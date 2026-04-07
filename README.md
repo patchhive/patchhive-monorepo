@@ -2,6 +2,21 @@
 
 The maintenance layer for modern codebases.
 
+## Source Of Truth
+
+This repository is the canonical PatchHive development monorepo.
+
+- Shared packages are developed here first.
+- Products are developed here first.
+- Individual product repositories can be exported from this monorepo later for standalone distribution and visibility.
+- Until that split happens, this repo is the source of truth for code, docs, and history.
+
+The intended long-term flow is:
+
+1. Build and evolve products in this monorepo.
+2. Publish shared packages such as `@patchhive/ui`.
+3. Export products such as `products/repo-reaper` into their own GitHub repositories when they are ready.
+
 ## Structure
 
 ```
