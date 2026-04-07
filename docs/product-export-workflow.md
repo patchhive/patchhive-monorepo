@@ -23,6 +23,8 @@ Standalone product repositories should:
 - use shared service contracts for things like `PATCHHIVE_AI_URL`
 - avoid local `file:` dependencies back into the monorepo
 
+Right now, `@patchhive/ui` is prepared to publish through GitHub Packages. That works well for PatchHive-controlled repositories, but it requires package-registry authentication during install. If standalone products need frictionless public installs for outside contributors, publish shared packages to npmjs instead.
+
 For example, RepoReaper's frontend currently uses a local dependency while it lives inside the monorepo. When RepoReaper becomes a standalone repository, that dependency should be changed from a local path to a published package version.
 
 ## Export Script
