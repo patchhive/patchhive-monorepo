@@ -32,11 +32,9 @@ import {
 
 `@patchhive/ui` is published from the PatchHive monorepo.
 
-The current publish workflow targets GitHub Packages under the `@patchhive` scope.
+The intended release target is the public npm registry, so standalone PatchHive product repositories and outside contributors can install it without package-registry authentication.
 
-That is convenient for PatchHive-owned repos, but it also means consumer installs need package-registry authentication.
-
-If PatchHive products need frictionless public installs later, publish this package to npmjs as a public package instead of relying only on GitHub Packages.
+This package should be published as a public scoped package.
 
 ## Monorepo Note
 
