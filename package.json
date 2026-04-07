@@ -1,0 +1,16 @@
+{
+  "name": "patchhive",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "products/*/frontend"
+  ],
+  "scripts": {
+    "dev:ai-local": "npm --workspace @patchhive/ai-local run dev",
+    "dev:ai-local-rust": "cargo run --manifest-path packages/ai-local/rust-gateway/Cargo.toml",
+    "start:ai-local": "npm --workspace @patchhive/ai-local run start",
+    "start:ai-local-rust": "cargo run --release --manifest-path packages/ai-local/rust-gateway/Cargo.toml",
+    "dev:repo-reaper": "cd products/repo-reaper/frontend && npm run dev",
+    "build:repo-reaper": "cd products/repo-reaper/frontend && npm run build"
+  }
+}

@@ -1,0 +1,42 @@
+# PatchHive monorepo
+
+# Node / frontend
+node_modules/
+dist/
+.vite/
+coverage/
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Rust
+target/
+
+# Local env / secrets
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Local databases and runtime files
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+*.pid
+
+# Logs / temp
+*.log
+tmp/
+.cache/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
+
+# Local tool state
+.codex

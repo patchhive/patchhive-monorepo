@@ -1,0 +1,113 @@
+# PatchHive Monorepo
+
+The maintenance layer for modern codebases.
+
+## Structure
+
+```
+patchhive/
+  packages/
+    ui/                     ← @patchhive/ui — shared component library
+      src/
+        theme.js            ← base dark theme + per-product accent colors
+        primitives.jsx      ← Btn, Input, Sel, ScoreBadge, ConfidenceBar,
+                               PatchHiveHeader, PatchHiveFooter, TabBar, etc.
+        components/
+          AgentCard.jsx
+          DiffViewer.jsx
+          IssueRow.jsx
+          LoginPage.jsx     ← accepts icon/title/storageKey/apiBase props
+        index.js            ← re-exports everything
+    ai-local/               ← @patchhive/ai-local — localhost AI gateway
+      src/
+        index.js            ← gateway server + provider routing
+        cli.js              ← local entrypoint
+  products/
+    repo-reaper/            ← RepoReaper v0.1.0
+      backend/              ← Rust (axum, rusqlite, reqwest, tokio)
+      frontend/             ← React (imports from @patchhive/ui)
+```
+
+## Adding a New Product
+
+1. Copy `products/repo-reaper` as a template
+2. Replace the backend with your product's logic
+3. In `frontend/src/App.jsx`:
+   - Call `applyTheme("signal-hive")` (or your product key)
+   - Pass your product's `icon` and `title` to `LoginPage`, `PatchHiveHeader`, `PatchHiveFooter`
+4. All shared UI — buttons, inputs, panels, colors — just work
+
+## Shared UI Package (`@patchhive/ui`)
+
+```js
+import {
+  // Theme
+  applyTheme, PRODUCT_THEMES, PROVIDERS,
+
+  // Primitives
+  S, Btn, Input, Sel, Divider, EmptyState,
+  ScoreBadge, ConfidenceBar, StatusDot, Tag, timeAgo,
+
+  // Layout
+  PatchHiveHeader, PatchHiveFooter, TabBar,
+
+  // Components
+  AgentCard, DiffViewer, IssueRow, LoginPage,
+} from "@patchhive/ui";
+```
+
+## Product Accent Colors
+
+| Product        | Accent  |
+|----------------|---------|
+| repo-reaper    | Crimson |
+| signal-hive    | Blue    |
+| review-bee     | Amber   |
+| trust-gate     | Purple  |
+| repo-memory    | Green   |
+| merge-keeper   | Blue    |
+| flake-sting    | Orange  |
+| dep-triage     | Amber   |
+| vuln-triage    | Crimson |
+| refactor-scout | Green   |
+
+## Quick Start — RepoReaper
+
+```bash
+cd products/repo-reaper
+cp .env.example .env
+# fill in BOT_GITHUB_TOKEN, BOT_GITHUB_USER, PROVIDER_API_KEY
+
+# Dev
+cd backend && cargo run
+cd frontend && npm install && npm run dev
+
+# Docker
+docker-compose up --build
+```
+
+## Local AI Gateway
+
+PatchHive includes `@patchhive/ai-local`, a localhost AI gateway for products that should route through a user's own Codex or Copilot session.
+
+```bash
+npm install
+npm run dev:ai-local
+```
+
+Point products at:
+
+```bash
+PATCHHIVE_AI_URL=http://127.0.0.1:8787/v1
+```
+
+RepoReaper uses `PATCHHIVE_AI_URL` first and falls back to `OPENAI_BASE_URL` for compatibility.
+
+## Platform Docs
+
+- [Platform Guardrails](/home/coemedia/Documents/code/patchhive/docs/platform-guardrails.md)
+- [Product API Contract v1](/home/coemedia/Documents/code/patchhive/docs/product-api-contract-v1.md)
+
+---
+
+*PatchHive — visibility first, autonomy second.*
