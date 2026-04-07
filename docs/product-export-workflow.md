@@ -1,0 +1,77 @@
+# Product Export Workflow
+
+PatchHive uses the monorepo as the source of truth.
+
+Standalone product repositories are exported from the monorepo when a product is ready for its own GitHub presence.
+
+## Principles
+
+- Develop products in the monorepo first.
+- Develop shared packages in the monorepo first.
+- Treat standalone product repositories as exported mirrors, not the primary development home.
+- Re-export products from the monorepo instead of manually copying files around.
+
+## Shared Packages
+
+Product exports do not carry `packages/` with them.
+
+That is intentional.
+
+Standalone product repositories should:
+
+- depend on published shared packages such as `@patchhive/ui`
+- use shared service contracts for things like `PATCHHIVE_AI_URL`
+- avoid local `file:` dependencies back into the monorepo
+
+For example, RepoReaper's frontend currently uses a local dependency while it lives inside the monorepo. When RepoReaper becomes a standalone repository, that dependency should be changed from a local path to a published package version.
+
+## Export Script
+
+Use:
+
+```bash
+./scripts/export-product.sh <product-name>
+```
+
+Example:
+
+```bash
+./scripts/export-product.sh repo-reaper
+```
+
+This creates a local export branch from `products/repo-reaper`.
+
+If you want to push directly to a standalone remote:
+
+```bash
+./scripts/export-product.sh repo-reaper repo-reaper main
+```
+
+That will:
+
+1. create a subtree export branch
+2. push that branch to the `repo-reaper` remote's `main` branch
+
+The script is intentionally safe:
+
+- it does not overwrite an existing export branch
+- if `export/<product>` already exists, it creates a timestamped branch name instead
+
+## Recommended First Export
+
+1. Create an empty GitHub repository for the product.
+2. Add it as a remote in the monorepo.
+3. Run the export script.
+4. Push the export branch to the product repo.
+5. Update the standalone product repo to use published shared packages.
+
+## Day-To-Day Workflow
+
+The intended long-term flow is:
+
+1. Build inside the monorepo.
+2. Commit and push monorepo changes first.
+3. Export a product when you want its standalone repository updated.
+4. Push the export branch into the product repository.
+
+This keeps one clean source of truth while still giving each product its own GitHub identity.

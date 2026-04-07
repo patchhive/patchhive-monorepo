@@ -17,6 +17,8 @@ The intended long-term flow is:
 2. Publish shared packages such as `@patchhive/ui`.
 3. Export products such as `products/repo-reaper` into their own GitHub repositories when they are ready.
 
+The export workflow is documented in [Product Export Workflow](/home/coemedia/Documents/code/patchhive/docs/product-export-workflow.md).
+
 ## Structure
 
 ```
