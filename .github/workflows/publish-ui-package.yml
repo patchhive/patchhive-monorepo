@@ -5,7 +5,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 jobs:
   publish-ui:
@@ -27,6 +26,6 @@ jobs:
 
       - name: Publish @patchhivehq/ui to npm
         working-directory: packages/ui
-        run: npm publish --access public --provenance
+        run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
