@@ -1,0 +1,52 @@
+name: patchhive-ai-local CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  node-gateway:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Verify Node entrypoint
+        run: node --check src/cli.js
+
+      - name: Verify adapters
+        run: |
+          node --check adapters/codex/index.js
+          node --check adapters/copilot/index.js
+
+  rust-gateway:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: rust-gateway
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Check Rust gateway
+        run: cargo check --locked

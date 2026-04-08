@@ -2,6 +2,8 @@
 
 Localhost AI gateway for PatchHive products.
 
+This repository is mirrored to `patchhive/patchhive-ai-local`, but the PatchHive monorepo remains the source of truth for development and releases.
+
 It gives the monorepo one stable OpenAI-compatible endpoint while the actual engine can be:
 
 - Codex via the official Codex SDK and the local user’s Codex login
