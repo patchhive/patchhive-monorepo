@@ -40,3 +40,6 @@ tmp/
 
 # Local tool state
 .codex
+
+# Local planning scratchpad
+FUTURE_PLANS.md
