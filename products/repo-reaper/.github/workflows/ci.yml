@@ -43,9 +43,18 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: 24
+          registry-url: https://registry.npmjs.org
 
       - name: Install frontend dependencies
-        run: npm install
+        run: |
+          for attempt in 1 2 3 4 5; do
+            npm install --prefer-online && exit 0
+            if [ "$attempt" -eq 5 ]; then
+              exit 1
+            fi
+            echo "npm install failed, retrying after registry backoff..."
+            sleep 15
+          done
 
       - name: Build frontend
         run: npm run build
