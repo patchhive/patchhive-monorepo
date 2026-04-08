@@ -1,0 +1,35 @@
+{
+  "name": "@patchhivehq/product-shell",
+  "version": "0.1.0",
+  "description": "Shared frontend shell helpers for PatchHive products.",
+  "type": "module",
+  "main": "./src/index.js",
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/patchhive/product-shell.git"
+  },
+  "homepage": "https://github.com/patchhive/product-shell",
+  "bugs": {
+    "url": "https://github.com/patchhive/product-shell/issues"
+  },
+  "keywords": [
+    "patchhive",
+    "react",
+    "shell",
+    "auth"
+  ],
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  },
+  "peerDependencies": {
+    "react": ">=18"
+  }
+}

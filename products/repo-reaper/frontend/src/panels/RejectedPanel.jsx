@@ -1,14 +1,14 @@
 import { API } from "../config.js";
 import { useState, useEffect } from "react";
+import { createApiFetcher } from "@patchhivehq/product-shell";
 import { S, Btn, EmptyState, ConfidenceBar, timeAgo } from "@patchhivehq/ui";
 
-export default function RejectedPanel({ onViewDiff }) {
+export default function RejectedPanel({ apiKey = "", onViewDiff }) {
   const [rejected, setRejected] = useState([]);
   const [expanded, setExpanded] = useState(null);
-  const apiKey = localStorage.getItem("reaper_api_key") || "";
-  const af = url => fetch(url, { headers: apiKey ? { "X-API-Key": apiKey } : {} });
+  const fetch_ = createApiFetcher(apiKey);
 
-  const load = () => af(`${API}/rejected`).then(r => r.json()).then(d => setRejected(d.rejected || []));
+  const load = () => fetch_(`${API}/rejected`).then(r => r.json()).then(d => setRejected(d.rejected || []));
   useEffect(load, []);
 
   return (

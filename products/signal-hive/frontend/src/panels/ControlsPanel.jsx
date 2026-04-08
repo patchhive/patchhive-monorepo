@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { createApiFetcher } from "@patchhivehq/product-shell";
 import { API } from "../config.js";
 import { Btn, EmptyState, Input, S, Sel, Tag } from "@patchhivehq/ui";
 
@@ -29,19 +30,13 @@ const SECTION_META = {
   },
 };
 
-const af = (key) => (url, opts = {}) =>
-  fetch(url, {
-    ...opts,
-    headers: { ...(opts.headers || {}), ...(key ? { "X-API-Key": key } : {}) },
-  });
-
 export default function ControlsPanel({ apiKey }) {
   const [repos, setRepos] = useState([]);
   const [repo, setRepo] = useState("");
   const [listType, setListType] = useState("allowlist");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const fetch_ = af(apiKey);
+  const fetch_ = createApiFetcher(apiKey);
 
   const load = () =>
     fetch_(`${API}/repo-lists`)

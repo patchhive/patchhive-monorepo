@@ -35,6 +35,9 @@ patchhive/
           IssueRow.jsx
           LoginPage.jsx     ← accepts icon/title/storageKey/apiBase props
         index.js            ← re-exports everything
+    product-shell/          ← @patchhivehq/product-shell — shared frontend auth/bootstrap helpers
+      src/
+        index.js            ← API-key auth hook + authenticated fetch helpers
     ai-local/               ← @patchhive/ai-local — localhost AI gateway
       src/
         index.js            ← gateway server + provider routing
@@ -75,6 +78,20 @@ import {
   AgentCard, DiffViewer, IssueRow, LoginPage,
 } from "@patchhivehq/ui";
 ```
+
+## Shared Product Shell (`@patchhivehq/product-shell`)
+
+```js
+import {
+  createApiFetcher,
+  useApiKeyAuth,
+} from "@patchhivehq/product-shell";
+```
+
+This package holds repeated frontend shell behaviors that already show up across multiple PatchHive products:
+
+- API-key login bootstrap against `/auth/status` and `/auth/login`
+- authenticated `fetch` helpers for product backends
 
 ## Product Accent Colors
 

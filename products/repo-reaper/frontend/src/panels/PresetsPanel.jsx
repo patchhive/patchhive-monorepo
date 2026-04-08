@@ -1,21 +1,21 @@
 import { API } from "../config.js";
 import { useState, useEffect } from "react";
+import { createApiFetcher } from "@patchhivehq/product-shell";
 import { S, Input, Btn, EmptyState, ROLE_META, PROVIDERS, timeAgo } from "@patchhivehq/ui";
 
-export default function PresetsPanel({ currentAgents, onLoadPreset }) {
+export default function PresetsPanel({ apiKey = "", currentAgents, onLoadPreset }) {
   const [presets, setPresets] = useState([]);
   const [saveName, setSaveName] = useState("");
   const [saving, setSaving] = useState(false);
-  const apiKey = localStorage.getItem("reaper_api_key") || "";
-  const af = (url, opts={}) => fetch(url, { ...opts, headers: { ...(opts.headers||{}), ...(apiKey ? { "X-API-Key": apiKey } : {}) } });
+  const fetch_ = createApiFetcher(apiKey);
 
-  const load = () => af(`${API}/presets`).then(r => r.json()).then(d => setPresets(d.presets || []));
+  const load = () => fetch_(`${API}/presets`).then(r => r.json()).then(d => setPresets(d.presets || []));
   useEffect(load, []);
 
   const save = async () => {
     if (!saveName.trim() || currentAgents.length === 0) return;
     setSaving(true);
-    await af(`${API}/presets`, {
+    await fetch_(`${API}/presets`, {
       method:"POST", headers:{ "Content-Type":"application/json" },
       body: JSON.stringify({ name: saveName, agents: currentAgents }),
     });
@@ -24,7 +24,7 @@ export default function PresetsPanel({ currentAgents, onLoadPreset }) {
   };
 
   const del = async name => {
-    await af(`${API}/presets/${encodeURIComponent(name)}`, { method:"DELETE" });
+    await fetch_(`${API}/presets/${encodeURIComponent(name)}`, { method:"DELETE" });
     load();
   };
 

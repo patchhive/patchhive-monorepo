@@ -7,6 +7,7 @@ import {
   PatchHiveHeader,
   TabBar,
 } from "@patchhivehq/ui";
+import { createApiFetcher, useApiKeyAuth } from "@patchhivehq/product-shell";
 import { API } from "./config.js";
 import ScanPanel from "./panels/ScanPanel.jsx";
 import HistoryPanel from "./panels/HistoryPanel.jsx";
@@ -37,71 +38,18 @@ function toList(value) {
     .filter(Boolean);
 }
 
-function useAuth() {
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem("signal_api_key") || "");
-  const [checked, setChecked] = useState(false);
-  const [needsAuth, setNeedsAuth] = useState(false);
-
-  useEffect(() => {
-    fetch(`${API}/auth/status`)
-      .then((res) => res.json())
-      .then((data) => {
-        if (!data.auth_enabled) {
-          setChecked(true);
-          return;
-        }
-        const stored = localStorage.getItem("signal_api_key");
-        if (!stored) {
-          setNeedsAuth(true);
-          setChecked(true);
-          return;
-        }
-        fetch(`${API}/auth/login`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ api_key: stored }),
-        }).then((res) => {
-          if (res.ok) {
-            setApiKey(stored);
-          } else {
-            setNeedsAuth(true);
-          }
-          setChecked(true);
-        });
-      })
-      .catch(() => setChecked(true));
-  }, []);
-
-  const login = (key) => {
-    localStorage.setItem("signal_api_key", key);
-    setApiKey(key);
-    setNeedsAuth(false);
-  };
-
-  const logout = () => {
-    localStorage.removeItem("signal_api_key");
-    setApiKey("");
-    setNeedsAuth(true);
-  };
-
-  return { apiKey, checked, needsAuth, login, logout };
-}
-
-const af = (key) => (url, opts = {}) =>
-  fetch(url, {
-    ...opts,
-    headers: { ...(opts.headers || {}), ...(key ? { "X-API-Key": key } : {}) },
-  });
-
 export default function App() {
-  const { apiKey, checked, needsAuth, login, logout } = useAuth();
+  const { apiKey, checked, needsAuth, login, logout } = useApiKeyAuth({
+    apiBase: API,
+    storageKey: "signal_api_key",
+  });
   const [tab, setTab] = useState("scan");
   const [running, setRunning] = useState(false);
   const [params, setParams] = useState(DEFAULT_PARAMS);
   const [scan, setScan] = useState(null);
   const [error, setError] = useState("");
 
-  const fetch_ = af(apiKey);
+  const fetch_ = createApiFetcher(apiKey);
 
   useEffect(() => {
     applyTheme("signal-hive");

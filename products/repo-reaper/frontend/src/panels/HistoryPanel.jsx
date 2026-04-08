@@ -1,18 +1,18 @@
 import { API } from "../config.js";
 import { useState, useEffect } from "react";
+import { createApiFetcher } from "@patchhivehq/product-shell";
 import { S, Btn, EmptyState, timeAgo } from "@patchhivehq/ui";
 
-export default function HistoryPanel({ onViewDiff }) {
+export default function HistoryPanel({ apiKey = "", onViewDiff }) {
   const [history, setHistory] = useState([]);
   const [expanded, setExpanded] = useState(null);
-  const apiKey = localStorage.getItem("reaper_api_key") || "";
-  const af = url => fetch(url, { headers: apiKey ? { "X-API-Key": apiKey } : {} });
+  const fetch_ = createApiFetcher(apiKey);
 
   useEffect(() => {
-    af(`${API}/history`).then(r => r.json()).then(d => setHistory(d.history || [])).catch(() => {});
+    fetch_(`${API}/history`).then(r => r.json()).then(d => setHistory(d.history || [])).catch(() => {});
   }, []);
 
-  const refresh = () => af(`${API}/history`).then(r => r.json()).then(d => setHistory(d.history || []));
+  const refresh = () => fetch_(`${API}/history`).then(r => r.json()).then(d => setHistory(d.history || []));
 
   const statusColor = s => ({ done:"#2a8a4a", error:"#c41e3a", crashed:"#c41e3a", running:"#c8922a" })[s] || "#484868";
 

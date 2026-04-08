@@ -1,17 +1,12 @@
 import { useEffect, useState } from "react";
+import { createApiFetcher } from "@patchhivehq/product-shell";
 import { API } from "../config.js";
 import { Btn, EmptyState, S, Tag } from "@patchhivehq/ui";
-
-const af = (key) => (url, opts = {}) =>
-  fetch(url, {
-    ...opts,
-    headers: { ...(opts.headers || {}), ...(key ? { "X-API-Key": key } : {}) },
-  });
 
 export default function ChecksPanel({ apiKey }) {
   const [health, setHealth] = useState(null);
   const [checks, setChecks] = useState([]);
-  const fetch_ = af(apiKey);
+  const fetch_ = createApiFetcher(apiKey);
 
   const refresh = () => {
     fetch_(`${API}/health`).then((res) => res.json()).then(setHealth).catch(() => setHealth(null));

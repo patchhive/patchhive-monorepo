@@ -24,6 +24,7 @@ PatchHive is a software maintenance platform — a family of focused tools that 
 patchhive/
   packages/
     ui/                     ← @patchhivehq/ui — shared React component library
+    product-shell/          ← @patchhivehq/product-shell — shared frontend auth/bootstrap helpers
   products/
     repo-reaper/            ← ✅ BUILT (v0.1.0)
     signal-hive/            ← next
@@ -110,6 +111,24 @@ Each product has a pre-defined accent color in `packages/ui/src/theme.js`:
 | RefactorScout   | `refactor-scout` | Green `#2a8a4a` |
 
 Apply in `App.jsx`: `useEffect(() => { applyTheme("signal-hive"); }, []);`
+
+---
+
+## Shared Product Shell Package — @patchhivehq/product-shell
+
+Located at `packages/product-shell/`. Product frontends that use the shared PatchHive API-key auth flow should import from here instead of rebuilding the same bootstrap logic.
+
+```js
+import {
+  createApiFetcher,
+  useApiKeyAuth,
+} from "@patchhivehq/product-shell";
+```
+
+Use it for:
+- `/auth/status` and `/auth/login` bootstrap
+- authenticated backend `fetch` helpers
+- any repeated frontend shell behavior that appears in 2+ PatchHive products and is not purely visual
 
 ---
 

@@ -1,9 +1,10 @@
 import { API } from "../config.js";
 // RepoListsPanel.jsx
 import { useState, useEffect } from "react";
+import { createApiFetcher } from "@patchhivehq/product-shell";
 import { S, Input, Btn, EmptyState, Tag } from "@patchhivehq/ui";
 
-export function RepoListsPanel() {
+export function RepoListsPanel({ apiKey = "" }) {
   const [repos, setRepos] = useState([]);
   const [input, setInput] = useState("");
   const [type, setType] = useState("allowlist");
@@ -12,20 +13,19 @@ export function RepoListsPanel() {
     { key: "denylist", label: "Denylist", color: "#c41e3a", empty: "No explicitly denied repos." },
     { key: "opt_out", label: "Opt-Out", color: "#c8922a", empty: "No opted-out repos." },
   ];
-  const apiKey = localStorage.getItem("reaper_api_key") || "";
-  const af = (url, opts={}) => fetch(url, { ...opts, headers: { ...(opts.headers||{}), ...(apiKey ? { "X-API-Key": apiKey } : {}) } });
+  const fetch_ = createApiFetcher(apiKey);
 
-  const load = () => af(`${API}/repo-lists`).then(r => r.json()).then(d => setRepos(d.repos || []));
+  const load = () => fetch_(`${API}/repo-lists`).then(r => r.json()).then(d => setRepos(d.repos || []));
   useEffect(load, []);
 
   const add = async () => {
     if (!input.trim()) return;
-    await af(`${API}/repo-lists`, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ repo: input.trim(), list_type: type }) });
+    await fetch_(`${API}/repo-lists`, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ repo: input.trim(), list_type: type }) });
     setInput(""); load();
   };
 
   const remove = async repo => {
-    await af(`${API}/repo-lists/${encodeURIComponent(repo)}`, { method:"DELETE" });
+    await fetch_(`${API}/repo-lists/${encodeURIComponent(repo)}`, { method:"DELETE" });
     load();
   };
 
@@ -75,23 +75,22 @@ export function RepoListsPanel() {
 }
 
 // SchedulesPanel.jsx
-export function SchedulesPanel() {
+export function SchedulesPanel({ apiKey = "" }) {
   const [schedules, setSchedules] = useState([]);
   const [form, setForm] = useState({ cron_expr:"nightly", config_json:"{}" });
-  const apiKey = localStorage.getItem("reaper_api_key") || "";
-  const af = (url, opts={}) => fetch(url, { ...opts, headers: { ...(opts.headers||{}), ...(apiKey ? { "X-API-Key": apiKey } : {}) } });
+  const fetch_ = createApiFetcher(apiKey);
 
-  const load = () => af(`${API}/schedules`).then(r => r.json()).then(d => setSchedules(d.schedules || []));
+  const load = () => fetch_(`${API}/schedules`).then(r => r.json()).then(d => setSchedules(d.schedules || []));
   useEffect(load, []);
 
   const create = async () => {
     let cfg; try { cfg = JSON.parse(form.config_json); } catch { return; }
-    await af(`${API}/schedules`, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ cron_expr: form.cron_expr, config_json: cfg }) });
+    await fetch_(`${API}/schedules`, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ cron_expr: form.cron_expr, config_json: cfg }) });
     load();
   };
 
-  const del = async id => { await af(`${API}/schedules/${id}`, { method:"DELETE" }); load(); };
-  const toggle = async id => { await af(`${API}/schedules/${id}/toggle`, { method:"PATCH" }); load(); };
+  const del = async id => { await fetch_(`${API}/schedules/${id}`, { method:"DELETE" }); load(); };
+  const toggle = async id => { await fetch_(`${API}/schedules/${id}/toggle`, { method:"PATCH" }); load(); };
 
   return (
     <div>
@@ -179,12 +178,11 @@ export function WebhookPanel({ watchMode, onToggleWatch }) {
 }
 
 // PRTrackingPanel.jsx
-export function PRTrackingPanel() {
+export function PRTrackingPanel({ apiKey = "" }) {
   const [prs, setPrs] = useState([]);
-  const apiKey = localStorage.getItem("reaper_api_key") || "";
-  const af = url => fetch(url, { headers: apiKey ? { "X-API-Key": apiKey } : {} });
+  const fetch_ = createApiFetcher(apiKey);
 
-  const load = () => af(`${API}/pr-tracking`).then(r => r.json()).then(d => setPrs(d.prs || []));
+  const load = () => fetch_(`${API}/pr-tracking`).then(r => r.json()).then(d => setPrs(d.prs || []));
   useEffect(load, []);
 
   return (
@@ -217,12 +215,12 @@ export function PRTrackingPanel() {
 }
 
 // StartupChecksPanel.jsx
-export function StartupChecksPanel() {
+export function StartupChecksPanel({ apiKey = "" }) {
   const [checks, setChecks] = useState([]);
-  const apiKey = localStorage.getItem("reaper_api_key") || "";
+  const fetch_ = createApiFetcher(apiKey);
 
   useEffect(() => {
-    fetch(`${API}/startup/checks`, { headers: apiKey ? { "X-API-Key": apiKey } : {} })
+    fetch_(`${API}/startup/checks`)
       .then(r => r.json()).then(d => setChecks(d.checks || []));
   }, []);
 

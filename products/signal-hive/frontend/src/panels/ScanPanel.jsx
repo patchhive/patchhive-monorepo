@@ -1,16 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
+import { createApiFetcher } from "@patchhivehq/product-shell";
 import { Btn, EmptyState, Input, S, Sel, Tag, timeAgo } from "@patchhivehq/ui";
 import { API } from "../config.js";
 import SignalCard from "../components/SignalCard.jsx";
 import { SORT_OPTIONS, sortRepos } from "../sort.js";
-
-function af(key) {
-  return (url, opts = {}) =>
-    fetch(url, {
-      ...opts,
-      headers: { ...(opts.headers || {}), ...(key ? { "X-API-Key": key } : {}) },
-    });
-}
 
 function toList(value) {
   return value
@@ -52,7 +45,7 @@ export default function ScanPanel({ apiKey, params, setParams, running, onRun, s
   const [presetError, setPresetError] = useState("");
   const set = (key, value) => setParams((prev) => ({ ...prev, [key]: value }));
   const sortedRepos = useMemo(() => sortRepos(scan?.repos || [], sortBy), [scan, sortBy]);
-  const fetch_ = af(apiKey);
+  const fetch_ = createApiFetcher(apiKey);
   const selectedPreset = presets.find((preset) => preset.name === selectedPresetName) || null;
 
   const loadPresets = (preferredName = "") =>

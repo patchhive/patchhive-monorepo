@@ -1,21 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
+import { createApiFetcher } from "@patchhivehq/product-shell";
 import { API } from "../config.js";
 import { Btn, EmptyState, S, Sel, timeAgo } from "@patchhivehq/ui";
 import SignalCard from "../components/SignalCard.jsx";
 import { SORT_OPTIONS, sortRepos } from "../sort.js";
-
-const af = (key) => (url, opts = {}) =>
-  fetch(url, {
-    ...opts,
-    headers: { ...(opts.headers || {}), ...(key ? { "X-API-Key": key } : {}) },
-  });
 
 export default function HistoryPanel({ apiKey }) {
   const [history, setHistory] = useState([]);
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(false);
   const [sortBy, setSortBy] = useState("priority");
-  const fetch_ = af(apiKey);
+  const fetch_ = createApiFetcher(apiKey);
   const sortedRepos = useMemo(() => sortRepos(selected?.repos || [], sortBy), [selected, sortBy]);
 
   const loadHistory = () =>

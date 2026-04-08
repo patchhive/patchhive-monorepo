@@ -1,10 +1,11 @@
 import { API } from "../config.js";
 import { useState } from "react";
+import { createApiFetcher } from "@patchhivehq/product-shell";
 import { S, Input, Sel, Btn, EmptyState, IssueRow } from "@patchhivehq/ui";
 
 const LANGS = ["python","javascript","typescript","rust","go","java","ruby","cpp"];
 
-export default function DryRunPanel({ agents, onViewDiff }) {
+export default function DryRunPanel({ agents, apiKey = "", onViewDiff }) {
   const [params, setParams] = useState({ language:"python", min_stars:50, max_repos:5, max_issues:10, search_query:"", concurrency:1, cost_budget_usd:0, retry_count:3 });
   const [running, setRunning] = useState(false);
   const [issues, setIssues] = useState([]);
@@ -12,13 +13,12 @@ export default function DryRunPanel({ agents, onViewDiff }) {
   const [logs, setLogs] = useState([]);
   const set = k => v => setParams(p => ({ ...p, [k]: v }));
 
-  const apiKey = localStorage.getItem("reaper_api_key") || "";
-  const af = url => fetch(url, { headers: apiKey ? { "X-API-Key": apiKey } : {} });
+  const fetch_ = createApiFetcher(apiKey);
 
   const run = async () => {
     setRunning(true); setIssues([]); setReport(""); setLogs([]);
-    const res = await fetch(`${API}/dry-run`, {
-      method:"POST", headers:{ "Content-Type":"application/json", ...(apiKey ? { "X-API-Key": apiKey } : {}) },
+    const res = await fetch_(`${API}/dry-run`, {
+      method:"POST", headers:{ "Content-Type":"application/json" },
       body: JSON.stringify({ ...params, min_stars:+params.min_stars, max_repos:+params.max_repos, max_issues:+params.max_issues, labels:["bug"] }),
     });
     const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = "";

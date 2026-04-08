@@ -1,5 +1,6 @@
 import { API } from "../config.js";
 import { useState, useEffect } from "react";
+import { createApiFetcher } from "@patchhivehq/product-shell";
 import { S, Input, Btn, Divider } from "@patchhivehq/ui";
 
 export default function ConfigPanel({ existingConfig, apiKey = "", onSaved }) {
@@ -11,7 +12,7 @@ export default function ConfigPanel({ existingConfig, apiKey = "", onSaved }) {
   const [saved, setSaved] = useState(false);
   const [aiStatus, setAiStatus] = useState(existingConfig?.AI_LOCAL_STATUS || { configured:false });
   const [loadingAiStatus, setLoadingAiStatus] = useState(false);
-  const af = (url, opts={}) => fetch(url, { ...opts, headers: { ...(opts.headers||{}), ...(apiKey ? { "X-API-Key": apiKey } : {}) } });
+  const fetch_ = createApiFetcher(apiKey);
 
   useEffect(() => {
     if (existingConfig) setCfg(c => ({ ...c, ...existingConfig }));
@@ -20,7 +21,7 @@ export default function ConfigPanel({ existingConfig, apiKey = "", onSaved }) {
   const loadAiStatus = async () => {
     setLoadingAiStatus(true);
     try {
-      const resp = await af(`${API}/ai-local/status`);
+      const resp = await fetch_(`${API}/ai-local/status`);
       const data = await resp.json();
       setAiStatus(data);
     } catch (error) {
@@ -41,7 +42,7 @@ export default function ConfigPanel({ existingConfig, apiKey = "", onSaved }) {
   const set = k => v => setCfg(c => ({ ...c, [k]: v }));
 
   const save = async () => {
-    await af(`${API}/config`, {
+    await fetch_(`${API}/config`, {
       method:"POST", headers:{ "Content-Type":"application/json" },
       body: JSON.stringify(cfg),
     });

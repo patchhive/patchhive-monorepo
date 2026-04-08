@@ -4,6 +4,7 @@ import {
   LoginPage, DiffViewer,
   PatchHiveHeader, PatchHiveFooter, TabBar,
 } from "@patchhivehq/ui";
+import { createApiFetcher, useApiKeyAuth } from "@patchhivehq/product-shell";
 import { API } from "./config.js";
 import TeamPanel       from "./panels/TeamPanel.jsx";
 import RunPanel        from "./panels/RunPanel.jsx";
@@ -39,37 +40,11 @@ const DEFAULT_PARAMS = {
   concurrency:3, search_query:"", cost_budget_usd:0, retry_count:3,
 };
 
-function useAuth() {
-  const [apiKey,    setApiKey]    = useState(() => localStorage.getItem("reaper_api_key") || "");
-  const [checked,   setChecked]   = useState(false);
-  const [needsAuth, setNeedsAuth] = useState(false);
-
-  useEffect(() => {
-    fetch(`${API}/auth/status`).then(r => r.json()).then(d => {
-      if (!d.auth_enabled) { setChecked(true); return; }
-      const stored = localStorage.getItem("reaper_api_key");
-      if (!stored) { setNeedsAuth(true); setChecked(true); return; }
-      fetch(`${API}/auth/login`, {
-        method:"POST", headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({ api_key: stored }),
-      }).then(r => {
-        if (r.ok) { setApiKey(stored); } else { setNeedsAuth(true); }
-        setChecked(true);
-      });
-    }).catch(() => setChecked(true));
-  }, []);
-
-  const login  = k => { localStorage.setItem("reaper_api_key", k); setApiKey(k); setNeedsAuth(false); };
-  const logout = () => { localStorage.removeItem("reaper_api_key"); setApiKey(""); setNeedsAuth(true); };
-  return { apiKey, checked, needsAuth, login, logout };
-}
-
-const af = key => (url, opts={}) => fetch(url, {
-  ...opts, headers: { ...(opts.headers||{}), ...(key ? { "X-API-Key": key } : {}) },
-});
-
 export default function App() {
-  const { apiKey, checked, needsAuth, login, logout } = useAuth();
+  const { apiKey, checked, needsAuth, login, logout } = useApiKeyAuth({
+    apiBase: API,
+    storageKey: "reaper_api_key",
+  });
   const [tab,          setTab]          = useState("team");
   const [agents,       setAgents]       = useState({});
   const [logs,         setLogs]         = useState([]);
@@ -85,7 +60,7 @@ export default function App() {
   const [existingCfg,  setExistingCfg]  = useState({});
   const [watchMode,    setWatchMode]    = useState(false);
 
-  const fetch_ = af(apiKey);
+  const fetch_ = createApiFetcher(apiKey);
 
   useEffect(() => { applyTheme("repo-reaper"); }, []);
 
@@ -197,16 +172,16 @@ export default function App() {
       <div style={{ padding:24, maxWidth:1400, margin:"0 auto" }}>
         {tab==="team"     && <TeamPanel agents={agents} logs={logs} running={running} cooldowns={cooldowns} onAdd={addAgent} onRemove={removeAgent} apiKey={apiKey} existingConfig={existingCfg} />}
         {tab==="run"      && <RunPanel running={running} onStart={startRun} params={params} setParams={setParams} issues={issues} logs={logs} agents={agents} runStats={runStats} runCost={runCost} onViewDiff={setViewDiff} />}
-        {tab==="dryrun"   && <DryRunPanel agents={agents} onViewDiff={setViewDiff} />}
-        {tab==="history"  && <HistoryPanel onViewDiff={setViewDiff} />}
-        {tab==="board"    && <LeaderboardPanel />}
-        {tab==="rejected" && <RejectedPanel onViewDiff={setViewDiff} />}
-        {tab==="prs"      && <PRTrackingPanel />}
-        {tab==="presets"  && <PresetsPanel currentAgents={Object.values(agents)} onLoadPreset={loadPreset} />}
-        {tab==="repos"    && <RepoListsPanel />}
-        {tab==="sched"    && <SchedulesPanel />}
+        {tab==="dryrun"   && <DryRunPanel agents={agents} apiKey={apiKey} onViewDiff={setViewDiff} />}
+        {tab==="history"  && <HistoryPanel apiKey={apiKey} onViewDiff={setViewDiff} />}
+        {tab==="board"    && <LeaderboardPanel apiKey={apiKey} />}
+        {tab==="rejected" && <RejectedPanel apiKey={apiKey} onViewDiff={setViewDiff} />}
+        {tab==="prs"      && <PRTrackingPanel apiKey={apiKey} />}
+        {tab==="presets"  && <PresetsPanel apiKey={apiKey} currentAgents={Object.values(agents)} onLoadPreset={loadPreset} />}
+        {tab==="repos"    && <RepoListsPanel apiKey={apiKey} />}
+        {tab==="sched"    && <SchedulesPanel apiKey={apiKey} />}
         {tab==="webhook"  && <WebhookPanel watchMode={watchMode} onToggleWatch={toggleWatchMode} />}
-        {tab==="startup"  && <StartupChecksPanel />}
+        {tab==="startup"  && <StartupChecksPanel apiKey={apiKey} />}
         {tab==="cfg"      && <ConfigPanel existingConfig={existingCfg} apiKey={apiKey} onSaved={refreshConfig} />}
       </div>
 

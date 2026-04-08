@@ -65,6 +65,40 @@ That creates:
 - monorepo tag `ui/v0.1.0`
 - standalone repo tag `v0.1.0` in `patchhive/patchhive-ui`
 
+## Product Shell Package Release
+
+1. Bump the package version:
+
+```bash
+npm run version:product-shell -- patch
+```
+
+2. Review the changed files:
+
+- `packages/product-shell/package.json`
+- `package-lock.json`
+- any dependents updated to the new `^version`
+
+3. Commit and push the monorepo changes.
+4. Run the `Publish Product Shell Package` workflow in `patchhive/patchhive2`.
+5. Sync the standalone mirror:
+
+```bash
+npm run mirror:product-shell
+```
+
+6. Confirm `product-shell CI` is green.
+7. Tag the release:
+
+```bash
+./scripts/tag-release.sh product-shell v0.1.0
+```
+
+That creates:
+
+- monorepo tag `product-shell/v0.1.0`
+- standalone repo tag `v0.1.0` in `patchhive/product-shell`
+
 ## AI Local Release
 
 1. Confirm the monorepo is clean and `packages/ai-local` is in the state you want to ship.

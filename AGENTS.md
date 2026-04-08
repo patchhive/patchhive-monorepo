@@ -60,6 +60,7 @@ RepoReaper was built first because it descended from Jeremy's earlier GitFix exp
 patchhive/
   packages/
     ui/                     @patchhivehq/ui shared React component library
+    product-shell/          @patchhivehq/product-shell shared frontend shell/auth helpers
     ai-local/               @patchhive/ai-local localhost AI gateway
   products/
     repo-reaper/            built first, current active product
@@ -121,6 +122,17 @@ Rules:
 - If a component will appear in 2 or more products, put it in `packages/ui/src/components/` and re-export it from `packages/ui/src/index.js`.
 - If a component is product-specific, keep it inside that product.
 - Product apps should call `applyTheme("<product-key>")` from `App.jsx`.
+
+## Shared Product Shell Package
+
+Location: `packages/product-shell/`
+
+Every product frontend that uses PatchHive's API-key login flow should import shared auth/bootstrap behavior from `@patchhivehq/product-shell`.
+
+Rules:
+- If API-key login bootstrap is the same across 2 or more products, keep it in `product-shell`, not inside a product `App.jsx`.
+- If authenticated backend `fetch` behavior is repeated across 2 or more products, keep it in `product-shell`.
+- Avoid direct `localStorage` reads across individual panels when the app shell can pass the resolved API key down instead.
 
 Product accent keys live in `packages/ui/src/theme.js`:
 - `repo-reaper`

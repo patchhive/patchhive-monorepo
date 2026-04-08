@@ -1,16 +1,16 @@
 import { API } from "../config.js";
 import { useState, useEffect } from "react";
+import { createApiFetcher } from "@patchhivehq/product-shell";
 import { S, Btn, EmptyState, ConfidenceBar, ROLE_META, PROVIDERS } from "@patchhivehq/ui";
 
-export default function LeaderboardPanel() {
+export default function LeaderboardPanel({ apiKey = "" }) {
   const [data, setData] = useState([]);
   const [lifetime, setLifetime] = useState(0);
-  const apiKey = localStorage.getItem("reaper_api_key") || "";
-  const af = url => fetch(url, { headers: apiKey ? { "X-API-Key": apiKey } : {} });
+  const fetch_ = createApiFetcher(apiKey);
 
   const load = () => {
-    af(`${API}/leaderboard`).then(r => r.json()).then(d => setData(d.leaderboard || []));
-    af(`${API}/stats/lifetime-cost`).then(r => r.json()).then(d => setLifetime(d.lifetime_cost_usd || 0));
+    fetch_(`${API}/leaderboard`).then(r => r.json()).then(d => setData(d.leaderboard || []));
+    fetch_(`${API}/stats/lifetime-cost`).then(r => r.json()).then(d => setLifetime(d.lifetime_cost_usd || 0));
   };
   useEffect(load, []);
 
