@@ -755,8 +755,24 @@ fn enrich_scan_trend(record: &mut ScanRecord, previous: &ScanRecord) {
 }
 
 fn build_scan_report(record: &ScanRecord) -> ScanReport {
+    let top_repo = record.repos.first();
+    let top_stale = record
+        .repos
+        .iter()
+        .max_by_key(|repo| repo.stale_issues);
+    let top_recurring = record.repos.iter().max_by_key(|repo| {
+        repo.recurring_bug_clusters
+            .iter()
+            .map(|cluster| cluster.issue_count)
+            .sum::<u32>()
+    });
+
     let mut lines = vec![
-        format!("# SignalHive Report — {}", record.created_at),
+        "# SignalHive by PatchHive".into(),
+        String::new(),
+        "> Maintenance visibility before automation".into(),
+        String::new(),
+        format!("## Scan {}", record.id),
         String::new(),
         format!("- Scan ID: `{}`", record.id),
         format!("- Trigger: `{}`", record.trigger_type),
@@ -792,6 +808,39 @@ fn build_scan_report(record: &ScanRecord) -> ScanReport {
         String::new(),
     ]);
 
+    lines.extend([
+        "## Executive Readout".into(),
+        String::new(),
+        format!(
+            "- {} repos scanned and {} maintenance signals surfaced.",
+            record.summary.total_repos, record.summary.total_signals
+        ),
+        match top_repo {
+            Some(repo) => format!(
+                "- Highest priority repo: `{}` at {:.1} priority.",
+                repo.full_name,
+                round1(repo.priority_score)
+            ),
+            None => "- No ranked repos were returned in this scan.".into(),
+        },
+        match top_stale {
+            Some(repo) => format!(
+                "- Largest stale backlog spike: `{}` with {} stale issues.",
+                repo.full_name, repo.stale_issues
+            ),
+            None => "- No stale backlog spike stood out in this scan.".into(),
+        },
+        match top_recurring {
+            Some(repo) => format!(
+                "- Strongest recurring bug pressure: `{}` with {} recurring clusters.",
+                repo.full_name,
+                repo.recurring_bug_clusters.len()
+            ),
+            None => "- No recurring bug cluster stood out in this scan.".into(),
+        },
+        String::new(),
+    ]);
+
     if let Some(trend) = &record.trend {
         lines.extend([
             "## Trend vs Previous Similar Scan".into(),
@@ -819,15 +868,14 @@ fn build_scan_report(record: &ScanRecord) -> ScanReport {
     lines.extend(["## Ranked Maintenance Queue".into(), String::new()]);
 
     for (index, repo) in record.repos.iter().take(10).enumerate() {
+        lines.push(format!("### {}. `{}`", index + 1, repo.full_name));
         lines.push(format!(
-            "{}. `{}` — priority {}",
-            index + 1,
-            repo.full_name,
+            "- Priority: {:.1}",
             round1(repo.priority_score)
         ));
-        lines.push(format!("   - {}", repo.summary));
+        lines.push(format!("- Summary: {}", repo.summary));
         lines.push(format!(
-            "   - Stats: stale {} | unlabeled {} | duplicates {} | recurring clusters {} | TODO {} | FIXME {}",
+            "- Stats: stale {} | unlabeled {} | duplicates {} | recurring clusters {} | TODO {} | FIXME {}",
             repo.stale_issues,
             repo.unlabeled_issues,
             repo.duplicate_candidates.len(),
@@ -838,18 +886,18 @@ fn build_scan_report(record: &ScanRecord) -> ScanReport {
 
         if let Some(trend) = &repo.trend {
             lines.push(format!(
-                "   - Trend: {} (score {:+}, stale {:+}, recurring {:+})",
+                "- Trend: {} (score {:+}, stale {:+}, recurring {:+})",
                 trend.status, trend.priority_delta, trend.stale_delta, trend.recurring_delta
             ));
         }
 
         for signal in repo.signals.iter().take(3) {
-            lines.push(format!("   - Signal: {signal}"));
+            lines.push(format!("- Signal: {signal}"));
         }
 
         if let Some(factor) = repo.score_breakdown.first() {
             lines.push(format!(
-                "   - Strongest driver: {} (+{}) — {}",
+                "- Strongest driver: {} (+{}) — {}",
                 factor.label,
                 round1(factor.impact),
                 factor.detail
