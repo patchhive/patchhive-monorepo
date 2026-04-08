@@ -88,6 +88,9 @@ SOURCE_SHA="$(git rev-parse --short HEAD)"
 
 cleanup() {
   git worktree remove --force "$WORKTREE_DIR" >/dev/null 2>&1 || true
+  if [[ "$RESET_HISTORY" == true ]] && git show-ref --verify --quiet "refs/heads/${SYNC_BRANCH}"; then
+    git branch -D "$SYNC_BRANCH" >/dev/null 2>&1 || true
+  fi
   rm -rf "$WORKTREE_DIR"
 }
 
