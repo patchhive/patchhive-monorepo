@@ -138,8 +138,8 @@ That creates:
 
 ```bash
 cd crates/patchhive-product-core && cargo check --locked
-cd ../../products/repo-reaper/backend && cargo check --locked
-cd ../../signal-hive/backend && cargo check --locked
+cd ../../products/repo-reaper/backend && cargo check
+cd ../../signal-hive/backend && cargo check
 ```
 
 3. Commit and push the monorepo changes.
@@ -167,6 +167,7 @@ That creates:
 - Product repos can keep subtree-style history.
 - Shared package/service repos should prefer clean mirror syncs.
 - Shared crate repos should prefer clean mirror syncs too.
+- The monorepo's `.cargo/config.toml` intentionally patches `patchhive-product-core` back to a local path, so exported product repos are the place to enforce strict `cargo check --locked` for that shared dependency.
 - If you want to preview tags without pushing anything, use:
 
 ```bash

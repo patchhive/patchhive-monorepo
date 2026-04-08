@@ -106,6 +106,8 @@ It currently holds:
 
 Standalone Rust product repositories should consume the shared crate from its own repo, while the monorepo uses `.cargo/config.toml` to patch that git dependency back to the local crate path during development.
 
+Because that monorepo patch intentionally overrides a git dependency with a local path, strict `cargo check --locked` validation for product backends should live in the standalone repos. Inside the monorepo, use plain `cargo check` while iterating on shared Rust crate changes.
+
 ## Product Accent Colors
 
 | Product        | Accent  |

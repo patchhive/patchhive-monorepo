@@ -1,2 +1,5 @@
+# Monorepo-local override so PatchHive products can iterate on the shared
+# crate without publishing every edit first. Standalone exported product repos
+# use the git dependency directly and keep strict --locked CI.
 [patch."https://github.com/patchhive/patchhive-product-core.git"]
 patchhive-product-core = { path = "crates/patchhive-product-core" }
