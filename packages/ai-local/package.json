@@ -28,7 +28,7 @@
     "gateway",
     "codex",
     "copilot"
-  },
+  ],
   "dependencies": {
     "@github/copilot": "^1.0.17",
     "@github/copilot-sdk": "^0.2.1",
