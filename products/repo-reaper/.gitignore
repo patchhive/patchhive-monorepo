@@ -1,0 +1,10 @@
+.env
+.env.local
+.DS_Store
+.vscode/
+
+backend/target/
+backend/repo-reaper.db
+
+frontend/node_modules/
+frontend/dist/
