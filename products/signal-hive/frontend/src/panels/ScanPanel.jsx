@@ -1,12 +1,138 @@
-import { useMemo, useState } from "react";
-import { Btn, EmptyState, Input, S, Sel } from "@patchhivehq/ui";
+import { useEffect, useMemo, useState } from "react";
+import { Btn, EmptyState, Input, S, Sel, Tag, timeAgo } from "@patchhivehq/ui";
+import { API } from "../config.js";
 import SignalCard from "../components/SignalCard.jsx";
 import { SORT_OPTIONS, sortRepos } from "../sort.js";
 
-export default function ScanPanel({ params, setParams, running, onRun, scan }) {
+function af(key) {
+  return (url, opts = {}) =>
+    fetch(url, {
+      ...opts,
+      headers: { ...(opts.headers || {}), ...(key ? { "X-API-Key": key } : {}) },
+    });
+}
+
+function toList(value) {
+  return value
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function toRequestParams(params) {
+  return {
+    search_query: params.search_query,
+    topics: toList(params.topics),
+    languages: toList(params.languages),
+    min_stars: Number(params.min_stars) || 25,
+    max_repos: Number(params.max_repos) || 8,
+    issues_per_repo: Number(params.issues_per_repo) || 30,
+    stale_days: Number(params.stale_days) || 45,
+  };
+}
+
+function toFormParams(params) {
+  return {
+    search_query: params.search_query || "",
+    topics: (params.topics || []).join(","),
+    languages: (params.languages || []).join(","),
+    min_stars: String(params.min_stars ?? 25),
+    max_repos: String(params.max_repos ?? 8),
+    issues_per_repo: String(params.issues_per_repo ?? 30),
+    stale_days: String(params.stale_days ?? 45),
+  };
+}
+
+export default function ScanPanel({ apiKey, params, setParams, running, onRun, scan }) {
   const [sortBy, setSortBy] = useState("priority");
+  const [presets, setPresets] = useState([]);
+  const [selectedPresetName, setSelectedPresetName] = useState("");
+  const [saveName, setSaveName] = useState("");
+  const [presetBusy, setPresetBusy] = useState(false);
+  const [presetError, setPresetError] = useState("");
   const set = (key, value) => setParams((prev) => ({ ...prev, [key]: value }));
   const sortedRepos = useMemo(() => sortRepos(scan?.repos || [], sortBy), [scan, sortBy]);
+  const fetch_ = af(apiKey);
+  const selectedPreset = presets.find((preset) => preset.name === selectedPresetName) || null;
+
+  const loadPresets = (preferredName = "") =>
+    fetch_(`${API}/presets`)
+      .then((res) => res.json())
+      .then((data) => {
+        const nextPresets = data.presets || [];
+        const nextSelected = preferredName || selectedPresetName;
+        setPresets(nextPresets);
+        if (nextPresets.some((preset) => preset.name === nextSelected)) {
+          setSelectedPresetName(nextSelected);
+        } else {
+          setSelectedPresetName(nextPresets[0]?.name || "");
+        }
+      })
+      .catch(() => setPresets([]));
+
+  useEffect(() => {
+    loadPresets();
+  }, [apiKey]);
+
+  const savePreset = async () => {
+    if (!saveName.trim()) {
+      return;
+    }
+    setPresetBusy(true);
+    setPresetError("");
+    try {
+      const res = await fetch_(`${API}/presets`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: saveName.trim(),
+          params: toRequestParams(params),
+        }),
+      });
+      if (!res.ok) {
+        throw new Error("SignalHive could not save this preset.");
+      }
+      const nextName = saveName.trim();
+      setSaveName("");
+      await loadPresets(nextName);
+    } catch (err) {
+      setPresetError(err.message || "SignalHive could not save this preset.");
+    } finally {
+      setPresetBusy(false);
+    }
+  };
+
+  const loadPreset = () => {
+    if (!selectedPreset) {
+      return;
+    }
+    setParams(toFormParams(selectedPreset.params));
+    setSaveName(selectedPreset.name);
+  };
+
+  const deletePreset = async () => {
+    if (!selectedPreset) {
+      return;
+    }
+    setPresetBusy(true);
+    setPresetError("");
+    try {
+      const res = await fetch_(`${API}/presets/${encodeURIComponent(selectedPreset.name)}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        throw new Error("SignalHive could not delete this preset.");
+      }
+      if (saveName === selectedPreset.name) {
+        setSaveName("");
+      }
+      await loadPresets();
+    } catch (err) {
+      setPresetError(err.message || "SignalHive could not delete this preset.");
+    } finally {
+      setPresetBusy(false);
+    }
+  };
 
   return (
     <div style={{ display: "grid", gap: 18 }}>
@@ -20,6 +146,83 @@ export default function ScanPanel({ params, setParams, running, onRun, scan }) {
             TODO/FIXME hotspots, and backlog drag before they slow delivery. This first slice is read-only
             and intentionally focused on visibility first.
           </div>
+        </div>
+
+        <div style={{ border: "1px solid var(--border)", borderRadius: 8, padding: 14, display: "grid", gap: 12 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+            <div style={{ display: "grid", gap: 4 }}>
+              <div style={{ fontSize: 14, fontWeight: 700 }}>Scan Presets</div>
+              <div style={{ color: "var(--text-dim)", fontSize: 11, lineHeight: 1.5 }}>
+                Save repeatable scan shapes so you can jump between maintenance views quickly.
+              </div>
+            </div>
+            <Tag color="var(--accent)">{presets.length} saved</Tag>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "minmax(220px, 1fr) auto auto auto", gap: 10 }}>
+            <div style={S.field}>
+              <div style={S.label}>Saved Preset</div>
+              <Sel
+                value={selectedPresetName}
+                onChange={setSelectedPresetName}
+                opts={
+                  presets.length > 0
+                    ? presets.map((preset) => ({ v: preset.name, l: preset.name }))
+                    : [{ v: "", l: "No saved presets" }]
+                }
+              />
+            </div>
+            <Btn onClick={loadPreset} disabled={!selectedPreset || presetBusy}>
+              Load
+            </Btn>
+            <Btn onClick={deletePreset} disabled={!selectedPreset || presetBusy} color="var(--accent)">
+              Delete
+            </Btn>
+            <Btn onClick={loadPresets} disabled={presetBusy} color="var(--text-dim)">
+              Refresh
+            </Btn>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "minmax(220px, 1fr) auto", gap: 10 }}>
+            <div style={S.field}>
+              <div style={S.label}>Save Current Config</div>
+              <Input
+                value={saveName}
+                onChange={setSaveName}
+                placeholder="nightly rust maintenance"
+              />
+            </div>
+            <Btn onClick={savePreset} disabled={presetBusy || !saveName.trim()}>
+              {presetBusy ? "Saving…" : "Save Preset"}
+            </Btn>
+          </div>
+
+          {selectedPreset && (
+            <div style={{ display: "grid", gap: 6, color: "var(--text-dim)", fontSize: 11 }}>
+              <div>
+                Last updated {timeAgo(selectedPreset.updated_at)} • created {timeAgo(selectedPreset.created_at)}
+              </div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {selectedPreset.params.search_query && <Tag>{selectedPreset.params.search_query}</Tag>}
+                {(selectedPreset.params.languages || []).map((language) => (
+                  <Tag key={`preset-language-${language}`}>{language}</Tag>
+                ))}
+                {(selectedPreset.params.topics || []).map((topic) => (
+                  <Tag key={`preset-topic-${topic}`}>{topic}</Tag>
+                ))}
+                <Tag>min {selectedPreset.params.min_stars} stars</Tag>
+                <Tag>{selectedPreset.params.max_repos} repos</Tag>
+                <Tag>{selectedPreset.params.issues_per_repo} issues / repo</Tag>
+                <Tag>{selectedPreset.params.stale_days}d stale threshold</Tag>
+              </div>
+            </div>
+          )}
+
+          {presetError && (
+            <div style={{ color: "var(--accent)", fontSize: 11 }}>
+              {presetError}
+            </div>
+          )}
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>

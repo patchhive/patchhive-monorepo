@@ -187,6 +187,7 @@ export default function App() {
 
         {tab === "scan" && (
           <ScanPanel
+            apiKey={apiKey}
             params={params}
             setParams={setParams}
             running={running}

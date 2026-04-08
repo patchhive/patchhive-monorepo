@@ -3,7 +3,9 @@ use chrono::Utc;
 use rusqlite::{params, Connection};
 use std::collections::HashSet;
 
-use crate::models::{RepoListItem, RepoSignal, ScanHistoryItem, ScanParams, ScanRecord, ScanSummary};
+use crate::models::{
+    RepoListItem, RepoSignal, ScanHistoryItem, ScanParams, ScanPreset, ScanRecord, ScanSummary,
+};
 
 pub fn db_path() -> String {
     std::env::var("SIGNAL_DB_PATH").unwrap_or_else(|_| "signal-hive.db".into())
@@ -80,6 +82,13 @@ pub fn init_db() -> Result<()> {
             repo TEXT PRIMARY KEY,
             list_type TEXT NOT NULL,
             added_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS scan_presets (
+            name TEXT PRIMARY KEY,
+            params_json TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
         );
         "#,
     )?;
@@ -416,4 +425,54 @@ pub fn repo_list_sets() -> Result<(HashSet<String>, HashSet<String>, HashSet<Str
         .map(|row| row.repo.clone())
         .collect();
     Ok((allow, deny, opt_out))
+}
+
+pub fn list_scan_presets() -> Result<Vec<ScanPreset>> {
+    let conn = connect()?;
+    let mut stmt = conn.prepare(
+        "SELECT name, params_json, created_at, updated_at FROM scan_presets ORDER BY updated_at DESC, name ASC",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok(ScanPreset {
+            name: row.get(0)?,
+            params: serde_json::from_str(&row.get::<_, String>(1)?).unwrap_or_default(),
+            created_at: row.get(2)?,
+            updated_at: row.get(3)?,
+        })
+    })?;
+
+    let mut presets = Vec::new();
+    for row in rows {
+        presets.push(row?);
+    }
+    Ok(presets)
+}
+
+pub fn save_scan_preset(name: &str, params_in: &ScanParams) -> Result<()> {
+    let conn = connect()?;
+    let now = Utc::now().to_rfc3339();
+    let existing_created_at: Option<String> = conn
+        .query_row(
+            "SELECT created_at FROM scan_presets WHERE name = ?1",
+            [name],
+            |row| row.get(0),
+        )
+        .ok();
+
+    conn.execute(
+        "INSERT OR REPLACE INTO scan_presets(name, params_json, created_at, updated_at) VALUES(?1, ?2, ?3, ?4)",
+        params![
+            name,
+            serde_json::to_string(params_in)?,
+            existing_created_at.unwrap_or_else(|| now.clone()),
+            now,
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn delete_scan_preset(name: &str) -> Result<()> {
+    let conn = connect()?;
+    conn.execute("DELETE FROM scan_presets WHERE name = ?1", [name])?;
+    Ok(())
 }

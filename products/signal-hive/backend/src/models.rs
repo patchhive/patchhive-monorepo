@@ -120,6 +120,14 @@ pub struct ScanHistoryItem {
     pub top_repo: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScanPreset {
+    pub name: String,
+    pub params: ScanParams,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct SearchRepoOwner {
     pub login: String,

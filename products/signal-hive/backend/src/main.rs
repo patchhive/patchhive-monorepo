@@ -58,6 +58,8 @@ async fn main() {
         .route("/auth/generate-key", post(gen_key))
         .route("/health", get(health))
         .route("/startup/checks", get(startup_checks_route))
+        .route("/presets", get(scan_presets).post(save_scan_preset))
+        .route("/presets/:name", delete(delete_scan_preset))
         .route("/repo-lists", get(repo_lists).post(add_repo_list))
         .route("/repo-lists/*repo", delete(remove_repo_list))
         .route("/scan", post(pipeline::scan))
@@ -134,10 +136,44 @@ async fn repo_lists() -> Json<serde_json::Value> {
     }))
 }
 
+async fn scan_presets() -> Json<serde_json::Value> {
+    Json(json!({
+        "presets": db::list_scan_presets().unwrap_or_default(),
+    }))
+}
+
 #[derive(serde::Deserialize)]
 struct RepoListBody {
     repo: String,
     list_type: String,
+}
+
+#[derive(serde::Deserialize)]
+struct ScanPresetBody {
+    name: String,
+    params: crate::models::ScanParams,
+}
+
+async fn save_scan_preset(
+    Json(body): Json<ScanPresetBody>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let name = body.name.trim();
+    if name.is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    db::save_scan_preset(name, &body.params).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(json!({ "ok": true, "name": name })))
+}
+
+async fn delete_scan_preset(
+    axum::extract::Path(name): axum::extract::Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    if name.trim().is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    db::delete_scan_preset(&name).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(json!({ "ok": true })))
 }
 
 async fn add_repo_list(Json(body): Json<RepoListBody>) -> Result<Json<serde_json::Value>, StatusCode> {

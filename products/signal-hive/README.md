@@ -12,6 +12,7 @@ SignalHive is the read-only reconnaissance layer for PatchHive. It scans reposit
 - clusters recurring bug-like issues into repeated failure patterns
 - counts TODO and FIXME hotspots through GitHub code search
 - respects allowlist, denylist, and opt-out controls during discovery
+- saves reusable scan presets for recurring maintenance views
 - ranks repositories into a maintenance queue your team can actually work from
 
 SignalHive is intentionally read-only. It does not open pull requests, write code, or mutate repositories.
