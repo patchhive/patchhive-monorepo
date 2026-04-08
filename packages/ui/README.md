@@ -30,13 +30,15 @@ import {
 
 ## Publishing
 
-`@patchhivehq/ui` is published from the PatchHive monorepo.
+`@patchhivehq/ui` is published from the PatchHive monorepo, with `patchhive/patchhive-ui` kept as the standalone package repo mirror.
 
 The intended release target is the public npm registry, so standalone PatchHive product repositories and outside contributors can install it without package-registry authentication.
 
 This package should be published as a public scoped package.
 
 ## Monorepo Note
+
+The monorepo remains the source of truth for changes and releases.
 
 Inside the monorepo, products may temporarily depend on this package through a local workspace or `file:` path.
 

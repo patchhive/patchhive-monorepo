@@ -14,12 +14,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/patchhive/patchhive2.git",
-    "directory": "packages/ui"
+    "url": "git+https://github.com/patchhive/patchhive-ui.git"
   },
-  "homepage": "https://github.com/patchhive/patchhive2/tree/main/packages/ui",
+  "homepage": "https://github.com/patchhive/patchhive-ui",
   "bugs": {
-    "url": "https://github.com/patchhive/patchhive2/issues"
+    "url": "https://github.com/patchhive/patchhive-ui/issues"
   },
   "keywords": [
     "patchhive",
