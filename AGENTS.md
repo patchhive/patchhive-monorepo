@@ -59,7 +59,7 @@ RepoReaper was built first because it descended from Jeremy's earlier GitFix exp
 ```text
 patchhive/
   packages/
-    ui/                     @patchhive/ui shared React component library
+    ui/                     @patchhivehq/ui shared React component library
     ai-local/               @patchhive/ai-local localhost AI gateway
   products/
     repo-reaper/            built first, current active product
@@ -87,7 +87,7 @@ Backend:
 Frontend:
 - React + Vite
 - No TypeScript in this repo currently
-- Inline CSS only, using CSS variables from `@patchhive/ui`
+- Inline CSS only, using CSS variables from `@patchhivehq/ui`
 - No CSS framework
 
 AI provider integration:
@@ -115,7 +115,7 @@ Shared platform guidance:
 
 Location: `packages/ui/`
 
-Every product frontend should import shared theme, primitives, layout shell, and reusable components from `@patchhive/ui`.
+Every product frontend should import shared theme, primitives, layout shell, and reusable components from `@patchhivehq/ui`.
 
 Rules:
 - If a component will appear in 2 or more products, put it in `packages/ui/src/components/` and re-export it from `packages/ui/src/index.js`.
@@ -161,7 +161,7 @@ export const API = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 `App.jsx` convention:
 - Call `applyTheme("<product-key>")` in a `useEffect`
-- Use `LoginPage` from `@patchhive/ui` with product-specific props
+- Use `LoginPage` from `@patchhivehq/ui` with product-specific props
 - Use `PatchHiveHeader`, `TabBar`, and `PatchHiveFooter`
 - Keep tab panels under `./panels/`
 

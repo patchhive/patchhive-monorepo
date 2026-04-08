@@ -1,6 +1,6 @@
 import { API } from "../config.js";
 import { useState, useEffect } from "react";
-import { S, Btn, EmptyState, ConfidenceBar, ROLE_META, PROVIDERS } from "@patchhive/ui";
+import { S, Btn, EmptyState, ConfidenceBar, ROLE_META, PROVIDERS } from "@patchhivehq/ui";
 
 export default function LeaderboardPanel() {
   const [data, setData] = useState([]);

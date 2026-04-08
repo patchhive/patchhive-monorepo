@@ -14,7 +14,7 @@ This repository is the canonical PatchHive development monorepo.
 The intended long-term flow is:
 
 1. Build and evolve products in this monorepo.
-2. Publish shared packages such as `@patchhive/ui`.
+2. Publish shared packages such as `@patchhivehq/ui`.
 3. Export products such as `products/repo-reaper` into their own GitHub repositories when they are ready.
 
 The export workflow is documented in [Product And Package Export Workflow](/home/coemedia/Documents/code/patchhive/docs/product-export-workflow.md).
@@ -24,7 +24,7 @@ The export workflow is documented in [Product And Package Export Workflow](/home
 ```
 patchhive/
   packages/
-    ui/                     ← @patchhive/ui — shared component library
+    ui/                     ← @patchhivehq/ui — shared component library
       src/
         theme.js            ← base dark theme + per-product accent colors
         primitives.jsx      ← Btn, Input, Sel, ScoreBadge, ConfidenceBar,
@@ -42,7 +42,7 @@ patchhive/
   products/
     repo-reaper/            ← RepoReaper v0.1.0
       backend/              ← Rust (axum, rusqlite, reqwest, tokio)
-      frontend/             ← React (imports from @patchhive/ui)
+      frontend/             ← React (imports from @patchhivehq/ui)
 ```
 
 ## Adding a New Product
@@ -54,7 +54,7 @@ patchhive/
    - Pass your product's `icon` and `title` to `LoginPage`, `PatchHiveHeader`, `PatchHiveFooter`
 4. All shared UI — buttons, inputs, panels, colors — just work
 
-## Shared UI Package (`@patchhive/ui`)
+## Shared UI Package (`@patchhivehq/ui`)
 
 ```js
 import {
@@ -70,7 +70,7 @@ import {
 
   // Components
   AgentCard, DiffViewer, IssueRow, LoginPage,
-} from "@patchhive/ui";
+} from "@patchhivehq/ui";
 ```
 
 ## Product Accent Colors

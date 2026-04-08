@@ -1,6 +1,6 @@
 import { API } from "../config.js";
 import { useState } from "react";
-import { S, Input, Sel, Btn, EmptyState, IssueRow } from "@patchhive/ui";
+import { S, Input, Sel, Btn, EmptyState, IssueRow } from "@patchhivehq/ui";
 
 const LANGS = ["python","javascript","typescript","rust","go","java","ruby","cpp"];
 

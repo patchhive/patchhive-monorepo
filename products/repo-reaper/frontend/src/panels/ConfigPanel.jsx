@@ -1,6 +1,6 @@
 import { API } from "../config.js";
 import { useState, useEffect } from "react";
-import { S, Input, Btn, Divider } from "@patchhive/ui";
+import { S, Input, Btn, Divider } from "@patchhivehq/ui";
 
 export default function ConfigPanel({ existingConfig, apiKey = "", onSaved }) {
   const [cfg, setCfg] = useState({

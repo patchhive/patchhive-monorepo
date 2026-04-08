@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { API } from "../config.js";
-import { S, Input, Sel, Btn, Divider, EmptyState, ROLE_META, PROVIDERS } from "@patchhive/ui";
-import { AgentCard } from "@patchhive/ui";
+import { S, Input, Sel, Btn, Divider, EmptyState, ROLE_META, PROVIDERS } from "@patchhivehq/ui";
+import { AgentCard } from "@patchhivehq/ui";
 
 const PROVIDER_MODELS = {
   anthropic: ["claude-opus-4-6","claude-sonnet-4-6","claude-haiku-4-5"],

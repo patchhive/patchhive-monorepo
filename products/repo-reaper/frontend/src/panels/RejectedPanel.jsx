@@ -1,6 +1,6 @@
 import { API } from "../config.js";
 import { useState, useEffect } from "react";
-import { S, Btn, EmptyState, ConfidenceBar, timeAgo } from "@patchhive/ui";
+import { S, Btn, EmptyState, ConfidenceBar, timeAgo } from "@patchhivehq/ui";
 
 export default function RejectedPanel({ onViewDiff }) {
   const [rejected, setRejected] = useState([]);

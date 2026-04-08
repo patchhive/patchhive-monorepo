@@ -69,5 +69,5 @@ fi
 echo
 echo "Next steps:"
 echo "  1. Create or confirm a standalone repo for ${PRODUCT_NAME}."
-echo "  2. Publish shared packages such as @patchhive/ui before wiring the exported frontend."
+echo "  2. Publish shared packages such as @patchhivehq/ui before wiring the exported frontend."
 echo "  3. Keep developing in the monorepo, then re-export when needed."

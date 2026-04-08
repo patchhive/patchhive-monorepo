@@ -1,6 +1,6 @@
 import { API } from "../config.js";
 import { useState, useEffect } from "react";
-import { S, Input, Btn, EmptyState, ROLE_META, PROVIDERS, timeAgo } from "@patchhive/ui";
+import { S, Input, Btn, EmptyState, ROLE_META, PROVIDERS, timeAgo } from "@patchhivehq/ui";
 
 export default function PresetsPanel({ currentAgents, onLoadPreset }) {
   const [presets, setPresets] = useState([]);

@@ -23,7 +23,7 @@ PatchHive is a software maintenance platform — a family of focused tools that 
 ```
 patchhive/
   packages/
-    ui/                     ← @patchhive/ui — shared React component library
+    ui/                     ← @patchhivehq/ui — shared React component library
   products/
     repo-reaper/            ← ✅ BUILT (v0.1.0)
     signal-hive/            ← next
@@ -46,7 +46,7 @@ patchhive/
 
 **Backend:** Rust — always. axum (HTTP), rusqlite (SQLite), reqwest (HTTP client), tokio (async), serde/serde_json, chrono, uuid, anyhow, tracing.
 
-**Frontend:** React + Vite — always. No TypeScript (not currently used). All styling is inline CSS using CSS variables from `@patchhive/ui`. No CSS frameworks.
+**Frontend:** React + Vite — always. No TypeScript (not currently used). All styling is inline CSS using CSS variables from `@patchhivehq/ui`. No CSS frameworks.
 
 **AI providers:** Direct HTTP via reqwest — no SDK dependencies. Supports Anthropic, OpenAI, Gemini, Groq, Ollama. Multi-provider is intentional and must be preserved in every product that calls AI.
 
@@ -56,7 +56,7 @@ patchhive/
 
 ---
 
-## Shared UI Package — @patchhive/ui
+## Shared UI Package — @patchhivehq/ui
 
 Located at `packages/ui/`. Every product frontend imports from here.
 
@@ -85,7 +85,7 @@ import {
   DiffViewer,        // modal diff viewer
   IssueRow,          // GitHub issue row with score/confidence
   LoginPage,         // auth page — accepts icon, title, storageKey, apiBase props
-} from "@patchhive/ui";
+} from "@patchhivehq/ui";
 ```
 
 ### Adding to the shared package
@@ -120,13 +120,13 @@ Every product frontend follows this pattern:
 ```
 products/<name>/frontend/
   src/
-    App.jsx          ← main app, uses PatchHiveHeader/Footer/TabBar from @patchhive/ui
+    App.jsx          ← main app, uses PatchHiveHeader/Footer/TabBar from @patchhivehq/ui
     config.js        ← exports API url (VITE_API_URL or localhost default)
     main.jsx         ← ReactDOM.createRoot boilerplate
     panels/          ← one file per tab panel
     components/      ← product-specific components (if any)
   index.html
-  package.json       ← depends on @patchhive/ui via file:../../../packages/ui
+  package.json       ← depends on @patchhivehq/ui as a published package
   vite.config.js
   Dockerfile
   nginx.conf
@@ -139,10 +139,10 @@ export const API = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 `App.jsx` always:
 1. Calls `applyTheme("product-key")` in a `useEffect`
-2. Uses `LoginPage` from `@patchhive/ui` with product-specific props
+2. Uses `LoginPage` from `@patchhivehq/ui` with product-specific props
 3. Uses `PatchHiveHeader`, `TabBar`, `PatchHiveFooter` for layout shell
 4. Imports panels from `./panels/`
-5. Imports shared components from `@patchhive/ui`
+5. Imports shared components from `@patchhivehq/ui`
 
 ---
 
@@ -359,7 +359,7 @@ docker-compose up --build
 1. Create `products/<name>/` directory
 2. Copy `products/repo-reaper/backend/` as a starting point, strip what's not needed
 3. Create `products/<name>/frontend/` with:
-   - `package.json` pointing to `@patchhive/ui` via `file:../../../packages/ui`
+   - `package.json` pointing to `@patchhivehq/ui`
    - `src/config.js` with the API url
    - `src/App.jsx` calling `applyTheme("<product-key>")`
    - `PatchHiveHeader`, `PatchHiveFooter`, `TabBar` for layout shell

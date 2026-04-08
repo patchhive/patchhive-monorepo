@@ -1,6 +1,6 @@
 import { API } from "../config.js";
 import { useState, useEffect } from "react";
-import { S, Btn, EmptyState, timeAgo } from "@patchhive/ui";
+import { S, Btn, EmptyState, timeAgo } from "@patchhivehq/ui";
 
 export default function HistoryPanel({ onViewDiff }) {
   const [history, setHistory] = useState([]);

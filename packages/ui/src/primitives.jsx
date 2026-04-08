@@ -1,5 +1,5 @@
 // primitives.jsx — PatchHive shared UI primitives
-// Import from @patchhive/ui in any product
+// Import from @patchhivehq/ui in any product
 
 // ── Style constants ────────────────────────────────────────────────────────────
 

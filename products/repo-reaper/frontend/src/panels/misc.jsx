@@ -1,7 +1,7 @@
 import { API } from "../config.js";
 // RepoListsPanel.jsx
 import { useState, useEffect } from "react";
-import { S, Input, Btn, EmptyState, Tag } from "@patchhive/ui";
+import { S, Input, Btn, EmptyState, Tag } from "@patchhivehq/ui";
 
 export function RepoListsPanel() {
   const [repos, setRepos] = useState([]);

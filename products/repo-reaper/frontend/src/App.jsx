@@ -3,7 +3,7 @@ import {
   applyTheme, PHASE_LABEL, PHASE_ICON,
   LoginPage, DiffViewer,
   PatchHiveHeader, PatchHiveFooter, TabBar,
-} from "@patchhive/ui";
+} from "@patchhivehq/ui";
 import { API } from "./config.js";
 import TeamPanel       from "./panels/TeamPanel.jsx";
 import RunPanel        from "./panels/RunPanel.jsx";
