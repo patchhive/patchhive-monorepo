@@ -90,6 +90,26 @@ If you want to push directly to a standalone package remote:
 
 That creates a subtree export branch from `packages/ui` and can push it directly into a standalone package repository.
 
+## Package Mirror Sync Script
+
+For shared package repositories, PatchHive prefers clean package-only mirror history over raw subtree history.
+
+After the first export, use:
+
+```bash
+./scripts/sync-package-mirror.sh ui patchhive-ui main
+```
+
+That creates one package-focused sync commit in the standalone mirror repository instead of replaying mixed monorepo commit messages.
+
+If you want to reset an existing package mirror onto the clean sync history model, use:
+
+```bash
+./scripts/sync-package-mirror.sh ui patchhive-ui main --reset-history
+```
+
+That force-pushes a fresh root commit into the standalone package repository.
+
 ## Recommended First Export
 
 1. Create an empty GitHub repository for the product.
@@ -105,6 +125,7 @@ That creates a subtree export branch from `packages/ui` and can push it directly
 3. Run the package export script.
 4. Push the export branch to the package repo.
 5. Keep releases and canonical history rooted in the monorepo.
+6. After the initial export, prefer `sync-package-mirror.sh` for future mirror updates.
 
 ## Day-To-Day Workflow
 

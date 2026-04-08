@@ -11,6 +11,9 @@
     "start:ai-local": "npm --workspace @patchhive/ai-local run start",
     "start:ai-local-rust": "cargo run --release --manifest-path packages/ai-local/rust-gateway/Cargo.toml",
     "dev:repo-reaper": "cd products/repo-reaper/frontend && npm run dev",
-    "build:repo-reaper": "cd products/repo-reaper/frontend && npm run build"
+    "build:repo-reaper": "cd products/repo-reaper/frontend && npm run build",
+    "mirror:ui": "./scripts/sync-package-mirror.sh ui patchhive-ui main",
+    "mirror:ui:reset": "./scripts/sync-package-mirror.sh ui patchhive-ui main --reset-history",
+    "version:ui": "./scripts/version-ui.sh"
   }
 }
