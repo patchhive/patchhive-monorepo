@@ -1,0 +1,23 @@
+version: "3.8"
+
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8020:8000"
+    volumes:
+      - ./data:/data
+    environment:
+      - TRUST_DB_PATH=/data/trust-gate.db
+      - RUST_LOG=info
+    env_file:
+      - .env
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "5175:80"
+    depends_on:
+      - backend
+    restart: unless-stopped

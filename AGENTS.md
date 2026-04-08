@@ -298,6 +298,15 @@ Important env vars:
 - SignalHive should respect allowlist, denylist, and opt-out controls early so autonomous repo discovery never feels invasive.
 - The intended early audience is engineering leads and CTOs at small startups who need maintenance visibility before they are ready for autonomous repo changes.
 
+## TrustGate Notes
+
+- TrustGate should stay trust-first and review-first.
+- Its job is to review AI-generated diffs against repo-specific risk rules and return a simple recommendation: `safe`, `warn`, or `block`.
+- The MVP should work without live AI providers or GitHub webhooks by accepting pasted unified diffs and locally stored repo rule sets.
+- Repo-specific rules are TrustGate's first memory layer: blocked paths, sensitive paths, suspicious terms, blocked terms, scope caps, and testing expectations.
+- TrustGate should complement other coding agents instead of competing with them. It should plug into the rest of PatchHive as a safety gate.
+- Early future integrations worth keeping in mind: GitHub status checks, PR diff ingestion, shared policy packs, and incident-informed rule tuning.
+
 ## Key Decisions
 
 - Rust backend and React frontend are deliberate and should stay consistent across products.

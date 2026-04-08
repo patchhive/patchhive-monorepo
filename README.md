@@ -51,6 +51,9 @@ patchhive/
     signal-hive/            ← SignalHive v0.1.0
       backend/              ← Rust read-only maintenance signal API
       frontend/             ← React signal dashboard
+    trust-gate/             ← TrustGate v0.1.0
+      backend/              ← Rust diff review and policy engine
+      frontend/             ← React rule editor and review dashboard
 ```
 
 ## Adding a New Product
@@ -144,6 +147,20 @@ docker-compose up --build
 cd products/signal-hive
 cp .env.example .env
 # fill in BOT_GITHUB_TOKEN
+
+# Dev
+cd backend && cargo run
+cd ../frontend && npm install && npm run dev
+
+# Docker
+docker-compose up --build
+```
+
+## Quick Start — TrustGate
+
+```bash
+cd products/trust-gate
+cp .env.example .env
 
 # Dev
 cd backend && cargo run
