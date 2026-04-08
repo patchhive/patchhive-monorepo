@@ -25,7 +25,7 @@ jobs:
         working-directory: packages/ui
         run: npm pack --dry-run
 
-      - name: Publish @patchhive/ui to npm
+      - name: Publish @patchhivehq/ui to npm
         working-directory: packages/ui
         run: npm publish --access public --provenance
         env:

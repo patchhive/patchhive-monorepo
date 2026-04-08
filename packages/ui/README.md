@@ -1,4 +1,4 @@
-# @patchhive/ui
+# @patchhivehq/ui
 
 Shared React UI primitives and components for PatchHive products.
 
@@ -25,12 +25,12 @@ import {
   AgentCard,
   DiffViewer,
   LoginPage,
-} from "@patchhive/ui";
+} from "@patchhivehq/ui";
 ```
 
 ## Publishing
 
-`@patchhive/ui` is published from the PatchHive monorepo.
+`@patchhivehq/ui` is published from the PatchHive monorepo.
 
 The intended release target is the public npm registry, so standalone PatchHive product repositories and outside contributors can install it without package-registry authentication.
 
