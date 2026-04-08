@@ -43,6 +43,9 @@ patchhive/
     repo-reaper/            ← RepoReaper v0.1.0
       backend/              ← Rust (axum, rusqlite, reqwest, tokio)
       frontend/             ← React (imports from @patchhivehq/ui)
+    signal-hive/            ← SignalHive v0.1.0
+      backend/              ← Rust read-only maintenance signal API
+      frontend/             ← React signal dashboard
 ```
 
 ## Adding a New Product
@@ -98,6 +101,21 @@ cp .env.example .env
 # Dev
 cd backend && cargo run
 cd frontend && npm install && npm run dev
+
+# Docker
+docker-compose up --build
+```
+
+## Quick Start — SignalHive
+
+```bash
+cd products/signal-hive
+cp .env.example .env
+# fill in BOT_GITHUB_TOKEN
+
+# Dev
+cd backend && cargo run
+cd ../frontend && npm install && npm run dev
 
 # Docker
 docker-compose up --build

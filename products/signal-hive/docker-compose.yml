@@ -1,0 +1,23 @@
+version: "3.8"
+
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8010:8000"
+    volumes:
+      - ./data:/data
+    environment:
+      - SIGNAL_DB_PATH=/data/signal-hive.db
+      - RUST_LOG=info
+    env_file:
+      - .env
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "5174:80"
+    depends_on:
+      - backend
+    restart: unless-stopped

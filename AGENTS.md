@@ -261,6 +261,14 @@ Important env vars:
 - RefactorScout: surface safe high-value refactors
 - HiveCore: final unified PatchHive control plane / brain that connects the specialist products into one system
 
+## SignalHive Notes
+
+- SignalHive should stay visibility-first and read-only.
+- Its job is to surface stale backlog risk, duplicate issues, TODO/FIXME hotspots, and hidden maintenance drag before PatchHive starts changing code.
+- SignalHive is the trust-building reconnaissance layer that should make the later autonomous products feel earned rather than abrupt.
+- The MVP should stay simple: GitHub issue sync, stale and duplicate heuristics, marker scanning, priority scoring, and a basic web view.
+- The intended early audience is engineering leads and CTOs at small startups who need maintenance visibility before they are ready for autonomous repo changes.
+
 ## Key Decisions
 
 - Rust backend and React frontend are deliberate and should stay consistent across products.
