@@ -64,6 +64,7 @@ async fn main() {
         .route("/scan", post(pipeline::scan))
         .route("/history", get(pipeline::history))
         .route("/history/:id", get(pipeline::history_detail))
+        .route("/history/:id/timeline", get(pipeline::timeline))
         .route("/history/:id/report", get(pipeline::report))
         .layer(middleware::from_fn(auth::auth_middleware))
         .layer(cors)

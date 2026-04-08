@@ -2,7 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import { createApiFetcher } from "@patchhivehq/product-shell";
 import { API } from "../config.js";
 import { Btn, EmptyState, S, Sel, Tag, timeAgo } from "@patchhivehq/ui";
+import ReportDashboard from "../components/ReportDashboard.jsx";
+import ScanTimelineChart from "../components/ScanTimelineChart.jsx";
 import SignalCard from "../components/SignalCard.jsx";
+import { buildDashboardSummary, downloadTextFile, exportDashboardHtml } from "../report.js";
 import { SORT_OPTIONS, sortRepos } from "../sort.js";
 
 function TrendTag({ label, value }) {
@@ -13,6 +16,7 @@ function TrendTag({ label, value }) {
 export default function HistoryPanel({ apiKey }) {
   const [history, setHistory] = useState([]);
   const [selected, setSelected] = useState(null);
+  const [timeline, setTimeline] = useState(null);
   const [loading, setLoading] = useState(false);
   const [sortBy, setSortBy] = useState("priority");
   const fetch_ = createApiFetcher(apiKey);
@@ -26,10 +30,15 @@ export default function HistoryPanel({ apiKey }) {
 
   const loadScan = (id) => {
     setLoading(true);
+    setTimeline(null);
     fetch_(`${API}/history/${id}`)
       .then((res) => res.json())
       .then(setSelected)
       .finally(() => setLoading(false));
+    fetch_(`${API}/history/${id}/timeline`)
+      .then((res) => res.json())
+      .then(setTimeline)
+      .catch(() => setTimeline(null));
   };
 
   useEffect(() => {
@@ -45,15 +54,20 @@ export default function HistoryPanel({ apiKey }) {
     if (!res.ok) {
       return;
     }
-    const blob = new Blob([data.markdown], { type: "text/markdown;charset=utf-8" });
-    const href = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = href;
-    link.download = data.filename || `signalhive-report-${scanId}.md`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(href);
+    downloadTextFile(
+      data.filename || `signalhive-report-${scanId}.md`,
+      data.markdown,
+      "text/markdown;charset=utf-8",
+    );
+  };
+
+  const copySummary = async () => {
+    if (!selected) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(buildDashboardSummary(selected));
+    } catch {}
   };
 
   return (
@@ -106,6 +120,14 @@ export default function HistoryPanel({ apiKey }) {
 
         {selected && !loading && (
           <>
+            <ReportDashboard
+              scan={selected}
+              timeline={timeline}
+              onCopySummary={copySummary}
+              onExportMarkdown={() => downloadReport(selected.id)}
+              onExportHtml={() => exportDashboardHtml(selected, timeline)}
+            />
+
             <div style={{ ...S.panel, display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
               <div>
                 <div style={{ fontSize: 18, fontWeight: 700 }}>Saved Scan</div>
@@ -150,6 +172,7 @@ export default function HistoryPanel({ apiKey }) {
                 </div>
               </div>
             )}
+            <ScanTimelineChart timeline={timeline} />
             {sortedRepos.map((repo) => <SignalCard key={repo.full_name} repo={repo} />)}
           </>
         )}

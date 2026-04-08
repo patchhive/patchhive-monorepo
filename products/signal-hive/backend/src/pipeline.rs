@@ -1019,3 +1019,12 @@ pub async fn report(
         None => Err((StatusCode::NOT_FOUND, Json(json!({ "error": "Scan not found" })))),
     }
 }
+
+pub async fn timeline(
+    Path(id): Path<String>,
+) -> Result<Json<crate::models::ScanTimeline>, (StatusCode, Json<serde_json::Value>)> {
+    match db::scan_timeline(&id, 12).map_err(internal_error)? {
+        Some(timeline) => Ok(Json(timeline)),
+        None => Err((StatusCode::NOT_FOUND, Json(json!({ "error": "Scan not found" })))),
+    }
+}

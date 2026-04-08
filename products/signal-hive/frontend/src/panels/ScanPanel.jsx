@@ -2,7 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import { createApiFetcher } from "@patchhivehq/product-shell";
 import { Btn, EmptyState, Input, S, Sel, Tag, timeAgo } from "@patchhivehq/ui";
 import { API } from "../config.js";
+import ReportDashboard from "../components/ReportDashboard.jsx";
+import ScanTimelineChart from "../components/ScanTimelineChart.jsx";
 import SignalCard from "../components/SignalCard.jsx";
+import { buildDashboardSummary, downloadTextFile, exportDashboardHtml } from "../report.js";
 import { SORT_OPTIONS, sortRepos } from "../sort.js";
 
 function toList(value) {
@@ -74,6 +77,7 @@ export default function ScanPanel({ apiKey, params, setParams, running, onRun, s
   const [scheduleEnabled, setScheduleEnabled] = useState("true");
   const [scheduleBusy, setScheduleBusy] = useState(false);
   const [scheduleError, setScheduleError] = useState("");
+  const [timeline, setTimeline] = useState(null);
   const set = (key, value) => setParams((prev) => ({ ...prev, [key]: value }));
   const sortedRepos = useMemo(() => sortRepos(scan?.repos || [], sortBy), [scan, sortBy]);
   const fetch_ = createApiFetcher(apiKey);
@@ -114,6 +118,17 @@ export default function ScanPanel({ apiKey, params, setParams, running, onRun, s
     loadPresets();
     loadSchedules();
   }, [apiKey]);
+
+  useEffect(() => {
+    if (!scan?.id) {
+      setTimeline(null);
+      return;
+    }
+    fetch_(`${API}/history/${scan.id}/timeline`)
+      .then((res) => res.json())
+      .then(setTimeline)
+      .catch(() => setTimeline(null));
+  }, [apiKey, scan?.id]);
 
   const savePreset = async () => {
     if (!saveName.trim()) {
@@ -270,17 +285,24 @@ export default function ScanPanel({ apiKey, params, setParams, running, onRun, s
       if (!res.ok) {
         throw new Error(data.error || "SignalHive could not export this report.");
       }
-      const blob = new Blob([data.markdown], { type: "text/markdown;charset=utf-8" });
-      const href = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = href;
-      link.download = data.filename || `signalhive-report-${scanId}.md`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(href);
+      downloadTextFile(
+        data.filename || `signalhive-report-${scanId}.md`,
+        data.markdown,
+        "text/markdown;charset=utf-8",
+      );
     } catch (err) {
       setScheduleError(err.message || "SignalHive could not export this report.");
+    }
+  };
+
+  const copySummary = async () => {
+    if (!scan) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(buildDashboardSummary(scan));
+    } catch (err) {
+      setScheduleError("SignalHive could not copy the summary to your clipboard.");
     }
   };
 
@@ -505,6 +527,14 @@ export default function ScanPanel({ apiKey, params, setParams, running, onRun, s
 
       {scan && (
         <div style={{ display: "grid", gap: 16 }}>
+          <ReportDashboard
+            scan={scan}
+            timeline={timeline}
+            onCopySummary={copySummary}
+            onExportMarkdown={() => downloadReport(scan.id)}
+            onExportHtml={() => exportDashboardHtml(scan, timeline)}
+          />
+
           <div style={{ ...S.panel, display: "grid", gap: 12 }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -554,6 +584,8 @@ export default function ScanPanel({ apiKey, params, setParams, running, onRun, s
               </div>
             )}
           </div>
+
+          <ScanTimelineChart timeline={timeline} />
 
           {sortedRepos.length === 0 ? (
             <EmptyState icon="◌" text="No repositories matched strongly enough to rank in this scan." />

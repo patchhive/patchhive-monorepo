@@ -293,7 +293,7 @@ Important env vars:
 - SignalHive should stay visibility-first and read-only.
 - Its job is to surface stale backlog risk, duplicate issues, recurring bug patterns, TODO/FIXME hotspots, and hidden maintenance drag before PatchHive starts changing code.
 - SignalHive is the trust-building reconnaissance layer that should make the later autonomous products feel earned rather than abrupt.
-- The MVP should stay simple: GitHub issue sync, stale and duplicate heuristics, recurring bug clustering, marker scanning, priority scoring, trend comparison, scheduled re-scans, and exportable reports.
+- The MVP should stay simple: GitHub issue sync, stale and duplicate heuristics, recurring bug clustering, marker scanning, priority scoring, trend comparison, timeline visuals, scheduled re-scans, and exportable reports/dashboard snapshots.
 - Scan presets and schedules are worth supporting early because they make repeated operator workflows sticky without changing SignalHive's read-only posture.
 - SignalHive should respect allowlist, denylist, and opt-out controls early so autonomous repo discovery never feels invasive.
 - The intended early audience is engineering leads and CTOs at small startups who need maintenance visibility before they are ready for autonomous repo changes.

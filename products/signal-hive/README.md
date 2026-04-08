@@ -15,7 +15,9 @@ SignalHive is the read-only reconnaissance layer for PatchHive. It scans reposit
 - saves reusable scan presets for recurring maintenance views
 - saves scheduled scans that rerun maintenance views in the background
 - compares each scan against the previous scan with the same parameters
+- shows timeline visuals across matching scans so maintenance drift is easy to spot
 - exports ranked scan reports as markdown
+- exports a cleaner dashboard snapshot as standalone HTML for sharing
 - ranks repositories into a maintenance queue your team can actually work from
 
 SignalHive is intentionally read-only. It does not open pull requests, write code, or mutate repositories.

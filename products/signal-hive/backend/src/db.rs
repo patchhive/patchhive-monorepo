@@ -5,7 +5,7 @@ use std::collections::HashSet;
 
 use crate::models::{
     RepoListItem, RepoSignal, ScanHistoryItem, ScanParams, ScanPreset, ScanRecord, ScanSchedule,
-    ScanSummary,
+    ScanSummary, ScanTimeline, ScanTimelinePoint,
 };
 
 pub fn db_path() -> String {
@@ -421,6 +421,64 @@ pub fn get_scan(id: &str) -> Result<Option<ScanRecord>> {
     }
 
     Ok(Some(record))
+}
+
+pub fn scan_timeline(id: &str, limit: usize) -> Result<Option<ScanTimeline>> {
+    let conn = connect()?;
+    let (signature, created_at): (String, String) = match conn.query_row(
+        "SELECT params_signature, created_at FROM scans WHERE id = ?1",
+        [id],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    ) {
+        Ok(values) => values,
+        Err(rusqlite::Error::QueryReturnedNoRows) => return Ok(None),
+        Err(err) => return Err(err.into()),
+    };
+
+    let mut stmt = conn.prepare(
+        r#"
+        SELECT s.id,
+               s.created_at,
+               s.total_repos,
+               s.total_signals,
+               s.top_repo,
+               s.trigger_type,
+               s.schedule_name,
+               COALESCE((SELECT SUM(stale_issues) FROM repo_signals WHERE scan_id = s.id), 0) AS total_stale_issues,
+               COALESCE((SELECT AVG(priority_score) FROM repo_signals WHERE scan_id = s.id), 0) AS avg_priority_score,
+               COALESCE((SELECT MAX(priority_score) FROM repo_signals WHERE scan_id = s.id), 0) AS top_priority_score
+        FROM scans s
+        WHERE s.params_signature = ?1 AND s.created_at <= ?2
+        ORDER BY s.created_at DESC
+        LIMIT ?3
+        "#,
+    )?;
+
+    let rows = stmt.query_map(params![signature, created_at, limit as i64], |row| {
+        Ok(ScanTimelinePoint {
+            id: row.get(0)?,
+            created_at: row.get(1)?,
+            total_repos: row.get(2)?,
+            total_signals: row.get(3)?,
+            top_repo: row.get(4)?,
+            trigger_type: row.get(5)?,
+            schedule_name: row.get(6)?,
+            total_stale_issues: row.get(7)?,
+            avg_priority_score: row.get(8)?,
+            top_priority_score: row.get(9)?,
+        })
+    })?;
+
+    let mut points = Vec::new();
+    for row in rows {
+        points.push(row?);
+    }
+    points.reverse();
+
+    Ok(Some(ScanTimeline {
+        current_scan_id: id.to_string(),
+        points,
+    }))
 }
 
 pub fn previous_scan_for_params(

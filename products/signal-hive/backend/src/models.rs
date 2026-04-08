@@ -188,6 +188,26 @@ pub struct ScanReport {
     pub exported_at: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScanTimelinePoint {
+    pub id: String,
+    pub created_at: String,
+    pub total_repos: u32,
+    pub total_signals: u32,
+    pub total_stale_issues: u32,
+    pub avg_priority_score: f64,
+    pub top_priority_score: f64,
+    pub top_repo: String,
+    pub trigger_type: String,
+    pub schedule_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScanTimeline {
+    pub current_scan_id: String,
+    pub points: Vec<ScanTimelinePoint>,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct SearchRepoOwner {
     pub login: String,
