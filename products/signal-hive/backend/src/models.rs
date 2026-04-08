@@ -53,6 +53,14 @@ pub struct ScoreFactor {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecurringBugCluster {
+    pub label: String,
+    pub issue_count: u32,
+    pub shared_terms: Vec<String>,
+    pub examples: Vec<IssueSample>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RepoSignal {
     pub full_name: String,
     pub repo_url: String,
@@ -66,6 +74,7 @@ pub struct RepoSignal {
     pub stale_bug_issues: u32,
     pub stale_high_comment_issues: u32,
     pub duplicate_candidates: Vec<DuplicateCandidate>,
+    pub recurring_bug_clusters: Vec<RecurringBugCluster>,
     pub todo_count: u32,
     pub fixme_count: u32,
     pub priority_score: f64,
@@ -73,6 +82,13 @@ pub struct RepoSignal {
     pub summary: String,
     pub signals: Vec<String>,
     pub issue_examples: Vec<IssueSample>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RepoListItem {
+    pub repo: String,
+    pub list_type: String,
+    pub added_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

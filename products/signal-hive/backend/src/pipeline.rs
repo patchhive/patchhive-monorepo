@@ -8,7 +8,10 @@ use serde_json::json;
 use crate::{
     db,
     github,
-    models::{DuplicateCandidate, GitHubIssue, IssueSample, RepoSignal, ScanParams, ScoreFactor},
+    models::{
+        DuplicateCandidate, GitHubIssue, IssueSample, RecurringBugCluster, RepoSignal, ScanParams,
+        ScoreFactor,
+    },
     state::AppState,
 };
 
@@ -61,6 +64,7 @@ struct IssueAnalysis {
     stale_high_comment_issues: u32,
     issue_examples: Vec<IssueSample>,
     duplicate_candidates: Vec<DuplicateCandidate>,
+    recurring_bug_clusters: Vec<RecurringBugCluster>,
 }
 
 fn issue_age_days(updated_at: &str) -> i64 {
@@ -95,6 +99,30 @@ fn title_tokens(title: &str) -> Vec<String> {
 
 fn tokenize_title(title: &str) -> HashSet<String> {
     title_tokens(title).into_iter().collect()
+}
+
+fn recurring_bug_tokens(title: &str) -> Vec<String> {
+    const IGNORE: &[&str] = &[
+        "bug", "bugs", "error", "errors", "panic", "panics", "crash", "crashes", "broken",
+        "failure", "failures", "failing", "fails", "fail", "regression", "regressions",
+        "unexpected", "incorrect", "wrong",
+    ];
+
+    title_tokens(title)
+        .into_iter()
+        .filter(|token| !IGNORE.contains(&token.as_str()))
+        .collect()
+}
+
+fn to_issue_sample(issue: &GitHubIssue) -> IssueSample {
+    IssueSample {
+        number: issue.number,
+        title: issue.title.clone(),
+        url: issue.html_url.clone(),
+        updated_at: issue.updated_at.clone(),
+        age_days: issue_age_days(&issue.updated_at),
+        comments: issue.comments,
+    }
 }
 
 fn label_names(issue: &GitHubIssue) -> Vec<String> {
@@ -175,6 +203,134 @@ fn duplicate_candidates(issues: &[GitHubIssue]) -> Vec<DuplicateCandidate> {
     pairs
 }
 
+fn recurring_bug_clusters(issues: &[GitHubIssue]) -> Vec<RecurringBugCluster> {
+    let bug_issues = issues
+        .iter()
+        .filter(|issue| is_bug_issue(issue))
+        .collect::<Vec<_>>();
+
+    if bug_issues.len() < 2 {
+        return Vec::new();
+    }
+
+    let token_sets = bug_issues
+        .iter()
+        .map(|issue| recurring_bug_tokens(&issue.title).into_iter().collect::<HashSet<_>>())
+        .collect::<Vec<_>>();
+
+    let mut adjacency = vec![Vec::<usize>::new(); bug_issues.len()];
+    for left_index in 0..bug_issues.len() {
+        if token_sets[left_index].is_empty() {
+            continue;
+        }
+
+        for right_index in (left_index + 1)..bug_issues.len() {
+            if token_sets[right_index].is_empty() {
+                continue;
+            }
+
+            let union = token_sets[left_index].union(&token_sets[right_index]).count() as f64;
+            let shared = token_sets[left_index]
+                .intersection(&token_sets[right_index])
+                .count() as f64;
+
+            if union == 0.0 {
+                continue;
+            }
+
+            let similarity = shared / union;
+            if shared >= 2.0 && similarity >= 0.34 {
+                adjacency[left_index].push(right_index);
+                adjacency[right_index].push(left_index);
+            }
+        }
+    }
+
+    let mut visited = vec![false; bug_issues.len()];
+    let mut clusters = Vec::new();
+
+    for start in 0..bug_issues.len() {
+        if visited[start] {
+            continue;
+        }
+
+        let mut stack = vec![start];
+        let mut component = Vec::new();
+        while let Some(index) = stack.pop() {
+            if visited[index] {
+                continue;
+            }
+            visited[index] = true;
+            component.push(index);
+            for neighbor in &adjacency[index] {
+                if !visited[*neighbor] {
+                    stack.push(*neighbor);
+                }
+            }
+        }
+
+        if component.len() < 2 {
+            continue;
+        }
+
+        let mut term_counts = std::collections::HashMap::<String, u32>::new();
+        let mut samples = component
+            .iter()
+            .map(|index| {
+                for token in &token_sets[*index] {
+                    *term_counts.entry(token.clone()).or_insert(0) += 1;
+                }
+                to_issue_sample(bug_issues[*index])
+            })
+            .collect::<Vec<_>>();
+
+        let mut shared_terms = term_counts
+            .into_iter()
+            .filter(|(_, count)| *count >= 2)
+            .collect::<Vec<_>>();
+        shared_terms.sort_by(|(left_term, left_count), (right_term, right_count)| {
+            right_count.cmp(left_count).then_with(|| left_term.cmp(right_term))
+        });
+
+        let shared_terms = shared_terms
+            .into_iter()
+            .map(|(term, _)| term)
+            .take(3)
+            .collect::<Vec<_>>();
+
+        samples.sort_by(|left, right| {
+            right
+                .comments
+                .cmp(&left.comments)
+                .then_with(|| right.age_days.cmp(&left.age_days))
+        });
+
+        let label = if shared_terms.is_empty() {
+            "Repeated bug pattern".to_string()
+        } else {
+            shared_terms.join(" / ")
+        };
+
+        clusters.push(RecurringBugCluster {
+            label,
+            issue_count: component.len() as u32,
+            shared_terms,
+            examples: samples.into_iter().take(3).collect(),
+        });
+    }
+
+    clusters.sort_by(|left, right| {
+        right
+            .issue_count
+            .cmp(&left.issue_count)
+            .then_with(|| right.examples.first().map(|example| example.comments).unwrap_or(0).cmp(
+                &left.examples.first().map(|example| example.comments).unwrap_or(0),
+            ))
+    });
+    clusters.truncate(3);
+    clusters
+}
+
 fn stale_issue_examples(issues: &[GitHubIssue], stale_days: u32) -> Vec<IssueSample> {
     let mut examples = issues
         .iter()
@@ -184,14 +340,7 @@ fn stale_issue_examples(issues: &[GitHubIssue], stale_days: u32) -> Vec<IssueSam
                 return None;
             }
 
-            Some(IssueSample {
-                number: issue.number,
-                title: issue.title.clone(),
-                url: issue.html_url.clone(),
-                updated_at: issue.updated_at.clone(),
-                age_days,
-                comments: issue.comments,
-            })
+            Some(IssueSample { age_days, ..to_issue_sample(issue) })
         })
         .collect::<Vec<_>>();
 
@@ -224,6 +373,7 @@ fn issue_signals(issues: &[GitHubIssue], stale_days: u32) -> IssueAnalysis {
         stale_high_comment_issues,
         issue_examples: stale_issue_examples(issues, stale_days),
         duplicate_candidates: duplicate_candidates(issues),
+        recurring_bug_clusters: recurring_bug_clusters(issues),
     }
 }
 
@@ -243,6 +393,11 @@ fn priority_score(
         .iter()
         .map(|pair| pair.similarity)
         .sum::<f64>();
+    let recurring_bug_issue_count = issue_analysis
+        .recurring_bug_clusters
+        .iter()
+        .map(|cluster| cluster.issue_count)
+        .sum::<u32>();
 
     let mut breakdown = Vec::new();
 
@@ -282,6 +437,28 @@ fn priority_score(
             detail: format!(
                 "{} stale issues still have active discussion",
                 issue_analysis.stale_high_comment_issues
+            ),
+        });
+    }
+
+    let recurring_bug_impact = ((recurring_bug_issue_count.min(6) as f64) * 2.8
+        + issue_analysis.recurring_bug_clusters.len() as f64 * 3.5)
+        .min(18.0);
+    if !issue_analysis.recurring_bug_clusters.is_empty() {
+        let strongest = issue_analysis
+            .recurring_bug_clusters
+            .first()
+            .map(|cluster| format!("top pattern '{}' appears in {} issues", cluster.label, cluster.issue_count))
+            .unwrap_or_else(|| "bug reports cluster around repeated symptoms".into());
+        breakdown.push(ScoreFactor {
+            key: "recurring_bugs".into(),
+            label: "Recurring bug pattern".into(),
+            impact: round1(recurring_bug_impact),
+            detail: format!(
+                "{} recurring bug clusters across {} issues; {}",
+                issue_analysis.recurring_bug_clusters.len(),
+                recurring_bug_issue_count,
+                strongest
             ),
         });
     }
@@ -362,6 +539,12 @@ fn summary_from_signals(
 ) -> (String, Vec<String>) {
     let mut signals = Vec::new();
 
+    if let Some(cluster) = issue_analysis.recurring_bug_clusters.first() {
+        signals.push(format!(
+            "Recurring bug pattern '{}' appears across {} sampled issues",
+            cluster.label, cluster.issue_count
+        ));
+    }
     if issue_analysis.stale_bug_issues > 0 {
         signals.push(format!(
             "{} stale bug-like issues are still open",
@@ -450,6 +633,7 @@ async fn analyze_repo(
         stale_bug_issues: issue_analysis.stale_bug_issues,
         stale_high_comment_issues: issue_analysis.stale_high_comment_issues,
         duplicate_candidates: issue_analysis.duplicate_candidates,
+        recurring_bug_clusters: issue_analysis.recurring_bug_clusters,
         todo_count,
         fixme_count,
         priority_score,
@@ -465,11 +649,18 @@ pub async fn scan(
     Json(params): Json<ScanParams>,
 ) -> Result<Json<crate::models::ScanRecord>, (StatusCode, Json<serde_json::Value>)> {
     let params = clamp_params(params);
-    if params.search_query.is_empty() && params.topics.is_empty() && params.languages.is_empty() {
-        return Err(bad_request("Provide at least a search query, topic, or language."));
+    let (allowlist, denylist, opt_out) = db::repo_list_sets().map_err(internal_error)?;
+    if params.search_query.is_empty()
+        && params.topics.is_empty()
+        && params.languages.is_empty()
+        && allowlist.is_empty()
+    {
+        return Err(bad_request(
+            "Provide at least a search query, topic, or language, or configure an allowlist.",
+        ));
     }
 
-    let repos = github::discover_repositories(&state.http, &params)
+    let repos = github::discover_repositories(&state.http, &params, &allowlist, &denylist, &opt_out)
         .await
         .map_err(internal_error)?;
 

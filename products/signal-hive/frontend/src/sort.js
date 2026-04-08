@@ -1,6 +1,7 @@
 export const SORT_OPTIONS = [
   { v: "priority", l: "Priority Score" },
   { v: "stale", l: "Most Stale Issues" },
+  { v: "recurring", l: "Most Recurring Bugs" },
   { v: "triage", l: "Most Unlabeled" },
   { v: "duplicates", l: "Most Duplicate Pairs" },
   { v: "markers", l: "Most TODO / FIXME" },
@@ -15,6 +16,13 @@ export function sortRepos(repos, sortBy) {
         return (
           right.stale_issues - left.stale_issues ||
           right.stale_bug_issues - left.stale_bug_issues ||
+          right.priority_score - left.priority_score
+        );
+      case "recurring":
+        return (
+          right.recurring_bug_clusters.reduce((sum, cluster) => sum + cluster.issue_count, 0) -
+            left.recurring_bug_clusters.reduce((sum, cluster) => sum + cluster.issue_count, 0) ||
+          right.recurring_bug_clusters.length - left.recurring_bug_clusters.length ||
           right.priority_score - left.priority_score
         );
       case "triage":

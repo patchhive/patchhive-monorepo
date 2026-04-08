@@ -54,6 +54,18 @@ export default function ChecksPanel({ apiKey }) {
             <div style={S.label}>DB Path</div>
             <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{health.db_path}</div>
           </div>
+          <div>
+            <div style={S.label}>Allowlist</div>
+            <div style={{ fontSize: 18, fontWeight: 700 }}>{health.repo_lists?.allowlist || 0}</div>
+          </div>
+          <div>
+            <div style={S.label}>Denylist</div>
+            <div style={{ fontSize: 18, fontWeight: 700 }}>{health.repo_lists?.denylist || 0}</div>
+          </div>
+          <div>
+            <div style={S.label}>Opt-Out</div>
+            <div style={{ fontSize: 18, fontWeight: 700 }}>{health.repo_lists?.opt_out || 0}</div>
+          </div>
         </div>
       )}
 

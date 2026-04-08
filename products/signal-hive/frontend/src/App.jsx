@@ -11,10 +11,12 @@ import { API } from "./config.js";
 import ScanPanel from "./panels/ScanPanel.jsx";
 import HistoryPanel from "./panels/HistoryPanel.jsx";
 import ChecksPanel from "./panels/ChecksPanel.jsx";
+import ControlsPanel from "./panels/ControlsPanel.jsx";
 
 const TABS = [
   { id: "scan", label: "📡 Scan" },
   { id: "history", label: "◎ History" },
+  { id: "controls", label: "Controls" },
   { id: "checks", label: "Checks" },
 ];
 
@@ -193,6 +195,7 @@ export default function App() {
           />
         )}
         {tab === "history" && <HistoryPanel apiKey={apiKey} />}
+        {tab === "controls" && <ControlsPanel apiKey={apiKey} />}
         {tab === "checks" && <ChecksPanel apiKey={apiKey} />}
       </div>
 

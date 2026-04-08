@@ -86,6 +86,7 @@ export default function SignalCard({ repo }) {
         <Stat label="Unlabeled" value={repo.unlabeled_issues} />
         <Stat label="Stale Bugs" value={repo.stale_bug_issues} />
         <Stat label="Stale w/Discussion" value={repo.stale_high_comment_issues} />
+        <Stat label="Recurring Bugs" value={repo.recurring_bug_clusters.length} />
         <Stat label="Duplicates" value={repo.duplicate_candidates.length} />
         <Stat label="TODO" value={repo.todo_count} />
         <Stat label="FIXME" value={repo.fixme_count} />
@@ -170,6 +171,46 @@ export default function SignalCard({ repo }) {
                 </div>
                 <div style={{ color: "var(--text-dim)", fontSize: 11 }}>
                   {pair.right_title}
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {repo.recurring_bug_clusters?.length > 0 && (
+        <>
+          <Divider />
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={S.label}>Recurring Bug Patterns</div>
+            {repo.recurring_bug_clusters.map((cluster) => (
+              <div
+                key={`${repo.full_name}-${cluster.label}`}
+                style={{ border: "1px solid var(--border)", borderRadius: 6, padding: "10px 12px", background: "var(--bg)", display: "grid", gap: 8 }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                  <div style={{ color: "var(--text)", fontSize: 12, fontWeight: 700 }}>{cluster.label}</div>
+                  <Tag color="var(--gold)">{cluster.issue_count} issues</Tag>
+                </div>
+                {cluster.shared_terms?.length > 0 && (
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    {cluster.shared_terms.map((term) => (
+                      <Tag key={term}>{term}</Tag>
+                    ))}
+                  </div>
+                )}
+                <div style={{ display: "grid", gap: 6 }}>
+                  {cluster.examples.map((issue) => (
+                    <a
+                      key={`${cluster.label}-${issue.number}`}
+                      href={issue.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ color: "var(--text-dim)", textDecoration: "none", fontSize: 11, lineHeight: 1.5 }}
+                    >
+                      #{issue.number} {issue.title} • {issue.comments} comments • {issue.age_days}d old
+                    </a>
+                  ))}
                 </div>
               </div>
             ))}

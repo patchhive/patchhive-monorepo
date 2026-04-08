@@ -10,7 +10,7 @@ use axum::{
     extract::State,
     http::StatusCode,
     middleware,
-    routing::{get, post},
+    routing::{delete, get, post},
     Json, Router,
 };
 use once_cell::sync::OnceCell;
@@ -58,6 +58,8 @@ async fn main() {
         .route("/auth/generate-key", post(gen_key))
         .route("/health", get(health))
         .route("/startup/checks", get(startup_checks_route))
+        .route("/repo-lists", get(repo_lists).post(add_repo_list))
+        .route("/repo-lists/*repo", delete(remove_repo_list))
         .route("/scan", post(pipeline::scan))
         .route("/history", get(pipeline::history))
         .route("/history/:id", get(pipeline::history_detail))
@@ -100,6 +102,10 @@ async fn health(State(_state): State<AppState>) -> Json<serde_json::Value> {
         .get()
         .map(|checks| checks.iter().filter(|check| check["level"] == "error").count())
         .unwrap_or(0);
+    let repo_lists = db::list_repo_lists().unwrap_or_default();
+    let allowlist_count = repo_lists.iter().filter(|row| row.list_type == "allowlist").count();
+    let denylist_count = repo_lists.iter().filter(|row| row.list_type == "denylist").count();
+    let opt_out_count = repo_lists.iter().filter(|row| row.list_type == "opt_out").count();
 
     Json(json!({
         "status": if errors > 0 { "degraded" } else { "ok" },
@@ -110,9 +116,48 @@ async fn health(State(_state): State<AppState>) -> Json<serde_json::Value> {
         "config_errors": errors,
         "db_path": db::db_path(),
         "read_only": true,
+        "repo_lists": {
+            "allowlist": allowlist_count,
+            "denylist": denylist_count,
+            "opt_out": opt_out_count,
+        },
     }))
 }
 
 async fn startup_checks_route() -> Json<serde_json::Value> {
     Json(json!({"checks": STARTUP_CHECKS.get().cloned().unwrap_or_default()}))
+}
+
+async fn repo_lists() -> Json<serde_json::Value> {
+    Json(json!({
+        "repos": db::list_repo_lists().unwrap_or_default(),
+    }))
+}
+
+#[derive(serde::Deserialize)]
+struct RepoListBody {
+    repo: String,
+    list_type: String,
+}
+
+async fn add_repo_list(Json(body): Json<RepoListBody>) -> Result<Json<serde_json::Value>, StatusCode> {
+    let Some(repo) = db::normalize_repo_name(&body.repo) else {
+        return Err(StatusCode::BAD_REQUEST);
+    };
+    let Some(list_type) = db::normalize_repo_list_type(&body.list_type) else {
+        return Err(StatusCode::BAD_REQUEST);
+    };
+
+    db::save_repo_list(&repo, list_type).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(json!({ "ok": true, "repo": repo, "list_type": list_type })))
+}
+
+async fn remove_repo_list(
+    axum::extract::Path(repo): axum::extract::Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let Some(repo) = db::normalize_repo_name(&repo) else {
+        return Err(StatusCode::BAD_REQUEST);
+    };
+    db::delete_repo_list(&repo).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(json!({ "ok": true })))
 }

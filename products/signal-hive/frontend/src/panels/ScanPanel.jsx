@@ -54,8 +54,10 @@ export default function ScanPanel({ params, setParams, running, onRun, scan }) {
         </div>
 
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-          <div style={{ color: "var(--text-muted)", fontSize: 11 }}>
-            SignalHive only reads GitHub metadata and code search results. It does not clone repos or write anything.
+          <div style={{ color: "var(--text-muted)", fontSize: 11, lineHeight: 1.5 }}>
+            SignalHive only reads GitHub metadata and code search results. It does not clone repos or
+            write anything. If you set an allowlist in Controls, that list can drive scans even when
+            the search fields are blank.
           </div>
           <Btn onClick={onRun} disabled={running}>
             {running ? "Scanning…" : "Run Signal Scan"}

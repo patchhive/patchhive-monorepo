@@ -1,8 +1,9 @@
 use anyhow::{Context, Result};
 use chrono::Utc;
 use rusqlite::{params, Connection};
+use std::collections::HashSet;
 
-use crate::models::{RepoSignal, ScanHistoryItem, ScanParams, ScanRecord, ScanSummary};
+use crate::models::{RepoListItem, RepoSignal, ScanHistoryItem, ScanParams, ScanRecord, ScanSummary};
 
 pub fn db_path() -> String {
     std::env::var("SIGNAL_DB_PATH").unwrap_or_else(|_| "signal-hive.db".into())
@@ -74,6 +75,12 @@ pub fn init_db() -> Result<()> {
             signals_json TEXT NOT NULL,
             issue_examples_json TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS repo_lists (
+            repo TEXT PRIMARY KEY,
+            list_type TEXT NOT NULL,
+            added_at TEXT NOT NULL
+        );
         "#,
     )?;
 
@@ -106,6 +113,12 @@ pub fn init_db() -> Result<()> {
         "repo_signals",
         "score_breakdown_json",
         "score_breakdown_json TEXT NOT NULL DEFAULT '[]'",
+    )?;
+    ensure_column(
+        &conn,
+        "repo_signals",
+        "recurring_bug_clusters_json",
+        "recurring_bug_clusters_json TEXT NOT NULL DEFAULT '[]'",
     )?;
     Ok(())
 }
@@ -164,9 +177,9 @@ pub fn save_scan(params_in: &ScanParams, repos: &[RepoSignal]) -> Result<ScanRec
                 scan_id, repo_full_name, repo_url, description, language, stars,
                 open_issues, sampled_issues, stale_issues, unlabeled_issues,
                 stale_bug_issues, stale_high_comment_issues, duplicate_candidates_json,
-                todo_count, fixme_count, priority_score, score_breakdown_json, summary,
-                signals_json, issue_examples_json
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)
+                recurring_bug_clusters_json, todo_count, fixme_count, priority_score,
+                score_breakdown_json, summary, signals_json, issue_examples_json
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)
             "#,
             params![
                 record.id,
@@ -182,6 +195,7 @@ pub fn save_scan(params_in: &ScanParams, repos: &[RepoSignal]) -> Result<ScanRec
                 repo.stale_bug_issues,
                 repo.stale_high_comment_issues,
                 serde_json::to_string(&repo.duplicate_candidates)?,
+                serde_json::to_string(&repo.recurring_bug_clusters)?,
                 repo.todo_count,
                 repo.fixme_count,
                 repo.priority_score,
@@ -276,8 +290,8 @@ pub fn get_scan(id: &str) -> Result<Option<ScanRecord>> {
         SELECT repo_full_name, repo_url, description, language, stars,
                open_issues, sampled_issues, stale_issues, unlabeled_issues,
                stale_bug_issues, stale_high_comment_issues, duplicate_candidates_json,
-               todo_count, fixme_count, priority_score, score_breakdown_json, summary,
-               signals_json, issue_examples_json
+               recurring_bug_clusters_json, todo_count, fixme_count, priority_score,
+               score_breakdown_json, summary, signals_json, issue_examples_json
         FROM repo_signals
         WHERE scan_id = ?1
         ORDER BY priority_score DESC, stars DESC
@@ -298,13 +312,14 @@ pub fn get_scan(id: &str) -> Result<Option<ScanRecord>> {
             stale_bug_issues: row.get(9)?,
             stale_high_comment_issues: row.get(10)?,
             duplicate_candidates: serde_json::from_str(&row.get::<_, String>(11)?).unwrap_or_default(),
-            todo_count: row.get(12)?,
-            fixme_count: row.get(13)?,
-            priority_score: row.get(14)?,
-            score_breakdown: serde_json::from_str(&row.get::<_, String>(15)?).unwrap_or_default(),
-            summary: row.get(16)?,
-            signals: serde_json::from_str(&row.get::<_, String>(17)?).unwrap_or_default(),
-            issue_examples: serde_json::from_str(&row.get::<_, String>(18)?).unwrap_or_default(),
+            recurring_bug_clusters: serde_json::from_str(&row.get::<_, String>(12)?).unwrap_or_default(),
+            todo_count: row.get(13)?,
+            fixme_count: row.get(14)?,
+            priority_score: row.get(15)?,
+            score_breakdown: serde_json::from_str(&row.get::<_, String>(16)?).unwrap_or_default(),
+            summary: row.get(17)?,
+            signals: serde_json::from_str(&row.get::<_, String>(18)?).unwrap_or_default(),
+            issue_examples: serde_json::from_str(&row.get::<_, String>(19)?).unwrap_or_default(),
         })
     })?;
 
@@ -320,4 +335,85 @@ pub fn scan_count() -> u32 {
         .ok()
         .and_then(|conn| conn.query_row("SELECT COUNT(*) FROM scans", [], |row| row.get(0)).ok())
         .unwrap_or(0)
+}
+
+pub fn normalize_repo_list_type(value: &str) -> Option<&'static str> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "allowlist" => Some("allowlist"),
+        "denylist" | "blocklist" => Some("denylist"),
+        "opt_out" | "opt-out" | "optout" => Some("opt_out"),
+        _ => None,
+    }
+}
+
+pub fn normalize_repo_name(value: &str) -> Option<String> {
+    let mut parts = value
+        .trim()
+        .split('/')
+        .map(|part| part.trim().to_ascii_lowercase())
+        .filter(|part| !part.is_empty());
+    let owner = parts.next()?;
+    let repo = parts.next()?;
+    if parts.next().is_some() {
+        return None;
+    }
+    Some(format!("{owner}/{repo}"))
+}
+
+pub fn list_repo_lists() -> Result<Vec<RepoListItem>> {
+    let conn = connect()?;
+    let mut stmt = conn.prepare(
+        "SELECT repo, list_type, added_at FROM repo_lists ORDER BY list_type ASC, repo ASC",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        let list_type: String = row.get(1)?;
+        Ok(RepoListItem {
+            repo: row.get(0)?,
+            list_type: normalize_repo_list_type(&list_type)
+                .unwrap_or("denylist")
+                .to_string(),
+            added_at: row.get(2)?,
+        })
+    })?;
+
+    let mut repos = Vec::new();
+    for row in rows {
+        repos.push(row?);
+    }
+    Ok(repos)
+}
+
+pub fn save_repo_list(repo: &str, list_type: &str) -> Result<()> {
+    let conn = connect()?;
+    conn.execute(
+        "INSERT OR REPLACE INTO repo_lists(repo, list_type, added_at) VALUES(?1, ?2, ?3)",
+        params![repo, list_type, Utc::now().to_rfc3339()],
+    )?;
+    Ok(())
+}
+
+pub fn delete_repo_list(repo: &str) -> Result<()> {
+    let conn = connect()?;
+    conn.execute("DELETE FROM repo_lists WHERE repo = ?1", [repo])?;
+    Ok(())
+}
+
+pub fn repo_list_sets() -> Result<(HashSet<String>, HashSet<String>, HashSet<String>)> {
+    let rows = list_repo_lists()?;
+    let allow = rows
+        .iter()
+        .filter(|row| row.list_type == "allowlist")
+        .map(|row| row.repo.clone())
+        .collect();
+    let deny = rows
+        .iter()
+        .filter(|row| row.list_type == "denylist")
+        .map(|row| row.repo.clone())
+        .collect();
+    let opt_out = rows
+        .iter()
+        .filter(|row| row.list_type == "opt_out")
+        .map(|row| row.repo.clone())
+        .collect();
+    Ok((allow, deny, opt_out))
 }

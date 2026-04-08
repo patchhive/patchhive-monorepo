@@ -2,14 +2,16 @@
 
 > See the maintenance work your team is missing.
 
-SignalHive is the read-only reconnaissance layer for PatchHive. It scans repository and issue history to surface stale risks, duplicate issues, TODO hotspots, and hidden maintenance drag before it turns into downtime or delivery friction.
+SignalHive is the read-only reconnaissance layer for PatchHive. It scans repository and issue history to surface stale risks, duplicate issues, recurring bug patterns, TODO hotspots, and hidden maintenance drag before it turns into downtime or delivery friction.
 
 ## What It Does
 
 - discovers repositories from broad search terms, topics, and languages
 - samples open issue history to find stale backlog risk
 - flags likely duplicate issue reports
+- clusters recurring bug-like issues into repeated failure patterns
 - counts TODO and FIXME hotspots through GitHub code search
+- respects allowlist, denylist, and opt-out controls during discovery
 - ranks repositories into a maintenance queue your team can actually work from
 
 SignalHive is intentionally read-only. It does not open pull requests, write code, or mutate repositories.
@@ -35,6 +37,7 @@ Frontend: `http://localhost:5174`
 - The frontend uses `@patchhivehq/ui` from the public npm registry.
 - The backend stores scan history in SQLite at `SIGNAL_DB_PATH`.
 - This product is designed to be the visibility-first entry point into PatchHive.
+- Repo discovery can be constrained with allowlist, denylist, and opt-out controls in the UI.
 
 ## Standalone Repo Notes
 

@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Context, Result};
 use reqwest::Client;
 use serde::de::DeserializeOwned;
+use std::collections::HashSet;
 use tracing::warn;
 
 use crate::models::{CodeSearchResponse, GitHubIssue, ScanParams, SearchRepo, SearchRepositoriesResponse};
@@ -44,7 +45,48 @@ pub async fn validate_token(client: &Client) -> Result<()> {
     Ok(())
 }
 
-pub async fn discover_repositories(client: &Client, params: &ScanParams) -> Result<Vec<SearchRepo>> {
+fn repo_allowed(
+    full_name: &str,
+    allowlist: &HashSet<String>,
+    denylist: &HashSet<String>,
+    opt_out: &HashSet<String>,
+) -> bool {
+    let name = full_name.to_ascii_lowercase();
+    if opt_out.contains(&name) || denylist.contains(&name) {
+        return false;
+    }
+    allowlist.is_empty() || allowlist.contains(&name)
+}
+
+pub async fn fetch_repo(client: &Client, full_name: &str) -> Result<SearchRepo> {
+    let path = format!("/repos/{full_name}");
+    github_get(client, &path, &[]).await
+}
+
+pub async fn discover_repositories(
+    client: &Client,
+    params: &ScanParams,
+    allowlist: &HashSet<String>,
+    denylist: &HashSet<String>,
+    opt_out: &HashSet<String>,
+) -> Result<Vec<SearchRepo>> {
+    if !allowlist.is_empty() {
+        let mut repos = Vec::new();
+        for repo in allowlist {
+            if !repo_allowed(repo, allowlist, denylist, opt_out) {
+                continue;
+            }
+            match fetch_repo(client, repo).await {
+                Ok(found) => repos.push(found),
+                Err(err) => warn!("failed to load allowlisted repo {repo}: {err}"),
+            }
+            if repos.len() >= params.max_repos as usize {
+                break;
+            }
+        }
+        return Ok(repos);
+    }
+
     let languages = if params.languages.is_empty() {
         vec![String::new()]
     } else {
@@ -93,6 +135,9 @@ pub async fn discover_repositories(client: &Client, params: &ScanParams) -> Resu
         .await?;
 
         for repo in response.items {
+            if !repo_allowed(&repo.full_name, allowlist, denylist, opt_out) {
+                continue;
+            }
             if seen.insert(repo.full_name.clone()) {
                 repos.push(repo);
             }
