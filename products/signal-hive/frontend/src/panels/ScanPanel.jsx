@@ -1,8 +1,12 @@
-import { Btn, EmptyState, Input, S } from "@patchhivehq/ui";
+import { useMemo, useState } from "react";
+import { Btn, EmptyState, Input, S, Sel } from "@patchhivehq/ui";
 import SignalCard from "../components/SignalCard.jsx";
+import { SORT_OPTIONS, sortRepos } from "../sort.js";
 
 export default function ScanPanel({ params, setParams, running, onRun, scan }) {
+  const [sortBy, setSortBy] = useState("priority");
   const set = (key, value) => setParams((prev) => ({ ...prev, [key]: value }));
+  const sortedRepos = useMemo(() => sortRepos(scan?.repos || [], sortBy), [scan, sortBy]);
 
   return (
     <div style={{ display: "grid", gap: 18 }}>
@@ -70,15 +74,21 @@ export default function ScanPanel({ params, setParams, running, onRun, scan }) {
                 {scan.summary.total_repos} repos scanned • {scan.summary.total_signals} signals found • top repo {scan.summary.top_repo}
               </div>
             </div>
-            <div style={{ color: "var(--text-muted)", fontSize: 11 }}>
-              Scan ID {scan.id}
+            <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
+              <div style={{ minWidth: 180, ...S.field }}>
+                <div style={S.label}>Sort Queue</div>
+                <Sel value={sortBy} onChange={setSortBy} opts={SORT_OPTIONS} />
+              </div>
+              <div style={{ color: "var(--text-muted)", fontSize: 11 }}>
+                Scan ID {scan.id}
+              </div>
             </div>
           </div>
 
-          {scan.repos.length === 0 ? (
+          {sortedRepos.length === 0 ? (
             <EmptyState icon="◌" text="No repositories matched strongly enough to rank in this scan." />
           ) : (
-            scan.repos.map((repo) => <SignalCard key={repo.full_name} repo={repo} />)
+            sortedRepos.map((repo) => <SignalCard key={repo.full_name} repo={repo} />)
           )}
         </div>
       )}

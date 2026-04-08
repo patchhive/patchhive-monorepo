@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { API } from "../config.js";
-import { Btn, EmptyState, S, timeAgo } from "@patchhivehq/ui";
+import { Btn, EmptyState, S, Sel, timeAgo } from "@patchhivehq/ui";
 import SignalCard from "../components/SignalCard.jsx";
+import { SORT_OPTIONS, sortRepos } from "../sort.js";
 
 const af = (key) => (url, opts = {}) =>
   fetch(url, {
@@ -13,7 +14,9 @@ export default function HistoryPanel({ apiKey }) {
   const [history, setHistory] = useState([]);
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [sortBy, setSortBy] = useState("priority");
   const fetch_ = af(apiKey);
+  const sortedRepos = useMemo(() => sortRepos(selected?.repos || [], sortBy), [selected, sortBy]);
 
   const loadHistory = () =>
     fetch_(`${API}/history`)
@@ -84,9 +87,15 @@ export default function HistoryPanel({ apiKey }) {
                   {selected.summary.total_repos} repos • {selected.summary.total_signals} signals • {timeAgo(selected.created_at)}
                 </div>
               </div>
-              <div style={{ color: "var(--text-muted)", fontSize: 11 }}>Scan ID {selected.id}</div>
+              <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
+                <div style={{ minWidth: 180, ...S.field }}>
+                  <div style={S.label}>Sort Queue</div>
+                  <Sel value={sortBy} onChange={setSortBy} opts={SORT_OPTIONS} />
+                </div>
+                <div style={{ color: "var(--text-muted)", fontSize: 11 }}>Scan ID {selected.id}</div>
+              </div>
             </div>
-            {selected.repos.map((repo) => <SignalCard key={repo.full_name} repo={repo} />)}
+            {sortedRepos.map((repo) => <SignalCard key={repo.full_name} repo={repo} />)}
           </>
         )}
       </div>

@@ -8,7 +8,7 @@ use serde_json::json;
 use crate::{
     db,
     github,
-    models::{DuplicateCandidate, GitHubIssue, IssueSample, RepoSignal, ScanParams},
+    models::{DuplicateCandidate, GitHubIssue, IssueSample, RepoSignal, ScanParams, ScoreFactor},
     state::AppState,
 };
 
@@ -53,6 +53,16 @@ fn clamp_params(mut params: ScanParams) -> ScanParams {
     params
 }
 
+struct IssueAnalysis {
+    sampled_issues: u32,
+    stale_issues: u32,
+    unlabeled_issues: u32,
+    stale_bug_issues: u32,
+    stale_high_comment_issues: u32,
+    issue_examples: Vec<IssueSample>,
+    duplicate_candidates: Vec<DuplicateCandidate>,
+}
+
 fn issue_age_days(updated_at: &str) -> i64 {
     DateTime::parse_from_rfc3339(updated_at)
         .ok()
@@ -60,17 +70,59 @@ fn issue_age_days(updated_at: &str) -> i64 {
         .unwrap_or_default()
 }
 
-fn tokenize_title(title: &str) -> HashSet<String> {
+fn round1(value: f64) -> f64 {
+    (value * 10.0).round() / 10.0
+}
+
+fn title_tokens(title: &str) -> Vec<String> {
     const STOP: &[&str] = &[
         "the", "a", "an", "and", "or", "for", "with", "from", "into", "after", "before", "that",
         "this", "when", "then", "have", "has", "had", "not", "are", "can", "its", "was", "were",
+        "issue", "issues", "help", "support", "question",
     ];
 
-    title
-        .split(|ch: char| !ch.is_alphanumeric())
-        .map(|part| part.trim().to_lowercase())
-        .filter(|part| part.len() > 2 && !STOP.contains(&part.as_str()))
+    let mut seen = HashSet::new();
+    let mut tokens = Vec::new();
+    for part in title.split(|ch: char| !ch.is_alphanumeric()) {
+        let token = part.trim().to_lowercase();
+        if token.len() <= 2 || STOP.contains(&token.as_str()) || !seen.insert(token.clone()) {
+            continue;
+        }
+        tokens.push(token);
+    }
+    tokens
+}
+
+fn tokenize_title(title: &str) -> HashSet<String> {
+    title_tokens(title).into_iter().collect()
+}
+
+fn label_names(issue: &GitHubIssue) -> Vec<String> {
+    issue
+        .labels
+        .iter()
+        .map(|label| label.name.trim().to_lowercase())
+        .filter(|label| !label.is_empty())
         .collect()
+}
+
+fn title_has_bug_hint(title: &str) -> bool {
+    let lower = title.to_lowercase();
+    ["bug", "regression", "panic", "crash", "error", "broken", "fails", "failing"]
+        .iter()
+        .any(|hint| lower.contains(hint))
+}
+
+fn is_bug_issue(issue: &GitHubIssue) -> bool {
+    label_names(issue).iter().any(|label| {
+        label.contains("bug")
+            || label.contains("regression")
+            || label.contains("defect")
+            || label.contains("failure")
+            || label.contains("crash")
+            || label.contains("panic")
+            || label.contains("error")
+    }) || title_has_bug_hint(&issue.title)
 }
 
 fn duplicate_candidates(issues: &[GitHubIssue]) -> Vec<DuplicateCandidate> {
@@ -79,12 +131,14 @@ fn duplicate_candidates(issues: &[GitHubIssue]) -> Vec<DuplicateCandidate> {
     for left_index in 0..issues.len() {
         let left = &issues[left_index];
         let left_tokens = tokenize_title(&left.title);
+        let left_phrase = title_tokens(&left.title).join(" ");
         if left_tokens.is_empty() {
             continue;
         }
 
         for right in issues.iter().skip(left_index + 1) {
             let right_tokens = tokenize_title(&right.title);
+            let right_phrase = title_tokens(&right.title).join(" ");
             if right_tokens.is_empty() {
                 continue;
             }
@@ -95,8 +149,16 @@ fn duplicate_candidates(issues: &[GitHubIssue]) -> Vec<DuplicateCandidate> {
                 continue;
             }
 
-            let similarity = shared / union;
-            if similarity >= 0.55 {
+            let contains_match = left_phrase.len() > 10
+                && right_phrase.len() > 10
+                && (left_phrase.contains(&right_phrase) || right_phrase.contains(&left_phrase));
+
+            let mut similarity = shared / union;
+            if contains_match {
+                similarity = similarity.max(0.78);
+            }
+
+            if similarity >= 0.58 {
                 pairs.push(DuplicateCandidate {
                     left_number: left.number,
                     right_number: right.number,
@@ -133,62 +195,215 @@ fn stale_issue_examples(issues: &[GitHubIssue], stale_days: u32) -> Vec<IssueSam
         })
         .collect::<Vec<_>>();
 
-    examples.sort_by(|a, b| b.age_days.cmp(&a.age_days));
+    examples.sort_by(|a, b| b.age_days.cmp(&a.age_days).then_with(|| b.comments.cmp(&a.comments)));
     examples.truncate(3);
     examples
 }
 
-fn issue_signals(issues: &[GitHubIssue], stale_days: u32) -> (u32, Vec<IssueSample>, Vec<DuplicateCandidate>) {
-    let stale_issue_count = issues
+fn issue_signals(issues: &[GitHubIssue], stale_days: u32) -> IssueAnalysis {
+    let sampled_issues = issues.len() as u32;
+    let unlabeled_issues = issues.iter().filter(|issue| issue.labels.is_empty()).count() as u32;
+    let stale_issues = issues
         .iter()
         .filter(|issue| issue_age_days(&issue.updated_at) >= stale_days as i64)
         .count() as u32;
-    let samples = stale_issue_examples(issues, stale_days);
-    let duplicates = duplicate_candidates(issues);
-    (stale_issue_count, samples, duplicates)
+    let stale_bug_issues = issues
+        .iter()
+        .filter(|issue| issue_age_days(&issue.updated_at) >= stale_days as i64 && is_bug_issue(issue))
+        .count() as u32;
+    let stale_high_comment_issues = issues
+        .iter()
+        .filter(|issue| issue_age_days(&issue.updated_at) >= stale_days as i64 && issue.comments >= 3)
+        .count() as u32;
+
+    IssueAnalysis {
+        sampled_issues,
+        stale_issues,
+        unlabeled_issues,
+        stale_bug_issues,
+        stale_high_comment_issues,
+        issue_examples: stale_issue_examples(issues, stale_days),
+        duplicate_candidates: duplicate_candidates(issues),
+    }
 }
 
 fn priority_score(
+    stars: u32,
     open_issues: u32,
-    stale_issues: u32,
-    duplicate_count: usize,
+    issue_analysis: &IssueAnalysis,
     todo_count: u32,
     fixme_count: u32,
-) -> f64 {
-    let mut score = 0.0;
-    score += stale_issues as f64 * 7.5;
-    score += duplicate_count as f64 * 18.0;
-    score += todo_count.min(25) as f64 * 1.2;
-    score += fixme_count.min(25) as f64 * 1.6;
-    score += open_issues.min(50) as f64 * 0.35;
-    if stale_issues >= 3 {
-        score += 10.0;
+) -> (f64, Vec<ScoreFactor>) {
+    let sampled = issue_analysis.sampled_issues.max(1) as f64;
+    let stale_ratio = issue_analysis.stale_issues as f64 / sampled;
+    let unlabeled_ratio = issue_analysis.unlabeled_issues as f64 / sampled;
+    let issue_density = (open_issues as f64 / stars.max(25) as f64) * 100.0;
+    let duplicate_pressure = issue_analysis
+        .duplicate_candidates
+        .iter()
+        .map(|pair| pair.similarity)
+        .sum::<f64>();
+
+    let mut breakdown = Vec::new();
+
+    let stale_backlog_impact =
+        (stale_ratio * 34.0).min(24.0) + (issue_analysis.stale_issues.min(6) as f64 * 2.2).min(12.0);
+    if issue_analysis.stale_issues > 0 {
+        breakdown.push(ScoreFactor {
+            key: "stale_backlog".into(),
+            label: "Stale backlog".into(),
+            impact: round1(stale_backlog_impact),
+            detail: format!(
+                "{} of {} sampled issues are stale",
+                issue_analysis.stale_issues, issue_analysis.sampled_issues
+            ),
+        });
     }
-    if duplicate_count >= 2 {
-        score += 8.0;
+
+    let stale_bug_impact = (issue_analysis.stale_bug_issues.min(3) as f64 * 7.5).min(18.0);
+    if issue_analysis.stale_bug_issues > 0 {
+        breakdown.push(ScoreFactor {
+            key: "stale_bug".into(),
+            label: "Stale bug pressure".into(),
+            impact: round1(stale_bug_impact),
+            detail: format!(
+                "{} stale bug-like issues are still open",
+                issue_analysis.stale_bug_issues
+            ),
+        });
     }
-    score.min(100.0)
+
+    let stalled_discussion_impact = (issue_analysis.stale_high_comment_issues.min(3) as f64 * 4.8).min(14.4);
+    if issue_analysis.stale_high_comment_issues > 0 {
+        breakdown.push(ScoreFactor {
+            key: "stalled_discussion".into(),
+            label: "Stalled discussions".into(),
+            impact: round1(stalled_discussion_impact),
+            detail: format!(
+                "{} stale issues still have active discussion",
+                issue_analysis.stale_high_comment_issues
+            ),
+        });
+    }
+
+    let duplicate_impact = (duplicate_pressure * 10.0).min(14.0)
+        + if issue_analysis.duplicate_candidates.len() >= 2 { 3.0 } else { 0.0 };
+    if !issue_analysis.duplicate_candidates.is_empty() {
+        let strongest = issue_analysis
+            .duplicate_candidates
+            .first()
+            .map(|pair| format!("strongest pair looks {}% alike", (pair.similarity * 100.0).round() as i64))
+            .unwrap_or_else(|| "title overlap suggests duplicate work".into());
+        breakdown.push(ScoreFactor {
+            key: "duplicates".into(),
+            label: "Duplicate issue pressure".into(),
+            impact: round1(duplicate_impact),
+            detail: format!(
+                "{} likely duplicate pairs; {}",
+                issue_analysis.duplicate_candidates.len(),
+                strongest
+            ),
+        });
+    }
+
+    let unlabeled_impact =
+        ((unlabeled_ratio * 18.0) + (issue_analysis.unlabeled_issues.min(4) as f64 * 1.4)).min(12.0);
+    if issue_analysis.unlabeled_issues > 0 {
+        breakdown.push(ScoreFactor {
+            key: "triage_gap".into(),
+            label: "Triage gap".into(),
+            impact: round1(unlabeled_impact),
+            detail: format!(
+                "{} sampled issues have no labels",
+                issue_analysis.unlabeled_issues
+            ),
+        });
+    }
+
+    let marker_impact = (todo_count.min(20) as f64 * 0.45 + fixme_count.min(15) as f64 * 0.8).min(12.0);
+    if todo_count > 0 || fixme_count > 0 {
+        breakdown.push(ScoreFactor {
+            key: "markers".into(),
+            label: "Code markers".into(),
+            impact: round1(marker_impact),
+            detail: format!("{todo_count} TODO and {fixme_count} FIXME markers found"),
+        });
+    }
+
+    let density_impact = ((issue_density - 10.0).max(0.0) * 0.35).min(10.0);
+    if density_impact > 0.0 {
+        breakdown.push(ScoreFactor {
+            key: "issue_density".into(),
+            label: "Open issue density".into(),
+            impact: round1(density_impact),
+            detail: format!(
+                "{open_issues} open issues across {stars} stars ({:.1} per 100 stars)",
+                issue_density
+            ),
+        });
+    }
+
+    breakdown.sort_by(|a, b| {
+        b.impact
+            .partial_cmp(&a.impact)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    let total = breakdown.iter().map(|factor| factor.impact).sum::<f64>().min(100.0);
+    (round1(total), breakdown)
 }
 
 fn summary_from_signals(
-    stale_issues: u32,
-    duplicate_count: usize,
+    stars: u32,
+    open_issues: u32,
+    issue_analysis: &IssueAnalysis,
     todo_count: u32,
     fixme_count: u32,
 ) -> (String, Vec<String>) {
     let mut signals = Vec::new();
 
-    if stale_issues > 0 {
-        signals.push(format!("{stale_issues} stale issues need triage"));
+    if issue_analysis.stale_bug_issues > 0 {
+        signals.push(format!(
+            "{} stale bug-like issues are still open",
+            issue_analysis.stale_bug_issues
+        ));
     }
-    if duplicate_count > 0 {
-        signals.push(format!("{duplicate_count} likely duplicate issue pairs"));
+    if issue_analysis.stale_issues > 0 {
+        signals.push(format!(
+            "{} of {} sampled issues look stale",
+            issue_analysis.stale_issues, issue_analysis.sampled_issues
+        ));
     }
-    if todo_count > 0 {
-        signals.push(format!("{todo_count} TODO markers found"));
+    if issue_analysis.stale_high_comment_issues > 0 {
+        signals.push(format!(
+            "{} stale issues still have active comment history",
+            issue_analysis.stale_high_comment_issues
+        ));
     }
-    if fixme_count > 0 {
-        signals.push(format!("{fixme_count} FIXME markers found"));
+    if !issue_analysis.duplicate_candidates.is_empty() {
+        signals.push(format!(
+            "{} likely duplicate issue pairs were found",
+            issue_analysis.duplicate_candidates.len()
+        ));
+    }
+    if issue_analysis.unlabeled_issues >= 2 {
+        signals.push(format!(
+            "{} sampled issues are unlabeled, which points to triage drift",
+            issue_analysis.unlabeled_issues
+        ));
+    }
+    if todo_count > 0 || fixme_count > 0 {
+        signals.push(format!(
+            "{todo_count} TODO and {fixme_count} FIXME markers were found in code search"
+        ));
+    }
+
+    let issue_density = (open_issues as f64 / stars.max(25) as f64) * 100.0;
+    if issue_density >= 18.0 {
+        signals.push(format!(
+            "Open issue density is high for repo size ({:.1} per 100 stars)",
+            issue_density
+        ));
     }
     if signals.is_empty() {
         signals.push("No major maintenance signals found in the current sample".into());
@@ -204,19 +419,20 @@ async fn analyze_repo(
     params: &ScanParams,
 ) -> Result<RepoSignal> {
     let issues = github::fetch_open_issues(client, &repo.owner.login, &repo.name, params.issues_per_repo).await?;
-    let (stale_issues, issue_examples, duplicate_candidates) = issue_signals(&issues, params.stale_days);
+    let issue_analysis = issue_signals(&issues, params.stale_days);
     let todo_count = github::search_code_marker(client, &repo.full_name, "TODO").await;
     let fixme_count = github::search_code_marker(client, &repo.full_name, "FIXME").await;
-    let priority_score = priority_score(
+    let (priority_score, score_breakdown) = priority_score(
+        repo.stargazers_count,
         repo.open_issues_count,
-        stale_issues,
-        duplicate_candidates.len(),
+        &issue_analysis,
         todo_count,
         fixme_count,
     );
     let (summary, signals) = summary_from_signals(
-        stale_issues,
-        duplicate_candidates.len(),
+        repo.stargazers_count,
+        repo.open_issues_count,
+        &issue_analysis,
         todo_count,
         fixme_count,
     );
@@ -228,14 +444,19 @@ async fn analyze_repo(
         language: repo.language.clone().unwrap_or_else(|| "unknown".into()),
         stars: repo.stargazers_count,
         open_issues: repo.open_issues_count,
-        stale_issues,
-        duplicate_candidates,
+        sampled_issues: issue_analysis.sampled_issues,
+        stale_issues: issue_analysis.stale_issues,
+        unlabeled_issues: issue_analysis.unlabeled_issues,
+        stale_bug_issues: issue_analysis.stale_bug_issues,
+        stale_high_comment_issues: issue_analysis.stale_high_comment_issues,
+        duplicate_candidates: issue_analysis.duplicate_candidates,
         todo_count,
         fixme_count,
-        priority_score: (priority_score * 10.0).round() / 10.0,
+        priority_score,
+        score_breakdown,
         summary,
         signals,
-        issue_examples,
+        issue_examples: issue_analysis.issue_examples,
     })
 }
 

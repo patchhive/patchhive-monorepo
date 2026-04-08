@@ -12,6 +12,26 @@ fn connect() -> Result<Connection> {
     Connection::open(db_path()).context("failed to open SignalHive database")
 }
 
+fn column_exists(conn: &Connection, table: &str, column: &str) -> Result<bool> {
+    let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+    let rows = stmt.query_map([], |row| row.get::<_, String>(1))?;
+
+    for row in rows {
+        if row? == column {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
+}
+
+fn ensure_column(conn: &Connection, table: &str, column: &str, definition: &str) -> Result<()> {
+    if !column_exists(conn, table, column)? {
+        conn.execute_batch(&format!("ALTER TABLE {table} ADD COLUMN {definition};"))?;
+    }
+    Ok(())
+}
+
 pub fn init_db() -> Result<()> {
     let conn = connect()?;
     conn.execute_batch(
@@ -40,16 +60,52 @@ pub fn init_db() -> Result<()> {
             language TEXT NOT NULL,
             stars INTEGER NOT NULL,
             open_issues INTEGER NOT NULL,
+            sampled_issues INTEGER NOT NULL DEFAULT 0,
             stale_issues INTEGER NOT NULL,
+            unlabeled_issues INTEGER NOT NULL DEFAULT 0,
+            stale_bug_issues INTEGER NOT NULL DEFAULT 0,
+            stale_high_comment_issues INTEGER NOT NULL DEFAULT 0,
             duplicate_candidates_json TEXT NOT NULL,
             todo_count INTEGER NOT NULL,
             fixme_count INTEGER NOT NULL,
             priority_score REAL NOT NULL,
+            score_breakdown_json TEXT NOT NULL DEFAULT '[]',
             summary TEXT NOT NULL,
             signals_json TEXT NOT NULL,
             issue_examples_json TEXT NOT NULL
         );
         "#,
+    )?;
+
+    ensure_column(
+        &conn,
+        "repo_signals",
+        "sampled_issues",
+        "sampled_issues INTEGER NOT NULL DEFAULT 0",
+    )?;
+    ensure_column(
+        &conn,
+        "repo_signals",
+        "unlabeled_issues",
+        "unlabeled_issues INTEGER NOT NULL DEFAULT 0",
+    )?;
+    ensure_column(
+        &conn,
+        "repo_signals",
+        "stale_bug_issues",
+        "stale_bug_issues INTEGER NOT NULL DEFAULT 0",
+    )?;
+    ensure_column(
+        &conn,
+        "repo_signals",
+        "stale_high_comment_issues",
+        "stale_high_comment_issues INTEGER NOT NULL DEFAULT 0",
+    )?;
+    ensure_column(
+        &conn,
+        "repo_signals",
+        "score_breakdown_json",
+        "score_breakdown_json TEXT NOT NULL DEFAULT '[]'",
     )?;
     Ok(())
 }
@@ -106,9 +162,11 @@ pub fn save_scan(params_in: &ScanParams, repos: &[RepoSignal]) -> Result<ScanRec
             r#"
             INSERT INTO repo_signals (
                 scan_id, repo_full_name, repo_url, description, language, stars,
-                open_issues, stale_issues, duplicate_candidates_json, todo_count,
-                fixme_count, priority_score, summary, signals_json, issue_examples_json
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+                open_issues, sampled_issues, stale_issues, unlabeled_issues,
+                stale_bug_issues, stale_high_comment_issues, duplicate_candidates_json,
+                todo_count, fixme_count, priority_score, score_breakdown_json, summary,
+                signals_json, issue_examples_json
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)
             "#,
             params![
                 record.id,
@@ -118,11 +176,16 @@ pub fn save_scan(params_in: &ScanParams, repos: &[RepoSignal]) -> Result<ScanRec
                 repo.language,
                 repo.stars,
                 repo.open_issues,
+                repo.sampled_issues,
                 repo.stale_issues,
+                repo.unlabeled_issues,
+                repo.stale_bug_issues,
+                repo.stale_high_comment_issues,
                 serde_json::to_string(&repo.duplicate_candidates)?,
                 repo.todo_count,
                 repo.fixme_count,
                 repo.priority_score,
+                serde_json::to_string(&repo.score_breakdown)?,
                 repo.summary,
                 serde_json::to_string(&repo.signals)?,
                 serde_json::to_string(&repo.issue_examples)?,
@@ -211,8 +274,10 @@ pub fn get_scan(id: &str) -> Result<Option<ScanRecord>> {
     let mut stmt = conn.prepare(
         r#"
         SELECT repo_full_name, repo_url, description, language, stars,
-               open_issues, stale_issues, duplicate_candidates_json, todo_count,
-               fixme_count, priority_score, summary, signals_json, issue_examples_json
+               open_issues, sampled_issues, stale_issues, unlabeled_issues,
+               stale_bug_issues, stale_high_comment_issues, duplicate_candidates_json,
+               todo_count, fixme_count, priority_score, score_breakdown_json, summary,
+               signals_json, issue_examples_json
         FROM repo_signals
         WHERE scan_id = ?1
         ORDER BY priority_score DESC, stars DESC
@@ -227,14 +292,19 @@ pub fn get_scan(id: &str) -> Result<Option<ScanRecord>> {
             language: row.get(3)?,
             stars: row.get(4)?,
             open_issues: row.get(5)?,
-            stale_issues: row.get(6)?,
-            duplicate_candidates: serde_json::from_str(&row.get::<_, String>(7)?).unwrap_or_default(),
-            todo_count: row.get(8)?,
-            fixme_count: row.get(9)?,
-            priority_score: row.get(10)?,
-            summary: row.get(11)?,
-            signals: serde_json::from_str(&row.get::<_, String>(12)?).unwrap_or_default(),
-            issue_examples: serde_json::from_str(&row.get::<_, String>(13)?).unwrap_or_default(),
+            sampled_issues: row.get(6)?,
+            stale_issues: row.get(7)?,
+            unlabeled_issues: row.get(8)?,
+            stale_bug_issues: row.get(9)?,
+            stale_high_comment_issues: row.get(10)?,
+            duplicate_candidates: serde_json::from_str(&row.get::<_, String>(11)?).unwrap_or_default(),
+            todo_count: row.get(12)?,
+            fixme_count: row.get(13)?,
+            priority_score: row.get(14)?,
+            score_breakdown: serde_json::from_str(&row.get::<_, String>(15)?).unwrap_or_default(),
+            summary: row.get(16)?,
+            signals: serde_json::from_str(&row.get::<_, String>(17)?).unwrap_or_default(),
+            issue_examples: serde_json::from_str(&row.get::<_, String>(18)?).unwrap_or_default(),
         })
     })?;
 

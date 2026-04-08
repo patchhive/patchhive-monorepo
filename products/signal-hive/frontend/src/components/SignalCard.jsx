@@ -9,6 +9,50 @@ function Stat({ label, value }) {
   );
 }
 
+function impactColor(impact) {
+  if (impact >= 15) {
+    return "var(--accent)";
+  }
+  if (impact >= 8) {
+    return "var(--gold)";
+  }
+  return "var(--green)";
+}
+
+function ScoreFactorRow({ factor }) {
+  const color = impactColor(factor.impact);
+  return (
+    <div
+      style={{
+        border: "1px solid var(--border)",
+        borderRadius: 6,
+        padding: "10px 12px",
+        background: "var(--bg)",
+        display: "grid",
+        gap: 5,
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)" }}>{factor.label}</div>
+        <div
+          style={{
+            color,
+            fontSize: 10,
+            fontWeight: 700,
+            border: `1px solid ${color}55`,
+            borderRadius: 999,
+            padding: "2px 7px",
+            whiteSpace: "nowrap",
+          }}
+        >
+          +{Math.round(factor.impact)}
+        </div>
+      </div>
+      <div style={{ color: "var(--text-dim)", fontSize: 11, lineHeight: 1.5 }}>{factor.detail}</div>
+    </div>
+  );
+}
+
 export default function SignalCard({ repo }) {
   return (
     <div style={{ ...S.panel, display: "flex", flexDirection: "column", gap: 14 }}>
@@ -37,17 +81,33 @@ export default function SignalCard({ repo }) {
       <div style={{ color: "var(--text)", fontSize: 13, lineHeight: 1.5 }}>{repo.summary}</div>
 
       <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
+        <Stat label="Sampled Issues" value={repo.sampled_issues} />
         <Stat label="Stale Issues" value={repo.stale_issues} />
+        <Stat label="Unlabeled" value={repo.unlabeled_issues} />
+        <Stat label="Stale Bugs" value={repo.stale_bug_issues} />
+        <Stat label="Stale w/Discussion" value={repo.stale_high_comment_issues} />
         <Stat label="Duplicates" value={repo.duplicate_candidates.length} />
         <Stat label="TODO" value={repo.todo_count} />
         <Stat label="FIXME" value={repo.fixme_count} />
       </div>
 
+      {repo.score_breakdown?.length > 0 && (
+        <>
+          <Divider />
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={S.label}>Score Drivers</div>
+            {repo.score_breakdown.map((factor) => (
+              <ScoreFactorRow key={factor.key} factor={factor} />
+            ))}
+          </div>
+        </>
+      )}
+
       {repo.signals?.length > 0 && (
         <>
           <Divider />
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <div style={S.label}>Why It Ranked</div>
+            <div style={S.label}>Maintenance Signals</div>
             {repo.signals.map((signal) => (
               <div key={signal} style={{ color: "var(--text-dim)", fontSize: 12 }}>
                 • {signal}

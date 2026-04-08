@@ -45,6 +45,14 @@ pub struct DuplicateCandidate {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScoreFactor {
+    pub key: String,
+    pub label: String,
+    pub impact: f64,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RepoSignal {
     pub full_name: String,
     pub repo_url: String,
@@ -52,11 +60,16 @@ pub struct RepoSignal {
     pub language: String,
     pub stars: u32,
     pub open_issues: u32,
+    pub sampled_issues: u32,
     pub stale_issues: u32,
+    pub unlabeled_issues: u32,
+    pub stale_bug_issues: u32,
+    pub stale_high_comment_issues: u32,
     pub duplicate_candidates: Vec<DuplicateCandidate>,
     pub todo_count: u32,
     pub fixme_count: u32,
     pub priority_score: f64,
+    pub score_breakdown: Vec<ScoreFactor>,
     pub summary: String,
     pub signals: Vec<String>,
     pub issue_examples: Vec<IssueSample>,
@@ -114,12 +127,18 @@ pub struct SearchRepositoriesResponse {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+pub struct GitHubLabel {
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct GitHubIssue {
     pub number: u32,
     pub title: String,
     pub html_url: String,
     pub updated_at: String,
     pub comments: u32,
+    pub labels: Vec<GitHubLabel>,
     pub pull_request: Option<serde_json::Value>,
 }
 
