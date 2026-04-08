@@ -141,6 +141,7 @@ export default function App() {
             running={running}
             onRun={runScan}
             scan={scan}
+            setScan={setScan}
           />
         )}
         {tab === "history" && <HistoryPanel apiKey={apiKey} />}

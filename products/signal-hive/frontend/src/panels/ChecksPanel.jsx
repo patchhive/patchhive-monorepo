@@ -61,6 +61,20 @@ export default function ChecksPanel({ apiKey }) {
             <div style={S.label}>Opt-Out</div>
             <div style={{ fontSize: 18, fontWeight: 700 }}>{health.repo_lists?.opt_out || 0}</div>
           </div>
+          <div>
+            <div style={S.label}>Schedules</div>
+            <div style={{ fontSize: 18, fontWeight: 700 }}>{health.schedules?.total || 0}</div>
+          </div>
+          <div>
+            <div style={S.label}>Active Schedules</div>
+            <div style={{ fontSize: 18, fontWeight: 700 }}>{health.schedules?.enabled || 0}</div>
+          </div>
+          <div>
+            <div style={S.label}>Next Scheduled Run</div>
+            <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
+              {health.schedules?.next_run_at ? new Date(health.schedules.next_run_at).toLocaleString() : "none"}
+            </div>
+          </div>
         </div>
       )}
 

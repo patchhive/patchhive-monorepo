@@ -1,15 +1,18 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use anyhow::Result;
 use axum::{extract::{Path, State}, http::StatusCode, Json};
 use chrono::{DateTime, Utc};
 use serde_json::json;
+use tokio::time::{sleep, Duration};
+use tracing::{info, warn};
 
 use crate::{
     db,
     github,
     models::{
-        DuplicateCandidate, GitHubIssue, IssueSample, RecurringBugCluster, RepoSignal, ScanParams,
+        DuplicateCandidate, GitHubIssue, IssueSample, RecurringBugCluster, RepoSignal,
+        RepoSignalTrend, ScanParams, ScanRecord, ScanReport, ScanTrendSummary,
         ScoreFactor,
     },
     state::AppState,
@@ -76,6 +79,10 @@ fn issue_age_days(updated_at: &str) -> i64 {
 
 fn round1(value: f64) -> f64 {
     (value * 10.0).round() / 10.0
+}
+
+fn recurring_issue_count(clusters: &[RecurringBugCluster]) -> i32 {
+    clusters.iter().map(|cluster| cluster.issue_count as i32).sum()
 }
 
 fn title_tokens(title: &str) -> Vec<String> {
@@ -641,34 +648,259 @@ async fn analyze_repo(
         summary,
         signals,
         issue_examples: issue_analysis.issue_examples,
+        trend: None,
     })
 }
 
-pub async fn scan(
-    State(state): State<AppState>,
-    Json(params): Json<ScanParams>,
-) -> Result<Json<crate::models::ScanRecord>, (StatusCode, Json<serde_json::Value>)> {
+fn repo_trend_status(
+    priority_delta: f64,
+    stale_delta: i32,
+    duplicate_delta: i32,
+    marker_delta: i32,
+    recurring_delta: i32,
+) -> String {
+    let worsening = priority_delta >= 5.0
+        || stale_delta >= 2
+        || duplicate_delta > 0
+        || recurring_delta > 0
+        || marker_delta >= 3;
+    let improving = priority_delta <= -5.0
+        || stale_delta <= -2
+        || duplicate_delta < 0
+        || recurring_delta < 0
+        || marker_delta <= -3;
+
+    if worsening && !improving {
+        "rising".into()
+    } else if improving && !worsening {
+        "improving".into()
+    } else {
+        "steady".into()
+    }
+}
+
+fn enrich_scan_trend(record: &mut ScanRecord, previous: &ScanRecord) {
+    let mut previous_repos = previous
+        .repos
+        .iter()
+        .cloned()
+        .map(|repo| (repo.full_name.clone(), repo))
+        .collect::<HashMap<_, _>>();
+
+    let mut new_repos = 0u32;
+    let mut rising_repos = 0u32;
+    let mut improving_repos = 0u32;
+    let mut steady_repos = 0u32;
+
+    for repo in &mut record.repos {
+        if let Some(previous_repo) = previous_repos.remove(&repo.full_name) {
+            let marker_delta = (repo.todo_count as i32 + repo.fixme_count as i32)
+                - (previous_repo.todo_count as i32 + previous_repo.fixme_count as i32);
+            let trend = RepoSignalTrend {
+                status: repo_trend_status(
+                    round1(repo.priority_score - previous_repo.priority_score),
+                    repo.stale_issues as i32 - previous_repo.stale_issues as i32,
+                    repo.duplicate_candidates.len() as i32
+                        - previous_repo.duplicate_candidates.len() as i32,
+                    marker_delta,
+                    recurring_issue_count(&repo.recurring_bug_clusters)
+                        - recurring_issue_count(&previous_repo.recurring_bug_clusters),
+                ),
+                compared_to_scan_id: previous.id.clone(),
+                compared_to_created_at: previous.created_at.clone(),
+                previous_priority_score: round1(previous_repo.priority_score),
+                priority_delta: round1(repo.priority_score - previous_repo.priority_score),
+                stale_delta: repo.stale_issues as i32 - previous_repo.stale_issues as i32,
+                duplicate_delta: repo.duplicate_candidates.len() as i32
+                    - previous_repo.duplicate_candidates.len() as i32,
+                marker_delta,
+                recurring_delta: recurring_issue_count(&repo.recurring_bug_clusters)
+                    - recurring_issue_count(&previous_repo.recurring_bug_clusters),
+            };
+
+            match trend.status.as_str() {
+                "rising" => rising_repos += 1,
+                "improving" => improving_repos += 1,
+                _ => steady_repos += 1,
+            }
+
+            repo.trend = Some(trend);
+        } else {
+            new_repos += 1;
+            repo.trend = Some(RepoSignalTrend {
+                status: "new".into(),
+                compared_to_scan_id: previous.id.clone(),
+                compared_to_created_at: previous.created_at.clone(),
+                previous_priority_score: 0.0,
+                priority_delta: round1(repo.priority_score),
+                stale_delta: repo.stale_issues as i32,
+                duplicate_delta: repo.duplicate_candidates.len() as i32,
+                marker_delta: (repo.todo_count + repo.fixme_count) as i32,
+                recurring_delta: recurring_issue_count(&repo.recurring_bug_clusters),
+            });
+        }
+    }
+
+    record.trend = Some(ScanTrendSummary {
+        compared_to_scan_id: previous.id.clone(),
+        compared_to_created_at: previous.created_at.clone(),
+        total_repos_delta: record.summary.total_repos as i32 - previous.summary.total_repos as i32,
+        total_signals_delta: record.summary.total_signals as i32 - previous.summary.total_signals as i32,
+        new_repos,
+        dropped_repos: previous_repos.len() as u32,
+        rising_repos,
+        improving_repos,
+        steady_repos,
+    });
+}
+
+fn build_scan_report(record: &ScanRecord) -> ScanReport {
+    let mut lines = vec![
+        format!("# SignalHive Report — {}", record.created_at),
+        String::new(),
+        format!("- Scan ID: `{}`", record.id),
+        format!("- Trigger: `{}`", record.trigger_type),
+    ];
+
+    if let Some(schedule_name) = &record.schedule_name {
+        lines.push(format!("- Schedule: `{schedule_name}`"));
+    }
+
+    lines.extend([
+        format!(
+            "- Scope: query=`{}` topics=`{}` languages=`{}`",
+            if record.params.search_query.is_empty() {
+                "*none*"
+            } else {
+                &record.params.search_query
+            },
+            if record.params.topics.is_empty() {
+                "*none*".into()
+            } else {
+                record.params.topics.join(", ")
+            },
+            if record.params.languages.is_empty() {
+                "*none*".into()
+            } else {
+                record.params.languages.join(", ")
+            }
+        ),
+        format!(
+            "- Coverage: {} repos scanned, {} signals found, top repo `{}`",
+            record.summary.total_repos, record.summary.total_signals, record.summary.top_repo
+        ),
+        String::new(),
+    ]);
+
+    if let Some(trend) = &record.trend {
+        lines.extend([
+            "## Trend vs Previous Similar Scan".into(),
+            String::new(),
+            format!(
+                "- Compared to `{}` from {}",
+                trend.compared_to_scan_id, trend.compared_to_created_at
+            ),
+            format!(
+                "- Signals delta: {:+}, repos delta: {:+}",
+                trend.total_signals_delta, trend.total_repos_delta
+            ),
+            format!(
+                "- Queue movement: {} new, {} dropped, {} rising, {} improving, {} steady",
+                trend.new_repos,
+                trend.dropped_repos,
+                trend.rising_repos,
+                trend.improving_repos,
+                trend.steady_repos
+            ),
+            String::new(),
+        ]);
+    }
+
+    lines.extend(["## Ranked Maintenance Queue".into(), String::new()]);
+
+    for (index, repo) in record.repos.iter().take(10).enumerate() {
+        lines.push(format!(
+            "{}. `{}` — priority {}",
+            index + 1,
+            repo.full_name,
+            round1(repo.priority_score)
+        ));
+        lines.push(format!("   - {}", repo.summary));
+        lines.push(format!(
+            "   - Stats: stale {} | unlabeled {} | duplicates {} | recurring clusters {} | TODO {} | FIXME {}",
+            repo.stale_issues,
+            repo.unlabeled_issues,
+            repo.duplicate_candidates.len(),
+            repo.recurring_bug_clusters.len(),
+            repo.todo_count,
+            repo.fixme_count
+        ));
+
+        if let Some(trend) = &repo.trend {
+            lines.push(format!(
+                "   - Trend: {} (score {:+}, stale {:+}, recurring {:+})",
+                trend.status, trend.priority_delta, trend.stale_delta, trend.recurring_delta
+            ));
+        }
+
+        for signal in repo.signals.iter().take(3) {
+            lines.push(format!("   - Signal: {signal}"));
+        }
+
+        if let Some(factor) = repo.score_breakdown.first() {
+            lines.push(format!(
+                "   - Strongest driver: {} (+{}) — {}",
+                factor.label,
+                round1(factor.impact),
+                factor.detail
+            ));
+        }
+
+        lines.push(String::new());
+    }
+
+    ScanReport {
+        filename: format!("signalhive-report-{}.md", &record.id[..8]),
+        markdown: lines.join("\n"),
+        exported_at: Utc::now().to_rfc3339(),
+    }
+}
+
+fn enrich_scan_record(record: &mut ScanRecord) -> Result<()> {
+    if let Some(previous) =
+        db::previous_scan_for_params(&record.id, &record.created_at, &record.params)?
+    {
+        enrich_scan_trend(record, &previous);
+    }
+    Ok(())
+}
+
+pub async fn run_scan_record(
+    state: &AppState,
+    params: ScanParams,
+    trigger_type: &str,
+    schedule_name: Option<&str>,
+) -> Result<ScanRecord> {
     let params = clamp_params(params);
-    let (allowlist, denylist, opt_out) = db::repo_list_sets().map_err(internal_error)?;
+    let (allowlist, denylist, opt_out) = db::repo_list_sets()?;
     if params.search_query.is_empty()
         && params.topics.is_empty()
         && params.languages.is_empty()
         && allowlist.is_empty()
     {
-        return Err(bad_request(
-            "Provide at least a search query, topic, or language, or configure an allowlist.",
-        ));
+        anyhow::bail!(
+            "Provide at least a search query, topic, or language, or configure an allowlist."
+        );
     }
 
     let repos = github::discover_repositories(&state.http, &params, &allowlist, &denylist, &opt_out)
-        .await
-        .map_err(internal_error)?;
+        .await?;
 
     let mut signals = Vec::new();
     for repo in repos {
         match analyze_repo(&state.http, &repo, &params).await {
             Ok(signal) => signals.push(signal),
-            Err(err) => tracing::warn!("failed to analyze {}: {err}", repo.full_name),
+            Err(err) => warn!("failed to analyze {}: {err}", repo.full_name),
         }
     }
 
@@ -679,7 +911,83 @@ pub async fn scan(
             .then_with(|| b.stars.cmp(&a.stars))
     });
 
-    let record = db::save_scan(&params, &signals).map_err(internal_error)?;
+    let mut record = db::save_scan(&params, &signals, trigger_type, schedule_name)?;
+    enrich_scan_record(&mut record)?;
+    Ok(record)
+}
+
+pub async fn run_schedule_now(state: &AppState, schedule_name: &str) -> Result<ScanRecord> {
+    let schedule = db::get_scan_schedule(schedule_name)?
+        .ok_or_else(|| anyhow::anyhow!("Schedule not found"))?;
+
+    let result = run_scan_record(state, schedule.params.clone(), "scheduled", Some(&schedule.name)).await;
+    match result {
+        Ok(record) => {
+            db::record_scan_schedule_result(&schedule.name, Some(&record.id), "ok", None)?;
+            Ok(record)
+        }
+        Err(err) => {
+            db::record_scan_schedule_result(&schedule.name, None, "error", Some(&err.to_string()))?;
+            Err(err)
+        }
+    }
+}
+
+pub fn start_scheduler(state: AppState) {
+    tokio::spawn(async move {
+        loop {
+            match db::claim_due_scan_schedules(4) {
+                Ok(schedules) => {
+                    for schedule in schedules {
+                        let name = schedule.name.clone();
+                        match run_scan_record(&state, schedule.params.clone(), "scheduled", Some(&name)).await {
+                            Ok(record) => {
+                                if let Err(err) =
+                                    db::record_scan_schedule_result(&name, Some(&record.id), "ok", None)
+                                {
+                                    warn!("failed to store schedule result for {name}: {err}");
+                                }
+                                info!("SignalHive scheduled scan '{name}' completed as {}", record.id);
+                            }
+                            Err(err) => {
+                                if let Err(write_err) = db::record_scan_schedule_result(
+                                    &name,
+                                    None,
+                                    "error",
+                                    Some(&err.to_string()),
+                                ) {
+                                    warn!("failed to store schedule error for {name}: {write_err}");
+                                }
+                                warn!("SignalHive scheduled scan '{name}' failed: {err}");
+                            }
+                        }
+                    }
+                }
+                Err(err) => warn!("SignalHive scheduler poll failed: {err}"),
+            }
+
+            sleep(Duration::from_secs(60)).await;
+        }
+    });
+}
+
+pub async fn scan(
+    State(state): State<AppState>,
+    Json(params): Json<ScanParams>,
+) -> Result<Json<crate::models::ScanRecord>, (StatusCode, Json<serde_json::Value>)> {
+    let params = clamp_params(params);
+    if params.search_query.is_empty() && params.topics.is_empty() && params.languages.is_empty() {
+        let allowlist = db::repo_list_sets().map_err(internal_error)?.0;
+        if allowlist.is_empty() {
+            return Err(bad_request(
+                "Provide at least a search query, topic, or language, or configure an allowlist.",
+            ));
+        }
+    }
+
+    let record = run_scan_record(&state, params, "manual", None)
+        .await
+        .map_err(internal_error)?;
     Ok(Json(record))
 }
 
@@ -692,7 +1000,22 @@ pub async fn history_detail(
     Path(id): Path<String>,
 ) -> Result<Json<crate::models::ScanRecord>, (StatusCode, Json<serde_json::Value>)> {
     match db::get_scan(&id).map_err(internal_error)? {
-        Some(scan) => Ok(Json(scan)),
+        Some(mut scan) => {
+            enrich_scan_record(&mut scan).map_err(internal_error)?;
+            Ok(Json(scan))
+        }
+        None => Err((StatusCode::NOT_FOUND, Json(json!({ "error": "Scan not found" })))),
+    }
+}
+
+pub async fn report(
+    Path(id): Path<String>,
+) -> Result<Json<ScanReport>, (StatusCode, Json<serde_json::Value>)> {
+    match db::get_scan(&id).map_err(internal_error)? {
+        Some(mut scan) => {
+            enrich_scan_record(&mut scan).map_err(internal_error)?;
+            Ok(Json(build_scan_report(&scan)))
+        }
         None => Err((StatusCode::NOT_FOUND, Json(json!({ "error": "Scan not found" })))),
     }
 }

@@ -41,6 +41,7 @@ async fn main() {
     let checks = startup::validate_config(&state.http).await;
     log_checks(&checks);
     let _ = STARTUP_CHECKS.set(checks);
+    pipeline::start_scheduler(state.clone());
 
     let cors = CorsLayer::new()
         .allow_origin(Any)
@@ -55,11 +56,15 @@ async fn main() {
         .route("/startup/checks", get(startup_checks_route))
         .route("/presets", get(scan_presets).post(save_scan_preset))
         .route("/presets/:name", delete(delete_scan_preset))
+        .route("/schedules", get(scan_schedules).post(save_scan_schedule))
+        .route("/schedules/:name", delete(delete_scan_schedule))
+        .route("/schedules/:name/run", post(run_scan_schedule_now))
         .route("/repo-lists", get(repo_lists).post(add_repo_list))
         .route("/repo-lists/*repo", delete(remove_repo_list))
         .route("/scan", post(pipeline::scan))
         .route("/history", get(pipeline::history))
         .route("/history/:id", get(pipeline::history_detail))
+        .route("/history/:id/report", get(pipeline::report))
         .layer(middleware::from_fn(auth::auth_middleware))
         .layer(cors)
         .with_state(state);
@@ -97,9 +102,16 @@ async fn gen_key() -> Result<Json<serde_json::Value>, StatusCode> {
 async fn health(State(_state): State<AppState>) -> Json<serde_json::Value> {
     let errors = STARTUP_CHECKS.get().map(|checks| count_errors(checks)).unwrap_or(0);
     let repo_lists = db::list_repo_lists().unwrap_or_default();
+    let schedules = db::list_scan_schedules().unwrap_or_default();
     let allowlist_count = repo_lists.iter().filter(|row| row.list_type == "allowlist").count();
     let denylist_count = repo_lists.iter().filter(|row| row.list_type == "denylist").count();
     let opt_out_count = repo_lists.iter().filter(|row| row.list_type == "opt_out").count();
+    let enabled_schedule_count = schedules.iter().filter(|schedule| schedule.enabled).count();
+    let next_run_at = schedules
+        .iter()
+        .filter(|schedule| schedule.enabled)
+        .map(|schedule| schedule.next_run_at.clone())
+        .min();
 
     Json(json!({
         "status": if errors > 0 { "degraded" } else { "ok" },
@@ -114,6 +126,11 @@ async fn health(State(_state): State<AppState>) -> Json<serde_json::Value> {
             "allowlist": allowlist_count,
             "denylist": denylist_count,
             "opt_out": opt_out_count,
+        },
+        "schedules": {
+            "total": schedules.len(),
+            "enabled": enabled_schedule_count,
+            "next_run_at": next_run_at,
         },
     }))
 }
@@ -134,6 +151,12 @@ async fn scan_presets() -> Json<serde_json::Value> {
     }))
 }
 
+async fn scan_schedules() -> Json<serde_json::Value> {
+    Json(json!({
+        "schedules": db::list_scan_schedules().unwrap_or_default(),
+    }))
+}
+
 #[derive(serde::Deserialize)]
 struct RepoListBody {
     repo: String,
@@ -144,6 +167,14 @@ struct RepoListBody {
 struct ScanPresetBody {
     name: String,
     params: crate::models::ScanParams,
+}
+
+#[derive(serde::Deserialize)]
+struct ScanScheduleBody {
+    name: String,
+    params: crate::models::ScanParams,
+    cadence_hours: u32,
+    enabled: bool,
 }
 
 async fn save_scan_preset(
@@ -166,6 +197,44 @@ async fn delete_scan_preset(
     }
     db::delete_scan_preset(&name).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(json!({ "ok": true })))
+}
+
+async fn save_scan_schedule(
+    Json(body): Json<ScanScheduleBody>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let name = body.name.trim();
+    if name.is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    db::save_scan_schedule(name, &body.params, body.cadence_hours.max(1), body.enabled)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(json!({ "ok": true, "name": name })))
+}
+
+async fn delete_scan_schedule(
+    axum::extract::Path(name): axum::extract::Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    if name.trim().is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    db::delete_scan_schedule(&name).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(json!({ "ok": true })))
+}
+
+async fn run_scan_schedule_now(
+    State(state): State<AppState>,
+    axum::extract::Path(name): axum::extract::Path<String>,
+) -> Result<Json<crate::models::ScanRecord>, StatusCode> {
+    if name.trim().is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    pipeline::run_schedule_now(&state, &name)
+        .await
+        .map(Json)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
 }
 
 async fn add_repo_list(Json(body): Json<RepoListBody>) -> Result<Json<serde_json::Value>, StatusCode> {

@@ -1,10 +1,11 @@
 use anyhow::{Context, Result};
-use chrono::Utc;
-use rusqlite::{params, Connection};
+use chrono::{Duration, Utc};
+use rusqlite::{params, Connection, OptionalExtension};
 use std::collections::HashSet;
 
 use crate::models::{
-    RepoListItem, RepoSignal, ScanHistoryItem, ScanParams, ScanPreset, ScanRecord, ScanSummary,
+    RepoListItem, RepoSignal, ScanHistoryItem, ScanParams, ScanPreset, ScanRecord, ScanSchedule,
+    ScanSummary,
 };
 
 pub fn db_path() -> String {
@@ -42,6 +43,9 @@ pub fn init_db() -> Result<()> {
         CREATE TABLE IF NOT EXISTS scans (
             id TEXT PRIMARY KEY,
             created_at TEXT NOT NULL,
+            params_signature TEXT NOT NULL DEFAULT '',
+            trigger_type TEXT NOT NULL DEFAULT 'manual',
+            schedule_name TEXT,
             search_query TEXT NOT NULL,
             topics_json TEXT NOT NULL,
             languages_json TEXT NOT NULL,
@@ -90,7 +94,40 @@ pub fn init_db() -> Result<()> {
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS scan_schedules (
+            name TEXT PRIMARY KEY,
+            params_json TEXT NOT NULL,
+            cadence_hours INTEGER NOT NULL,
+            enabled INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            next_run_at TEXT NOT NULL,
+            last_run_at TEXT,
+            last_scan_id TEXT,
+            last_status TEXT NOT NULL DEFAULT 'idle',
+            last_error TEXT
+        );
         "#,
+    )?;
+
+    ensure_column(
+        &conn,
+        "scans",
+        "params_signature",
+        "params_signature TEXT NOT NULL DEFAULT ''",
+    )?;
+    ensure_column(
+        &conn,
+        "scans",
+        "trigger_type",
+        "trigger_type TEXT NOT NULL DEFAULT 'manual'",
+    )?;
+    ensure_column(
+        &conn,
+        "scans",
+        "schedule_name",
+        "schedule_name TEXT",
     )?;
 
     ensure_column(
@@ -132,9 +169,43 @@ pub fn init_db() -> Result<()> {
     Ok(())
 }
 
-pub fn save_scan(params_in: &ScanParams, repos: &[RepoSignal]) -> Result<ScanRecord> {
+fn normalized_signature_parts(values: &[String]) -> Vec<String> {
+    let mut parts = values
+        .iter()
+        .map(|value| value.trim().to_ascii_lowercase())
+        .filter(|value| !value.is_empty())
+        .collect::<Vec<_>>();
+    parts.sort();
+    parts.dedup();
+    parts
+}
+
+pub fn params_signature(params: &ScanParams) -> String {
+    serde_json::json!({
+        "search_query": params.search_query.trim().to_ascii_lowercase(),
+        "topics": normalized_signature_parts(&params.topics),
+        "languages": normalized_signature_parts(&params.languages),
+        "min_stars": params.min_stars,
+        "max_repos": params.max_repos,
+        "issues_per_repo": params.issues_per_repo,
+        "stale_days": params.stale_days,
+    })
+    .to_string()
+}
+
+fn next_run_at(cadence_hours: u32) -> String {
+    (Utc::now() + Duration::hours(cadence_hours.max(1) as i64)).to_rfc3339()
+}
+
+pub fn save_scan(
+    params_in: &ScanParams,
+    repos: &[RepoSignal],
+    trigger_type: &str,
+    schedule_name: Option<&str>,
+) -> Result<ScanRecord> {
     let id = uuid::Uuid::new_v4().to_string();
     let created_at = Utc::now().to_rfc3339();
+    let params_signature = params_signature(params_in);
     let summary = ScanSummary {
         total_repos: repos.len() as u32,
         total_signals: repos.iter().map(|repo| repo.signals.len() as u32).sum(),
@@ -150,6 +221,9 @@ pub fn save_scan(params_in: &ScanParams, repos: &[RepoSignal]) -> Result<ScanRec
         params: params_in.clone(),
         summary: summary.clone(),
         repos: repos.to_vec(),
+        trigger_type: trigger_type.to_string(),
+        schedule_name: schedule_name.map(|value| value.to_string()),
+        trend: None,
     };
 
     let conn = connect()?;
@@ -158,14 +232,18 @@ pub fn save_scan(params_in: &ScanParams, repos: &[RepoSignal]) -> Result<ScanRec
     tx.execute(
         r#"
         INSERT INTO scans (
-            id, created_at, search_query, topics_json, languages_json,
+            id, created_at, params_signature, trigger_type, schedule_name,
+            search_query, topics_json, languages_json,
             min_stars, max_repos, issues_per_repo, stale_days,
             total_repos, total_signals, top_repo
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
         "#,
         params![
             record.id,
             record.created_at,
+            params_signature,
+            record.trigger_type,
+            record.schedule_name,
             record.params.search_query,
             serde_json::to_string(&record.params.topics)?,
             serde_json::to_string(&record.params.languages)?,
@@ -225,7 +303,7 @@ pub fn list_scans() -> Result<Vec<ScanHistoryItem>> {
     let mut stmt = conn.prepare(
         r#"
         SELECT id, created_at, search_query, topics_json, languages_json,
-               max_repos, total_repos, total_signals, top_repo
+               max_repos, total_repos, total_signals, top_repo, trigger_type, schedule_name
         FROM scans
         ORDER BY created_at DESC
         LIMIT 25
@@ -243,6 +321,8 @@ pub fn list_scans() -> Result<Vec<ScanHistoryItem>> {
             total_repos: row.get(6)?,
             total_signals: row.get(7)?,
             top_repo: row.get(8)?,
+            trigger_type: row.get(9)?,
+            schedule_name: row.get(10)?,
         })
     })?;
 
@@ -260,7 +340,7 @@ pub fn get_scan(id: &str) -> Result<Option<ScanRecord>> {
         r#"
         SELECT created_at, search_query, topics_json, languages_json,
                min_stars, max_repos, issues_per_repo, stale_days,
-               total_repos, total_signals, top_repo
+               total_repos, total_signals, top_repo, trigger_type, schedule_name
         FROM scans
         WHERE id = ?1
         "#,
@@ -284,6 +364,9 @@ pub fn get_scan(id: &str) -> Result<Option<ScanRecord>> {
                     top_repo: row.get(10)?,
                 },
                 repos: Vec::new(),
+                trigger_type: row.get(11)?,
+                schedule_name: row.get(12)?,
+                trend: None,
             })
         },
     );
@@ -329,6 +412,7 @@ pub fn get_scan(id: &str) -> Result<Option<ScanRecord>> {
             summary: row.get(17)?,
             signals: serde_json::from_str(&row.get::<_, String>(18)?).unwrap_or_default(),
             issue_examples: serde_json::from_str(&row.get::<_, String>(19)?).unwrap_or_default(),
+            trend: None,
         })
     })?;
 
@@ -337,6 +421,197 @@ pub fn get_scan(id: &str) -> Result<Option<ScanRecord>> {
     }
 
     Ok(Some(record))
+}
+
+pub fn previous_scan_for_params(
+    current_id: &str,
+    current_created_at: &str,
+    params: &ScanParams,
+) -> Result<Option<ScanRecord>> {
+    let conn = connect()?;
+    let signature = params_signature(params);
+    let previous_id: Option<String> = conn
+        .query_row(
+            r#"
+            SELECT id
+            FROM scans
+            WHERE params_signature = ?1 AND created_at < ?2 AND id != ?3
+            ORDER BY created_at DESC
+            LIMIT 1
+            "#,
+            params![signature, current_created_at, current_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+
+    match previous_id {
+        Some(id) => get_scan(&id),
+        None => Ok(None),
+    }
+}
+
+fn scan_schedule_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ScanSchedule> {
+    Ok(ScanSchedule {
+        name: row.get(0)?,
+        params: serde_json::from_str(&row.get::<_, String>(1)?).unwrap_or_default(),
+        cadence_hours: row.get(2)?,
+        enabled: row.get::<_, i64>(3)? != 0,
+        created_at: row.get(4)?,
+        updated_at: row.get(5)?,
+        next_run_at: row.get(6)?,
+        last_run_at: row.get(7)?,
+        last_scan_id: row.get(8)?,
+        last_status: row.get(9)?,
+        last_error: row.get(10)?,
+    })
+}
+
+pub fn list_scan_schedules() -> Result<Vec<ScanSchedule>> {
+    let conn = connect()?;
+    let mut stmt = conn.prepare(
+        r#"
+        SELECT name, params_json, cadence_hours, enabled, created_at, updated_at,
+               next_run_at, last_run_at, last_scan_id, last_status, last_error
+        FROM scan_schedules
+        ORDER BY enabled DESC, next_run_at ASC, name ASC
+        "#,
+    )?;
+    let rows = stmt.query_map([], scan_schedule_from_row)?;
+
+    let mut schedules = Vec::new();
+    for row in rows {
+        schedules.push(row?);
+    }
+    Ok(schedules)
+}
+
+pub fn get_scan_schedule(name: &str) -> Result<Option<ScanSchedule>> {
+    let conn = connect()?;
+    conn.query_row(
+        r#"
+        SELECT name, params_json, cadence_hours, enabled, created_at, updated_at,
+               next_run_at, last_run_at, last_scan_id, last_status, last_error
+        FROM scan_schedules
+        WHERE name = ?1
+        "#,
+        [name],
+        scan_schedule_from_row,
+    )
+    .optional()
+    .map_err(Into::into)
+}
+
+pub fn save_scan_schedule(
+    name: &str,
+    params_in: &ScanParams,
+    cadence_hours: u32,
+    enabled: bool,
+) -> Result<()> {
+    let conn = connect()?;
+    let now = Utc::now().to_rfc3339();
+    let existing = get_scan_schedule(name)?;
+    let created_at = existing
+        .as_ref()
+        .map(|schedule| schedule.created_at.clone())
+        .unwrap_or_else(|| now.clone());
+    let next_run = if let Some(schedule) = &existing {
+        if schedule.enabled == enabled && schedule.cadence_hours == cadence_hours.max(1) {
+            schedule.next_run_at.clone()
+        } else {
+            next_run_at(cadence_hours)
+        }
+    } else {
+        next_run_at(cadence_hours)
+    };
+
+    conn.execute(
+        r#"
+        INSERT OR REPLACE INTO scan_schedules(
+            name, params_json, cadence_hours, enabled, created_at, updated_at,
+            next_run_at, last_run_at, last_scan_id, last_status, last_error
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+        "#,
+        params![
+            name,
+            serde_json::to_string(params_in)?,
+            cadence_hours.max(1),
+            if enabled { 1 } else { 0 },
+            created_at,
+            now,
+            next_run,
+            existing.as_ref().and_then(|schedule| schedule.last_run_at.clone()),
+            existing.as_ref().and_then(|schedule| schedule.last_scan_id.clone()),
+            existing
+                .as_ref()
+                .map(|schedule| schedule.last_status.clone())
+                .unwrap_or_else(|| "idle".into()),
+            existing.as_ref().and_then(|schedule| schedule.last_error.clone()),
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn delete_scan_schedule(name: &str) -> Result<()> {
+    let conn = connect()?;
+    conn.execute("DELETE FROM scan_schedules WHERE name = ?1", [name])?;
+    Ok(())
+}
+
+pub fn claim_due_scan_schedules(limit: usize) -> Result<Vec<ScanSchedule>> {
+    let conn = connect()?;
+    let now = Utc::now().to_rfc3339();
+    let mut stmt = conn.prepare(
+        r#"
+        SELECT name, params_json, cadence_hours, enabled, created_at, updated_at,
+               next_run_at, last_run_at, last_scan_id, last_status, last_error
+        FROM scan_schedules
+        WHERE enabled = 1 AND next_run_at <= ?1
+        ORDER BY next_run_at ASC, name ASC
+        LIMIT ?2
+        "#,
+    )?;
+
+    let rows = stmt.query_map(params![now, limit as i64], scan_schedule_from_row)?;
+    let mut schedules = Vec::new();
+    for row in rows {
+        let schedule = row?;
+        conn.execute(
+            r#"
+            UPDATE scan_schedules
+            SET next_run_at = ?2, updated_at = ?3, last_status = 'running', last_error = NULL
+            WHERE name = ?1
+            "#,
+            params![schedule.name, next_run_at(schedule.cadence_hours), Utc::now().to_rfc3339()],
+        )?;
+        schedules.push(schedule);
+    }
+
+    Ok(schedules)
+}
+
+pub fn record_scan_schedule_result(
+    name: &str,
+    last_scan_id: Option<&str>,
+    status: &str,
+    error: Option<&str>,
+) -> Result<()> {
+    let conn = connect()?;
+    conn.execute(
+        r#"
+        UPDATE scan_schedules
+        SET last_run_at = ?2, last_scan_id = ?3, last_status = ?4, last_error = ?5, updated_at = ?6
+        WHERE name = ?1
+        "#,
+        params![
+            name,
+            Utc::now().to_rfc3339(),
+            last_scan_id,
+            status,
+            error,
+            Utc::now().to_rfc3339(),
+        ],
+    )?;
+    Ok(())
 }
 
 pub fn scan_count() -> u32 {

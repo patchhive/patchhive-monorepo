@@ -53,7 +53,23 @@ function ScoreFactorRow({ factor }) {
   );
 }
 
+function trendColor(status) {
+  if (status === "rising" || status === "new") {
+    return "var(--accent)";
+  }
+  if (status === "improving") {
+    return "var(--green)";
+  }
+  return "var(--gold)";
+}
+
+function signedValue(value, digits = 0) {
+  const rounded = digits > 0 ? value.toFixed(digits) : `${Math.round(value)}`;
+  return `${value >= 0 ? "+" : ""}${rounded}`;
+}
+
 export default function SignalCard({ repo }) {
+  const trend = repo.trend || null;
   return (
     <div style={{ ...S.panel, display: "flex", flexDirection: "column", gap: 14 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
@@ -79,6 +95,36 @@ export default function SignalCard({ repo }) {
       </div>
 
       <div style={{ color: "var(--text)", fontSize: 13, lineHeight: 1.5 }}>{repo.summary}</div>
+
+      {trend && (
+        <div
+          style={{
+            border: "1px solid var(--border)",
+            borderRadius: 8,
+            padding: "10px 12px",
+            background: "var(--bg)",
+            display: "grid",
+            gap: 8,
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+              <div style={S.label}>Trend vs previous similar scan</div>
+              <Tag color={trendColor(trend.status)}>{trend.status}</Tag>
+            </div>
+            <div style={{ color: "var(--text-muted)", fontSize: 10 }}>
+              {trend.compared_to_created_at}
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <Tag>Score {signedValue(trend.priority_delta, 1)}</Tag>
+            <Tag>Stale {signedValue(trend.stale_delta)}</Tag>
+            <Tag>Duplicates {signedValue(trend.duplicate_delta)}</Tag>
+            <Tag>Markers {signedValue(trend.marker_delta)}</Tag>
+            <Tag>Recurring {signedValue(trend.recurring_delta)}</Tag>
+          </div>
+        </div>
+      )}
 
       <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
         <Stat label="Sampled Issues" value={repo.sampled_issues} />

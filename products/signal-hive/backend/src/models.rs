@@ -82,6 +82,8 @@ pub struct RepoSignal {
     pub summary: String,
     pub signals: Vec<String>,
     pub issue_examples: Vec<IssueSample>,
+    #[serde(default)]
+    pub trend: Option<RepoSignalTrend>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -99,12 +101,44 @@ pub struct ScanSummary {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RepoSignalTrend {
+    pub status: String,
+    pub compared_to_scan_id: String,
+    pub compared_to_created_at: String,
+    pub previous_priority_score: f64,
+    pub priority_delta: f64,
+    pub stale_delta: i32,
+    pub duplicate_delta: i32,
+    pub marker_delta: i32,
+    pub recurring_delta: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScanTrendSummary {
+    pub compared_to_scan_id: String,
+    pub compared_to_created_at: String,
+    pub total_repos_delta: i32,
+    pub total_signals_delta: i32,
+    pub new_repos: u32,
+    pub dropped_repos: u32,
+    pub rising_repos: u32,
+    pub improving_repos: u32,
+    pub steady_repos: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScanRecord {
     pub id: String,
     pub created_at: String,
     pub params: ScanParams,
     pub summary: ScanSummary,
     pub repos: Vec<RepoSignal>,
+    #[serde(default)]
+    pub trigger_type: String,
+    #[serde(default)]
+    pub schedule_name: Option<String>,
+    #[serde(default)]
+    pub trend: Option<ScanTrendSummary>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -118,6 +152,10 @@ pub struct ScanHistoryItem {
     pub total_repos: u32,
     pub total_signals: u32,
     pub top_repo: String,
+    #[serde(default)]
+    pub trigger_type: String,
+    #[serde(default)]
+    pub schedule_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -126,6 +164,28 @@ pub struct ScanPreset {
     pub params: ScanParams,
     pub created_at: String,
     pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScanSchedule {
+    pub name: String,
+    pub params: ScanParams,
+    pub cadence_hours: u32,
+    pub enabled: bool,
+    pub created_at: String,
+    pub updated_at: String,
+    pub next_run_at: String,
+    pub last_run_at: Option<String>,
+    pub last_scan_id: Option<String>,
+    pub last_status: String,
+    pub last_error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScanReport {
+    pub filename: String,
+    pub markdown: String,
+    pub exported_at: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
