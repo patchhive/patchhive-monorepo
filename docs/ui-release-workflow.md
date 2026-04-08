@@ -42,6 +42,12 @@ If you want to preview the next version without editing files:
 ./scripts/sync-package-mirror.sh ui patchhive-ui main
 ```
 
+6. Tag the release:
+
+```bash
+./scripts/tag-release.sh ui v0.1.0
+```
+
 ## One-Time History Reset
 
 If the standalone package mirror has old subtree-style history and you want to reset it to clean package-only sync commits, run:

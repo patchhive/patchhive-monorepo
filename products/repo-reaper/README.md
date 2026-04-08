@@ -37,11 +37,11 @@ RepoReaper is a multi-agent GitHub bug-fixing system. It hunts open issues, scor
 
 ```bash
 cp .env.example .env
-# Fill in BOT_GITHUB_TOKEN, BOT_GITHUB_USER, PROVIDER_API_KEY
+# Fill in BOT_GITHUB_TOKEN, BOT_GITHUB_USER, and either PROVIDER_API_KEY or PATCHHIVE_AI_URL
 
 # Dev
 cd backend && cargo run
-cd frontend && npm install && npm run dev
+cd ../frontend && npm install && npm run dev
 
 # Docker
 docker-compose up --build
@@ -58,16 +58,22 @@ Frontend: `http://localhost:5173`
 - **Frontend** — React, Vite
 - **AI** — Direct HTTP to all providers (no SDK dependencies)
 
+## Standalone Repo Notes
+
+- The frontend installs `@patchhivehq/ui` from the public npm registry.
+- The standalone GitHub Actions workflow checks `cargo check --locked` for the backend and `npm run build` for the frontend.
+- The PatchHive monorepo remains the source of truth, but this repository is intended to be usable on its own.
+
 ## Local AI Gateway
 
 RepoReaper supports `PATCHHIVE_AI_URL` for OpenAI-compatible local gateways.
 
 ```bash
-npm install
-npm run dev:ai-local
+# Start patchhive-ai-local in its own repo or from the PatchHive monorepo.
+# Then point RepoReaper at that local gateway:
 
 export PATCHHIVE_AI_URL=http://127.0.0.1:8787/v1
-cd products/repo-reaper/backend
+cd backend
 cargo run
 ```
 

@@ -14,6 +14,7 @@
     "build:repo-reaper": "cd products/repo-reaper/frontend && npm run build",
     "mirror:ui": "./scripts/sync-package-mirror.sh ui patchhive-ui main",
     "mirror:ui:reset": "./scripts/sync-package-mirror.sh ui patchhive-ui main --reset-history",
-    "version:ui": "./scripts/version-ui.sh"
+    "version:ui": "./scripts/version-ui.sh",
+    "tag:release": "./scripts/tag-release.sh"
   }
 }
