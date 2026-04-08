@@ -1,0 +1,2 @@
+[patch."https://github.com/patchhive/patchhive-product-core.git"]
+patchhive-product-core = { path = "crates/patchhive-product-core" }

@@ -131,11 +131,42 @@ That creates:
 - monorepo tag `ai-local/v0.1.0`
 - standalone repo tag `v0.1.0` in `patchhive/patchhive-ai-local`
 
+## Product Core Crate Release
+
+1. Confirm the monorepo is clean and `crates/patchhive-product-core` is in the state you want to ship.
+2. Run local verification:
+
+```bash
+cd crates/patchhive-product-core && cargo check --locked
+cd ../../products/repo-reaper/backend && cargo check --locked
+cd ../../signal-hive/backend && cargo check --locked
+```
+
+3. Commit and push the monorepo changes.
+4. Sync the standalone mirror:
+
+```bash
+npm run mirror:product-core
+```
+
+5. Confirm `patchhive-product-core CI` is green.
+6. Tag the release:
+
+```bash
+./scripts/tag-release.sh patchhive-product-core v0.1.0
+```
+
+That creates:
+
+- monorepo tag `patchhive-product-core/v0.1.0`
+- standalone repo tag `v0.1.0` in `patchhive/patchhive-product-core`
+
 ## Notes
 
 - The monorepo remains the source of truth.
 - Product repos can keep subtree-style history.
 - Shared package/service repos should prefer clean mirror syncs.
+- Shared crate repos should prefer clean mirror syncs too.
 - If you want to preview tags without pushing anything, use:
 
 ```bash

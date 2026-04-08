@@ -62,6 +62,8 @@ patchhive/
     ui/                     @patchhivehq/ui shared React component library
     product-shell/          @patchhivehq/product-shell shared frontend shell/auth helpers
     ai-local/               @patchhive/ai-local localhost AI gateway
+  crates/
+    patchhive-product-core/ shared Rust auth + startup helpers
   products/
     repo-reaper/            built first, current active product
     signal-hive/
@@ -110,6 +112,7 @@ Shared platform guidance:
 - Keep product APIs close enough that HiveCore can orchestrate them without heavy translation layers.
 - Standardize request/response envelopes, error shapes, run/job identifiers, and async webhook/run lifecycle patterns as products are built out.
 - Treat repo discovery safety, output caps, and cross-product contracts as platform guardrails, not optional product polish.
+- When the same Rust backend seam exists in 2 or more products, prefer extracting it into `crates/patchhive-product-core` before starting another product.
 - See [docs/platform-guardrails.md](/home/coemedia/Documents/code/patchhive/docs/platform-guardrails.md) and [docs/product-api-contract-v1.md](/home/coemedia/Documents/code/patchhive/docs/product-api-contract-v1.md).
 
 ## Shared UI Package
@@ -133,6 +136,18 @@ Rules:
 - If API-key login bootstrap is the same across 2 or more products, keep it in `product-shell`, not inside a product `App.jsx`.
 - If authenticated backend `fetch` behavior is repeated across 2 or more products, keep it in `product-shell`.
 - Avoid direct `localStorage` reads across individual panels when the app shell can pass the resolved API key down instead.
+
+## Shared Rust Product Core
+
+Location: `crates/patchhive-product-core/`
+
+Every product backend that repeats PatchHive's API-key auth or typed startup checks should use `patchhive-product-core` instead of carrying its own copy.
+
+Rules:
+- If a Rust backend seam already exists in 2 or more products, extract it into `patchhive-product-core` before a third product repeats it.
+- Keep the crate focused on backend primitives, not product behavior.
+- Good candidates: auth middleware, startup/health helpers, generic ID or envelope helpers, generic named preset storage interfaces.
+- Bad candidates until proven generic: GitHub search logic, scoring heuristics, pipelines, route behavior, and product-specific SQLite schemas.
 
 Product accent keys live in `packages/ui/src/theme.js`:
 - `repo-reaper`

@@ -42,6 +42,8 @@ patchhive/
       src/
         index.js            ← gateway server + provider routing
         cli.js              ← local entrypoint
+  crates/
+    patchhive-product-core/ shared Rust auth + startup primitives
   products/
     repo-reaper/            ← RepoReaper v0.1.0
       backend/              ← Rust (axum, rusqlite, reqwest, tokio)
@@ -92,6 +94,17 @@ This package holds repeated frontend shell behaviors that already show up across
 
 - API-key login bootstrap against `/auth/status` and `/auth/login`
 - authenticated `fetch` helpers for product backends
+
+## Shared Rust Product Core (`patchhive-product-core`)
+
+`patchhive-product-core` is the first shared Rust crate for backend overlap that is already real across multiple PatchHive products.
+
+It currently holds:
+
+- API-key auth hashing, verification, persistence, and axum middleware
+- typed startup checks and shared startup logging helpers
+
+Standalone Rust product repositories should consume the shared crate from its own repo, while the monorepo uses `.cargo/config.toml` to patch that git dependency back to the local crate path during development.
 
 ## Product Accent Colors
 

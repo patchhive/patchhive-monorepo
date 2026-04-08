@@ -28,3 +28,4 @@ hex = "0.4"
 futures = "0.3"
 async-stream = "0.3"
 once_cell = "1"
+patchhive-product-core = { path = "../../../crates/patchhive-product-core" }

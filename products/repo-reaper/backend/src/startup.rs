@@ -1,8 +1,8 @@
-use serde_json::{json, Value};
 use crate::db::*;
+use patchhive_product_core::startup::StartupCheck;
 use reqwest::Client;
 
-pub async fn validate_config(http: &Client) -> Vec<Value> {
+pub async fn validate_config(http: &Client) -> Vec<StartupCheck> {
     let mut results = Vec::new();
     let ai_local_url = crate::ai_local::configured_url();
 
@@ -12,18 +12,26 @@ pub async fn validate_config(http: &Client) -> Vec<Value> {
     ];
     for (key, desc) in required {
         if std::env::var(key).unwrap_or_default().is_empty() {
-            results.push(json!({"level":"error","msg":format!("Missing {key} ({desc}) — set in .env or Config panel")}));
+            results.push(StartupCheck::error(format!(
+                "Missing {key} ({desc}) — set in .env or Config panel"
+            )));
         } else {
-            results.push(json!({"level":"ok","msg":format!("{key} is set")}));
+            results.push(StartupCheck::ok(format!("{key} is set")));
         }
     }
 
     if std::env::var("PROVIDER_API_KEY").unwrap_or_default().is_empty() {
         if ai_local_url.is_some() {
-            results.push(json!({"level":"ok","msg":"PATCHHIVE_AI_URL is set — OpenAI-compatible agents can use the local Codex/Copilot gateway"}));
-            results.push(json!({"level":"warn","msg":"No PROVIDER_API_KEY set — Anthropic, Gemini, and Groq agents still need per-agent or global keys"}));
+            results.push(StartupCheck::ok(
+                "PATCHHIVE_AI_URL is set — OpenAI-compatible agents can use the local Codex/Copilot gateway",
+            ));
+            results.push(StartupCheck::warn(
+                "No PROVIDER_API_KEY set — Anthropic, Gemini, and Groq agents still need per-agent or global keys",
+            ));
         } else {
-            results.push(json!({"level":"warn","msg":"No PROVIDER_API_KEY set — each agent must carry its own key"}));
+            results.push(StartupCheck::warn(
+                "No PROVIDER_API_KEY set — each agent must carry its own key",
+            ));
         }
     }
 
@@ -37,18 +45,25 @@ pub async fn validate_config(http: &Client) -> Vec<Value> {
             .send().await
         {
             Ok(r) if r.status() == 401 => {
-                results.push(json!({"level":"error","msg":"BOT_GITHUB_TOKEN is invalid or expired"}));
+                results.push(StartupCheck::error("BOT_GITHUB_TOKEN is invalid or expired"));
             }
             Ok(r) if r.status().is_success() => {
-                let data: Value = r.json().await.unwrap_or_default();
+                let data: serde_json::Value = r.json().await.unwrap_or_default();
                 let login = data["login"].as_str().unwrap_or("?");
-                results.push(json!({"level":"ok","msg":format!("GitHub token valid — authenticated as @{login}")}));
+                results.push(StartupCheck::ok(format!(
+                    "GitHub token valid — authenticated as @{login}"
+                )));
             }
             Ok(r) => {
-                results.push(json!({"level":"warn","msg":format!("GitHub returned {}", r.status())}));
+                results.push(StartupCheck::warn(format!(
+                    "GitHub returned {}",
+                    r.status()
+                )));
             }
             Err(e) => {
-                results.push(json!({"level":"warn","msg":format!("Could not validate GitHub token: {e}")}));
+                results.push(StartupCheck::warn(format!(
+                    "Could not validate GitHub token: {e}"
+                )));
             }
         }
     }
@@ -66,12 +81,20 @@ pub async fn validate_config(http: &Client) -> Vec<Value> {
                 })
                 .unwrap_or_default();
             if ready.is_empty() {
-                results.push(json!({"level":"warn","msg":"PatchHive AI gateway is reachable, but no local providers are authenticated yet"}));
+                results.push(StartupCheck::warn(
+                    "PatchHive AI gateway is reachable, but no local providers are authenticated yet",
+                ));
             } else {
-                results.push(json!({"level":"ok","msg":format!("PatchHive AI gateway reachable — ready providers: {}", ready.join(", "))}));
+                results.push(StartupCheck::ok(format!(
+                    "PatchHive AI gateway reachable — ready providers: {}",
+                    ready.join(", ")
+                )));
             }
         } else {
-            results.push(json!({"level":"warn","msg":format!("PATCHHIVE_AI_URL is set, but the local AI gateway is not ready: {}", status["error"].as_str().unwrap_or("unknown error"))}));
+            results.push(StartupCheck::warn(format!(
+                "PATCHHIVE_AI_URL is set, but the local AI gateway is not ready: {}",
+                status["error"].as_str().unwrap_or("unknown error")
+            )));
         }
     }
 

@@ -1072,6 +1072,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "patchhive-product-core"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "hex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "percent-encoding"
 version = "2.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1171,6 +1184,7 @@ dependencies = [
  "hex",
  "hmac",
  "once_cell",
+ "patchhive-product-core",
  "reqwest",
  "rusqlite",
  "serde",

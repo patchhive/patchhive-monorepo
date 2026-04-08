@@ -12,6 +12,8 @@
     "start:ai-local-rust": "cargo run --release --manifest-path packages/ai-local/rust-gateway/Cargo.toml",
     "dev:repo-reaper": "cd products/repo-reaper/frontend && npm run dev",
     "build:repo-reaper": "cd products/repo-reaper/frontend && npm run build",
+    "mirror:product-core": "./scripts/sync-crate-mirror.sh patchhive-product-core product-core main",
+    "mirror:product-core:reset": "./scripts/sync-crate-mirror.sh patchhive-product-core product-core main --reset-history",
     "mirror:product-shell": "./scripts/sync-package-mirror.sh product-shell product-shell main",
     "mirror:product-shell:reset": "./scripts/sync-package-mirror.sh product-shell product-shell main --reset-history",
     "mirror:ui": "./scripts/sync-package-mirror.sh ui patchhive-ui main",

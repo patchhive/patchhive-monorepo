@@ -14,6 +14,7 @@ use axum::{
     Json, Router,
 };
 use once_cell::sync::OnceCell;
+use patchhive_product_core::startup::{count_errors, log_checks, StartupCheck};
 use serde_json::json;
 use tower_http::cors::{Any, CorsLayer};
 use tracing::info;
@@ -21,7 +22,7 @@ use tracing::info;
 use crate::auth::{auth_enabled, generate_and_save_key, verify_token};
 use crate::state::AppState;
 
-static STARTUP_CHECKS: OnceCell<Vec<serde_json::Value>> = OnceCell::new();
+static STARTUP_CHECKS: OnceCell<Vec<StartupCheck>> = OnceCell::new();
 
 #[tokio::main]
 async fn main() {
@@ -38,13 +39,7 @@ async fn main() {
 
     let state = AppState::new();
     let checks = startup::validate_config(&state.http).await;
-    for check in &checks {
-        match check["level"].as_str() {
-            Some("error") => tracing::error!("Config: {}", check["msg"].as_str().unwrap_or("")),
-            Some("warn") => tracing::warn!("Config: {}", check["msg"].as_str().unwrap_or("")),
-            _ => info!("Config: {}", check["msg"].as_str().unwrap_or("")),
-        }
-    }
+    log_checks(&checks);
     let _ = STARTUP_CHECKS.set(checks);
 
     let cors = CorsLayer::new()
@@ -100,10 +95,7 @@ async fn gen_key() -> Result<Json<serde_json::Value>, StatusCode> {
 }
 
 async fn health(State(_state): State<AppState>) -> Json<serde_json::Value> {
-    let errors = STARTUP_CHECKS
-        .get()
-        .map(|checks| checks.iter().filter(|check| check["level"] == "error").count())
-        .unwrap_or(0);
+    let errors = STARTUP_CHECKS.get().map(|checks| count_errors(checks)).unwrap_or(0);
     let repo_lists = db::list_repo_lists().unwrap_or_default();
     let allowlist_count = repo_lists.iter().filter(|row| row.list_type == "allowlist").count();
     let denylist_count = repo_lists.iter().filter(|row| row.list_type == "denylist").count();
