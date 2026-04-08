@@ -64,6 +64,8 @@ patchhive/
     ai-local/               @patchhive/ai-local localhost AI gateway
   crates/
     patchhive-product-core/ shared Rust auth + startup helpers
+  templates/
+    product-starter/        shared starter for new PatchHive products
   products/
     repo-reaper/            built first, current active product
     signal-hive/
@@ -148,6 +150,19 @@ Rules:
 - Keep the crate focused on backend primitives, not product behavior.
 - Good candidates: auth middleware, startup/health helpers, generic ID or envelope helpers, generic named preset storage interfaces.
 - Bad candidates until proven generic: GitHub search logic, scoring heuristics, pipelines, route behavior, and product-specific SQLite schemas.
+
+## Product Starter Template
+
+Location: `templates/product-starter/`
+
+PatchHive should use the shared starter when creating new products instead of copying an existing product directory manually.
+
+Rules:
+- The starter repo root is documentation and wrapper context; the actual copied scaffold lives under `templates/product-starter/scaffold/`.
+- The starter should hold only the repeated shell: auth wiring, health/startup checks, Docker, CI, frontend shell, and placeholder overview route.
+- Product-specific logic should replace starter copy early. Do not let placeholder starter routes linger once a product loop is real.
+- Use `./scripts/new-product.sh <product-slug>` to create new products from the starter.
+- If a new product backend uses shared git crates, refresh its standalone `Cargo.lock` with `./scripts/refresh-product-lockfile.sh <product-slug>` before the first standalone export.
 
 Product accent keys live in `packages/ui/src/theme.js`:
 - `repo-reaper`

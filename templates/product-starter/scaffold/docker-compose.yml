@@ -1,0 +1,23 @@
+version: "3.8"
+
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "__BACKEND_PORT__:8000"
+    volumes:
+      - ./data:/data
+    environment:
+      - __ENV_PREFIX___DB_PATH=/data/__DB_FILE__
+      - RUST_LOG=info
+    env_file:
+      - .env
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "__FRONTEND_PORT__:80"
+    depends_on:
+      - backend
+    restart: unless-stopped

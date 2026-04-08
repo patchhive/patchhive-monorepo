@@ -8,10 +8,13 @@
   "scripts": {
     "dev:ai-local": "npm --workspace @patchhive/ai-local run dev",
     "dev:ai-local-rust": "cargo run --manifest-path packages/ai-local/rust-gateway/Cargo.toml",
+    "new:product": "./scripts/new-product.sh",
+    "refresh:product-lockfile": "./scripts/refresh-product-lockfile.sh",
     "start:ai-local": "npm --workspace @patchhive/ai-local run start",
     "start:ai-local-rust": "cargo run --release --manifest-path packages/ai-local/rust-gateway/Cargo.toml",
     "dev:repo-reaper": "cd products/repo-reaper/frontend && npm run dev",
     "build:repo-reaper": "cd products/repo-reaper/frontend && npm run build",
+    "export:product-starter": "./scripts/export-template.sh product-starter product-starter main",
     "mirror:product-core": "./scripts/sync-crate-mirror.sh patchhive-product-core product-core main",
     "mirror:product-core:reset": "./scripts/sync-crate-mirror.sh patchhive-product-core product-core main --reset-history",
     "mirror:product-shell": "./scripts/sync-package-mirror.sh product-shell product-shell main",

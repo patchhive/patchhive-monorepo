@@ -8,6 +8,8 @@ Shared packages can be exported the same way when you want them to have their ow
 
 Shared Rust crates can be exported the same way when multiple standalone product backends need to consume them.
 
+Shared templates can be exported the same way when you want starter scaffolds to have their own GitHub identity.
+
 ## Principles
 
 - Develop products in the monorepo first.
@@ -15,6 +17,7 @@ Shared Rust crates can be exported the same way when multiple standalone product
 - Treat standalone product repositories as exported mirrors, not the primary development home.
 - Treat standalone package repositories as exported mirrors, not the primary development home.
 - Treat standalone crate repositories as exported mirrors, not the primary development home.
+- Treat standalone template repositories as exported mirrors, not the primary development home.
 - Re-export products, packages, and crates from the monorepo instead of manually copying files around.
 
 ## Shared Packages
@@ -167,6 +170,28 @@ If you want to reset an existing crate mirror onto the clean sync history model,
 ./scripts/sync-crate-mirror.sh patchhive-product-core product-core main --reset-history
 ```
 
+## Template Export Script
+
+Use:
+
+```bash
+./scripts/export-template.sh <template-name>
+```
+
+Example:
+
+```bash
+./scripts/export-template.sh product-starter
+```
+
+If you want to push directly to a standalone template remote:
+
+```bash
+./scripts/export-template.sh product-starter product-starter main
+```
+
+That creates a subtree export branch from `templates/product-starter` and can push it directly into a standalone template repository.
+
 ## Recommended First Export
 
 1. Create an empty GitHub repository for the product.
@@ -193,13 +218,21 @@ If you want to reset an existing crate mirror onto the clean sync history model,
 5. Point exported product backends at the crate's standalone git dependency.
 6. After the initial export, prefer `sync-crate-mirror.sh` for future mirror updates.
 
+## Recommended Template Export
+
+1. Create an empty GitHub repository for the template.
+2. Add it as a remote in the monorepo.
+3. Run the template export script.
+4. Push the export branch to the template repo.
+5. Keep the canonical template history and docs rooted in the monorepo.
+
 ## Day-To-Day Workflow
 
 The intended long-term flow is:
 
 1. Build inside the monorepo.
 2. Commit and push monorepo changes first.
-3. Export a product, package, or crate when you want its standalone repository updated.
+3. Export a product, package, crate, or template when you want its standalone repository updated.
 4. Push the export branch into the corresponding standalone repository.
 
 This keeps one clean source of truth while still giving each product its own GitHub identity.

@@ -1,0 +1,21 @@
+{
+  "name": "__FRONTEND_PACKAGE_NAME__",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port __FRONTEND_PORT__",
+    "build": "vite build",
+    "preview": "vite preview --port __FRONTEND_PORT__"
+  },
+  "dependencies": {
+    "@patchhivehq/product-shell": "^0.1.0",
+    "@patchhivehq/ui": "^0.1.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.1",
+    "vite": "^5.4.2"
+  }
+}

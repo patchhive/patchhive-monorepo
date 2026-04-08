@@ -44,6 +44,9 @@ patchhive/
         cli.js              ← local entrypoint
   crates/
     patchhive-product-core/ shared Rust auth + startup primitives
+  templates/
+    product-starter/        monorepo-first starter for new PatchHive products
+      scaffold/            actual files copied into new products
   products/
     repo-reaper/            ← RepoReaper v0.1.0
       backend/              ← Rust (axum, rusqlite, reqwest, tokio)
@@ -110,6 +113,20 @@ It currently holds:
 Standalone Rust product repositories should consume the shared crate from its own repo, while the monorepo uses `.cargo/config.toml` to patch that git dependency back to the local crate path during development.
 
 Because that monorepo patch intentionally overrides a git dependency with a local path, strict `cargo check --locked` validation for product backends should live in the standalone repos. Inside the monorepo, use plain `cargo check` while iterating on shared Rust crate changes.
+
+## Product Starter Template
+
+PatchHive now includes a monorepo-first starter template at `templates/product-starter`.
+
+Use:
+
+```bash
+./scripts/new-product.sh <product-slug>
+```
+
+This creates a new product with the shared Rust backend shell, React frontend shell, Docker files, API-key auth flow, and standalone CI already wired in.
+
+The workflow is documented in [Product Starter Workflow](/home/coemedia/Documents/code/patchhive/docs/product-starter-workflow.md).
 
 ## Product Accent Colors
 
