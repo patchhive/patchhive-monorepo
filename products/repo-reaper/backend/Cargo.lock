@@ -1103,7 +1103,7 @@ dependencies = [
 [[package]]
 name = "patchhive-github-pr"
 version = "0.1.0"
-source = "git+https://github.com/patchhive/patchhive-github-pr.git#fba1b5ee21ddaf7f3e2c9118f285de5485184a30"
+source = "git+https://github.com/patchhive/patchhive-github-pr.git#df0d12f678b53a7756a39c8bb3931de85aa00180"
 dependencies = [
  "anyhow",
  "hex",
