@@ -56,7 +56,7 @@ Standalone Rust product repositories should:
 - avoid `path = "../../../crates/..."` dependencies that only work inside the monorepo
 - rely on the monorepo's `.cargo/config.toml` patching only for local PatchHive development
 
-For example, `patchhive-product-core` should be consumed from `https://github.com/patchhive/patchhive-product-core.git` in exported products, while the monorepo patches that dependency back to the local crate path for day-to-day work.
+For example, `patchhive-product-core` should be consumed from `https://github.com/patchhive/patchhive-product-core.git` in exported products, and `patchhive-github-pr` should be consumed from `https://github.com/patchhive/patchhive-github-pr.git`, while the monorepo patches those dependencies back to local crate paths for day-to-day work.
 
 ## Export Script
 
@@ -146,6 +146,12 @@ Example:
 ./scripts/export-crate.sh patchhive-product-core
 ```
 
+or:
+
+```bash
+./scripts/export-crate.sh patchhive-github-pr
+```
+
 If you want to push directly to a standalone crate remote:
 
 ```bash
@@ -162,6 +168,12 @@ After the first export, use:
 
 ```bash
 ./scripts/sync-crate-mirror.sh patchhive-product-core product-core main
+```
+
+or:
+
+```bash
+./scripts/sync-crate-mirror.sh patchhive-github-pr github-pr main
 ```
 
 If you want to reset an existing crate mirror onto the clean sync history model, use:

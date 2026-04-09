@@ -3,3 +3,6 @@
 # use the git dependency directly and keep strict --locked CI.
 [patch."https://github.com/patchhive/patchhive-product-core.git"]
 patchhive-product-core = { path = "crates/patchhive-product-core" }
+
+[patch."https://github.com/patchhive/patchhive-github-pr.git"]
+patchhive-github-pr = { path = "crates/patchhive-github-pr" }

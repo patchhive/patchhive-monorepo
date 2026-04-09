@@ -1,0 +1,23 @@
+[package]
+name = "patchhive-github-pr"
+version = "0.1.0"
+edition = "2021"
+description = "Shared Rust GitHub PR plumbing for PatchHive products."
+license = "MIT"
+repository = "https://github.com/patchhive/patchhive-github-pr.git"
+homepage = "https://github.com/patchhive/patchhive-github-pr"
+keywords = ["patchhive", "github", "pull-request", "rust"]
+
+[lib]
+name = "patchhive_github_pr"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow = "1"
+hex = "0.4"
+hmac = "0.12"
+http = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"

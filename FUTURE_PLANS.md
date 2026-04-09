@@ -27,8 +27,7 @@ Use this to capture later ideas so they do not get lost between product pushes.
 - Only extract more shared packages/crates when they are truly used in 2+ products.
 - Revisit a generic shared preset helper when a third product needs the same named-config pattern.
 - Revisit more `patchhive-product-core` helpers only after another backend repeats the same seam.
-- Extract a shared GitHub PR/diff/check integration package from TrustGate before wiring the next product into the same flow.
-- After that package exists, move webhook verification, PR diff fetch, check/status publishing, and maintained PR comments behind the shared seam.
+- Use `patchhive-github-pr` for the next product that needs PR diff fetch, webhook verification, check/status publishing, or maintained PR comments.
 - Consider LiteLLM later only as an optional upstream behind `patchhive-ai-local`, not as the product-facing contract.
 
 ## Product Direction

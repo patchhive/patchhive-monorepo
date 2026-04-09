@@ -44,6 +44,7 @@ patchhive/
         cli.js              ← local entrypoint
   crates/
     patchhive-product-core/ shared Rust auth + startup primitives
+    patchhive-github-pr/    shared Rust GitHub PR/diff/check plumbing
   templates/
     product-starter/        monorepo-first starter for new PatchHive products
       scaffold/            actual files copied into new products
@@ -113,6 +114,22 @@ It currently holds:
 Standalone Rust product repositories should consume the shared crate from its own repo, while the monorepo uses `.cargo/config.toml` to patch that git dependency back to the local crate path during development.
 
 Because that monorepo patch intentionally overrides a git dependency with a local path, strict `cargo check --locked` validation for product backends should live in the standalone repos. Inside the monorepo, use plain `cargo check` while iterating on shared Rust crate changes.
+
+## Shared GitHub PR Crate (`patchhive-github-pr`)
+
+`patchhive-github-pr` holds the repeated GitHub pull-request mechanics that would otherwise get reimplemented across PatchHive backend products.
+
+It currently covers:
+
+- standard PatchHive GitHub token/env resolution
+- signed GitHub webhook verification
+- pull request metadata fetch
+- unified diff fetch
+- GitHub check-run publishing
+- commit-status publishing
+- maintained PR comment upsert
+
+Products should keep policy, scoring, and report content local, but use `patchhive-github-pr` for the transport and GitHub API plumbing itself.
 
 ## Product Starter Template
 

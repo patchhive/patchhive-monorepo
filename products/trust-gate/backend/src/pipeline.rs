@@ -8,9 +8,8 @@ use axum::{
 };
 use chrono::Utc;
 use glob::Pattern;
-use hmac::{Hmac, Mac};
+use patchhive_github_pr::verify_github_webhook_signature;
 use serde_json::{json, Value};
-use sha2::Sha256;
 use uuid::Uuid;
 
 use crate::{
@@ -740,16 +739,17 @@ async fn run_github_pr_review(
     let rules = resolve_rules(&repo, rules)?;
     let github_context = GitHubReviewContext {
         repo: repo.clone(),
-        head_repo: pr["head"]["repo"]["full_name"]
-            .as_str()
-            .unwrap_or(&repo)
-            .to_string(),
+        head_repo: if pr.head_repo.trim().is_empty() {
+            repo.clone()
+        } else {
+            pr.head_repo.clone()
+        },
         pr_number,
-        pr_title: pr["title"].as_str().unwrap_or("").to_string(),
-        pr_url: pr["html_url"].as_str().unwrap_or("").to_string(),
-        head_sha: pr["head"]["sha"].as_str().unwrap_or("").to_string(),
-        head_ref: pr["head"]["ref"].as_str().unwrap_or("").to_string(),
-        base_ref: pr["base"]["ref"].as_str().unwrap_or("").to_string(),
+        pr_title: pr.title,
+        pr_url: pr.html_url,
+        head_sha: pr.head_sha,
+        head_ref: pr.head_ref,
+        base_ref: pr.base_ref,
         event,
         action,
         trigger,
@@ -796,24 +796,15 @@ fn verify_webhook_signature(headers: &HeaderMap, body: &[u8]) -> Result<(), ApiE
         ));
     };
 
-    let signature = headers
-        .get("X-Hub-Signature-256")
-        .and_then(|value| value.to_str().ok())
-        .ok_or_else(|| api_error(StatusCode::UNAUTHORIZED, "Missing X-Hub-Signature-256 header."))?;
-
-    let sig_hex = signature
-        .strip_prefix("sha256=")
-        .ok_or_else(|| api_error(StatusCode::UNAUTHORIZED, "Malformed GitHub webhook signature."))?;
-    let sig_bytes = hex::decode(sig_hex)
-        .map_err(|_| api_error(StatusCode::UNAUTHORIZED, "GitHub webhook signature was not valid hex."))?;
-
-    let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes())
-        .map_err(|_| api_error(StatusCode::INTERNAL_SERVER_ERROR, "Could not initialize webhook verifier."))?;
-    mac.update(body);
-    mac.verify_slice(&sig_bytes)
-        .map_err(|_| api_error(StatusCode::UNAUTHORIZED, "GitHub webhook signature did not match."))?;
-
-    Ok(())
+    verify_github_webhook_signature(headers, body, &secret).map_err(|err| {
+        let text = err.to_string();
+        let status = if text.contains("Could not initialize") {
+            StatusCode::INTERNAL_SERVER_ERROR
+        } else {
+            StatusCode::UNAUTHORIZED
+        };
+        api_error(status, text)
+    })
 }
 
 pub async fn rule_packs() -> Json<serde_json::Value> {

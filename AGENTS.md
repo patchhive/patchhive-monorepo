@@ -64,6 +64,7 @@ patchhive/
     ai-local/               @patchhive/ai-local localhost AI gateway
   crates/
     patchhive-product-core/ shared Rust auth + startup helpers
+    patchhive-github-pr/    shared Rust GitHub PR/diff/check helpers
   templates/
     product-starter/        shared starter for new PatchHive products
   products/
@@ -150,6 +151,17 @@ Rules:
 - Keep the crate focused on backend primitives, not product behavior.
 - Good candidates: auth middleware, startup/health helpers, generic ID or envelope helpers, generic named preset storage interfaces.
 - Bad candidates until proven generic: GitHub search logic, scoring heuristics, pipelines, route behavior, and product-specific SQLite schemas.
+
+## Shared GitHub PR Crate
+
+Location: `crates/patchhive-github-pr/`
+
+Every product backend that needs GitHub PR diff fetch, signed webhook verification, check/status publishing, or maintained PR comments should use `patchhive-github-pr` instead of carrying a private copy.
+
+Rules:
+- Keep the crate focused on GitHub PR transport and lifecycle plumbing.
+- Good candidates: token/env helpers, webhook signature verification, PR metadata fetch, diff fetch, check/status publishing, managed PR comments.
+- Keep product-owned report text, policy decisions, scoring, and escalation logic outside the crate.
 
 ## Product Starter Template
 
