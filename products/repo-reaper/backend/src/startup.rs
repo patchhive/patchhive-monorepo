@@ -1,4 +1,5 @@
 use crate::db::*;
+use patchhive_github_pr::github_token_from_env;
 use patchhive_product_core::startup::StartupCheck;
 use reqwest::Client;
 
@@ -36,7 +37,7 @@ pub async fn validate_config(http: &Client) -> Vec<StartupCheck> {
     }
 
     // Validate GitHub token
-    let token = std::env::var("BOT_GITHUB_TOKEN").unwrap_or_default();
+    let token = github_token_from_env().unwrap_or_default();
     if !token.is_empty() {
         match http.get("https://api.github.com/user")
             .header("Authorization", format!("Bearer {token}"))

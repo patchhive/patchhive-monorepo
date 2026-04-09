@@ -6,8 +6,7 @@ use axum::{
     routing::{delete, get, post, patch},
     Router,
 };
-use hmac::{Hmac, Mac};
-use sha2::Sha256;
+use patchhive_github_pr::{env_value, github_token_from_env, verify_github_webhook_signature};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -79,19 +78,20 @@ async fn toggle_schedule(State(_): State<AppState>, axum::extract::Path(id): axu
 // ── Webhook handler ────────────────────────────────────────────────────────────
 
 async fn github_webhook(State(state): State<AppState>, req: Request<Body>) -> Result<Json<Value>, StatusCode> {
-    let event = req.headers().get("X-GitHub-Event").and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
-    let signature = req.headers().get("X-Hub-Signature-256").and_then(|v| v.to_str().ok()).map(|s| s.to_string());
+    let headers = req.headers().clone();
+    let event = headers.get("X-GitHub-Event").and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
     let body_bytes = axum::body::to_bytes(req.into_body(), 1024 * 1024).await.unwrap_or_default();
 
     // Verify signature
-    let secret = std::env::var("WEBHOOK_SECRET").unwrap_or_default();
+    let secret = env_value(&["WEBHOOK_SECRET"]).unwrap_or_default();
     if !secret.is_empty() {
-        let sig = signature.ok_or(StatusCode::UNAUTHORIZED)?;
-        let sig_hex = sig.strip_prefix("sha256=").ok_or(StatusCode::UNAUTHORIZED)?;
-        let sig_bytes = hex::decode(sig_hex).map_err(|_| StatusCode::UNAUTHORIZED)?;
-        let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes()).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-        mac.update(&body_bytes);
-        mac.verify_slice(&sig_bytes).map_err(|_| StatusCode::UNAUTHORIZED)?;
+        verify_github_webhook_signature(&headers, &body_bytes, &secret).map_err(|err| {
+            if err.to_string().contains("Could not initialize") {
+                StatusCode::INTERNAL_SERVER_ERROR
+            } else {
+                StatusCode::UNAUTHORIZED
+            }
+        })?;
     }
 
     let payload: Value = serde_json::from_slice(&body_bytes).unwrap_or_default();
@@ -193,7 +193,11 @@ async fn webhook_pr_comment(state: AppState, repo: &str, issue: Value, comment: 
     let agents_snap = state.agents.read().await.clone();
     let Some(reaper) = agents_snap.values().find(|a| a.role == "reaper").or_else(|| agents_snap.values().next()).cloned() else { return };
 
-    let bot_token = reaper.bot_token.as_deref().map(|s| s.to_string()).unwrap_or_else(|| std::env::var("BOT_GITHUB_TOKEN").unwrap_or_default());
+    let bot_token = reaper.bot_token.as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .map(|s| s.to_string())
+        .or_else(github_token_from_env)
+        .unwrap_or_default();
     let bot_user  = reaper.bot_user.as_deref().map(|s| s.to_string()).unwrap_or_else(|| std::env::var("BOT_GITHUB_USER").unwrap_or_default());
     let pr_number = issue["number"].as_i64().unwrap_or(0);
     let branch = format!("reaper/followup-{pr_number}");

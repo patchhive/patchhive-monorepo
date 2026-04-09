@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Result};
+use patchhive_github_pr::github_token_from_env;
 use std::path::Path;
 use std::process::Output;
 use tokio::process::Command;
@@ -24,7 +25,11 @@ async fn runcmd_ok(args: &[&str], cwd: Option<&Path>) -> Result<String> {
 
 pub async fn git_clone(fork_url: &str, dest: &Path, bot_user: Option<&str>, bot_token: Option<&str>) -> Result<()> {
     let user  = bot_user.map(|s| s.to_string()).unwrap_or_else(|| env_str("BOT_GITHUB_USER"));
-    let token = bot_token.map(|s| s.to_string()).unwrap_or_else(|| env_str("BOT_GITHUB_TOKEN"));
+    let token = bot_token
+        .map(|s| s.to_string())
+        .filter(|value| !value.trim().is_empty())
+        .or_else(github_token_from_env)
+        .unwrap_or_default();
     let email = env_str("BOT_GITHUB_EMAIL");
     let auth_url = fork_url.replace("https://", &format!("https://{user}:{token}@"));
 

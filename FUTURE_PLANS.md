@@ -28,6 +28,7 @@ Use this to capture later ideas so they do not get lost between product pushes.
 - Revisit a generic shared preset helper when a third product needs the same named-config pattern.
 - Revisit more `patchhive-product-core` helpers only after another backend repeats the same seam.
 - Use `patchhive-github-pr` for the next product that needs PR diff fetch, webhook verification, check/status publishing, or maintained PR comments.
+- If a third product repeats GitHub repo or issue scanning helpers, extract a separate shared GitHub data client instead of expanding `patchhive-github-pr` beyond PR plumbing.
 - Consider LiteLLM later only as an optional upstream behind `patchhive-ai-local`, not as the product-facing contract.
 
 ## Product Direction

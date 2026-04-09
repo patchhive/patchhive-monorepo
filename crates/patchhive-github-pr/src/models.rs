@@ -6,6 +6,12 @@ pub struct GitHubPullRequest {
     pub repo: String,
     pub number: i64,
     #[serde(default)]
+    pub state: String,
+    #[serde(default)]
+    pub merged: bool,
+    #[serde(default)]
+    pub draft: bool,
+    #[serde(default)]
     pub title: String,
     #[serde(default)]
     pub html_url: String,

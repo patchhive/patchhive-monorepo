@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Result};
+use patchhive_github_pr::{github_token_from_env, GitHubPrClient};
 use reqwest::Client;
 use serde_json::Value;
 use std::time::Duration;
@@ -6,8 +7,19 @@ use tokio::time::sleep;
 
 const GH_API: &str = "https://api.github.com";
 
-fn bot_token() -> String { std::env::var("BOT_GITHUB_TOKEN").unwrap_or_default() }
+fn bot_token() -> String { github_token_from_env().unwrap_or_default() }
 fn bot_user()  -> String { std::env::var("BOT_GITHUB_USER").unwrap_or_default() }
+
+fn pr_client(http: &Client, token: Option<&str>) -> GitHubPrClient {
+    GitHubPrClient::new(
+        http.clone(),
+        token
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .or_else(github_token_from_env),
+        "repo-reaper/0.1",
+    )
+}
 
 fn gh_headers(token: Option<&str>) -> reqwest::header::HeaderMap {
     let mut h = reqwest::header::HeaderMap::new();
@@ -118,7 +130,7 @@ pub async fn gh_check_rate_limit(http: &Client, token: Option<&str>) -> Value {
 }
 
 pub async fn gh_poll_pr(http: &Client, repo: &str, pr_number: i64, token: Option<&str>) -> Value {
-    let Ok(pr) = gh_get(http, &format!("/repos/{repo}/pulls/{pr_number}"), &[], token).await else {
+    let Ok(pr) = pr_client(http, token).fetch_pull_request(repo, pr_number).await else {
         return serde_json::json!({"state":"unknown","merged":false});
     };
     let reviews = gh_get(http, &format!("/repos/{repo}/pulls/{pr_number}/reviews"), &[], token).await.unwrap_or_default();
@@ -132,8 +144,8 @@ pub async fn gh_poll_pr(http: &Client, repo: &str, pr_number: i64, token: Option
         .unwrap_or("")
         .to_string();
     serde_json::json!({
-        "state": pr["state"], "merged": pr["merged"], "draft": pr["draft"],
-        "review_state": review_state, "title": pr["title"], "url": pr["html_url"],
+        "state": pr.state, "merged": pr.merged, "draft": pr.draft,
+        "review_state": review_state, "title": pr.title, "url": pr.html_url,
     })
 }
 
@@ -155,13 +167,12 @@ pub async fn gh_default_branch(http: &Client, repo: &str, token: Option<&str>) -
 }
 
 pub async fn gh_pr_base_branch(http: &Client, repo: &str, pr_number: i64, token: Option<&str>) -> Option<String> {
-    gh_get(http, &format!("/repos/{repo}/pulls/{pr_number}"), &[], token)
-        .await
-        .ok()?
-        .get("base")?
-        .get("ref")?
-        .as_str()
-        .map(|s| s.to_string())
+    let pr = pr_client(http, token).fetch_pull_request(repo, pr_number).await.ok()?;
+    if pr.base_ref.trim().is_empty() {
+        None
+    } else {
+        Some(pr.base_ref)
+    }
 }
 
 pub async fn search_repos(http: &Client, query: &str, max_repos: usize) -> Result<Vec<Value>> {

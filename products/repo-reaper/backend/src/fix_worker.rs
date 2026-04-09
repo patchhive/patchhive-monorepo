@@ -5,6 +5,7 @@ use tokio::sync::mpsc::Sender;
 use std::convert::Infallible;
 use axum::response::sse::Event;
 use chrono::Utc;
+use patchhive_github_pr::github_token_from_env;
 use uuid::Uuid;
 
 use crate::agents::*;
@@ -90,7 +91,12 @@ pub async fn fix_one(
     let t_start    = std::time::Instant::now();
     let mut cost   = 0.0f64;
 
-    let bot_token = reaper.bot_token.clone().unwrap_or_else(|| cfg("BOT_GITHUB_TOKEN"));
+    let bot_token = reaper
+        .bot_token
+        .clone()
+        .filter(|value| !value.trim().is_empty())
+        .or_else(github_token_from_env)
+        .unwrap_or_default();
     let bot_user  = reaper.bot_user.clone().unwrap_or_else(|| cfg("BOT_GITHUB_USER"));
 
     let send = |ev: Result<Event, Infallible>| {

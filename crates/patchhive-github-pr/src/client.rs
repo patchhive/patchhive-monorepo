@@ -166,6 +166,9 @@ impl GitHubPrClient {
         Ok(GitHubPullRequest {
             repo: repo.to_string(),
             number: pr_number,
+            state: value["state"].as_str().unwrap_or("").to_string(),
+            merged: value["merged"].as_bool().unwrap_or(false),
+            draft: value["draft"].as_bool().unwrap_or(false),
             title: value["title"].as_str().unwrap_or("").to_string(),
             html_url: value["html_url"].as_str().unwrap_or("").to_string(),
             head_repo: value["head"]["repo"]["full_name"]
