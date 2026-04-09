@@ -63,6 +63,7 @@ function fromRules(ruleSet) {
 export default function RulesPanel({ apiKey, initialRepo }) {
   const [form, setForm] = useState(DEFAULT_RULE_FORM);
   const [rules, setRules] = useState([]);
+  const [packs, setPacks] = useState([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const fetch_ = createApiFetcher(apiKey);
@@ -75,8 +76,15 @@ export default function RulesPanel({ apiKey, initialRepo }) {
       .then((data) => setRules(data.rules || []))
       .catch(() => setRules([]));
 
+  const refreshPacks = () =>
+    fetch_(`${API}/rule-packs`)
+      .then((res) => res.json())
+      .then((data) => setPacks(data.packs || []))
+      .catch(() => setPacks([]));
+
   useEffect(() => {
     refresh();
+    refreshPacks();
   }, [apiKey]);
 
   useEffect(() => {
@@ -158,6 +166,54 @@ export default function RulesPanel({ apiKey, initialRepo }) {
           <div style={S.label}>Repo</div>
           <Input value={form.repo} onChange={(value) => set("repo", value)} placeholder="owner/repo" />
         </div>
+
+        {packs.length > 0 && (
+          <div style={{ display: "grid", gap: 10 }}>
+            <div style={{ fontSize: 14, fontWeight: 700 }}>Rule Packs</div>
+            <div style={{ color: "var(--text-dim)", fontSize: 12, lineHeight: 1.5 }}>
+              Start with a policy preset, then tweak it for the repo you actually run. These are scaffolds,
+              not locked templates.
+            </div>
+            <div style={{ display: "grid", gap: 10 }}>
+              {packs.map((pack) => (
+                <div
+                  key={pack.id}
+                  style={{
+                    border: "1px solid var(--border)",
+                    borderRadius: 8,
+                    padding: 12,
+                    display: "grid",
+                    gap: 8,
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+                    <div style={{ fontWeight: 700 }}>{pack.label}</div>
+                    <Tag color="var(--blue)">{pack.id}</Tag>
+                  </div>
+                  <div style={{ color: "var(--text-dim)", fontSize: 11, lineHeight: 1.5 }}>{pack.description}</div>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <Tag color="var(--accent)">{pack.rules.blocked_paths.length} blocked</Tag>
+                    <Tag color="var(--gold)">{pack.rules.warn_paths.length} warn</Tag>
+                    <Tag color="var(--blue)">{pack.rules.max_files} max files</Tag>
+                  </div>
+                  <div>
+                    <Btn
+                      onClick={() =>
+                        setForm({
+                          ...fromRules(pack.rules),
+                          repo: form.repo,
+                        })
+                      }
+                      color="var(--blue)"
+                    >
+                      Apply Pack
+                    </Btn>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <div style={S.field}>

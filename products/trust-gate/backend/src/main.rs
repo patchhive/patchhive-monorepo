@@ -1,5 +1,6 @@
 mod auth;
 mod db;
+mod github;
 mod models;
 mod pipeline;
 mod startup;
@@ -55,7 +56,10 @@ async fn main() {
         .route("/startup/checks", get(startup_checks_route))
         .route("/rules", get(list_rules).post(save_rules))
         .route("/rules/*repo", delete(delete_rules))
+        .route("/rule-packs", get(pipeline::rule_packs))
         .route("/review", post(pipeline::review))
+        .route("/review/github/pr", post(pipeline::review_github_pr))
+        .route("/webhooks/github", post(pipeline::github_webhook))
         .route("/history", get(pipeline::history))
         .route("/history/:id", get(pipeline::history_detail))
         .layer(middleware::from_fn(auth::auth_middleware))
@@ -107,6 +111,9 @@ async fn health() -> Json<serde_json::Value> {
         "config_errors": errors,
         "db_path": db::db_path(),
         "mode": "review-first",
+        "github_token_ready": crate::github::github_token().is_some(),
+        "github_webhook_ready": crate::github::webhook_secret().is_some(),
+        "github_public_url": std::env::var("TRUSTGATE_PUBLIC_URL").ok().filter(|value| !value.trim().is_empty()),
     }))
 }
 

@@ -23,8 +23,10 @@ const TABS = [
 
 const DEFAULT_FORM = {
   repo: "",
+  pr_number: "",
   ai_source: "Codex",
   diff: "",
+  publish_status: true,
 };
 
 function recommendationColor(recommendation) {
@@ -75,6 +77,34 @@ export default function App() {
     }
   }, [fetch_, form]);
 
+  const runGitHubReview = useCallback(async () => {
+    setRunning(true);
+    setError("");
+    try {
+      const res = await fetch_(`${API}/review/github/pr`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          repo: form.repo,
+          pr_number: Number(form.pr_number),
+          ai_source: form.ai_source,
+          publish_status: Boolean(form.publish_status),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "TrustGate could not review that pull request.");
+      }
+      setReview(data);
+      setForm((prev) => ({ ...prev, diff: data.diff || prev.diff }));
+      setTab("review");
+    } catch (err) {
+      setError(err.message || "TrustGate could not review that pull request.");
+    } finally {
+      setRunning(false);
+    }
+  }, [fetch_, form]);
+
   const loadHistoryReview = useCallback(
     async (id) => {
       setRunning(true);
@@ -88,8 +118,10 @@ export default function App() {
         setReview(data);
         setForm({
           repo: data.repo || "",
+          pr_number: data.github?.pr_number ? String(data.github.pr_number) : "",
           ai_source: data.ai_source || "unknown",
           diff: data.diff || "",
+          publish_status: true,
         });
         setTab("review");
       } catch (err) {
@@ -179,6 +211,7 @@ export default function App() {
             setForm={setForm}
             running={running}
             onRun={runReview}
+            onRunGitHub={runGitHubReview}
             review={review}
             setReview={setReview}
           />

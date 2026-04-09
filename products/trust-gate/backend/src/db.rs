@@ -158,26 +158,62 @@ pub fn list_reviews() -> Result<Vec<ReviewHistoryItem>> {
     let conn = connect()?;
     let mut stmt = conn.prepare(
         r#"
-        SELECT id, created_at, repo, ai_source, recommendation, risk_score, files_changed, summary
+        SELECT id, created_at, repo, ai_source, recommendation, risk_score, files_changed, summary, review_json
         FROM reviews
         ORDER BY created_at DESC
         "#,
     )?;
 
     let rows = stmt.query_map([], |row| {
-        Ok(ReviewHistoryItem {
-            id: row.get(0)?,
-            created_at: row.get(1)?,
-            repo: row.get(2)?,
-            ai_source: row.get(3)?,
-            recommendation: row.get(4)?,
-            risk_score: row.get::<_, i64>(5)? as u32,
-            files_changed: row.get::<_, i64>(6)? as u32,
-            summary: row.get(7)?,
-        })
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, String>(3)?,
+            row.get::<_, String>(4)?,
+            row.get::<_, i64>(5)? as u32,
+            row.get::<_, i64>(6)? as u32,
+            row.get::<_, String>(7)?,
+            row.get::<_, String>(8)?,
+        ))
     })?;
 
     rows.into_iter()
+        .map(|row| {
+            let (
+                id,
+                created_at,
+                repo,
+                ai_source,
+                recommendation,
+                risk_score,
+                files_changed,
+                summary,
+                review_json,
+            ) = row?;
+
+            let parsed = serde_json::from_str::<ReviewResult>(&review_json).ok();
+            let source_kind = parsed
+                .as_ref()
+                .map(|review| review.source_kind.clone())
+                .unwrap_or_else(|| "manual".into());
+            let pr_number = parsed
+                .as_ref()
+                .and_then(|review| review.github.as_ref().map(|github| github.pr_number));
+
+            Ok::<ReviewHistoryItem, rusqlite::Error>(ReviewHistoryItem {
+                id,
+                created_at,
+                repo,
+                ai_source,
+                recommendation,
+                risk_score,
+                files_changed,
+                summary,
+                source_kind,
+                pr_number,
+            })
+        })
         .collect::<std::result::Result<Vec<_>, _>>()
         .context("failed to list TrustGate reviews")
 }

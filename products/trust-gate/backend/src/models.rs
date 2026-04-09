@@ -78,6 +78,14 @@ fn default_max_deletions() -> u32 {
     250
 }
 
+fn default_review_source_kind() -> String {
+    "manual".into()
+}
+
+fn default_publish_status() -> bool {
+    true
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RepoRuleSet {
     pub repo: String,
@@ -130,6 +138,14 @@ pub struct SavedRuleSet {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RulePack {
+    pub id: String,
+    pub label: String,
+    pub description: String,
+    pub rules: RepoRuleSet,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReviewRequest {
     pub repo: String,
     pub diff: String,
@@ -137,6 +153,18 @@ pub struct ReviewRequest {
     pub ai_source: String,
     #[serde(default)]
     pub rules: Option<RepoRuleSet>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GitHubPrReviewRequest {
+    pub repo: String,
+    pub pr_number: i64,
+    #[serde(default)]
+    pub ai_source: String,
+    #[serde(default)]
+    pub rules: Option<RepoRuleSet>,
+    #[serde(default = "default_publish_status")]
+    pub publish_status: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -148,6 +176,10 @@ pub struct ReviewMetricSummary {
     pub risky_files: u32,
     pub blocked_findings: u32,
     pub warning_findings: u32,
+    #[serde(default)]
+    pub generated_files: u32,
+    #[serde(default)]
+    pub source_files_changed: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -158,6 +190,10 @@ pub struct FileAssessment {
     pub deletions: u32,
     pub matched_rules: Vec<String>,
     pub summary: String,
+    #[serde(default)]
+    pub generated: bool,
+    #[serde(default)]
+    pub path_policy: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -167,6 +203,46 @@ pub struct ReviewFinding {
     pub severity: String,
     pub detail: String,
     pub evidence: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GitHubReviewContext {
+    pub repo: String,
+    #[serde(default)]
+    pub head_repo: String,
+    pub pr_number: i64,
+    #[serde(default)]
+    pub pr_title: String,
+    #[serde(default)]
+    pub pr_url: String,
+    #[serde(default)]
+    pub head_sha: String,
+    #[serde(default)]
+    pub head_ref: String,
+    #[serde(default)]
+    pub base_ref: String,
+    #[serde(default)]
+    pub event: String,
+    #[serde(default)]
+    pub action: String,
+    #[serde(default)]
+    pub trigger: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct GitHubReportOutcome {
+    #[serde(default)]
+    pub attempted: bool,
+    #[serde(default)]
+    pub delivered: bool,
+    #[serde(default)]
+    pub method: String,
+    #[serde(default)]
+    pub state: String,
+    #[serde(default)]
+    pub message: String,
+    #[serde(default)]
+    pub details: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -183,6 +259,12 @@ pub struct ReviewResult {
     pub findings: Vec<ReviewFinding>,
     pub rules: RepoRuleSet,
     pub diff: String,
+    #[serde(default = "default_review_source_kind")]
+    pub source_kind: String,
+    #[serde(default)]
+    pub github: Option<GitHubReviewContext>,
+    #[serde(default)]
+    pub github_report: Option<GitHubReportOutcome>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -195,4 +277,8 @@ pub struct ReviewHistoryItem {
     pub risk_score: u32,
     pub files_changed: u32,
     pub summary: String,
+    #[serde(default = "default_review_source_kind")]
+    pub source_kind: String,
+    #[serde(default)]
+    pub pr_number: Option<i64>,
 }

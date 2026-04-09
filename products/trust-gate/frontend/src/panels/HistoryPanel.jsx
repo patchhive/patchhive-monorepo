@@ -60,6 +60,8 @@ export default function HistoryPanel({ apiKey, onLoadReview }) {
             <div style={{ color: "var(--text-dim)", fontSize: 12, lineHeight: 1.5 }}>{review.summary}</div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
               <Tag color="var(--blue)">{review.files_changed} files</Tag>
+              <Tag color="var(--blue)">{(review.source_kind || "manual").replaceAll("_", " ")}</Tag>
+              {review.pr_number && <Tag color="var(--gold)">PR #{review.pr_number}</Tag>}
               <Btn
                 onClick={async () => {
                   setBusyId(review.id);

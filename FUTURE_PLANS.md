@@ -16,6 +16,7 @@ Use this to capture later ideas so they do not get lost between product pushes.
 - Add print/share output for TrustGate decisions once the review format settles.
 - Add reusable policy packs for common repo types like web apps, libraries, infra repos, and agent-generated patch repos.
 - Add incident-informed rule tuning later so painful failures can become future guardrails.
+- Make TrustGate the gate before RepoReaper opens or advances autonomous PRs.
 
 ## RepoReaper
 
@@ -27,6 +28,7 @@ Use this to capture later ideas so they do not get lost between product pushes.
 - Only extract more shared packages/crates when they are truly used in 2+ products.
 - Revisit a generic shared preset helper when a third product needs the same named-config pattern.
 - Revisit more `patchhive-product-core` helpers only after another backend repeats the same seam.
+- Revisit a shared GitHub PR/diff/check integration package once a second product needs the same webhook, diff-fetch, and status-report plumbing.
 - Consider LiteLLM later only as an optional upstream behind `patchhive-ai-local`, not as the product-facing contract.
 - Build a real PatchHive product starter/template flow; three products in, the shell scaffolding is clearly repeating.
 

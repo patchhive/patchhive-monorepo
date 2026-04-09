@@ -62,9 +62,23 @@ export default function ChecksPanel({ apiKey }) {
             <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{health.mode}</div>
           </div>
           <div>
+            <div style={S.label}>GitHub Token</div>
+            <div style={{ fontSize: 18, fontWeight: 700 }}>{health.github_token_ready ? "ready" : "missing"}</div>
+          </div>
+          <div>
+            <div style={S.label}>Webhook Secret</div>
+            <div style={{ fontSize: 18, fontWeight: 700 }}>{health.github_webhook_ready ? "ready" : "missing"}</div>
+          </div>
+          <div>
             <div style={S.label}>DB Path</div>
             <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{health.db_path}</div>
           </div>
+          {health.github_public_url && (
+            <div>
+              <div style={S.label}>Public URL</div>
+              <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{health.github_public_url}</div>
+            </div>
+          )}
         </div>
       )}
 
