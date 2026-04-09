@@ -58,6 +58,9 @@ patchhive/
     trust-gate/             ← TrustGate v0.1.0
       backend/              ← Rust diff review and policy engine
       frontend/             ← React rule editor and review dashboard
+    repo-memory/            ← RepoMemory v0.1.0
+      backend/              ← Rust durable memory ingestion API
+      frontend/             ← React memory explorer and prompt-pack UI
 ```
 
 ## Adding a New Product
@@ -195,6 +198,21 @@ docker-compose up --build
 ```bash
 cd products/trust-gate
 cp .env.example .env
+
+# Dev
+cd backend && cargo run
+cd ../frontend && npm install && npm run dev
+
+# Docker
+docker-compose up --build
+```
+
+## Quick Start — RepoMemory
+
+```bash
+cd products/repo-memory
+cp .env.example .env
+# fill in BOT_GITHUB_TOKEN
 
 # Dev
 cd backend && cargo run

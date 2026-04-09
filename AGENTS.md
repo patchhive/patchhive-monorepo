@@ -334,6 +334,14 @@ Important env vars:
 - TrustGate should complement other coding agents instead of competing with them. It should plug into the rest of PatchHive as a safety gate.
 - Early future integrations worth keeping in mind: GitHub status checks, PR diff ingestion, shared policy packs, and incident-informed rule tuning.
 
+## RepoMemory Notes
+
+- RepoMemory should stay context-first and durable-memory-first.
+- Its job is to turn merged PRs, reviewer feedback, recurring bug signals, and hotspot history into reusable repo-specific knowledge.
+- The MVP should work without live AI providers by extracting useful memory heuristics directly from GitHub data.
+- Prompt-pack generation matters early because it is the bridge between remembered repo context and later agent behavior.
+- RepoMemory should make both TrustGate and RepoReaper smarter, not compete with them as a separate actor.
+
 ## Key Decisions
 
 - Rust backend and React frontend are deliberate and should stay consistent across products.

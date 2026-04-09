@@ -1,0 +1,787 @@
+use std::collections::{HashMap, HashSet};
+
+use anyhow::Result;
+use axum::{
+    extract::{Path, Query, State},
+    http::StatusCode,
+    Json,
+};
+use chrono::Utc;
+use serde_json::json;
+use uuid::Uuid;
+
+use crate::{
+    auth::{auth_enabled, generate_and_save_key, verify_token},
+    db,
+    github,
+    models::{
+        GitHubIssue, GitHubPullFile, GitHubPullRequest, GitHubReview, GitHubReviewComment,
+        HistoryItem, IngestParams, IngestRecord, IngestSummary, KnownRepo, MemoryEntry,
+        MemoryEvidence, OverviewPayload,
+    },
+    state::AppState,
+    STARTUP_CHECKS,
+};
+
+type JsonError = (StatusCode, Json<serde_json::Value>);
+type JsonResult<T> = Result<Json<T>, JsonError>;
+
+#[derive(serde::Deserialize)]
+pub struct LoginBody {
+    api_key: String,
+}
+
+#[derive(serde::Deserialize)]
+pub struct MemoryQuery {
+    repo: Option<String>,
+    kind: Option<String>,
+    search: Option<String>,
+    run_id: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+pub struct HistoryQuery {
+    repo: Option<String>,
+}
+
+#[derive(Clone)]
+struct PullBundle {
+    pr: GitHubPullRequest,
+    reviews: Vec<GitHubReview>,
+    comments: Vec<GitHubReviewComment>,
+    files: Vec<GitHubPullFile>,
+}
+
+#[derive(Default)]
+struct SignalBucket {
+    frequency: u32,
+    evidence: Vec<MemoryEvidence>,
+}
+
+pub async fn auth_status() -> Json<serde_json::Value> {
+    Json(json!({"auth_enabled": auth_enabled()}))
+}
+
+pub async fn login(Json(body): Json<LoginBody>) -> Result<Json<serde_json::Value>, StatusCode> {
+    if !verify_token(&body.api_key) {
+        return Err(StatusCode::UNAUTHORIZED);
+    }
+    Ok(Json(json!({"ok": true, "auth_enabled": true})))
+}
+
+pub async fn gen_key() -> Result<Json<serde_json::Value>, StatusCode> {
+    if auth_enabled() {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    let key = generate_and_save_key();
+    Ok(Json(json!({"api_key": key, "message": "Store this — it won't be shown again"})))
+}
+
+pub async fn health(State(_state): State<AppState>) -> Json<serde_json::Value> {
+    let errors = STARTUP_CHECKS
+        .get()
+        .map(|checks| patchhive_product_core::startup::count_errors(checks))
+        .unwrap_or(0);
+
+    Json(json!({
+        "status": if errors > 0 { "degraded" } else { "ok" },
+        "version": "0.1.0",
+        "product": "RepoMemory by PatchHive",
+        "auth_enabled": auth_enabled(),
+        "config_errors": errors,
+        "db_path": db::db_path(),
+        "counts": db::overview_counts(),
+        "github_ready": std::env::var("BOT_GITHUB_TOKEN").is_ok() || std::env::var("GITHUB_TOKEN").is_ok(),
+        "memory_loop": "merged-prs + review feedback + closed issues",
+    }))
+}
+
+pub async fn startup_checks_route() -> Json<serde_json::Value> {
+    Json(json!({"checks": STARTUP_CHECKS.get().cloned().unwrap_or_default()}))
+}
+
+pub async fn overview() -> JsonResult<OverviewPayload> {
+    let payload = OverviewPayload {
+        product: "RepoMemory by PatchHive".into(),
+        tagline: "Turn merged history and review pain into durable repo memory.".into(),
+        counts: db::overview_counts(),
+        repos: db::list_known_repos().map_err(internal_error)?,
+        featured_memories: db::featured_memories(8).map_err(internal_error)?,
+    };
+
+    Ok(Json(payload))
+}
+
+pub async fn known_repos() -> JsonResult<serde_json::Value> {
+    let repos: Vec<KnownRepo> = db::list_known_repos().map_err(internal_error)?;
+    Ok(Json(json!({ "repos": repos })))
+}
+
+pub async fn memories(Query(query): Query<MemoryQuery>) -> JsonResult<serde_json::Value> {
+    let memories = db::list_memories(
+        query.repo.as_deref(),
+        query.kind.as_deref(),
+        query.search.as_deref(),
+        query.run_id.as_deref(),
+    )
+    .map_err(internal_error)?;
+
+    Ok(Json(json!({ "memories": memories })))
+}
+
+pub async fn history(Query(query): Query<HistoryQuery>) -> JsonResult<serde_json::Value> {
+    let items: Vec<HistoryItem> = db::list_history(query.repo.as_deref()).map_err(internal_error)?;
+    Ok(Json(json!({ "history": items })))
+}
+
+pub async fn history_detail(Path(id): Path<String>) -> JsonResult<IngestRecord> {
+    match db::get_history(&id).map_err(internal_error)? {
+        Some(run) => Ok(Json(run)),
+        None => Err(not_found("RepoMemory run not found.")),
+    }
+}
+
+pub async fn prompt_pack(Path(id): Path<String>) -> JsonResult<serde_json::Value> {
+    match db::get_history(&id).map_err(internal_error)? {
+        Some(run) => Ok(Json(json!({
+            "id": run.id,
+            "repo": run.repo,
+            "prompt_pack": run.prompt_pack,
+        }))),
+        None => Err(not_found("RepoMemory run not found.")),
+    }
+}
+
+pub async fn ingest(
+    State(state): State<AppState>,
+    Json(params): Json<IngestParams>,
+) -> JsonResult<IngestRecord> {
+    let params = params.normalized();
+    if !valid_repo(&params.repo) {
+        return Err(bad_request("RepoMemory expects repos in owner/repo format."));
+    }
+
+    let pulls = github::fetch_merged_pull_requests(
+        &state.http,
+        &params.repo,
+        params.merged_pr_limit,
+        params.since_days,
+    )
+    .await
+    .map_err(upstream_error)?;
+
+    let mut bundles = Vec::new();
+    for pr in pulls {
+        let reviews = github::fetch_pr_reviews(&state.http, &params.repo, pr.number)
+            .await
+            .unwrap_or_default();
+        let comments = github::fetch_pr_review_comments(&state.http, &params.repo, pr.number)
+            .await
+            .unwrap_or_default();
+        let files = github::fetch_pr_files(&state.http, &params.repo, pr.number)
+            .await
+            .unwrap_or_default();
+        bundles.push(PullBundle {
+            pr,
+            reviews,
+            comments,
+            files,
+        });
+    }
+
+    let issues = github::fetch_closed_issues(&state.http, &params.repo, params.issue_limit, params.since_days)
+        .await
+        .map_err(upstream_error)?;
+
+    let run = build_memory_run(params, bundles, issues).map_err(internal_from_anyhow)?;
+    db::save_run(&run).map_err(internal_error)?;
+    Ok(Json(run))
+}
+
+fn build_memory_run(
+    params: IngestParams,
+    bundles: Vec<PullBundle>,
+    issues: Vec<GitHubIssue>,
+) -> Result<IngestRecord> {
+    let run_id = Uuid::new_v4().to_string();
+    let created_at = Utc::now().to_rfc3339();
+    let repo = params.repo.clone();
+
+    let mut entries = Vec::new();
+    let mut review_buckets: HashMap<&'static str, SignalBucket> = HashMap::new();
+    let mut dir_counts: HashMap<String, u32> = HashMap::new();
+    let mut file_review_counts: HashMap<String, SignalBucket> = HashMap::new();
+    let mut bug_terms: HashMap<String, SignalBucket> = HashMap::new();
+    let mut source_prs = 0u32;
+    let mut source_with_tests = 0u32;
+    let mut review_feedback_items = 0u32;
+
+    for bundle in &bundles {
+        let mut touched_source = false;
+        let mut touched_tests = false;
+
+        for file in &bundle.files {
+            if is_source_file(&file.filename) {
+                touched_source = true;
+            }
+            if is_test_file(&file.filename) {
+                touched_tests = true;
+            }
+
+            let bucket = path_bucket(&file.filename);
+            *dir_counts.entry(bucket).or_insert(0) += 1;
+        }
+
+        if touched_source {
+            source_prs += 1;
+            if touched_tests {
+                source_with_tests += 1;
+            }
+        }
+
+        for review in &bundle.reviews {
+            if review.state.eq_ignore_ascii_case("commented")
+                || review.state.eq_ignore_ascii_case("changes_requested")
+                || review.state.eq_ignore_ascii_case("approved")
+            {
+                if let Some(body) = review.body.as_deref() {
+                    review_feedback_items += collect_feedback(
+                        &mut review_buckets,
+                        &bundle.pr,
+                        None,
+                        review.html_url.as_deref().unwrap_or(&bundle.pr.html_url),
+                        body,
+                        review.user.as_ref().map(|user| user.login.as_str()),
+                    );
+                }
+            }
+        }
+
+        for comment in &bundle.comments {
+            review_feedback_items += collect_feedback(
+                &mut review_buckets,
+                &bundle.pr,
+                comment.path.as_deref(),
+                &comment.html_url,
+                &comment.body,
+                comment.user.as_ref().map(|user| user.login.as_str()),
+            );
+
+            if let Some(path) = comment.path.as_deref() {
+                let entry = file_review_counts.entry(path.to_string()).or_default();
+                entry.frequency += 1;
+                push_evidence(
+                    &mut entry.evidence,
+                    MemoryEvidence {
+                        source_type: "review_comment".into(),
+                        title: format!("#{} {}", bundle.pr.number, bundle.pr.title),
+                        url: comment.html_url.clone(),
+                        path: Some(path.to_string()),
+                        excerpt: truncate(comment.body.trim(), 180),
+                    },
+                );
+            }
+        }
+    }
+
+    for issue in &issues {
+        if !looks_bug_like(issue) {
+            continue;
+        }
+        let title_tokens = tokenize(&format!(
+            "{} {}",
+            issue.title,
+            issue.body.clone().unwrap_or_default()
+        ));
+
+        for token in title_tokens {
+            if token.len() < 4 || STOPWORDS.contains(&token.as_str()) {
+                continue;
+            }
+            let bucket = bug_terms.entry(token.clone()).or_default();
+            bucket.frequency += 1;
+            push_evidence(
+                &mut bucket.evidence,
+                MemoryEvidence {
+                    source_type: "issue".into(),
+                    title: format!("#{} {}", issue.number, issue.title),
+                    url: issue.html_url.clone(),
+                    path: None,
+                    excerpt: truncate(issue.body.as_deref().unwrap_or(issue.title.as_str()), 180),
+                },
+            );
+        }
+    }
+
+    for (key, label, prompt_line, detail_line, tags) in review_bucket_specs() {
+        if let Some(bucket) = review_buckets.get(key) {
+            if bucket.frequency < 2 {
+                continue;
+            }
+            entries.push(build_entry(
+                &run_id,
+                &repo,
+                "review_rule",
+                label,
+                format!("{detail_line} Reviewer feedback surfaced this pattern {} times across recent merged PRs.", bucket.frequency),
+                prompt_line,
+                bucket.frequency,
+                tags,
+                bucket.evidence.clone(),
+                &created_at,
+            ));
+        }
+    }
+
+    if source_prs >= 3 && source_with_tests >= 2 {
+        let ratio = source_with_tests as f64 / source_prs as f64;
+        if ratio >= 0.5 {
+            entries.push(build_entry(
+                &run_id,
+                &repo,
+                "testing_expectation",
+                "Behavior changes usually ship with tests",
+                format!(
+                    "{} of the last {} merged PRs that touched source files also updated tests. This repo tends to expect test coverage when behavior changes.",
+                    source_with_tests, source_prs
+                ),
+                "When behavior changes or bugs are fixed, update or add tests in the same patch.",
+                source_with_tests,
+                vec!["tests", "merged-pr-pattern"],
+                Vec::new(),
+                &created_at,
+            ));
+        }
+    }
+
+    let mut hotspot_dirs: Vec<_> = dir_counts.into_iter().collect();
+    hotspot_dirs.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
+    for (dir, frequency) in hotspot_dirs.into_iter().filter(|(_, count)| *count >= 2).take(3) {
+        entries.push(build_entry(
+            &run_id,
+            &repo,
+            "hotspot",
+            format!("Recent fixes cluster in {dir}"),
+            format!(
+                "Recent merged PRs repeatedly touched {dir}. Treat it as a high-context area and read nearby helpers, tests, and conventions before changing it."
+            ),
+            format!("Treat {dir} as a high-context area; read nearby code and tests before editing it."),
+            frequency,
+            vec!["hotspot", "paths"],
+            Vec::new(),
+            &created_at,
+        ));
+    }
+
+    let mut review_paths: Vec<_> = file_review_counts.into_iter().collect();
+    review_paths.sort_by(|left, right| right.1.frequency.cmp(&left.1.frequency).then_with(|| left.0.cmp(&right.0)));
+    for (path, bucket) in review_paths.into_iter().filter(|(_, bucket)| bucket.frequency >= 2).take(3) {
+        entries.push(build_entry(
+            &run_id,
+            &repo,
+            "hotspot",
+            format!("{path} attracts repeat review churn"),
+            format!(
+                "Reviewer comments keep landing on {path}. This file or area likely encodes conventions that agents should read before making edits."
+            ),
+            format!("Read {path} carefully before editing; this path attracts repeat review feedback."),
+            bucket.frequency,
+            vec!["review-churn", "paths"],
+            bucket.evidence,
+            &created_at,
+        ));
+    }
+
+    let mut bug_terms: Vec<_> = bug_terms.into_iter().collect();
+    bug_terms.sort_by(|left, right| right.1.frequency.cmp(&left.1.frequency).then_with(|| left.0.cmp(&right.0)));
+    for (term, bucket) in bug_terms.into_iter().filter(|(_, bucket)| bucket.frequency >= 2).take(4) {
+        entries.push(build_entry(
+            &run_id,
+            &repo,
+            "failure_pattern",
+            format!("Recurring failures mention '{term}'"),
+            format!(
+                "Closed bug reports repeatedly mention {term}. RepoMemory is treating that as a repeated failure pattern worth checking before new patches move forward."
+            ),
+            format!("Re-check {term}-adjacent behavior and edge cases before finalizing a patch."),
+            bucket.frequency,
+            vec!["bugs", "issues", "failure-pattern"],
+            bucket.evidence,
+            &created_at,
+        ));
+    }
+
+    entries.sort_by(|left, right| {
+        right
+            .confidence
+            .partial_cmp(&left.confidence)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| right.frequency.cmp(&left.frequency))
+    });
+
+    let summary = build_summary(&entries, bundles.len() as u32, review_feedback_items, issues.len() as u32);
+    let prompt_pack = build_prompt_pack(&repo, &summary, &entries);
+
+    Ok(IngestRecord {
+        id: run_id,
+        repo,
+        created_at,
+        params,
+        summary,
+        prompt_pack,
+        entries,
+    })
+}
+
+fn build_summary(
+    entries: &[MemoryEntry],
+    merged_prs_analyzed: u32,
+    review_feedback_items: u32,
+    closed_issues_analyzed: u32,
+) -> IngestSummary {
+    let conventions = entries
+        .iter()
+        .filter(|entry| entry.kind == "review_rule" || entry.kind == "testing_expectation")
+        .count() as u32;
+    let failures = entries
+        .iter()
+        .filter(|entry| entry.kind == "failure_pattern")
+        .count() as u32;
+    let hotspots = entries
+        .iter()
+        .filter(|entry| entry.kind == "hotspot")
+        .count() as u32;
+
+    IngestSummary {
+        merged_prs_analyzed,
+        review_feedback_items,
+        closed_issues_analyzed,
+        memories_created: entries.len() as u32,
+        conventions,
+        failures,
+        hotspots,
+        top_memory: entries
+            .first()
+            .map(|entry| entry.title.clone())
+            .unwrap_or_else(|| "No strong memory signals yet.".into()),
+    }
+}
+
+fn build_prompt_pack(repo: &str, summary: &IngestSummary, entries: &[MemoryEntry]) -> String {
+    let mut sections = Vec::new();
+    let convention_lines: Vec<_> = entries
+        .iter()
+        .filter(|entry| entry.kind == "review_rule" || entry.kind == "testing_expectation")
+        .map(|entry| format!("- {}", entry.prompt_line))
+        .collect();
+    let failure_lines: Vec<_> = entries
+        .iter()
+        .filter(|entry| entry.kind == "failure_pattern")
+        .map(|entry| format!("- {}", entry.prompt_line))
+        .collect();
+    let hotspot_lines: Vec<_> = entries
+        .iter()
+        .filter(|entry| entry.kind == "hotspot")
+        .map(|entry| format!("- {}", entry.prompt_line))
+        .collect();
+
+    if !convention_lines.is_empty() {
+        sections.push(format!(
+            "## Conventions and review habits\n{}",
+            convention_lines.join("\n")
+        ));
+    }
+    if !failure_lines.is_empty() {
+        sections.push(format!(
+            "## Failure patterns to watch\n{}",
+            failure_lines.join("\n")
+        ));
+    }
+    if !hotspot_lines.is_empty() {
+        sections.push(format!("## Hotspots\n{}", hotspot_lines.join("\n")));
+    }
+
+    if sections.is_empty() {
+        sections.push("## Early signal\n- RepoMemory has not seen enough repeated patterns yet. Read recent merged PRs and reviewer comments before trusting automation.".into());
+    }
+
+    format!(
+        "# RepoMemory Prompt Pack\n\nRepo: **{repo}**\nGenerated from **{}** merged PRs, **{}** review feedback items, and **{}** closed issues.\n\n{}\n",
+        summary.merged_prs_analyzed,
+        summary.review_feedback_items,
+        summary.closed_issues_analyzed,
+        sections.join("\n\n")
+    )
+}
+
+fn build_entry(
+    run_id: &str,
+    repo: &str,
+    kind: &str,
+    title: impl Into<String>,
+    detail: impl Into<String>,
+    prompt_line: impl Into<String>,
+    frequency: u32,
+    tags: Vec<&str>,
+    evidence: Vec<MemoryEvidence>,
+    created_at: &str,
+) -> MemoryEntry {
+    MemoryEntry {
+        id: Uuid::new_v4().to_string(),
+        run_id: run_id.to_string(),
+        repo: repo.to_string(),
+        kind: kind.to_string(),
+        title: title.into(),
+        detail: detail.into(),
+        prompt_line: prompt_line.into(),
+        confidence: confidence_for(frequency, evidence.len()),
+        frequency,
+        tags: tags.into_iter().map(str::to_string).collect(),
+        evidence,
+        created_at: created_at.to_string(),
+    }
+}
+
+fn confidence_for(frequency: u32, evidence_count: usize) -> f64 {
+    let base = 42.0 + (frequency as f64 * 9.5) + (evidence_count.min(4) as f64 * 4.0);
+    base.min(96.0)
+}
+
+fn collect_feedback(
+    buckets: &mut HashMap<&'static str, SignalBucket>,
+    pr: &GitHubPullRequest,
+    path: Option<&str>,
+    url: &str,
+    body: &str,
+    author: Option<&str>,
+) -> u32 {
+    let mut matched = 0;
+    for sentence in split_feedback_sentences(body) {
+        let Some((bucket_key, _label)) = classify_feedback(&sentence) else {
+            continue;
+        };
+        let bucket = buckets.entry(bucket_key).or_default();
+        bucket.frequency += 1;
+        push_evidence(
+            &mut bucket.evidence,
+            MemoryEvidence {
+                source_type: "review_feedback".into(),
+                title: format!("#{} {}", pr.number, pr.title),
+                url: url.to_string(),
+                path: path.map(str::to_string),
+                excerpt: if let Some(author) = author {
+                    format!("{author}: {}", truncate(&sentence, 180))
+                } else {
+                    truncate(&sentence, 180)
+                },
+            },
+        );
+        matched += 1;
+    }
+    matched
+}
+
+fn review_bucket_specs() -> Vec<(&'static str, &'static str, &'static str, &'static str, Vec<&'static str>)> {
+    vec![
+        (
+            "tests",
+            "Reviewers repeatedly ask for tests",
+            "Add or update tests when behavior changes, bugs are fixed, or risky code is touched.",
+            "Repo reviewers regularly ask for stronger test coverage before merge.",
+            vec!["tests", "review-feedback"],
+        ),
+        (
+            "helpers",
+            "Reviewers prefer existing helpers over one-off logic",
+            "Prefer existing helpers, shared utilities, and established abstractions before adding one-off logic.",
+            "Review feedback keeps steering changes back toward shared helpers and existing abstractions.",
+            vec!["helpers", "conventions"],
+        ),
+        (
+            "validation",
+            "Boundary checks and validation matter here",
+            "Preserve guard rails, input validation, and edge-case handling around boundaries.",
+            "Reviewers repeatedly call out missing validation, guards, or edge-case handling.",
+            vec!["validation", "safety"],
+        ),
+        (
+            "naming",
+            "Consistency beats clever naming in this repo",
+            "Match existing naming, file placement, and structural conventions before inventing a new pattern.",
+            "Reviewer feedback keeps reinforcing local naming and structure conventions.",
+            vec!["naming", "style"],
+        ),
+        (
+            "docs",
+            "Docs and supporting context are expected alongside behavior changes",
+            "Keep docs, comments, or README context in sync when interfaces or behavior change.",
+            "Recent reviews repeatedly ask for docs, comments, or supporting context updates.",
+            vec!["docs", "maintenance"],
+        ),
+        (
+            "errors",
+            "Error handling needs context, not just a happy path",
+            "Preserve repo error-handling patterns and include context-rich failures or logging where expected.",
+            "Reviewer feedback regularly calls out missing context, logging, or error-handling consistency.",
+            vec!["errors", "operability"],
+        ),
+    ]
+}
+
+fn classify_feedback(sentence: &str) -> Option<(&'static str, &'static str)> {
+    let lower = sentence.to_ascii_lowercase();
+    if contains_any(&lower, &["test", "coverage", "assert", "spec"]) {
+        return Some(("tests", "tests"));
+    }
+    if contains_any(&lower, &["helper", "utility", "shared", "common", "existing", "reuse"]) {
+        return Some(("helpers", "helpers"));
+    }
+    if contains_any(&lower, &["validate", "validation", "guard", "sanitize", "check for", "edge case"]) {
+        return Some(("validation", "validation"));
+    }
+    if contains_any(&lower, &["rename", "naming", "consistent", "convention", "style", "pattern"]) {
+        return Some(("naming", "naming"));
+    }
+    if contains_any(&lower, &["readme", "docs", "document", "comment", "changelog"]) {
+        return Some(("docs", "docs"));
+    }
+    if contains_any(&lower, &["error", "logging", "log ", "context", "fallback", "retry"]) {
+        return Some(("errors", "errors"));
+    }
+    None
+}
+
+fn valid_repo(repo: &str) -> bool {
+    let mut parts = repo.split('/');
+    matches!(
+        (parts.next(), parts.next(), parts.next()),
+        (Some(owner), Some(name), None) if !owner.trim().is_empty() && !name.trim().is_empty()
+    )
+}
+
+fn contains_any(haystack: &str, needles: &[&str]) -> bool {
+    needles.iter().any(|needle| haystack.contains(needle))
+}
+
+fn split_feedback_sentences(body: &str) -> Vec<String> {
+    body.replace('\r', "\n")
+        .split(['\n', '.', '!', '?'])
+        .map(str::trim)
+        .filter(|part| part.len() >= 18)
+        .map(str::to_string)
+        .collect()
+}
+
+fn push_evidence(target: &mut Vec<MemoryEvidence>, evidence: MemoryEvidence) {
+    if target.len() < 4 {
+        target.push(evidence);
+    }
+}
+
+fn path_bucket(path: &str) -> String {
+    let clean = path.trim_matches('/');
+    let parts: Vec<_> = clean.split('/').take(2).collect();
+    if parts.is_empty() {
+        clean.to_string()
+    } else {
+        parts.join("/")
+    }
+}
+
+fn is_source_file(path: &str) -> bool {
+    let lower = path.to_ascii_lowercase();
+    let source_like = [
+        ".rs", ".js", ".jsx", ".ts", ".tsx", ".py", ".go", ".java", ".kt", ".rb", ".php", ".c",
+        ".cc", ".cpp", ".h", ".hpp",
+    ];
+    source_like.iter().any(|ext| lower.ends_with(ext)) && !is_test_file(path)
+}
+
+fn is_test_file(path: &str) -> bool {
+    let lower = path.to_ascii_lowercase();
+    lower.contains("/test")
+        || lower.contains("/tests/")
+        || lower.contains("__tests__")
+        || lower.contains(".spec.")
+        || lower.contains(".test.")
+}
+
+fn looks_bug_like(issue: &GitHubIssue) -> bool {
+    let lower = format!(
+        "{} {} {}",
+        issue.title,
+        issue.body.clone().unwrap_or_default(),
+        issue
+            .labels
+            .iter()
+            .map(|label| label.name.as_str())
+            .collect::<Vec<_>>()
+            .join(" ")
+    )
+    .to_ascii_lowercase();
+
+    contains_any(
+        &lower,
+        &[
+            "bug",
+            "regression",
+            "panic",
+            "crash",
+            "timeout",
+            "failure",
+            "failing",
+            "broken",
+            "error",
+            "race",
+            "leak",
+        ],
+    )
+}
+
+fn tokenize(text: &str) -> HashSet<String> {
+    text.split(|ch: char| !ch.is_ascii_alphanumeric())
+        .map(|part| part.trim().to_ascii_lowercase())
+        .filter(|part| part.len() >= 4)
+        .collect()
+}
+
+fn truncate(value: &str, limit: usize) -> String {
+    if value.chars().count() <= limit {
+        return value.to_string();
+    }
+    let truncated: String = value.chars().take(limit.saturating_sub(1)).collect();
+    format!("{truncated}…")
+}
+
+fn internal_error(err: impl std::fmt::Display) -> JsonError {
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(json!({ "error": err.to_string() })),
+    )
+}
+
+fn internal_from_anyhow(err: anyhow::Error) -> JsonError {
+    internal_error(err)
+}
+
+fn upstream_error(err: impl std::fmt::Display) -> JsonError {
+    (
+        StatusCode::BAD_GATEWAY,
+        Json(json!({ "error": err.to_string() })),
+    )
+}
+
+fn bad_request(message: &str) -> JsonError {
+    (StatusCode::BAD_REQUEST, Json(json!({ "error": message })))
+}
+
+fn not_found(message: &str) -> JsonError {
+    (StatusCode::NOT_FOUND, Json(json!({ "error": message })))
+}
+
+static STOPWORDS: &[&str] = &[
+    "with", "that", "this", "from", "when", "into", "after", "before", "still", "only", "over",
+    "have", "more", "than", "they", "them", "then", "their", "there", "should", "could", "would",
+    "about", "around", "while", "where", "which", "issue", "issues", "repo", "pull", "request",
+    "closed", "merge", "merged", "fails", "failing", "tests", "test", "code", "review",
+];

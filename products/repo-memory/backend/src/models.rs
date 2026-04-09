@@ -1,0 +1,198 @@
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IngestParams {
+    pub repo: String,
+    pub merged_pr_limit: u32,
+    pub issue_limit: u32,
+    pub since_days: u32,
+}
+
+impl Default for IngestParams {
+    fn default() -> Self {
+        Self {
+            repo: String::new(),
+            merged_pr_limit: 18,
+            issue_limit: 24,
+            since_days: 180,
+        }
+    }
+}
+
+impl IngestParams {
+    pub fn normalized(&self) -> Self {
+        Self {
+            repo: self.repo.trim().to_string(),
+            merged_pr_limit: self.merged_pr_limit.clamp(5, 40),
+            issue_limit: self.issue_limit.clamp(5, 40),
+            since_days: self.since_days.clamp(30, 730),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MemoryEvidence {
+    pub source_type: String,
+    pub title: String,
+    pub url: String,
+    pub path: Option<String>,
+    pub excerpt: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MemoryEntry {
+    pub id: String,
+    pub run_id: String,
+    pub repo: String,
+    pub kind: String,
+    pub title: String,
+    pub detail: String,
+    pub prompt_line: String,
+    pub confidence: f64,
+    pub frequency: u32,
+    pub tags: Vec<String>,
+    pub evidence: Vec<MemoryEvidence>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IngestSummary {
+    pub merged_prs_analyzed: u32,
+    pub review_feedback_items: u32,
+    pub closed_issues_analyzed: u32,
+    pub memories_created: u32,
+    pub conventions: u32,
+    pub failures: u32,
+    pub hotspots: u32,
+    pub top_memory: String,
+}
+
+impl IngestSummary {
+    pub fn empty() -> Self {
+        Self {
+            merged_prs_analyzed: 0,
+            review_feedback_items: 0,
+            closed_issues_analyzed: 0,
+            memories_created: 0,
+            conventions: 0,
+            failures: 0,
+            hotspots: 0,
+            top_memory: "No strong memory signals yet.".into(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IngestRecord {
+    pub id: String,
+    pub repo: String,
+    pub created_at: String,
+    pub params: IngestParams,
+    pub summary: IngestSummary,
+    pub prompt_pack: String,
+    pub entries: Vec<MemoryEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HistoryItem {
+    pub id: String,
+    pub repo: String,
+    pub created_at: String,
+    pub memories_created: u32,
+    pub conventions: u32,
+    pub failures: u32,
+    pub hotspots: u32,
+    pub top_memory: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KnownRepo {
+    pub repo: String,
+    pub last_ingested_at: String,
+    pub run_count: u32,
+    pub memory_count: u32,
+    pub top_memory: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OverviewCounts {
+    pub repos: u32,
+    pub runs: u32,
+    pub memories: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OverviewPayload {
+    pub product: String,
+    pub tagline: String,
+    pub counts: OverviewCounts,
+    pub repos: Vec<KnownRepo>,
+    pub featured_memories: Vec<MemoryEntry>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct GitHubUser {
+    pub login: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct GitHubLabel {
+    pub name: String,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Deserialize)]
+pub struct GitHubPullRequest {
+    pub number: u32,
+    pub title: String,
+    pub html_url: String,
+    pub body: Option<String>,
+    pub merged_at: Option<String>,
+    pub updated_at: String,
+    pub additions: Option<u32>,
+    pub deletions: Option<u32>,
+    pub changed_files: Option<u32>,
+    pub user: Option<GitHubUser>,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Deserialize)]
+pub struct GitHubReview {
+    pub body: Option<String>,
+    pub html_url: Option<String>,
+    pub submitted_at: Option<String>,
+    pub state: String,
+    pub user: Option<GitHubUser>,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Deserialize)]
+pub struct GitHubReviewComment {
+    pub body: String,
+    pub html_url: String,
+    pub path: Option<String>,
+    pub created_at: String,
+    pub user: Option<GitHubUser>,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Deserialize)]
+pub struct GitHubPullFile {
+    pub filename: String,
+    pub additions: u32,
+    pub deletions: u32,
+    pub status: String,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Deserialize)]
+pub struct GitHubIssue {
+    pub number: u32,
+    pub title: String,
+    pub html_url: String,
+    pub body: Option<String>,
+    pub closed_at: Option<String>,
+    pub comments: u32,
+    pub labels: Vec<GitHubLabel>,
+    pub pull_request: Option<serde_json::Value>,
+}

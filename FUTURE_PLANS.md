@@ -14,6 +14,13 @@ Use this to capture later ideas so they do not get lost between product pushes.
 
 - Add incident-informed rule tuning later so painful failures can become future guardrails.
 - Make TrustGate the gate before RepoReaper opens or advances autonomous PRs.
+- IncidentEcho fits here as a capability that turns past failures, outages, and bad PR outcomes into future policy checks and guardrails.
+
+## RepoMemory
+
+- Add a print-friendly or shareable prompt-pack view once the format settles.
+- Add reviewer and maintainer profile summaries so repeated feedback can be attributed more clearly over time.
+- Consider AI-assisted summarization or retrieval later through `patchhive-ai-local`, but keep the base memory loop useful without AI.
 
 ## RepoReaper
 
@@ -26,7 +33,7 @@ Use this to capture later ideas so they do not get lost between product pushes.
 - Revisit a generic shared preset helper when a third product needs the same named-config pattern.
 - Revisit more `patchhive-product-core` helpers only after another backend repeats the same seam.
 - Use `patchhive-github-pr` for the next product that needs PR diff fetch, webhook verification, check/status publishing, or maintained PR comments.
-- If a third product repeats GitHub repo or issue scanning helpers, extract a separate shared GitHub data client instead of expanding `patchhive-github-pr` beyond PR plumbing.
+- SignalHive and RepoMemory now both repeat generic GitHub repo/issue history fetch helpers. Extract a separate shared GitHub data client when the next product needs that seam instead of expanding `patchhive-github-pr` beyond PR plumbing.
 - Consider LiteLLM later only as an optional upstream behind `patchhive-ai-local`, not as the product-facing contract.
 
 ## Product Direction
