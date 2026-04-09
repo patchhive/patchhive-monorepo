@@ -13,6 +13,7 @@ import ReviewPanel from "./panels/ReviewPanel.jsx";
 import HistoryPanel from "./panels/HistoryPanel.jsx";
 import RulesPanel from "./panels/RulesPanel.jsx";
 import ChecksPanel from "./panels/ChecksPanel.jsx";
+import DecisionViewPage from "./components/DecisionViewPage.jsx";
 
 const TABS = [
   { id: "review", label: "🛡 Review" },
@@ -39,6 +40,19 @@ function recommendationColor(recommendation) {
   return "var(--accent)";
 }
 
+function resolveRoute(pathname) {
+  const path = pathname || "/";
+  const historyMatch = path.match(/^\/history\/([^/]+)$/);
+  if (historyMatch) {
+    return { kind: "decision", reviewId: decodeURIComponent(historyMatch[1]), printMode: false };
+  }
+  const printMatch = path.match(/^\/print\/([^/]+)$/);
+  if (printMatch) {
+    return { kind: "decision", reviewId: decodeURIComponent(printMatch[1]), printMode: true };
+  }
+  return { kind: "app" };
+}
+
 export default function App() {
   const { apiKey, checked, needsAuth, login, logout } = useApiKeyAuth({
     apiBase: API,
@@ -49,10 +63,17 @@ export default function App() {
   const [form, setForm] = useState(DEFAULT_FORM);
   const [review, setReview] = useState(null);
   const [error, setError] = useState("");
+  const [route, setRoute] = useState(() => resolveRoute(window.location.pathname));
   const fetch_ = createApiFetcher(apiKey);
 
   useEffect(() => {
     applyTheme("trust-gate");
+  }, []);
+
+  useEffect(() => {
+    const onPopState = () => setRoute(resolveRoute(window.location.pathname));
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
   }, []);
 
   const runReview = useCallback(async () => {
@@ -169,6 +190,10 @@ export default function App() {
         apiBase={API}
       />
     );
+  }
+
+  if (route.kind === "decision") {
+    return <DecisionViewPage apiKey={apiKey} reviewId={route.reviewId} printMode={route.printMode} />;
   }
 
   return (

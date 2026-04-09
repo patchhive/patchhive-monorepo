@@ -22,6 +22,10 @@ function sourceLabel(sourceKind) {
   return "Manual";
 }
 
+function openDecisionRoute(path) {
+  window.open(`${window.location.origin}${path}`, "_blank", "noopener,noreferrer");
+}
+
 export default function ReviewPanel({
   form,
   setForm,
@@ -199,6 +203,17 @@ export default function ReviewPanel({
               <Tag color="var(--accent)">{review.metrics.blocked_findings} blockers</Tag>
               <Tag color="var(--gold)">{review.metrics.warning_findings} warnings</Tag>
             </div>
+
+            {review.id && (
+              <div className="trustgate-print-actions" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <Btn onClick={() => openDecisionRoute(`/history/${review.id}`)} color="var(--blue)">
+                  Open Decision View
+                </Btn>
+                <Btn onClick={() => openDecisionRoute(`/print/${review.id}`)} color="var(--text-dim)">
+                  Print View
+                </Btn>
+              </div>
+            )}
 
             {review.github && (
               <div

@@ -20,6 +20,10 @@ function sourceLabel(review) {
   return "Manual";
 }
 
+function openDecisionRoute(path) {
+  window.open(`${window.location.origin}${path}`, "_blank", "noopener,noreferrer");
+}
+
 export default function HistoryPanel({ apiKey, onLoadReview }) {
   const [reviews, setReviews] = useState([]);
   const [busyId, setBusyId] = useState("");
@@ -97,6 +101,12 @@ export default function HistoryPanel({ apiKey, onLoadReview }) {
                 disabled={busyId === review.id}
               >
                 {busyId === review.id ? "Loading..." : "Load Review"}
+              </Btn>
+              <Btn onClick={() => openDecisionRoute(`/history/${review.id}`)} color="var(--blue)">
+                Decision View
+              </Btn>
+              <Btn onClick={() => openDecisionRoute(`/print/${review.id}`)} color="var(--text-dim)">
+                Print View
               </Btn>
             </div>
           </div>
