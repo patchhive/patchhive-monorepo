@@ -23,9 +23,9 @@ const TABS = [
 
 const DEFAULT_FORM = {
   repo: "",
-  pr_number: "",
   ai_source: "Codex",
   diff: "",
+  pr_number: "",
   publish_status: true,
 };
 
@@ -62,7 +62,11 @@ export default function App() {
       const res = await fetch_(`${API}/review`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify({
+          repo: form.repo,
+          ai_source: form.ai_source,
+          diff: form.diff,
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -86,20 +90,23 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           repo: form.repo,
-          pr_number: Number(form.pr_number),
+          pr_number: Number(form.pr_number) || 0,
           ai_source: form.ai_source,
-          publish_status: Boolean(form.publish_status),
+          publish_status: !!form.publish_status,
         }),
       });
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || "TrustGate could not review that pull request.");
+        throw new Error(data.error || "TrustGate could not fetch and review that PR.");
       }
       setReview(data);
-      setForm((prev) => ({ ...prev, diff: data.diff || prev.diff }));
+      setForm((prev) => ({
+        ...prev,
+        diff: data.diff || prev.diff,
+      }));
       setTab("review");
     } catch (err) {
-      setError(err.message || "TrustGate could not review that pull request.");
+      setError(err.message || "TrustGate could not fetch and review that PR.");
     } finally {
       setRunning(false);
     }
@@ -118,9 +125,9 @@ export default function App() {
         setReview(data);
         setForm({
           repo: data.repo || "",
-          pr_number: data.github?.pr_number ? String(data.github.pr_number) : "",
           ai_source: data.ai_source || "unknown",
           diff: data.diff || "",
+          pr_number: data.github?.pr_number ? String(data.github.pr_number) : "",
           publish_status: true,
         });
         setTab("review");
@@ -175,9 +182,17 @@ export default function App() {
       }}
     >
       <PatchHiveHeader icon="🛡" title="TrustGate" version="v0.1.0" running={running}>
-        <div style={{ fontSize: 10, color: "var(--text-dim)" }}>Review AI-generated diffs before they move forward</div>
+        <div style={{ fontSize: 10, color: "var(--text-dim)" }}>
+          Review AI-generated diffs before they move forward
+        </div>
         {review?.recommendation && (
-          <div style={{ fontSize: 10, color: recommendationColor(review.recommendation), fontWeight: 700 }}>
+          <div
+            style={{
+              fontSize: 10,
+              color: recommendationColor(review.recommendation),
+              fontWeight: 700,
+            }}
+          >
             {review.recommendation.toUpperCase()}
           </div>
         )}
@@ -190,7 +205,15 @@ export default function App() {
 
       <TabBar tabs={TABS} active={tab} onChange={setTab} />
 
-      <div style={{ padding: 24, maxWidth: 1320, margin: "0 auto", display: "grid", gap: 16 }}>
+      <div
+        style={{
+          padding: 24,
+          maxWidth: 1320,
+          margin: "0 auto",
+          display: "grid",
+          gap: 16,
+        }}
+      >
         {error && (
           <div
             style={{

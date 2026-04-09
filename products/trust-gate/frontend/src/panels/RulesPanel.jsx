@@ -70,21 +70,22 @@ export default function RulesPanel({ apiKey, initialRepo }) {
 
   const set = (key, value) => setForm((prev) => ({ ...prev, [key]: value }));
 
-  const refresh = () =>
-    fetch_(`${API}/rules`)
-      .then((res) => res.json())
-      .then((data) => setRules(data.rules || []))
-      .catch(() => setRules([]));
-
-  const refreshPacks = () =>
-    fetch_(`${API}/rule-packs`)
-      .then((res) => res.json())
-      .then((data) => setPacks(data.packs || []))
-      .catch(() => setPacks([]));
+  const refresh = async () => {
+    try {
+      const [rulesRes, packsRes] = await Promise.all([
+        fetch_(`${API}/rules`).then((res) => res.json()),
+        fetch_(`${API}/rule-packs`).then((res) => res.json()),
+      ]);
+      setRules(rulesRes.rules || []);
+      setPacks(packsRes.packs || []);
+    } catch {
+      setRules([]);
+      setPacks([]);
+    }
+  };
 
   useEffect(() => {
     refresh();
-    refreshPacks();
   }, [apiKey]);
 
   useEffect(() => {
@@ -94,6 +95,12 @@ export default function RulesPanel({ apiKey, initialRepo }) {
   }, [initialRepo]);
 
   const savedRepos = useMemo(() => rules.map((item) => item.repo), [rules]);
+
+  const applyPack = (pack) => {
+    const next = fromRules(pack.rules || {});
+    next.repo = form.repo;
+    setForm(next);
+  };
 
   const save = async () => {
     if (!form.repo.trim()) {
@@ -156,25 +163,10 @@ export default function RulesPanel({ apiKey, initialRepo }) {
           </div>
         </div>
 
-        {error && (
-          <div style={{ border: "1px solid var(--accent)44", background: "var(--accent)10", color: "var(--accent)", borderRadius: 8, padding: "10px 12px" }}>
-            {error}
-          </div>
-        )}
-
-        <div style={S.field}>
-          <div style={S.label}>Repo</div>
-          <Input value={form.repo} onChange={(value) => set("repo", value)} placeholder="owner/repo" />
-        </div>
-
         {packs.length > 0 && (
           <div style={{ display: "grid", gap: 10 }}>
-            <div style={{ fontSize: 14, fontWeight: 700 }}>Rule Packs</div>
-            <div style={{ color: "var(--text-dim)", fontSize: 12, lineHeight: 1.5 }}>
-              Start with a policy preset, then tweak it for the repo you actually run. These are scaffolds,
-              not locked templates.
-            </div>
-            <div style={{ display: "grid", gap: 10 }}>
+            <div style={{ fontSize: 14, fontWeight: 700 }}>Starter Rule Packs</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10 }}>
               {packs.map((pack) => (
                 <div
                   key={pack.id}
@@ -191,60 +183,88 @@ export default function RulesPanel({ apiKey, initialRepo }) {
                     <Tag color="var(--blue)">{pack.id}</Tag>
                   </div>
                   <div style={{ color: "var(--text-dim)", fontSize: 11, lineHeight: 1.5 }}>{pack.description}</div>
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    <Tag color="var(--accent)">{pack.rules.blocked_paths.length} blocked</Tag>
-                    <Tag color="var(--gold)">{pack.rules.warn_paths.length} warn</Tag>
-                    <Tag color="var(--blue)">{pack.rules.max_files} max files</Tag>
-                  </div>
-                  <div>
-                    <Btn
-                      onClick={() =>
-                        setForm({
-                          ...fromRules(pack.rules),
-                          repo: form.repo,
-                        })
-                      }
-                      color="var(--blue)"
-                    >
-                      Apply Pack
-                    </Btn>
-                  </div>
+                  <Btn onClick={() => applyPack(pack)} color="var(--blue)">
+                    Apply Pack
+                  </Btn>
                 </div>
               ))}
             </div>
           </div>
         )}
 
+        {error && (
+          <div
+            style={{
+              border: "1px solid var(--accent)44",
+              background: "var(--accent)10",
+              color: "var(--accent)",
+              borderRadius: 8,
+              padding: "10px 12px",
+            }}
+          >
+            {error}
+          </div>
+        )}
+
+        <div style={S.field}>
+          <div style={S.label}>Repo</div>
+          <Input value={form.repo} onChange={(value) => set("repo", value)} placeholder="owner/repo" />
+        </div>
+
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <div style={S.field}>
             <div style={S.label}>Blocked Paths</div>
-            <textarea value={form.blocked_paths} onChange={(event) => set("blocked_paths", event.target.value)} style={{ ...S.input, minHeight: 90, resize: "vertical" }} />
+            <textarea
+              value={form.blocked_paths}
+              onChange={(event) => set("blocked_paths", event.target.value)}
+              style={{ ...S.input, minHeight: 90, resize: "vertical" }}
+            />
           </div>
           <div style={S.field}>
             <div style={S.label}>Sensitive Paths</div>
-            <textarea value={form.warn_paths} onChange={(event) => set("warn_paths", event.target.value)} style={{ ...S.input, minHeight: 90, resize: "vertical" }} />
+            <textarea
+              value={form.warn_paths}
+              onChange={(event) => set("warn_paths", event.target.value)}
+              style={{ ...S.input, minHeight: 90, resize: "vertical" }}
+            />
           </div>
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <div style={S.field}>
             <div style={S.label}>Require Tests For Paths</div>
-            <textarea value={form.require_test_for_paths} onChange={(event) => set("require_test_for_paths", event.target.value)} style={{ ...S.input, minHeight: 90, resize: "vertical" }} />
+            <textarea
+              value={form.require_test_for_paths}
+              onChange={(event) => set("require_test_for_paths", event.target.value)}
+              style={{ ...S.input, minHeight: 90, resize: "vertical" }}
+            />
           </div>
           <div style={S.field}>
             <div style={S.label}>Test Path Markers</div>
-            <textarea value={form.test_paths} onChange={(event) => set("test_paths", event.target.value)} style={{ ...S.input, minHeight: 90, resize: "vertical" }} />
+            <textarea
+              value={form.test_paths}
+              onChange={(event) => set("test_paths", event.target.value)}
+              style={{ ...S.input, minHeight: 90, resize: "vertical" }}
+            />
           </div>
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <div style={S.field}>
             <div style={S.label}>Suspicious Terms</div>
-            <textarea value={form.suspicious_terms} onChange={(event) => set("suspicious_terms", event.target.value)} style={{ ...S.input, minHeight: 90, resize: "vertical" }} />
+            <textarea
+              value={form.suspicious_terms}
+              onChange={(event) => set("suspicious_terms", event.target.value)}
+              style={{ ...S.input, minHeight: 90, resize: "vertical" }}
+            />
           </div>
           <div style={S.field}>
             <div style={S.label}>Blocked Terms</div>
-            <textarea value={form.blocked_terms} onChange={(event) => set("blocked_terms", event.target.value)} style={{ ...S.input, minHeight: 90, resize: "vertical" }} />
+            <textarea
+              value={form.blocked_terms}
+              onChange={(event) => set("blocked_terms", event.target.value)}
+              style={{ ...S.input, minHeight: 90, resize: "vertical" }}
+            />
           </div>
         </div>
 
@@ -255,17 +275,30 @@ export default function RulesPanel({ apiKey, initialRepo }) {
           </div>
           <div style={S.field}>
             <div style={S.label}>Max Additions</div>
-            <Input value={form.max_additions} onChange={(value) => set("max_additions", value)} type="number" />
+            <Input
+              value={form.max_additions}
+              onChange={(value) => set("max_additions", value)}
+              type="number"
+            />
           </div>
           <div style={S.field}>
             <div style={S.label}>Max Deletions</div>
-            <Input value={form.max_deletions} onChange={(value) => set("max_deletions", value)} type="number" />
+            <Input
+              value={form.max_deletions}
+              onChange={(value) => set("max_deletions", value)}
+              type="number"
+            />
           </div>
         </div>
 
         <div style={S.field}>
           <div style={S.label}>Notes</div>
-          <textarea value={form.notes} onChange={(event) => set("notes", event.target.value)} style={{ ...S.input, minHeight: 90, resize: "vertical" }} placeholder="Why these rules exist, what the repo cares about, or which changes need a human in the loop." />
+          <textarea
+            value={form.notes}
+            onChange={(event) => set("notes", event.target.value)}
+            style={{ ...S.input, minHeight: 90, resize: "vertical" }}
+            placeholder="Why these rules exist, what the repo cares about, or which changes need a human in the loop."
+          />
         </div>
 
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -290,7 +323,16 @@ export default function RulesPanel({ apiKey, initialRepo }) {
           <EmptyState icon="◌" text="Save a repo rule set and it will show up here." />
         ) : (
           rules.map((item) => (
-            <div key={item.repo} style={{ border: "1px solid var(--border)", borderRadius: 8, padding: 12, display: "grid", gap: 10 }}>
+            <div
+              key={item.repo}
+              style={{
+                border: "1px solid var(--border)",
+                borderRadius: 8,
+                padding: 12,
+                display: "grid",
+                gap: 10,
+              }}
+            >
               <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                 <div style={{ fontWeight: 700 }}>{item.repo}</div>
                 {savedRepos.includes(item.repo) && <Tag color="var(--green)">saved</Tag>}

@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Context, Result};
 use reqwest::{
-    header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, USER_AGENT},
+    header::{ACCEPT, AUTHORIZATION, HeaderMap, HeaderValue, USER_AGENT},
     Client,
 };
 use serde_json::{json, Value};
@@ -8,23 +8,35 @@ use serde_json::{json, Value};
 use crate::models::{GitHubReportOutcome, ReviewResult};
 
 const GH_API: &str = "https://api.github.com";
+const STATUS_CONTEXT: &str = "trustgate/recommendation";
+const CHECK_RUN_NAME: &str = "TrustGate";
 
 pub fn github_token() -> Option<String> {
     std::env::var("BOT_GITHUB_TOKEN")
         .ok()
-        .or_else(|| std::env::var("GITHUB_TOKEN").ok())
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| {
+            std::env::var("GITHUB_TOKEN")
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+        })
+}
+
+pub fn github_token_configured() -> bool {
+    github_token().is_some()
 }
 
 pub fn webhook_secret() -> Option<String> {
     std::env::var("TRUST_GITHUB_WEBHOOK_SECRET")
         .ok()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
+        .filter(|value| !value.trim().is_empty())
 }
 
-fn github_headers(token: Option<&str>, accept: &str) -> Result<HeaderMap> {
+pub fn webhook_secret_configured() -> bool {
+    webhook_secret().is_some()
+}
+
+fn gh_headers(token: Option<&str>, accept: &str) -> Result<HeaderMap> {
     let mut headers = HeaderMap::new();
     headers.insert(USER_AGENT, HeaderValue::from_static("trust-gate/0.1"));
     headers.insert("X-GitHub-Api-Version", HeaderValue::from_static("2022-11-28"));
@@ -40,10 +52,10 @@ fn github_headers(token: Option<&str>, accept: &str) -> Result<HeaderMap> {
     Ok(headers)
 }
 
-pub async fn get_json(client: &Client, path: &str, token: Option<&str>) -> Result<Value> {
+async fn gh_get_json(client: &Client, path: &str, token: Option<&str>) -> Result<Value> {
     let response = client
         .get(format!("{GH_API}{path}"))
-        .headers(github_headers(token, "application/vnd.github+json")?)
+        .headers(gh_headers(token, "application/vnd.github+json")?)
         .send()
         .await
         .with_context(|| format!("GitHub request failed for {path}"))?;
@@ -51,19 +63,19 @@ pub async fn get_json(client: &Client, path: &str, token: Option<&str>) -> Resul
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
-        return Err(anyhow!("GitHub request failed for {path}: {status} {body}"));
+        return Err(anyhow!("GitHub GET {path} -> {status}: {body}"));
     }
 
     response
-        .json()
+        .json::<Value>()
         .await
         .with_context(|| format!("Failed to decode GitHub JSON for {path}"))
 }
 
-pub async fn get_text(client: &Client, path: &str, accept: &str, token: Option<&str>) -> Result<String> {
+async fn gh_get_text(client: &Client, path: &str, accept: &str, token: Option<&str>) -> Result<String> {
     let response = client
         .get(format!("{GH_API}{path}"))
-        .headers(github_headers(token, accept)?)
+        .headers(gh_headers(token, accept)?)
         .send()
         .await
         .with_context(|| format!("GitHub request failed for {path}"))?;
@@ -71,7 +83,7 @@ pub async fn get_text(client: &Client, path: &str, accept: &str, token: Option<&
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
-        return Err(anyhow!("GitHub request failed for {path}: {status} {body}"));
+        return Err(anyhow!("GitHub GET {path} -> {status}: {body}"));
     }
 
     response
@@ -80,7 +92,48 @@ pub async fn get_text(client: &Client, path: &str, accept: &str, token: Option<&
         .with_context(|| format!("Failed to decode GitHub text for {path}"))
 }
 
-fn report_target_url(review: &ReviewResult) -> Option<String> {
+async fn gh_post(client: &Client, path: &str, body: &Value, token: &str) -> Result<Value> {
+    let response = client
+        .post(format!("{GH_API}{path}"))
+        .headers(gh_headers(Some(token), "application/vnd.github+json")?)
+        .json(body)
+        .send()
+        .await
+        .with_context(|| format!("GitHub POST failed for {path}"))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(anyhow!("GitHub POST {path} -> {status}: {text}"));
+    }
+
+    if response.status() == reqwest::StatusCode::NO_CONTENT {
+        Ok(json!({}))
+    } else {
+        response
+            .json::<Value>()
+            .await
+            .with_context(|| format!("Failed to decode GitHub JSON for {path}"))
+    }
+}
+
+pub async fn fetch_pull_request(client: &Client, repo: &str, pr_number: i64) -> Result<Value> {
+    let token = github_token();
+    gh_get_json(client, &format!("/repos/{repo}/pulls/{pr_number}"), token.as_deref()).await
+}
+
+pub async fn fetch_pull_request_diff(client: &Client, repo: &str, pr_number: i64) -> Result<String> {
+    let token = github_token();
+    gh_get_text(
+        client,
+        &format!("/repos/{repo}/pulls/{pr_number}"),
+        "application/vnd.github.v3.diff",
+        token.as_deref(),
+    )
+    .await
+}
+
+fn details_url(review: &ReviewResult) -> Option<String> {
     let base = std::env::var("TRUSTGATE_PUBLIC_URL").ok()?;
     let trimmed = base.trim().trim_end_matches('/');
     if trimmed.is_empty() {
@@ -89,112 +142,46 @@ fn report_target_url(review: &ReviewResult) -> Option<String> {
     Some(format!("{trimmed}/history/{}", review.id))
 }
 
-fn check_run_conclusion(recommendation: &str) -> &'static str {
-    match recommendation {
+fn check_conclusion(review: &ReviewResult) -> &'static str {
+    match review.recommendation.as_str() {
         "safe" => "success",
         "warn" => "action_required",
         _ => "failure",
     }
 }
 
-fn commit_status_state(recommendation: &str) -> &'static str {
-    match recommendation {
+fn commit_state(review: &ReviewResult) -> &'static str {
+    match review.recommendation.as_str() {
         "safe" => "success",
         "warn" => "pending",
         _ => "failure",
     }
 }
 
-fn report_body(review: &ReviewResult) -> String {
+fn check_output_text(review: &ReviewResult) -> String {
     if review.findings.is_empty() {
-        return "TrustGate did not surface active warnings for this diff.".into();
+        return "TrustGate found no active warnings against the current repo rules.".into();
     }
 
     review
         .findings
         .iter()
-        .take(8)
+        .take(10)
         .map(|finding| {
-            let evidence = if finding.evidence.is_empty() {
-                String::new()
+            if finding.evidence.is_empty() {
+                format!("- [{}] {}: {}", finding.severity, finding.label, finding.detail)
             } else {
-                format!("\n- {}", finding.evidence.join("\n- "))
-            };
-            format!(
-                "### {} [{}]\n{}\n{}",
-                finding.label,
-                finding.severity,
-                finding.detail,
-                evidence
-            )
+                format!(
+                    "- [{}] {}: {} ({})",
+                    finding.severity,
+                    finding.label,
+                    finding.detail,
+                    finding.evidence.join("; ")
+                )
+            }
         })
         .collect::<Vec<_>>()
-        .join("\n\n")
-}
-
-async fn create_check_run(client: &Client, repo: &str, head_sha: &str, review: &ReviewResult) -> Result<()> {
-    let token = github_token().ok_or_else(|| anyhow!("GitHub token is not configured"))?;
-    let mut body = json!({
-        "name": "TrustGate",
-        "head_sha": head_sha,
-        "status": "completed",
-        "conclusion": check_run_conclusion(&review.recommendation),
-        "external_id": review.id,
-        "output": {
-            "title": format!("TrustGate: {}", review.recommendation.to_uppercase()),
-            "summary": review.summary,
-            "text": report_body(review),
-        },
-    });
-
-    if let Some(target_url) = report_target_url(review) {
-        body["details_url"] = Value::String(target_url);
-    }
-
-    let response = client
-        .post(format!("{GH_API}/repos/{repo}/check-runs"))
-        .headers(github_headers(Some(&token), "application/vnd.github+json")?)
-        .json(&body)
-        .send()
-        .await
-        .context("failed to create GitHub check run")?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let text = response.text().await.unwrap_or_default();
-        return Err(anyhow!("GitHub check run failed: {status} {text}"));
-    }
-
-    Ok(())
-}
-
-async fn create_commit_status(client: &Client, repo: &str, head_sha: &str, review: &ReviewResult) -> Result<()> {
-    let token = github_token().ok_or_else(|| anyhow!("GitHub token is not configured"))?;
-    let mut body = json!({
-        "state": commit_status_state(&review.recommendation),
-        "context": "trustgate/recommendation",
-        "description": review.summary.chars().take(140).collect::<String>(),
-    });
-
-    if let Some(target_url) = report_target_url(review) {
-        body["target_url"] = Value::String(target_url);
-    }
-
-    let response = client
-        .post(format!("{GH_API}/repos/{repo}/statuses/{head_sha}"))
-        .headers(github_headers(Some(&token), "application/vnd.github+json")?)
-        .json(&body)
-        .send()
-        .await
-        .context("failed to create GitHub commit status")?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let text = response.text().await.unwrap_or_default();
-        return Err(anyhow!("GitHub commit status failed: {status} {text}"));
-    }
-
-    Ok(())
+        .join("\n")
 }
 
 pub async fn publish_review_outcome(client: &Client, review: &ReviewResult) -> GitHubReportOutcome {
@@ -203,74 +190,113 @@ pub async fn publish_review_outcome(client: &Client, review: &ReviewResult) -> G
             attempted: false,
             delivered: false,
             method: "none".into(),
-            state: "not_applicable".into(),
+            state: "skipped".into(),
             message: "This review was not tied to a GitHub pull request.".into(),
-            details: vec![],
+            details: Vec::new(),
         };
     };
 
-    let target_repo = if github.head_repo.trim().is_empty() {
-        github.repo.clone()
-    } else {
-        github.head_repo.clone()
-    };
-
-    if github.head_sha.trim().is_empty() {
-        return GitHubReportOutcome {
-            attempted: true,
-            delivered: false,
-            method: "none".into(),
-            state: "missing_head_sha".into(),
-            message: "TrustGate could not determine the PR head SHA for GitHub reporting.".into(),
-            details: vec![],
-        };
-    }
-
-    if github_token().is_none() {
+    let Some(token) = github_token() else {
         return GitHubReportOutcome {
             attempted: true,
             delivered: false,
             method: "none".into(),
             state: "missing_token".into(),
-            message: "GitHub token missing. TrustGate reviewed the PR but could not publish the decision back to GitHub.".into(),
+            message: "BOT_GITHUB_TOKEN or GITHUB_TOKEN is required to report TrustGate results back to GitHub.".into(),
             details: vec![
-                "Set BOT_GITHUB_TOKEN or GITHUB_TOKEN to enable status/check output.".into(),
+                "PR diff ingestion still works for public repos without a token.".into(),
+                "GitHub status/check publishing is disabled until a token is configured.".into(),
             ],
         };
-    }
+    };
+
+    let target_repo = if github.head_repo.trim().is_empty() {
+        review.repo.as_str()
+    } else {
+        github.head_repo.as_str()
+    };
 
     let mut details = Vec::new();
-    match create_check_run(client, &target_repo, &github.head_sha, review).await {
-        Ok(()) => GitHubReportOutcome {
-            attempted: true,
-            delivered: true,
-            method: "check_run".into(),
-            state: review.recommendation.clone(),
-            message: "Published a TrustGate check run to the PR head commit.".into(),
-            details,
+    let check_body = json!({
+        "name": CHECK_RUN_NAME,
+        "head_sha": github.head_sha,
+        "status": "completed",
+        "conclusion": check_conclusion(review),
+        "external_id": review.id,
+        "details_url": details_url(review),
+        "output": {
+            "title": format!("TrustGate: {}", review.recommendation.to_uppercase()),
+            "summary": review.summary,
+            "text": check_output_text(review),
+        }
+    });
+
+    match gh_post(
+        client,
+        &format!("/repos/{target_repo}/check-runs"),
+        &check_body,
+        &token,
+    )
+    .await
+    {
+        Ok(value) => {
+            let html_url = value["html_url"].as_str().unwrap_or("").to_string();
+            details.push(if html_url.is_empty() {
+                "Created a GitHub check run.".into()
+            } else {
+                format!("Created GitHub check run: {html_url}")
+            });
+            return GitHubReportOutcome {
+                attempted: true,
+                delivered: true,
+                method: "check_run".into(),
+                state: review.recommendation.clone(),
+                message: "TrustGate posted a GitHub check run for this PR.".into(),
+                details,
+            };
+        }
+        Err(err) => details.push(format!("Check run failed, falling back to commit status: {err}")),
+    }
+
+    let status_body = json!({
+        "state": commit_state(review),
+        "context": STATUS_CONTEXT,
+        "description": match review.recommendation.as_str() {
+            "safe" => "TrustGate marked this diff safe.",
+            "warn" => "TrustGate found warnings that need review.",
+            _ => "TrustGate found blocking issues.",
         },
-        Err(check_err) => {
-            details.push(format!("Check run fallback: {check_err}"));
-            match create_commit_status(client, &target_repo, &github.head_sha, review).await {
-                Ok(()) => GitHubReportOutcome {
-                    attempted: true,
-                    delivered: true,
-                    method: "commit_status".into(),
-                    state: review.recommendation.clone(),
-                    message: "Published a TrustGate commit status to the PR head commit.".into(),
-                    details,
-                },
-                Err(status_err) => {
-                    details.push(format!("Commit status failed: {status_err}"));
-                    GitHubReportOutcome {
-                        attempted: true,
-                        delivered: false,
-                        method: "none".into(),
-                        state: "delivery_failed".into(),
-                        message: "TrustGate reviewed the PR, but GitHub rejected both check-run and commit-status output.".into(),
-                        details,
-                    }
-                }
+        "target_url": details_url(review),
+    });
+
+    match gh_post(
+        client,
+        &format!("/repos/{target_repo}/statuses/{}", github.head_sha),
+        &status_body,
+        &token,
+    )
+    .await
+    {
+        Ok(_) => {
+            details.push("Created a commit status fallback.".into());
+            GitHubReportOutcome {
+                attempted: true,
+                delivered: true,
+                method: "commit_status".into(),
+                state: review.recommendation.clone(),
+                message: "TrustGate posted a GitHub commit status for this PR.".into(),
+                details,
+            }
+        }
+        Err(err) => {
+            details.push(format!("Commit status failed: {err}"));
+            GitHubReportOutcome {
+                attempted: true,
+                delivered: false,
+                method: "none".into(),
+                state: "report_failed".into(),
+                message: "TrustGate reviewed the PR but could not post the result back to GitHub.".into(),
+                details,
             }
         }
     }

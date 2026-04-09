@@ -15,7 +15,22 @@ function severityColor(severity) {
   return recommendationColor(severity === "block" ? "block" : severity === "warn" ? "warn" : "safe");
 }
 
-export default function ReviewPanel({ form, setForm, running, onRun, onRunGitHub, review, setReview }) {
+function sourceLabel(sourceKind) {
+  if (sourceKind === "github_pr") {
+    return "GitHub PR";
+  }
+  return "Manual";
+}
+
+export default function ReviewPanel({
+  form,
+  setForm,
+  running,
+  onRun,
+  onRunGitHub,
+  review,
+  setReview,
+}) {
   const [showDiff, setShowDiff] = useState(false);
 
   const recommendationText = useMemo(() => {
@@ -33,19 +48,15 @@ export default function ReviewPanel({ form, setForm, running, onRun, onRunGitHub
         <div style={{ display: "grid", gap: 6 }}>
           <div style={{ fontSize: 18, fontWeight: 700 }}>Review Intake</div>
           <div style={{ color: "var(--text-dim)", fontSize: 12, lineHeight: 1.6 }}>
-            TrustGate can still review a pasted unified diff, but it can now also fetch a pull request diff
-            directly from GitHub and publish the decision back as a status/check when GitHub auth is configured.
+            TrustGate can still review pasted diffs directly, but it now also knows how to fetch a GitHub pull
+            request, review the real diff, and push a status/check back into the PR flow.
           </div>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1.4fr 0.8fr 0.8fr", gap: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr", gap: 12 }}>
           <div style={S.field}>
             <div style={S.label}>Repo</div>
             <Input value={form.repo} onChange={(value) => set("repo", value)} placeholder="owner/repo" />
-          </div>
-          <div style={S.field}>
-            <div style={S.label}>PR Number</div>
-            <Input value={form.pr_number} onChange={(value) => set("pr_number", value)} placeholder="123" type="number" />
           </div>
           <div style={S.field}>
             <div style={S.label}>AI Source</div>
@@ -64,42 +75,65 @@ export default function ReviewPanel({ form, setForm, running, onRun, onRunGitHub
             padding: 14,
             display: "grid",
             gap: 12,
-            background: "rgba(255,255,255,0.02)",
           }}
         >
           <div>
             <div style={{ fontSize: 14, fontWeight: 700 }}>GitHub PR Review</div>
             <div style={{ color: "var(--text-dim)", fontSize: 12, lineHeight: 1.5 }}>
-              Enter a repo and PR number to let TrustGate fetch the diff itself. If GitHub reporting is enabled,
-              TrustGate will also push its recommendation back to the PR head commit.
+              Give TrustGate a repo and PR number, and it will fetch the live diff, apply the repo rule set, and
+              optionally post the result back to GitHub.
             </div>
           </div>
 
-          <label style={{ display: "flex", gap: 8, alignItems: "center", color: "var(--text-dim)", fontSize: 12 }}>
-            <input
-              type="checkbox"
-              checked={Boolean(form.publish_status)}
-              onChange={(event) => set("publish_status", event.target.checked)}
-            />
-            Publish status/check output back to GitHub after review
-          </label>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 12, alignItems: "end" }}>
+            <div style={S.field}>
+              <div style={S.label}>PR Number</div>
+              <Input
+                value={form.pr_number}
+                onChange={(value) => set("pr_number", value)}
+                placeholder="123"
+                type="number"
+              />
+            </div>
+            <label
+              style={{
+                display: "flex",
+                gap: 8,
+                alignItems: "center",
+                color: "var(--text-dim)",
+                fontSize: 12,
+                paddingBottom: 10,
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={!!form.publish_status}
+                onChange={(event) => set("publish_status", event.target.checked)}
+              />
+              Publish GitHub status/check
+            </label>
+          </div>
 
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <Btn onClick={onRunGitHub} disabled={running || !form.repo.trim() || !String(form.pr_number || "").trim()}>
+            <Btn
+              onClick={onRunGitHub}
+              disabled={running || !form.repo.trim() || !String(form.pr_number).trim()}
+              color="var(--blue)"
+            >
               {running ? "Reviewing..." : "Fetch PR + Review"}
             </Btn>
           </div>
         </div>
 
         <div style={S.field}>
-          <div style={S.label}>Unified Diff</div>
+          <div style={S.label}>Manual Unified Diff</div>
           <textarea
             value={form.diff}
             onChange={(event) => set("diff", event.target.value)}
-            placeholder="Paste a unified diff here if you want to review manually..."
+            placeholder="Paste a unified diff here..."
             style={{
               ...S.input,
-              minHeight: 280,
+              minHeight: 260,
               resize: "vertical",
               lineHeight: 1.5,
               whiteSpace: "pre",
@@ -109,14 +143,20 @@ export default function ReviewPanel({ form, setForm, running, onRun, onRunGitHub
 
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           <Btn onClick={onRun} disabled={running || !form.repo.trim() || !form.diff.trim()}>
-            {running ? "Reviewing..." : "Run Manual Review"}
+            {running ? "Reviewing..." : "Review Pasted Diff"}
           </Btn>
           <Btn onClick={() => setShowDiff(true)} disabled={!form.diff.trim()} color="var(--blue)">
             View Diff
           </Btn>
           <Btn
             onClick={() => {
-              setForm({ repo: "", pr_number: "", ai_source: "Codex", diff: "", publish_status: true });
+              setForm({
+                repo: "",
+                ai_source: "Codex",
+                diff: "",
+                pr_number: "",
+                publish_status: true,
+              });
               setReview(null);
             }}
             color="var(--text-dim)"
@@ -129,15 +169,18 @@ export default function ReviewPanel({ form, setForm, running, onRun, onRunGitHub
       {review ? (
         <>
           <div style={{ ...S.panel, display: "grid", gap: 14 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                gap: 12,
+                flexWrap: "wrap",
+                alignItems: "center",
+              }}
+            >
               <div style={{ display: "grid", gap: 6 }}>
                 <div style={{ fontSize: 18, fontWeight: 700 }}>Recommendation</div>
                 <div style={{ color: "var(--text-dim)", fontSize: 12 }}>{review.summary}</div>
-                {review.github?.pr_number && (
-                  <div style={{ color: "var(--text-dim)", fontSize: 12 }}>
-                    PR #{review.github.pr_number} · {review.github.pr_title || review.repo}
-                  </div>
-                )}
               </div>
               <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                 <Tag color={recommendationColor(review.recommendation)}>{recommendationText}</Tag>
@@ -146,16 +189,47 @@ export default function ReviewPanel({ form, setForm, running, onRun, onRunGitHub
             </div>
 
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+              <Tag color="var(--blue)">{sourceLabel(review.source_kind)}</Tag>
               <Tag color="var(--blue)">{review.metrics.files_changed} files</Tag>
               <Tag color="var(--green)">{review.metrics.additions} additions</Tag>
               <Tag color="var(--accent)">{review.metrics.deletions} deletions</Tag>
               <Tag color="var(--gold)">{review.metrics.tests_changed} test files</Tag>
-              <Tag color="var(--blue)">{review.metrics.generated_files} generated files</Tag>
-              <Tag color="var(--blue)">{review.metrics.source_files_changed} source files</Tag>
+              <Tag color="var(--gold)">{review.metrics.generated_files} generated files</Tag>
               <Tag color="var(--accent)">{review.metrics.blocked_findings} blockers</Tag>
               <Tag color="var(--gold)">{review.metrics.warning_findings} warnings</Tag>
-              <Tag color="var(--blue)">{review.source_kind.replaceAll("_", " ")}</Tag>
             </div>
+
+            {review.github && (
+              <div
+                style={{
+                  border: "1px solid var(--border)",
+                  borderRadius: 8,
+                  padding: 12,
+                  display: "grid",
+                  gap: 8,
+                }}
+              >
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                  <Tag color="var(--blue)">PR #{review.github.pr_number}</Tag>
+                  <Tag color="var(--text-dim)">{review.github.repo}</Tag>
+                  {review.github.base_ref && <Tag color="var(--text-dim)">base {review.github.base_ref}</Tag>}
+                  {review.github.head_ref && <Tag color="var(--text-dim)">head {review.github.head_ref}</Tag>}
+                </div>
+                {review.github.pr_title && (
+                  <div style={{ fontSize: 13, fontWeight: 700 }}>{review.github.pr_title}</div>
+                )}
+                {review.github.pr_url && (
+                  <a
+                    href={review.github.pr_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ color: "var(--blue)", fontSize: 12 }}
+                  >
+                    Open pull request
+                  </a>
+                )}
+              </div>
+            )}
 
             {review.github_report && (
               <div
@@ -173,18 +247,16 @@ export default function ReviewPanel({ form, setForm, running, onRun, onRunGitHub
                   <Tag color={review.github_report.delivered ? "var(--green)" : "var(--gold)"}>
                     {review.github_report.method || "none"}
                   </Tag>
-                  <Tag color={recommendationColor(review.recommendation)}>
-                    {review.github_report.state || review.recommendation}
+                  <Tag color={review.github_report.delivered ? "var(--green)" : "var(--gold)"}>
+                    {review.github_report.state || "skipped"}
                   </Tag>
                 </div>
-                <div style={{ color: "var(--text-dim)", fontSize: 12, lineHeight: 1.5 }}>
-                  {review.github_report.message}
-                </div>
+                <div style={{ color: "var(--text-dim)", fontSize: 12 }}>{review.github_report.message}</div>
                 {review.github_report.details?.length > 0 && (
-                  <div style={{ display: "grid", gap: 4 }}>
-                    {review.github_report.details.map((detail) => (
-                      <div key={detail} style={{ fontSize: 11, color: "var(--text)", wordBreak: "break-word" }}>
-                        {detail}
+                  <div style={{ display: "grid", gap: 6 }}>
+                    {review.github_report.details.map((item) => (
+                      <div key={item} style={{ fontSize: 11, color: "var(--text)" }}>
+                        {item}
                       </div>
                     ))}
                   </div>
@@ -244,16 +316,12 @@ export default function ReviewPanel({ form, setForm, running, onRun, onRunGitHub
                 <div><strong>Test path markers:</strong> {review.rules.test_paths.join(", ") || "none"}</div>
                 <div><strong>Suspicious terms:</strong> {review.rules.suspicious_terms.join(", ") || "none"}</div>
                 <div><strong>Blocked terms:</strong> {review.rules.blocked_terms.join(", ") || "none"}</div>
-                <div><strong>Scope caps:</strong> {review.rules.max_files} files, {review.rules.max_additions} additions, {review.rules.max_deletions} deletions</div>
+                <div>
+                  <strong>Scope caps:</strong> {review.rules.max_files} files, {review.rules.max_additions} additions,
+                  {" "}
+                  {review.rules.max_deletions} deletions
+                </div>
                 {review.rules.notes && <div><strong>Notes:</strong> {review.rules.notes}</div>}
-                {review.github?.pr_url && (
-                  <div>
-                    <strong>GitHub PR:</strong>{" "}
-                    <a href={review.github.pr_url} target="_blank" rel="noreferrer" style={{ color: "var(--blue)" }}>
-                      {review.github.pr_url}
-                    </a>
-                  </div>
-                )}
               </div>
             </div>
           </div>
@@ -275,19 +343,15 @@ export default function ReviewPanel({ form, setForm, running, onRun, onRunGitHub
                   <div style={{ fontWeight: 700, wordBreak: "break-word" }}>{file.path}</div>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                     <Tag color={recommendationColor(file.status)}>{file.status}</Tag>
-                    {file.generated && <Tag color="var(--blue)">generated</Tag>}
+                    {file.generated && <Tag color="var(--gold)">generated</Tag>}
                     <Tag color="var(--green)">+{file.additions}</Tag>
                     <Tag color="var(--accent)">-{file.deletions}</Tag>
                   </div>
                 </div>
                 <div style={{ color: "var(--text-dim)", fontSize: 12 }}>{file.summary}</div>
-                {file.path_policy && (
-                  <div style={{ color: "var(--gold)", fontSize: 11 }}>
-                    Policy note: {file.path_policy}
-                  </div>
-                )}
-                {file.matched_rules.length > 0 && (
+                {(file.path_policy || file.matched_rules.length > 0) && (
                   <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    {file.path_policy && <Tag color="var(--gold)">{file.path_policy}</Tag>}
                     {file.matched_rules.map((rule) => (
                       <Tag key={`${file.path}-${rule}`} color="var(--blue)">
                         {rule}
@@ -302,7 +366,7 @@ export default function ReviewPanel({ form, setForm, running, onRun, onRunGitHub
       ) : (
         <EmptyState
           icon="🛡"
-          text="Paste a diff or point TrustGate at a GitHub PR to get a safe, warn, or block recommendation."
+          text="Fetch a GitHub PR or paste your first AI-generated diff to get a safe, warn, or block recommendation."
         />
       )}
 

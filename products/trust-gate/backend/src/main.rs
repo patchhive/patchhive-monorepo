@@ -54,9 +54,9 @@ async fn main() {
         .route("/auth/generate-key", post(gen_key))
         .route("/health", get(health))
         .route("/startup/checks", get(startup_checks_route))
+        .route("/rule-packs", get(pipeline::rule_packs))
         .route("/rules", get(list_rules).post(save_rules))
         .route("/rules/*repo", delete(delete_rules))
-        .route("/rule-packs", get(pipeline::rule_packs))
         .route("/review", post(pipeline::review))
         .route("/review/github/pr", post(pipeline::review_github_pr))
         .route("/webhooks/github", post(pipeline::github_webhook))
@@ -111,9 +111,14 @@ async fn health() -> Json<serde_json::Value> {
         "config_errors": errors,
         "db_path": db::db_path(),
         "mode": "review-first",
-        "github_token_ready": crate::github::github_token().is_some(),
-        "github_webhook_ready": crate::github::webhook_secret().is_some(),
-        "github_public_url": std::env::var("TRUSTGATE_PUBLIC_URL").ok().filter(|value| !value.trim().is_empty()),
+        "github": {
+            "token_configured": github::github_token_configured(),
+            "webhook_secret_configured": github::webhook_secret_configured(),
+            "public_url_configured": std::env::var("TRUSTGATE_PUBLIC_URL")
+                .ok()
+                .map(|value| !value.trim().is_empty())
+                .unwrap_or(false),
+        }
     }))
 }
 

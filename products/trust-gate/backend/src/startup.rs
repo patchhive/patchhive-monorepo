@@ -18,42 +18,42 @@ pub async fn validate_config() -> Vec<StartupCheck> {
         ));
     }
 
-    if crate::github::github_token().is_some() {
+    if crate::github::github_token_configured() {
         checks.push(StartupCheck::info(
-            "GitHub token is configured. TrustGate can fetch private PR diffs and report recommendations back to GitHub.",
+            "GitHub token is configured. TrustGate can fetch private PR diffs and report results back as a status/check.",
         ));
     } else {
         checks.push(StartupCheck::warn(
-            "GitHub token is not configured. TrustGate can still review pasted diffs and public PRs, but it cannot publish status/check output.",
+            "BOT_GITHUB_TOKEN is missing. TrustGate can still fetch public PR diffs, but GitHub status/check reporting is disabled.",
         ));
     }
 
-    if crate::github::webhook_secret().is_some() {
+    if crate::github::webhook_secret_configured() {
         checks.push(StartupCheck::info(
-            "GitHub webhook secret is configured. TrustGate can accept signed pull_request webhooks.",
+            "GitHub webhook secret is configured. Public webhook ingestion is ready.",
         ));
     } else {
         checks.push(StartupCheck::warn(
-            "TRUST_GITHUB_WEBHOOK_SECRET is not configured. Public webhook ingestion is disabled until you add it.",
+            "TRUST_GITHUB_WEBHOOK_SECRET is not configured. The /webhooks/github endpoint will reject webhook delivery until it is set.",
         ));
     }
 
     if std::env::var("TRUSTGATE_PUBLIC_URL")
         .ok()
-        .filter(|value| !value.trim().is_empty())
-        .is_some()
+        .map(|value| !value.trim().is_empty())
+        .unwrap_or(false)
     {
         checks.push(StartupCheck::info(
-            "TRUSTGATE_PUBLIC_URL is configured. GitHub status output can link back to TrustGate review details.",
+            "TRUSTGATE_PUBLIC_URL is configured, so GitHub reports can deep-link back to TrustGate history.",
         ));
     } else {
         checks.push(StartupCheck::info(
-            "TRUSTGATE_PUBLIC_URL is not configured. GitHub reports will still post, but without deep links back into TrustGate.",
+            "TRUSTGATE_PUBLIC_URL is not configured. GitHub reports will still post, but without a clickable details URL.",
         ));
     }
 
     checks.push(StartupCheck::info(
-        "TrustGate can now review pasted diffs, fetch pull-request diffs directly from GitHub, and publish safe/warn/block recommendations back to PRs.",
+        "TrustGate reviews AI-generated diffs and returns safe, warn, or block recommendations.",
     ));
 
     checks

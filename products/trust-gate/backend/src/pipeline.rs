@@ -147,128 +147,141 @@ fn make_finding(
 }
 
 fn is_generated_path(path: &str) -> bool {
-    [
-        "package-lock.json",
-        "pnpm-lock.yaml",
-        "yarn.lock",
-        "Cargo.lock",
-        "*.min.js",
-        "*.map",
-        "*.snap",
-        "*.pb.go",
-        "*.generated.*",
-        "*.g.dart",
-        "dist/",
-        "build/",
-        "coverage/",
-        "vendor/",
-        "generated/",
-    ]
-    .iter()
-    .any(|pattern| matches_rule(path, pattern))
+    let lower = path.to_lowercase();
+    lower.ends_with("package-lock.json")
+        || lower.ends_with("pnpm-lock.yaml")
+        || lower.ends_with("yarn.lock")
+        || lower.ends_with("cargo.lock")
+        || lower.contains("/dist/")
+        || lower.contains("/build/")
+        || lower.contains("/coverage/")
+        || lower.contains("/generated/")
+        || lower.ends_with(".snap")
+        || lower.ends_with(".min.js")
+        || lower.ends_with(".min.css")
+        || lower.ends_with(".pb.go")
 }
 
-fn is_docs_path(path: &str) -> bool {
-    [
-        "README",
-        ".md",
-        "docs/",
-        "CHANGELOG",
-        "LICENSE",
-        ".txt",
-    ]
-    .iter()
-    .any(|pattern| matches_rule(path, pattern))
+fn is_docs_only_path(path: &str) -> bool {
+    let lower = path.to_lowercase();
+    lower.ends_with(".md")
+        || lower.starts_with("docs/")
+        || lower.contains("/docs/")
+        || lower.ends_with("changelog")
+        || lower.ends_with("license")
 }
 
 fn path_policy_note(path: &str) -> Option<&'static str> {
-    if matches_rule(path, ".github/workflows/") {
-        Some("Workflow changes can alter CI execution, release behavior, or secret exposure.")
-    } else if matches_rule(path, "infra/") || matches_rule(path, "terraform/") {
-        Some("Infrastructure changes can affect deployment safety, runtime access, or production posture.")
-    } else if matches_rule(path, "migrations/") || matches_rule(path, "schema.sql") {
-        Some("Database or schema changes deserve extra review because rollback and data safety can be expensive.")
-    } else if matches_rule(path, "auth/") || matches_rule(path, "permissions") {
-        Some("Authentication and permission changes need deliberate human review.")
-    } else if matches_rule(path, "billing") {
-        Some("Billing-related changes can have customer or revenue impact if they drift.")
-    } else if matches_rule(path, "Dockerfile") || matches_rule(path, "docker-compose") {
-        Some("Container/runtime changes can shift the execution environment in subtle ways.")
+    let lower = path.to_lowercase();
+
+    if lower.contains(".github/workflows/") {
+        Some("Workflow edits can change CI behavior, release automation, or secret exposure.")
+    } else if lower.contains("auth/") || lower.contains("permission") {
+        Some("Auth and permission changes deserve extra scrutiny because small mistakes can broaden access.")
+    } else if lower.contains("billing") {
+        Some("Billing paths affect money movement and should be reviewed with policy and test coverage in mind.")
+    } else if lower.contains("terraform/")
+        || lower.contains("infra/")
+        || lower.contains("dockerfile")
+        || lower.contains("docker-compose")
+    {
+        Some("Infra/runtime changes can alter deployment, networking, or secret handling beyond the diff itself.")
+    } else if lower.contains("migration") || lower.ends_with("schema.sql") {
+        Some("Schema and migration changes can have irreversible data impact if they move forward too casually.")
     } else {
         None
     }
 }
 
-fn rule_packs_catalog() -> Vec<RulePack> {
+fn limit_examples(items: Vec<String>, limit: usize) -> Vec<String> {
+    items.into_iter().take(limit).collect()
+}
+
+fn build_rule_packs() -> Vec<RulePack> {
     let mut app = RepoRuleSet::default();
+    app.warn_paths.extend([
+        "routes/".into(),
+        "db/".into(),
+        "api/".into(),
+        "config/".into(),
+    ]);
+    app.require_test_for_paths.extend(["ui/".into(), "components/".into()]);
     app.max_files = 14;
-    app.max_additions = 520;
-    app.max_deletions = 320;
-    app.warn_paths.extend(["config/".into(), "routes/".into(), "api/".into()]);
-    app.notes = "Balanced defaults for product apps: guard auth, data, runtime, and deployment-sensitive paths.".into();
+    app.max_additions = 550;
+    app.max_deletions = 300;
+    app.notes = "Balanced app policy pack: strict on auth, workflows, and data boundaries while allowing normal feature work.".into();
 
     let mut library = RepoRuleSet::default();
+    library.blocked_paths.extend(["examples/".into(), "benchmarks/".into()]);
+    library.warn_paths.extend(["public_api".into(), "include/".into()]);
+    library.require_test_for_paths
+        .extend(["crates/".into(), "packages/".into()]);
     library.max_files = 10;
-    library.max_additions = 280;
-    library.max_deletions = 200;
-    library.warn_paths.extend(["Cargo.toml".into(), "package.json".into(), "exports".into()]);
-    library.require_test_for_paths.extend(["crates/".into(), "packages/".into()]);
-    library.notes = "Stricter defaults for reusable libraries where public API drift and missing tests hurt downstream users.".into();
+    library.max_additions = 320;
+    library.max_deletions = 220;
+    library.notes = "Library pack: tighter diff budgets and stronger test expectations around public surface changes.".into();
 
     let mut infra = RepoRuleSet::default();
     infra.blocked_paths.extend([
-        "k8s/".into(),
-        "helm/".into(),
-        "*.tf".into(),
-        "*.tfvars".into(),
-        "ansible/".into(),
+        "production/".into(),
+        "modules/".into(),
+        "environments/prod".into(),
     ]);
-    infra.warn_paths.extend(["deploy/".into(), "ops/".into()]);
-    infra.suspicious_terms.extend(["0.0.0.0/0".into(), "allow all".into()]);
+    infra.warn_paths.extend(["helm/".into(), "k8s/".into(), "deploy/".into()]);
+    infra.require_test_for_paths = vec!["modules/".into(), "terraform/".into(), "scripts/".into()];
+    infra.test_paths = vec!["tests/".into(), "plan/".into(), ".golden".into()];
     infra.max_files = 8;
     infra.max_additions = 260;
-    infra.max_deletions = 180;
-    infra.notes = "Infra repos get tighter budgets because config drift can fan out quickly.".into();
+    infra.max_deletions = 160;
+    infra.notes = "Infra pack: assumes runtime and deploy changes are high-risk, with low scope budgets and stronger escalation.".into();
 
     let mut agent_patch = RepoRuleSet::default();
-    agent_patch.warn_paths.extend(["scripts/".into(), "release".into(), "ci".into()]);
-    agent_patch.max_files = 8;
+    agent_patch.blocked_paths.extend([
+        "prod/".into(),
+        "release/".into(),
+        "security/".into(),
+    ]);
+    agent_patch.warn_paths.extend([
+        "src/".into(),
+        "app/".into(),
+        "server/".into(),
+        "backend/".into(),
+    ]);
+    agent_patch.max_files = 6;
     agent_patch.max_additions = 220;
-    agent_patch.max_deletions = 140;
-    agent_patch.notes =
-        "Strict defaults for agent-generated patches. Keep scope small and avoid workflow or infra churn."
-            .into();
+    agent_patch.max_deletions = 120;
+    agent_patch.notes = "Agent-generated patch pack: strict scope budget designed for autonomous fixes that should stay narrow and test-backed.".into();
 
     vec![
         RulePack {
             id: "app".into(),
-            label: "Product App".into(),
-            description: "Balanced guardrails for web or service products with user-facing code, auth, and runtime concerns.".into(),
+            label: "App".into(),
+            description: "For product repos with UI, API, auth, and data layers that need balanced guardrails.".into(),
             rules: app,
         },
         RulePack {
             id: "library".into(),
             label: "Library".into(),
-            description: "Tighter scope caps and stronger test expectations for reusable packages and crates.".into(),
+            description: "For SDKs and libraries where public surface changes and missing tests should be treated more strictly.".into(),
             rules: library,
         },
         RulePack {
             id: "infra".into(),
             label: "Infra".into(),
-            description: "Treat deployment and infrastructure churn as high risk with smaller allowed patches.".into(),
+            description: "For deployment-heavy repos where workflow, runtime, and data-plane changes deserve aggressive escalation.".into(),
             rules: infra,
         },
         RulePack {
             id: "agent-patch".into(),
-            label: "Agent Patch Repo".into(),
-            description: "Conservative defaults for autonomous patching flows that must earn trust incrementally.".into(),
+            label: "Agent Patch".into(),
+            description: "For narrow autonomous fix repos where small, reversible, test-backed diffs are the standard.".into(),
             rules: agent_patch,
         },
     ]
 }
 
-fn resolve_rules(repo: &str, inline_rules: Option<RepoRuleSet>) -> Result<RepoRuleSet, ApiError> {
-    let mut rules = if let Some(mut rules) = inline_rules {
+fn resolve_rules(repo: &str, incoming: Option<RepoRuleSet>) -> Result<RepoRuleSet, ApiError> {
+    let mut rules = if let Some(mut rules) = incoming {
         rules.repo = repo.to_string();
         rules
     } else if let Some(saved) = db::get_rules(repo)
@@ -283,6 +296,14 @@ fn resolve_rules(repo: &str, inline_rules: Option<RepoRuleSet>) -> Result<RepoRu
 
     rules.repo = repo.to_string();
     Ok(rules)
+}
+
+fn normalize_ai_source(value: &str, fallback: &str) -> String {
+    if value.trim().is_empty() {
+        fallback.into()
+    } else {
+        value.trim().to_string()
+    }
 }
 
 fn review_diff(
@@ -304,47 +325,41 @@ fn review_diff(
     let mut warn_path_hits = Vec::new();
     let mut blocked_term_hits = Vec::new();
     let mut suspicious_term_hits = Vec::new();
-    let mut generated_hits = Vec::new();
     let mut policy_hits = Vec::new();
-    let mut files_requiring_tests = Vec::new();
+    let mut generated_hits = Vec::new();
     let mut tests_changed = 0u32;
     let mut source_files_changed = 0u32;
     let mut generated_files = 0u32;
-    let mut sensitive_source_files = 0u32;
+    let mut test_required_paths = Vec::new();
+    let mut sensitive_code_changes = 0u32;
 
     for patch in patches {
-        let mut status = "safe".to_string();
-        let mut reasons = Vec::new();
-        let mut matched_rules = Vec::new();
+        let generated = is_generated_path(&patch.path);
+        let docs_only = is_docs_only_path(&patch.path);
+        let path_policy = path_policy_note(&patch.path).unwrap_or("").to_string();
+        let touches_test_path = !matching_patterns(&patch.path, &rules.test_paths).is_empty();
+        let requires_tests = !generated
+            && !docs_only
+            && !touches_test_path
+            && !matching_patterns(&patch.path, &rules.require_test_for_paths).is_empty();
 
-        let is_generated = is_generated_path(&patch.path);
-        let is_docs = is_docs_path(&patch.path);
-        let is_test = !matching_patterns(&patch.path, &rules.test_paths).is_empty();
-        let requires_tests =
-            !is_generated
-                && !is_docs
-                && !is_test
-                && !matching_patterns(&patch.path, &rules.require_test_for_paths).is_empty();
-
-        if is_test {
+        if touches_test_path {
             tests_changed += 1;
         }
 
-        if is_generated {
+        if generated {
             generated_files += 1;
             generated_hits.push(patch.path.clone());
-            matched_rules.push("generated artifact".into());
-            reasons.push(
-                "Likely generated or lockfile output. Review the source-of-truth change, not only the generated file."
-                    .into(),
-            );
         }
 
         if requires_tests {
             source_files_changed += 1;
-            files_requiring_tests.push(patch.path.clone());
-            matched_rules.push("test coverage expected".into());
+            test_required_paths.push(patch.path.clone());
         }
+
+        let mut status = "safe".to_string();
+        let mut reasons = Vec::new();
+        let mut matched_rules = Vec::new();
 
         let blocked_paths = matching_patterns(&patch.path, &rules.blocked_paths);
         if !blocked_paths.is_empty() {
@@ -370,18 +385,7 @@ fn review_diff(
                     .map(|pattern| format!("warn path: {pattern}")),
             );
             warn_path_hits.push(format!("{} ({})", patch.path, warn_paths.join(", ")));
-            if requires_tests {
-                sensitive_source_files += 1;
-            }
-        }
-
-        let path_policy = path_policy_note(&patch.path).unwrap_or("").to_string();
-        if !path_policy.is_empty() {
-            if status == "safe" {
-                status = "warn".into();
-            }
-            reasons.push(path_policy.clone());
-            policy_hits.push(format!("{} -> {}", patch.path, path_policy));
+            sensitive_code_changes += 1;
         }
 
         for term in &rules.blocked_terms {
@@ -418,14 +422,28 @@ fn review_diff(
             }
         }
 
-        if is_generated && patch.additions + patch.deletions > 120 && status == "safe" {
-            status = "warn".into();
+        if !path_policy.is_empty() {
+            policy_hits.push(format!("{} — {}", patch.path, path_policy));
         }
 
-        let summary = if reasons.is_empty() {
+        let mut summary_parts = Vec::new();
+        if !reasons.is_empty() {
+            summary_parts.push(reasons.join(" "));
+        }
+        if !path_policy.is_empty() {
+            summary_parts.push(path_policy.clone());
+        }
+        if generated {
+            summary_parts.push(
+                "Likely generated or lockfile output; review it together with the source of truth that produced it."
+                    .into(),
+            );
+        }
+
+        let summary = if summary_parts.is_empty() {
             "No immediate rule hits in this file.".to_string()
         } else {
-            reasons.join(" ")
+            summary_parts.join(" ")
         };
 
         files.push(FileAssessment {
@@ -435,7 +453,7 @@ fn review_diff(
             deletions: patch.deletions,
             matched_rules,
             summary,
-            generated: is_generated,
+            generated,
             path_policy,
         });
     }
@@ -452,7 +470,7 @@ fn review_diff(
             "Blocked file paths",
             "block",
             "The diff touches file areas that should not move forward without explicit review.",
-            blocked_path_hits.into_iter().take(6).collect(),
+            limit_examples(blocked_path_hits.clone(), 6),
         ));
     }
 
@@ -462,17 +480,17 @@ fn review_diff(
             "Sensitive file paths",
             "warn",
             "The diff touches file areas that deserve extra scrutiny.",
-            warn_path_hits.into_iter().take(6).collect(),
+            limit_examples(warn_path_hits, 6),
         ));
     }
 
     if !policy_hits.is_empty() {
         findings.push(make_finding(
             "path_policy",
-            "Path-specific policy warnings",
-            "warn",
-            "TrustGate matched one or more repo-sensitive policy zones such as CI, auth, data, or infrastructure paths.",
-            policy_hits.into_iter().take(6).collect(),
+            "Path-specific policy notes",
+            if !blocked_path_hits.is_empty() { "block" } else { "warn" },
+            "Some touched files sit on boundaries where even small edits can have outsized impact on trust, runtime, or data safety.",
+            limit_examples(policy_hits, 6),
         ));
     }
 
@@ -482,7 +500,7 @@ fn review_diff(
             "Blocked added content",
             "block",
             "The diff appears to add secret-like or explicitly banned content.",
-            blocked_term_hits.into_iter().take(6).collect(),
+            limit_examples(blocked_term_hits, 6),
         ));
     }
 
@@ -492,25 +510,11 @@ fn review_diff(
             "Suspicious added content",
             "warn",
             "The diff adds lines that often correlate with fragile or risky changes.",
-            suspicious_term_hits.into_iter().take(6).collect(),
+            limit_examples(suspicious_term_hits, 6),
         ));
     }
 
-    if !generated_hits.is_empty() && source_files_changed == 0 {
-        findings.push(make_finding(
-            "generated_only",
-            "Generated artifacts without source context",
-            "warn",
-            "This diff mostly touches generated or lockfile artifacts. Review the source-of-truth change that produced them before merging.",
-            generated_hits.into_iter().take(6).collect(),
-        ));
-    }
-
-    let files_budget_exceeded = files_changed > rules.max_files;
-    let additions_budget_exceeded = additions > rules.max_additions;
-    let deletions_budget_exceeded = deletions > rules.max_deletions;
-
-    if files_budget_exceeded {
+    if files_changed > rules.max_files {
         let severity = if files_changed > rules.max_files.saturating_mul(2) {
             "block"
         } else {
@@ -528,7 +532,7 @@ fn review_diff(
         ));
     }
 
-    if additions_budget_exceeded {
+    if additions > rules.max_additions {
         let severity = if additions > rules.max_additions.saturating_mul(2) {
             "block"
         } else {
@@ -546,7 +550,7 @@ fn review_diff(
         ));
     }
 
-    if deletions_budget_exceeded {
+    if deletions > rules.max_deletions {
         let severity = if deletions > rules.max_deletions.saturating_mul(2) {
             "block"
         } else {
@@ -564,11 +568,32 @@ fn review_diff(
         ));
     }
 
-    if !files_requiring_tests.is_empty() && tests_changed == 0 {
-        let severity = if files_requiring_tests.len() >= 3
-            || additions > 120
+    if generated_files > 0 {
+        let severity = if generated_files >= 3 && source_files_changed == 0 {
+            "block"
+        } else {
+            "warn"
+        };
+        let detail = if source_files_changed == 0 {
+            "The diff changes generated artifacts or lockfiles without touching likely source files. Review the true source of change before moving forward."
+        } else {
+            "The diff includes generated artifacts or lockfiles. Review them alongside the code or configuration that produced them."
+        };
+        findings.push(make_finding(
+            "generated_files",
+            "Generated files changed",
+            severity,
+            detail,
+            limit_examples(generated_hits, 6),
+        ));
+    }
+
+    let missing_tests = !test_required_paths.is_empty() && tests_changed == 0;
+    if missing_tests {
+        let severity = if sensitive_code_changes > 0
+            || source_files_changed > 2
+            || additions > 140
             || deletions > 80
-            || sensitive_source_files > 0
         {
             "block"
         } else {
@@ -580,11 +605,7 @@ fn review_diff(
             "Code changes without tests",
             severity,
             "The diff touches code paths that normally deserve tests, but no test files changed.",
-            files_requiring_tests
-                .iter()
-                .take(6)
-                .cloned()
-                .collect::<Vec<_>>(),
+            limit_examples(test_required_paths.clone(), 6),
         ));
     }
 
@@ -592,23 +613,20 @@ fn review_diff(
         .iter()
         .filter(|file| file.status == "warn" || file.status == "block")
         .count() as u32;
-    let blocked_files = files.iter().filter(|file| file.status == "block").count() as u32;
-    let warning_files = files.iter().filter(|file| file.status == "warn").count() as u32;
 
-    if (files_budget_exceeded || additions_budget_exceeded || deletions_budget_exceeded)
-        && (risky_files > 0 || (!files_requiring_tests.is_empty() && tests_changed == 0))
+    if (files_changed > rules.max_files || additions > rules.max_additions || deletions > rules.max_deletions)
+        && risky_files >= 3
     {
         findings.push(make_finding(
             "large_risky_diff",
-            "Large diff with active risk signals",
+            "Large diff with concentrated risk",
             "block",
-            "This patch is already over repo scope budgets and it also carries risk signals like sensitive paths or missing tests. Split or tighten it before moving forward.",
-            files
-                .iter()
-                .filter(|file| file.status != "safe")
-                .map(|file| file.path.clone())
-                .take(6)
-                .collect(),
+            "This patch is both large and concentrated in sensitive areas. TrustGate should not treat it like a normal bounded AI patch.",
+            vec![
+                format!("{files_changed} files changed"),
+                format!("{risky_files} risky files"),
+                format!("{additions} additions / {deletions} deletions"),
+            ],
         ));
     }
 
@@ -621,27 +639,26 @@ fn review_diff(
         .filter(|finding| finding.severity == "warn")
         .count() as u32;
 
-    let recommendation = if blocked_findings > 0 || blocked_files > 0 {
+    let recommendation = if blocked_findings > 0 {
         "block"
-    } else if warning_findings > 0 || warning_files > 0 {
+    } else if warning_findings > 0 {
         "warn"
     } else {
         "safe"
     };
 
     let risk_score = clamp_score(
-        blocked_findings as usize * 28
-            + warning_findings as usize * 12
-            + blocked_files as usize * 10
-            + warning_files as usize * 5
-            + usize::from(!files_requiring_tests.is_empty() && tests_changed == 0) * 12
-            + usize::from(generated_files > 0 && source_files_changed == 0) * 6,
+        blocked_findings as usize * 34
+            + warning_findings as usize * 11
+            + risky_files as usize * 8
+            + generated_files as usize * 4
+            + source_files_changed as usize * 3
+            + usize::from(missing_tests) * 12,
     );
 
     let summary = match recommendation {
         "block" => format!(
-            "Block this diff for now. TrustGate found {blocked_findings} blocking issues, {warning_findings} warnings, and {} risky files.",
-            risky_files
+            "Block this diff for now. TrustGate found {blocked_findings} blocking issues and {warning_findings} warnings."
         ),
         "warn" => format!(
             "Review closely before merge. TrustGate found {warning_findings} warnings across {risky_files} risky files."
@@ -656,11 +673,7 @@ fn review_diff(
         id: Uuid::new_v4().to_string(),
         created_at: Utc::now().to_rfc3339(),
         repo: repo.to_string(),
-        ai_source: if ai_source.trim().is_empty() {
-            "unknown".into()
-        } else {
-            ai_source.trim().to_string()
-        },
+        ai_source: ai_source.to_string(),
         recommendation: recommendation.into(),
         risk_score,
         summary,
@@ -685,61 +698,96 @@ fn review_diff(
     }
 }
 
-async fn fetch_pr_context(
-    state: &AppState,
-    repo: &str,
+async fn run_github_pr_review(
+    client: &reqwest::Client,
+    repo: String,
     pr_number: i64,
-    trigger: &str,
-    event: &str,
-    action: &str,
-) -> Result<(String, GitHubReviewContext), ApiError> {
-    let token = github::github_token();
-    let path = format!("/repos/{repo}/pulls/{pr_number}");
-    let pr = github::get_json(&state.http, &path, token.as_deref())
+    ai_source: String,
+    rules: Option<RepoRuleSet>,
+    publish_status: bool,
+    trigger: String,
+    event: String,
+    action: String,
+) -> Result<ReviewResult, ApiError> {
+    let Some(repo) = db::normalize_repo_name(&repo) else {
+        return Err(api_error(
+            StatusCode::BAD_REQUEST,
+            "TrustGate expects repos in owner/repo format.",
+        ));
+    };
+
+    if pr_number <= 0 {
+        return Err(api_error(
+            StatusCode::BAD_REQUEST,
+            "TrustGate expects a positive pull request number.",
+        ));
+    }
+
+    let pr = github::fetch_pull_request(client, &repo, pr_number)
         .await
         .map_err(|err| api_error(StatusCode::BAD_GATEWAY, err.to_string()))?;
-    let diff = github::get_text(
-        &state.http,
-        &path,
-        "application/vnd.github.v3.diff",
-        token.as_deref(),
-    )
-    .await
-    .map_err(|err| api_error(StatusCode::BAD_GATEWAY, err.to_string()))?;
+    let diff = github::fetch_pull_request_diff(client, &repo, pr_number)
+        .await
+        .map_err(|err| api_error(StatusCode::BAD_GATEWAY, err.to_string()))?;
 
     if diff.trim().is_empty() {
         return Err(api_error(
             StatusCode::BAD_GATEWAY,
-            "GitHub returned an empty PR diff.",
+            "GitHub returned an empty pull request diff.",
         ));
     }
 
-    Ok((
-        diff,
-        GitHubReviewContext {
-            repo: repo.to_string(),
-            head_repo: pr["head"]["repo"]["full_name"]
-                .as_str()
-                .unwrap_or(repo)
-                .to_string(),
-            pr_number,
-            pr_title: pr["title"].as_str().unwrap_or("").to_string(),
-            pr_url: pr["html_url"].as_str().unwrap_or("").to_string(),
-            head_sha: pr["head"]["sha"].as_str().unwrap_or("").to_string(),
-            head_ref: pr["head"]["ref"].as_str().unwrap_or("").to_string(),
-            base_ref: pr["base"]["ref"].as_str().unwrap_or("").to_string(),
-            event: event.to_string(),
-            action: action.to_string(),
-            trigger: trigger.to_string(),
-        },
-    ))
+    let rules = resolve_rules(&repo, rules)?;
+    let github_context = GitHubReviewContext {
+        repo: repo.clone(),
+        head_repo: pr["head"]["repo"]["full_name"]
+            .as_str()
+            .unwrap_or(&repo)
+            .to_string(),
+        pr_number,
+        pr_title: pr["title"].as_str().unwrap_or("").to_string(),
+        pr_url: pr["html_url"].as_str().unwrap_or("").to_string(),
+        head_sha: pr["head"]["sha"].as_str().unwrap_or("").to_string(),
+        head_ref: pr["head"]["ref"].as_str().unwrap_or("").to_string(),
+        base_ref: pr["base"]["ref"].as_str().unwrap_or("").to_string(),
+        event,
+        action,
+        trigger,
+    };
+
+    let mut review = review_diff(
+        &repo,
+        &diff,
+        &normalize_ai_source(&ai_source, "github-pr"),
+        rules,
+        "github_pr",
+        Some(github_context),
+    );
+
+    review.github_report = Some(if publish_status {
+        github::publish_review_outcome(client, &review).await
+    } else {
+        crate::models::GitHubReportOutcome {
+            attempted: false,
+            delivered: false,
+            method: "none".into(),
+            state: "skipped".into(),
+            message: "GitHub status/check publishing was skipped for this run.".into(),
+            details: Vec::new(),
+        }
+    });
+
+    db::save_review(&review)
+        .map_err(|err| api_error(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+
+    Ok(review)
 }
 
 fn verify_webhook_signature(headers: &HeaderMap, body: &[u8]) -> Result<(), ApiError> {
     let Some(secret) = github::webhook_secret() else {
         return Err(api_error(
             StatusCode::FORBIDDEN,
-            "Configure TRUST_GITHUB_WEBHOOK_SECRET before enabling TrustGate webhook ingestion.",
+            "Configure TRUST_GITHUB_WEBHOOK_SECRET before enabling the TrustGate GitHub webhook.",
         ));
     };
 
@@ -747,23 +795,24 @@ fn verify_webhook_signature(headers: &HeaderMap, body: &[u8]) -> Result<(), ApiE
         .get("X-Hub-Signature-256")
         .and_then(|value| value.to_str().ok())
         .ok_or_else(|| api_error(StatusCode::UNAUTHORIZED, "Missing X-Hub-Signature-256 header."))?;
-    let signature_hex = signature
+
+    let sig_hex = signature
         .strip_prefix("sha256=")
-        .ok_or_else(|| api_error(StatusCode::UNAUTHORIZED, "Invalid webhook signature format."))?;
-    let signature_bytes = hex::decode(signature_hex)
-        .map_err(|_| api_error(StatusCode::UNAUTHORIZED, "Webhook signature was not valid hex."))?;
+        .ok_or_else(|| api_error(StatusCode::UNAUTHORIZED, "Malformed GitHub webhook signature."))?;
+    let sig_bytes = hex::decode(sig_hex)
+        .map_err(|_| api_error(StatusCode::UNAUTHORIZED, "GitHub webhook signature was not valid hex."))?;
 
     let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes())
-        .map_err(|_| api_error(StatusCode::INTERNAL_SERVER_ERROR, "Could not initialize webhook verification."))?;
+        .map_err(|_| api_error(StatusCode::INTERNAL_SERVER_ERROR, "Could not initialize webhook verifier."))?;
     mac.update(body);
-    mac.verify_slice(&signature_bytes)
-        .map_err(|_| api_error(StatusCode::UNAUTHORIZED, "Webhook signature did not match."))?;
+    mac.verify_slice(&sig_bytes)
+        .map_err(|_| api_error(StatusCode::UNAUTHORIZED, "GitHub webhook signature did not match."))?;
 
     Ok(())
 }
 
-pub async fn rule_packs() -> Json<Value> {
-    Json(json!({ "packs": rule_packs_catalog() }))
+pub async fn rule_packs() -> Json<serde_json::Value> {
+    Json(json!({ "packs": build_rule_packs() }))
 }
 
 pub async fn review(Json(body): Json<ReviewRequest>) -> Result<Json<ReviewResult>, ApiError> {
@@ -782,7 +831,14 @@ pub async fn review(Json(body): Json<ReviewRequest>) -> Result<Json<ReviewResult
     }
 
     let rules = resolve_rules(&repo, body.rules)?;
-    let review = review_diff(&repo, &body.diff, &body.ai_source, rules, "manual", None);
+    let review = review_diff(
+        &repo,
+        &body.diff,
+        &normalize_ai_source(&body.ai_source, "manual"),
+        rules,
+        "manual",
+        None,
+    );
     db::save_review(&review)
         .map_err(|err| api_error(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
 
@@ -793,39 +849,18 @@ pub async fn review_github_pr(
     State(state): State<AppState>,
     Json(body): Json<GitHubPrReviewRequest>,
 ) -> Result<Json<ReviewResult>, ApiError> {
-    let Some(repo) = db::normalize_repo_name(&body.repo) else {
-        return Err(api_error(
-            StatusCode::BAD_REQUEST,
-            "TrustGate expects repos in owner/repo format.",
-        ));
-    };
-
-    if body.pr_number <= 0 {
-        return Err(api_error(
-            StatusCode::BAD_REQUEST,
-            "TrustGate needs a valid pull request number.",
-        ));
-    }
-
-    let rules = resolve_rules(&repo, body.rules)?;
-    let (diff, github_context) =
-        fetch_pr_context(&state, &repo, body.pr_number, "manual_pr", "pull_request", "manual")
-            .await?;
-    let mut review = review_diff(
-        &repo,
-        &diff,
-        &body.ai_source,
-        rules,
-        "github_pr",
-        Some(github_context),
-    );
-
-    if body.publish_status {
-        review.github_report = Some(github::publish_review_outcome(&state.http, &review).await);
-    }
-
-    db::save_review(&review)
-        .map_err(|err| api_error(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+    let review = run_github_pr_review(
+        &state.http,
+        body.repo,
+        body.pr_number,
+        body.ai_source,
+        body.rules,
+        body.publish_status,
+        "manual_pr_lookup".into(),
+        "pull_request".into(),
+        "manual".into(),
+    )
+    .await?;
 
     Ok(Json(review))
 }
@@ -834,7 +869,7 @@ pub async fn github_webhook(
     State(state): State<AppState>,
     headers: HeaderMap,
     body: Bytes,
-) -> Result<Json<Value>, ApiError> {
+) -> Result<Json<serde_json::Value>, ApiError> {
     verify_webhook_signature(&headers, &body)?;
 
     let event = headers
@@ -843,69 +878,50 @@ pub async fn github_webhook(
         .unwrap_or("")
         .to_string();
     let payload: Value = serde_json::from_slice(&body)
-        .map_err(|_| api_error(StatusCode::BAD_REQUEST, "Webhook payload was not valid JSON."))?;
+        .map_err(|_| api_error(StatusCode::BAD_REQUEST, "Could not decode GitHub webhook payload."))?;
 
     if event != "pull_request" {
         return Ok(Json(json!({
             "triggered": false,
             "event": event,
-            "reason": "TrustGate currently reacts only to pull_request webhooks.",
+            "reason": "TrustGate currently reviews pull_request webhooks only.",
         })));
     }
 
     let action = payload["action"].as_str().unwrap_or("").to_string();
-    if !matches!(
+    let supported = matches!(
         action.as_str(),
         "opened" | "reopened" | "synchronize" | "ready_for_review"
-    ) {
+    );
+    if !supported {
         return Ok(Json(json!({
             "triggered": false,
             "event": event,
             "action": action,
-            "reason": "TrustGate ignores this pull_request action.",
+            "reason": "This pull_request action does not trigger an automatic TrustGate review.",
         })));
     }
 
-    let Some(repo) = payload["repository"]["full_name"]
+    let repo = payload["repository"]["full_name"]
         .as_str()
-        .and_then(db::normalize_repo_name)
-    else {
-        return Err(api_error(
-            StatusCode::BAD_REQUEST,
-            "Webhook payload did not include a valid repository name.",
-        ));
-    };
-
-    let pr_number = payload["number"]
+        .ok_or_else(|| api_error(StatusCode::BAD_REQUEST, "Webhook payload was missing repository.full_name."))?
+        .to_string();
+    let pr_number = payload["pull_request"]["number"]
         .as_i64()
-        .or_else(|| payload["pull_request"]["number"].as_i64())
-        .ok_or_else(|| {
-            api_error(
-                StatusCode::BAD_REQUEST,
-                "Webhook payload did not include a pull request number.",
-            )
-        })?;
+        .ok_or_else(|| api_error(StatusCode::BAD_REQUEST, "Webhook payload was missing pull_request.number."))?;
 
-    let rules = resolve_rules(&repo, None)?;
-    let (diff, github_context) =
-        fetch_pr_context(&state, &repo, pr_number, "github_webhook", &event, &action).await?;
-    let ai_source = payload["sender"]["login"]
-        .as_str()
-        .map(|login| format!("GitHub webhook via @{login}"))
-        .unwrap_or_else(|| "GitHub webhook".into());
-
-    let mut review = review_diff(
-        &repo,
-        &diff,
-        &ai_source,
-        rules,
-        "github_webhook",
-        Some(github_context),
-    );
-    review.github_report = Some(github::publish_review_outcome(&state.http, &review).await);
-
-    db::save_review(&review)
-        .map_err(|err| api_error(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+    let review = run_github_pr_review(
+        &state.http,
+        repo,
+        pr_number,
+        "github-webhook".into(),
+        None,
+        true,
+        "github_webhook".into(),
+        event.clone(),
+        action.clone(),
+    )
+    .await?;
 
     Ok(Json(json!({
         "triggered": true,
