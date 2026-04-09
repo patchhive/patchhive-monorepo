@@ -774,6 +774,11 @@ async fn run_github_pr_review(
             state: "skipped".into(),
             message: "GitHub status/check publishing was skipped for this run.".into(),
             details: Vec::new(),
+            check_url: String::new(),
+            status_url: String::new(),
+            comment_url: String::new(),
+            comment_mode: String::new(),
+            report_markdown: String::new(),
         }
     });
 

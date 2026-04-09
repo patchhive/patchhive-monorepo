@@ -243,6 +243,16 @@ pub struct GitHubReportOutcome {
     pub message: String,
     #[serde(default)]
     pub details: Vec<String>,
+    #[serde(default)]
+    pub check_url: String,
+    #[serde(default)]
+    pub status_url: String,
+    #[serde(default)]
+    pub comment_url: String,
+    #[serde(default)]
+    pub comment_mode: String,
+    #[serde(default)]
+    pub report_markdown: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

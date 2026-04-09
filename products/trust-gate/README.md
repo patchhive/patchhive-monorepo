@@ -10,6 +10,7 @@ TrustGate is the trust and safety layer for PatchHive. It reviews AI-generated d
 - fetches GitHub pull-request diffs directly from `owner/repo + PR number`
 - accepts signed `pull_request` webhook payloads so review can happen automatically on PR updates
 - pushes TrustGate recommendations back to GitHub as a check run when possible, with commit-status fallback
+- maintains a single PR comment with the current TrustGate report so maintainers can read the review in-thread
 - loads repo-specific risk rules for path restrictions, suspicious terms, and change limits
 - offers reusable rule packs for app, library, infra, and agent-generated patch repos
 - flags risky file changes such as workflow, infrastructure, migration, or auth-adjacent edits

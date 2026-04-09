@@ -32,6 +32,7 @@ export default function ReviewPanel({
   setReview,
 }) {
   const [showDiff, setShowDiff] = useState(false);
+  const [showReport, setShowReport] = useState(false);
 
   const recommendationText = useMemo(() => {
     if (!review) {
@@ -252,6 +253,46 @@ export default function ReviewPanel({
                   </Tag>
                 </div>
                 <div style={{ color: "var(--text-dim)", fontSize: 12 }}>{review.github_report.message}</div>
+                {(review.github_report.check_url ||
+                  review.github_report.status_url ||
+                  review.github_report.comment_url ||
+                  review.github_report.comment_mode) && (
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                    {review.github_report.comment_mode && (
+                      <Tag color="var(--blue)">{review.github_report.comment_mode} PR comment</Tag>
+                    )}
+                    {review.github_report.check_url && (
+                      <a
+                        href={review.github_report.check_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{ color: "var(--blue)", fontSize: 12 }}
+                      >
+                        Open check run
+                      </a>
+                    )}
+                    {review.github_report.status_url && (
+                      <a
+                        href={review.github_report.status_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{ color: "var(--blue)", fontSize: 12 }}
+                      >
+                        Open commit status
+                      </a>
+                    )}
+                    {review.github_report.comment_url && (
+                      <a
+                        href={review.github_report.comment_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{ color: "var(--blue)", fontSize: 12 }}
+                      >
+                        Open PR comment
+                      </a>
+                    )}
+                  </div>
+                )}
                 {review.github_report.details?.length > 0 && (
                   <div style={{ display: "grid", gap: 6 }}>
                     {review.github_report.details.map((item) => (
@@ -259,6 +300,38 @@ export default function ReviewPanel({
                         {item}
                       </div>
                     ))}
+                  </div>
+                )}
+                {review.github_report.report_markdown && (
+                  <div style={{ display: "grid", gap: 8 }}>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      <Btn onClick={() => setShowReport((prev) => !prev)} color="var(--blue)">
+                        {showReport ? "Hide report preview" : "Show report preview"}
+                      </Btn>
+                      <Btn
+                        onClick={async () => {
+                          try {
+                            await navigator.clipboard.writeText(review.github_report.report_markdown);
+                          } catch (_) {}
+                        }}
+                        color="var(--text-dim)"
+                      >
+                        Copy report markdown
+                      </Btn>
+                    </div>
+                    {showReport && (
+                      <textarea
+                        readOnly
+                        value={review.github_report.report_markdown}
+                        style={{
+                          ...S.input,
+                          minHeight: 220,
+                          resize: "vertical",
+                          lineHeight: 1.5,
+                          whiteSpace: "pre-wrap",
+                        }}
+                      />
+                    )}
                   </div>
                 )}
               </div>
