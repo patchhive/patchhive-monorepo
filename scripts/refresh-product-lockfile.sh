@@ -44,7 +44,11 @@ TMP_DIR="$(mktemp -d /tmp/patchhive-lockfile-XXXXXX)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
 cp -R "$PRODUCT_DIR" "$TMP_DIR/product"
-cargo generate-lockfile --manifest-path "$TMP_DIR/product/backend/Cargo.toml"
+rm -f "$TMP_DIR/product/backend/Cargo.lock"
+(
+  cd "$TMP_DIR/product/backend"
+  cargo generate-lockfile
+)
 cp "$TMP_DIR/product/backend/Cargo.lock" "$BACKEND_DIR/Cargo.lock"
 
 echo "Refreshed standalone Cargo.lock for $PRODUCT_NAME"
