@@ -13,7 +13,6 @@ Use this to capture later ideas so they do not get lost between product pushes.
 ## TrustGate
 
 - Add a print-friendly/exportable TrustGate decision view once the PR comment and report format fully settles.
-- Add configurable report/comment templates so repo teams can tune how TrustGate speaks in GitHub.
 - Add incident-informed rule tuning later so painful failures can become future guardrails.
 - Make TrustGate the gate before RepoReaper opens or advances autonomous PRs.
 

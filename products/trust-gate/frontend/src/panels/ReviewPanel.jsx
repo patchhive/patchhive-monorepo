@@ -251,8 +251,18 @@ export default function ReviewPanel({
                   <Tag color={review.github_report.delivered ? "var(--green)" : "var(--gold)"}>
                     {review.github_report.state || "skipped"}
                   </Tag>
+                  {review.github_report.template_scope && (
+                    <Tag color="var(--blue)">
+                      {review.github_report.template_scope === "repo" ? "custom template" : "default template"}
+                    </Tag>
+                  )}
                 </div>
                 <div style={{ color: "var(--text-dim)", fontSize: 12 }}>{review.github_report.message}</div>
+                {review.github_report.template_scope === "repo" && review.github_report.template_repo && (
+                  <div style={{ color: "var(--text-dim)", fontSize: 11 }}>
+                    Using the saved TrustGate template set for {review.github_report.template_repo}.
+                  </div>
+                )}
                 {(review.github_report.check_url ||
                   review.github_report.status_url ||
                   review.github_report.comment_url ||

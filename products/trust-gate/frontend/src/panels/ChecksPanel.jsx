@@ -71,6 +71,10 @@ export default function ChecksPanel({ apiKey }) {
             <div style={{ fontSize: 18, fontWeight: 700 }}>{health.rules_count}</div>
           </div>
           <div>
+            <div style={S.label}>Saved Templates</div>
+            <div style={{ fontSize: 18, fontWeight: 700 }}>{health.template_count ?? 0}</div>
+          </div>
+          <div>
             <div style={S.label}>Repos With History</div>
             <div style={{ fontSize: 18, fontWeight: 700 }}>{health.repo_count}</div>
           </div>

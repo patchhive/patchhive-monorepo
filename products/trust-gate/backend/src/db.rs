@@ -2,7 +2,10 @@ use anyhow::{Context, Result};
 use chrono::Utc;
 use rusqlite::{params, Connection, OptionalExtension};
 
-use crate::models::{RepoRuleSet, ReviewHistoryItem, ReviewResult, SavedRuleSet};
+use crate::models::{
+    RepoRuleSet, ReportTemplateSet, ReviewHistoryItem, ReviewResult, SavedReportTemplateSet,
+    SavedRuleSet,
+};
 
 pub fn db_path() -> String {
     std::env::var("TRUST_DB_PATH").unwrap_or_else(|_| "trust-gate.db".into())
@@ -35,6 +38,13 @@ pub fn init_db() -> Result<()> {
         CREATE TABLE IF NOT EXISTS rule_sets (
           repo TEXT PRIMARY KEY,
           rules_json TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS report_templates (
+          repo TEXT PRIMARY KEY,
+          templates_json TEXT NOT NULL,
           created_at TEXT NOT NULL,
           updated_at TEXT NOT NULL
         );
@@ -124,6 +134,81 @@ pub fn delete_rules(repo: &str) -> Result<()> {
     let conn = connect()?;
     conn.execute("DELETE FROM rule_sets WHERE repo = ?1", params![repo])
         .context("failed to delete TrustGate rule set")?;
+    Ok(())
+}
+
+pub fn save_report_templates(repo: &str, templates: &ReportTemplateSet) -> Result<()> {
+    let conn = connect()?;
+    let now = Utc::now().to_rfc3339();
+    let templates_json =
+        serde_json::to_string(templates).context("failed to serialize report template set")?;
+
+    conn.execute(
+        r#"
+        INSERT INTO report_templates (repo, templates_json, created_at, updated_at)
+        VALUES (?1, ?2, ?3, ?4)
+        ON CONFLICT(repo) DO UPDATE SET
+          templates_json = excluded.templates_json,
+          updated_at = excluded.updated_at
+        "#,
+        params![repo, templates_json, now, now],
+    )
+    .context("failed to save TrustGate report templates")?;
+
+    Ok(())
+}
+
+pub fn list_report_templates() -> Result<Vec<SavedReportTemplateSet>> {
+    let conn = connect()?;
+    let mut stmt = conn.prepare(
+        "SELECT repo, templates_json, created_at, updated_at FROM report_templates ORDER BY updated_at DESC",
+    )?;
+
+    let rows = stmt.query_map([], |row| {
+        let repo: String = row.get(0)?;
+        let templates_json: String = row.get(1)?;
+        let created_at: String = row.get(2)?;
+        let updated_at: String = row.get(3)?;
+        Ok((repo, templates_json, created_at, updated_at))
+    })?;
+
+    rows.into_iter()
+        .map(|row| {
+            let (repo, templates_json, created_at, updated_at) = row?;
+            let templates = serde_json::from_str::<ReportTemplateSet>(&templates_json)
+                .context("failed to parse report template set")?;
+            Ok(SavedReportTemplateSet {
+                repo,
+                templates,
+                created_at,
+                updated_at,
+            })
+        })
+        .collect()
+}
+
+pub fn get_report_templates(repo: &str) -> Result<Option<ReportTemplateSet>> {
+    let conn = connect()?;
+    let templates_json: Option<String> = conn
+        .query_row(
+            "SELECT templates_json FROM report_templates WHERE repo = ?1",
+            params![repo],
+            |row| row.get(0),
+        )
+        .optional()?;
+
+    templates_json
+        .map(|value| {
+            serde_json::from_str::<ReportTemplateSet>(&value)
+                .context("failed to parse report template set")
+        })
+        .transpose()
+}
+
+pub fn delete_report_templates(repo: &str) -> Result<()> {
+    let conn = connect()?;
+    conn.execute("DELETE FROM report_templates WHERE repo = ?1", params![repo])
+        .context("failed to delete TrustGate report template set")?;
     Ok(())
 }
 
@@ -248,6 +333,16 @@ pub fn rule_count() -> usize {
         .ok()
         .and_then(|conn| {
             conn.query_row("SELECT COUNT(*) FROM rule_sets", [], |row| row.get::<_, i64>(0))
+                .ok()
+        })
+        .unwrap_or(0) as usize
+}
+
+pub fn template_count() -> usize {
+    connect()
+        .ok()
+        .and_then(|conn| {
+            conn.query_row("SELECT COUNT(*) FROM report_templates", [], |row| row.get::<_, i64>(0))
                 .ok()
         })
         .unwrap_or(0) as usize

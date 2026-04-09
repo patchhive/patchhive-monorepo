@@ -86,6 +86,22 @@ fn default_publish_status() -> bool {
     true
 }
 
+fn default_check_title_template() -> String {
+    "TrustGate: {{recommendation_upper}}".into()
+}
+
+fn default_check_summary_template() -> String {
+    "{{emoji}} TrustGate recommends **{{recommendation_upper}}** for this PR.\n\n{{summary}}\n\nFiles changed: **{{files_changed}}**  |  Additions: **+{{additions}}**  |  Deletions: **-{{deletions}}**  |  Tests changed: **{{tests_changed}}**  |  Generated files: **{{generated_files}}**".into()
+}
+
+fn default_check_text_template() -> String {
+    "{{findings_plaintext}}".into()
+}
+
+fn default_comment_template() -> String {
+    "## {{emoji}} TrustGate: {{recommendation_upper}}\n\n{{summary}}\n\n### Risk snapshot\n- Risk score: **{{risk_score}}**\n- Files changed: **{{files_changed}}**\n- Additions / deletions: **+{{additions}} / -{{deletions}}**\n- Tests changed: **{{tests_changed}}**\n- Generated files: **{{generated_files}}**\n- Blocking findings: **{{blocked_findings}}**\n- Warning findings: **{{warning_findings}}**\n\n### Findings\n{{findings_markdown}}\n\n### File hotspots\n{{file_hotspots_markdown}}\n\n### Next move\n{{next_move}}\n\n{{details_markdown}}\n\n*TrustGate by PatchHive*".into()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RepoRuleSet {
     pub repo: String,
@@ -135,6 +151,84 @@ pub struct SavedRuleSet {
     pub rules: RepoRuleSet,
     pub created_at: String,
     pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReportTemplateSet {
+    pub repo: String,
+    #[serde(default = "default_check_title_template")]
+    pub check_title_template: String,
+    #[serde(default = "default_check_summary_template")]
+    pub check_summary_template: String,
+    #[serde(default = "default_check_text_template")]
+    pub check_text_template: String,
+    #[serde(default = "default_comment_template")]
+    pub comment_template: String,
+    #[serde(default)]
+    pub notes: String,
+}
+
+impl Default for ReportTemplateSet {
+    fn default() -> Self {
+        Self {
+            repo: String::new(),
+            check_title_template: default_check_title_template(),
+            check_summary_template: default_check_summary_template(),
+            check_text_template: default_check_text_template(),
+            comment_template: default_comment_template(),
+            notes: String::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SavedReportTemplateSet {
+    pub repo: String,
+    pub templates: ReportTemplateSet,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TemplateVariableDoc {
+    pub key: String,
+    pub description: String,
+}
+
+pub fn report_template_variables() -> Vec<TemplateVariableDoc> {
+    vec![
+        ("repo", "Reviewed repo in owner/repo format."),
+        ("pr_number", "GitHub pull request number when reviewing a PR."),
+        ("pr_title", "GitHub pull request title when available."),
+        ("base_ref", "Base branch name for PR-backed reviews."),
+        ("head_ref", "Head branch name for PR-backed reviews."),
+        ("ai_source", "Reported AI source such as Codex or Copilot."),
+        ("source_kind", "Review source kind such as manual or github_pr."),
+        ("emoji", "Recommendation emoji: green, yellow, or red."),
+        ("recommendation", "Recommendation in lowercase."),
+        ("recommendation_upper", "Recommendation in uppercase."),
+        ("summary", "TrustGate one-line summary."),
+        ("risk_score", "Computed review risk score."),
+        ("files_changed", "Number of changed files."),
+        ("additions", "Total additions in the diff."),
+        ("deletions", "Total deletions in the diff."),
+        ("tests_changed", "Number of touched test files."),
+        ("generated_files", "Number of generated files."),
+        ("blocked_findings", "Count of blocking findings."),
+        ("warning_findings", "Count of warning findings."),
+        ("findings_markdown", "Markdown bullet list of findings."),
+        ("findings_plaintext", "Plaintext findings list for check output."),
+        ("file_hotspots_markdown", "Markdown bullet list of risky or interesting files."),
+        ("next_move", "TrustGate's recommended next action."),
+        ("details_markdown", "Markdown line linking back to TrustGate details when available."),
+        ("details_url", "Direct TrustGate details URL when configured."),
+    ]
+    .into_iter()
+    .map(|(key, description)| TemplateVariableDoc {
+        key: key.into(),
+        description: description.into(),
+    })
+    .collect()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -253,6 +347,10 @@ pub struct GitHubReportOutcome {
     pub comment_mode: String,
     #[serde(default)]
     pub report_markdown: String,
+    #[serde(default)]
+    pub template_scope: String,
+    #[serde(default)]
+    pub template_repo: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

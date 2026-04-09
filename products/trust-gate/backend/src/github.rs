@@ -5,11 +5,23 @@ use patchhive_github_pr::{
 };
 use reqwest::Client;
 
-use crate::models::{GitHubReportOutcome, ReviewResult};
+use crate::{
+    db,
+    models::{GitHubReportOutcome, ReportTemplateSet, ReviewResult},
+};
 
 const STATUS_CONTEXT: &str = "trustgate/recommendation";
 const CHECK_RUN_NAME: &str = "TrustGate";
 const COMMENT_MARKER: &str = "<!-- patchhive-trustgate-report -->";
+
+struct RenderedGitHubReport {
+    check_title: String,
+    check_summary: String,
+    check_text: String,
+    comment_markdown: String,
+    template_scope: String,
+    template_repo: String,
+}
 
 pub fn github_token_configured() -> bool {
     github_token_from_env().is_some()
@@ -27,11 +39,19 @@ fn pr_client(client: &Client) -> GitHubPrClient {
     GitHubPrClient::with_env_token(client.clone(), "trust-gate/0.1")
 }
 
-pub async fn fetch_pull_request(client: &Client, repo: &str, pr_number: i64) -> Result<GitHubPullRequest> {
+pub async fn fetch_pull_request(
+    client: &Client,
+    repo: &str,
+    pr_number: i64,
+) -> Result<GitHubPullRequest> {
     pr_client(client).fetch_pull_request(repo, pr_number).await
 }
 
-pub async fn fetch_pull_request_diff(client: &Client, repo: &str, pr_number: i64) -> Result<String> {
+pub async fn fetch_pull_request_diff(
+    client: &Client,
+    repo: &str,
+    pr_number: i64,
+) -> Result<String> {
     pr_client(client).fetch_pull_request_diff(repo, pr_number).await
 }
 
@@ -42,6 +62,22 @@ fn details_url(review: &ReviewResult) -> Option<String> {
         return None;
     }
     Some(format!("{trimmed}/history/{}", review.id))
+}
+
+fn report_templates_for_repo(repo: &str) -> (ReportTemplateSet, String, String) {
+    match db::get_report_templates(repo) {
+        Ok(Some(mut templates)) => {
+            if templates.repo.trim().is_empty() {
+                templates.repo = repo.into();
+            }
+            (templates, "repo".into(), repo.into())
+        }
+        _ => {
+            let mut templates = ReportTemplateSet::default();
+            templates.repo = repo.into();
+            (templates, "default".into(), repo.into())
+        }
+    }
 }
 
 fn check_conclusion(review: &ReviewResult) -> &'static str {
@@ -68,22 +104,15 @@ fn recommendation_emoji(review: &ReviewResult) -> &'static str {
     }
 }
 
-fn check_summary(review: &ReviewResult) -> String {
-    let metrics = &review.metrics;
-    format!(
-        "{emoji} TrustGate recommends **{rec}** for this PR.\n\n{summary}\n\nFiles changed: **{files}**  |  Additions: **+{adds}**  |  Deletions: **-{dels}**  |  Tests changed: **{tests}**  |  Generated files: **{generated}**",
-        emoji = recommendation_emoji(review),
-        rec = review.recommendation.to_uppercase(),
-        summary = review.summary,
-        files = metrics.files_changed,
-        adds = metrics.additions,
-        dels = metrics.deletions,
-        tests = metrics.tests_changed,
-        generated = metrics.generated_files,
-    )
+fn next_move(review: &ReviewResult) -> &'static str {
+    match review.recommendation.as_str() {
+        "safe" => "This patch is within the current repo rules. Review normally, but TrustGate did not find a reason to stop it.",
+        "warn" => "A human should look at the flagged areas before merge. The patch may still be fine, but it no longer looks routine.",
+        _ => "Do not move this patch forward yet. The repo rules say the current risk profile is too high without intervention.",
+    }
 }
 
-fn check_output_text(review: &ReviewResult) -> String {
+fn plaintext_findings(review: &ReviewResult) -> String {
     if review.findings.is_empty() {
         return "TrustGate found no active warnings against the current repo rules.".into();
     }
@@ -163,34 +192,104 @@ fn markdown_top_files(review: &ReviewResult) -> String {
     }
 }
 
-fn build_pr_comment(review: &ReviewResult) -> String {
-    let details = details_url(review)
-        .map(|url| format!("[Open TrustGate review]({url})"))
-        .unwrap_or_else(|| "TrustGate review details are local to the current PatchHive host.".into());
+fn render_template(template: &str, variables: &[(&str, String)]) -> String {
+    let mut rendered = template.to_string();
+    for (key, value) in variables {
+        rendered = rendered.replace(&format!("{{{{{key}}}}}"), value);
+    }
+    rendered.trim().to_string()
+}
 
-    format!(
-        "{marker}\n## {emoji} TrustGate: {rec}\n\n{summary}\n\n### Risk snapshot\n- Risk score: **{score}**\n- Files changed: **{files}**\n- Additions / deletions: **+{adds} / -{dels}**\n- Tests changed: **{tests}**\n- Generated files: **{generated}**\n- Blocking findings: **{blocks}**\n- Warning findings: **{warns}**\n\n### Findings\n{findings}\n\n### File hotspots\n{files_section}\n\n### Next move\n{next_move}\n\n{details}\n\n*TrustGate by PatchHive*",
-        marker = COMMENT_MARKER,
-        emoji = recommendation_emoji(review),
-        rec = review.recommendation.to_uppercase(),
-        summary = review.summary,
-        score = review.risk_score,
-        files = review.metrics.files_changed,
-        adds = review.metrics.additions,
-        dels = review.metrics.deletions,
-        tests = review.metrics.tests_changed,
-        generated = review.metrics.generated_files,
-        blocks = review.metrics.blocked_findings,
-        warns = review.metrics.warning_findings,
-        findings = markdown_findings(review),
-        files_section = markdown_top_files(review),
-        next_move = match review.recommendation.as_str() {
-            "safe" => "This patch is within the current repo rules. Review normally, but TrustGate did not find a reason to stop it.",
-            "warn" => "A human should look at the flagged areas before merge. The patch may still be fine, but it no longer looks routine.",
-            _ => "Do not move this patch forward yet. The repo rules say the current risk profile is too high without intervention.",
-        },
-        details = details,
-    )
+fn render_github_report(review: &ReviewResult) -> RenderedGitHubReport {
+    let (templates, template_scope, template_repo) = report_templates_for_repo(&review.repo);
+    let details_url_value = details_url(review).unwrap_or_default();
+    let details_markdown = if details_url_value.is_empty() {
+        "TrustGate review details are local to the current PatchHive host.".into()
+    } else {
+        format!("[Open TrustGate review]({details_url_value})")
+    };
+
+    let github = review.github.as_ref();
+    let variables = vec![
+        ("repo", review.repo.clone()),
+        (
+            "pr_number",
+            github
+                .map(|value| value.pr_number.to_string())
+                .unwrap_or_default(),
+        ),
+        (
+            "pr_title",
+            github.map(|value| value.pr_title.clone()).unwrap_or_default(),
+        ),
+        (
+            "base_ref",
+            github.map(|value| value.base_ref.clone()).unwrap_or_default(),
+        ),
+        (
+            "head_ref",
+            github.map(|value| value.head_ref.clone()).unwrap_or_default(),
+        ),
+        ("ai_source", review.ai_source.clone()),
+        ("source_kind", review.source_kind.clone()),
+        ("emoji", recommendation_emoji(review).into()),
+        ("recommendation", review.recommendation.clone()),
+        ("recommendation_upper", review.recommendation.to_uppercase()),
+        ("summary", review.summary.clone()),
+        ("risk_score", review.risk_score.to_string()),
+        ("files_changed", review.metrics.files_changed.to_string()),
+        ("additions", review.metrics.additions.to_string()),
+        ("deletions", review.metrics.deletions.to_string()),
+        ("tests_changed", review.metrics.tests_changed.to_string()),
+        ("generated_files", review.metrics.generated_files.to_string()),
+        (
+            "blocked_findings",
+            review.metrics.blocked_findings.to_string(),
+        ),
+        (
+            "warning_findings",
+            review.metrics.warning_findings.to_string(),
+        ),
+        ("findings_markdown", markdown_findings(review)),
+        ("findings_plaintext", plaintext_findings(review)),
+        ("file_hotspots_markdown", markdown_top_files(review)),
+        ("next_move", next_move(review).into()),
+        ("details_markdown", details_markdown),
+        ("details_url", details_url_value),
+    ];
+
+    let check_title = render_template(&templates.check_title_template, &variables);
+    let check_summary = render_template(&templates.check_summary_template, &variables);
+    let check_text = render_template(&templates.check_text_template, &variables);
+    let comment_body = render_template(&templates.comment_template, &variables);
+
+    RenderedGitHubReport {
+        check_title,
+        check_summary,
+        check_text,
+        comment_markdown: format!("{COMMENT_MARKER}\n{comment_body}"),
+        template_scope,
+        template_repo,
+    }
+}
+
+pub fn preview_review_outcome(review: &ReviewResult, message: &str) -> GitHubReportOutcome {
+    let rendered = render_github_report(review);
+    GitHubReportOutcome {
+        attempted: false,
+        delivered: false,
+        method: "none".into(),
+        state: "skipped".into(),
+        message: message.into(),
+        details: Vec::new(),
+        check_url: String::new(),
+        status_url: String::new(),
+        comment_url: String::new(),
+        comment_mode: String::new(),
+        report_markdown: rendered.comment_markdown,
+        template_scope: rendered.template_scope,
+        template_repo: rendered.template_repo,
+    }
 }
 
 pub async fn publish_review_outcome(client: &Client, review: &ReviewResult) -> GitHubReportOutcome {
@@ -207,10 +306,12 @@ pub async fn publish_review_outcome(client: &Client, review: &ReviewResult) -> G
             comment_url: String::new(),
             comment_mode: String::new(),
             report_markdown: String::new(),
+            template_scope: String::new(),
+            template_repo: String::new(),
         };
     };
 
-    let report_markdown = build_pr_comment(review);
+    let rendered = render_github_report(review);
 
     if !github_token_configured() {
         return GitHubReportOutcome {
@@ -218,7 +319,9 @@ pub async fn publish_review_outcome(client: &Client, review: &ReviewResult) -> G
             delivered: false,
             method: "none".into(),
             state: "missing_token".into(),
-            message: "BOT_GITHUB_TOKEN or GITHUB_TOKEN is required to report TrustGate results back to GitHub.".into(),
+            message:
+                "BOT_GITHUB_TOKEN or GITHUB_TOKEN is required to report TrustGate results back to GitHub."
+                    .into(),
             details: vec![
                 "PR diff ingestion still works for public repos without a token.".into(),
                 "GitHub status/check publishing is disabled until a token is configured.".into(),
@@ -227,7 +330,9 @@ pub async fn publish_review_outcome(client: &Client, review: &ReviewResult) -> G
             status_url: String::new(),
             comment_url: String::new(),
             comment_mode: String::new(),
-            report_markdown,
+            report_markdown: rendered.comment_markdown,
+            template_scope: rendered.template_scope,
+            template_repo: rendered.template_repo,
         };
     }
 
@@ -255,9 +360,9 @@ pub async fn publish_review_outcome(client: &Client, review: &ReviewResult) -> G
                 conclusion: check_conclusion(review).into(),
                 external_id: review.id.clone(),
                 details_url: details_url(review),
-                title: format!("TrustGate: {}", review.recommendation.to_uppercase()),
-                summary: check_summary(review),
-                text: check_output_text(review),
+                title: rendered.check_title.clone(),
+                summary: rendered.check_summary.clone(),
+                text: rendered.check_text.clone(),
             },
         )
         .await
@@ -308,7 +413,12 @@ pub async fn publish_review_outcome(client: &Client, review: &ReviewResult) -> G
     }
 
     match gh
-        .upsert_issue_comment(&github.repo, github.pr_number, COMMENT_MARKER, &report_markdown)
+        .upsert_issue_comment(
+            &github.repo,
+            github.pr_number,
+            COMMENT_MARKER,
+            &rendered.comment_markdown,
+        )
         .await
     {
         Ok(GitHubManagedCommentResult { mode, html_url }) => {
@@ -346,6 +456,8 @@ pub async fn publish_review_outcome(client: &Client, review: &ReviewResult) -> G
         status_url,
         comment_url,
         comment_mode,
-        report_markdown,
+        report_markdown: rendered.comment_markdown,
+        template_scope: rendered.template_scope,
+        template_repo: rendered.template_repo,
     }
 }

@@ -767,19 +767,10 @@ async fn run_github_pr_review(
     review.github_report = Some(if publish_status {
         github::publish_review_outcome(client, &review).await
     } else {
-        crate::models::GitHubReportOutcome {
-            attempted: false,
-            delivered: false,
-            method: "none".into(),
-            state: "skipped".into(),
-            message: "GitHub status/check publishing was skipped for this run.".into(),
-            details: Vec::new(),
-            check_url: String::new(),
-            status_url: String::new(),
-            comment_url: String::new(),
-            comment_mode: String::new(),
-            report_markdown: String::new(),
-        }
+        github::preview_review_outcome(
+            &review,
+            "GitHub status/check publishing was skipped for this run.",
+        )
     });
 
     db::save_review(&review)

@@ -20,7 +20,7 @@ use tracing::info;
 
 use crate::{
     auth::{auth_enabled, generate_and_save_key, verify_token},
-    models::RepoRuleSet,
+    models::{report_template_variables, RepoRuleSet, ReportTemplateSet},
     state::AppState,
 };
 
@@ -57,6 +57,8 @@ async fn main() {
         .route("/rule-packs", get(pipeline::rule_packs))
         .route("/rules", get(list_rules).post(save_rules))
         .route("/rules/*repo", delete(delete_rules))
+        .route("/templates", get(list_templates).post(save_templates))
+        .route("/templates/*repo", delete(delete_templates))
         .route("/review", post(pipeline::review))
         .route("/review/github/pr", post(pipeline::review_github_pr))
         .route("/webhooks/github", post(pipeline::github_webhook))
@@ -106,6 +108,7 @@ async fn health() -> Json<serde_json::Value> {
         "product": "TrustGate by PatchHive",
         "review_count": db::review_count(),
         "rules_count": db::rule_count(),
+        "template_count": db::template_count(),
         "repo_count": pipeline::unique_repos(&reviews),
         "auth_enabled": auth_enabled(),
         "config_errors": errors,
@@ -132,6 +135,14 @@ async fn list_rules() -> Json<serde_json::Value> {
     }))
 }
 
+async fn list_templates() -> Json<serde_json::Value> {
+    Json(json!({
+        "templates": db::list_report_templates().unwrap_or_default(),
+        "defaults": ReportTemplateSet::default(),
+        "variables": report_template_variables(),
+    }))
+}
+
 async fn save_rules(Json(mut body): Json<RepoRuleSet>) -> Result<Json<serde_json::Value>, StatusCode> {
     let Some(repo) = db::normalize_repo_name(&body.repo) else {
         return Err(StatusCode::BAD_REQUEST);
@@ -139,6 +150,25 @@ async fn save_rules(Json(mut body): Json<RepoRuleSet>) -> Result<Json<serde_json
 
     body.repo = repo.clone();
     db::save_rules(&repo, &body).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(json!({ "ok": true, "repo": repo })))
+}
+
+async fn save_templates(
+    Json(mut body): Json<ReportTemplateSet>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let Some(repo) = db::normalize_repo_name(&body.repo) else {
+        return Err(StatusCode::BAD_REQUEST);
+    };
+
+    if body.check_title_template.trim().is_empty()
+        || body.check_summary_template.trim().is_empty()
+        || body.comment_template.trim().is_empty()
+    {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    body.repo = repo.clone();
+    db::save_report_templates(&repo, &body).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(json!({ "ok": true, "repo": repo })))
 }
 
@@ -150,5 +180,16 @@ async fn delete_rules(
     };
 
     db::delete_rules(&repo).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(json!({ "ok": true })))
+}
+
+async fn delete_templates(
+    axum::extract::Path(repo): axum::extract::Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let Some(repo) = db::normalize_repo_name(&repo) else {
+        return Err(StatusCode::BAD_REQUEST);
+    };
+
+    db::delete_report_templates(&repo).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(json!({ "ok": true })))
 }

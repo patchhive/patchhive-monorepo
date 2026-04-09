@@ -11,6 +11,7 @@ TrustGate is the trust and safety layer for PatchHive. It reviews AI-generated d
 - accepts signed `pull_request` webhook payloads so review can happen automatically on PR updates
 - pushes TrustGate recommendations back to GitHub as a check run when possible, with commit-status fallback
 - maintains a single PR comment with the current TrustGate report so maintainers can read the review in-thread
+- lets each repo save GitHub report templates so TrustGate's check output and PR comment tone can be tuned without changing the review logic
 - loads repo-specific risk rules for path restrictions, suspicious terms, and change limits
 - offers reusable rule packs for app, library, infra, and agent-generated patch repos
 - flags risky file changes such as workflow, infrastructure, migration, or auth-adjacent edits
@@ -47,6 +48,7 @@ Frontend: `http://localhost:5175`
 - The frontend uses `@patchhivehq/product-shell` for the shared PatchHive API-key login flow.
 - The backend stores rules and review history in SQLite at `TRUST_DB_PATH`.
 - Repo-specific rule sets are the main product memory in the MVP.
+- Repo-specific GitHub report templates now sit beside the rule sets and control how TrustGate speaks back in GitHub.
 - GitHub integration is optional; the core review loop still works on pasted diffs alone.
 - `BOT_GITHUB_TOKEN` or `GITHUB_TOKEN` enables private PR fetches plus GitHub report delivery.
 - `TRUST_GITHUB_WEBHOOK_SECRET` enables signed `pull_request` webhook intake.
