@@ -1046,6 +1046,7 @@ fn rank_context_entries(
                 + (matched_paths.len() as f64 * 18.0)
                 + (matched_terms.len() as f64 * 7.0)
                 + context_kind_bonus(entry, &clean_paths, consumer)
+                + profile_path_bonus(entry, &clean_paths, &matched_paths, consumer)
                 + curation_bonus(entry);
 
             ContextEntry {
@@ -1116,13 +1117,7 @@ fn matching_entry_paths(entry: &MemoryEntry, changed_paths: &[String]) -> Vec<St
             .evidence
             .iter()
             .filter_map(|evidence| evidence.path.as_ref())
-            .any(|candidate| {
-                let candidate = candidate.to_ascii_lowercase();
-                path_lower == candidate
-                    || path_lower.starts_with(&(candidate.clone() + "/"))
-                    || candidate.starts_with(&(path_lower.clone() + "/"))
-                    || path_bucket == candidate
-            });
+            .any(|candidate| path_matches_candidate(&path_lower, &path_bucket, candidate));
 
         if direct_match || text.contains(&path_bucket) || text.contains(&path_lower) {
             matched.push(path.clone());
@@ -1191,6 +1186,55 @@ fn context_kind_bonus(entry: &MemoryEntry, changed_paths: &[String], consumer: &
             _ => 0.0,
         },
     }
+}
+
+fn profile_path_bonus(
+    entry: &MemoryEntry,
+    changed_paths: &[String],
+    matched_paths: &[String],
+    consumer: &str,
+) -> f64 {
+    if changed_paths.is_empty() || matched_paths.is_empty() {
+        return 0.0;
+    }
+
+    let matched_count = matched_paths.len().min(3) as f64;
+    let coverage = matched_paths.len() as f64 / changed_paths.len().max(1) as f64;
+    let evidence_hits = changed_paths
+        .iter()
+        .filter(|path| entry_path_focuses_on(entry, path))
+        .count()
+        .min(3) as f64;
+
+    match (consumer, entry.kind.as_str()) {
+        ("trust-gate", "reviewer_profile") => 16.0 + (matched_count * 5.0) + (coverage * 10.0) + (evidence_hits * 4.0),
+        ("trust-gate", "maintainer_profile") => 8.0 + (matched_count * 4.0) + (coverage * 8.0) + (evidence_hits * 3.0),
+        ("repo-reaper", "maintainer_profile") => 16.0 + (matched_count * 5.0) + (coverage * 10.0) + (evidence_hits * 4.0),
+        ("repo-reaper", "reviewer_profile") => 8.0 + (matched_count * 4.0) + (coverage * 8.0) + (evidence_hits * 3.0),
+        (_, "reviewer_profile" | "maintainer_profile") => {
+            10.0 + (matched_count * 4.0) + (coverage * 8.0) + (evidence_hits * 3.0)
+        }
+        _ => 0.0,
+    }
+}
+
+fn entry_path_focuses_on(entry: &MemoryEntry, path: &str) -> bool {
+    let path_lower = path.to_ascii_lowercase();
+    let path_bucket = path_bucket(path).to_ascii_lowercase();
+
+    entry
+        .evidence
+        .iter()
+        .filter_map(|evidence| evidence.path.as_ref())
+        .any(|candidate| path_matches_candidate(&path_lower, &path_bucket, candidate))
+}
+
+fn path_matches_candidate(path_lower: &str, path_bucket_lower: &str, candidate: &str) -> bool {
+    let candidate = candidate.to_ascii_lowercase();
+    path_lower == candidate
+        || path_lower.starts_with(&(candidate.clone() + "/"))
+        || candidate.starts_with(&(path_lower.to_string() + "/"))
+        || path_bucket_lower == candidate
 }
 
 fn curation_bonus(entry: &MemoryEntry) -> f64 {
@@ -1412,6 +1456,85 @@ fn valid_repo(repo: &str) -> bool {
         (parts.next(), parts.next(), parts.next()),
         (Some(owner), Some(name), None) if !owner.trim().is_empty() && !name.trim().is_empty()
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_entry(kind: &str, title: &str, detail: &str, prompt_line: &str) -> MemoryEntry {
+        MemoryEntry {
+            id: format!("id-{kind}"),
+            memory_ref: format!("ref-{kind}"),
+            run_id: "run-1".into(),
+            repo: "patchhive/example".into(),
+            kind: kind.into(),
+            title: title.into(),
+            detail: detail.into(),
+            prompt_line: prompt_line.into(),
+            confidence: 72.0,
+            frequency: 3,
+            disposition: "signal".into(),
+            pinned: false,
+            tags: vec![kind.into()],
+            evidence: Vec::new(),
+            created_at: "2026-04-11T00:00:00Z".into(),
+        }
+    }
+
+    #[test]
+    fn repo_reaper_prefers_maintainer_profiles_when_paths_match() {
+        let maintainer = sample_entry(
+            "maintainer_profile",
+            "Merged patterns from @alex",
+            "Recent merged work from @alex clusters in src/reaper.",
+            "When touching src/reaper, match the conventions that recently landed in merged work from @alex.",
+        );
+        let reviewer = sample_entry(
+            "reviewer_profile",
+            "Review patterns from @sam",
+            "Past feedback from @sam repeatedly focused on tests especially around docs/.",
+            "Pre-empt the kinds of feedback @sam often gives when touching docs/.",
+        );
+
+        let ranked = rank_context_entries(
+            &[reviewer, maintainer],
+            "repo-reaper",
+            &[String::from("src/reaper/fix_worker.rs")],
+            "",
+            "",
+            4,
+        );
+
+        assert_eq!(ranked.first().map(|entry| entry.kind.as_str()), Some("maintainer_profile"));
+    }
+
+    #[test]
+    fn trust_gate_prefers_reviewer_profiles_when_paths_match() {
+        let maintainer = sample_entry(
+            "maintainer_profile",
+            "Merged patterns from @alex",
+            "Recent merged work from @alex clusters in src/reaper.",
+            "When touching src/reaper, match the conventions that recently landed in merged work from @alex.",
+        );
+        let reviewer = sample_entry(
+            "reviewer_profile",
+            "Review patterns from @sam",
+            "Past feedback from @sam repeatedly focused on validation especially around src/reaper.",
+            "Pre-empt the kinds of feedback @sam often gives when touching src/reaper.",
+        );
+
+        let ranked = rank_context_entries(
+            &[maintainer, reviewer],
+            "trust-gate",
+            &[String::from("src/reaper/fix_worker.rs")],
+            "",
+            "",
+            4,
+        );
+
+        assert_eq!(ranked.first().map(|entry| entry.kind.as_str()), Some("reviewer_profile"));
+    }
 }
 
 fn normalize_consumer(value: &str) -> String {
