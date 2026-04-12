@@ -13,7 +13,7 @@ use axum::{
     Json, Router,
 };
 use once_cell::sync::OnceCell;
-use patchhive_product_core::startup::{count_errors, log_checks, StartupCheck};
+use patchhive_product_core::startup::{count_errors, listen_addr, log_checks, StartupCheck};
 use serde_json::json;
 use tower_http::cors::{Any, CorsLayer};
 use tracing::info;
@@ -68,9 +68,9 @@ async fn main() {
         .layer(cors)
         .with_state(AppState::new());
 
-    let addr = "0.0.0.0:8000";
+    let addr = listen_addr("TRUSTGATE_PORT", 8020);
     info!("🛡 TrustGate by PatchHive — listening on {addr}");
-    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+    let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }
 

@@ -130,6 +130,49 @@ pub struct OverviewPayload {
     pub featured_memories: Vec<MemoryEntry>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContextRequest {
+    pub repo: String,
+    #[serde(default)]
+    pub changed_paths: Vec<String>,
+    #[serde(default)]
+    pub task_summary: String,
+    #[serde(default)]
+    pub diff_summary: String,
+    #[serde(default = "default_context_limit")]
+    pub limit: u32,
+}
+
+fn default_context_limit() -> u32 {
+    6
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContextEntry {
+    pub id: String,
+    pub kind: String,
+    pub title: String,
+    pub detail: String,
+    pub prompt_line: String,
+    pub confidence: f64,
+    pub frequency: u32,
+    pub retrieval_score: f64,
+    pub matched_paths: Vec<String>,
+    pub matched_terms: Vec<String>,
+    pub tags: Vec<String>,
+    pub evidence: Vec<MemoryEvidence>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContextResponse {
+    pub repo: String,
+    pub run_id: String,
+    pub created_at: String,
+    pub summary: String,
+    pub prompt_lines: Vec<String>,
+    pub entries: Vec<ContextEntry>,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct GitHubUser {
     pub login: String,

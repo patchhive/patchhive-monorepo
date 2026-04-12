@@ -10,6 +10,7 @@ services:
     environment:
       - REAPER_DB_PATH=/data/repo-reaper.db
       - REAPER_WORK_DIR=/tmp/repo-reaper
+      - REAPER_PORT=8000
       - RUST_LOG=info
     env_file:
       - .env

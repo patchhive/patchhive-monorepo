@@ -55,6 +55,7 @@ Frontend: `http://localhost:5175`
 - `BOT_GITHUB_TOKEN` or `GITHUB_TOKEN` enables private PR fetches plus GitHub report delivery.
 - `TRUST_GITHUB_WEBHOOK_SECRET` enables signed `pull_request` webhook intake.
 - `TRUSTGATE_PUBLIC_URL` lets GitHub checks/statuses link back to TrustGate review details.
+- `PATCHHIVE_REPO_MEMORY_URL` optionally lets TrustGate enrich reviews with remembered testing expectations, hotspots, and failure patterns.
 
 ## Standalone Repo Notes
 

@@ -9,6 +9,7 @@ services:
       - ./data:/data
     environment:
       - REPO_MEMORY_DB_PATH=/data/repo-memory.db
+      - REPO_MEMORY_PORT=8000
       - RUST_LOG=info
     env_file:
       - .env

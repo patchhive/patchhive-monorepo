@@ -12,7 +12,7 @@ use axum::{
     Router,
 };
 use once_cell::sync::OnceCell;
-use patchhive_product_core::startup::{log_checks, StartupCheck};
+use patchhive_product_core::startup::{listen_addr, log_checks, StartupCheck};
 use tower_http::cors::{Any, CorsLayer};
 use tracing::info;
 
@@ -52,6 +52,7 @@ async fn main() {
         .route("/overview", get(pipeline::overview))
         .route("/repos", get(pipeline::known_repos))
         .route("/memories", get(pipeline::memories))
+        .route("/context", post(pipeline::context))
         .route("/history", get(pipeline::history))
         .route("/history/:id", get(pipeline::history_detail))
         .route("/history/:id/prompt-pack", get(pipeline::prompt_pack))
@@ -60,8 +61,8 @@ async fn main() {
         .layer(cors)
         .with_state(state);
 
-    let addr = "0.0.0.0:8000";
+    let addr = listen_addr("REPO_MEMORY_PORT", 8030);
     info!("🧠 RepoMemory by PatchHive — listening on {addr}");
-    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+    let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }

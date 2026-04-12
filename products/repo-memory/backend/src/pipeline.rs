@@ -15,9 +15,9 @@ use crate::{
     db,
     github,
     models::{
-        GitHubIssue, GitHubPullFile, GitHubPullRequest, GitHubReview, GitHubReviewComment,
-        HistoryItem, IngestParams, IngestRecord, IngestSummary, KnownRepo, MemoryEntry,
-        MemoryEvidence, OverviewPayload,
+        ContextEntry, ContextRequest, ContextResponse, GitHubIssue, GitHubPullFile,
+        GitHubPullRequest, GitHubReview, GitHubReviewComment, HistoryItem, IngestParams,
+        IngestRecord, IngestSummary, KnownRepo, MemoryEntry, MemoryEvidence, OverviewPayload,
     },
     state::AppState,
     STARTUP_CHECKS,
@@ -127,6 +127,51 @@ pub async fn memories(Query(query): Query<MemoryQuery>) -> JsonResult<serde_json
     .map_err(internal_error)?;
 
     Ok(Json(json!({ "memories": memories })))
+}
+
+pub async fn context(Json(request): Json<ContextRequest>) -> JsonResult<ContextResponse> {
+    let repo = request.repo.trim().to_string();
+    if !valid_repo(&repo) {
+        return Err(bad_request("RepoMemory expects repos in owner/repo format."));
+    }
+
+    let latest = db::list_history(Some(&repo))
+        .map_err(internal_error)?
+        .into_iter()
+        .next()
+        .ok_or_else(|| not_found("RepoMemory has no ingested history for that repo yet."))?;
+
+    let run = db::get_history(&latest.id)
+        .map_err(internal_error)?
+        .ok_or_else(|| not_found("RepoMemory run not found."))?;
+
+    let entries = rank_context_entries(
+        &run.entries,
+        &request.changed_paths,
+        &request.task_summary,
+        &request.diff_summary,
+        request.limit.max(1) as usize,
+    );
+
+    let summary = if entries.is_empty() {
+        format!(
+            "RepoMemory found no especially relevant memories in the latest run for {repo}, so consumers should fall back to the full prompt pack."
+        )
+    } else {
+        format!(
+            "RepoMemory selected {} relevant memories from the latest run for {repo}.",
+            entries.len()
+        )
+    };
+
+    Ok(Json(ContextResponse {
+        repo,
+        run_id: run.id,
+        created_at: run.created_at,
+        summary,
+        prompt_lines: entries.iter().map(|entry| entry.prompt_line.clone()).collect(),
+        entries,
+    }))
 }
 
 pub async fn history(Query(query): Query<HistoryQuery>) -> JsonResult<serde_json::Value> {
@@ -514,6 +559,138 @@ fn build_prompt_pack(repo: &str, summary: &IngestSummary, entries: &[MemoryEntry
     )
 }
 
+fn rank_context_entries(
+    entries: &[MemoryEntry],
+    changed_paths: &[String],
+    task_summary: &str,
+    diff_summary: &str,
+    limit: usize,
+) -> Vec<ContextEntry> {
+    let clean_paths: Vec<String> = changed_paths
+        .iter()
+        .map(|path| path.trim().trim_start_matches("./").to_string())
+        .filter(|path| !path.is_empty())
+        .collect();
+    let context_tokens = tokenize_context(&format!("{task_summary} {diff_summary}"));
+
+    let mut ranked = entries
+        .iter()
+        .map(|entry| {
+            let matched_paths = matching_entry_paths(entry, &clean_paths);
+            let matched_terms = matching_entry_terms(entry, &context_tokens);
+            let retrieval_score =
+                entry.confidence * 0.55
+                + (entry.frequency as f64 * 6.0)
+                + (matched_paths.len() as f64 * 18.0)
+                + (matched_terms.len() as f64 * 7.0)
+                + context_kind_bonus(entry, &clean_paths);
+
+            ContextEntry {
+                id: entry.id.clone(),
+                kind: entry.kind.clone(),
+                title: entry.title.clone(),
+                detail: entry.detail.clone(),
+                prompt_line: entry.prompt_line.clone(),
+                confidence: entry.confidence,
+                frequency: entry.frequency,
+                retrieval_score,
+                matched_paths,
+                matched_terms,
+                tags: entry.tags.clone(),
+                evidence: entry.evidence.clone(),
+            }
+        })
+        .collect::<Vec<_>>();
+
+    ranked.sort_by(|left, right| {
+        right
+            .retrieval_score
+            .partial_cmp(&left.retrieval_score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| right.frequency.cmp(&left.frequency))
+    });
+
+    let fallback_mode = clean_paths.is_empty() && context_tokens.is_empty();
+    ranked
+        .into_iter()
+        .filter(|entry| fallback_mode || !entry.matched_paths.is_empty() || !entry.matched_terms.is_empty() || entry.retrieval_score >= 68.0)
+        .take(limit)
+        .collect()
+}
+
+fn matching_entry_paths(entry: &MemoryEntry, changed_paths: &[String]) -> Vec<String> {
+    let mut matched = Vec::new();
+    for path in changed_paths {
+        let path_lower = path.to_ascii_lowercase();
+        let path_bucket = path_bucket(path).to_ascii_lowercase();
+        let text = format!(
+            "{} {} {} {}",
+            entry.title,
+            entry.detail,
+            entry.prompt_line,
+            entry.tags.join(" ")
+        )
+        .to_ascii_lowercase();
+
+        let direct_match = entry
+            .evidence
+            .iter()
+            .filter_map(|evidence| evidence.path.as_ref())
+            .any(|candidate| {
+                let candidate = candidate.to_ascii_lowercase();
+                path_lower == candidate
+                    || path_lower.starts_with(&(candidate.clone() + "/"))
+                    || candidate.starts_with(&(path_lower.clone() + "/"))
+                    || path_bucket == candidate
+            });
+
+        if direct_match || text.contains(&path_bucket) || text.contains(&path_lower) {
+            matched.push(path.clone());
+        }
+    }
+    matched.sort();
+    matched.dedup();
+    matched
+}
+
+fn matching_entry_terms(entry: &MemoryEntry, context_tokens: &HashSet<String>) -> Vec<String> {
+    if context_tokens.is_empty() {
+        return Vec::new();
+    }
+
+    let entry_tokens = tokenize_context(&format!(
+        "{} {} {} {} {}",
+        entry.title,
+        entry.detail,
+        entry.prompt_line,
+        entry.tags.join(" "),
+        entry
+            .evidence
+            .iter()
+            .map(|evidence| evidence.excerpt.as_str())
+            .collect::<Vec<_>>()
+            .join(" ")
+    ));
+
+    let mut matched = context_tokens
+        .intersection(&entry_tokens)
+        .cloned()
+        .collect::<Vec<_>>();
+    matched.sort();
+    matched.truncate(4);
+    matched
+}
+
+fn context_kind_bonus(entry: &MemoryEntry, changed_paths: &[String]) -> f64 {
+    match entry.kind.as_str() {
+        "hotspot" if !changed_paths.is_empty() => 9.0,
+        "failure_pattern" => 7.0,
+        "testing_expectation" => 6.0,
+        "review_rule" => 4.0,
+        _ => 0.0,
+    }
+}
+
 fn build_entry(
     run_id: &str,
     repo: &str,
@@ -742,6 +919,14 @@ fn tokenize(text: &str) -> HashSet<String> {
     text.split(|ch: char| !ch.is_ascii_alphanumeric())
         .map(|part| part.trim().to_ascii_lowercase())
         .filter(|part| part.len() >= 4)
+        .collect()
+}
+
+fn tokenize_context(text: &str) -> HashSet<String> {
+    text.split(|ch: char| !ch.is_ascii_alphanumeric())
+        .map(|part| part.trim().to_ascii_lowercase())
+        .filter(|part| part.len() >= 3)
+        .filter(|part| !STOPWORDS.contains(&part.as_str()))
         .collect()
 }
 

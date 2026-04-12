@@ -6,6 +6,7 @@ use std::convert::Infallible;
 use axum::response::sse::Event;
 use chrono::Utc;
 use patchhive_github_pr::github_token_from_env;
+use patchhive_product_core::repo_memory::{fetch_repo_memory_context, RepoMemoryContextRequest, RepoMemoryContextResponse};
 use uuid::Uuid;
 
 use crate::agents::*;
@@ -49,6 +50,28 @@ pub fn astatus(agent_id: &str, status: &str, task: &str) -> Result<Event, Infall
 }
 
 fn cfg(k: &str) -> String { std::env::var(k).unwrap_or_default() }
+
+fn build_repo_memory_block(context: Option<&RepoMemoryContextResponse>) -> String {
+    let Some(context) = context else {
+        return String::new();
+    };
+    if context.entries.is_empty() {
+        return String::new();
+    }
+
+    let lines = context
+        .entries
+        .iter()
+        .take(5)
+        .map(|entry| format!("- [{}] {}", entry.kind, entry.prompt_line))
+        .collect::<Vec<_>>();
+
+    format!(
+        "RepoMemory says the latest durable context for this repo is:\n{}\n\nSummary: {}",
+        lines.join("\n"),
+        context.summary
+    )
+}
 
 pub struct FixParams {
     pub retry_count: usize,
@@ -164,7 +187,7 @@ pub async fn fix_one(
         ), Some(&bot_token)).await;
 
     // Judge: select relevant files
-    let codebase = if let Some(ref judge) = judge {
+    let (selected_files, codebase) = if let Some(ref judge) = judge {
         let _ = tx.send(astatus(&judge.id, "working", &format!("#{issue_num}"))).await;
         let structure = collect_repo_structure(&work_path);
         let result = agent_select_files(
@@ -178,16 +201,56 @@ pub async fn fix_one(
             Ok((files, c)) if !files.is_empty() => {
                 cost += c;
                 let _ = tx.send(alog(judge, &format!("Targeted {} files: {}", files.len(), files.iter().take(3).cloned().collect::<Vec<_>>().join(", ")), "success")).await;
-                collect_files_selective(&work_path, &files, 80_000)
+                let codebase = collect_files_selective(&work_path, &files, 80_000);
+                (files, codebase)
             }
-            Ok(_) => collect_files_all(&work_path, 60_000),
+            Ok(_) => (Vec::new(), collect_files_all(&work_path, 60_000)),
             Err(e) => {
                 let _ = tx.send(alog(judge, &format!("Targeting failed (fallback): {e}"), "warn")).await;
-                collect_files_all(&work_path, 60_000)
+                (Vec::new(), collect_files_all(&work_path, 60_000))
             }
         }
     } else {
-        collect_files_all(&work_path, 60_000)
+        (Vec::new(), collect_files_all(&work_path, 60_000))
+    };
+
+    let repo_memory_context = match fetch_repo_memory_context(
+        &http,
+        &RepoMemoryContextRequest {
+            repo: issue["repo"].as_str().unwrap_or("").to_string(),
+            changed_paths: selected_files.clone(),
+            task_summary: format!(
+                "Fix GitHub issue #{} in {}: {}",
+                issue_num,
+                issue["repo"].as_str().unwrap_or(""),
+                issue["title"].as_str().unwrap_or("")
+            ),
+            diff_summary: issue_ctx.chars().take(1200).collect::<String>(),
+            limit: 5,
+        },
+    )
+    .await
+    {
+        Ok(context) => {
+            if let Some(ref context) = context {
+                if !context.entries.is_empty() {
+                    let _ = tx.send(alog(&reaper, &format!("Loaded {} RepoMemory hints", context.entries.len()), "info")).await;
+                }
+            }
+            context
+        }
+        Err(e) => {
+            let _ = tx.send(alog(&reaper, &format!("RepoMemory unavailable (continuing): {e}"), "warn")).await;
+            None
+        }
+    };
+    let enriched_issue_ctx = {
+        let block = build_repo_memory_block(repo_memory_context.as_ref());
+        if block.is_empty() {
+            issue_ctx.clone()
+        } else {
+            format!("{issue_ctx}\n\n{block}")
+        }
     };
 
     // Reaper: generate patch
@@ -196,7 +259,7 @@ pub async fn fix_one(
         &http,
         issue["title"].as_str().unwrap_or(""),
         issue["body"].as_str().unwrap_or(""),
-        &codebase, &issue_ctx, &reaper,
+        &codebase, &enriched_issue_ctx, &reaper,
     ).await;
 
     let (mut result, pc) = match patch_result {
@@ -231,7 +294,7 @@ pub async fn fix_one(
         let _ = tx.send(alog(&reaper, "Apply failed — self-healing…", "warn")).await;
         if let Ok((r2, c2)) = agent_patch_retry(
             &http, issue["title"].as_str().unwrap_or(""), issue["body"].as_str().unwrap_or(""),
-            &codebase, &patch_str, &format!("git apply error:\n{apply_err}"), &reaper,
+            &codebase, &patch_str, &format!("git apply error:\n{apply_err}\n\n{enriched_issue_ctx}"), &reaper,
         ).await {
             cost += c2;
             if !r2["patch"].is_null() {
@@ -311,7 +374,7 @@ pub async fn fix_one(
         let _ = git_reset(&work_path).await;
         match agent_patch_retry(
             &http, issue["title"].as_str().unwrap_or(""), issue["body"].as_str().unwrap_or(""),
-            &codebase, &final_patch, &format!("Test failure:\n{}", test.output), &reaper,
+            &codebase, &final_patch, &format!("Test failure:\n{}\n\n{}", test.output, enriched_issue_ctx), &reaper,
         ).await {
             Ok((r3, c3)) => {
                 cost += c3;

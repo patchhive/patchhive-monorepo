@@ -79,6 +79,16 @@ cargo run
 
 If `PATCHHIVE_AI_URL` is set, RepoReaper uses it for the `openai` provider. `OPENAI_BASE_URL` still works as a compatibility fallback.
 
+RepoReaper also supports optional RepoMemory context:
+
+```bash
+export PATCHHIVE_REPO_MEMORY_URL=http://127.0.0.1:8030
+# Optional if RepoMemory auth is enabled:
+export PATCHHIVE_REPO_MEMORY_API_KEY=repo-memory_xxxxxxxxxxxxxxxx
+```
+
+When configured, RepoReaper loads remembered repo conventions, hotspots, and failure patterns before patch generation and retry loops.
+
 ---
 
 *RepoReaper by PatchHive — part of the PatchHive maintenance platform*

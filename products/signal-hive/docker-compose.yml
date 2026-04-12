@@ -9,6 +9,7 @@ services:
       - ./data:/data
     environment:
       - SIGNAL_DB_PATH=/data/signal-hive.db
+      - SIGNAL_PORT=8000
       - RUST_LOG=info
     env_file:
       - .env

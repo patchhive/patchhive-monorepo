@@ -135,8 +135,7 @@ export function SchedulesPanel({ apiKey = "" }) {
 
 // WebhookPanel.jsx
 export function WebhookPanel({ watchMode, onToggleWatch }) {
-  const host = window.location.hostname;
-  const url = `http://${host}:8000/webhook/github`;
+  const url = `${API.replace(/\/+$/, "")}/webhook/github`;
 
   return (
     <div style={{ maxWidth:600 }}>

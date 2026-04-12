@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use patchhive_product_core::repo_memory::RepoMemoryContextResponse;
 
 fn default_blocked_paths() -> Vec<String> {
     vec![
@@ -373,6 +374,8 @@ pub struct ReviewResult {
     pub github: Option<GitHubReviewContext>,
     #[serde(default)]
     pub github_report: Option<GitHubReportOutcome>,
+    #[serde(default)]
+    pub repo_memory_context: Option<RepoMemoryContextResponse>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -56,5 +56,15 @@ pub async fn validate_config() -> Vec<StartupCheck> {
         "TrustGate reviews AI-generated diffs and returns safe, warn, or block recommendations.",
     ));
 
+    if patchhive_product_core::repo_memory::repo_memory_url().is_some() {
+        checks.push(StartupCheck::info(
+            "RepoMemory context is configured. TrustGate can enrich reviews with remembered repo conventions and failure patterns.",
+        ));
+    } else {
+        checks.push(StartupCheck::info(
+            "RepoMemory context is not configured. TrustGate will rely on repo rules alone until PATCHHIVE_REPO_MEMORY_URL is set.",
+        ));
+    }
+
     checks
 }

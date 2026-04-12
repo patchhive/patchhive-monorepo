@@ -21,6 +21,7 @@ Use this to capture later ideas so they do not get lost between product pushes.
 - Add a print-friendly or shareable prompt-pack view once the format settles.
 - Add reviewer and maintainer profile summaries so repeated feedback can be attributed more clearly over time.
 - Consider AI-assisted summarization or retrieval later through `patchhive-ai-local`, but keep the base memory loop useful without AI.
+- IncidentEcho also fits here as a capability that captures lessons from bugs, incidents, and painful reviews so the repo keeps institutional memory.
 
 ## RepoReaper
 

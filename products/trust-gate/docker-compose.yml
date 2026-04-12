@@ -9,6 +9,7 @@ services:
       - ./data:/data
     environment:
       - TRUST_DB_PATH=/data/trust-gate.db
+      - TRUSTGATE_PORT=8000
       - RUST_LOG=info
     env_file:
       - .env

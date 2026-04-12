@@ -9,7 +9,11 @@ use axum::{
 use chrono::Utc;
 use glob::Pattern;
 use patchhive_github_pr::verify_github_webhook_signature;
+use patchhive_product_core::repo_memory::{
+    fetch_repo_memory_context, RepoMemoryContextRequest,
+};
 use serde_json::{json, Value};
+use tracing::warn;
 use uuid::Uuid;
 
 use crate::{
@@ -305,7 +309,8 @@ fn normalize_ai_source(value: &str, fallback: &str) -> String {
     }
 }
 
-fn review_diff(
+async fn review_diff(
+    client: &reqwest::Client,
     repo: &str,
     diff: &str,
     ai_source: &str,
@@ -314,6 +319,27 @@ fn review_diff(
     github_context: Option<GitHubReviewContext>,
 ) -> ReviewResult {
     let patches = parse_diff(diff);
+    let changed_paths: Vec<String> = patches.iter().map(|patch| patch.path.clone()).collect();
+    let diff_summary = summarize_diff_for_memory(&patches);
+    let task_summary = summarize_review_task(repo, ai_source, source_kind, github_context.as_ref());
+    let repo_memory_context = match fetch_repo_memory_context(
+        client,
+        &RepoMemoryContextRequest {
+            repo: repo.to_string(),
+            changed_paths: changed_paths.clone(),
+            task_summary,
+            diff_summary,
+            limit: 5,
+        },
+    )
+    .await
+    {
+        Ok(context) => context,
+        Err(err) => {
+            warn!("RepoMemory context lookup failed for {repo}: {err}");
+            None
+        }
+    };
     let files_changed = patches.len() as u32;
     let additions = patches.iter().map(|patch| patch.additions).sum::<u32>();
     let deletions = patches.iter().map(|patch| patch.deletions).sum::<u32>();
@@ -629,6 +655,67 @@ fn review_diff(
         ));
     }
 
+    if let Some(context) = repo_memory_context.as_ref() {
+        if missing_tests {
+            let memory_testing = context
+                .entries
+                .iter()
+                .filter(|entry| entry.kind == "testing_expectation" || entry.tags.iter().any(|tag| tag == "tests"))
+                .map(|entry| format!("{} — {}", entry.title, entry.prompt_line))
+                .take(4)
+                .collect::<Vec<_>>();
+            if !memory_testing.is_empty() {
+                findings.push(make_finding(
+                    "repo_memory_tests",
+                    "RepoMemory test expectations",
+                    if sensitive_code_changes > 0 { "block" } else { "warn" },
+                    "RepoMemory found prior evidence that this repo expects tests for changes like these.",
+                    memory_testing,
+                ));
+            }
+        }
+
+        let hotspot_entries = context
+            .entries
+            .iter()
+            .filter(|entry| entry.kind == "hotspot" && !entry.matched_paths.is_empty())
+            .map(|entry| {
+                format!(
+                    "{} -> {}",
+                    entry.matched_paths.join(", "),
+                    entry.prompt_line
+                )
+            })
+            .take(4)
+            .collect::<Vec<_>>();
+        if !hotspot_entries.is_empty() {
+            findings.push(make_finding(
+                "repo_memory_hotspots",
+                "RepoMemory hotspots",
+                "warn",
+                "RepoMemory says this diff touches high-context areas that have attracted repeat fixes or review churn.",
+                hotspot_entries,
+            ));
+        }
+
+        let failure_entries = context
+            .entries
+            .iter()
+            .filter(|entry| entry.kind == "failure_pattern")
+            .map(|entry| format!("{} — {}", entry.title, entry.prompt_line))
+            .take(3)
+            .collect::<Vec<_>>();
+        if !failure_entries.is_empty() {
+            findings.push(make_finding(
+                "repo_memory_failures",
+                "RepoMemory failure patterns",
+                "warn",
+                "RepoMemory found recurring historical failures that look relevant to this review.",
+                failure_entries,
+            ));
+        }
+    }
+
     let blocked_findings = findings
         .iter()
         .filter(|finding| finding.severity == "block")
@@ -694,6 +781,51 @@ fn review_diff(
         source_kind: source_kind.into(),
         github: github_context,
         github_report: None,
+        repo_memory_context,
+    }
+}
+
+fn summarize_diff_for_memory(patches: &[FilePatch]) -> String {
+    patches
+        .iter()
+        .take(6)
+        .map(|patch| {
+            let lines = patch
+                .added_lines
+                .iter()
+                .take(2)
+                .map(|line| line.trim())
+                .filter(|line| !line.is_empty())
+                .collect::<Vec<_>>()
+                .join(" | ");
+            if lines.is_empty() {
+                patch.path.clone()
+            } else {
+                format!("{}: {}", patch.path, lines)
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn summarize_review_task(
+    repo: &str,
+    ai_source: &str,
+    source_kind: &str,
+    github_context: Option<&GitHubReviewContext>,
+) -> String {
+    if let Some(context) = github_context {
+        format!(
+            "Review {} diff for {} PR #{} {} from {} to {}.",
+            ai_source,
+            repo,
+            context.pr_number,
+            context.pr_title,
+            context.head_ref,
+            context.base_ref,
+        )
+    } else {
+        format!("Review {ai_source} diff for {repo} from {source_kind}.")
     }
 }
 
@@ -756,13 +888,15 @@ async fn run_github_pr_review(
     };
 
     let mut review = review_diff(
+        client,
         &repo,
         &diff,
         &normalize_ai_source(&ai_source, "github-pr"),
         rules,
         "github_pr",
         Some(github_context),
-    );
+    )
+    .await;
 
     review.github_report = Some(if publish_status {
         github::publish_review_outcome(client, &review).await
@@ -802,7 +936,10 @@ pub async fn rule_packs() -> Json<serde_json::Value> {
     Json(json!({ "packs": build_rule_packs() }))
 }
 
-pub async fn review(Json(body): Json<ReviewRequest>) -> Result<Json<ReviewResult>, ApiError> {
+pub async fn review(
+    State(state): State<AppState>,
+    Json(body): Json<ReviewRequest>,
+) -> Result<Json<ReviewResult>, ApiError> {
     let Some(repo) = db::normalize_repo_name(&body.repo) else {
         return Err(api_error(
             StatusCode::BAD_REQUEST,
@@ -819,13 +956,15 @@ pub async fn review(Json(body): Json<ReviewRequest>) -> Result<Json<ReviewResult
 
     let rules = resolve_rules(&repo, body.rules)?;
     let review = review_diff(
+        &state.http,
         &repo,
         &body.diff,
         &normalize_ai_source(&body.ai_source, "manual"),
         rules,
         "manual",
         None,
-    );
+    )
+    .await;
     db::save_review(&review)
         .map_err(|err| api_error(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
 

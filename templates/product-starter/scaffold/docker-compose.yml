@@ -9,6 +9,7 @@ services:
       - ./data:/data
     environment:
       - __ENV_PREFIX___DB_PATH=/data/__DB_FILE__
+      - __ENV_PREFIX___PORT=8000
       - RUST_LOG=info
     env_file:
       - .env

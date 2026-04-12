@@ -61,3 +61,15 @@ pub fn log_checks(checks: &[StartupCheck]) {
         }
     }
 }
+
+pub fn configured_port(port_env: &str, default_port: u16) -> u16 {
+    std::env::var(port_env)
+        .ok()
+        .and_then(|value| value.trim().parse::<u16>().ok())
+        .filter(|port| *port > 0)
+        .unwrap_or(default_port)
+}
+
+pub fn listen_addr(port_env: &str, default_port: u16) -> String {
+    format!("0.0.0.0:{}", configured_port(port_env, default_port))
+}

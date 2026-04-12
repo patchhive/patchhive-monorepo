@@ -1,6 +1,6 @@
 use crate::db::*;
 use patchhive_github_pr::github_token_from_env;
-use patchhive_product_core::startup::StartupCheck;
+use patchhive_product_core::{repo_memory::repo_memory_url, startup::StartupCheck};
 use reqwest::Client;
 
 pub async fn validate_config(http: &Client) -> Vec<StartupCheck> {
@@ -97,6 +97,12 @@ pub async fn validate_config(http: &Client) -> Vec<StartupCheck> {
                 status["error"].as_str().unwrap_or("unknown error")
             )));
         }
+    }
+
+    if repo_memory_url().is_some() {
+        results.push(StartupCheck::info(
+            "PATCHHIVE_REPO_MEMORY_URL is set — RepoReaper can enrich patch generation with remembered repo conventions and failures",
+        ));
     }
 
     results
