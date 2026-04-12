@@ -6,17 +6,21 @@ use axum::{
     Json,
 };
 use chrono::Utc;
+use patchhive_product_core::repo_memory::RepoMemoryContextRequest;
 use patchhive_product_core::startup::count_errors;
 use serde_json::json;
+use tokio::join;
 use uuid::Uuid;
 
 use crate::{
     auth::{auth_enabled, generate_and_save_key, verify_token},
     db, github,
     github::GitHubMergeContext,
+    integrations,
     models::{
-        AssessmentRequest, HistoryItem, MergeAssessment, MergeMetrics, MergeSignal, OverviewPayload,
-        ReviewerState,
+        AssessmentRequest, HistoryItem, MergeAssessment, MergeMetrics, MergeSignal,
+        OverviewPayload, RepoMemoryContextPreview, ReviewBeeContext, ReviewerState,
+        TrustGateContext,
     },
     state::AppState,
     STARTUP_CHECKS,
@@ -70,6 +74,11 @@ pub async fn health() -> Json<serde_json::Value> {
         "hold_count": counts.hold_runs,
         "blocked_count": counts.blocked_runs,
         "mode": "github-merge-readiness",
+        "integrations": {
+            "review_bee_configured": integrations::review_bee_configured(),
+            "trust_gate_configured": integrations::trust_gate_configured(),
+            "repo_memory_configured": integrations::repo_memory_configured(),
+        }
     }))
 }
 
@@ -112,7 +121,7 @@ pub async fn assess_github_pr(
     let context = github::fetch_merge_context(&state.http, repo, request.pr_number)
         .await
         .map_err(|err| api_error(StatusCode::BAD_GATEWAY, err.to_string()))?;
-    let assessment = build_assessment(&context);
+    let assessment = build_assessment(&state, &context).await;
     db::save_assessment(&assessment)
         .map_err(|err| api_error(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
 
@@ -309,7 +318,7 @@ fn make_signal(
     }
 }
 
-fn build_assessment(context: &GitHubMergeContext) -> MergeAssessment {
+async fn build_assessment(state: &AppState, context: &GitHubMergeContext) -> MergeAssessment {
     let created_at = Utc::now().to_rfc3339();
     let reviewer_states = reviewer_states(context);
     let reviewer_count = reviewer_states.len() as u32;
@@ -489,6 +498,38 @@ fn build_assessment(context: &GitHubMergeContext) -> MergeAssessment {
         ));
     }
 
+    let changed_paths = diff_changed_paths(&context.diff);
+    let diff_summary = format!(
+        "{} files, +{} / -{}",
+        context.pr.changed_files, context.pr.additions, context.pr.deletions
+    );
+    let task_summary = format!(
+        "Assess merge readiness for PR #{}: {}",
+        context.pr.number, context.pr.title
+    );
+    let repo_memory_request = RepoMemoryContextRequest {
+        repo: context.pr.repo.clone(),
+        consumer: "merge-keeper".into(),
+        changed_paths: changed_paths.clone(),
+        task_summary: task_summary.clone(),
+        diff_summary: diff_summary.clone(),
+        limit: 4,
+    };
+
+    let (review_bee_result, trust_gate_result, repo_memory_result) = join!(
+        integrations::fetch_review_bee_context(&state.http, &context.pr.repo, context.pr.number),
+        integrations::fetch_trust_gate_context(&state.http, &context.pr.repo, context.pr.number),
+        integrations::fetch_repo_memory_preview(&state.http, &repo_memory_request),
+    );
+
+    let review_bee_context = review_bee_result.ok().flatten();
+    let trust_gate_context = trust_gate_result.ok().flatten();
+    let repo_memory_context = repo_memory_result.ok().flatten();
+
+    apply_review_bee_signals(&mut blockers, &mut warnings, review_bee_context.as_ref());
+    apply_trust_gate_signals(&mut blockers, &mut warnings, trust_gate_context.as_ref());
+    apply_repo_memory_signals(&mut warnings, repo_memory_context.as_ref());
+
     let readiness = if !blockers.is_empty() {
         "blocked"
     } else if !warnings.is_empty() {
@@ -517,7 +558,127 @@ fn build_assessment(context: &GitHubMergeContext) -> MergeAssessment {
         reviewer_states,
         blockers,
         warnings,
+        review_bee: review_bee_context,
+        trust_gate: trust_gate_context,
+        repo_memory: repo_memory_context,
     }
+}
+
+fn diff_changed_paths(diff: &str) -> Vec<String> {
+    let mut paths = Vec::new();
+    for line in diff.lines() {
+        if line.starts_with("+++ b/") {
+            let path = line.trim_start_matches("+++ b/").trim();
+            if !path.is_empty() && !paths.iter().any(|existing| existing == path) {
+                paths.push(path.to_string());
+            }
+        }
+    }
+    paths
+}
+
+fn apply_review_bee_signals(
+    blockers: &mut Vec<MergeSignal>,
+    warnings: &mut Vec<MergeSignal>,
+    context: Option<&ReviewBeeContext>,
+) {
+    let Some(context) = context else {
+        return;
+    };
+
+    if context.open_items == 0 {
+        return;
+    }
+
+    let evidence = context.top_items.iter().take(4).cloned().collect::<Vec<_>>();
+    if context.status == "attention" && context.open_items >= 3 {
+        blockers.push(make_signal(
+            "review-bee-pressure",
+            "block",
+            "ReviewBee still sees concentrated review churn",
+            format!(
+                "ReviewBee found {} open checklist item{} across {} actionable thread{}, which usually means the PR still needs real follow-up before merge.",
+                context.open_items,
+                plural_suffix(context.open_items),
+                context.actionable_threads,
+                plural_suffix(context.actionable_threads),
+            ),
+            evidence,
+        ));
+    } else {
+        warnings.push(make_signal(
+            "review-bee-follow-up",
+            "warn",
+            "ReviewBee still sees unresolved follow-up",
+            format!(
+                "ReviewBee found {} open checklist item{} across {} actionable thread{}.",
+                context.open_items,
+                plural_suffix(context.open_items),
+                context.actionable_threads,
+                plural_suffix(context.actionable_threads),
+            ),
+            evidence,
+        ));
+    }
+}
+
+fn apply_trust_gate_signals(
+    blockers: &mut Vec<MergeSignal>,
+    warnings: &mut Vec<MergeSignal>,
+    context: Option<&TrustGateContext>,
+) {
+    let Some(context) = context else {
+        return;
+    };
+
+    let evidence = context.top_findings.iter().take(4).cloned().collect::<Vec<_>>();
+    match context.recommendation.as_str() {
+        "block" => blockers.push(make_signal(
+            "trust-gate-block",
+            "block",
+            "TrustGate would block this PR",
+            format!(
+                "{} Risk score: {}. Blocking findings: {}.",
+                context.summary, context.risk_score, context.blocked_findings
+            ),
+            evidence,
+        )),
+        "warn" => warnings.push(make_signal(
+            "trust-gate-warn",
+            "warn",
+            "TrustGate wants a human review pass",
+            format!(
+                "{} Risk score: {}. Warning findings: {}.",
+                context.summary, context.risk_score, context.warning_findings
+            ),
+            evidence,
+        )),
+        _ => {}
+    }
+}
+
+fn apply_repo_memory_signals(
+    warnings: &mut Vec<MergeSignal>,
+    context: Option<&RepoMemoryContextPreview>,
+) {
+    let Some(context) = context else {
+        return;
+    };
+
+    if context.pinned_entries == 0 && context.policy_entries < 2 {
+        return;
+    }
+
+    warnings.push(make_signal(
+        "repo-memory-policy",
+        "warn",
+        "RepoMemory found repo-specific merge expectations",
+        format!(
+            "{} Policy entries: {}. Pinned entries: {}.",
+            context.summary, context.policy_entries, context.pinned_entries
+        ),
+        context.top_entries.iter().take(4).cloned().collect(),
+    ));
 }
 
 fn failing_check_evidence(context: &GitHubMergeContext) -> Vec<String> {
@@ -644,5 +805,79 @@ mod tests {
         assert_eq!(changes_requested, 1);
         assert_eq!(comment_reviews, 1);
         assert_eq!(requesters, vec!["alex".to_string()]);
+    }
+
+    #[test]
+    fn diff_changed_paths_collects_unique_paths() {
+        let diff = r#"
+diff --git a/src/lib.rs b/src/lib.rs
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@
++pub fn next() {}
+diff --git a/tests/lib.test.rs b/tests/lib.test.rs
+--- a/tests/lib.test.rs
++++ b/tests/lib.test.rs
+@@
++it("works", () => {})
++++ b/src/lib.rs
+"#;
+
+        assert_eq!(
+            diff_changed_paths(diff),
+            vec!["src/lib.rs".to_string(), "tests/lib.test.rs".to_string()]
+        );
+    }
+
+    #[test]
+    fn trust_gate_block_turns_into_blocker() {
+        let mut blockers = Vec::new();
+        let mut warnings = Vec::new();
+
+        apply_trust_gate_signals(
+            &mut blockers,
+            &mut warnings,
+            Some(&TrustGateContext {
+                recommendation: "block".into(),
+                summary: "High-risk change.".into(),
+                risk_score: 87,
+                blocked_findings: 2,
+                warning_findings: 0,
+                top_findings: vec!["workflow [block]: touches CI".into()],
+            }),
+        );
+
+        assert_eq!(blockers.len(), 1);
+        assert!(warnings.is_empty());
+        assert_eq!(blockers[0].key, "trust-gate-block");
+    }
+
+    #[test]
+    fn repo_memory_only_warns_on_stronger_expectations() {
+        let mut warnings = Vec::new();
+        apply_repo_memory_signals(
+            &mut warnings,
+            Some(&RepoMemoryContextPreview {
+                summary: "One soft hint.".into(),
+                policy_entries: 1,
+                pinned_entries: 0,
+                top_entries: vec!["tests: reviewers usually ask for coverage here".into()],
+                ..RepoMemoryContextPreview::default()
+            }),
+        );
+        assert!(warnings.is_empty());
+
+        apply_repo_memory_signals(
+            &mut warnings,
+            Some(&RepoMemoryContextPreview {
+                summary: "Durable repo expectations.".into(),
+                policy_entries: 2,
+                pinned_entries: 0,
+                top_entries: vec!["auth: require regression coverage".into()],
+                ..RepoMemoryContextPreview::default()
+            }),
+        );
+        assert_eq!(warnings.len(), 1);
+        assert_eq!(warnings[0].key, "repo-memory-policy");
     }
 }

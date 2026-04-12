@@ -23,6 +23,19 @@ function signalColor(severity) {
   return "var(--blue)";
 }
 
+function statusTone(value) {
+  if (value === "blocked" || value === "block" || value === "attention") {
+    return "var(--accent)";
+  }
+  if (value === "hold" || value === "warn" || value === "mixed") {
+    return "var(--gold)";
+  }
+  if (value === "ready" || value === "safe" || value === "clear") {
+    return "var(--green)";
+  }
+  return "var(--blue)";
+}
+
 export default function KeeperPanel({
   apiKey,
   form,
@@ -128,6 +141,66 @@ export default function KeeperPanel({
             </div>
           )}
 
+          {(assessment.review_bee || assessment.trust_gate || assessment.repo_memory) && (
+            <div style={{ ...S.panel, display: "grid", gap: 14 }}>
+              <div style={{ display: "grid", gap: 4 }}>
+                <div style={{ fontSize: 15, fontWeight: 700 }}>Cross-product context</div>
+                <div style={{ color: "var(--text-dim)", fontSize: 12 }}>
+                  MergeKeeper can optionally layer sibling PatchHive products into the merge call so review churn, policy risk, and repo memory all show up in one place.
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}>
+                {assessment.review_bee && (
+                  <ContextCard
+                    title="ReviewBee"
+                    summary={assessment.review_bee.summary}
+                    badge={assessment.review_bee.status || "linked"}
+                    badgeColor={statusTone(assessment.review_bee.status)}
+                    stats={[
+                      `${assessment.review_bee.open_items} open item${assessment.review_bee.open_items === 1 ? "" : "s"}`,
+                      `${assessment.review_bee.actionable_threads} actionable thread${assessment.review_bee.actionable_threads === 1 ? "" : "s"}`,
+                    ]}
+                    items={assessment.review_bee.top_items}
+                  />
+                )}
+
+                {assessment.trust_gate && (
+                  <ContextCard
+                    title="TrustGate"
+                    summary={assessment.trust_gate.summary}
+                    badge={assessment.trust_gate.recommendation || "linked"}
+                    badgeColor={statusTone(assessment.trust_gate.recommendation)}
+                    stats={[
+                      `risk ${assessment.trust_gate.risk_score}`,
+                      `${assessment.trust_gate.blocked_findings} blocked finding${assessment.trust_gate.blocked_findings === 1 ? "" : "s"}`,
+                      `${assessment.trust_gate.warning_findings} warning finding${assessment.trust_gate.warning_findings === 1 ? "" : "s"}`,
+                    ]}
+                    items={assessment.trust_gate.top_findings}
+                  />
+                )}
+
+                {assessment.repo_memory && (
+                  <ContextCard
+                    title="RepoMemory"
+                    summary={assessment.repo_memory.summary}
+                    badge="context"
+                    badgeColor="var(--blue)"
+                    stats={[
+                      `${assessment.repo_memory.policy_entries} policy entr${assessment.repo_memory.policy_entries === 1 ? "y" : "ies"}`,
+                      `${assessment.repo_memory.pinned_entries} pinned entr${assessment.repo_memory.pinned_entries === 1 ? "y" : "ies"}`,
+                    ]}
+                    items={
+                      assessment.repo_memory.top_entries?.length
+                        ? assessment.repo_memory.top_entries
+                        : assessment.repo_memory.prompt_lines
+                    }
+                  />
+                )}
+              </div>
+            </div>
+          )}
+
           <SignalSection title="Blockers" emptyText="No hard blockers right now." items={assessment.blockers} />
           <SignalSection title="Holds" emptyText="No hold-level warnings right now." items={assessment.warnings} />
         </div>
@@ -209,6 +282,41 @@ function SignalSection({ title, emptyText, items }) {
             )}
           </div>
         ))
+      )}
+    </div>
+  );
+}
+
+function ContextCard({ title, summary, badge, badgeColor, stats, items }) {
+  return (
+    <div style={{ border: "1px solid var(--border)", borderRadius: 10, padding: 12, display: "grid", gap: 10, background: "rgba(255,255,255,0.02)" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "start", flexWrap: "wrap" }}>
+        <div style={{ fontWeight: 700 }}>{title}</div>
+        {badge ? <Tag color={badgeColor}>{badge}</Tag> : null}
+      </div>
+
+      {summary ? (
+        <div style={{ color: "var(--text-dim)", fontSize: 12, lineHeight: 1.6 }}>{summary}</div>
+      ) : (
+        <div style={{ color: "var(--text-dim)", fontSize: 12 }}>No summary returned.</div>
+      )}
+
+      {stats?.length > 0 && (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {stats.map((item) => (
+            <Tag key={`${title}-${item}`} color="var(--text-dim)">{item}</Tag>
+          ))}
+        </div>
+      )}
+
+      {items?.length > 0 && (
+        <div style={{ display: "grid", gap: 6 }}>
+          {items.slice(0, 4).map((item, index) => (
+            <div key={`${title}-${index}`} style={{ color: "var(--text-dim)", fontSize: 12, lineHeight: 1.5 }}>
+              - {item}
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );

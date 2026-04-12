@@ -30,9 +30,7 @@ Use this to capture later ideas so they do not get lost between product pushes.
 
 ## MergeKeeper
 
-- Feed ReviewBee into MergeKeeper later so active review-thread pressure and merge readiness stay aligned instead of feeling like separate products.
-- Feed TrustGate into MergeKeeper later so risky PRs can stay merge-blocked even when GitHub checks are green.
-- Feed RepoMemory into MergeKeeper later so repo-specific merge expectations and reviewer tendencies can shape readiness calls.
+- Add webhook-driven refresh and a maintained GitHub merge-readiness artifact later so MergeKeeper can live directly in the PR flow.
 - Add branch-protection and merge-queue awareness later if teams want MergeKeeper to mirror GitHub’s stricter merge rules more exactly.
 
 ## RepoReaper

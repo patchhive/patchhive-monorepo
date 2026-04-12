@@ -1,6 +1,7 @@
 mod auth;
 mod db;
 mod github;
+mod integrations;
 mod models;
 mod pipeline;
 mod startup;

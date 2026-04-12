@@ -51,6 +51,50 @@ pub struct MergeSignal {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ReviewBeeContext {
+    #[serde(default)]
+    pub status: String,
+    #[serde(default)]
+    pub summary: String,
+    #[serde(default)]
+    pub open_items: u32,
+    #[serde(default)]
+    pub actionable_threads: u32,
+    #[serde(default)]
+    pub top_items: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct TrustGateContext {
+    #[serde(default)]
+    pub recommendation: String,
+    #[serde(default)]
+    pub summary: String,
+    #[serde(default)]
+    pub risk_score: u32,
+    #[serde(default)]
+    pub blocked_findings: u32,
+    #[serde(default)]
+    pub warning_findings: u32,
+    #[serde(default)]
+    pub top_findings: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct RepoMemoryContextPreview {
+    #[serde(default)]
+    pub summary: String,
+    #[serde(default)]
+    pub prompt_lines: Vec<String>,
+    #[serde(default)]
+    pub policy_entries: u32,
+    #[serde(default)]
+    pub pinned_entries: u32,
+    #[serde(default)]
+    pub top_entries: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ReviewerState {
     #[serde(default)]
     pub login: String,
@@ -94,6 +138,12 @@ pub struct MergeAssessment {
     pub blockers: Vec<MergeSignal>,
     #[serde(default)]
     pub warnings: Vec<MergeSignal>,
+    #[serde(default)]
+    pub review_bee: Option<ReviewBeeContext>,
+    #[serde(default)]
+    pub trust_gate: Option<TrustGateContext>,
+    #[serde(default)]
+    pub repo_memory: Option<RepoMemoryContextPreview>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

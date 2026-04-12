@@ -10,6 +10,7 @@ pub struct GitHubMergeContext {
     pub reviews: Vec<GitHubPullReview>,
     pub threads: Vec<GitHubPullReviewThread>,
     pub commit_health: GitHubCommitHealth,
+    pub diff: String,
 }
 
 pub fn github_token_configured() -> bool {
@@ -32,11 +33,13 @@ pub async fn fetch_merge_context(
         .fetch_pull_request_review_threads(repo, pr_number)
         .await?;
     let commit_health = client.fetch_commit_health(repo, &pr.head_sha).await?;
+    let diff = client.fetch_pull_request_diff(repo, pr_number).await?;
 
     Ok(GitHubMergeContext {
         pr,
         reviews,
         threads,
         commit_health,
+        diff,
     })
 }
