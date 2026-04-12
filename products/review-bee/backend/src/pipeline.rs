@@ -1,12 +1,14 @@
 use std::collections::{BTreeSet, HashMap};
 use axum::{
+    body::Bytes,
     extract::{Path, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     Json,
 };
 use chrono::Utc;
+use patchhive_github_pr::verify_github_webhook_signature;
 use patchhive_product_core::startup::count_errors;
-use serde_json::json;
+use serde_json::{json, Value};
 use uuid::Uuid;
 
 use crate::{
@@ -14,8 +16,8 @@ use crate::{
     db, github,
     github::GitHubReviewContext,
     models::{
-        ChecklistEvidence, ChecklistItem, HistoryItem, OverviewPayload, ReviewMetrics,
-        ReviewRequest, ReviewResult,
+        ChecklistEvidence, ChecklistItem, GitHubReviewContext as ReviewTriggerContext,
+        HistoryItem, OverviewPayload, ReviewMetrics, ReviewRequest, ReviewResult,
     },
     state::AppState,
     STARTUP_CHECKS,
@@ -67,6 +69,8 @@ pub async fn health() -> Json<serde_json::Value> {
         .map(|checks| count_errors(checks))
         .unwrap_or(0);
     let counts = db::overview_counts();
+    let github_ready = github::github_token_configured();
+    let webhook_ready = github_ready && github::webhook_secret_configured();
 
     Json(json!({
         "status": if errors > 0 { "degraded" } else { "ok" },
@@ -75,11 +79,18 @@ pub async fn health() -> Json<serde_json::Value> {
         "auth_enabled": auth_enabled(),
         "config_errors": errors,
         "db_path": db::db_path(),
-        "github_ready": github::github_token_configured(),
+        "github_ready": github_ready,
         "review_count": counts.reviews,
         "repo_count": counts.repos,
         "open_item_count": counts.open_items,
         "mode": "github-pr-review-checklists",
+        "github": {
+            "token_configured": github_ready,
+            "webhook_secret_configured": github::webhook_secret_configured(),
+            "public_url_configured": github::public_url_configured(),
+            "webhook_ready": webhook_ready,
+            "comment_publish_ready": github_ready,
+        }
     }))
 }
 
@@ -119,21 +130,152 @@ pub async fn review_github_pr(
         ));
     }
 
-    let context = github::fetch_review_context(&state.http, repo, request.pr_number)
-        .await
-        .map_err(|err| api_error(StatusCode::BAD_GATEWAY, err.to_string()))?;
-    let result = build_review_result(&context);
-    db::save_review(&result)
-        .map_err(|err| api_error(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+    let result = run_github_pr_review(
+        &state,
+        repo.to_string(),
+        request.pr_number,
+        request.publish_comment,
+        "manual_pr_lookup".into(),
+        "pull_request".into(),
+        "manual".into(),
+    )
+    .await?;
 
     Ok(Json(result))
+}
+
+fn verify_webhook_signature(headers: &HeaderMap, body: &[u8]) -> Result<(), ApiError> {
+    let Some(secret) = github::webhook_secret() else {
+        return Err(api_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Configure REVIEW_BEE_GITHUB_WEBHOOK_SECRET before enabling the ReviewBee GitHub webhook.",
+        ));
+    };
+
+    verify_github_webhook_signature(headers, body, &secret).map_err(|err| {
+        api_error(
+            StatusCode::UNAUTHORIZED,
+            format!("GitHub webhook signature verification failed: {err}"),
+        )
+    })
+}
+
+fn supported_webhook_action(event: &str, action: &str) -> bool {
+    match event {
+        "pull_request" => matches!(
+            action,
+            "opened" | "reopened" | "synchronize" | "ready_for_review"
+        ),
+        "pull_request_review" => matches!(action, "submitted" | "edited" | "dismissed"),
+        "pull_request_review_comment" => matches!(action, "created" | "edited" | "deleted"),
+        "pull_request_review_thread" => matches!(action, "resolved" | "unresolved"),
+        _ => false,
+    }
+}
+
+async fn run_github_pr_review(
+    state: &AppState,
+    repo: String,
+    pr_number: i64,
+    publish_comment: bool,
+    trigger: String,
+    event: String,
+    action: String,
+) -> Result<ReviewResult, ApiError> {
+    let context = github::fetch_review_context(&state.http, &repo, pr_number)
+        .await
+        .map_err(|err| api_error(StatusCode::BAD_GATEWAY, err.to_string()))?;
+    let mut result = build_review_result(&context, trigger, event, action);
+    result.github_report = Some(if publish_comment {
+        github::publish_review_outcome(&state.http, &result).await
+    } else {
+        github::preview_review_outcome(
+            &result,
+            "GitHub comment publish was skipped for this manual ReviewBee run.",
+        )
+    });
+    db::save_review(&result)
+        .map_err(|err| api_error(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+    Ok(result)
+}
+
+pub async fn github_webhook(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> JsonResult<serde_json::Value> {
+    verify_webhook_signature(&headers, &body)?;
+
+    let event = headers
+        .get("X-GitHub-Event")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+    let payload: Value = serde_json::from_slice(&body).map_err(|_| {
+        api_error(
+            StatusCode::BAD_REQUEST,
+            "Could not decode GitHub webhook payload.",
+        )
+    })?;
+
+    let action = payload["action"].as_str().unwrap_or("").to_string();
+    if !supported_webhook_action(&event, &action) {
+        return Ok(Json(json!({
+            "triggered": false,
+            "event": event,
+            "action": action,
+            "reason": "This GitHub event does not trigger an automatic ReviewBee refresh.",
+        })));
+    }
+
+    let repo = payload["repository"]["full_name"]
+        .as_str()
+        .ok_or_else(|| {
+            api_error(
+                StatusCode::BAD_REQUEST,
+                "Webhook payload was missing repository.full_name.",
+            )
+        })?
+        .to_string();
+    let pr_number = payload["pull_request"]["number"]
+        .as_i64()
+        .ok_or_else(|| {
+            api_error(
+                StatusCode::BAD_REQUEST,
+                "Webhook payload was missing pull_request.number.",
+            )
+        })?;
+
+    let review = run_github_pr_review(
+        &state,
+        repo,
+        pr_number,
+        true,
+        "github_webhook".into(),
+        event.clone(),
+        action.clone(),
+    )
+    .await?;
+
+    Ok(Json(json!({
+        "triggered": true,
+        "event": event,
+        "action": action,
+        "status": review.status,
+        "review": review,
+    })))
 }
 
 fn api_error(status: StatusCode, error: impl Into<String>) -> ApiError {
     (status, Json(json!({ "error": error.into() })))
 }
 
-fn build_review_result(context: &GitHubReviewContext) -> ReviewResult {
+fn build_review_result(
+    context: &GitHubReviewContext,
+    trigger: String,
+    event: String,
+    action: String,
+) -> ReviewResult {
     let created_at = Utc::now().to_rfc3339();
     let mut reviewer_logins = BTreeSet::new();
     let mut requested_changes_reviews = 0u32;
@@ -303,6 +445,19 @@ fn build_review_result(context: &GitHubReviewContext) -> ReviewResult {
         reviewers: reviewer_logins.into_iter().collect(),
         prompt_suggestions,
         checklist,
+        github: Some(ReviewTriggerContext {
+            repo: context.pr.repo.clone(),
+            pr_number: context.pr.number,
+            pr_title: context.pr.title.clone(),
+            pr_url: context.pr.html_url.clone(),
+            head_sha: context.pr.head_sha.clone(),
+            head_ref: context.pr.head_ref.clone(),
+            base_ref: context.pr.base_ref.clone(),
+            event,
+            action,
+            trigger,
+        }),
+        github_report: None,
     }
 }
 
@@ -670,5 +825,18 @@ mod tests {
     fn path_bucket_keeps_useful_area_context() {
         assert_eq!(path_bucket("src/reaper/fix_worker.rs"), "src/reaper");
         assert_eq!(path_bucket("docs/guide.md"), "docs");
+    }
+
+    #[test]
+    fn webhook_support_matrix_stays_intentional() {
+        assert!(supported_webhook_action("pull_request", "synchronize"));
+        assert!(supported_webhook_action("pull_request_review", "submitted"));
+        assert!(supported_webhook_action(
+            "pull_request_review_comment",
+            "created"
+        ));
+        assert!(supported_webhook_action("pull_request_review_thread", "resolved"));
+        assert!(!supported_webhook_action("issues", "opened"));
+        assert!(!supported_webhook_action("pull_request", "closed"));
     }
 }

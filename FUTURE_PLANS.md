@@ -12,9 +12,9 @@ Use this to capture later ideas so they do not get lost between product pushes.
 
 ## ReviewBee
 
-- Add webhook-driven reruns so PR checklists update as new review comments and thread resolutions land.
-- Add maintained PR comment / check output once ReviewBee's GitHub-facing voice settles.
 - Let RepoMemory feed reviewer-preference context into ReviewBee later if it sharpens checklist clustering without adding noise.
+- Consider a lightweight GitHub check output later if teams want ReviewBee visibility in the PR checks rail as well as the maintained comment.
+- Add repo-tunable ReviewBee comment/report templates later if a second product needs the same review-voice customization seam.
 
 ## TrustGate
 

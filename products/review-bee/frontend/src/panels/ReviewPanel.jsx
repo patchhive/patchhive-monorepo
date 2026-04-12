@@ -79,6 +79,21 @@ export default function ReviewPanel({
             {running ? "Reading reviews..." : "Run ReviewBee"}
           </Btn>
         </div>
+
+        <label style={{ display: "flex", gap: 10, alignItems: "start", color: "var(--text-dim)", fontSize: 12, lineHeight: 1.5 }}>
+          <input
+            type="checkbox"
+            checked={!!form.publish_comment}
+            onChange={(event) => setForm((prev) => ({ ...prev, publish_comment: event.target.checked }))}
+            style={{ marginTop: 2 }}
+          />
+          <span>
+            Maintain a single ReviewBee PR comment when this run completes.
+            <span style={{ display: "block", fontSize: 11, color: "var(--text-dim)" }}>
+              Leave this on for a live GitHub artifact. Turn it off if you just want a local pass.
+            </span>
+          </span>
+        </label>
       </div>
 
       {review ? (
@@ -143,7 +158,61 @@ export default function ReviewPanel({
                 Reviewers in play: {review.reviewers.join(", ")}
               </div>
             )}
+
+            {review.github && (
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <Tag color="var(--blue)">trigger: {review.github.trigger || "manual"}</Tag>
+                <Tag color="var(--blue)">event: {review.github.event || "pull_request"}</Tag>
+                <Tag color="var(--text-dim)">action: {review.github.action || "manual"}</Tag>
+                {review.github.base_ref && <Tag color="var(--text-dim)">base: {review.github.base_ref}</Tag>}
+                {review.github.head_ref && <Tag color="var(--text-dim)">head: {review.github.head_ref}</Tag>}
+              </div>
+            )}
           </div>
+
+          {review.github_report && (
+            <div style={{ ...S.panel, display: "grid", gap: 12 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "start" }}>
+                <div style={{ display: "grid", gap: 6 }}>
+                  <div style={{ fontSize: 15, fontWeight: 700 }}>GitHub artifact</div>
+                  <div style={{ color: "var(--text-dim)", fontSize: 12, lineHeight: 1.6 }}>{review.github_report.message}</div>
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <Tag color={review.github_report.delivered ? "var(--green)" : review.github_report.state === "failed" ? "var(--accent)" : "var(--gold)"}>
+                    {review.github_report.state}
+                  </Tag>
+                  {review.github_report.comment_mode && (
+                    <Tag color="var(--blue)">{review.github_report.comment_mode}</Tag>
+                  )}
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {review.github_report.comment_url && (
+                  <Btn
+                    onClick={() => window.open(review.github_report.comment_url, "_blank", "noreferrer")}
+                    style={{ padding: "6px 10px" }}
+                  >
+                    Open comment
+                  </Btn>
+                )}
+                {review.github_report.report_markdown && navigator?.clipboard && (
+                  <Btn
+                    onClick={() => navigator.clipboard.writeText(review.github_report.report_markdown)}
+                    style={{ padding: "6px 10px" }}
+                  >
+                    Copy report
+                  </Btn>
+                )}
+              </div>
+
+              {review.github_report.report_markdown && (
+                <div style={{ border: "1px solid var(--border)", borderRadius: 6, padding: 12, background: "var(--bg-input)", color: "var(--text-dim)", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
+                  {review.github_report.report_markdown}
+                </div>
+              )}
+            </div>
+          )}
 
           {review.prompt_suggestions?.length > 0 && (
             <div style={{ ...S.panel, display: "grid", gap: 10 }}>

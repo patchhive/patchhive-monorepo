@@ -28,6 +28,7 @@ export default function App() {
   const [form, setForm] = useState({
     repo: "",
     pr_number: "",
+    publish_comment: true,
   });
   const [review, setReview] = useState(null);
   const [running, setRunning] = useState(false);
@@ -48,6 +49,7 @@ export default function App() {
         body: JSON.stringify({
           repo: form.repo,
           pr_number: Number(form.pr_number) || 0,
+          publish_comment: !!form.publish_comment,
         }),
       });
       const data = await res.json();
@@ -76,6 +78,7 @@ export default function App() {
       setForm({
         repo: data.repo || "",
         pr_number: data.pr_number ? String(data.pr_number) : "",
+        publish_comment: true,
       });
       setTab("review");
     } catch (err) {

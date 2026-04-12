@@ -52,6 +52,18 @@ export default function ChecksPanel({ apiKey }) {
             </div>
           </div>
           <div>
+            <div style={S.label}>Webhook Ready</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: health.github?.webhook_ready ? "var(--green)" : "var(--gold)" }}>
+              {health.github?.webhook_ready ? "yes" : "no"}
+            </div>
+          </div>
+          <div>
+            <div style={S.label}>Comment Publish</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: health.github?.comment_publish_ready ? "var(--green)" : "var(--gold)" }}>
+              {health.github?.comment_publish_ready ? "ready" : "limited"}
+            </div>
+          </div>
+          <div>
             <div style={S.label}>Stored Reviews</div>
             <div style={{ fontSize: 18, fontWeight: 700 }}>{health.review_count}</div>
           </div>
@@ -70,6 +82,18 @@ export default function ChecksPanel({ apiKey }) {
           <div>
             <div style={S.label}>DB Path</div>
             <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.5 }}>{health.db_path}</div>
+          </div>
+          <div>
+            <div style={S.label}>Webhook Secret</div>
+            <div style={{ fontSize: 12, color: health.github?.webhook_secret_configured ? "var(--green)" : "var(--gold)", lineHeight: 1.5 }}>
+              {health.github?.webhook_secret_configured ? "configured" : "missing"}
+            </div>
+          </div>
+          <div>
+            <div style={S.label}>Public URL</div>
+            <div style={{ fontSize: 12, color: health.github?.public_url_configured ? "var(--green)" : "var(--gold)", lineHeight: 1.5 }}>
+              {health.github?.public_url_configured ? "configured" : "missing"}
+            </div>
           </div>
         </div>
       )}

@@ -4,6 +4,12 @@ use serde::{Deserialize, Serialize};
 pub struct ReviewRequest {
     pub repo: String,
     pub pr_number: i64,
+    #[serde(default = "default_publish_comment")]
+    pub publish_comment: bool,
+}
+
+fn default_publish_comment() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -100,6 +106,54 @@ pub struct ReviewResult {
     pub prompt_suggestions: Vec<String>,
     #[serde(default)]
     pub checklist: Vec<ChecklistItem>,
+    #[serde(default)]
+    pub github: Option<GitHubReviewContext>,
+    #[serde(default)]
+    pub github_report: Option<GitHubReportOutcome>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct GitHubReviewContext {
+    #[serde(default)]
+    pub repo: String,
+    #[serde(default)]
+    pub pr_number: i64,
+    #[serde(default)]
+    pub pr_title: String,
+    #[serde(default)]
+    pub pr_url: String,
+    #[serde(default)]
+    pub head_sha: String,
+    #[serde(default)]
+    pub head_ref: String,
+    #[serde(default)]
+    pub base_ref: String,
+    #[serde(default)]
+    pub event: String,
+    #[serde(default)]
+    pub action: String,
+    #[serde(default)]
+    pub trigger: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct GitHubReportOutcome {
+    #[serde(default)]
+    pub attempted: bool,
+    #[serde(default)]
+    pub delivered: bool,
+    #[serde(default)]
+    pub method: String,
+    #[serde(default)]
+    pub state: String,
+    #[serde(default)]
+    pub message: String,
+    #[serde(default)]
+    pub comment_url: String,
+    #[serde(default)]
+    pub comment_mode: String,
+    #[serde(default)]
+    pub report_markdown: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

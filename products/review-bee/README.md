@@ -12,8 +12,10 @@ ReviewBee reads pull request review comments, identifies which ones are actually
 - tracks resolved vs still-open review themes
 - suggests follow-up prompts the author or an agent can use to clear review churn faster
 - stores review history locally so teams can reload previous checklists
+- can maintain a single ReviewBee PR comment so the checklist stays attached to the pull request
+- can refresh itself from GitHub webhooks when new review activity lands
 
-ReviewBee is intentionally review-first. It helps close PRs faster, but it does not edit code or publish comments back to GitHub in the MVP.
+ReviewBee is intentionally review-first. It helps close PRs faster, but it does not edit code. Its GitHub-facing artifact is a maintained checklist comment, not a write-to-code action.
 
 ## Quick Start
 
@@ -35,8 +37,10 @@ Frontend: `http://localhost:5177`
 - The frontend uses `@patchhivehq/ui` and `@patchhivehq/product-shell`.
 - The backend stores review history in SQLite at `REVIEW_BEE_DB_PATH`.
 - `BOT_GITHUB_TOKEN` or `GITHUB_TOKEN` is required for GitHub-backed PR review analysis.
+- `REVIEW_BEE_GITHUB_WEBHOOK_SECRET` enables signed GitHub webhook refreshes on PR review activity.
+- `REVIEW_BEE_PUBLIC_URL` lets ReviewBee link maintained PR comments back to its own history view.
 - ReviewBee does not require `PATCHHIVE_AI_URL` for the MVP loop.
-- The first MVP reads review threads and current resolution state, then turns that into a local merge checklist.
+- The current loop reads review threads and current resolution state, turns that into a merge checklist, and can keep one maintained PR comment in sync with the latest run.
 
 ## Standalone Repo Notes
 

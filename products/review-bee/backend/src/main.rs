@@ -52,6 +52,7 @@ async fn main() {
         .route("/history", get(pipeline::history))
         .route("/history/:id", get(pipeline::history_detail))
         .route("/review/github/pr", post(pipeline::review_github_pr))
+        .route("/webhooks/github", post(pipeline::github_webhook))
         .layer(middleware::from_fn(auth::auth_middleware))
         .layer(cors)
         .with_state(AppState::new());
