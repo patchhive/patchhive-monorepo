@@ -33,6 +33,13 @@ Use this to capture later ideas so they do not get lost between product pushes.
 - Add branch-protection and merge-queue awareness later if teams want MergeKeeper to mirror GitHub’s stricter merge rules more exactly.
 - Add repo-tunable MergeKeeper report/comment templates later if a second product needs the same merge-voice customization seam.
 
+## FlakeSting
+
+- Add scan-to-scan trend views later so teams can see whether flaky pressure is actually improving or just moving around.
+- Add workflow-completion webhooks or scheduled rescans later so FlakeSting can stay fresh without manual reruns.
+- Add quarantine-ready export or handoff output later once teams want to turn suspect signals into concrete CI cleanup work.
+- Consider AI-assisted clustering or explanation later through `patchhive-ai-local`, but keep the base flaky-detection loop useful without AI.
+
 ## RepoReaper
 
 - Revisit release/tagging once the current product loop feels stable enough for an intentional versioned release.
@@ -44,7 +51,7 @@ Use this to capture later ideas so they do not get lost between product pushes.
 - Revisit a generic shared preset helper when a third product needs the same named-config pattern.
 - Revisit more `patchhive-product-core` helpers only after another backend repeats the same seam.
 - Use `patchhive-github-pr` for the next product that needs PR diff fetch, webhook verification, check/status publishing, or maintained PR comments.
-- SignalHive and RepoMemory now both repeat generic GitHub repo/issue/history fetch helpers. When the next product needs that seam, extract a separate shared GitHub data client instead of stretching `patchhive-github-pr` beyond PR plumbing.
+- SignalHive, RepoMemory, and FlakeSting now all repeat generic GitHub data fetch helpers for repo/issue/history/actions scanning. That seam is now real enough to justify extracting a separate shared GitHub data client instead of stretching `patchhive-github-pr` beyond PR plumbing.
 - Consider LiteLLM later only as an optional upstream behind `patchhive-ai-local`, not as the product-facing contract.
 
 ## Product Direction

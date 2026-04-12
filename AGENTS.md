@@ -358,6 +358,15 @@ Important env vars:
 - MergeKeeper should become the convergence point for ReviewBee, TrustGate, RepoMemory, and CI signals over time, but it should not wait for all of them before being useful.
 - The early UX should stay simple: one PR in, one readiness decision out, with visible reasons.
 
+## FlakeSting Notes
+
+- FlakeSting should stay CI-trust-first and signal-first.
+- Its job is to detect flaky tests and unstable workflow behavior before teams normalize unreliable checks.
+- The MVP should work without live AI providers by reading GitHub Actions history and looking for fail/pass swings, rerun pressure, runner-specific weirdness, and repeated test instability.
+- FlakeSting should explain why a job or step looks flaky, not just assign a scary score.
+- The early UX should stay narrow and credible: one repo in, one ranked flaky queue out, with direct evidence back to GitHub runs.
+- FlakeSting should make MergeKeeper and broader PatchHive automation safer over time by helping teams trust their CI signal again.
+
 ## IncidentEcho Notes
 
 - IncidentEcho is a cross-cutting capability, not a standalone product by default.

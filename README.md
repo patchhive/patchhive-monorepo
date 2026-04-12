@@ -67,16 +67,26 @@ patchhive/
     merge-keeper/           ← MergeKeeper v0.1.0
       backend/              ← Rust PR merge-readiness API
       frontend/             ← React merge readiness dashboard
+    flake-sting/            ← FlakeSting v0.1.0
+      backend/              ← Rust flaky-CI signal API
+      frontend/             ← React flaky workflow dashboard
 ```
 
 ## Adding a New Product
 
-1. Copy `products/repo-reaper` as a template
-2. Replace the backend with your product's logic
-3. In `frontend/src/App.jsx`:
-   - Call `applyTheme("signal-hive")` (or your product key)
-   - Pass your product's `icon` and `title` to `LoginPage`, `PatchHiveHeader`, `PatchHiveFooter`
-4. All shared UI — buttons, inputs, panels, colors — just work
+```bash
+./scripts/new-product.sh <product-slug>
+```
+
+That starter already wires in:
+
+- the shared Rust backend shell
+- the shared React/frontend shell
+- Docker files
+- API-key auth
+- standalone CI
+
+Product-specific logic should be added after the scaffold exists.
 
 ## Shared UI Package (`@patchhivehq/ui`)
 
@@ -252,6 +262,21 @@ docker-compose up --build
 cd products/merge-keeper
 cp .env.example .env
 # fill in BOT_GITHUB_TOKEN or GITHUB_TOKEN
+
+# Dev
+cd backend && cargo run
+cd ../frontend && npm install && npm run dev
+
+# Docker
+docker-compose up --build
+```
+
+## Quick Start — FlakeSting
+
+```bash
+cd products/flake-sting
+cp .env.example .env
+# fill in BOT_GITHUB_TOKEN or GITHUB_TOKEN for better GitHub Actions access
 
 # Dev
 cd backend && cargo run

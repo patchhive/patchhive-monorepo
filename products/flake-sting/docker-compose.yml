@@ -1,0 +1,24 @@
+version: "3.8"
+
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8060:8000"
+    volumes:
+      - ./data:/data
+    environment:
+      - FLAKE_STING_DB_PATH=/data/flake-sting.db
+      - FLAKE_STING_PORT=8000
+      - RUST_LOG=info
+    env_file:
+      - .env
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "5179:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
