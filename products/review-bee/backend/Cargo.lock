@@ -865,6 +865,7 @@ dependencies = [
 [[package]]
 name = "patchhive-github-pr"
 version = "0.1.0"
+source = "git+https://github.com/patchhive/patchhive-github-pr.git#ac18d2c0e72b747dc2fdf544374242ae5bfa78e9"
 dependencies = [
  "anyhow",
  "hex",
@@ -879,6 +880,7 @@ dependencies = [
 [[package]]
 name = "patchhive-product-core"
 version = "0.1.0"
+source = "git+https://github.com/patchhive/patchhive-product-core.git#02c09451ac85e12bdb361ce501ad10d6bd154e75"
 dependencies = [
  "anyhow",
  "axum",
