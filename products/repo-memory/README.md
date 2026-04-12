@@ -13,6 +13,8 @@ RepoMemory is the durable memory layer for PatchHive. It ingests merged PRs, rev
 - stores durable memory entries with evidence and confidence
 - generates a prompt-pack agents can reuse before they touch the repo
 - exposes a context endpoint other PatchHive products can query with changed paths and task summary
+- lets operators pin, suppress, or promote extracted memories into repo policy
+- previews consumer-specific retrieval for RepoReaper and TrustGate before those products use the context live
 - keeps ingest history so teams can reopen prior memory snapshots
 
 RepoMemory is intentionally context-first. It does not open PRs or mutate repositories in the MVP.
@@ -41,6 +43,7 @@ Frontend: `http://localhost:5176`
 - The generated prompt pack is meant to be copied into later agent flows, not treated as perfect truth.
 - `PATCHHIVE_REPO_MEMORY_URL` lets other PatchHive products retrieve repo context from this service.
 - If RepoMemory auth is enabled, downstream callers can use `PATCHHIVE_REPO_MEMORY_API_KEY` with an `X-API-Key` header.
+- Curation survives future ingests through stable memory references, so pinned/policy/suppressed decisions remain durable instead of resetting every run.
 
 ## Standalone Repo Notes
 

@@ -1,5 +1,36 @@
 use serde::{Deserialize, Serialize};
 
+fn slug_component(value: &str) -> String {
+    let mut out = String::new();
+    let mut last_dash = false;
+    for ch in value.chars().flat_map(|ch| ch.to_lowercase()) {
+        if ch.is_ascii_alphanumeric() {
+            out.push(ch);
+            last_dash = false;
+        } else if !last_dash {
+            out.push('-');
+            last_dash = true;
+        }
+    }
+
+    out.trim_matches('-').to_string()
+}
+
+pub fn stable_memory_ref(repo: &str, kind: &str, title: &str) -> String {
+    let repo = slug_component(repo);
+    let kind = slug_component(kind);
+    let title = slug_component(title);
+    format!("{repo}__{kind}__{title}")
+}
+
+fn default_memory_disposition() -> String {
+    "signal".into()
+}
+
+fn default_context_consumer() -> String {
+    String::new()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IngestParams {
     pub repo: String,
@@ -42,6 +73,8 @@ pub struct MemoryEvidence {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct MemoryEntry {
     pub id: String,
+    #[serde(default)]
+    pub memory_ref: String,
     pub run_id: String,
     pub repo: String,
     pub kind: String,
@@ -50,6 +83,10 @@ pub struct MemoryEntry {
     pub prompt_line: String,
     pub confidence: f64,
     pub frequency: u32,
+    #[serde(default = "default_memory_disposition")]
+    pub disposition: String,
+    #[serde(default)]
+    pub pinned: bool,
     pub tags: Vec<String>,
     pub evidence: Vec<MemoryEvidence>,
     pub created_at: String,
@@ -133,6 +170,8 @@ pub struct OverviewPayload {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContextRequest {
     pub repo: String,
+    #[serde(default = "default_context_consumer")]
+    pub consumer: String,
     #[serde(default)]
     pub changed_paths: Vec<String>,
     #[serde(default)]
@@ -150,6 +189,7 @@ fn default_context_limit() -> u32 {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContextEntry {
     pub id: String,
+    pub memory_ref: String,
     pub kind: String,
     pub title: String,
     pub detail: String,
@@ -157,6 +197,10 @@ pub struct ContextEntry {
     pub confidence: f64,
     pub frequency: u32,
     pub retrieval_score: f64,
+    #[serde(default = "default_memory_disposition")]
+    pub disposition: String,
+    #[serde(default)]
+    pub pinned: bool,
     pub matched_paths: Vec<String>,
     pub matched_terms: Vec<String>,
     pub tags: Vec<String>,
@@ -166,11 +210,22 @@ pub struct ContextEntry {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContextResponse {
     pub repo: String,
+    pub consumer: String,
     pub run_id: String,
     pub created_at: String,
     pub summary: String,
     pub prompt_lines: Vec<String>,
     pub entries: Vec<ContextEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemoryCurationUpdate {
+    pub repo: String,
+    pub memory_ref: String,
+    #[serde(default = "default_memory_disposition")]
+    pub disposition: String,
+    #[serde(default)]
+    pub pinned: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]

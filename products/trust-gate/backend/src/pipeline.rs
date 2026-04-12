@@ -326,6 +326,7 @@ async fn review_diff(
         client,
         &RepoMemoryContextRequest {
             repo: repo.to_string(),
+            consumer: "trust-gate".into(),
             changed_paths: changed_paths.clone(),
             task_summary,
             diff_summary,
@@ -657,18 +658,29 @@ async fn review_diff(
 
     if let Some(context) = repo_memory_context.as_ref() {
         if missing_tests {
-            let memory_testing = context
+            let memory_testing_entries = context
                 .entries
                 .iter()
                 .filter(|entry| entry.kind == "testing_expectation" || entry.tags.iter().any(|tag| tag == "tests"))
-                .map(|entry| format!("{} — {}", entry.title, entry.prompt_line))
                 .take(4)
+                .collect::<Vec<_>>();
+            let memory_testing = memory_testing_entries
+                .iter()
+                .map(|entry| format!("{} — {}", entry.title, entry.prompt_line))
                 .collect::<Vec<_>>();
             if !memory_testing.is_empty() {
                 findings.push(make_finding(
                     "repo_memory_tests",
                     "RepoMemory test expectations",
-                    if sensitive_code_changes > 0 { "block" } else { "warn" },
+                    if sensitive_code_changes > 0
+                        || memory_testing_entries
+                            .iter()
+                            .any(|entry| entry.pinned || entry.disposition == "policy")
+                    {
+                        "block"
+                    } else {
+                        "warn"
+                    },
                     "RepoMemory found prior evidence that this repo expects tests for changes like these.",
                     memory_testing,
                 ));
@@ -705,11 +717,20 @@ async fn review_diff(
             .map(|entry| format!("{} — {}", entry.title, entry.prompt_line))
             .take(3)
             .collect::<Vec<_>>();
+        let failure_is_curated = context
+            .entries
+            .iter()
+            .filter(|entry| entry.kind == "failure_pattern")
+            .any(|entry| entry.pinned || entry.disposition == "policy");
         if !failure_entries.is_empty() {
             findings.push(make_finding(
                 "repo_memory_failures",
                 "RepoMemory failure patterns",
-                "warn",
+                if failure_is_curated && sensitive_code_changes > 0 {
+                    "block"
+                } else {
+                    "warn"
+                },
                 "RepoMemory found recurring historical failures that look relevant to this review.",
                 failure_entries,
             ));

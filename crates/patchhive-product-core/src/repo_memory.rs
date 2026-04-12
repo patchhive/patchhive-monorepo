@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 pub struct RepoMemoryContextRequest {
     pub repo: String,
     #[serde(default)]
+    pub consumer: String,
+    #[serde(default)]
     pub changed_paths: Vec<String>,
     #[serde(default)]
     pub task_summary: String,
@@ -38,6 +40,8 @@ pub struct RepoMemoryContextEntry {
     #[serde(default)]
     pub id: String,
     #[serde(default)]
+    pub memory_ref: String,
+    #[serde(default)]
     pub kind: String,
     #[serde(default)]
     pub title: String,
@@ -52,6 +56,10 @@ pub struct RepoMemoryContextEntry {
     #[serde(default)]
     pub retrieval_score: f64,
     #[serde(default)]
+    pub disposition: String,
+    #[serde(default)]
+    pub pinned: bool,
+    #[serde(default)]
     pub matched_paths: Vec<String>,
     #[serde(default)]
     pub matched_terms: Vec<String>,
@@ -65,6 +73,8 @@ pub struct RepoMemoryContextEntry {
 pub struct RepoMemoryContextResponse {
     #[serde(default)]
     pub repo: String,
+    #[serde(default)]
+    pub consumer: String,
     #[serde(default)]
     pub run_id: String,
     #[serde(default)]

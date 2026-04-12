@@ -59,16 +59,38 @@ fn build_repo_memory_block(context: Option<&RepoMemoryContextResponse>) -> Strin
         return String::new();
     }
 
-    let lines = context
-        .entries
-        .iter()
-        .take(5)
-        .map(|entry| format!("- [{}] {}", entry.kind, entry.prompt_line))
-        .collect::<Vec<_>>();
+    let mut curated = Vec::new();
+    let mut signal = Vec::new();
+    for entry in context.entries.iter().take(6) {
+        let prefix = match (entry.pinned, entry.disposition.as_str()) {
+            (true, "policy") => "[pinned policy]",
+            (true, _) => "[pinned]",
+            (_, "policy") => "[policy]",
+            _ => "",
+        };
+        let line = if prefix.is_empty() {
+            format!("- [{}] {}", entry.kind, entry.prompt_line)
+        } else {
+            format!("- {} [{}] {}", prefix, entry.kind, entry.prompt_line)
+        };
+        if entry.pinned || entry.disposition == "policy" {
+            curated.push(line);
+        } else {
+            signal.push(line);
+        }
+    }
+
+    let mut sections = Vec::new();
+    if !curated.is_empty() {
+        sections.push(format!("Operator-curated memory:\n{}", curated.join("\n")));
+    }
+    if !signal.is_empty() {
+        sections.push(format!("Retrieved signals:\n{}", signal.join("\n")));
+    }
 
     format!(
         "RepoMemory says the latest durable context for this repo is:\n{}\n\nSummary: {}",
-        lines.join("\n"),
+        sections.join("\n\n"),
         context.summary
     )
 }
@@ -218,6 +240,7 @@ pub async fn fix_one(
         &http,
         &RepoMemoryContextRequest {
             repo: issue["repo"].as_str().unwrap_or("").to_string(),
+            consumer: "repo-reaper".into(),
             changed_paths: selected_files.clone(),
             task_summary: format!(
                 "Fix GitHub issue #{} in {}: {}",

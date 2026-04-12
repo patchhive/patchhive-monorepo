@@ -15,9 +15,10 @@ use crate::{
     db,
     github,
     models::{
-        ContextEntry, ContextRequest, ContextResponse, GitHubIssue, GitHubPullFile,
-        GitHubPullRequest, GitHubReview, GitHubReviewComment, HistoryItem, IngestParams,
-        IngestRecord, IngestSummary, KnownRepo, MemoryEntry, MemoryEvidence, OverviewPayload,
+        stable_memory_ref, ContextEntry, ContextRequest, ContextResponse, GitHubIssue,
+        GitHubPullFile, GitHubPullRequest, GitHubReview, GitHubReviewComment, HistoryItem,
+        IngestParams, IngestRecord, IngestSummary, KnownRepo, MemoryCurationUpdate, MemoryEntry,
+        MemoryEvidence, OverviewPayload,
     },
     state::AppState,
     STARTUP_CHECKS,
@@ -129,6 +130,37 @@ pub async fn memories(Query(query): Query<MemoryQuery>) -> JsonResult<serde_json
     Ok(Json(json!({ "memories": memories })))
 }
 
+pub async fn curate_memory(
+    Json(mut update): Json<MemoryCurationUpdate>,
+) -> JsonResult<serde_json::Value> {
+    update.repo = update.repo.trim().to_string();
+    update.memory_ref = update.memory_ref.trim().to_string();
+    update.disposition = normalize_disposition(&update.disposition).to_string();
+
+    if !valid_repo(&update.repo) {
+        return Err(bad_request("RepoMemory expects repos in owner/repo format."));
+    }
+    if update.memory_ref.is_empty() {
+        return Err(bad_request("RepoMemory needs a stable memory_ref to save curation."));
+    }
+
+    db::save_memory_curation(
+        &update.repo,
+        &update.memory_ref,
+        &update.disposition,
+        update.pinned,
+    )
+    .map_err(internal_error)?;
+
+    Ok(Json(json!({
+        "ok": true,
+        "repo": update.repo,
+        "memory_ref": update.memory_ref,
+        "disposition": update.disposition,
+        "pinned": update.pinned,
+    })))
+}
+
 pub async fn context(Json(request): Json<ContextRequest>) -> JsonResult<ContextResponse> {
     let repo = request.repo.trim().to_string();
     if !valid_repo(&repo) {
@@ -145,27 +177,45 @@ pub async fn context(Json(request): Json<ContextRequest>) -> JsonResult<ContextR
         .map_err(internal_error)?
         .ok_or_else(|| not_found("RepoMemory run not found."))?;
 
+    let consumer = normalize_consumer(&request.consumer);
     let entries = rank_context_entries(
         &run.entries,
+        &consumer,
         &request.changed_paths,
         &request.task_summary,
         &request.diff_summary,
         request.limit.max(1) as usize,
     );
 
+    let policy_count = entries
+        .iter()
+        .filter(|entry| entry.disposition == "policy")
+        .count();
+    let pinned_count = entries.iter().filter(|entry| entry.pinned).count();
     let summary = if entries.is_empty() {
         format!(
             "RepoMemory found no especially relevant memories in the latest run for {repo}, so consumers should fall back to the full prompt pack."
         )
     } else {
         format!(
-            "RepoMemory selected {} relevant memories from the latest run for {repo}.",
-            entries.len()
+            "RepoMemory selected {} relevant memories from the latest run for {repo}{}{}.",
+            entries.len(),
+            if policy_count > 0 {
+                format!(", including {policy_count} policy memories")
+            } else {
+                String::new()
+            },
+            if pinned_count > 0 {
+                format!(", with {pinned_count} pinned")
+            } else {
+                String::new()
+            },
         )
     };
 
     Ok(Json(ContextResponse {
         repo,
+        consumer,
         run_id: run.id,
         created_at: run.created_at,
         summary,
@@ -561,6 +611,7 @@ fn build_prompt_pack(repo: &str, summary: &IngestSummary, entries: &[MemoryEntry
 
 fn rank_context_entries(
     entries: &[MemoryEntry],
+    consumer: &str,
     changed_paths: &[String],
     task_summary: &str,
     diff_summary: &str,
@@ -576,17 +627,39 @@ fn rank_context_entries(
     let mut ranked = entries
         .iter()
         .map(|entry| {
+            let disposition = normalize_disposition(&entry.disposition).to_string();
+            if disposition == "suppressed" {
+                return ContextEntry {
+                    id: entry.id.clone(),
+                    memory_ref: entry.memory_ref.clone(),
+                    kind: entry.kind.clone(),
+                    title: entry.title.clone(),
+                    detail: entry.detail.clone(),
+                    prompt_line: entry.prompt_line.clone(),
+                    confidence: entry.confidence,
+                    frequency: entry.frequency,
+                    retrieval_score: -10_000.0,
+                    disposition,
+                    pinned: entry.pinned,
+                    matched_paths: Vec::new(),
+                    matched_terms: Vec::new(),
+                    tags: entry.tags.clone(),
+                    evidence: entry.evidence.clone(),
+                };
+            }
             let matched_paths = matching_entry_paths(entry, &clean_paths);
             let matched_terms = matching_entry_terms(entry, &context_tokens);
             let retrieval_score =
-                entry.confidence * 0.55
+                entry.confidence * 0.48
                 + (entry.frequency as f64 * 6.0)
                 + (matched_paths.len() as f64 * 18.0)
                 + (matched_terms.len() as f64 * 7.0)
-                + context_kind_bonus(entry, &clean_paths);
+                + context_kind_bonus(entry, &clean_paths, consumer)
+                + curation_bonus(entry);
 
             ContextEntry {
                 id: entry.id.clone(),
+                memory_ref: entry.memory_ref.clone(),
                 kind: entry.kind.clone(),
                 title: entry.title.clone(),
                 detail: entry.detail.clone(),
@@ -594,6 +667,8 @@ fn rank_context_entries(
                 confidence: entry.confidence,
                 frequency: entry.frequency,
                 retrieval_score,
+                disposition,
+                pinned: entry.pinned,
                 matched_paths,
                 matched_terms,
                 tags: entry.tags.clone(),
@@ -604,16 +679,30 @@ fn rank_context_entries(
 
     ranked.sort_by(|left, right| {
         right
-            .retrieval_score
-            .partial_cmp(&left.retrieval_score)
-            .unwrap_or(std::cmp::Ordering::Equal)
+            .pinned
+            .cmp(&left.pinned)
+            .then_with(|| disposition_rank(&right.disposition).cmp(&disposition_rank(&left.disposition)))
+            .then_with(|| {
+                right
+                    .retrieval_score
+                    .partial_cmp(&left.retrieval_score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
             .then_with(|| right.frequency.cmp(&left.frequency))
     });
 
     let fallback_mode = clean_paths.is_empty() && context_tokens.is_empty();
     ranked
         .into_iter()
-        .filter(|entry| fallback_mode || !entry.matched_paths.is_empty() || !entry.matched_terms.is_empty() || entry.retrieval_score >= 68.0)
+        .filter(|entry| entry.disposition != "suppressed")
+        .filter(|entry| {
+            fallback_mode
+                || entry.pinned
+                || entry.disposition == "policy"
+                || !entry.matched_paths.is_empty()
+                || !entry.matched_terms.is_empty()
+                || entry.retrieval_score >= 68.0
+        })
         .take(limit)
         .collect()
 }
@@ -681,13 +770,48 @@ fn matching_entry_terms(entry: &MemoryEntry, context_tokens: &HashSet<String>) -
     matched
 }
 
-fn context_kind_bonus(entry: &MemoryEntry, changed_paths: &[String]) -> f64 {
-    match entry.kind.as_str() {
-        "hotspot" if !changed_paths.is_empty() => 9.0,
-        "failure_pattern" => 7.0,
-        "testing_expectation" => 6.0,
-        "review_rule" => 4.0,
-        _ => 0.0,
+fn context_kind_bonus(entry: &MemoryEntry, changed_paths: &[String], consumer: &str) -> f64 {
+    match consumer {
+        "trust-gate" => match entry.kind.as_str() {
+            "testing_expectation" => 11.0,
+            "failure_pattern" => 9.0,
+            "hotspot" if !changed_paths.is_empty() => 8.0,
+            "review_rule" => 5.0,
+            _ => 0.0,
+        },
+        "repo-reaper" => match entry.kind.as_str() {
+            "hotspot" if !changed_paths.is_empty() => 11.0,
+            "failure_pattern" => 8.0,
+            "review_rule" => 7.0,
+            "testing_expectation" => 6.0,
+            _ => 0.0,
+        },
+        _ => match entry.kind.as_str() {
+            "hotspot" if !changed_paths.is_empty() => 9.0,
+            "failure_pattern" => 7.0,
+            "testing_expectation" => 6.0,
+            "review_rule" => 4.0,
+            _ => 0.0,
+        },
+    }
+}
+
+fn curation_bonus(entry: &MemoryEntry) -> f64 {
+    let mut score = 0.0;
+    if entry.pinned {
+        score += 24.0;
+    }
+    if normalize_disposition(&entry.disposition) == "policy" {
+        score += 18.0;
+    }
+    score
+}
+
+fn disposition_rank(disposition: &str) -> i32 {
+    match normalize_disposition(disposition) {
+        "policy" => 2,
+        "signal" => 1,
+        _ => 0,
     }
 }
 
@@ -703,16 +827,22 @@ fn build_entry(
     evidence: Vec<MemoryEvidence>,
     created_at: &str,
 ) -> MemoryEntry {
+    let title = title.into();
+    let detail = detail.into();
+    let prompt_line = prompt_line.into();
     MemoryEntry {
         id: Uuid::new_v4().to_string(),
+        memory_ref: stable_memory_ref(repo, kind, &title),
         run_id: run_id.to_string(),
         repo: repo.to_string(),
         kind: kind.to_string(),
-        title: title.into(),
-        detail: detail.into(),
-        prompt_line: prompt_line.into(),
+        title,
+        detail,
+        prompt_line,
         confidence: confidence_for(frequency, evidence.len()),
         frequency,
+        disposition: "signal".into(),
+        pinned: false,
         tags: tags.into_iter().map(str::to_string).collect(),
         evidence,
         created_at: created_at.to_string(),
@@ -834,6 +964,18 @@ fn valid_repo(repo: &str) -> bool {
         (parts.next(), parts.next(), parts.next()),
         (Some(owner), Some(name), None) if !owner.trim().is_empty() && !name.trim().is_empty()
     )
+}
+
+fn normalize_consumer(value: &str) -> String {
+    value.trim().to_ascii_lowercase()
+}
+
+fn normalize_disposition(value: &str) -> &str {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "policy" => "policy",
+        "suppressed" => "suppressed",
+        _ => "signal",
+    }
 }
 
 fn contains_any(haystack: &str, needles: &[&str]) -> bool {

@@ -1,6 +1,8 @@
 use rusqlite::{params, params_from_iter, Connection, OptionalExtension};
 
-use crate::models::{HistoryItem, IngestRecord, KnownRepo, MemoryEntry, OverviewCounts};
+use crate::models::{
+    stable_memory_ref, HistoryItem, IngestRecord, KnownRepo, MemoryEntry, OverviewCounts,
+};
 
 pub fn db_path() -> String {
     std::env::var("REPO_MEMORY_DB_PATH").unwrap_or_else(|_| "repo-memory.db".into())
@@ -30,6 +32,7 @@ pub fn init_db() -> rusqlite::Result<()> {
 
         CREATE TABLE IF NOT EXISTS memory_entries (
           id TEXT PRIMARY KEY,
+          memory_ref TEXT NOT NULL DEFAULT '',
           run_id TEXT NOT NULL,
           repo TEXT NOT NULL,
           kind TEXT NOT NULL,
@@ -43,12 +46,25 @@ pub fn init_db() -> rusqlite::Result<()> {
           created_at TEXT NOT NULL
         );
 
+        CREATE TABLE IF NOT EXISTS memory_curations (
+          repo TEXT NOT NULL,
+          memory_ref TEXT NOT NULL,
+          disposition TEXT NOT NULL DEFAULT 'signal',
+          pinned INTEGER NOT NULL DEFAULT 0,
+          updated_at TEXT NOT NULL,
+          PRIMARY KEY (repo, memory_ref)
+        );
+
         CREATE INDEX IF NOT EXISTS idx_memory_runs_repo_created
           ON memory_runs (repo, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_memory_entries_repo_kind_confidence
           ON memory_entries (repo, kind, confidence DESC, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_memory_entries_repo_ref
+          ON memory_entries (repo, memory_ref);
         "#,
     )?;
+    ensure_column(&conn, "memory_entries", "memory_ref", "TEXT NOT NULL DEFAULT ''")?;
+    backfill_memory_refs(&conn)?;
     conn.execute(
         r#"
         INSERT INTO product_meta (key, value)
@@ -83,13 +99,14 @@ pub fn save_run(run: &IngestRecord) -> rusqlite::Result<()> {
         tx.execute(
             r#"
             INSERT INTO memory_entries (
-              id, run_id, repo, kind, title, detail, prompt_line, confidence,
-              frequency, tags_json, evidence_json, created_at
+              id, memory_ref, run_id, repo, kind, title, detail, prompt_line,
+              confidence, frequency, tags_json, evidence_json, created_at
             )
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
             "#,
             params![
                 entry.id,
+                entry.memory_ref,
                 entry.run_id,
                 entry.repo,
                 entry.kind,
@@ -187,10 +204,19 @@ pub fn featured_memories(limit: usize) -> rusqlite::Result<Vec<MemoryEntry>> {
     let mut stmt = conn.prepare(
         r#"
         SELECT
-          id, run_id, repo, kind, title, detail, prompt_line, confidence,
-          frequency, tags_json, evidence_json, created_at
-        FROM memory_entries
-        ORDER BY confidence DESC, created_at DESC
+          me.id, me.memory_ref, me.run_id, me.repo, me.kind, me.title, me.detail,
+          me.prompt_line, me.confidence, me.frequency,
+          COALESCE(mc.disposition, 'signal'),
+          COALESCE(mc.pinned, 0),
+          me.tags_json, me.evidence_json, me.created_at
+        FROM memory_entries me
+        LEFT JOIN memory_curations mc
+          ON mc.repo = me.repo AND mc.memory_ref = me.memory_ref
+        WHERE COALESCE(mc.disposition, 'signal') != 'suppressed'
+        ORDER BY COALESCE(mc.pinned, 0) DESC,
+                 CASE COALESCE(mc.disposition, 'signal') WHEN 'policy' THEN 0 ELSE 1 END,
+                 me.confidence DESC,
+                 me.created_at DESC
         LIMIT ?1
         "#,
     )?;
@@ -278,27 +304,32 @@ pub fn list_memories(
     let mut sql = String::from(
         r#"
         SELECT
-          id, run_id, repo, kind, title, detail, prompt_line, confidence,
-          frequency, tags_json, evidence_json, created_at
-        FROM memory_entries
+          me.id, me.memory_ref, me.run_id, me.repo, me.kind, me.title, me.detail,
+          me.prompt_line, me.confidence, me.frequency,
+          COALESCE(mc.disposition, 'signal'),
+          COALESCE(mc.pinned, 0),
+          me.tags_json, me.evidence_json, me.created_at
+        FROM memory_entries me
+        LEFT JOIN memory_curations mc
+          ON mc.repo = me.repo AND mc.memory_ref = me.memory_ref
         WHERE 1=1
         "#,
     );
     let mut params = Vec::new();
 
     if let Some(run_id) = run_id.filter(|value| !value.trim().is_empty()) {
-        sql.push_str(&format!(" AND run_id = ?{}", params.len() + 1));
+        sql.push_str(&format!(" AND me.run_id = ?{}", params.len() + 1));
         params.push(run_id.to_string());
     } else if let Some(repo) = repo.filter(|value| !value.trim().is_empty()) {
         sql.push_str(&format!(
-            " AND run_id = (SELECT id FROM memory_runs WHERE repo = ?{} ORDER BY created_at DESC LIMIT 1)",
+            " AND me.run_id = (SELECT id FROM memory_runs WHERE repo = ?{} ORDER BY created_at DESC LIMIT 1)",
             params.len() + 1
         ));
         params.push(repo.to_string());
     }
 
     if let Some(kind) = kind.filter(|value| !value.trim().is_empty()) {
-        sql.push_str(&format!(" AND kind = ?{}", params.len() + 1));
+        sql.push_str(&format!(" AND me.kind = ?{}", params.len() + 1));
         params.push(kind.to_string());
     }
 
@@ -310,28 +341,133 @@ pub fn list_memories(
         params.push(format!("%{}%", search.trim()));
     }
 
-    sql.push_str(" ORDER BY confidence DESC, frequency DESC, created_at DESC");
+    sql.push_str(
+        " ORDER BY CASE COALESCE(mc.disposition, 'signal')
+                    WHEN 'policy' THEN 0
+                    WHEN 'signal' THEN 1
+                    ELSE 2
+                  END,
+                 COALESCE(mc.pinned, 0) DESC,
+                 me.confidence DESC,
+                 me.frequency DESC,
+                 me.created_at DESC",
+    );
 
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map(params_from_iter(params.iter()), decode_memory_entry)?;
     rows.collect()
 }
 
+pub fn save_memory_curation(
+    repo: &str,
+    memory_ref: &str,
+    disposition: &str,
+    pinned: bool,
+) -> rusqlite::Result<()> {
+    let conn = connect()?;
+
+    if disposition == "signal" && !pinned {
+        conn.execute(
+            "DELETE FROM memory_curations WHERE repo = ?1 AND memory_ref = ?2",
+            params![repo, memory_ref],
+        )?;
+        return Ok(());
+    }
+
+    conn.execute(
+        r#"
+        INSERT INTO memory_curations (repo, memory_ref, disposition, pinned, updated_at)
+        VALUES (?1, ?2, ?3, ?4, datetime('now'))
+        ON CONFLICT(repo, memory_ref) DO UPDATE SET
+          disposition = excluded.disposition,
+          pinned = excluded.pinned,
+          updated_at = excluded.updated_at
+        "#,
+        params![repo, memory_ref, disposition, if pinned { 1 } else { 0 }],
+    )?;
+    Ok(())
+}
+
+fn ensure_column(conn: &Connection, table: &str, column: &str, definition: &str) -> rusqlite::Result<()> {
+    let pragma = format!("PRAGMA table_info({table})");
+    let mut stmt = conn.prepare(&pragma)?;
+    let rows = stmt.query_map([], |row| row.get::<_, String>(1))?;
+    let mut exists = false;
+    for row in rows {
+        if row?.eq_ignore_ascii_case(column) {
+            exists = true;
+            break;
+        }
+    }
+
+    if !exists {
+        conn.execute(
+            &format!("ALTER TABLE {table} ADD COLUMN {column} {definition}"),
+            [],
+        )?;
+    }
+
+    Ok(())
+}
+
+fn backfill_memory_refs(conn: &Connection) -> rusqlite::Result<()> {
+    let mut stmt = conn.prepare(
+        r#"
+        SELECT id, repo, kind, title
+        FROM memory_entries
+        WHERE memory_ref = '' OR memory_ref IS NULL
+        "#,
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, String>(3)?,
+        ))
+    })?;
+
+    for row in rows {
+        let (id, repo, kind, title) = row?;
+        let memory_ref = stable_memory_ref(&repo, &kind, &title);
+        conn.execute(
+            "UPDATE memory_entries SET memory_ref = ?1 WHERE id = ?2",
+            params![memory_ref, id],
+        )?;
+    }
+
+    Ok(())
+}
+
 fn decode_memory_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<MemoryEntry> {
-    let tags_json: String = row.get(9)?;
-    let evidence_json: String = row.get(10)?;
+    let tags_json: String = row.get(12)?;
+    let evidence_json: String = row.get(13)?;
+    let repo: String = row.get(3)?;
+    let kind: String = row.get(4)?;
+    let title: String = row.get(5)?;
+    let memory_ref = {
+        let value: String = row.get(1)?;
+        if value.trim().is_empty() {
+            stable_memory_ref(&repo, &kind, &title)
+        } else {
+            value
+        }
+    };
     Ok(MemoryEntry {
         id: row.get(0)?,
-        run_id: row.get(1)?,
-        repo: row.get(2)?,
-        kind: row.get(3)?,
-        title: row.get(4)?,
-        detail: row.get(5)?,
-        prompt_line: row.get(6)?,
-        confidence: row.get(7)?,
-        frequency: row.get::<_, i64>(8)? as u32,
+        memory_ref,
+        run_id: row.get(2)?,
+        repo,
+        kind,
+        title,
+        detail: row.get(6)?,
+        prompt_line: row.get(7)?,
+        confidence: row.get(8)?,
+        frequency: row.get::<_, i64>(9)? as u32,
+        disposition: row.get(10)?,
+        pinned: row.get::<_, i64>(11)? != 0,
         tags: serde_json::from_str(&tags_json).unwrap_or_default(),
         evidence: serde_json::from_str(&evidence_json).unwrap_or_default(),
-        created_at: row.get(11)?,
+        created_at: row.get(14)?,
     })
 }
