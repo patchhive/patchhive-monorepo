@@ -12,6 +12,10 @@ pub struct GitHubPullRequest {
     #[serde(default)]
     pub draft: bool,
     #[serde(default)]
+    pub mergeable: Option<bool>,
+    #[serde(default)]
+    pub mergeable_state: String,
+    #[serde(default)]
     pub title: String,
     #[serde(default)]
     pub html_url: String,
@@ -23,6 +27,12 @@ pub struct GitHubPullRequest {
     pub head_ref: String,
     #[serde(default)]
     pub base_ref: String,
+    #[serde(default)]
+    pub additions: u32,
+    #[serde(default)]
+    pub deletions: u32,
+    #[serde(default)]
+    pub changed_files: u32,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -113,4 +123,54 @@ pub struct GitHubManagedCommentResult {
     pub mode: String,
     #[serde(default)]
     pub html_url: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct GitHubStatusContext {
+    #[serde(default)]
+    pub context: String,
+    #[serde(default)]
+    pub state: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub target_url: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct GitHubCheckRunSummary {
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub status: String,
+    #[serde(default)]
+    pub conclusion: String,
+    #[serde(default)]
+    pub html_url: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct GitHubCommitHealth {
+    #[serde(default)]
+    pub combined_state: String,
+    #[serde(default)]
+    pub successful_contexts: u32,
+    #[serde(default)]
+    pub pending_contexts: u32,
+    #[serde(default)]
+    pub failing_contexts: u32,
+    #[serde(default)]
+    pub neutral_contexts: u32,
+    #[serde(default)]
+    pub successful_checks: u32,
+    #[serde(default)]
+    pub pending_checks: u32,
+    #[serde(default)]
+    pub failing_checks: u32,
+    #[serde(default)]
+    pub neutral_checks: u32,
+    #[serde(default)]
+    pub statuses: Vec<GitHubStatusContext>,
+    #[serde(default)]
+    pub check_runs: Vec<GitHubCheckRunSummary>,
 }

@@ -8,8 +8,9 @@ use serde_json::{json, Value};
 use crate::{
     models::{
         GitHubCheckRunRequest, GitHubCheckRunResult, GitHubCommitStatusRequest,
-        GitHubCommitStatusResult, GitHubManagedCommentResult, GitHubPullRequest,
-        GitHubPullReview, GitHubPullReviewThread, GitHubPullReviewThreadComment,
+        GitHubCommitHealth, GitHubCommitStatusResult, GitHubManagedCommentResult,
+        GitHubPullRequest, GitHubPullReview, GitHubPullReviewThread,
+        GitHubPullReviewThreadComment, GitHubCheckRunSummary, GitHubStatusContext,
     },
     webhook::github_token_from_env,
 };
@@ -197,6 +198,8 @@ impl GitHubPrClient {
             state: value["state"].as_str().unwrap_or("").to_string(),
             merged: value["merged"].as_bool().unwrap_or(false),
             draft: value["draft"].as_bool().unwrap_or(false),
+            mergeable: value["mergeable"].as_bool(),
+            mergeable_state: value["mergeable_state"].as_str().unwrap_or("").to_string(),
             title: value["title"].as_str().unwrap_or("").to_string(),
             html_url: value["html_url"].as_str().unwrap_or("").to_string(),
             head_repo: value["head"]["repo"]["full_name"]
@@ -206,7 +209,80 @@ impl GitHubPrClient {
             head_sha: value["head"]["sha"].as_str().unwrap_or("").to_string(),
             head_ref: value["head"]["ref"].as_str().unwrap_or("").to_string(),
             base_ref: value["base"]["ref"].as_str().unwrap_or("").to_string(),
+            additions: value["additions"].as_u64().unwrap_or(0) as u32,
+            deletions: value["deletions"].as_u64().unwrap_or(0) as u32,
+            changed_files: value["changed_files"].as_u64().unwrap_or(0) as u32,
         })
+    }
+
+    pub async fn fetch_commit_health(&self, repo: &str, sha: &str) -> Result<GitHubCommitHealth> {
+        let sha = sha.trim();
+        if sha.is_empty() {
+            return Err(anyhow!("Commit SHA is required for commit health lookup"));
+        }
+
+        let statuses_value = self
+            .get_json(&format!("/repos/{repo}/commits/{sha}/status"))
+            .await?;
+        let check_runs_value = self
+            .get_json(&format!("/repos/{repo}/commits/{sha}/check-runs?per_page=100"))
+            .await?;
+
+        let status_items = statuses_value["statuses"]
+            .as_array()
+            .ok_or_else(|| anyhow!("GitHub combined status response was not an array"))?;
+        let check_items = check_runs_value["check_runs"]
+            .as_array()
+            .ok_or_else(|| anyhow!("GitHub check-runs response was not an array"))?;
+
+        let statuses = status_items
+            .iter()
+            .map(|item| GitHubStatusContext {
+                context: item["context"].as_str().unwrap_or("").to_string(),
+                state: item["state"].as_str().unwrap_or("").to_string(),
+                description: item["description"].as_str().unwrap_or("").to_string(),
+                target_url: item["target_url"].as_str().unwrap_or("").to_string(),
+            })
+            .collect::<Vec<_>>();
+        let check_runs = check_items
+            .iter()
+            .map(|item| GitHubCheckRunSummary {
+                name: item["name"].as_str().unwrap_or("").to_string(),
+                status: item["status"].as_str().unwrap_or("").to_string(),
+                conclusion: item["conclusion"].as_str().unwrap_or("").to_string(),
+                html_url: item["html_url"].as_str().unwrap_or("").to_string(),
+            })
+            .collect::<Vec<_>>();
+
+        let mut health = GitHubCommitHealth {
+            combined_state: statuses_value["state"].as_str().unwrap_or("").to_string(),
+            statuses,
+            check_runs,
+            ..GitHubCommitHealth::default()
+        };
+
+        for status in &health.statuses {
+            match status.state.as_str() {
+                "success" => health.successful_contexts += 1,
+                "pending" => health.pending_contexts += 1,
+                "failure" | "error" => health.failing_contexts += 1,
+                _ => health.neutral_contexts += 1,
+            }
+        }
+
+        for run in &health.check_runs {
+            match (run.status.as_str(), run.conclusion.as_str()) {
+                ("completed", "success") => health.successful_checks += 1,
+                ("completed", "neutral" | "skipped") => health.neutral_checks += 1,
+                ("completed", "failure" | "timed_out" | "cancelled" | "action_required" | "startup_failure" | "stale") => {
+                    health.failing_checks += 1
+                }
+                ("completed", _) => health.neutral_checks += 1,
+                _ => health.pending_checks += 1,
+            }
+        }
+
+        Ok(health)
     }
 
     pub async fn fetch_pull_request_diff(&self, repo: &str, pr_number: i64) -> Result<String> {

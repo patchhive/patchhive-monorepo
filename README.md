@@ -64,6 +64,9 @@ patchhive/
     repo-memory/            ← RepoMemory v0.1.0
       backend/              ← Rust durable memory ingestion API
       frontend/             ← React memory explorer and prompt-pack UI
+    merge-keeper/           ← MergeKeeper v0.1.0
+      backend/              ← Rust PR merge-readiness API
+      frontend/             ← React merge readiness dashboard
 ```
 
 ## Adding a New Product
@@ -130,6 +133,7 @@ It currently covers:
 - standard PatchHive GitHub token/env resolution
 - signed GitHub webhook verification
 - pull request metadata fetch
+- pull request commit-health fetch
 - pull request review fetch
 - pull request review-thread fetch
 - unified diff fetch
@@ -233,6 +237,21 @@ docker-compose up --build
 cd products/repo-memory
 cp .env.example .env
 # fill in BOT_GITHUB_TOKEN
+
+# Dev
+cd backend && cargo run
+cd ../frontend && npm install && npm run dev
+
+# Docker
+docker-compose up --build
+```
+
+## Quick Start — MergeKeeper
+
+```bash
+cd products/merge-keeper
+cp .env.example .env
+# fill in BOT_GITHUB_TOKEN or GITHUB_TOKEN
 
 # Dev
 cd backend && cargo run

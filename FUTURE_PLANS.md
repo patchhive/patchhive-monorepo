@@ -28,6 +28,13 @@ Use this to capture later ideas so they do not get lost between product pushes.
 - Consider AI-assisted summarization or retrieval later through `patchhive-ai-local`, but keep the base memory loop useful without AI.
 - IncidentEcho also fits here as a capability that captures lessons from bugs, incidents, and painful reviews so the repo keeps institutional memory.
 
+## MergeKeeper
+
+- Feed ReviewBee into MergeKeeper later so active review-thread pressure and merge readiness stay aligned instead of feeling like separate products.
+- Feed TrustGate into MergeKeeper later so risky PRs can stay merge-blocked even when GitHub checks are green.
+- Feed RepoMemory into MergeKeeper later so repo-specific merge expectations and reviewer tendencies can shape readiness calls.
+- Add branch-protection and merge-queue awareness later if teams want MergeKeeper to mirror GitHub’s stricter merge rules more exactly.
+
 ## RepoReaper
 
 - Revisit release/tagging once the current product loop feels stable enough for an intentional versioned release.

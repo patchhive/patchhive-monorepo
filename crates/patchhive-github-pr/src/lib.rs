@@ -7,5 +7,6 @@ pub use models::{
     GitHubCheckRunRequest, GitHubCheckRunResult, GitHubCommitStatusRequest,
     GitHubCommitStatusResult, GitHubManagedCommentResult, GitHubPullRequest,
     GitHubPullReview, GitHubPullReviewThread, GitHubPullReviewThreadComment,
+    GitHubCommitHealth, GitHubCheckRunSummary, GitHubStatusContext,
 };
 pub use webhook::{env_value, github_token_from_env, verify_github_webhook_signature};

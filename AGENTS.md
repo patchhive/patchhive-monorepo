@@ -350,6 +350,14 @@ Important env vars:
 - Prompt-pack generation matters early because it is the bridge between remembered repo context and later agent behavior.
 - RepoMemory should make both TrustGate and RepoReaper smarter, not compete with them as a separate actor.
 
+## MergeKeeper Notes
+
+- MergeKeeper should stay merge-readiness-first and orchestration-adjacent.
+- Its job is to tell a human or another PatchHive product whether a PR is actually ready to merge, on hold, or blocked.
+- The MVP should work without live AI providers by reading GitHub PR state, reviewer state, unresolved review pressure, and commit/check health.
+- MergeKeeper should become the convergence point for ReviewBee, TrustGate, RepoMemory, and CI signals over time, but it should not wait for all of them before being useful.
+- The early UX should stay simple: one PR in, one readiness decision out, with visible reasons.
+
 ## IncidentEcho Notes
 
 - IncidentEcho is a cross-cutting capability, not a standalone product by default.
