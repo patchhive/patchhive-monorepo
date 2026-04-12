@@ -10,6 +10,12 @@ Use this to capture later ideas so they do not get lost between product pushes.
 - Add optional delivery for scheduled scans: email, webhook, or digest-style summary output.
 - Consider AI-assisted summarization or clustering later through `patchhive-ai-local`, but keep the core scan useful without AI.
 
+## ReviewBee
+
+- Add webhook-driven reruns so PR checklists update as new review comments and thread resolutions land.
+- Add maintained PR comment / check output once ReviewBee's GitHub-facing voice settles.
+- Let RepoMemory feed reviewer-preference context into ReviewBee later if it sharpens checklist clustering without adding noise.
+
 ## TrustGate
 
 - Add incident-informed rule tuning later so painful failures can become future guardrails.
@@ -19,7 +25,6 @@ Use this to capture later ideas so they do not get lost between product pushes.
 ## RepoMemory
 
 - Add a print-friendly or shareable prompt-pack view once the format settles.
-- Add reviewer and maintainer profile summaries so repeated feedback can be attributed more clearly over time.
 - Consider AI-assisted summarization or retrieval later through `patchhive-ai-local`, but keep the base memory loop useful without AI.
 - IncidentEcho also fits here as a capability that captures lessons from bugs, incidents, and painful reviews so the repo keeps institutional memory.
 

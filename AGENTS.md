@@ -325,6 +325,14 @@ Important env vars:
 - SignalHive should respect allowlist, denylist, and opt-out controls early so autonomous repo discovery never feels invasive.
 - The intended early audience is engineering leads and CTOs at small startups who need maintenance visibility before they are ready for autonomous repo changes.
 
+## ReviewBee Notes
+
+- ReviewBee should stay review-first and merge-speed-first.
+- Its job is to turn PR review threads into a concrete, lower-noise follow-up checklist instead of forcing engineers to reread long thread histories.
+- The MVP should work without live AI providers by clustering actionable review comments, grouping similar asks, and surfacing which feedback appears resolved versus still active.
+- ReviewBee should reuse `patchhive-github-pr` for PR review fetch and thread-state plumbing instead of growing a separate GitHub client.
+- ReviewBee should make teams faster at closing PRs before PatchHive asks them to trust broader autonomous write behavior.
+
 ## TrustGate Notes
 
 - TrustGate should stay trust-first and review-first.

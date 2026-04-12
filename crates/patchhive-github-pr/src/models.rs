@@ -25,6 +25,49 @@ pub struct GitHubPullRequest {
     pub base_ref: String,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct GitHubPullReview {
+    pub id: i64,
+    #[serde(default)]
+    pub state: String,
+    #[serde(default)]
+    pub body: String,
+    #[serde(default)]
+    pub html_url: String,
+    #[serde(default)]
+    pub submitted_at: String,
+    #[serde(default)]
+    pub author_login: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct GitHubPullReviewThreadComment {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub body: String,
+    #[serde(default)]
+    pub url: String,
+    #[serde(default)]
+    pub created_at: String,
+    #[serde(default)]
+    pub author_login: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct GitHubPullReviewThread {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub path: String,
+    #[serde(default)]
+    pub is_resolved: bool,
+    #[serde(default)]
+    pub is_outdated: bool,
+    #[serde(default)]
+    pub comments: Vec<GitHubPullReviewThreadComment>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GitHubCheckRunRequest {
     pub name: String,

@@ -55,6 +55,9 @@ patchhive/
     signal-hive/            ← SignalHive v0.1.0
       backend/              ← Rust read-only maintenance signal API
       frontend/             ← React signal dashboard
+    review-bee/             ← ReviewBee v0.1.0
+      backend/              ← Rust PR review checklist API
+      frontend/             ← React PR checklist dashboard
     trust-gate/             ← TrustGate v0.1.0
       backend/              ← Rust diff review and policy engine
       frontend/             ← React rule editor and review dashboard
@@ -127,6 +130,8 @@ It currently covers:
 - standard PatchHive GitHub token/env resolution
 - signed GitHub webhook verification
 - pull request metadata fetch
+- pull request review fetch
+- pull request review-thread fetch
 - unified diff fetch
 - GitHub check-run publishing
 - commit-status publishing
@@ -184,6 +189,21 @@ docker-compose up --build
 cd products/signal-hive
 cp .env.example .env
 # fill in BOT_GITHUB_TOKEN
+
+# Dev
+cd backend && cargo run
+cd ../frontend && npm install && npm run dev
+
+# Docker
+docker-compose up --build
+```
+
+## Quick Start — ReviewBee
+
+```bash
+cd products/review-bee
+cp .env.example .env
+# fill in BOT_GITHUB_TOKEN or GITHUB_TOKEN
 
 # Dev
 cd backend && cargo run

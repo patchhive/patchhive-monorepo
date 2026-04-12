@@ -1,0 +1,24 @@
+version: "3.8"
+
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8040:8000"
+    volumes:
+      - ./data:/data
+    environment:
+      - REVIEW_BEE_DB_PATH=/data/review-bee.db
+      - REVIEW_BEE_PORT=8000
+      - RUST_LOG=info
+    env_file:
+      - .env
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "5177:80"
+    depends_on:
+      - backend
+    restart: unless-stopped

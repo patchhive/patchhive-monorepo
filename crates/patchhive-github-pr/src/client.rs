@@ -9,6 +9,7 @@ use crate::{
     models::{
         GitHubCheckRunRequest, GitHubCheckRunResult, GitHubCommitStatusRequest,
         GitHubCommitStatusResult, GitHubManagedCommentResult, GitHubPullRequest,
+        GitHubPullReview, GitHubPullReviewThread, GitHubPullReviewThreadComment,
     },
     webhook::github_token_from_env,
 };
@@ -136,6 +137,33 @@ impl GitHubPrClient {
         }
     }
 
+    async fn post_json_with_headers(
+        &self,
+        path: &str,
+        body: &Value,
+        accept: &str,
+    ) -> Result<Value> {
+        let response = self
+            .client
+            .post(format!("{GH_API}{path}"))
+            .headers(self.headers(accept, true)?)
+            .json(body)
+            .send()
+            .await
+            .with_context(|| format!("GitHub POST failed for {path}"))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let text = response.text().await.unwrap_or_default();
+            return Err(anyhow!("GitHub POST {path} -> {status}: {text}"));
+        }
+
+        response
+            .json::<Value>()
+            .await
+            .with_context(|| format!("Failed to decode GitHub JSON for {path}"))
+    }
+
     async fn patch_json(&self, path: &str, body: &Value) -> Result<Value> {
         let response = self
             .client
@@ -187,6 +215,125 @@ impl GitHubPrClient {
             "application/vnd.github.v3.diff",
         )
         .await
+    }
+
+    pub async fn fetch_pull_request_reviews(
+        &self,
+        repo: &str,
+        pr_number: i64,
+    ) -> Result<Vec<GitHubPullReview>> {
+        let value = self
+            .get_json(&format!("/repos/{repo}/pulls/{pr_number}/reviews?per_page=100"))
+            .await?;
+
+        let items = value
+            .as_array()
+            .ok_or_else(|| anyhow!("GitHub reviews response was not an array"))?;
+
+        Ok(items
+            .iter()
+            .map(|item| GitHubPullReview {
+                id: item["id"].as_i64().unwrap_or(0),
+                state: item["state"].as_str().unwrap_or("").to_string(),
+                body: item["body"].as_str().unwrap_or("").to_string(),
+                html_url: item["html_url"].as_str().unwrap_or("").to_string(),
+                submitted_at: item["submitted_at"].as_str().unwrap_or("").to_string(),
+                author_login: item["user"]["login"].as_str().unwrap_or("").to_string(),
+            })
+            .collect())
+    }
+
+    pub async fn fetch_pull_request_review_threads(
+        &self,
+        repo: &str,
+        pr_number: i64,
+    ) -> Result<Vec<GitHubPullReviewThread>> {
+        let (owner, name) = split_repo(repo)?;
+        let query = r#"
+query PatchHiveReviewThreads($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      reviewThreads(first: 100) {
+        nodes {
+          id
+          path
+          isResolved
+          isOutdated
+          comments(first: 30) {
+            nodes {
+              id
+              body
+              url
+              createdAt
+              author {
+                login
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+"#;
+
+        let value = self
+            .post_json_with_headers(
+                "/graphql",
+                &json!({
+                    "query": query,
+                    "variables": {
+                        "owner": owner,
+                        "name": name,
+                        "number": pr_number,
+                    }
+                }),
+                "application/vnd.github+json",
+            )
+            .await?;
+
+        if let Some(errors) = value["errors"].as_array() {
+            if !errors.is_empty() {
+                let messages = errors
+                    .iter()
+                    .filter_map(|error| error["message"].as_str())
+                    .collect::<Vec<_>>()
+                    .join("; ");
+                return Err(anyhow!("GitHub GraphQL error: {messages}"));
+            }
+        }
+
+        let threads = value["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"]
+            .as_array()
+            .ok_or_else(|| anyhow!("GitHub review thread response was not an array"))?;
+
+        Ok(threads
+            .iter()
+            .map(|thread| GitHubPullReviewThread {
+                id: thread["id"].as_str().unwrap_or("").to_string(),
+                path: thread["path"].as_str().unwrap_or("").to_string(),
+                is_resolved: thread["isResolved"].as_bool().unwrap_or(false),
+                is_outdated: thread["isOutdated"].as_bool().unwrap_or(false),
+                comments: thread["comments"]["nodes"]
+                    .as_array()
+                    .map(|comments| {
+                        comments
+                            .iter()
+                            .map(|comment| GitHubPullReviewThreadComment {
+                                id: comment["id"].as_str().unwrap_or("").to_string(),
+                                body: comment["body"].as_str().unwrap_or("").to_string(),
+                                url: comment["url"].as_str().unwrap_or("").to_string(),
+                                created_at: comment["createdAt"].as_str().unwrap_or("").to_string(),
+                                author_login: comment["author"]["login"]
+                                    .as_str()
+                                    .unwrap_or("")
+                                    .to_string(),
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default(),
+            })
+            .collect())
     }
 
     pub async fn create_check_run(
@@ -282,4 +429,22 @@ impl GitHubPrClient {
             html_url: created["html_url"].as_str().unwrap_or("").to_string(),
         })
     }
+}
+
+fn split_repo(repo: &str) -> Result<(&str, &str)> {
+    let mut parts = repo.split('/');
+    let owner = parts
+        .next()
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| anyhow!("Repository owner was missing"))?;
+    let name = parts
+        .next()
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| anyhow!("Repository name was missing"))?;
+
+    if parts.next().is_some() {
+        return Err(anyhow!("Repository must be in owner/name format"));
+    }
+
+    Ok((owner, name))
 }
