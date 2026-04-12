@@ -4,6 +4,12 @@ use serde::{Deserialize, Serialize};
 pub struct AssessmentRequest {
     pub repo: String,
     pub pr_number: i64,
+    #[serde(default = "default_publish_report")]
+    pub publish_report: bool,
+}
+
+fn default_publish_report() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -105,6 +111,58 @@ pub struct ReviewerState {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct GitHubAssessmentContext {
+    #[serde(default)]
+    pub repo: String,
+    #[serde(default)]
+    pub pr_number: i64,
+    #[serde(default)]
+    pub pr_title: String,
+    #[serde(default)]
+    pub pr_url: String,
+    #[serde(default)]
+    pub head_sha: String,
+    #[serde(default)]
+    pub head_repo: String,
+    #[serde(default)]
+    pub head_ref: String,
+    #[serde(default)]
+    pub base_ref: String,
+    #[serde(default)]
+    pub trigger: String,
+    #[serde(default)]
+    pub event: String,
+    #[serde(default)]
+    pub action: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct GitHubReportOutcome {
+    #[serde(default)]
+    pub attempted: bool,
+    #[serde(default)]
+    pub delivered: bool,
+    #[serde(default)]
+    pub method: String,
+    #[serde(default)]
+    pub state: String,
+    #[serde(default)]
+    pub message: String,
+    #[serde(default)]
+    pub details: Vec<String>,
+    #[serde(default)]
+    pub check_url: String,
+    #[serde(default)]
+    pub status_url: String,
+    #[serde(default)]
+    pub comment_url: String,
+    #[serde(default)]
+    pub comment_mode: String,
+    #[serde(default)]
+    pub report_markdown: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct MergeAssessment {
     #[serde(default)]
     pub id: String,
@@ -144,6 +202,10 @@ pub struct MergeAssessment {
     pub trust_gate: Option<TrustGateContext>,
     #[serde(default)]
     pub repo_memory: Option<RepoMemoryContextPreview>,
+    #[serde(default)]
+    pub github: Option<GitHubAssessmentContext>,
+    #[serde(default)]
+    pub github_report: Option<GitHubReportOutcome>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

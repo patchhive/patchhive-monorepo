@@ -30,8 +30,8 @@ Use this to capture later ideas so they do not get lost between product pushes.
 
 ## MergeKeeper
 
-- Add webhook-driven refresh and a maintained GitHub merge-readiness artifact later so MergeKeeper can live directly in the PR flow.
 - Add branch-protection and merge-queue awareness later if teams want MergeKeeper to mirror GitHub’s stricter merge rules more exactly.
+- Add repo-tunable MergeKeeper report/comment templates later if a second product needs the same merge-voice customization seam.
 
 ## RepoReaper
 

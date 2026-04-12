@@ -52,6 +52,27 @@ export default function ChecksPanel({ apiKey }) {
           </div>
 
           <div style={{ ...S.panel, display: "grid", gap: 12 }}>
+            <div style={{ fontSize: 15, fontWeight: 700 }}>GitHub publish path</div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <Tag color={health.github?.token_configured ? "var(--green)" : "var(--accent)"}>
+                token {health.github?.token_configured ? "ready" : "missing"}
+              </Tag>
+              <Tag color={health.github?.webhook_secret_configured ? "var(--green)" : "var(--text-dim)"}>
+                webhook {health.github?.webhook_secret_configured ? "ready" : "off"}
+              </Tag>
+              <Tag color={health.github?.public_url_configured ? "var(--green)" : "var(--text-dim)"}>
+                public url {health.github?.public_url_configured ? "ready" : "off"}
+              </Tag>
+              <Tag color={health.github?.report_publish_ready ? "var(--green)" : "var(--accent)"}>
+                artifact publish {health.github?.report_publish_ready ? "ready" : "off"}
+              </Tag>
+            </div>
+            <div style={{ color: "var(--text-dim)", fontSize: 12, lineHeight: 1.6 }}>
+              MergeKeeper can keep a PR comment in sync and publish a check-style readiness signal when GitHub auth is configured. Webhooks are optional but make the decision feel alive inside the PR.
+            </div>
+          </div>
+
+          <div style={{ ...S.panel, display: "grid", gap: 12 }}>
             <div style={{ fontSize: 15, fontWeight: 700 }}>Cross-product integrations</div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <Tag color={health.integrations?.review_bee_configured ? "var(--green)" : "var(--text-dim)"}>

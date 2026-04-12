@@ -28,10 +28,17 @@ export default function App() {
   const [form, setForm] = useState({
     repo: "",
     pr_number: "",
+    publish_report: true,
   });
   const [assessment, setAssessment] = useState(null);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
+  const [pendingRunId, setPendingRunId] = useState(() => {
+    if (typeof window === "undefined") {
+      return "";
+    }
+    return new URLSearchParams(window.location.search).get("run") || "";
+  });
   const fetch_ = createApiFetcher(apiKey);
 
   useEffect(() => {
@@ -48,6 +55,7 @@ export default function App() {
         body: JSON.stringify({
           repo: form.repo,
           pr_number: Number(form.pr_number) || 0,
+          publish_report: !!form.publish_report,
         }),
       });
       const data = await res.json();
@@ -76,6 +84,7 @@ export default function App() {
       setForm({
         repo: data.repo || "",
         pr_number: data.pr_number ? String(data.pr_number) : "",
+        publish_report: form.publish_report,
       });
       setTab("keeper");
     } catch (err) {
@@ -84,6 +93,28 @@ export default function App() {
       setRunning(false);
     }
   }
+
+  useEffect(() => {
+    if (!checked || needsAuth || !pendingRunId || running) {
+      return;
+    }
+    loadHistoryAssessment(pendingRunId);
+    setPendingRunId("");
+  }, [checked, needsAuth, pendingRunId, running]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const url = new URL(window.location.href);
+    if (assessment?.id) {
+      url.searchParams.set("run", assessment.id);
+    } else {
+      url.searchParams.delete("run");
+    }
+    window.history.replaceState({}, "", url.toString());
+  }, [assessment?.id]);
 
   if (!checked) {
     return (

@@ -20,11 +20,11 @@ pub async fn validate_config() -> Vec<StartupCheck> {
 
     if crate::github::github_token_configured() {
         checks.push(StartupCheck::info(
-            "GitHub token detected. MergeKeeper can read PR state, review pressure, and check health.",
+            "GitHub token detected. MergeKeeper can read PR state, review pressure, check health, and publish merge-readiness artifacts.",
         ));
     } else {
         checks.push(StartupCheck::error(
-            "BOT_GITHUB_TOKEN or GITHUB_TOKEN is required for GitHub-backed merge readiness checks.",
+            "BOT_GITHUB_TOKEN or GITHUB_TOKEN is required for GitHub-backed merge readiness checks and GitHub report publishing.",
         ));
     }
 
@@ -59,6 +59,26 @@ pub async fn validate_config() -> Vec<StartupCheck> {
     } else {
         checks.push(StartupCheck::info(
             "RepoMemory integration is not configured. MergeKeeper will skip repo-specific memory hints for now.",
+        ));
+    }
+
+    if crate::github::webhook_secret_configured() {
+        checks.push(StartupCheck::info(
+            "GitHub webhook secret is configured. MergeKeeper can refresh itself from supported PR events.",
+        ));
+    } else {
+        checks.push(StartupCheck::info(
+            "GitHub webhook secret is not configured. MergeKeeper will stay manual until MERGE_KEEPER_GITHUB_WEBHOOK_SECRET is set.",
+        ));
+    }
+
+    if crate::github::public_url_configured() {
+        checks.push(StartupCheck::info(
+            "Public URL is configured. MergeKeeper can link PR comments back to a shareable run view.",
+        ));
+    } else {
+        checks.push(StartupCheck::info(
+            "Public URL is not configured. MergeKeeper will still publish GitHub artifacts, but deep links back to the app stay local-only.",
         ));
     }
 

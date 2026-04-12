@@ -85,6 +85,21 @@ export default function KeeperPanel({
             {running ? "Reading GitHub..." : "Run MergeKeeper"}
           </Btn>
         </div>
+
+        <label style={{ display: "flex", gap: 10, alignItems: "start", color: "var(--text-dim)", fontSize: 12, lineHeight: 1.5 }}>
+          <input
+            type="checkbox"
+            checked={!!form.publish_report}
+            onChange={(event) => setForm((prev) => ({ ...prev, publish_report: event.target.checked }))}
+            style={{ marginTop: 2 }}
+          />
+          <span>
+            Maintain a MergeKeeper PR artifact when this run completes.
+            <span style={{ display: "block", fontSize: 11, color: "var(--text-dim)" }}>
+              Leave this on to upsert the PR comment and publish a check-style readiness signal. Turn it off for a local-only pass.
+            </span>
+          </span>
+        </label>
       </div>
 
       {assessment ? (
@@ -125,8 +140,74 @@ export default function KeeperPanel({
               {assessment.base_ref && <Tag color="var(--blue)">base: {assessment.base_ref}</Tag>}
               {assessment.head_ref && <Tag color="var(--blue)">head: {assessment.head_ref}</Tag>}
               <Tag color="var(--text-dim)">+{assessment.metrics.additions} / -{assessment.metrics.deletions}</Tag>
+              {assessment.github?.trigger && <Tag color="var(--blue)">trigger: {assessment.github.trigger}</Tag>}
+              {assessment.github?.event && <Tag color="var(--text-dim)">event: {assessment.github.event}</Tag>}
+              {assessment.github?.action && <Tag color="var(--text-dim)">action: {assessment.github.action}</Tag>}
             </div>
           </div>
+
+          {assessment.github_report && (
+            <div style={{ ...S.panel, display: "grid", gap: 12 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "start" }}>
+                <div style={{ display: "grid", gap: 6 }}>
+                  <div style={{ fontSize: 15, fontWeight: 700 }}>GitHub artifact</div>
+                  <div style={{ color: "var(--text-dim)", fontSize: 12, lineHeight: 1.6 }}>
+                    {assessment.github_report.message}
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <Tag
+                    color={
+                      assessment.github_report.delivered
+                        ? "var(--green)"
+                        : assessment.github_report.state === "report_failed" || assessment.github_report.state === "missing_token"
+                          ? "var(--accent)"
+                          : "var(--gold)"
+                    }
+                  >
+                    {assessment.github_report.state}
+                  </Tag>
+                  {assessment.github_report.comment_mode && (
+                    <Tag color="var(--blue)">{assessment.github_report.comment_mode}</Tag>
+                  )}
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {assessment.github_report.comment_url && (
+                  <Btn onClick={() => window.open(assessment.github_report.comment_url, "_blank", "noreferrer")} style={{ padding: "6px 10px" }}>
+                    Open comment
+                  </Btn>
+                )}
+                {assessment.github_report.check_url && (
+                  <Btn onClick={() => window.open(assessment.github_report.check_url, "_blank", "noreferrer")} style={{ padding: "6px 10px" }}>
+                    Open check
+                  </Btn>
+                )}
+                {assessment.github_report.report_markdown && navigator?.clipboard && (
+                  <Btn onClick={() => navigator.clipboard.writeText(assessment.github_report.report_markdown)} style={{ padding: "6px 10px" }}>
+                    Copy report
+                  </Btn>
+                )}
+              </div>
+
+              {assessment.github_report.details?.length > 0 && (
+                <div style={{ display: "grid", gap: 6 }}>
+                  {assessment.github_report.details.map((line, index) => (
+                    <div key={`gh-detail-${index}`} style={{ color: "var(--text-dim)", fontSize: 12, lineHeight: 1.5 }}>
+                      - {line}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {assessment.github_report.report_markdown && (
+                <div style={{ border: "1px solid var(--border)", borderRadius: 6, padding: 12, background: "var(--bg-input)", color: "var(--text-dim)", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
+                  {assessment.github_report.report_markdown}
+                </div>
+              )}
+            </div>
+          )}
 
           {assessment.reviewer_states?.length > 0 && (
             <div style={{ ...S.panel, display: "grid", gap: 10 }}>

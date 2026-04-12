@@ -1,14 +1,16 @@
 use std::collections::BTreeMap;
 
 use axum::{
+    body::Bytes,
     extract::{Path, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     Json,
 };
 use chrono::Utc;
+use patchhive_github_pr::verify_github_webhook_signature;
 use patchhive_product_core::repo_memory::RepoMemoryContextRequest;
 use patchhive_product_core::startup::count_errors;
-use serde_json::json;
+use serde_json::{json, Value};
 use tokio::join;
 use uuid::Uuid;
 
@@ -18,9 +20,9 @@ use crate::{
     github::GitHubMergeContext,
     integrations,
     models::{
-        AssessmentRequest, HistoryItem, MergeAssessment, MergeMetrics, MergeSignal,
-        OverviewPayload, RepoMemoryContextPreview, ReviewBeeContext, ReviewerState,
-        TrustGateContext,
+        AssessmentRequest, GitHubAssessmentContext, HistoryItem, MergeAssessment,
+        MergeMetrics, MergeSignal, OverviewPayload, RepoMemoryContextPreview,
+        ReviewBeeContext, ReviewerState, TrustGateContext,
     },
     state::AppState,
     STARTUP_CHECKS,
@@ -74,6 +76,12 @@ pub async fn health() -> Json<serde_json::Value> {
         "hold_count": counts.hold_runs,
         "blocked_count": counts.blocked_runs,
         "mode": "github-merge-readiness",
+        "github": {
+            "token_configured": github::github_token_configured(),
+            "webhook_secret_configured": github::webhook_secret_configured(),
+            "public_url_configured": github::public_url_configured(),
+            "report_publish_ready": github::github_token_configured(),
+        },
         "integrations": {
             "review_bee_configured": integrations::review_bee_configured(),
             "trust_gate_configured": integrations::trust_gate_configured(),
@@ -118,12 +126,16 @@ pub async fn assess_github_pr(
         ));
     }
 
-    let context = github::fetch_merge_context(&state.http, repo, request.pr_number)
-        .await
-        .map_err(|err| api_error(StatusCode::BAD_GATEWAY, err.to_string()))?;
-    let assessment = build_assessment(&state, &context).await;
-    db::save_assessment(&assessment)
-        .map_err(|err| api_error(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+    let assessment = run_github_pr_assessment(
+        &state,
+        repo.to_string(),
+        request.pr_number,
+        request.publish_report,
+        "manual_pr_lookup".into(),
+        "pull_request".into(),
+        "manual".into(),
+    )
+    .await?;
 
     Ok(Json(assessment))
 }
@@ -138,6 +150,153 @@ fn valid_repo(repo: &str) -> bool {
         (parts.next(), parts.next(), parts.next()),
         (Some(owner), Some(name), None) if !owner.trim().is_empty() && !name.trim().is_empty()
     )
+}
+
+fn verify_webhook_signature(headers: &HeaderMap, body: &[u8]) -> Result<(), ApiError> {
+    let Some(secret) = github::webhook_secret() else {
+        return Err(api_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Configure MERGE_KEEPER_GITHUB_WEBHOOK_SECRET before enabling the MergeKeeper GitHub webhook.",
+        ));
+    };
+
+    verify_github_webhook_signature(headers, body, &secret).map_err(|err| {
+        api_error(
+            StatusCode::UNAUTHORIZED,
+            format!("GitHub webhook signature verification failed: {err}"),
+        )
+    })
+}
+
+fn supported_webhook_action(event: &str, action: &str) -> bool {
+    match event {
+        "pull_request" => matches!(
+            action,
+            "opened" | "reopened" | "synchronize" | "ready_for_review" | "edited" | "closed"
+        ),
+        "pull_request_review" => matches!(action, "submitted" | "edited" | "dismissed"),
+        "pull_request_review_comment" => matches!(action, "created" | "edited" | "deleted"),
+        "pull_request_review_thread" => matches!(action, "resolved" | "unresolved"),
+        "check_run" => matches!(action, "created" | "completed" | "rerequested"),
+        "check_suite" => matches!(action, "completed" | "rerequested"),
+        _ => false,
+    }
+}
+
+fn extract_webhook_target(event: &str, payload: &Value) -> Option<(String, i64)> {
+    let repo = payload["repository"]["full_name"].as_str()?.to_string();
+    let pr_number = match event {
+        "pull_request" | "pull_request_review" | "pull_request_review_comment" | "pull_request_review_thread" => {
+            payload["pull_request"]["number"].as_i64()?
+        }
+        "check_run" => payload["check_run"]["pull_requests"]
+            .as_array()
+            .and_then(|items| items.first())
+            .and_then(|item| item["number"].as_i64())?,
+        "check_suite" => payload["check_suite"]["pull_requests"]
+            .as_array()
+            .and_then(|items| items.first())
+            .and_then(|item| item["number"].as_i64())?,
+        _ => return None,
+    };
+    Some((repo, pr_number))
+}
+
+async fn run_github_pr_assessment(
+    state: &AppState,
+    repo: String,
+    pr_number: i64,
+    publish_report: bool,
+    trigger: String,
+    event: String,
+    action: String,
+) -> Result<MergeAssessment, ApiError> {
+    let context = github::fetch_merge_context(&state.http, &repo, pr_number)
+        .await
+        .map_err(|err| api_error(StatusCode::BAD_GATEWAY, err.to_string()))?;
+    let mut assessment = build_assessment(state, &context).await;
+    assessment.github = Some(GitHubAssessmentContext {
+        repo: context.pr.repo.clone(),
+        pr_number: context.pr.number,
+        pr_title: context.pr.title.clone(),
+        pr_url: context.pr.html_url.clone(),
+        head_sha: context.pr.head_sha.clone(),
+        head_repo: context.pr.head_repo.clone(),
+        head_ref: context.pr.head_ref.clone(),
+        base_ref: context.pr.base_ref.clone(),
+        trigger,
+        event,
+        action,
+    });
+    assessment.github_report = Some(if publish_report {
+        github::publish_assessment_outcome(&state.http, &assessment).await
+    } else {
+        github::preview_assessment_outcome(
+            &assessment,
+            "GitHub publish was skipped for this MergeKeeper run.",
+        )
+    });
+    db::save_assessment(&assessment)
+        .map_err(|err| api_error(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+    Ok(assessment)
+}
+
+pub async fn github_webhook(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> JsonResult<serde_json::Value> {
+    verify_webhook_signature(&headers, &body)?;
+
+    let event = headers
+        .get("X-GitHub-Event")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+    let payload: Value = serde_json::from_slice(&body).map_err(|_| {
+        api_error(
+            StatusCode::BAD_REQUEST,
+            "Could not decode GitHub webhook payload.",
+        )
+    })?;
+    let action = payload["action"].as_str().unwrap_or("").to_string();
+
+    if !supported_webhook_action(&event, &action) {
+        return Ok(Json(json!({
+            "triggered": false,
+            "event": event,
+            "action": action,
+            "reason": "This GitHub event does not trigger an automatic MergeKeeper refresh.",
+        })));
+    }
+
+    let Some((repo, pr_number)) = extract_webhook_target(&event, &payload) else {
+        return Ok(Json(json!({
+            "triggered": false,
+            "event": event,
+            "action": action,
+            "reason": "This webhook did not include an associated pull request target MergeKeeper could refresh.",
+        })));
+    };
+
+    let assessment = run_github_pr_assessment(
+        &state,
+        repo,
+        pr_number,
+        true,
+        "github_webhook".into(),
+        event.clone(),
+        action.clone(),
+    )
+    .await?;
+
+    Ok(Json(json!({
+        "triggered": true,
+        "event": event,
+        "action": action,
+        "readiness": assessment.readiness,
+        "assessment": assessment,
+    })))
 }
 
 fn actionable_text(text: &str) -> bool {
@@ -561,6 +720,8 @@ async fn build_assessment(state: &AppState, context: &GitHubMergeContext) -> Mer
         review_bee: review_bee_context,
         trust_gate: trust_gate_context,
         repo_memory: repo_memory_context,
+        github: None,
+        github_report: None,
     }
 }
 
