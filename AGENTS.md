@@ -342,6 +342,14 @@ Important env vars:
 - Prompt-pack generation matters early because it is the bridge between remembered repo context and later agent behavior.
 - RepoMemory should make both TrustGate and RepoReaper smarter, not compete with them as a separate actor.
 
+## IncidentEcho Notes
+
+- IncidentEcho is a cross-cutting capability, not a standalone product by default.
+- Its job is to turn bugs, outages, painful reviews, reverted PRs, and other bad outcomes into reusable future knowledge.
+- On the RepoMemory side, that means capturing and storing lessons so humans and agents can reuse them later.
+- On the TrustGate side, that means converting those lessons into future warnings, checks, or blocking guardrails.
+- The intended flow is: incident or painful failure -> captured lesson -> durable memory -> future policy.
+
 ## Key Decisions
 
 - Rust backend and React frontend are deliberate and should stay consistent across products.
