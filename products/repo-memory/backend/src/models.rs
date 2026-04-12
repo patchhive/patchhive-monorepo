@@ -143,6 +143,43 @@ pub struct HistoryItem {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RunDiffItem {
+    pub memory_ref: String,
+    pub kind: String,
+    pub title: String,
+    pub prompt_line: String,
+    pub current_confidence: Option<f64>,
+    pub previous_confidence: Option<f64>,
+    pub current_frequency: Option<u32>,
+    pub previous_frequency: Option<u32>,
+    pub delta_confidence: f64,
+    pub delta_frequency: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RunDiffSummary {
+    pub new_entries: u32,
+    pub strengthened_entries: u32,
+    pub faded_entries: u32,
+    pub retired_entries: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RunDiffResponse {
+    pub repo: String,
+    pub run_id: String,
+    pub previous_run_id: Option<String>,
+    pub created_at: String,
+    pub previous_created_at: Option<String>,
+    pub summary: String,
+    pub counts: RunDiffSummary,
+    pub new_entries: Vec<RunDiffItem>,
+    pub strengthened_entries: Vec<RunDiffItem>,
+    pub faded_entries: Vec<RunDiffItem>,
+    pub retired_entries: Vec<RunDiffItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KnownRepo {
     pub repo: String,
     pub last_ingested_at: String,

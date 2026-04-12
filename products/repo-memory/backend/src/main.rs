@@ -56,6 +56,7 @@ async fn main() {
         .route("/context", post(pipeline::context))
         .route("/history", get(pipeline::history))
         .route("/history/:id", get(pipeline::history_detail))
+        .route("/history/:id/diff", get(pipeline::history_diff))
         .route("/history/:id/prompt-pack", get(pipeline::prompt_pack))
         .route("/ingest", post(pipeline::ingest))
         .layer(middleware::from_fn(auth::auth_middleware))

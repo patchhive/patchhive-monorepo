@@ -15,6 +15,7 @@ RepoMemory is the durable memory layer for PatchHive. It ingests merged PRs, rev
 - exposes a context endpoint other PatchHive products can query with changed paths and task summary
 - lets operators pin, suppress, or promote extracted memories into repo policy
 - previews consumer-specific retrieval for RepoReaper and TrustGate before those products use the context live
+- compares each ingest with the previous run so you can see which memories are new, stronger, fading, or retired
 - keeps ingest history so teams can reopen prior memory snapshots
 
 RepoMemory is intentionally context-first. It does not open PRs or mutate repositories in the MVP.
