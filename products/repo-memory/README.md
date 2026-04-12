@@ -8,6 +8,7 @@ RepoMemory is the durable memory layer for PatchHive. It ingests merged PRs, rev
 
 - ingests recent merged PRs for a target repo
 - mines reviewer comments and review summaries for repeated conventions
+- builds reviewer and maintainer profile memories from repeated feedback and merged work patterns
 - finds repeated bug terms in recent closed issues
 - tracks high-context hotspots where fixes and review churn keep landing
 - stores durable memory entries with evidence and confidence

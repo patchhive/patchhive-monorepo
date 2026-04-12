@@ -59,6 +59,23 @@ struct SignalBucket {
     evidence: Vec<MemoryEvidence>,
 }
 
+#[derive(Default)]
+struct ReviewerProfileBucket {
+    total_feedback: u32,
+    category_counts: HashMap<&'static str, u32>,
+    path_counts: HashMap<String, u32>,
+    evidence: Vec<MemoryEvidence>,
+}
+
+#[derive(Default)]
+struct MaintainerProfileBucket {
+    merged_prs: u32,
+    source_prs: u32,
+    source_with_tests: u32,
+    path_counts: HashMap<String, u32>,
+    evidence: Vec<MemoryEvidence>,
+}
+
 pub async fn auth_status() -> Json<serde_json::Value> {
     Json(json!({"auth_enabled": auth_enabled()}))
 }
@@ -328,6 +345,8 @@ fn build_memory_run(
     let mut dir_counts: HashMap<String, u32> = HashMap::new();
     let mut file_review_counts: HashMap<String, SignalBucket> = HashMap::new();
     let mut bug_terms: HashMap<String, SignalBucket> = HashMap::new();
+    let mut reviewer_profiles: HashMap<String, ReviewerProfileBucket> = HashMap::new();
+    let mut maintainer_profiles: HashMap<String, MaintainerProfileBucket> = HashMap::new();
     let mut source_prs = 0u32;
     let mut source_with_tests = 0u32;
     let mut review_feedback_items = 0u32;
@@ -335,6 +354,12 @@ fn build_memory_run(
     for bundle in &bundles {
         let mut touched_source = false;
         let mut touched_tests = false;
+        let author_login = bundle
+            .pr
+            .user
+            .as_ref()
+            .map(|user| user.login.trim().to_string())
+            .filter(|login| !login.is_empty());
 
         for file in &bundle.files {
             if is_source_file(&file.filename) {
@@ -346,6 +371,42 @@ fn build_memory_run(
 
             let bucket = path_bucket(&file.filename);
             *dir_counts.entry(bucket).or_insert(0) += 1;
+            if let Some(author) = author_login.as_ref() {
+                *maintainer_profiles
+                    .entry(author.clone())
+                    .or_default()
+                    .path_counts
+                    .entry(path_bucket(&file.filename))
+                    .or_insert(0) += 1;
+            }
+        }
+
+        if let Some(author) = author_login.as_ref() {
+            let profile = maintainer_profiles.entry(author.clone()).or_default();
+            profile.merged_prs += 1;
+            if touched_source {
+                profile.source_prs += 1;
+                if touched_tests {
+                    profile.source_with_tests += 1;
+                }
+            }
+            push_evidence(
+                &mut profile.evidence,
+                MemoryEvidence {
+                    source_type: "merged_pr".into(),
+                    title: format!("#{} {}", bundle.pr.number, bundle.pr.title),
+                    url: bundle.pr.html_url.clone(),
+                    path: None,
+                    excerpt: truncate(
+                        &format!(
+                            "{} merged with {} changed files.",
+                            author,
+                            bundle.pr.changed_files.unwrap_or(bundle.files.len() as u32)
+                        ),
+                        180,
+                    ),
+                },
+            );
         }
 
         if touched_source {
@@ -363,6 +424,7 @@ fn build_memory_run(
                 if let Some(body) = review.body.as_deref() {
                     review_feedback_items += collect_feedback(
                         &mut review_buckets,
+                        &mut reviewer_profiles,
                         &bundle.pr,
                         None,
                         review.html_url.as_deref().unwrap_or(&bundle.pr.html_url),
@@ -376,6 +438,7 @@ fn build_memory_run(
         for comment in &bundle.comments {
             review_feedback_items += collect_feedback(
                 &mut review_buckets,
+                &mut reviewer_profiles,
                 &bundle.pr,
                 comment.path.as_deref(),
                 &comment.html_url,
@@ -527,6 +590,112 @@ fn build_memory_run(
         ));
     }
 
+    let mut reviewer_profiles: Vec<_> = reviewer_profiles.into_iter().collect();
+    reviewer_profiles.sort_by(|left, right| {
+        right
+            .1
+            .total_feedback
+            .cmp(&left.1.total_feedback)
+            .then_with(|| left.0.cmp(&right.0))
+    });
+    for (reviewer, profile) in reviewer_profiles
+        .into_iter()
+        .filter(|(_, profile)| profile.total_feedback >= 2)
+        .take(4)
+    {
+        let focus = top_named_counts(&profile.category_counts, 2)
+            .into_iter()
+            .map(|(name, _)| name)
+            .collect::<Vec<_>>();
+        let paths = top_string_counts(&profile.path_counts, 2)
+            .into_iter()
+            .map(|(path, _)| path)
+            .collect::<Vec<_>>();
+        let focus_text = if focus.is_empty() {
+            "general review consistency".into()
+        } else {
+            focus.join(" and ")
+        };
+        let path_text = if paths.is_empty() {
+            "across the repo".into()
+        } else {
+            format!("especially around {}", paths.join(" and "))
+        };
+
+        entries.push(build_entry(
+            &run_id,
+            &repo,
+            "reviewer_profile",
+            format!("Review patterns from @{reviewer}"),
+            format!(
+                "Past feedback from @{reviewer} repeatedly focused on {focus_text} {path_text}. RepoMemory is keeping that signature so future patches can pre-empt the same review friction."
+            ),
+            format!(
+                "Pre-empt the kinds of feedback @{reviewer} often gives around {focus_text} {}.",
+                if paths.is_empty() {
+                    "before you ship changes".into()
+                } else {
+                    format!("when touching {}", paths.join(" and "))
+                }
+            ),
+            profile.total_feedback,
+            vec!["reviewer-profile", "feedback-signature"],
+            profile.evidence,
+            &created_at,
+        ));
+    }
+
+    let mut maintainer_profiles: Vec<_> = maintainer_profiles.into_iter().collect();
+    maintainer_profiles.sort_by(|left, right| {
+        right
+            .1
+            .merged_prs
+            .cmp(&left.1.merged_prs)
+            .then_with(|| left.0.cmp(&right.0))
+    });
+    for (author, profile) in maintainer_profiles
+        .into_iter()
+        .filter(|(_, profile)| profile.merged_prs >= 2)
+        .take(4)
+    {
+        let paths = top_string_counts(&profile.path_counts, 2)
+            .into_iter()
+            .map(|(path, _)| path)
+            .collect::<Vec<_>>();
+        let test_ratio = if profile.source_prs > 0 {
+            profile.source_with_tests as f64 / profile.source_prs as f64
+        } else {
+            0.0
+        };
+        let path_text = if paths.is_empty() {
+            "across the repo".into()
+        } else {
+            paths.join(" and ")
+        };
+        let test_text = if profile.source_prs >= 2 && test_ratio >= 0.5 {
+            "Recent merged work from this author usually pairs source changes with tests."
+        } else {
+            "Recent merged work from this author mostly signals where accepted patterns keep landing."
+        };
+
+        entries.push(build_entry(
+            &run_id,
+            &repo,
+            "maintainer_profile",
+            format!("Merged patterns from @{author}"),
+            format!(
+                "Recent merged work from @{author} clusters in {path_text}. {test_text}"
+            ),
+            format!(
+                "When touching {path_text}, match the conventions that recently landed in merged work from @{author}."
+            ),
+            profile.merged_prs,
+            vec!["maintainer-profile", "merged-history"],
+            profile.evidence,
+            &created_at,
+        ));
+    }
+
     entries.sort_by(|left, right| {
         right
             .confidence
@@ -600,6 +769,16 @@ fn build_prompt_pack(repo: &str, summary: &IngestSummary, entries: &[MemoryEntry
         .filter(|entry| entry.kind == "hotspot")
         .map(|entry| format!("- {}", entry.prompt_line))
         .collect();
+    let reviewer_lines: Vec<_> = entries
+        .iter()
+        .filter(|entry| entry.kind == "reviewer_profile")
+        .map(|entry| format!("- {}", entry.prompt_line))
+        .collect();
+    let maintainer_lines: Vec<_> = entries
+        .iter()
+        .filter(|entry| entry.kind == "maintainer_profile")
+        .map(|entry| format!("- {}", entry.prompt_line))
+        .collect();
 
     if !convention_lines.is_empty() {
         sections.push(format!(
@@ -615,6 +794,18 @@ fn build_prompt_pack(repo: &str, summary: &IngestSummary, entries: &[MemoryEntry
     }
     if !hotspot_lines.is_empty() {
         sections.push(format!("## Hotspots\n{}", hotspot_lines.join("\n")));
+    }
+    if !reviewer_lines.is_empty() {
+        sections.push(format!(
+            "## Reviewer feedback signatures\n{}",
+            reviewer_lines.join("\n")
+        ));
+    }
+    if !maintainer_lines.is_empty() {
+        sections.push(format!(
+            "## Maintainer patterns\n{}",
+            maintainer_lines.join("\n")
+        ));
     }
 
     if sections.is_empty() {
@@ -976,12 +1167,16 @@ fn context_kind_bonus(entry: &MemoryEntry, changed_paths: &[String], consumer: &
             "testing_expectation" => 11.0,
             "failure_pattern" => 9.0,
             "hotspot" if !changed_paths.is_empty() => 8.0,
+            "reviewer_profile" => 6.0,
+            "maintainer_profile" => 3.0,
             "review_rule" => 5.0,
             _ => 0.0,
         },
         "repo-reaper" => match entry.kind.as_str() {
             "hotspot" if !changed_paths.is_empty() => 11.0,
             "failure_pattern" => 8.0,
+            "maintainer_profile" => 6.0,
+            "reviewer_profile" => 5.0,
             "review_rule" => 7.0,
             "testing_expectation" => 6.0,
             _ => 0.0,
@@ -990,6 +1185,8 @@ fn context_kind_bonus(entry: &MemoryEntry, changed_paths: &[String], consumer: &
             "hotspot" if !changed_paths.is_empty() => 9.0,
             "failure_pattern" => 7.0,
             "testing_expectation" => 6.0,
+            "reviewer_profile" => 4.0,
+            "maintainer_profile" => 4.0,
             "review_rule" => 4.0,
             _ => 0.0,
         },
@@ -1056,6 +1253,7 @@ fn confidence_for(frequency: u32, evidence_count: usize) -> f64 {
 
 fn collect_feedback(
     buckets: &mut HashMap<&'static str, SignalBucket>,
+    reviewer_profiles: &mut HashMap<String, ReviewerProfileBucket>,
     pr: &GitHubPullRequest,
     path: Option<&str>,
     url: &str,
@@ -1083,6 +1281,24 @@ fn collect_feedback(
                 },
             },
         );
+        if let Some(author) = author.filter(|value| !value.trim().is_empty()) {
+            let profile = reviewer_profiles.entry(author.to_string()).or_default();
+            profile.total_feedback += 1;
+            *profile.category_counts.entry(bucket_key).or_insert(0) += 1;
+            if let Some(path) = path {
+                *profile.path_counts.entry(path_bucket(path)).or_insert(0) += 1;
+            }
+            push_evidence(
+                &mut profile.evidence,
+                MemoryEvidence {
+                    source_type: "review_feedback".into(),
+                    title: format!("#{} {}", pr.number, pr.title),
+                    url: url.to_string(),
+                    path: path.map(str::to_string),
+                    excerpt: truncate(&sentence, 180),
+                },
+            );
+        }
         matched += 1;
     }
     matched
@@ -1156,6 +1372,38 @@ fn classify_feedback(sentence: &str) -> Option<(&'static str, &'static str)> {
         return Some(("errors", "errors"));
     }
     None
+}
+
+fn category_label(key: &str) -> String {
+    match key {
+        "tests" => "tests".into(),
+        "helpers" => "shared helpers".into(),
+        "validation" => "validation".into(),
+        "naming" => "naming and structure".into(),
+        "docs" => "docs and supporting context".into(),
+        "errors" => "error handling".into(),
+        _ => key.to_string(),
+    }
+}
+
+fn top_named_counts(counts: &HashMap<&'static str, u32>, limit: usize) -> Vec<(String, u32)> {
+    let mut items = counts
+        .iter()
+        .map(|(name, count)| (category_label(name), *count))
+        .collect::<Vec<_>>();
+    items.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
+    items.truncate(limit);
+    items
+}
+
+fn top_string_counts(counts: &HashMap<String, u32>, limit: usize) -> Vec<(String, u32)> {
+    let mut items = counts
+        .iter()
+        .map(|(name, count)| (name.clone(), *count))
+        .collect::<Vec<_>>();
+    items.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
+    items.truncate(limit);
+    items
 }
 
 fn valid_repo(repo: &str) -> bool {
