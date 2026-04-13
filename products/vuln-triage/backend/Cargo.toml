@@ -21,6 +21,6 @@ dotenvy = "0.15"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 once_cell = "1"
-patchhive-product-core = { git = "https://github.com/patchhive/patchhive-product-core.git", version = "0.1.0" }
-patchhive-github-security = { git = "https://github.com/patchhive/patchhive-github-security.git", version = "0.1.0" }
+patchhive-product-core = { git = "https://github.com/patchhive/patchhive-product-core.git", rev = "cb69546698e5b58b1dc3d2e6cce0adfd726855ea", version = "0.1.0" }
+patchhive-github-security = { git = "https://github.com/patchhive/patchhive-github-security.git", rev = "bd98ee47a242bfa28c73141d286b08a273281e1c", version = "0.1.0" }
 uuid = { version = "1", features = ["serde", "v4"] }

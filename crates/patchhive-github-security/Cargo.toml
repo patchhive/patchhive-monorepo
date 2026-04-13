@@ -14,7 +14,7 @@ path = "src/lib.rs"
 
 [dependencies]
 anyhow = "1"
-patchhive-github-data = { git = "https://github.com/patchhive/patchhive-github-data.git", version = "0.1.0" }
+patchhive-github-data = { git = "https://github.com/patchhive/patchhive-github-data.git", rev = "335ebec68a79098ed9eebdde90bff522146d493d", version = "0.1.0" }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
