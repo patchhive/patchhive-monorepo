@@ -1,0 +1,19 @@
+[package]
+name = "patchhive-github-data"
+version = "0.1.0"
+edition = "2021"
+description = "Shared Rust GitHub data client for PatchHive products."
+license = "MIT"
+repository = "https://github.com/patchhive/patchhive-github-data.git"
+homepage = "https://github.com/patchhive/patchhive-github-data"
+keywords = ["patchhive", "github", "actions", "issues", "rust"]
+
+[lib]
+name = "patchhive_github_data"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

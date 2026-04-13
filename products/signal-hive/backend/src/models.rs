@@ -1,5 +1,11 @@
 use serde::{Deserialize, Serialize};
 
+pub use patchhive_github_data::models::{
+    GitHubCodeSearchResponse as CodeSearchResponse, GitHubIssue, GitHubLabel,
+    GitHubRepository as SearchRepo, GitHubRepositoryOwner as SearchRepoOwner,
+    GitHubSearchRepositoriesResponse as SearchRepositoriesResponse,
+};
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScanParams {
     pub search_query: String,
@@ -206,47 +212,4 @@ pub struct ScanTimelinePoint {
 pub struct ScanTimeline {
     pub current_scan_id: String,
     pub points: Vec<ScanTimelinePoint>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct SearchRepoOwner {
-    pub login: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct SearchRepo {
-    pub name: String,
-    pub full_name: String,
-    pub html_url: String,
-    pub description: Option<String>,
-    pub language: Option<String>,
-    pub stargazers_count: u32,
-    pub open_issues_count: u32,
-    pub owner: SearchRepoOwner,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct SearchRepositoriesResponse {
-    pub items: Vec<SearchRepo>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct GitHubLabel {
-    pub name: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct GitHubIssue {
-    pub number: u32,
-    pub title: String,
-    pub html_url: String,
-    pub updated_at: String,
-    pub comments: u32,
-    pub labels: Vec<GitHubLabel>,
-    pub pull_request: Option<serde_json::Value>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct CodeSearchResponse {
-    pub total_count: u32,
 }

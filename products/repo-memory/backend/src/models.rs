@@ -1,5 +1,10 @@
 use serde::{Deserialize, Serialize};
 
+pub use patchhive_github_data::models::{
+    GitHubIssue, GitHubLabel, GitHubPullFile, GitHubPullRequest, GitHubReview,
+    GitHubReviewComment, GitHubUser,
+};
+
 fn slug_component(value: &str) -> String {
     let mut out = String::new();
     let mut last_dash = false;
@@ -263,71 +268,4 @@ pub struct MemoryCurationUpdate {
     pub disposition: String,
     #[serde(default)]
     pub pinned: bool,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct GitHubUser {
-    pub login: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct GitHubLabel {
-    pub name: String,
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Clone, Deserialize)]
-pub struct GitHubPullRequest {
-    pub number: u32,
-    pub title: String,
-    pub html_url: String,
-    pub body: Option<String>,
-    pub merged_at: Option<String>,
-    pub updated_at: String,
-    pub additions: Option<u32>,
-    pub deletions: Option<u32>,
-    pub changed_files: Option<u32>,
-    pub user: Option<GitHubUser>,
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Clone, Deserialize)]
-pub struct GitHubReview {
-    pub body: Option<String>,
-    pub html_url: Option<String>,
-    pub submitted_at: Option<String>,
-    pub state: String,
-    pub user: Option<GitHubUser>,
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Clone, Deserialize)]
-pub struct GitHubReviewComment {
-    pub body: String,
-    pub html_url: String,
-    pub path: Option<String>,
-    pub created_at: String,
-    pub user: Option<GitHubUser>,
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Clone, Deserialize)]
-pub struct GitHubPullFile {
-    pub filename: String,
-    pub additions: u32,
-    pub deletions: u32,
-    pub status: String,
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Clone, Deserialize)]
-pub struct GitHubIssue {
-    pub number: u32,
-    pub title: String,
-    pub html_url: String,
-    pub body: Option<String>,
-    pub closed_at: Option<String>,
-    pub comments: u32,
-    pub labels: Vec<GitHubLabel>,
-    pub pull_request: Option<serde_json::Value>,
 }

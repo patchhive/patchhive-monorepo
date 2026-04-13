@@ -45,6 +45,7 @@ patchhive/
   crates/
     patchhive-product-core/ shared Rust auth + startup primitives
     patchhive-github-pr/    shared Rust GitHub PR/diff/check plumbing
+    patchhive-github-data/  shared Rust GitHub repo/issue/history/actions reads
   templates/
     product-starter/        monorepo-first starter for new PatchHive products
       scaffold/            actual files copied into new products
@@ -152,6 +153,22 @@ It currently covers:
 - maintained PR comment upsert
 
 Products should keep policy, scoring, and report content local, but use `patchhive-github-pr` for the transport and GitHub API plumbing itself.
+
+## Shared GitHub Data Crate (`patchhive-github-data`)
+
+`patchhive-github-data` holds the repeated GitHub read paths that would otherwise keep reappearing across PatchHive backend products.
+
+It currently covers:
+
+- standard PatchHive GitHub token/env resolution
+- repository fetch and repository search
+- issue history reads
+- merged pull-request history reads
+- pull-request review, review-comment, and file reads for historical ingestion
+- code-search count reads
+- GitHub Actions workflow run and job reads
+
+Products should keep scoring, filtering, and interpretation local, but use `patchhive-github-data` for the typed GitHub data access itself.
 
 ## Product Starter Template
 

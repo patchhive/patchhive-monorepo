@@ -1,48 +1,16 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
+use patchhive_github_data::{
+    code_search_count, fetch_issues, fetch_repository, search_repositories,
+    validate_token as validate_shared_token,
+};
 use reqwest::Client;
-use serde::de::DeserializeOwned;
 use std::collections::HashSet;
 use tracing::warn;
 
-use crate::models::{CodeSearchResponse, GitHubIssue, ScanParams, SearchRepo, SearchRepositoriesResponse};
-
-fn github_token() -> Result<String> {
-    std::env::var("BOT_GITHUB_TOKEN")
-        .or_else(|_| std::env::var("GITHUB_TOKEN"))
-        .map_err(|_| anyhow!("BOT_GITHUB_TOKEN is not set"))
-}
-
-async fn github_get<T: DeserializeOwned>(
-    client: &Client,
-    path: &str,
-    params: &[(&str, String)],
-) -> Result<T> {
-    let token = github_token()?;
-    let url = format!("https://api.github.com{path}");
-    let response = client
-        .get(url)
-        .bearer_auth(token)
-        .header("Accept", "application/vnd.github+json")
-        .query(params)
-        .send()
-        .await
-        .with_context(|| format!("GitHub request failed for {path}"))?;
-
-    let status = response.status();
-    if !status.is_success() {
-        let body = response.text().await.unwrap_or_default();
-        return Err(anyhow!("GitHub request failed for {path}: {status} {body}"));
-    }
-
-    response
-        .json::<T>()
-        .await
-        .with_context(|| format!("Failed to decode GitHub response for {path}"))
-}
+use crate::models::{GitHubIssue, ScanParams, SearchRepo};
 
 pub async fn validate_token(client: &Client) -> Result<()> {
-    let _: serde_json::Value = github_get(client, "/rate_limit", &[]).await?;
-    Ok(())
+    validate_shared_token(client).await
 }
 
 fn repo_allowed(
@@ -59,8 +27,7 @@ fn repo_allowed(
 }
 
 pub async fn fetch_repo(client: &Client, full_name: &str) -> Result<SearchRepo> {
-    let path = format!("/repos/{full_name}");
-    github_get(client, &path, &[]).await
+    fetch_repository(client, full_name).await
 }
 
 pub async fn discover_repositories(
@@ -122,15 +89,12 @@ pub async fn discover_repositories(
             query_parts.push(format!("language:{language}"));
         }
 
-        let response: SearchRepositoriesResponse = github_get(
+        let response = search_repositories(
             client,
-            "/search/repositories",
-            &[
-                ("q", query_parts.join(" ")),
-                ("sort", "updated".to_string()),
-                ("order", "desc".to_string()),
-                ("per_page", params.max_repos.min(25).to_string()),
-            ],
+            &query_parts.join(" "),
+            params.max_repos.min(25),
+            "updated",
+            "desc",
         )
         .await?;
 
@@ -156,16 +120,13 @@ pub async fn fetch_open_issues(
     repo: &str,
     per_page: u32,
 ) -> Result<Vec<GitHubIssue>> {
-    let path = format!("/repos/{owner}/{repo}/issues");
-    let mut issues: Vec<GitHubIssue> = github_get(
+    let mut issues = fetch_issues(
         client,
-        &path,
-        &[
-            ("state", "open".to_string()),
-            ("sort", "updated".to_string()),
-            ("direction", "desc".to_string()),
-            ("per_page", per_page.min(100).to_string()),
-        ],
+        &format!("{owner}/{repo}"),
+        "open",
+        "updated",
+        "desc",
+        per_page.min(100),
     )
     .await?;
 
@@ -174,18 +135,8 @@ pub async fn fetch_open_issues(
 }
 
 pub async fn search_code_marker(client: &Client, full_name: &str, marker: &str) -> u32 {
-    let result: Result<CodeSearchResponse> = github_get(
-        client,
-        "/search/code",
-        &[
-            ("q", format!("{marker} repo:{full_name}")),
-            ("per_page", "1".to_string()),
-        ],
-    )
-    .await;
-
-    match result {
-        Ok(response) => response.total_count,
+    match code_search_count(client, &format!("{marker} repo:{full_name}")).await {
+        Ok(total_count) => total_count,
         Err(err) => {
             warn!("code search failed for {full_name} marker {marker}: {err}");
             0

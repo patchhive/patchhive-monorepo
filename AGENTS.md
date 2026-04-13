@@ -65,6 +65,7 @@ patchhive/
   crates/
     patchhive-product-core/ shared Rust auth + startup helpers
     patchhive-github-pr/    shared Rust GitHub PR/diff/check helpers
+    patchhive-github-data/  shared Rust GitHub repo/issue/history/actions reads
   templates/
     product-starter/        shared starter for new PatchHive products
   products/
@@ -162,6 +163,18 @@ Rules:
 - Keep the crate focused on GitHub PR transport and lifecycle plumbing.
 - Good candidates: token/env helpers, webhook signature verification, PR metadata fetch, diff fetch, check/status publishing, managed PR comments.
 - Keep product-owned report text, policy decisions, scoring, and escalation logic outside the crate.
+
+## Shared GitHub Data Crate
+
+Location: `crates/patchhive-github-data/`
+
+Every product backend that needs GitHub repository search, issue history, merged PR history, historical review feedback, or Actions workflow reads should use `patchhive-github-data` instead of carrying a private copy.
+
+Rules:
+- Keep the crate focused on GitHub read paths and typed response shapes.
+- Good candidates: token/env helpers, repo fetch/search, issue history, PR history, review/comment/file reads, code search counts, Actions workflow runs/jobs.
+- Keep PR webhook verification, PR comment/check publishing, and other PR lifecycle mechanics in `patchhive-github-pr`.
+- Keep product-owned filtering, heuristics, scoring, and routing outside the crate.
 
 ## Product Starter Template
 

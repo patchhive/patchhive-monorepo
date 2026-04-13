@@ -6,3 +6,6 @@ patchhive-product-core = { path = "crates/patchhive-product-core" }
 
 [patch."https://github.com/patchhive/patchhive-github-pr.git"]
 patchhive-github-pr = { path = "crates/patchhive-github-pr" }
+
+[patch."https://github.com/patchhive/patchhive-github-data.git"]
+patchhive-github-data = { path = "crates/patchhive-github-data" }
