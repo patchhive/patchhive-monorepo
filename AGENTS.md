@@ -66,6 +66,7 @@ patchhive/
     patchhive-product-core/ shared Rust auth + startup helpers
     patchhive-github-pr/    shared Rust GitHub PR/diff/check helpers
     patchhive-github-data/  shared Rust GitHub repo/issue/history/actions reads
+    patchhive-github-security/ shared Rust GitHub security/advisory reads
   templates/
     product-starter/        shared starter for new PatchHive products
   products/
@@ -175,6 +176,18 @@ Rules:
 - Good candidates: token/env helpers, repo fetch/search, issue history, PR history, review/comment/file reads, code search counts, Actions workflow runs/jobs.
 - Keep PR webhook verification, PR comment/check publishing, and other PR lifecycle mechanics in `patchhive-github-pr`.
 - Keep product-owned filtering, heuristics, scoring, and routing outside the crate.
+
+## Shared GitHub Security Crate
+
+Location: `crates/patchhive-github-security/`
+
+Every product backend that needs GitHub code scanning alerts, Dependabot alerts, or advisory metadata should use `patchhive-github-security` instead of carrying a private copy.
+
+Rules:
+- Keep the crate focused on typed GitHub security reads.
+- Good candidates: token/env helpers, code scanning alerts, Dependabot alerts, advisory fields, CWEs, references, EPSS metadata.
+- Keep generic repository/issue/history reads in `patchhive-github-data`.
+- Keep product-owned ranking, severity interpretation, prioritization, and routing outside the crate.
 
 ## Product Starter Template
 
@@ -386,7 +399,14 @@ Important env vars:
 - Its job is to turn dependency update noise into a ranked queue of `update now`, `watch`, and `ignore for now` calls.
 - The MVP should work without live AI providers by reading open dependency PRs plus optional Dependabot alerts, then scoring urgency with deterministic heuristics.
 - DepTriage should help teams spend attention on the dependency work that actually matters instead of making PatchHive look like “another update bot.”
-- If a later product like VulnTriage needs the same alert/advisory read seam, we should extract that shared GitHub security data client then, not before.
+
+## VulnTriage Notes
+
+- VulnTriage should stay triage-first and read-only.
+- Its job is to turn GitHub code scanning and dependency alerts into a ranked queue of `fix now`, `plan next`, and `watch`.
+- The MVP should work without live AI providers by scoring severity, reachability proxy, owner hints, and practical next steps with deterministic heuristics.
+- VulnTriage should help small teams behave like they have an AppSec triage layer without forcing them to stare at raw GitHub alert noise.
+- VulnTriage should reuse `patchhive-github-security` for typed code scanning and Dependabot reads instead of growing another private GitHub security client.
 
 ## IncidentEcho Notes
 

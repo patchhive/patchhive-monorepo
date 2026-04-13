@@ -74,6 +74,15 @@ Use this to capture later ideas so they do not get lost between product pushes.
 - Add opt-in issue or PR-comment handoff later so the ranked queue can be turned into one clean planning artifact instead of update noise.
 - Consider AI-assisted release-note summarization later through `patchhive-ai-local`, but keep the base ranking loop useful without AI.
 
+## VulnTriage
+
+- Add finding trend history so teams can see whether a repo's security pressure is rising, improving, or just moving around.
+- Add codeowner-aware ownership hints later so findings land closer to the humans who can actually act on them.
+- Add suppression or accepted-risk controls so known findings do not keep dominating every scan forever.
+- Add report export modes later once teams want to turn the ranked queue into a planning artifact or weekly security digest.
+- Add historical compare mode so operators can see which findings are new, which were cleared, and which keep surviving scan after scan.
+- Consider AI-assisted finding summaries later through `patchhive-ai-local`, but keep the base ranking loop useful without AI.
+
 ## RepoReaper
 
 - Revisit release/tagging once the current product loop feels stable enough for an intentional versioned release.
@@ -90,7 +99,7 @@ Use this to capture later ideas so they do not get lost between product pushes.
 - Revisit more `patchhive-product-core` helpers only after another backend repeats the same seam.
 - Use `patchhive-github-pr` for the next product that needs PR diff fetch, webhook verification, check/status publishing, or maintained PR comments.
 - Use `patchhive-github-data` for the next product that needs GitHub repo search, issue history, merged PR history, review/comment history, or Actions reads.
-- If VulnTriage or another product repeats Dependabot/security-advisory reads, extract a shared GitHub security data client instead of bloating `patchhive-github-data`.
+- Use `patchhive-github-security` for the next product that needs code scanning alerts, Dependabot alerts, or advisory metadata.
 - Consider LiteLLM later only as an optional upstream behind `patchhive-ai-local`, not as the product-facing contract.
 
 ## Product Direction

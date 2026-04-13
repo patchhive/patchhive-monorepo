@@ -46,6 +46,7 @@ patchhive/
     patchhive-product-core/ shared Rust auth + startup primitives
     patchhive-github-pr/    shared Rust GitHub PR/diff/check plumbing
     patchhive-github-data/  shared Rust GitHub repo/issue/history/actions reads
+    patchhive-github-security/ shared Rust GitHub security/advisory reads
   templates/
     product-starter/        monorepo-first starter for new PatchHive products
       scaffold/            actual files copied into new products
@@ -74,6 +75,9 @@ patchhive/
     dep-triage/             ← DepTriage v0.1.0
       backend/              ← Rust dependency-triage API
       frontend/             ← React dependency queue dashboard
+    vuln-triage/            ← VulnTriage v0.1.0
+      backend/              ← Rust security finding triage API
+      frontend/             ← React vulnerability queue dashboard
 ```
 
 ## Adding a New Product
@@ -172,6 +176,19 @@ It currently covers:
 - GitHub Actions workflow run and job reads
 
 Products should keep scoring, filtering, and interpretation local, but use `patchhive-github-data` for the typed GitHub data access itself.
+
+## Shared GitHub Security Crate (`patchhive-github-security`)
+
+`patchhive-github-security` holds the repeated GitHub security read paths that would otherwise keep reappearing across PatchHive backend products.
+
+It currently covers:
+
+- standard PatchHive GitHub token/env resolution via `patchhive-github-data`
+- Dependabot alert reads
+- code scanning alert reads
+- advisory metadata, CWEs, references, and EPSS fields
+
+Products should keep scoring, ranking, escalation, and report language local, but use `patchhive-github-security` for the typed GitHub security access itself.
 
 ## Product Starter Template
 
@@ -312,6 +329,21 @@ docker-compose up --build
 cd products/dep-triage
 cp .env.example .env
 # fill in BOT_GITHUB_TOKEN or GITHUB_TOKEN for stronger GitHub reads and Dependabot alert access
+
+# Dev
+cd backend && cargo run
+cd ../frontend && npm install && npm run dev
+
+# Docker
+docker-compose up --build
+```
+
+## Quick Start — VulnTriage
+
+```bash
+cd products/vuln-triage
+cp .env.example .env
+# fill in BOT_GITHUB_TOKEN or GITHUB_TOKEN for stronger GitHub security reads
 
 # Dev
 cd backend && cargo run

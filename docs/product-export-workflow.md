@@ -56,7 +56,7 @@ Standalone Rust product repositories should:
 - avoid `path = "../../../crates/..."` dependencies that only work inside the monorepo
 - rely on the monorepo's `.cargo/config.toml` patching only for local PatchHive development
 
-For example, `patchhive-product-core` should be consumed from `https://github.com/patchhive/patchhive-product-core.git` in exported products, `patchhive-github-pr` should be consumed from `https://github.com/patchhive/patchhive-github-pr.git`, and `patchhive-github-data` should be consumed from `https://github.com/patchhive/patchhive-github-data.git`, while the monorepo patches those dependencies back to local crate paths for day-to-day work.
+For example, `patchhive-product-core` should be consumed from `https://github.com/patchhive/patchhive-product-core.git` in exported products, `patchhive-github-pr` should be consumed from `https://github.com/patchhive/patchhive-github-pr.git`, `patchhive-github-data` should be consumed from `https://github.com/patchhive/patchhive-github-data.git`, and `patchhive-github-security` should be consumed from `https://github.com/patchhive/patchhive-github-security.git`, while the monorepo patches those dependencies back to local crate paths for day-to-day work.
 
 ## Export Script
 
@@ -158,6 +158,12 @@ or:
 ./scripts/export-crate.sh patchhive-github-data
 ```
 
+or:
+
+```bash
+./scripts/export-crate.sh patchhive-github-security
+```
+
 If you want to push directly to a standalone crate remote:
 
 ```bash
@@ -186,6 +192,12 @@ or:
 
 ```bash
 ./scripts/sync-crate-mirror.sh patchhive-github-data github-data main
+```
+
+or:
+
+```bash
+./scripts/sync-crate-mirror.sh patchhive-github-security github-security main
 ```
 
 If you want to reset an existing crate mirror onto the clean sync history model, use:

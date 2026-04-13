@@ -9,3 +9,6 @@ patchhive-github-pr = { path = "crates/patchhive-github-pr" }
 
 [patch."https://github.com/patchhive/patchhive-github-data.git"]
 patchhive-github-data = { path = "crates/patchhive-github-data" }
+
+[patch."https://github.com/patchhive/patchhive-github-security.git"]
+patchhive-github-security = { path = "crates/patchhive-github-security" }
