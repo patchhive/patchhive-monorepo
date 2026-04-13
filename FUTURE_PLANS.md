@@ -64,6 +64,16 @@ Use this to capture later ideas so they do not get lost between product pushes.
 - Add one-click issue draft generation for flaky cleanup work, but keep it opt-in and evidence-heavy.
 - Consider AI-assisted clustering or explanation later through `patchhive-ai-local`, but keep the base flaky-detection loop useful without AI.
 
+## DepTriage
+
+- Add dependency ownership hints later so the queue can point to codeowners, platform teams, or service owners for each update.
+- Add grouping by workspace or service so monorepos can triage dependency pressure at the subsystem level instead of only by package.
+- Add historical “how often do we keep deferring this package?” views so repeated neglect becomes visible.
+- Add compatibility-risk notes later by looking at release age, major-version distance, and ecosystem-specific blast radius.
+- Add a weekly digest/export mode once teams want the triage queue delivered outside the UI.
+- Add opt-in issue or PR-comment handoff later so the ranked queue can be turned into one clean planning artifact instead of update noise.
+- Consider AI-assisted release-note summarization later through `patchhive-ai-local`, but keep the base ranking loop useful without AI.
+
 ## RepoReaper
 
 - Revisit release/tagging once the current product loop feels stable enough for an intentional versioned release.
@@ -80,6 +90,7 @@ Use this to capture later ideas so they do not get lost between product pushes.
 - Revisit more `patchhive-product-core` helpers only after another backend repeats the same seam.
 - Use `patchhive-github-pr` for the next product that needs PR diff fetch, webhook verification, check/status publishing, or maintained PR comments.
 - Use `patchhive-github-data` for the next product that needs GitHub repo search, issue history, merged PR history, review/comment history, or Actions reads.
+- If VulnTriage or another product repeats Dependabot/security-advisory reads, extract a shared GitHub security data client instead of bloating `patchhive-github-data`.
 - Consider LiteLLM later only as an optional upstream behind `patchhive-ai-local`, not as the product-facing contract.
 
 ## Product Direction

@@ -380,6 +380,14 @@ Important env vars:
 - The early UX should stay narrow and credible: one repo in, one ranked flaky queue out, with direct evidence back to GitHub runs.
 - FlakeSting should make MergeKeeper and broader PatchHive automation safer over time by helping teams trust their CI signal again.
 
+## DepTriage Notes
+
+- DepTriage should stay triage-first and read-only.
+- Its job is to turn dependency update noise into a ranked queue of `update now`, `watch`, and `ignore for now` calls.
+- The MVP should work without live AI providers by reading open dependency PRs plus optional Dependabot alerts, then scoring urgency with deterministic heuristics.
+- DepTriage should help teams spend attention on the dependency work that actually matters instead of making PatchHive look like “another update bot.”
+- If a later product like VulnTriage needs the same alert/advisory read seam, we should extract that shared GitHub security data client then, not before.
+
 ## IncidentEcho Notes
 
 - IncidentEcho is a cross-cutting capability, not a standalone product by default.

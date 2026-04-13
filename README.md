@@ -71,6 +71,9 @@ patchhive/
     flake-sting/            ← FlakeSting v0.1.0
       backend/              ← Rust flaky-CI signal API
       frontend/             ← React flaky workflow dashboard
+    dep-triage/             ← DepTriage v0.1.0
+      backend/              ← Rust dependency-triage API
+      frontend/             ← React dependency queue dashboard
 ```
 
 ## Adding a New Product
@@ -294,6 +297,21 @@ docker-compose up --build
 cd products/flake-sting
 cp .env.example .env
 # fill in BOT_GITHUB_TOKEN or GITHUB_TOKEN for better GitHub Actions access
+
+# Dev
+cd backend && cargo run
+cd ../frontend && npm install && npm run dev
+
+# Docker
+docker-compose up --build
+```
+
+## Quick Start — DepTriage
+
+```bash
+cd products/dep-triage
+cp .env.example .env
+# fill in BOT_GITHUB_TOKEN or GITHUB_TOKEN for stronger GitHub reads and Dependabot alert access
 
 # Dev
 cd backend && cargo run
