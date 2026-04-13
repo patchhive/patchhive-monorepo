@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use patchhive_github_data::{
     code_search_count, fetch_issues, fetch_repository, search_repositories,
     validate_token as validate_shared_token,

@@ -1,10 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-pub use patchhive_github_data::models::{
-    GitHubCodeSearchResponse as CodeSearchResponse, GitHubIssue, GitHubLabel,
-    GitHubRepository as SearchRepo, GitHubRepositoryOwner as SearchRepoOwner,
-    GitHubSearchRepositoriesResponse as SearchRepositoriesResponse,
-};
+pub use patchhive_github_data::models::{GitHubIssue, GitHubRepository as SearchRepo};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScanParams {

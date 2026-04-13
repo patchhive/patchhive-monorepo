@@ -1,8 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 pub use patchhive_github_data::models::{
-    GitHubIssue, GitHubLabel, GitHubPullFile, GitHubPullRequest, GitHubReview,
-    GitHubReviewComment, GitHubUser,
+    GitHubIssue, GitHubPullFile, GitHubPullRequest, GitHubReview, GitHubReviewComment,
 };
 
 fn slug_component(value: &str) -> String {

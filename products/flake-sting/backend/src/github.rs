@@ -1,14 +1,14 @@
 use anyhow::Result;
 use patchhive_github_data::{
     fetch_workflow_jobs as fetch_shared_workflow_jobs,
-    fetch_workflow_runs as fetch_shared_workflow_runs, github_token_configured,
+    fetch_workflow_runs as fetch_shared_workflow_runs,
 };
 use reqwest::Client;
 
+pub use patchhive_github_data::github_token_configured;
 pub use patchhive_github_data::models::{
     GitHubActionsWorkflowJob as GitHubWorkflowJob,
     GitHubActionsWorkflowRun as GitHubWorkflowRun,
-    GitHubActionsWorkflowStep as GitHubWorkflowStep,
 };
 
 pub async fn fetch_workflow_runs(
