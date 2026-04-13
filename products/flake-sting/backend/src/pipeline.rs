@@ -15,7 +15,8 @@ use crate::{
     db, github,
     github::{GitHubWorkflowJob, GitHubWorkflowRun},
     models::{
-        FlakeMetrics, FlakeScanResult, FlakeSignal, HistoryItem, OverviewPayload, ScanRequest,
+        compute_trend, FlakeMetrics, FlakeScanResult, FlakeSignal, HistoryItem,
+        OverviewPayload, ScanRequest,
     },
     state::AppState,
     STARTUP_CHECKS,
@@ -480,7 +481,7 @@ async fn build_scan_result(
         branch
     };
 
-    Ok(FlakeScanResult {
+    let mut result = FlakeScanResult {
         id: Uuid::new_v4().to_string(),
         created_at: Utc::now().to_rfc3339(),
         repo,
@@ -489,7 +490,12 @@ async fn build_scan_result(
         summary,
         metrics,
         signals,
-    })
+        trend: None,
+    };
+    result.trend = db::latest_comparable_scan(&result.repo, &result.branch, &result.workflow_name)
+        .and_then(|previous| compute_trend(&result, Some(&previous)));
+
+    Ok(result)
 }
 
 #[cfg(test)]

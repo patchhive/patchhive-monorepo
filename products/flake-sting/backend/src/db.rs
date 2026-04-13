@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use rusqlite::{params, Connection, OptionalExtension};
 
-use crate::models::{FlakeScanResult, HistoryItem, OverviewCounts, OverviewPayload};
+use crate::models::{compute_trend, FlakeScanResult, HistoryItem, OverviewCounts, OverviewPayload};
 
 pub fn db_path() -> String {
     std::env::var("FLAKE_STING_DB_PATH").unwrap_or_else(|_| "flake-sting.db".into())
@@ -71,7 +71,7 @@ pub fn history(limit: usize) -> Vec<HistoryItem> {
     let mut stmt = match conn.prepare(
         r#"
         SELECT id, repo, branch, workflow_name, summary,
-               flaky_signals, quarantine_candidates, created_at
+               flaky_signals, quarantine_candidates, created_at, payload
         FROM flake_scans
         ORDER BY created_at DESC
         LIMIT ?1
@@ -91,6 +91,18 @@ pub fn history(limit: usize) -> Vec<HistoryItem> {
             flaky_signals: row.get::<_, i64>(5)? as u32,
             quarantine_candidates: row.get::<_, i64>(6)? as u32,
             created_at: row.get(7)?,
+            trend: serde_json::from_str::<FlakeScanResult>(&row.get::<_, String>(8)?)
+                .ok()
+                .and_then(|scan| {
+                    previous_comparable_scan_before(
+                        &conn,
+                        &scan.repo,
+                        &scan.branch,
+                        &scan.workflow_name,
+                        &scan.created_at,
+                    )
+                    .and_then(|previous| compute_trend(&scan, Some(&previous)))
+                }),
         })
     })
     .map(|rows| rows.flatten().collect())
@@ -108,7 +120,16 @@ pub fn get_scan(id: &str) -> Option<FlakeScanResult> {
         .optional()
         .ok()
         .flatten()?;
-    serde_json::from_str(&payload).ok()
+    let mut scan = serde_json::from_str::<FlakeScanResult>(&payload).ok()?;
+    scan.trend = previous_comparable_scan_before(
+        &conn,
+        &scan.repo,
+        &scan.branch,
+        &scan.workflow_name,
+        &scan.created_at,
+    )
+    .and_then(|previous| compute_trend(&scan, Some(&previous)));
+    Some(scan)
 }
 
 pub fn overview_counts() -> OverviewCounts {
@@ -145,4 +166,67 @@ pub fn overview() -> OverviewPayload {
         counts: overview_counts(),
         recent_scans: history(6),
     }
+}
+
+pub fn latest_comparable_scan(
+    repo: &str,
+    branch: &str,
+    workflow_name: &str,
+) -> Option<FlakeScanResult> {
+    let conn = connect().ok()?;
+    latest_comparable_scan_conn(&conn, repo, branch, workflow_name)
+}
+
+fn latest_comparable_scan_conn(
+    conn: &Connection,
+    repo: &str,
+    branch: &str,
+    workflow_name: &str,
+) -> Option<FlakeScanResult> {
+    let payload = conn
+        .query_row(
+            r#"
+            SELECT payload
+            FROM flake_scans
+            WHERE repo = ?1 AND branch = ?2 AND workflow_name = ?3
+            ORDER BY created_at DESC
+            LIMIT 1
+            "#,
+            params![repo, branch, workflow_name],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .ok()
+        .flatten()?;
+
+    serde_json::from_str(&payload).ok()
+}
+
+fn previous_comparable_scan_before(
+    conn: &Connection,
+    repo: &str,
+    branch: &str,
+    workflow_name: &str,
+    created_at: &str,
+) -> Option<FlakeScanResult> {
+    let payload = conn
+        .query_row(
+            r#"
+            SELECT payload
+            FROM flake_scans
+            WHERE repo = ?1
+              AND branch = ?2
+              AND workflow_name = ?3
+              AND created_at < ?4
+            ORDER BY created_at DESC
+            LIMIT 1
+            "#,
+            params![repo, branch, workflow_name, created_at],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .ok()
+        .flatten()?;
+
+    serde_json::from_str(&payload).ok()
 }

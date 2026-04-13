@@ -55,9 +55,9 @@ Use this to capture later ideas so they do not get lost between product pushes.
 
 ## FlakeSting
 
-- Add scan-to-scan trend views later so teams can see whether flaky pressure is actually improving or just moving around.
 - Add workflow-completion webhooks or scheduled rescans later so FlakeSting can stay fresh without manual reruns.
 - Add quarantine-ready export or handoff output later once teams want to turn suspect signals into concrete CI cleanup work.
+- Add timeline-style flaky pressure views later so teams can see longer movement across many scans, not just one compare-against-previous step.
 - Add runner/OS clustering so teams can see when a signal is really “Ubuntu 24 + Python 3.12” instability instead of a universally flaky test.
 - Add PR or commit correlation so flaky signals can be connected back to the changes that most often precede them.
 - Add flaky ownership hints later so the output can point to likely codeowners, CI owners, or test suite owners.

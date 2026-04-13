@@ -12,6 +12,8 @@ FlakeSting reads recent GitHub Actions history, looks for fail/pass swings in te
 - scores likely flaky signals as `suspect` or `quarantine`
 - surfaces rerun pressure, runner/environment hints, and evidence links back to the underlying GitHub runs
 - stores local scan history so teams can reload prior scans and compare recurring CI trust debt
+- compares each scan to the last comparable one so teams can tell whether flaky pressure is rising, improving, or just shifting around
+- lets operators sort the flaky queue and copy a scan summary for quick sharing
 - works without AI in the MVP loop by leaning on GitHub Actions history and deterministic heuristics
 
 FlakeSting is intentionally CI-trust-first. It does not rerun workflows, edit code, or rewrite CI config in the MVP. Its job is to make unstable checks visible before they quietly erode confidence in the rest of the delivery pipeline.
@@ -38,7 +40,7 @@ Frontend: `http://localhost:5179`
 - `BOT_GITHUB_TOKEN` or `GITHUB_TOKEN` is strongly recommended so FlakeSting can read workflow runs and jobs with healthier rate limits.
 - FlakeSting does not require `PATCHHIVE_AI_URL` for the MVP loop.
 - The current scan loop reads recent GitHub Actions runs, looks for fail/pass swings, and ranks unstable test jobs or steps before they become background noise.
-- The current UI is designed for one repo at a time so the scoring and evidence stay easy to trust while the product sharpens.
+- The current UI is designed for one repo at a time so the scoring, trend comparison, and evidence stay easy to trust while the product sharpens.
 
 ## Standalone Repo Notes
 
