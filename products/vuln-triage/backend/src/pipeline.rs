@@ -118,6 +118,10 @@ pub async fn scan_github_findings(
     Ok(Json(result))
 }
 
+fn api_error(status: StatusCode, error: impl Into<String>) -> ApiError {
+    (status, Json(json!({ "error": error.into() })))
+}
+
 async fn build_scan_result(
     state: &AppState,
     repo: &str,
@@ -319,6 +323,7 @@ fn dependabot_to_finding(alert: github::GitHubDependabotAlert) -> VulnerabilityF
     let owner_hint = owner_hint_for_path(&alert.dependency.manifest_path);
     let score = score_dependency_alert(&alert, &severity, &reachability);
     let recommendation = recommend(score, &severity);
+    let summary = alert.security_advisory.summary.clone();
     let title = format!(
         "{} vulnerability in {}",
         severity.to_ascii_uppercase(),
@@ -385,7 +390,7 @@ fn dependabot_to_finding(alert: github::GitHubDependabotAlert) -> VulnerabilityF
         severity,
         score,
         title,
-        summary: alert.security_advisory.summary,
+        summary,
         owner_hint: owner_hint.into(),
         location: alert.dependency.manifest_path.clone(),
         package_name,
@@ -608,19 +613,19 @@ fn severity_rank(value: &str) -> u8 {
 
 fn owner_hint_for_path(path: &str) -> &'static str {
     let lower = path.to_ascii_lowercase();
-    if lower.starts_with(".github/") || lower.contains("/workflows/") || lower.contains("/ci/") {
+    if lower.starts_with(".github/") || lower.starts_with("ci/") || lower.contains("/workflows/") || lower.contains("/ci/") {
         "platform / CI owners"
-    } else if lower.contains("/frontend/") || lower.contains("/web/") || lower.contains("/ui/") {
+    } else if lower.starts_with("frontend/") || lower.starts_with("web/") || lower.starts_with("ui/") || lower.contains("/frontend/") || lower.contains("/web/") || lower.contains("/ui/") {
         "frontend owners"
-    } else if lower.contains("/mobile/") || lower.contains("/android/") || lower.contains("/ios/") {
+    } else if lower.starts_with("mobile/") || lower.starts_with("android/") || lower.starts_with("ios/") || lower.contains("/mobile/") || lower.contains("/android/") || lower.contains("/ios/") {
         "mobile owners"
-    } else if lower.contains("/infra/") || lower.contains("/terraform/") || lower.contains("/helm/") || lower.contains("/k8s/") {
+    } else if lower.starts_with("infra/") || lower.starts_with("terraform/") || lower.starts_with("helm/") || lower.starts_with("k8s/") || lower.contains("/infra/") || lower.contains("/terraform/") || lower.contains("/helm/") || lower.contains("/k8s/") {
         "infrastructure owners"
-    } else if lower.contains("/backend/") || lower.contains("/server/") || lower.contains("/api/") || lower.contains("/routes/") {
+    } else if lower.starts_with("backend/") || lower.starts_with("server/") || lower.starts_with("api/") || lower.starts_with("routes/") || lower.contains("/backend/") || lower.contains("/server/") || lower.contains("/api/") || lower.contains("/routes/") {
         "backend owners"
-    } else if lower.contains("/auth/") || lower.contains("/security/") {
+    } else if lower.starts_with("auth/") || lower.starts_with("security/") || lower.contains("/auth/") || lower.contains("/security/") {
         "auth / security owners"
-    } else if lower.contains("/test/") || lower.contains("/tests/") || lower.contains("/spec/") {
+    } else if lower.starts_with("test/") || lower.starts_with("tests/") || lower.starts_with("spec/") || lower.contains("/test/") || lower.contains("/tests/") || lower.contains("/spec/") {
         "quality owners"
     } else {
         "repo maintainers"
