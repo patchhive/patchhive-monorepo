@@ -172,6 +172,12 @@ If you want to push directly to a standalone crate remote:
 
 That creates a subtree export branch from `crates/patchhive-product-core` and can push it directly into a standalone crate repository.
 
+If a shared crate's git dependencies change, refresh its standalone-safe lockfile before exporting:
+
+```bash
+./scripts/refresh-crate-lockfile.sh patchhive-github-security
+```
+
 ## Crate Mirror Sync Script
 
 For shared crate repositories, PatchHive prefers clean crate-only mirror history over raw subtree history.
