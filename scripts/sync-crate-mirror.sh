@@ -106,12 +106,19 @@ if [[ "$RESET_HISTORY" == true ]]; then
   git checkout --orphan "$SYNC_BRANCH" >/dev/null 2>&1
 fi
 
-# Remove every tracked file from the temporary worktree, including hidden files
-# like .cargo/config.toml that would otherwise leak monorepo-only overrides into
-# the standalone crate mirror.
-while IFS= read -r -d '' tracked_path; do
-  git rm -r --quiet --ignore-unmatch -- "$tracked_path" >/dev/null 2>&1 || true
-done < <(git ls-files -z)
+# Remove everything from the temporary worktree except .git, including hidden
+# files like .cargo/config.toml that would otherwise leak monorepo-only
+# overrides into the standalone crate mirror.
+shopt -s dotglob nullglob
+for entry in * .*; do
+  case "$entry" in
+    .|..|.git)
+      continue
+      ;;
+  esac
+  rm -rf -- "$entry"
+done
+shopt -u dotglob nullglob
 
 popd >/dev/null
 
