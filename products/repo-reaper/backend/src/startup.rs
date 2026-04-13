@@ -105,6 +105,16 @@ pub async fn validate_config(http: &Client) -> Vec<StartupCheck> {
         ));
     }
 
+    if std::env::var("WEBHOOK_SECRET").unwrap_or_default().is_empty() {
+        results.push(StartupCheck::warn(
+            "WEBHOOK_SECRET is not set — GitHub webhook signature verification is disabled",
+        ));
+    } else {
+        results.push(StartupCheck::ok(
+            "WEBHOOK_SECRET is set — GitHub webhook signatures will be verified",
+        ));
+    }
+
     results
 }
 
@@ -120,34 +130,42 @@ pub async fn pr_poll_loop(http: Client) {
 }
 
 async fn poll_all_prs(http: &Client) {
-    let Ok(conn) = get_conn() else { return };
-    let prs: Vec<(i64, String, String)> = conn.prepare(
-        "SELECT pr_number, repo, run_id FROM pr_tracking WHERE state != 'closed' AND merged = 0"
-    ).ok().and_then(|mut s| {
-        let mapped = s.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).ok()?;
-        Some(mapped.flatten().collect())
-    })
-     .unwrap_or_default();
+    let prs: Vec<(i64, String, String)> = {
+        let Ok(conn) = get_conn() else { return };
+        conn.prepare(
+            "SELECT pr_number, repo, run_id FROM pr_tracking WHERE state != 'closed' AND merged = 0"
+        ).ok().and_then(|mut s| {
+            let mapped = s.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).ok()?;
+            Some(mapped.flatten().collect())
+        })
+         .unwrap_or_default()
+    };
 
     for (pr_number, repo, run_id) in prs {
         let state = crate::github::gh_poll_pr(http, &repo, pr_number, None).await;
         let merged = state["merged"].as_bool().unwrap_or(false);
-        let _ = conn.execute(
-            "UPDATE pr_tracking SET state=?1, merged=?2, review_state=?3, last_checked=?4 WHERE pr_number=?5 AND repo=?6",
-            rusqlite::params![
-                state["state"].as_str().unwrap_or("open"),
-                merged as i32,
-                state["review_state"].as_str(),
-                chrono::Utc::now().to_rfc3339(),
-                pr_number, repo,
-            ],
-        );
+        if let Ok(conn) = get_conn() {
+            let _ = conn.execute(
+                "UPDATE pr_tracking SET state=?1, merged=?2, review_state=?3, last_checked=?4 WHERE pr_number=?5 AND repo=?6",
+                rusqlite::params![
+                    state["state"].as_str().unwrap_or("open"),
+                    merged as i32,
+                    state["review_state"].as_str(),
+                    chrono::Utc::now().to_rfc3339(),
+                    pr_number, repo,
+                ],
+            );
+        }
         if merged {
-            let issue_number: Option<i64> = conn.query_row(
-                "SELECT issue_number FROM issue_attempts WHERE run_id=?1 AND pr_number=?2 LIMIT 1",
-                rusqlite::params![run_id, pr_number],
-                |r| r.get(0),
-            ).ok();
+            let issue_number: Option<i64> = get_conn()
+                .ok()
+                .and_then(|conn| {
+                    conn.query_row(
+                        "SELECT issue_number FROM issue_attempts WHERE run_id=?1 AND pr_number=?2 LIMIT 1",
+                        rusqlite::params![run_id, pr_number],
+                        |r| r.get(0),
+                    ).ok()
+                });
             let branch = format!("reaper/issue-{}", issue_number.unwrap_or(pr_number));
             crate::github::gh_delete_branch(http, &repo, &branch, None, None).await;
         }

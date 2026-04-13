@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct GitHubPullRequest {
+pub struct GitHubPullRequestDetail {
     #[serde(default)]
     pub repo: String,
     pub number: i64,

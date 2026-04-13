@@ -14,9 +14,8 @@ use axum::{
     Json, Router,
 };
 use once_cell::sync::OnceCell;
-use patchhive_product_core::startup::{count_errors, listen_addr, log_checks, StartupCheck};
+use patchhive_product_core::startup::{cors_layer, count_errors, listen_addr, log_checks, StartupCheck};
 use serde_json::json;
-use tower_http::cors::{Any, CorsLayer};
 use tracing::info;
 
 use crate::auth::{auth_enabled, generate_and_save_key, verify_token};
@@ -43,10 +42,7 @@ async fn main() {
     let _ = STARTUP_CHECKS.set(checks);
     pipeline::start_scheduler(state.clone());
 
-    let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any);
+    let cors = cors_layer();
 
     let app = Router::new()
         .route("/auth/status", get(auth_status))
@@ -72,12 +68,16 @@ async fn main() {
 
     let addr = listen_addr("SIGNAL_PORT", 8010);
     info!("📡 SignalHive by PatchHive — listening on {addr}");
-    let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    let listener = tokio::net::TcpListener::bind(&addr)
+        .await
+        .unwrap_or_else(|err| panic!("failed to bind SignalHive to {addr}: {err}"));
+    axum::serve(listener, app)
+        .await
+        .unwrap_or_else(|err| panic!("SignalHive server failed: {err}"));
 }
 
 async fn auth_status() -> Json<serde_json::Value> {
-    Json(json!({"auth_enabled": auth_enabled()}))
+    Json(auth::auth_status_payload())
 }
 
 #[derive(serde::Deserialize)]
@@ -86,22 +86,29 @@ struct LoginBody {
 }
 
 async fn login(Json(body): Json<LoginBody>) -> Result<Json<serde_json::Value>, StatusCode> {
+    if !auth_enabled() {
+        return Err(StatusCode::SERVICE_UNAVAILABLE);
+    }
     if !verify_token(&body.api_key) {
         return Err(StatusCode::UNAUTHORIZED);
     }
-    Ok(Json(json!({"ok": true, "auth_enabled": true})))
+    Ok(Json(json!({"ok": true, "auth_enabled": true, "auth_configured": true})))
 }
 
-async fn gen_key() -> Result<Json<serde_json::Value>, StatusCode> {
+async fn gen_key(headers: axum::http::HeaderMap) -> Result<Json<serde_json::Value>, StatusCode> {
     if auth_enabled() {
         return Err(StatusCode::FORBIDDEN);
     }
-    let key = generate_and_save_key();
+    if !auth::bootstrap_request_allowed(&headers) {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    let key = generate_and_save_key().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(json!({"api_key": key, "message": "Store this — it won't be shown again"})))
 }
 
 async fn health(State(_state): State<AppState>) -> Json<serde_json::Value> {
     let errors = STARTUP_CHECKS.get().map(|checks| count_errors(checks)).unwrap_or(0);
+    let db_ok = db::health_check();
     let repo_lists = db::list_repo_lists().unwrap_or_default();
     let schedules = db::list_scan_schedules().unwrap_or_default();
     let allowlist_count = repo_lists.iter().filter(|row| row.list_type == "allowlist").count();
@@ -115,12 +122,13 @@ async fn health(State(_state): State<AppState>) -> Json<serde_json::Value> {
         .min();
 
     Json(json!({
-        "status": if errors > 0 { "degraded" } else { "ok" },
+        "status": if errors > 0 || !db_ok { "degraded" } else { "ok" },
         "version": "0.1.0",
         "product": "SignalHive by PatchHive",
         "scan_count": db::scan_count(),
         "auth_enabled": auth_enabled(),
         "config_errors": errors,
+        "db_ok": db_ok,
         "db_path": db::db_path(),
         "read_only": true,
         "repo_lists": {

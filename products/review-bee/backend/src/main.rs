@@ -13,7 +13,7 @@ use axum::{
 };
 use once_cell::sync::OnceCell;
 use patchhive_product_core::startup::{listen_addr, log_checks, StartupCheck};
-use tower_http::cors::{Any, CorsLayer};
+use patchhive_product_core::startup::cors_layer;
 use tracing::info;
 
 use crate::state::AppState;
@@ -37,10 +37,7 @@ async fn main() {
     log_checks(&checks);
     let _ = STARTUP_CHECKS.set(checks);
 
-    let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any);
+    let cors = cors_layer();
 
     let app = Router::new()
         .route("/auth/status", get(pipeline::auth_status))
@@ -59,6 +56,10 @@ async fn main() {
 
     let addr = listen_addr("REVIEW_BEE_PORT", 8040);
     info!("🐝 ReviewBee by PatchHive — listening on {addr}");
-    let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    let listener = tokio::net::TcpListener::bind(&addr)
+        .await
+        .unwrap_or_else(|err| panic!("failed to bind ReviewBee to {addr}: {err}"));
+    axum::serve(listener, app)
+        .await
+        .unwrap_or_else(|err| panic!("ReviewBee server failed: {err}"));
 }

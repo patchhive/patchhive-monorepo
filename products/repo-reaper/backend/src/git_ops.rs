@@ -1,8 +1,10 @@
 use anyhow::{anyhow, Result};
 use patchhive_github_pr::github_token_from_env;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Output;
 use tokio::process::Command;
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 
 fn env_str(k: &str) -> String { std::env::var(k).unwrap_or_default() }
 
@@ -10,6 +12,16 @@ async fn runcmd(args: &[&str], cwd: Option<&Path>) -> Result<Output> {
     let mut cmd = Command::new(args[0]);
     cmd.args(&args[1..]);
     if let Some(dir) = cwd { cmd.current_dir(dir); }
+    Ok(cmd.output().await?)
+}
+
+async fn runcmd_with_env(args: &[&str], cwd: Option<&Path>, envs: &[(&str, &str)]) -> Result<Output> {
+    let mut cmd = Command::new(args[0]);
+    cmd.args(&args[1..]);
+    if let Some(dir) = cwd { cmd.current_dir(dir); }
+    for (key, value) in envs {
+        cmd.env(key, value);
+    }
     Ok(cmd.output().await?)
 }
 
@@ -23,6 +35,28 @@ async fn runcmd_ok(args: &[&str], cwd: Option<&Path>) -> Result<String> {
     Ok(String::from_utf8_lossy(&out.stdout).to_string())
 }
 
+fn shell_single_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\"'\"'"))
+}
+
+fn write_askpass_script(user: &str, token: &str) -> Result<(PathBuf, PathBuf)> {
+    let auth_dir = std::env::temp_dir().join(format!("repo-reaper-auth-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&auth_dir)?;
+    #[cfg(unix)]
+    std::fs::set_permissions(&auth_dir, std::fs::Permissions::from_mode(0o700))?;
+
+    let script_path = auth_dir.join("git-askpass.sh");
+    let script = format!(
+        "#!/bin/sh\ncase \"$1\" in\n  *Username*) printf '%s\\n' {} ;;\n  *Password*) printf '%s\\n' {} ;;\n  *) printf '\\n' ;;\nesac\n",
+        shell_single_quote(user),
+        shell_single_quote(token),
+    );
+    std::fs::write(&script_path, script)?;
+    #[cfg(unix)]
+    std::fs::set_permissions(&script_path, std::fs::Permissions::from_mode(0o700))?;
+    Ok((auth_dir, script_path))
+}
+
 pub async fn git_clone(fork_url: &str, dest: &Path, bot_user: Option<&str>, bot_token: Option<&str>) -> Result<()> {
     let user  = bot_user.map(|s| s.to_string()).unwrap_or_else(|| env_str("BOT_GITHUB_USER"));
     let token = bot_token
@@ -31,9 +65,24 @@ pub async fn git_clone(fork_url: &str, dest: &Path, bot_user: Option<&str>, bot_
         .or_else(github_token_from_env)
         .unwrap_or_default();
     let email = env_str("BOT_GITHUB_EMAIL");
-    let auth_url = fork_url.replace("https://", &format!("https://{user}:{token}@"));
+    let askpass_user = if user.trim().is_empty() { "x-access-token" } else { user.as_str() };
+    let (auth_dir, askpass_path) = write_askpass_script(askpass_user, &token)?;
+    let clone = runcmd_with_env(
+        &["git", "clone", "--depth=10", fork_url, dest.to_str().unwrap_or("")],
+        None,
+        &[
+            ("GIT_ASKPASS", askpass_path.to_str().unwrap_or("")),
+            ("GIT_TERMINAL_PROMPT", "0"),
+        ],
+    ).await;
+    let _ = std::fs::remove_dir_all(&auth_dir);
+    let out = clone?;
+    if !out.status.success() {
+        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+        let stdout = String::from_utf8_lossy(&out.stdout).to_string();
+        return Err(anyhow!("{stderr}{stdout}"));
+    }
 
-    runcmd_ok(&["git", "clone", "--depth=10", &auth_url, dest.to_str().unwrap_or("")], None).await?;
     runcmd_ok(&["git", "config", "user.name", &user], Some(dest)).await?;
     if !email.is_empty() {
         runcmd_ok(&["git", "config", "user.email", &email], Some(dest)).await?;
@@ -68,10 +117,17 @@ fn skip_dir(p: &Path) -> bool {
     p.components().any(|c| SKIP_DIRS.contains(&c.as_os_str().to_str().unwrap_or("")))
 }
 
-pub fn collect_repo_structure(repo_dir: &Path) -> String {
+fn collect_repo_structure_sync(repo_dir: &Path) -> String {
     let mut lines = Vec::new();
     visit_dir(repo_dir, repo_dir, &mut lines, ALL_EXTS, 250);
     lines.join("\n")
+}
+
+pub async fn collect_repo_structure(repo_dir: &Path) -> String {
+    let repo_dir = repo_dir.to_path_buf();
+    tokio::task::spawn_blocking(move || collect_repo_structure_sync(&repo_dir))
+        .await
+        .unwrap_or_default()
 }
 
 fn visit_dir(base: &Path, dir: &Path, lines: &mut Vec<String>, exts: &[&str], limit: usize) {
@@ -98,7 +154,7 @@ fn visit_dir(base: &Path, dir: &Path, lines: &mut Vec<String>, exts: &[&str], li
     }
 }
 
-pub fn collect_files_selective(repo_dir: &Path, paths: &[String], max_bytes: usize) -> String {
+fn collect_files_selective_sync(repo_dir: &Path, paths: &[String], max_bytes: usize) -> String {
     let mut out = Vec::new();
     let mut total = 0;
     for path_str in paths {
@@ -116,7 +172,15 @@ pub fn collect_files_selective(repo_dir: &Path, paths: &[String], max_bytes: usi
     out.join("\n\n")
 }
 
-pub fn collect_files_all(repo_dir: &Path, max_bytes: usize) -> String {
+pub async fn collect_files_selective(repo_dir: &Path, paths: &[String], max_bytes: usize) -> String {
+    let repo_dir = repo_dir.to_path_buf();
+    let paths = paths.to_vec();
+    tokio::task::spawn_blocking(move || collect_files_selective_sync(&repo_dir, &paths, max_bytes))
+        .await
+        .unwrap_or_default()
+}
+
+fn collect_files_all_sync(repo_dir: &Path, max_bytes: usize) -> String {
     let mut files = collect_code_files(repo_dir);
     files.sort_by_key(|f| std::fs::metadata(f).map(|m| m.len()).unwrap_or(0));
     let mut out = Vec::new();
@@ -134,6 +198,13 @@ pub fn collect_files_all(repo_dir: &Path, max_bytes: usize) -> String {
         if total >= max_bytes { break; }
     }
     out.join("\n\n")
+}
+
+pub async fn collect_files_all(repo_dir: &Path, max_bytes: usize) -> String {
+    let repo_dir = repo_dir.to_path_buf();
+    tokio::task::spawn_blocking(move || collect_files_all_sync(&repo_dir, max_bytes))
+        .await
+        .unwrap_or_default()
 }
 
 fn collect_code_files(dir: &Path) -> Vec<std::path::PathBuf> {
@@ -186,6 +257,14 @@ pub struct TestResult {
 }
 
 pub async fn run_tests(repo_dir: &Path) -> TestResult {
+    if !matches!(env_str("REAPER_ENABLE_UNTRUSTED_TESTS").to_ascii_lowercase().as_str(), "1" | "true" | "yes") {
+        return TestResult {
+            passed: false,
+            output: "Unsafe test execution is disabled for untrusted repositories. Set REAPER_ENABLE_UNTRUSTED_TESTS=true to opt in.".into(),
+            runner: "disabled".into(),
+        };
+    }
+
     let runners: &[(&[&str], Option<&str>)] = &[
         (&["pytest", "--tb=short", "-q"], Some("pytest.ini")),
         (&["python", "-m", "pytest", "-q"], None),

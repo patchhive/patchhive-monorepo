@@ -155,128 +155,146 @@ pub async fn dry_run(State(state): State<AppState>, axum::Json(req): axum::Json<
 
 pub async fn run(State(state): State<AppState>, axum::Json(req): axum::Json<RunRequest>) -> Sse<impl futures::Stream<Item = Result<Event, Infallible>>> {
     let (tx, rx) = mpsc::channel(256);
+    tokio::spawn(execute_run(state, req, tx.clone()));
+
+    Sse::new(ReceiverStream::new(rx)).keep_alive(KeepAlive::default())
+}
+
+pub async fn execute_run(
+    state: AppState,
+    req: RunRequest,
+    tx: mpsc::Sender<Result<Event, Infallible>>,
+) {
     let http = state.http.clone();
     let agents_arc = state.agents.clone();
     let run_active = state.run_active.clone();
 
-    tokio::spawn(async move {
-        if run_active.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_err() {
-            let _ = tx.send(sse("error", json!({"msg":"A hunt is already active"}))).await;
-            return;
+    if run_active.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_err() {
+        let _ = tx.send(sse("error", json!({"msg":"A hunt is already active"}))).await;
+        return;
+    }
+
+    let run_id = Uuid::new_v4().to_string()[..12].to_string();
+    let run_cost = Arc::new(AtomicI64::new(0));
+    let cancel_requested = Arc::new(AtomicBool::new(false));
+    let budget = req.cost_budget_usd.max(cfg("COST_BUDGET_USD").parse().unwrap_or(0.0));
+    let min_conf = cfg("MIN_REVIEW_CONFIDENCE").parse().unwrap_or(40i32);
+
+    let agents_snap = agents_arc.read().await.clone();
+    if agents_snap.is_empty() {
+        let _ = tx.send(sse("log", json!({"msg":"No agents configured","type":"error"}))).await;
+        let _ = tx.send(sse("done", json!({"total_fixed":0}))).await;
+        run_active.store(false, Ordering::SeqCst);
+        return;
+    }
+
+    let scouts:     Vec<_> = agents_snap.values().filter(|a| a.role == "scout").cloned().collect();
+    let judges:     Vec<_> = agents_snap.values().filter(|a| a.role == "judge").cloned().collect();
+    let reapers:    Vec<_> = agents_snap.values().filter(|a| a.role == "reaper").cloned().collect();
+    let smiths:     Vec<_> = agents_snap.values().filter(|a| a.role == "smith").cloned().collect();
+    let gatekeepers:Vec<_> = agents_snap.values().filter(|a| a.role == "gatekeeper").cloned().collect();
+
+    let scout_list: Vec<_> = if scouts.is_empty() { agents_snap.values().take(1).cloned().collect() } else { scouts };
+    let reaper_list = if reapers.is_empty() { scout_list.clone() } else { reapers };
+    let gatekeeper_list = if gatekeepers.is_empty() { reaper_list.clone() } else { gatekeepers };
+    let scout = scout_list[0].clone();
+
+    let (allow, deny, opt_out) = load_lists();
+    let _ = start_run(&run_id, &serde_json::to_value(&req).unwrap_or_default(), false);
+    if budget <= 0.0 {
+        let _ = tx.send(sse("log", json!({"msg":"No cost budget configured — run is currently uncapped","type":"warn"}))).await;
+    }
+
+    let _ = tx.send(sse("phase", json!({"phase":"scan"}))).await;
+    let _ = tx.send(astatus(&scout.id, "working", "Hunting")).await;
+
+    let (repos, mut all_issues) = discover(&http, &req, &scout, &allow, &deny, &opt_out, &tx).await;
+    let _ = tx.send(alog(&scout, &format!("{} repos, {} bugs found", repos.len(), all_issues.len()), "success")).await;
+
+    let _ = tx.send(sse("phase", json!({"phase":"triage"}))).await;
+    let _ = tx.send(astatus(&scout.id, "working", "Judging issues")).await;
+
+    if !all_issues.is_empty() {
+        match agent_score_issues(&http, &mut all_issues, &scout).await {
+            Ok(c) => { run_cost.fetch_add((c * 1_000_000.0) as i64, Ordering::Relaxed); }
+            Err(e) => { let _ = tx.send(alog(&scout, &format!("Scoring failed: {e}"), "warn")).await; }
         }
+    }
 
-        let run_id = Uuid::new_v4().to_string()[..12].to_string();
-        let run_cost = Arc::new(AtomicI64::new(0));
-        let budget = req.cost_budget_usd.max(cfg("COST_BUDGET_USD").parse().unwrap_or(0.0));
-        let min_conf = cfg("MIN_REVIEW_CONFIDENCE").parse().unwrap_or(40i32);
+    let fixable: Vec<_> = all_issues.iter().take(req.max_issues).cloned().collect();
+    let _ = tx.send(sse("issues", json!({"issues": all_issues}))).await;
+    let _ = tx.send(alog(&scout, &format!("Queued {}/{} for reaping", fixable.len(), all_issues.len()), "success")).await;
+    let _ = tx.send(astatus(&scout.id, "idle", "")).await;
 
-        let agents_snap = agents_arc.read().await.clone();
-        if agents_snap.is_empty() {
-            let _ = tx.send(sse("log", json!({"msg":"No agents configured","type":"error"}))).await;
-            let _ = tx.send(sse("done", json!({"total_fixed":0}))).await;
+    if fixable.is_empty() {
+        let rc = run_cost.load(Ordering::Relaxed) as f64 / 1_000_000.0;
+        let _ = finish_run(&run_id, 0, 0, rc, "done");
+        let _ = tx.send(sse("done", json!({"total_fixed":0}))).await;
+        run_active.store(false, Ordering::SeqCst);
+        return;
+    }
+
+    let _ = tx.send(sse("phase", json!({"phase":"fix"}))).await;
+    let sem = Arc::new(Semaphore::new(req.concurrency));
+    let (done_tx, mut done_rx) = mpsc::channel::<()>(fixable.len());
+
+    let total = fixable.len();
+    let mut handles = Vec::new();
+
+    for (idx, issue) in fixable.iter().enumerate() {
+        let params = FixParams {
+            retry_count: req.retry_count,
+            min_conf,
+            run_id: run_id.clone(),
+            cancel_requested: cancel_requested.clone(),
+        };
+        let handle = tokio::spawn(fix_one(
+            issue.clone(), idx,
+            judges.clone(), reaper_list.clone(),
+            smiths.clone(), gatekeeper_list.clone(),
+            sem.clone(), params,
+            run_cost.clone(), tx.clone(), http.clone(),
+        ));
+        let dtx = done_tx.clone();
+        handles.push(tokio::spawn(async move {
+            handle.await.ok();
+            let _ = dtx.send(()).await;
+        }));
+    }
+    drop(done_tx);
+
+    let mut completed = 0;
+    while let Some(()) = done_rx.recv().await {
+        completed += 1;
+        let rc = run_cost.load(Ordering::Relaxed) as f64 / 1_000_000.0;
+        let _ = tx.send(sse("cost_update", json!({"run_cost": rc, "lifetime_cost": get_lifetime_cost()}))).await;
+        if budget > 0.0 && rc >= budget && !cancel_requested.load(Ordering::SeqCst) {
+            cancel_requested.store(true, Ordering::SeqCst);
+            let _ = tx.send(sse("log", json!({"msg":format!("Budget ${budget:.2} reached — finishing in-flight work and cancelling new hunts"),"type":"warn"}))).await;
+        }
+        if completed == total { break; }
+    }
+
+    for h in handles {
+        let _ = h.await;
+    }
+
+    let total_fixed: i64 = {
+        let Ok(conn) = get_conn() else {
             run_active.store(false, Ordering::SeqCst);
             return;
-        }
-
-        let scouts:     Vec<_> = agents_snap.values().filter(|a| a.role == "scout").cloned().collect();
-        let judges:     Vec<_> = agents_snap.values().filter(|a| a.role == "judge").cloned().collect();
-        let reapers:    Vec<_> = agents_snap.values().filter(|a| a.role == "reaper").cloned().collect();
-        let smiths:     Vec<_> = agents_snap.values().filter(|a| a.role == "smith").cloned().collect();
-        let gatekeepers:Vec<_> = agents_snap.values().filter(|a| a.role == "gatekeeper").cloned().collect();
-
-        let scout_list: Vec<_> = if scouts.is_empty() { agents_snap.values().take(1).cloned().collect() } else { scouts };
-        let reaper_list = if reapers.is_empty() { scout_list.clone() } else { reapers };
-        let gatekeeper_list = if gatekeepers.is_empty() { reaper_list.clone() } else { gatekeepers };
-        let scout = scout_list[0].clone();
-
-        let (allow, deny, opt_out) = load_lists();
-        let _ = start_run(&run_id, &serde_json::to_value(&req).unwrap_or_default(), false);
-
-        let _ = tx.send(sse("phase", json!({"phase":"scan"}))).await;
-        let _ = tx.send(astatus(&scout.id, "working", "Hunting")).await;
-
-        let (repos, mut all_issues) = discover(&http, &req, &scout, &allow, &deny, &opt_out, &tx).await;
-        let _ = tx.send(alog(&scout, &format!("{} repos, {} bugs found", repos.len(), all_issues.len()), "success")).await;
-
-        let _ = tx.send(sse("phase", json!({"phase":"triage"}))).await;
-        let _ = tx.send(astatus(&scout.id, "working", "Judging issues")).await;
-
-        if !all_issues.is_empty() {
-            match agent_score_issues(&http, &mut all_issues, &scout).await {
-                Ok(c) => { run_cost.fetch_add((c * 1_000_000.0) as i64, Ordering::Relaxed); }
-                Err(e) => { let _ = tx.send(alog(&scout, &format!("Scoring failed: {e}"), "warn")).await; }
-            }
-        }
-
-        let fixable: Vec<_> = all_issues.iter().take(req.max_issues).cloned().collect();
-        let _ = tx.send(sse("issues", json!({"issues": all_issues}))).await;
-        let _ = tx.send(alog(&scout, &format!("Queued {}/{} for reaping", fixable.len(), all_issues.len()), "success")).await;
-        let _ = tx.send(astatus(&scout.id, "idle", "")).await;
-
-        if fixable.is_empty() {
-            let rc = run_cost.load(Ordering::Relaxed) as f64 / 1_000_000.0;
-            let _ = finish_run(&run_id, 0, 0, rc, "done");
-            let _ = tx.send(sse("done", json!({"total_fixed":0}))).await;
-            run_active.store(false, Ordering::SeqCst);
-            return;
-        }
-
-        let _ = tx.send(sse("phase", json!({"phase":"fix"}))).await;
-        let sem = Arc::new(Semaphore::new(req.concurrency));
-        let (done_tx, mut done_rx) = mpsc::channel::<()>(fixable.len());
-
-        let total = fixable.len();
-        let mut handles = Vec::new();
-
-        for (idx, issue) in fixable.iter().enumerate() {
-            let params = FixParams {
-                retry_count: req.retry_count,
-                min_conf, budget,
-                run_id: run_id.clone(),
-            };
-            let handle = tokio::spawn(fix_one(
-                issue.clone(), idx,
-                judges.clone(), reaper_list.clone(),
-                smiths.clone(), gatekeeper_list.clone(),
-                sem.clone(), params,
-                run_cost.clone(), tx.clone(), http.clone(),
-            ));
-            let dtx = done_tx.clone();
-            handles.push(tokio::spawn(async move {
-                handle.await.ok();
-                let _ = dtx.send(()).await;
-            }));
-        }
-        drop(done_tx);
-
-        let mut completed = 0;
-        while let Some(()) = done_rx.recv().await {
-            completed += 1;
-            let rc = run_cost.load(Ordering::Relaxed) as f64 / 1_000_000.0;
-            let _ = tx.send(sse("cost_update", json!({"run_cost": rc, "lifetime_cost": get_lifetime_cost()}))).await;
-            if budget > 0.0 && rc >= budget {
-                let _ = tx.send(sse("log", json!({"msg":format!("Budget ${budget:.2} reached — stopping"),"type":"warn"}))).await;
-                break;
-            }
-            if completed == total { break; }
-        }
-
-        for h in handles { h.abort(); }
-
-        let Ok(conn) = get_conn() else { run_active.store(false, Ordering::SeqCst); return };
-        let total_fixed: i64 = conn.query_row(
+        };
+        conn.query_row(
             "SELECT COUNT(*) FROM issue_attempts WHERE run_id=? AND status='fixed'",
             [&run_id], |r| r.get(0)
-        ).unwrap_or(0);
-        let rc = run_cost.load(Ordering::Relaxed) as f64 / 1_000_000.0;
-        let _ = finish_run(&run_id, total_fixed, fixable.len() as i64, rc, "done");
+        ).unwrap_or(0)
+    };
+    let rc = run_cost.load(Ordering::Relaxed) as f64 / 1_000_000.0;
+    let _ = finish_run(&run_id, total_fixed, fixable.len() as i64, rc, "done");
 
-        let _ = tx.send(sse("phase", json!({"phase":"done"}))).await;
-        let _ = tx.send(sse("log", json!({"msg":format!("Hunt complete — {total_fixed}/{} kills | ${rc:.4}",fixable.len()),"type":"success"}))).await;
-        let _ = tx.send(sse("done", json!({"total_fixed":total_fixed,"total_attempted":fixable.len(),"run_id":run_id,"cost":rc}))).await;
+    let _ = tx.send(sse("phase", json!({"phase":"done"}))).await;
+    let _ = tx.send(sse("log", json!({"msg":format!("Hunt complete — {total_fixed}/{} kills | ${rc:.4}",fixable.len()),"type":"success"}))).await;
+    let _ = tx.send(sse("done", json!({"total_fixed":total_fixed,"total_attempted":fixable.len(),"run_id":run_id,"cost":rc}))).await;
 
-        run_active.store(false, Ordering::SeqCst);
-    });
-
-    Sse::new(ReceiverStream::new(rx)).keep_alive(KeepAlive::default())
+    run_active.store(false, Ordering::SeqCst);
 }

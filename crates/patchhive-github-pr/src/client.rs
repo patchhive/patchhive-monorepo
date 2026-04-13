@@ -4,12 +4,13 @@ use reqwest::{
     Client,
 };
 use serde_json::{json, Value};
+use std::fmt;
 
 use crate::{
     models::{
         GitHubCheckRunRequest, GitHubCheckRunResult, GitHubCommitStatusRequest,
         GitHubCommitHealth, GitHubCommitStatusResult, GitHubManagedCommentResult,
-        GitHubPullRequest, GitHubPullReview, GitHubPullReviewThread,
+        GitHubPullRequestDetail, GitHubPullReview, GitHubPullReviewThread,
         GitHubPullReviewThreadComment, GitHubCheckRunSummary, GitHubStatusContext,
     },
     webhook::github_token_from_env,
@@ -22,6 +23,15 @@ pub struct GitHubPrClient {
     client: Client,
     token: Option<String>,
     user_agent: String,
+}
+
+impl fmt::Debug for GitHubPrClient {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("GitHubPrClient")
+            .field("token_configured", &self.token.is_some())
+            .field("user_agent", &self.user_agent)
+            .finish()
+    }
 }
 
 impl GitHubPrClient {
@@ -71,10 +81,15 @@ impl GitHubPrClient {
     }
 
     async fn get_json(&self, path: &str) -> Result<Value> {
+        self.get_json_with_query(path, &[]).await
+    }
+
+    async fn get_json_with_query(&self, path: &str, query: &[(&str, String)]) -> Result<Value> {
         let response = self
             .client
             .get(format!("{GH_API}{path}"))
             .headers(self.headers("application/vnd.github+json", false)?)
+            .query(query)
             .send()
             .await
             .with_context(|| format!("GitHub request failed for {path}"))?;
@@ -89,6 +104,44 @@ impl GitHubPrClient {
             .json::<Value>()
             .await
             .with_context(|| format!("Failed to decode GitHub JSON for {path}"))
+    }
+
+    async fn get_paginated_array(
+        &self,
+        path: &str,
+        query: &[(&str, String)],
+        array_key: Option<&str>,
+    ) -> Result<Vec<Value>> {
+        let mut items = Vec::new();
+        let mut page = 1u32;
+
+        loop {
+            let mut page_query = query.to_vec();
+            page_query.push(("per_page", "100".to_string()));
+            page_query.push(("page", page.to_string()));
+
+            let value = self.get_json_with_query(path, &page_query).await?;
+            let page_items = match array_key {
+                Some(key) => value[key]
+                    .as_array()
+                    .cloned()
+                    .ok_or_else(|| anyhow!("GitHub response field `{key}` was not an array"))?,
+                None => value
+                    .as_array()
+                    .cloned()
+                    .ok_or_else(|| anyhow!("GitHub response was not an array"))?,
+            };
+
+            let page_len = page_items.len();
+            items.extend(page_items);
+
+            if page_len < 100 {
+                break;
+            }
+            page += 1;
+        }
+
+        Ok(items)
     }
 
     async fn get_text(&self, path: &str, accept: &str) -> Result<String> {
@@ -187,12 +240,13 @@ impl GitHubPrClient {
             .with_context(|| format!("Failed to decode GitHub JSON for {path}"))
     }
 
-    pub async fn fetch_pull_request(&self, repo: &str, pr_number: i64) -> Result<GitHubPullRequest> {
+    pub async fn fetch_pull_request(&self, repo: &str, pr_number: i64) -> Result<GitHubPullRequestDetail> {
+        validate_repo(repo)?;
         let value = self
             .get_json(&format!("/repos/{repo}/pulls/{pr_number}"))
             .await?;
 
-        Ok(GitHubPullRequest {
+        Ok(GitHubPullRequestDetail {
             repo: repo.to_string(),
             number: pr_number,
             state: value["state"].as_str().unwrap_or("").to_string(),
@@ -216,6 +270,7 @@ impl GitHubPrClient {
     }
 
     pub async fn fetch_commit_health(&self, repo: &str, sha: &str) -> Result<GitHubCommitHealth> {
+        validate_repo(repo)?;
         let sha = sha.trim();
         if sha.is_empty() {
             return Err(anyhow!("Commit SHA is required for commit health lookup"));
@@ -224,16 +279,17 @@ impl GitHubPrClient {
         let statuses_value = self
             .get_json(&format!("/repos/{repo}/commits/{sha}/status"))
             .await?;
-        let check_runs_value = self
-            .get_json(&format!("/repos/{repo}/commits/{sha}/check-runs?per_page=100"))
+        let check_items = self
+            .get_paginated_array(
+                &format!("/repos/{repo}/commits/{sha}/check-runs"),
+                &[],
+                Some("check_runs"),
+            )
             .await?;
 
         let status_items = statuses_value["statuses"]
             .as_array()
             .ok_or_else(|| anyhow!("GitHub combined status response was not an array"))?;
-        let check_items = check_runs_value["check_runs"]
-            .as_array()
-            .ok_or_else(|| anyhow!("GitHub check-runs response was not an array"))?;
 
         let statuses = status_items
             .iter()
@@ -286,6 +342,7 @@ impl GitHubPrClient {
     }
 
     pub async fn fetch_pull_request_diff(&self, repo: &str, pr_number: i64) -> Result<String> {
+        validate_repo(repo)?;
         self.get_text(
             &format!("/repos/{repo}/pulls/{pr_number}"),
             "application/vnd.github.v3.diff",
@@ -298,15 +355,12 @@ impl GitHubPrClient {
         repo: &str,
         pr_number: i64,
     ) -> Result<Vec<GitHubPullReview>> {
+        validate_repo(repo)?;
         let value = self
-            .get_json(&format!("/repos/{repo}/pulls/{pr_number}/reviews?per_page=100"))
+            .get_paginated_array(&format!("/repos/{repo}/pulls/{pr_number}/reviews"), &[], None)
             .await?;
 
-        let items = value
-            .as_array()
-            .ok_or_else(|| anyhow!("GitHub reviews response was not an array"))?;
-
-        Ok(items
+        Ok(value
             .iter()
             .map(|item| GitHubPullReview {
                 id: item["id"].as_i64().unwrap_or(0),
@@ -324,6 +378,7 @@ impl GitHubPrClient {
         repo: &str,
         pr_number: i64,
     ) -> Result<Vec<GitHubPullReviewThread>> {
+        validate_repo(repo)?;
         let (owner, name) = split_repo(repo)?;
         let query = r#"
 query PatchHiveReviewThreads($owner: String!, $name: String!, $number: Int!) {
@@ -417,6 +472,7 @@ query PatchHiveReviewThreads($owner: String!, $name: String!, $number: Int!) {
         repo: &str,
         request: GitHubCheckRunRequest,
     ) -> Result<GitHubCheckRunResult> {
+        validate_repo(repo)?;
         let body = json!({
             "name": request.name,
             "head_sha": request.head_sha,
@@ -445,6 +501,7 @@ query PatchHiveReviewThreads($owner: String!, $name: String!, $number: Int!) {
         repo: &str,
         request: GitHubCommitStatusRequest,
     ) -> Result<GitHubCommitStatusResult> {
+        validate_repo(repo)?;
         let body = json!({
             "state": request.state,
             "context": request.context,
@@ -467,18 +524,17 @@ query PatchHiveReviewThreads($owner: String!, $name: String!, $number: Int!) {
         marker: &str,
         body: &str,
     ) -> Result<GitHubManagedCommentResult> {
+        validate_repo(repo)?;
         let comments = self
-            .get_json(&format!("/repos/{repo}/issues/{issue_number}/comments?per_page=100"))
+            .get_paginated_array(&format!("/repos/{repo}/issues/{issue_number}/comments"), &[], None)
             .await?;
 
-        if let Some(existing) = comments.as_array().and_then(|items| {
-            items.iter().find(|item| {
+        if let Some(existing) = comments.iter().find(|item| {
                 item["body"]
                     .as_str()
                     .map(|text| text.contains(marker))
                     .unwrap_or(false)
-            })
-        }) {
+            }) {
             let id = existing["id"]
                 .as_i64()
                 .ok_or_else(|| anyhow!("Existing managed comment was missing an id"))?;
@@ -505,6 +561,21 @@ query PatchHiveReviewThreads($owner: String!, $name: String!, $number: Int!) {
             html_url: created["html_url"].as_str().unwrap_or("").to_string(),
         })
     }
+}
+
+fn validate_repo(repo: &str) -> Result<()> {
+    let (owner, name) = split_repo(repo)?;
+    if !valid_repo_segment(owner) || !valid_repo_segment(name) {
+        return Err(anyhow!("Repository must be a safe owner/name string"));
+    }
+    Ok(())
+}
+
+fn valid_repo_segment(segment: &str) -> bool {
+    !segment.trim().is_empty()
+        && segment
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
 }
 
 fn split_repo(repo: &str) -> Result<(&str, &str)> {

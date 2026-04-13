@@ -1,10 +1,11 @@
 use axum::{
     extract::{Path, State},
     Json,
-    routing::{delete, get, post},
+    routing::{get, post},
     Router,
 };
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use crate::db::get_conn;
 use crate::github::{gh_poll_pr, gh_delete_branch, gh_check_rate_limit};
 use crate::state::AppState;
@@ -35,25 +36,66 @@ async fn get_history(State(_): State<AppState>) -> Json<Value> {
         Some(mapped.flatten().collect())
     }).unwrap_or_default();
 
+    let mut attempts_by_run: HashMap<String, Vec<Value>> = HashMap::new();
+    let attempts: Vec<(String, Value)> = conn
+        .prepare(
+            "WITH recent_runs AS (
+                SELECT id FROM runs ORDER BY started_at DESC LIMIT 30
+             )
+             SELECT
+                ia.run_id,
+                ia.id,
+                ia.issue_number,
+                ia.issue_title,
+                ia.issue_url,
+                ia.status,
+                ia.skip_reason,
+                ia.pr_url,
+                ia.pr_number,
+                ia.reaper_agent,
+                ia.smith_agent,
+                ia.gatekeeper_agent,
+                ia.started_at,
+                ia.finished_at,
+                ia.cost_usd,
+                ia.patch_diff,
+                ia.confidence
+             FROM issue_attempts ia
+             JOIN recent_runs rr ON rr.id = ia.run_id
+             ORDER BY ia.run_id, ia.started_at"
+        )
+        .ok()
+        .and_then(|mut s| {
+            let mapped = s.query_map([], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    json!({
+                        "id":r.get::<_,String>(1)?,"issue_number":r.get::<_,i64>(2)?,"issue_title":r.get::<_,String>(3)?,
+                        "issue_url":r.get::<_,Option<String>>(4)?,"status":r.get::<_,String>(5)?,
+                        "skip_reason":r.get::<_,Option<String>>(6)?,"pr_url":r.get::<_,Option<String>>(7)?,
+                        "pr_number":r.get::<_,Option<i64>>(8)?,"reaper_agent":r.get::<_,String>(9)?,
+                        "smith_agent":r.get::<_,Option<String>>(10)?,"gatekeeper_agent":r.get::<_,String>(11)?,
+                        "started_at":r.get::<_,String>(12)?,"finished_at":r.get::<_,Option<String>>(13)?,
+                        "cost_usd":r.get::<_,f64>(14)?,"patch_diff":r.get::<_,Option<String>>(15)?,"confidence":r.get::<_,i32>(16)?,
+                    }),
+                ))
+            }).ok()?;
+            Some(mapped.flatten().collect())
+        })
+        .unwrap_or_default();
+
+    for (run_id, attempt) in attempts {
+        attempts_by_run.entry(run_id).or_default().push(attempt);
+    }
+
     let mut result = Vec::new();
     for run in runs {
         let run_id = run["id"].as_str().unwrap_or("").to_string();
-        let attempts: Vec<Value> = conn.prepare(
-            "SELECT id,issue_number,issue_title,issue_url,status,skip_reason,pr_url,pr_number,reaper_agent,smith_agent,gatekeeper_agent,started_at,finished_at,cost_usd,patch_diff,confidence FROM issue_attempts WHERE run_id=? ORDER BY started_at"
-        ).ok().and_then(|mut s| {
-            let mapped = s.query_map([&run_id], |r| Ok(json!({
-                "id":r.get::<_,String>(0)?,"issue_number":r.get::<_,i64>(1)?,"issue_title":r.get::<_,String>(2)?,
-                "issue_url":r.get::<_,Option<String>>(3)?,"status":r.get::<_,String>(4)?,
-                "skip_reason":r.get::<_,Option<String>>(5)?,"pr_url":r.get::<_,Option<String>>(6)?,
-                "pr_number":r.get::<_,Option<i64>>(7)?,"reaper_agent":r.get::<_,String>(8)?,
-                "smith_agent":r.get::<_,Option<String>>(9)?,"gatekeeper_agent":r.get::<_,String>(10)?,
-                "started_at":r.get::<_,String>(11)?,"finished_at":r.get::<_,Option<String>>(12)?,
-                "cost_usd":r.get::<_,f64>(13)?,"patch_diff":r.get::<_,Option<String>>(14)?,"confidence":r.get::<_,i32>(15)?,
-            }))).ok()?;
-            Some(mapped.flatten().collect())
-        }).unwrap_or_default();
         let mut run_obj = run.as_object().cloned().unwrap_or_default();
-        run_obj.insert("attempts".into(), json!(attempts));
+        run_obj.insert(
+            "attempts".into(),
+            json!(attempts_by_run.remove(&run_id).unwrap_or_default()),
+        );
         result.push(Value::Object(run_obj));
     }
     Json(json!({"history": result}))
@@ -152,23 +194,27 @@ async fn refresh_pr(
     State(state): State<AppState>,
 ) -> Json<Value> {
     let pr_state = gh_poll_pr(&state.http, &repo, pr_number, None).await;
-    let Ok(conn) = get_conn() else { return Json(pr_state) };
     let merged = pr_state["merged"].as_bool().unwrap_or(false);
-    let issue_number: Option<i64> = conn.query_row(
-        "SELECT issue_number FROM issue_attempts WHERE run_id IN (
-             SELECT run_id FROM pr_tracking WHERE pr_number=?1 AND repo=?2
-         ) AND pr_number=?1 LIMIT 1",
-        rusqlite::params![pr_number, repo],
-        |r| r.get(0),
-    ).ok();
-    let _ = conn.execute(
-        "UPDATE pr_tracking SET state=?1,merged=?2,review_state=?3,last_checked=?4 WHERE pr_number=?5 AND repo=?6",
-        rusqlite::params![
-            pr_state["state"].as_str().unwrap_or("open"), merged as i32,
-            pr_state["review_state"].as_str(), chrono::Utc::now().to_rfc3339(),
-            pr_number, repo,
-        ],
-    );
+    let issue_number: Option<i64> = if let Ok(conn) = get_conn() {
+        let issue_number = conn.query_row(
+            "SELECT issue_number FROM issue_attempts WHERE run_id IN (
+                 SELECT run_id FROM pr_tracking WHERE pr_number=?1 AND repo=?2
+             ) AND pr_number=?1 LIMIT 1",
+            rusqlite::params![pr_number, repo],
+            |r| r.get(0),
+        ).ok();
+        let _ = conn.execute(
+            "UPDATE pr_tracking SET state=?1,merged=?2,review_state=?3,last_checked=?4 WHERE pr_number=?5 AND repo=?6",
+            rusqlite::params![
+                pr_state["state"].as_str().unwrap_or("open"), merged as i32,
+                pr_state["review_state"].as_str(), chrono::Utc::now().to_rfc3339(),
+                pr_number, repo,
+            ],
+        );
+        issue_number
+    } else {
+        return Json(pr_state);
+    };
     if merged {
         let branch_issue = issue_number.unwrap_or(pr_number);
         gh_delete_branch(&state.http, &repo, &format!("reaper/issue-{branch_issue}"), None, None).await;

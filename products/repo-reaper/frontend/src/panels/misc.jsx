@@ -1,7 +1,7 @@
 import { API } from "../config.js";
 // RepoListsPanel.jsx
 import { useState, useEffect } from "react";
-import { createApiFetcher } from "@patchhivehq/product-shell";
+import { useApiFetcher } from "@patchhivehq/product-shell";
 import { S, Input, Btn, EmptyState, Tag } from "@patchhivehq/ui";
 
 export function RepoListsPanel({ apiKey = "" }) {
@@ -13,10 +13,10 @@ export function RepoListsPanel({ apiKey = "" }) {
     { key: "denylist", label: "Denylist", color: "#c41e3a", empty: "No explicitly denied repos." },
     { key: "opt_out", label: "Opt-Out", color: "#c8922a", empty: "No opted-out repos." },
   ];
-  const fetch_ = createApiFetcher(apiKey);
+  const fetch_ = useApiFetcher(apiKey);
 
   const load = () => fetch_(`${API}/repo-lists`).then(r => r.json()).then(d => setRepos(d.repos || []));
-  useEffect(load, []);
+  useEffect(load, [fetch_]);
 
   const add = async () => {
     if (!input.trim()) return;
@@ -78,10 +78,10 @@ export function RepoListsPanel({ apiKey = "" }) {
 export function SchedulesPanel({ apiKey = "" }) {
   const [schedules, setSchedules] = useState([]);
   const [form, setForm] = useState({ cron_expr:"nightly", config_json:"{}" });
-  const fetch_ = createApiFetcher(apiKey);
+  const fetch_ = useApiFetcher(apiKey);
 
   const load = () => fetch_(`${API}/schedules`).then(r => r.json()).then(d => setSchedules(d.schedules || []));
-  useEffect(load, []);
+  useEffect(load, [fetch_]);
 
   const create = async () => {
     let cfg; try { cfg = JSON.parse(form.config_json); } catch { return; }
@@ -179,10 +179,10 @@ export function WebhookPanel({ watchMode, onToggleWatch }) {
 // PRTrackingPanel.jsx
 export function PRTrackingPanel({ apiKey = "" }) {
   const [prs, setPrs] = useState([]);
-  const fetch_ = createApiFetcher(apiKey);
+  const fetch_ = useApiFetcher(apiKey);
 
   const load = () => fetch_(`${API}/pr-tracking`).then(r => r.json()).then(d => setPrs(d.prs || []));
-  useEffect(load, []);
+  useEffect(load, [fetch_]);
 
   return (
     <div>
@@ -216,12 +216,12 @@ export function PRTrackingPanel({ apiKey = "" }) {
 // StartupChecksPanel.jsx
 export function StartupChecksPanel({ apiKey = "" }) {
   const [checks, setChecks] = useState([]);
-  const fetch_ = createApiFetcher(apiKey);
+  const fetch_ = useApiFetcher(apiKey);
 
   useEffect(() => {
     fetch_(`${API}/startup/checks`)
       .then(r => r.json()).then(d => setChecks(d.checks || []));
-  }, []);
+  }, [fetch_]);
 
   const color = l => ({ ok:"#2a8a4a", warn:"#c8922a", error:"#c41e3a" })[l] || "#484868";
   const icon  = l => ({ ok:"✓", warn:"⚠", error:"✗" })[l] || "◌";

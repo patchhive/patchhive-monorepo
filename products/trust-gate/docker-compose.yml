@@ -18,7 +18,7 @@ services:
   frontend:
     build: ./frontend
     ports:
-      - "5175:80"
+      - "5175:8080"
     depends_on:
       - backend
     restart: unless-stopped

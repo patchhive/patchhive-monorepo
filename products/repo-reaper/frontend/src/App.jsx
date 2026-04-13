@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import {
   applyTheme, PHASE_LABEL, PHASE_ICON,
   LoginPage, DiffViewer,
@@ -41,7 +41,7 @@ const DEFAULT_PARAMS = {
 };
 
 export default function App() {
-  const { apiKey, checked, needsAuth, login, logout } = useApiKeyAuth({
+  const { apiKey, checked, needsAuth, login, logout, authError, bootstrapRequired, generateKey } = useApiKeyAuth({
     apiBase: API,
     storageKey: "reaper_api_key",
   });
@@ -59,6 +59,7 @@ export default function App() {
   const [params,       setParams]       = useState(DEFAULT_PARAMS);
   const [existingCfg,  setExistingCfg]  = useState({});
   const [watchMode,    setWatchMode]    = useState(false);
+  const runAbortRef = useRef(null);
 
   const fetch_ = createApiFetcher(apiKey);
 
@@ -78,6 +79,8 @@ export default function App() {
     fetch_(`${API}/stats/lifetime-cost`).then(r=>r.json()).then(d=>setLifetimeCost(d.lifetime_cost_usd||0)).catch(()=>{});
     fetch_(`${API}/watch-mode`).then(r=>r.json()).then(d=>setWatchMode(d.watch_mode||false)).catch(()=>{});
   }, [checked, needsAuth, apiKey, refreshConfig]);
+
+  useEffect(() => () => runAbortRef.current?.abort(), []);
 
   const pushTeam = useCallback(async map => {
     await fetch_(`${API}/agents`, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ agents:Object.values(map) }) });
@@ -123,24 +126,50 @@ export default function App() {
 
   const startRun = useCallback(() => {
     if (running) return;
+    runAbortRef.current?.abort();
+    const controller = new AbortController();
+    runAbortRef.current = controller;
     setRunning(true); setLogs([]); setIssues({}); setPhase("scan"); setRunStats(null); setRunCost(0);
     fetch_(`${API}/run`, {
       method:"POST", headers:{"Content-Type":"application/json"},
+      signal: controller.signal,
       body: JSON.stringify({ ...params, min_stars:+params.min_stars, max_repos:+params.max_repos, max_issues:+params.max_issues, concurrency:+params.concurrency, cost_budget_usd:+params.cost_budget_usd, retry_count:+params.retry_count, labels:["bug"] }),
     }).then(res => {
+      if (!res.ok || !res.body) {
+        setRunning(false);
+        return;
+      }
       const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = "";
       const pump = () => reader.read().then(({ done, value }) => {
-        if (done) { setRunning(false); return; }
+        if (done) { if (runAbortRef.current === controller) runAbortRef.current = null; setRunning(false); return; }
         buf += dec.decode(value, { stream:true });
         const parts = buf.split("\n\n"); buf = parts.pop();
         parts.forEach(p => {
           const em = p.match(/^event: (.+)/m); const dm = p.match(/^data: (.+)/m);
-          if (em && dm) handle(em[1].trim(), JSON.parse(dm[1]));
+          if (em && dm) {
+            try {
+              handle(em[1].trim(), JSON.parse(dm[1]));
+            } catch (error) {
+              console.warn("Skipping malformed SSE payload", error);
+            }
+          }
         });
         pump();
+      }).catch(error => {
+        if (error?.name !== "AbortError") {
+          console.warn("RepoReaper run stream ended unexpectedly", error);
+        }
+        if (runAbortRef.current === controller) runAbortRef.current = null;
+        setRunning(false);
       });
       pump();
-    }).catch(() => setRunning(false));
+    }).catch(error => {
+      if (error?.name !== "AbortError") {
+        console.warn("RepoReaper run request failed", error);
+      }
+      if (runAbortRef.current === controller) runAbortRef.current = null;
+      setRunning(false);
+    });
   }, [running, params, handle, apiKey]);
 
   if (!checked) return (
@@ -148,7 +177,7 @@ export default function App() {
       🔱
     </div>
   );
-  if (needsAuth) return <LoginPage onLogin={login} icon="🔱" title="RepoReaper" subtitle="by PatchHive" storageKey="reaper_api_key" apiBase={API} />;
+  if (needsAuth) return <LoginPage onLogin={login} icon="🔱" title="RepoReaper" subtitle="by PatchHive" storageKey="reaper_api_key" apiBase={API} authError={authError} bootstrapRequired={bootstrapRequired} onGenerateKey={generateKey} />;
 
   const hasCooldown = Object.keys(cooldowns).length > 0;
 

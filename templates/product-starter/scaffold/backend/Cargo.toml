@@ -8,6 +8,7 @@ name = "__PRODUCT_SLUG__"
 path = "src/main.rs"
 
 [dependencies]
+anyhow = "1"
 axum = { version = "0.7", features = ["macros"] }
 tokio = { version = "1", features = ["full"] }
 tower-http = { version = "0.5", features = ["cors"] }

@@ -95,9 +95,21 @@ const configuredUseLoggedInUser = envBool(
   "PATCHHIVE_AI_COPILOT_USE_LOGGED_IN_USER",
   configuredGithubToken ? false : true,
 );
-const copilotEnv = {
-  ...process.env,
-};
+const copilotEnv = {};
+
+for (const name of [
+  "HOME",
+  "PATH",
+  "XDG_CONFIG_HOME",
+  "XDG_CACHE_HOME",
+  "NODE_OPTIONS",
+  "GH_TOKEN",
+  "GITHUB_TOKEN",
+]) {
+  if (process.env[name]) {
+    copilotEnv[name] = process.env[name];
+  }
+}
 
 if (configuredConfigDir) {
   copilotEnv.COPILOT_HOME = configuredConfigDir;

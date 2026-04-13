@@ -1,15 +1,15 @@
 import { API } from "../config.js";
 import { useState, useEffect } from "react";
-import { createApiFetcher } from "@patchhivehq/product-shell";
+import { useApiFetcher } from "@patchhivehq/product-shell";
 import { S, Btn, EmptyState, ConfidenceBar, timeAgo } from "@patchhivehq/ui";
 
 export default function RejectedPanel({ apiKey = "", onViewDiff }) {
   const [rejected, setRejected] = useState([]);
   const [expanded, setExpanded] = useState(null);
-  const fetch_ = createApiFetcher(apiKey);
+  const fetch_ = useApiFetcher(apiKey);
 
   const load = () => fetch_(`${API}/rejected`).then(r => r.json()).then(d => setRejected(d.rejected || []));
-  useEffect(load, []);
+  useEffect(load, [fetch_]);
 
   return (
     <div>

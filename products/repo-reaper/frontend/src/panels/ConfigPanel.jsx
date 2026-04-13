@@ -1,6 +1,6 @@
 import { API } from "../config.js";
 import { useState, useEffect } from "react";
-import { createApiFetcher } from "@patchhivehq/product-shell";
+import { useApiFetcher } from "@patchhivehq/product-shell";
 import { S, Input, Btn, Divider } from "@patchhivehq/ui";
 
 export default function ConfigPanel({ existingConfig, apiKey = "", onSaved }) {
@@ -12,7 +12,7 @@ export default function ConfigPanel({ existingConfig, apiKey = "", onSaved }) {
   const [saved, setSaved] = useState(false);
   const [aiStatus, setAiStatus] = useState(existingConfig?.AI_LOCAL_STATUS || { configured:false });
   const [loadingAiStatus, setLoadingAiStatus] = useState(false);
-  const fetch_ = createApiFetcher(apiKey);
+  const fetch_ = useApiFetcher(apiKey);
 
   useEffect(() => {
     if (existingConfig) setCfg(c => ({ ...c, ...existingConfig }));
@@ -37,7 +37,7 @@ export default function ConfigPanel({ existingConfig, apiKey = "", onSaved }) {
       return;
     }
     loadAiStatus();
-  }, [existingConfig?.AI_LOCAL_STATUS, existingConfig?.PATCHHIVE_AI_URL]);
+  }, [existingConfig?.AI_LOCAL_STATUS, existingConfig?.PATCHHIVE_AI_URL, fetch_]);
 
   const set = k => v => setCfg(c => ({ ...c, [k]: v }));
 

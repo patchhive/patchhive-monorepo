@@ -16,6 +16,15 @@ fn connect() -> Result<Connection> {
     Connection::open(db_path()).context("failed to open SignalHive database")
 }
 
+pub fn health_check() -> bool {
+    connect()
+        .and_then(|conn| {
+            conn.query_row("SELECT 1", [], |row| row.get::<_, i64>(0))
+                .context("failed to query SignalHive database")
+        })
+        .is_ok()
+}
+
 fn column_exists(conn: &Connection, table: &str, column: &str) -> Result<bool> {
     let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
     let rows = stmt.query_map([], |row| row.get::<_, String>(1))?;

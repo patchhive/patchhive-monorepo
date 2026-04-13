@@ -12,6 +12,7 @@ use std::{
 use anyhow::{anyhow, Context, Result};
 use axum::{
     extract::State,
+    http::HeaderMap,
     http::StatusCode,
     response::IntoResponse,
     routing::{get, post},
@@ -35,6 +36,7 @@ struct AppState {
     provider_order: Vec<String>,
     base_url_hint: String,
     response_counter: Arc<AtomicU64>,
+    gateway_api_key: Option<String>,
 }
 
 struct AdapterClient {
@@ -181,6 +183,16 @@ async fn main() -> Result<()> {
         .ok()
         .and_then(|value| value.parse::<u16>().ok())
         .unwrap_or(8787);
+    let gateway_api_key = std::env::var("PATCHHIVE_AI_GATEWAY_API_KEY")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+
+    if !host_is_local(&host) && gateway_api_key.is_none() {
+        return Err(anyhow!(
+            "PATCHHIVE_AI_GATEWAY_API_KEY is required when PATCHHIVE_AI_HOST binds to a non-local address"
+        ));
+    }
 
     let mut adapters = HashMap::new();
     adapters.insert("codex".to_string(), Arc::new(spawn_adapter("codex").await?));
@@ -200,6 +212,7 @@ async fn main() -> Result<()> {
         provider_order,
         base_url_hint: format!("http://{host}:{port}/v1"),
         response_counter: Arc::new(AtomicU64::new(1)),
+        gateway_api_key,
     };
 
     let app = Router::new()
@@ -218,7 +231,11 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn health(State(state): State<AppState>) -> impl IntoResponse {
+async fn health(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+    if let Err(response) = authorize_request(&state, &headers) {
+        return response;
+    }
+
     let mut providers = Map::new();
     let mut any_ok = false;
 
@@ -262,7 +279,11 @@ async fn health(State(state): State<AppState>) -> impl IntoResponse {
     .into_response()
 }
 
-async fn list_models(State(state): State<AppState>) -> impl IntoResponse {
+async fn list_models(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+    if let Err(response) = authorize_request(&state, &headers) {
+        return response;
+    }
+
     let mut data = Vec::new();
     let mut seen_ids = HashSet::new();
     let mut errors = Vec::new();
@@ -312,7 +333,11 @@ async fn list_models(State(state): State<AppState>) -> impl IntoResponse {
     .into_response()
 }
 
-async fn chat_completions(State(state): State<AppState>, Json(body): Json<Value>) -> impl IntoResponse {
+async fn chat_completions(State(state): State<AppState>, headers: HeaderMap, Json(body): Json<Value>) -> impl IntoResponse {
+    if let Err(response) = authorize_request(&state, &headers) {
+        return response;
+    }
+
     if body
         .get("stream")
         .and_then(Value::as_bool)
@@ -348,7 +373,11 @@ async fn chat_completions(State(state): State<AppState>, Json(body): Json<Value>
     }
 }
 
-async fn responses_api(State(state): State<AppState>, Json(body): Json<Value>) -> impl IntoResponse {
+async fn responses_api(State(state): State<AppState>, headers: HeaderMap, Json(body): Json<Value>) -> impl IntoResponse {
+    if let Err(response) = authorize_request(&state, &headers) {
+        return response;
+    }
+
     if body
         .get("stream")
         .and_then(Value::as_bool)
@@ -471,6 +500,36 @@ async fn complete_with_fallback(
     };
 
     Err(CompletionFailure { message, attempts })
+}
+
+fn host_is_local(host: &str) -> bool {
+    matches!(host.trim(), "127.0.0.1" | "localhost" | "::1" | "[::1]")
+}
+
+fn authorize_request(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> std::result::Result<(), axum::response::Response> {
+    let Some(expected) = state.gateway_api_key.as_deref() else {
+        return Ok(());
+    };
+
+    let provided = headers
+        .get("x-api-key")
+        .or_else(|| headers.get("authorization"))
+        .and_then(|value| value.to_str().ok())
+        .map(|value| value.trim_start_matches("Bearer ").trim())
+        .unwrap_or("");
+
+    if provided == expected {
+        Ok(())
+    } else {
+        Err((
+            StatusCode::UNAUTHORIZED,
+            Json(json!({ "error": "Unauthorized — provide X-API-Key header" })),
+        )
+            .into_response())
+    }
 }
 
 async fn spawn_adapter(name: &'static str) -> Result<AdapterClient> {

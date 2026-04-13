@@ -11,6 +11,15 @@ fn connect() -> Result<Connection> {
     Connection::open(db_path()).context("Could not open MergeKeeper database")
 }
 
+pub fn health_check() -> bool {
+    connect()
+        .and_then(|conn| {
+            conn.query_row("SELECT 1", [], |row| row.get::<_, i64>(0))
+                .context("Could not query MergeKeeper database")
+        })
+        .is_ok()
+}
+
 pub fn init_db() -> Result<()> {
     let conn = connect()?;
     conn.execute_batch(

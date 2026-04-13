@@ -3,7 +3,7 @@ use std::collections::{BTreeSet, HashMap};
 use anyhow::Result;
 use axum::{
     extract::{Path, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     Json,
 };
 use chrono::{DateTime, Utc};
@@ -61,21 +61,27 @@ struct PullAnalysis {
 }
 
 pub async fn auth_status() -> Json<serde_json::Value> {
-    Json(json!({"auth_enabled": auth_enabled()}))
+    Json(crate::auth::auth_status_payload())
 }
 
 pub async fn login(Json(body): Json<LoginBody>) -> Result<Json<serde_json::Value>, StatusCode> {
+    if !auth_enabled() {
+        return Err(StatusCode::SERVICE_UNAVAILABLE);
+    }
     if !verify_token(&body.api_key) {
         return Err(StatusCode::UNAUTHORIZED);
     }
-    Ok(Json(json!({"ok": true, "auth_enabled": true})))
+    Ok(Json(json!({"ok": true, "auth_enabled": true, "auth_configured": true})))
 }
 
-pub async fn gen_key() -> Result<Json<serde_json::Value>, StatusCode> {
+pub async fn gen_key(headers: HeaderMap) -> Result<Json<serde_json::Value>, StatusCode> {
     if auth_enabled() {
         return Err(StatusCode::FORBIDDEN);
     }
-    let key = generate_and_save_key();
+    if !crate::auth::bootstrap_request_allowed(&headers) {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    let key = generate_and_save_key().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(json!({"api_key": key, "message": "Store this — it won't be shown again"})))
 }
 
@@ -84,14 +90,16 @@ pub async fn health() -> Json<serde_json::Value> {
         .get()
         .map(|checks| count_errors(checks))
         .unwrap_or(0);
+    let db_ok = db::health_check();
     let counts = db::overview_counts();
 
     Json(json!({
-        "status": if errors > 0 { "degraded" } else { "ok" },
+        "status": if errors > 0 || !db_ok { "degraded" } else { "ok" },
         "version": "0.1.0",
         "product": "DepTriage by PatchHive",
         "auth_enabled": auth_enabled(),
         "config_errors": errors,
+        "db_ok": db_ok,
         "db_path": db::db_path(),
         "github_ready": github::github_token_configured(),
         "scan_count": counts.scans,

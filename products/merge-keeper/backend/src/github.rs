@@ -1,7 +1,7 @@
 use anyhow::Result;
 use patchhive_github_pr::{
     env_value, github_token_from_env, GitHubCheckRunRequest, GitHubCommitStatusRequest,
-    GitHubCommitHealth, GitHubManagedCommentResult, GitHubPrClient, GitHubPullRequest,
+    GitHubCommitHealth, GitHubManagedCommentResult, GitHubPrClient, GitHubPullRequestDetail,
     GitHubPullReview, GitHubPullReviewThread,
 };
 use reqwest::Client;
@@ -13,7 +13,7 @@ const CHECK_RUN_NAME: &str = "MergeKeeper";
 const COMMENT_MARKER: &str = "<!-- patchhive-mergekeeper-report -->";
 
 pub struct GitHubMergeContext {
-    pub pr: GitHubPullRequest,
+    pub pr: GitHubPullRequestDetail,
     pub reviews: Vec<GitHubPullReview>,
     pub threads: Vec<GitHubPullReviewThread>,
     pub commit_health: GitHubCommitHealth,

@@ -8,5 +8,7 @@ RUN cargo build --release
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y git ca-certificates libssl3 && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /app/target/release/repo-reaper /usr/local/bin/repo-reaper
+RUN useradd --system --create-home --uid 10001 patchhive && chown patchhive:patchhive /usr/local/bin/repo-reaper
 WORKDIR /app
+USER patchhive
 CMD ["repo-reaper"]

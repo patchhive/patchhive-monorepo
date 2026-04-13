@@ -1,5 +1,5 @@
 import { API } from "../config.js";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createApiFetcher } from "@patchhivehq/product-shell";
 import { S, Input, Sel, Btn, EmptyState, IssueRow } from "@patchhivehq/ui";
 
@@ -11,16 +11,28 @@ export default function DryRunPanel({ agents, apiKey = "", onViewDiff }) {
   const [issues, setIssues] = useState([]);
   const [report, setReport] = useState("");
   const [logs, setLogs] = useState([]);
+  const abortRef = useRef(null);
   const set = k => v => setParams(p => ({ ...p, [k]: v }));
 
   const fetch_ = createApiFetcher(apiKey);
 
+  useEffect(() => () => abortRef.current?.abort(), []);
+
   const run = async () => {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     setRunning(true); setIssues([]); setReport(""); setLogs([]);
     const res = await fetch_(`${API}/dry-run`, {
       method:"POST", headers:{ "Content-Type":"application/json" },
+      signal: controller.signal,
       body: JSON.stringify({ ...params, min_stars:+params.min_stars, max_repos:+params.max_repos, max_issues:+params.max_issues, labels:["bug"] }),
     });
+    if (!res.ok || !res.body) {
+      if (abortRef.current === controller) abortRef.current = null;
+      setRunning(false);
+      return;
+    }
     const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = "";
     const pump = async () => {
       const { done, value } = await reader.read();
@@ -30,16 +42,32 @@ export default function DryRunPanel({ agents, apiKey = "", onViewDiff }) {
       for (const p of parts) {
         const em = p.match(/^event: (.+)/m); const dm = p.match(/^data: (.+)/m);
         if (em && dm) {
-          const ev = em[1].trim(); const d = JSON.parse(dm[1]);
-          if (ev === "issues")          setIssues(d.issues || []);
-          if (ev === "dry_run_report")  setReport(d.report || "");
-          if (ev === "agent_log")       setLogs(l => [...l.slice(-100), d]);
-          if (ev === "done")            setRunning(false);
+          try {
+            const ev = em[1].trim(); const d = JSON.parse(dm[1]);
+            if (ev === "issues")          setIssues(d.issues || []);
+            if (ev === "dry_run_report")  setReport(d.report || "");
+            if (ev === "agent_log")       setLogs(l => [...l.slice(-100), d]);
+            if (ev === "done")            setRunning(false);
+          } catch (error) {
+            console.warn("Skipping malformed dry-run SSE payload", error);
+          }
         }
       }
-      pump();
+      pump().catch(error => {
+        if (error?.name !== "AbortError") {
+          console.warn("RepoReaper dry-run stream ended unexpectedly", error);
+        }
+        if (abortRef.current === controller) abortRef.current = null;
+        setRunning(false);
+      });
     };
-    pump();
+    pump().catch(error => {
+      if (error?.name !== "AbortError") {
+        console.warn("RepoReaper dry-run stream ended unexpectedly", error);
+      }
+      if (abortRef.current === controller) abortRef.current = null;
+      setRunning(false);
+    });
   };
 
   return (

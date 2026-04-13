@@ -7,7 +7,7 @@ use axum::{
     Router,
 };
 use patchhive_github_pr::{env_value, github_token_from_env, verify_github_webhook_signature};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::{json, Value};
 use uuid::Uuid;
 use chrono::{Utc, Duration};
@@ -165,9 +165,15 @@ async fn webhook_single_fix(state: AppState, repo: &str, issue: Value) {
     let _ = start_run(&run_id, &json!({"source":"webhook","repo":repo,"issue":issue["number"]}), false);
     let (tx, _rx) = tokio::sync::mpsc::channel(32); // fire-and-forget channel
     let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(1));
+    let cancel_requested = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
 
     use crate::fix_worker::{fix_one, FixParams};
-    let params = FixParams { retry_count, min_conf, budget: 0.0, run_id: run_id.clone() };
+    let params = FixParams {
+        retry_count,
+        min_conf,
+        run_id: run_id.clone(),
+        cancel_requested,
+    };
     fix_one(iss, 0, judges, reaper_list, smiths, gatekeeper_list, sem, params, run_cost.clone(), tx, state.http.clone()).await;
 
     let Ok(conn) = get_conn() else { return };
@@ -208,7 +214,7 @@ async fn webhook_pr_comment(state: AppState, repo: &str, issue: Value, comment: 
     if git_clone(fork["clone_url"].as_str().unwrap_or(""), &work_dir, Some(&bot_user), Some(&bot_token)).await.is_err() { return; }
     if git_branch(&work_dir, &branch).await.is_err() { return; }
 
-    let codebase = collect_files_all(&work_dir, 60_000);
+    let codebase = collect_files_all(&work_dir, 60_000).await;
     let Ok((result, _)) = agent_pr_comment_fix(&state.http, issue["title"].as_str().unwrap_or(""), comment["body"].as_str().unwrap_or(""), &codebase, &reaper).await else { return };
     let Some(patch) = result["patch"].as_str() else { return };
 
@@ -263,7 +269,8 @@ pub async fn scheduler_loop(state: AppState) {
                 let state_clone = state.clone();
                 tokio::spawn(async move {
                     if let Ok(req) = serde_json::from_value::<crate::pipeline::RunRequest>(cfg) {
-                        let _ = crate::pipeline::run(axum::extract::State(state_clone), axum::Json(req)).await;
+                        let (tx, _rx) = tokio::sync::mpsc::channel(32);
+                        crate::pipeline::execute_run(state_clone, req, tx).await;
                         tracing::info!("Scheduled run {id} triggered");
                     } else {
                         tracing::warn!("Scheduled run {id} has invalid config_json");

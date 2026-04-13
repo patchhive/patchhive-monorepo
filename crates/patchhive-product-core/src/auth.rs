@@ -5,11 +5,14 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
+use anyhow::{Context, Result};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::{
+    collections::{HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
+    sync::{Mutex, OnceLock, RwLock},
 };
 
 #[derive(Clone, Debug)]
@@ -58,15 +61,31 @@ fn hash_token(token: &str) -> String {
     hex::encode(hasher.finalize())
 }
 
-fn stored_hash(config: &ApiKeyAuthConfig) -> String {
-    std::env::var(&config.hash_env_var).unwrap_or_default()
+fn runtime_hashes() -> &'static RwLock<HashMap<String, String>> {
+    static RUNTIME_HASHES: OnceLock<RwLock<HashMap<String, String>>> = OnceLock::new();
+    RUNTIME_HASHES.get_or_init(|| RwLock::new(HashMap::new()))
 }
 
-fn persist_hash(env_path: &Path, env_var: &str, hash: &str) {
-    let _ = std::fs::OpenOptions::new()
+fn warned_configs() -> &'static Mutex<HashSet<String>> {
+    static WARNED: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+    WARNED.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+fn stored_hash(config: &ApiKeyAuthConfig) -> String {
+    runtime_hashes()
+        .read()
+        .ok()
+        .and_then(|hashes| hashes.get(&config.hash_env_var).cloned())
+        .or_else(|| std::env::var(&config.hash_env_var).ok())
+        .unwrap_or_default()
+}
+
+fn persist_hash(env_path: &Path, env_var: &str, hash: &str) -> Result<()> {
+    std::fs::OpenOptions::new()
         .create(true)
         .append(true)
-        .open(env_path);
+        .open(env_path)
+        .with_context(|| format!("failed to open {}", env_path.display()))?;
 
     let existing = fs::read_to_string(env_path).unwrap_or_default();
     let filtered = existing
@@ -81,7 +100,9 @@ fn persist_hash(env_path: &Path, env_var: &str, hash: &str) {
         format!("{filtered}\n{env_var}={hash}\n")
     };
 
-    let _ = fs::write(env_path, content);
+    fs::write(env_path, content)
+        .with_context(|| format!("failed to write {}", env_path.display()))?;
+    Ok(())
 }
 
 fn request_token(headers: &HeaderMap) -> &str {
@@ -97,10 +118,27 @@ pub fn auth_enabled(config: &ApiKeyAuthConfig) -> bool {
     !stored_hash(config).is_empty()
 }
 
+fn warn_auth_unconfigured(config: &ApiKeyAuthConfig) {
+    let Ok(mut warned) = warned_configs().lock() else {
+        tracing::warn!(
+            "{} auth is not configured; protected endpoints are unavailable until /auth/generate-key succeeds",
+            config.hash_env_var
+        );
+        return;
+    };
+
+    if warned.insert(config.hash_env_var.clone()) {
+        tracing::warn!(
+            "{} auth is not configured; protected endpoints are unavailable until /auth/generate-key succeeds",
+            config.hash_env_var
+        );
+    }
+}
+
 pub fn verify_token(config: &ApiKeyAuthConfig, token: &str) -> bool {
     let stored = stored_hash(config);
     if stored.is_empty() {
-        return true;
+        return false;
     }
 
     let actual = hash_token(token).into_bytes();
@@ -116,16 +154,88 @@ pub fn verify_token(config: &ApiKeyAuthConfig, token: &str) -> bool {
         == 0
 }
 
-pub fn generate_and_save_key(config: &ApiKeyAuthConfig) -> String {
+pub fn generate_and_save_key(config: &ApiKeyAuthConfig) -> Result<String> {
     let key = format!(
         "{}{}",
         config.key_prefix,
         uuid::Uuid::new_v4().to_string().replace('-', "")
     );
     let hash = hash_token(&key);
-    std::env::set_var(&config.hash_env_var, &hash);
-    persist_hash(&config.env_path, &config.hash_env_var, &hash);
-    key
+
+    runtime_hashes()
+        .write()
+        .map_err(|_| anyhow::anyhow!("failed to acquire runtime auth lock"))?
+        .insert(config.hash_env_var.clone(), hash.clone());
+    persist_hash(&config.env_path, &config.hash_env_var, &hash)?;
+    Ok(key)
+}
+
+pub fn bootstrap_request_allowed(headers: &HeaderMap) -> bool {
+    if matches!(
+        std::env::var("PATCHHIVE_ALLOW_REMOTE_BOOTSTRAP")
+            .ok()
+            .as_deref(),
+        Some("1" | "true" | "TRUE" | "yes" | "on")
+    ) {
+        return true;
+    }
+
+    for header in ["origin", "referer"] {
+        if let Some(value) = headers.get(header).and_then(|value| value.to_str().ok()) {
+            if !local_endpoint(value) {
+                return false;
+            }
+        }
+    }
+
+    if let Some(value) = headers.get("x-forwarded-for").and_then(|value| value.to_str().ok()) {
+        let client = value.split(',').next().unwrap_or("").trim();
+        if !matches!(client, "" | "127.0.0.1" | "::1" | "[::1]") {
+            return false;
+        }
+    }
+
+    headers
+        .get("host")
+        .and_then(|value| value.to_str().ok())
+        .map(local_endpoint)
+        .unwrap_or(false)
+}
+
+pub fn auth_status_payload(config: &ApiKeyAuthConfig) -> serde_json::Value {
+    let configured = auth_enabled(config);
+    json!({
+        "auth_enabled": configured,
+        "auth_configured": configured,
+        "bootstrap_required": !configured,
+        "auth_storage": "session",
+    })
+}
+
+fn local_endpoint(value: &str) -> bool {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+
+    let without_scheme = trimmed
+        .split("://")
+        .nth(1)
+        .unwrap_or(trimmed)
+        .split('/')
+        .next()
+        .unwrap_or(trimmed)
+        .trim();
+
+    let host = without_scheme
+        .trim_start_matches('[')
+        .trim_end_matches(']')
+        .split(':')
+        .next()
+        .unwrap_or(without_scheme)
+        .trim();
+
+    matches!(host, "localhost" | "127.0.0.1" | "::1")
 }
 
 pub async fn auth_middleware(
@@ -134,13 +244,20 @@ pub async fn auth_middleware(
     request: Request,
     next: Next,
 ) -> Response {
-    if !auth_enabled(config) {
-        return next.run(request).await;
-    }
-
     let path = request.uri().path();
     if config.public_paths.iter().any(|public| path == public) {
         return next.run(request).await;
+    }
+
+    if !auth_enabled(config) {
+        warn_auth_unconfigured(config);
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({
+                "error": "API key auth is not configured yet. Generate the first key from a localhost session before using protected endpoints."
+            })),
+        )
+            .into_response();
     }
 
     let token = request_token(&headers);

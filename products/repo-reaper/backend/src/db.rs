@@ -1,8 +1,12 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
+use once_cell::sync::OnceCell;
 use rusqlite::{Connection, params};
 use serde_json::Value;
 use std::path::PathBuf;
+use std::sync::{Mutex, MutexGuard};
 use chrono::Utc;
+
+static DB_CONN: OnceCell<Mutex<Connection>> = OnceCell::new();
 
 pub fn db_path() -> PathBuf {
     std::env::var("REAPER_DB_PATH")
@@ -10,16 +14,32 @@ pub fn db_path() -> PathBuf {
         .unwrap_or_else(|_| PathBuf::from("repo-reaper.db"))
 }
 
-pub fn get_conn() -> Result<Connection> {
+fn open_conn() -> Result<Connection> {
     let conn = Connection::open(db_path())?;
     conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
     Ok(conn)
+}
+
+pub fn get_conn() -> Result<MutexGuard<'static, Connection>> {
+    let mutex = DB_CONN.get_or_try_init(|| open_conn().map(Mutex::new))?;
+    mutex
+        .lock()
+        .map_err(|_| anyhow!("repo-reaper database mutex poisoned"))
 }
 
 pub fn init_db() -> Result<()> {
     let conn = get_conn()?;
     conn.execute_batch(SCHEMA)?;
     Ok(())
+}
+
+pub fn health_check() -> bool {
+    get_conn()
+        .and_then(|conn| {
+            conn.query_row("SELECT 1", [], |row| row.get::<_, i64>(0))
+                .map_err(Into::into)
+        })
+        .is_ok()
 }
 
 const SCHEMA: &str = "
@@ -164,17 +184,38 @@ pub fn track_pr(pr_number: i64, repo: &str, run_id: &str) -> Result<()> {
 }
 
 pub fn update_perf(agent_name: &str, provider: &str, model: &str, role: &str, outcome: &str, cost: f64) -> Result<()> {
-    let col = match outcome { "fixed" => "total_fixed", "skipped" => "total_skipped", _ => "total_errors" };
     let conn = get_conn()?;
     conn.execute(
         "INSERT INTO agent_performance(agent_name,provider,model,role,total_fixed,total_skipped,total_errors,total_cost_usd)
          VALUES(?1,?2,?3,?4,0,0,0,0) ON CONFLICT(agent_name,provider,model,role) DO NOTHING",
         params![agent_name, provider, model, role],
     )?;
-    conn.execute(
-        &format!("UPDATE agent_performance SET {col}={col}+1, total_cost_usd=total_cost_usd+?1 WHERE agent_name=?2 AND provider=?3 AND model=?4 AND role=?5"),
-        params![cost, agent_name, provider, model, role],
-    )?;
+    match outcome {
+        "fixed" => {
+            conn.execute(
+                "UPDATE agent_performance
+                 SET total_fixed=total_fixed+1, total_cost_usd=total_cost_usd+?1
+                 WHERE agent_name=?2 AND provider=?3 AND model=?4 AND role=?5",
+                params![cost, agent_name, provider, model, role],
+            )?;
+        }
+        "skipped" => {
+            conn.execute(
+                "UPDATE agent_performance
+                 SET total_skipped=total_skipped+1, total_cost_usd=total_cost_usd+?1
+                 WHERE agent_name=?2 AND provider=?3 AND model=?4 AND role=?5",
+                params![cost, agent_name, provider, model, role],
+            )?;
+        }
+        _ => {
+            conn.execute(
+                "UPDATE agent_performance
+                 SET total_errors=total_errors+1, total_cost_usd=total_cost_usd+?1
+                 WHERE agent_name=?2 AND provider=?3 AND model=?4 AND role=?5",
+                params![cost, agent_name, provider, model, role],
+            )?;
+        }
+    }
     Ok(())
 }
 

@@ -8,5 +8,7 @@ RUN cargo build --release
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y ca-certificates libssl3 && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /app/target/release/__PRODUCT_SLUG__ /usr/local/bin/__PRODUCT_SLUG__
+RUN useradd --system --create-home --uid 10001 patchhive && chown patchhive:patchhive /usr/local/bin/__PRODUCT_SLUG__
 WORKDIR /app
+USER patchhive
 CMD ["__PRODUCT_SLUG__"]

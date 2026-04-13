@@ -1,16 +1,16 @@
 import { API } from "../config.js";
 import { useState, useEffect } from "react";
-import { createApiFetcher } from "@patchhivehq/product-shell";
+import { useApiFetcher } from "@patchhivehq/product-shell";
 import { S, Btn, EmptyState, timeAgo } from "@patchhivehq/ui";
 
 export default function HistoryPanel({ apiKey = "", onViewDiff }) {
   const [history, setHistory] = useState([]);
   const [expanded, setExpanded] = useState(null);
-  const fetch_ = createApiFetcher(apiKey);
+  const fetch_ = useApiFetcher(apiKey);
 
   useEffect(() => {
     fetch_(`${API}/history`).then(r => r.json()).then(d => setHistory(d.history || [])).catch(() => {});
-  }, []);
+  }, [fetch_]);
 
   const refresh = () => fetch_(`${API}/history`).then(r => r.json()).then(d => setHistory(d.history || []));
 

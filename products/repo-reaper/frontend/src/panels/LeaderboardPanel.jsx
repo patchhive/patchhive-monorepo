@@ -1,18 +1,18 @@
 import { API } from "../config.js";
 import { useState, useEffect } from "react";
-import { createApiFetcher } from "@patchhivehq/product-shell";
+import { useApiFetcher } from "@patchhivehq/product-shell";
 import { S, Btn, EmptyState, ConfidenceBar, ROLE_META, PROVIDERS } from "@patchhivehq/ui";
 
 export default function LeaderboardPanel({ apiKey = "" }) {
   const [data, setData] = useState([]);
   const [lifetime, setLifetime] = useState(0);
-  const fetch_ = createApiFetcher(apiKey);
+  const fetch_ = useApiFetcher(apiKey);
 
   const load = () => {
     fetch_(`${API}/leaderboard`).then(r => r.json()).then(d => setData(d.leaderboard || []));
     fetch_(`${API}/stats/lifetime-cost`).then(r => r.json()).then(d => setLifetime(d.lifetime_cost_usd || 0));
   };
-  useEffect(load, []);
+  useEffect(load, [fetch_]);
 
   return (
     <div>

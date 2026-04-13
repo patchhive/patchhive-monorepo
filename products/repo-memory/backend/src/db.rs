@@ -12,6 +12,12 @@ fn connect() -> rusqlite::Result<Connection> {
     Connection::open(db_path())
 }
 
+pub fn health_check() -> bool {
+    connect()
+        .and_then(|conn| conn.query_row("SELECT 1", [], |row| row.get::<_, i64>(0)))
+        .is_ok()
+}
+
 pub fn init_db() -> rusqlite::Result<()> {
     let conn = connect()?;
     conn.execute_batch(

@@ -180,13 +180,18 @@ async fn openai_call(http: &Client, p: &AgentCallParams<'_>, base: &str) -> Resu
 async fn gemini_call(http: &Client, p: &AgentCallParams<'_>) -> Result<(String, f64)> {
     let key_owned = p.api_key.map(|s| s.to_string()).or_else(|| std::env::var("PROVIDER_API_KEY").ok()).ok_or_else(|| anyhow!("No Gemini key"))?;
     let key = key_owned.as_str();
-    let url = format!("https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}", p.model, key);
+    let url = format!("https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent", p.model);
     let body = json!({
         "system_instruction": {"parts": [{"text": p.system}]},
         "contents": [{"parts": [{"text": p.prompt}]}],
         "generationConfig": {"maxOutputTokens": 2000}
     });
-    let resp = http.post(&url).json(&body).send().await?;
+    let resp = http
+        .post(&url)
+        .header("x-goog-api-key", key)
+        .json(&body)
+        .send()
+        .await?;
     if !resp.status().is_success() {
         let status = resp.status();
         let txt = resp.text().await.unwrap_or_default();
@@ -208,6 +213,11 @@ async fn ollama_call(http: &Client, p: &AgentCallParams<'_>) -> Result<(String, 
         ]
     });
     let resp = http.post(format!("{base}/api/chat")).json(&body).send().await?;
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let txt = resp.text().await.unwrap_or_default();
+        return Err(anyhow!("Ollama {status}: {txt}"));
+    }
     let data: Value = resp.json().await?;
     let text = data["message"]["content"].as_str().unwrap_or("").to_string();
     Ok((text, 0.0))

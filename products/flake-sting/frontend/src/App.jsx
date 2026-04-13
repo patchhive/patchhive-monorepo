@@ -20,7 +20,7 @@ const TABS = [
 ];
 
 export default function App() {
-  const { apiKey, checked, needsAuth, login, logout } = useApiKeyAuth({
+  const { apiKey, checked, needsAuth, login, logout, authError, bootstrapRequired, generateKey } = useApiKeyAuth({
     apiBase: API,
     storageKey: "flake-sting_api_key",
   });
@@ -108,6 +108,9 @@ export default function App() {
         subtitle="by PatchHive"
         storageKey="flake-sting_api_key"
         apiBase={API}
+        authError={authError}
+        bootstrapRequired={bootstrapRequired}
+        onGenerateKey={generateKey}
       />
     );
   }

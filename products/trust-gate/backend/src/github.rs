@@ -1,7 +1,7 @@
 use anyhow::Result;
 use patchhive_github_pr::{
     env_value, github_token_from_env, GitHubCheckRunRequest, GitHubCommitStatusRequest,
-    GitHubManagedCommentResult, GitHubPrClient, GitHubPullRequest,
+    GitHubManagedCommentResult, GitHubPrClient, GitHubPullRequestDetail,
 };
 use reqwest::Client;
 
@@ -43,7 +43,7 @@ pub async fn fetch_pull_request(
     client: &Client,
     repo: &str,
     pr_number: i64,
-) -> Result<GitHubPullRequest> {
+) -> Result<GitHubPullRequestDetail> {
     pr_client(client).fetch_pull_request(repo, pr_number).await
 }
 

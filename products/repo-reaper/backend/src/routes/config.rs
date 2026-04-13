@@ -4,6 +4,7 @@ use axum::{
     routing::{delete, get},
     Router,
 };
+use std::{collections::HashSet, fs, path::Path as StdPath};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -66,7 +67,54 @@ const ROLES: &[(&str, &str, &str, &str, &str)] = &[
     ("gatekeeper", "Gatekeeper", "🔒","#2a8a4a", "Validates & opens PRs"),
 ];
 
-fn env(k: &str) -> String { std::env::var(k).unwrap_or_default() }
+fn env(k: &str) -> String {
+    env_from_file(StdPath::new(".env"), k)
+        .or_else(|| std::env::var(k).ok())
+        .unwrap_or_default()
+}
+
+fn env_from_file(path: &StdPath, key: &str) -> Option<String> {
+    let content = fs::read_to_string(path).ok()?;
+    content
+        .lines()
+        .find_map(|line| {
+            let trimmed = line.trim();
+            if trimmed.starts_with('#') {
+                return None;
+            }
+            let (line_key, value) = trimmed.split_once('=')?;
+            if line_key.trim() == key {
+                Some(value.trim().to_string())
+            } else {
+                None
+            }
+        })
+}
+
+fn persist_env_updates(path: &StdPath, updates: &[(String, String)]) -> std::io::Result<()> {
+    let update_keys: HashSet<&str> = updates.iter().map(|(key, _)| key.as_str()).collect();
+    let existing = fs::read_to_string(path).unwrap_or_default();
+    let mut retained = existing
+        .lines()
+        .filter(|line| {
+            let trimmed = line.trim_start();
+            !update_keys
+                .iter()
+                .any(|key| trimmed.starts_with(&format!("{key}=")))
+        })
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+
+    for (key, value) in updates {
+        retained.push(format!("{key}={value}"));
+    }
+
+    let mut content = retained.join("\n");
+    if !content.is_empty() {
+        content.push('\n');
+    }
+    fs::write(path, content)
+}
 
 fn normalize_repo_list_type(value: &str) -> Option<&'static str> {
     match value.trim().to_ascii_lowercase().as_str() {
@@ -134,16 +182,19 @@ async fn save_config(Json(body): Json<ConfigSave>) -> Json<Value> {
         ("COST_BUDGET_USD",       body.cost_budget),
         ("MIN_REVIEW_CONFIDENCE", body.min_conf),
     ];
+    let mut updates = Vec::new();
     for (key, val) in pairs {
         if let Some(v) = val {
             let is_masked_placeholder = matches!(key, "BOT_GITHUB_TOKEN" | "PROVIDER_API_KEY" | "WEBHOOK_SECRET")
                 && (v == "(set)" || v.starts_with('*'));
             if !v.is_empty() && !is_masked_placeholder {
-                std::env::set_var(key, &v);
+                updates.push((key.to_string(), v));
             }
         }
     }
-    Json(json!({"saved": true}))
+
+    let saved = persist_env_updates(StdPath::new(".env"), &updates).is_ok();
+    Json(json!({"saved": saved, "restart_required": saved}))
 }
 
 async fn list_models(State(state): State<AppState>, Path(provider): Path<String>) -> Json<Value> {

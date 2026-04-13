@@ -1,11 +1,29 @@
+use std::sync::{Mutex, MutexGuard};
+
+use once_cell::sync::OnceCell;
 use rusqlite::Connection;
+
+static DB_CONN: OnceCell<Mutex<Connection>> = OnceCell::new();
 
 pub fn db_path() -> String {
     std::env::var("__ENV_PREFIX___DB_PATH").unwrap_or_else(|_| "__DB_FILE__".into())
 }
 
-fn connect() -> rusqlite::Result<Connection> {
+fn open_connection() -> rusqlite::Result<Connection> {
     Connection::open(db_path())
+}
+
+fn connect() -> rusqlite::Result<MutexGuard<'static, Connection>> {
+    let mutex = DB_CONN.get_or_try_init(|| open_connection().map(Mutex::new))?;
+    mutex
+        .lock()
+        .map_err(|_| rusqlite::Error::InvalidQuery)
+}
+
+pub fn health_check() -> bool {
+    connect()
+        .and_then(|conn| conn.query_row("SELECT 1", [], |row| row.get::<_, i64>(0)))
+        .is_ok()
 }
 
 pub fn init_db() -> rusqlite::Result<()> {

@@ -47,7 +47,7 @@ cd ../frontend && npm install && npm run dev
 docker-compose up --build
 ```
 
-Backend: `http://localhost:8000`
+Backend: `VITE_API_URL` or the current browser origin
 Frontend: `http://localhost:5173`
 
 ---

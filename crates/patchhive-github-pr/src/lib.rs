@@ -5,7 +5,7 @@ mod webhook;
 pub use client::GitHubPrClient;
 pub use models::{
     GitHubCheckRunRequest, GitHubCheckRunResult, GitHubCommitStatusRequest,
-    GitHubCommitStatusResult, GitHubManagedCommentResult, GitHubPullRequest,
+    GitHubCommitStatusResult, GitHubManagedCommentResult, GitHubPullRequestDetail,
     GitHubPullReview, GitHubPullReviewThread, GitHubPullReviewThreadComment,
     GitHubCommitHealth, GitHubCheckRunSummary, GitHubStatusContext,
 };

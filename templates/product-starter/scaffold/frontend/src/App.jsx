@@ -18,7 +18,7 @@ const TABS = [
 ];
 
 export default function App() {
-  const { apiKey, checked, needsAuth, login, logout } = useApiKeyAuth({
+  const { apiKey, checked, needsAuth, login, logout, authError, bootstrapRequired, generateKey } = useApiKeyAuth({
     apiBase: API,
     storageKey: "__PRODUCT_SLUG___api_key",
   });
@@ -45,6 +45,9 @@ export default function App() {
         subtitle="by PatchHive"
         storageKey="__PRODUCT_SLUG___api_key"
         apiBase={API}
+        authError={authError}
+        bootstrapRequired={bootstrapRequired}
+        onGenerateKey={generateKey}
       />
     );
   }

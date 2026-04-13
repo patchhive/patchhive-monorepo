@@ -12,7 +12,7 @@ use crate::models::{
     GitHubSearchRepositoriesResponse,
 };
 
-const GH_API: &str = "https://api.github.com";
+pub const GH_API: &str = "https://api.github.com";
 
 pub fn github_token() -> Option<String> {
     std::env::var("BOT_GITHUB_TOKEN")
@@ -30,12 +30,9 @@ pub fn github_token_configured() -> bool {
     github_token().is_some()
 }
 
-fn request_headers(token: Option<&str>) -> Result<HeaderMap> {
+pub fn request_headers(user_agent: &str, token: Option<&str>) -> Result<HeaderMap> {
     let mut headers = HeaderMap::new();
-    headers.insert(
-        USER_AGENT,
-        HeaderValue::from_static("patchhive-github-data/0.1"),
-    );
+    headers.insert(USER_AGENT, HeaderValue::from_str(user_agent)?);
     headers.insert("X-GitHub-Api-Version", HeaderValue::from_static("2022-11-28"));
     headers.insert(ACCEPT, HeaderValue::from_static("application/vnd.github+json"));
     if let Some(token) = token {
@@ -47,7 +44,7 @@ fn request_headers(token: Option<&str>) -> Result<HeaderMap> {
     Ok(headers)
 }
 
-fn valid_repo(repo: &str) -> bool {
+pub fn valid_repo(repo: &str) -> bool {
     let mut parts = repo.split('/');
     matches!(
         (parts.next(), parts.next(), parts.next()),
@@ -55,15 +52,16 @@ fn valid_repo(repo: &str) -> bool {
     )
 }
 
-async fn get_json<T: DeserializeOwned>(
+pub async fn get_json<T: DeserializeOwned>(
     client: &Client,
+    user_agent: &str,
     path: &str,
     query: &[(&str, String)],
     token: Option<&str>,
 ) -> Result<T> {
     let response = client
         .get(format!("{GH_API}{path}"))
-        .headers(request_headers(token)?)
+        .headers(request_headers(user_agent, token)?)
         .query(query)
         .send()
         .await
@@ -81,13 +79,51 @@ async fn get_json<T: DeserializeOwned>(
         .with_context(|| format!("Could not decode GitHub JSON for {path}"))
 }
 
+pub async fn get_paginated_json<T: DeserializeOwned>(
+    client: &Client,
+    user_agent: &str,
+    path: &str,
+    query: &[(&str, String)],
+    token: Option<&str>,
+    max_items: usize,
+) -> Result<Vec<T>> {
+    if max_items == 0 {
+        return Ok(Vec::new());
+    }
+
+    let mut page = 1usize;
+    let mut items = Vec::new();
+
+    loop {
+        let remaining = max_items.saturating_sub(items.len());
+        if remaining == 0 {
+            break;
+        }
+
+        let mut page_query = query.to_vec();
+        page_query.push(("per_page", remaining.min(100).to_string()));
+        page_query.push(("page", page.to_string()));
+
+        let mut page_items: Vec<T> = get_json(client, user_agent, path, &page_query, token).await?;
+        let page_len = page_items.len();
+        items.append(&mut page_items);
+
+        if page_len < remaining.min(100) {
+            break;
+        }
+        page += 1;
+    }
+
+    Ok(items)
+}
+
 async fn get_public_json<T: DeserializeOwned>(
     client: &Client,
     path: &str,
     query: &[(&str, String)],
 ) -> Result<T> {
     let token = github_token();
-    get_json(client, path, query, token.as_deref()).await
+    get_json(client, "patchhive-github-data/0.1", path, query, token.as_deref()).await
 }
 
 async fn get_authenticated_json<T: DeserializeOwned>(
@@ -96,7 +132,7 @@ async fn get_authenticated_json<T: DeserializeOwned>(
     query: &[(&str, String)],
 ) -> Result<T> {
     let token = github_token_required()?;
-    get_json(client, path, query, Some(token.as_str())).await
+    get_json(client, "patchhive-github-data/0.1", path, query, Some(token.as_str())).await
 }
 
 pub async fn validate_token(client: &Client) -> Result<()> {
@@ -191,10 +227,13 @@ pub async fn fetch_pull_reviews(
         return Err(anyhow!("Repository must be in owner/name format"));
     }
 
-    get_public_json(
+    get_paginated_json(
         client,
+        "patchhive-github-data/0.1",
         &format!("/repos/{repo}/pulls/{number}/reviews"),
-        &[("per_page", "100".into())],
+        &[],
+        github_token().as_deref(),
+        1000,
     )
     .await
 }
@@ -208,10 +247,13 @@ pub async fn fetch_pull_review_comments(
         return Err(anyhow!("Repository must be in owner/name format"));
     }
 
-    get_public_json(
+    get_paginated_json(
         client,
+        "patchhive-github-data/0.1",
         &format!("/repos/{repo}/pulls/{number}/comments"),
-        &[("per_page", "100".into())],
+        &[],
+        github_token().as_deref(),
+        1000,
     )
     .await
 }
@@ -225,10 +267,13 @@ pub async fn fetch_pull_files(
         return Err(anyhow!("Repository must be in owner/name format"));
     }
 
-    get_public_json(
+    get_paginated_json(
         client,
+        "patchhive-github-data/0.1",
         &format!("/repos/{repo}/pulls/{number}/files"),
-        &[("per_page", "100".into())],
+        &[],
+        github_token().as_deref(),
+        1000,
     )
     .await
 }
@@ -265,8 +310,14 @@ pub async fn fetch_workflow_runs(
         query.push(("branch", branch.trim().to_string()));
     }
 
-    let response: GitHubActionsWorkflowRunsResponse =
-        get_public_json(client, &format!("/repos/{repo}/actions/runs"), &query).await?;
+    let response: GitHubActionsWorkflowRunsResponse = get_json(
+        client,
+        "patchhive-github-data/0.1",
+        &format!("/repos/{repo}/actions/runs"),
+        &query,
+        github_token().as_deref(),
+    )
+    .await?;
     Ok(response.workflow_runs)
 }
 

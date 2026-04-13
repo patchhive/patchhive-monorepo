@@ -1,6 +1,6 @@
 use serde_json::{json, Value};
 use std::path::PathBuf;
-use std::sync::{Arc, atomic::{AtomicI64, Ordering}};
+use std::sync::{Arc, atomic::{AtomicBool, AtomicI64, Ordering}};
 use tokio::sync::mpsc::Sender;
 use std::convert::Infallible;
 use axum::response::sse::Event;
@@ -98,8 +98,12 @@ fn build_repo_memory_block(context: Option<&RepoMemoryContextResponse>) -> Strin
 pub struct FixParams {
     pub retry_count: usize,
     pub min_conf: i32,
-    pub budget: f64,
     pub run_id: String,
+    pub cancel_requested: Arc<AtomicBool>,
+}
+
+fn cancelled(params: &FixParams) -> bool {
+    params.cancel_requested.load(Ordering::SeqCst)
 }
 
 pub async fn fix_one(
@@ -116,6 +120,9 @@ pub async fn fix_one(
     http: reqwest::Client,
 ) {
     let _permit = sem.acquire().await.unwrap();
+    if cancelled(&params) {
+        return;
+    }
 
     // Pick agents by index
     let judge_idx      = idx % judges.len().max(1);
@@ -143,11 +150,6 @@ pub async fn fix_one(
         .or_else(github_token_from_env)
         .unwrap_or_default();
     let bot_user  = reaper.bot_user.clone().unwrap_or_else(|| cfg("BOT_GITHUB_USER"));
-
-    let send = |ev: Result<Event, Infallible>| {
-        let tx2 = tx.clone();
-        async move { let _ = tx2.send(ev).await; }
-    };
 
     // Duplicate check
     if gh_check_duplicate(&http, issue["repo"].as_str().unwrap_or(""), &branch,
@@ -210,8 +212,14 @@ pub async fn fix_one(
 
     // Judge: select relevant files
     let (selected_files, codebase) = if let Some(ref judge) = judge {
+        if cancelled(&params) {
+            let _ = finish_attempt(&attempt_id, "skipped", None, None, cost, None, None, Some("cancelled"), Some(t_start.elapsed().as_secs_f64()), 0);
+            let _ = tx.send(sse_ev("issue_result", json!({"id":issue["id"],"status":"skipped","reason":"cancelled"}))).await;
+            if work_path.exists() { let _ = tokio::fs::remove_dir_all(&work_path).await; }
+            return;
+        }
         let _ = tx.send(astatus(&judge.id, "working", &format!("#{issue_num}"))).await;
-        let structure = collect_repo_structure(&work_path);
+        let structure = collect_repo_structure(&work_path).await;
         let result = agent_select_files(
             &http, &structure,
             issue["title"].as_str().unwrap_or(""),
@@ -223,17 +231,17 @@ pub async fn fix_one(
             Ok((files, c)) if !files.is_empty() => {
                 cost += c;
                 let _ = tx.send(alog(judge, &format!("Targeted {} files: {}", files.len(), files.iter().take(3).cloned().collect::<Vec<_>>().join(", ")), "success")).await;
-                let codebase = collect_files_selective(&work_path, &files, 80_000);
+                let codebase = collect_files_selective(&work_path, &files, 80_000).await;
                 (files, codebase)
             }
-            Ok(_) => (Vec::new(), collect_files_all(&work_path, 60_000)),
+            Ok(_) => (Vec::new(), collect_files_all(&work_path, 60_000).await),
             Err(e) => {
                 let _ = tx.send(alog(judge, &format!("Targeting failed (fallback): {e}"), "warn")).await;
-                (Vec::new(), collect_files_all(&work_path, 60_000))
+                (Vec::new(), collect_files_all(&work_path, 60_000).await)
             }
         }
     } else {
-        (Vec::new(), collect_files_all(&work_path, 60_000))
+        (Vec::new(), collect_files_all(&work_path, 60_000).await)
     };
 
     let repo_memory_context = match fetch_repo_memory_context(
@@ -277,6 +285,12 @@ pub async fn fix_one(
     };
 
     // Reaper: generate patch
+    if cancelled(&params) {
+        let _ = finish_attempt(&attempt_id, "skipped", None, None, cost, None, None, Some("cancelled"), Some(t_start.elapsed().as_secs_f64()), 0);
+        let _ = tx.send(sse_ev("issue_result", json!({"id":issue["id"],"status":"skipped","reason":"cancelled"}))).await;
+        if work_path.exists() { let _ = tokio::fs::remove_dir_all(&work_path).await; }
+        return;
+    }
     let _ = tx.send(astatus(&reaper.id, "working", &format!("Reaping #{issue_num}"))).await;
     let patch_result = agent_generate_patch(
         &http,
@@ -311,7 +325,7 @@ pub async fn fix_one(
 
     // Apply patch with self-healing
     let patch_str = result["patch"].as_str().unwrap_or("").to_string();
-    let (mut applied, mut apply_err) = apply_patch(&work_path, &patch_str).await;
+    let (mut applied, apply_err) = apply_patch(&work_path, &patch_str).await;
 
     if !applied {
         let _ = tx.send(alog(&reaper, "Apply failed — self-healing…", "warn")).await;
@@ -327,7 +341,7 @@ pub async fn fix_one(
                     applied = true;
                     let _ = tx.send(alog(&reaper, "Self-healed ✓", "success")).await;
                 } else {
-                    apply_err = err;
+                    let _ = tx.send(alog(&reaper, &format!("Self-heal apply failed: {err}"), "warn")).await;
                 }
             }
         }
@@ -346,6 +360,12 @@ pub async fn fix_one(
     let mut smith_note = String::new();
 
     if let Some(ref smith) = smith {
+        if cancelled(&params) {
+            let _ = finish_attempt(&attempt_id, "skipped", None, None, cost, Some(&final_patch), None, Some("cancelled"), Some(t_start.elapsed().as_secs_f64()), confidence);
+            let _ = tx.send(sse_ev("issue_result", json!({"id":issue["id"],"status":"skipped","reason":"cancelled"}))).await;
+            if work_path.exists() { let _ = tokio::fs::remove_dir_all(&work_path).await; }
+            return;
+        }
         let _ = tx.send(astatus(&smith.id, "working", &format!("Smithing #{issue_num}"))).await;
         match agent_smith_patch(&http, issue["title"].as_str().unwrap_or(""), &final_patch, result["explanation"].as_str().unwrap_or(""), smith).await {
             Ok((rev, rc)) => {
@@ -386,6 +406,12 @@ pub async fn fix_one(
     }
 
     // Gatekeeper: run tests with configurable retries
+    if cancelled(&params) {
+        let _ = finish_attempt(&attempt_id, "skipped", None, None, cost, Some(&final_patch), None, Some("cancelled"), Some(t_start.elapsed().as_secs_f64()), confidence);
+        let _ = tx.send(sse_ev("issue_result", json!({"id":issue["id"],"status":"skipped","reason":"cancelled"}))).await;
+        if work_path.exists() { let _ = tokio::fs::remove_dir_all(&work_path).await; }
+        return;
+    }
     let _ = tx.send(astatus(&gatekeeper.id, "working", &format!("Testing #{issue_num}"))).await;
     let mut test = run_tests(&work_path).await;
     let _ = tx.send(alog(&gatekeeper, &format!("Tests {}", if test.passed { "passed ✓" } else { "failed" }), if test.passed { "success" } else { "warn" })).await;
@@ -418,6 +444,12 @@ pub async fn fix_one(
     }
 
     // Commit + push + open PR
+    if cancelled(&params) {
+        let _ = finish_attempt(&attempt_id, "skipped", None, None, cost, Some(&final_patch), None, Some("cancelled"), Some(t_start.elapsed().as_secs_f64()), confidence);
+        let _ = tx.send(sse_ev("issue_result", json!({"id":issue["id"],"status":"skipped","reason":"cancelled"}))).await;
+        if work_path.exists() { let _ = tokio::fs::remove_dir_all(&work_path).await; }
+        return;
+    }
     let _ = tx.send(astatus(&gatekeeper.id, "working", &format!("PR #{issue_num}"))).await;
     let commit_msg = format!("fix: {} (closes #{issue_num})", issue["title"].as_str().unwrap_or("").chars().take(72).collect::<String>());
 

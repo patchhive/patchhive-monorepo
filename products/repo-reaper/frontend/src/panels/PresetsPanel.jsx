@@ -1,16 +1,16 @@
 import { API } from "../config.js";
 import { useState, useEffect } from "react";
-import { createApiFetcher } from "@patchhivehq/product-shell";
+import { useApiFetcher } from "@patchhivehq/product-shell";
 import { S, Input, Btn, EmptyState, ROLE_META, PROVIDERS, timeAgo } from "@patchhivehq/ui";
 
 export default function PresetsPanel({ apiKey = "", currentAgents, onLoadPreset }) {
   const [presets, setPresets] = useState([]);
   const [saveName, setSaveName] = useState("");
   const [saving, setSaving] = useState(false);
-  const fetch_ = createApiFetcher(apiKey);
+  const fetch_ = useApiFetcher(apiKey);
 
   const load = () => fetch_(`${API}/presets`).then(r => r.json()).then(d => setPresets(d.presets || []));
-  useEffect(load, []);
+  useEffect(load, [fetch_]);
 
   const save = async () => {
     if (!saveName.trim() || currentAgents.length === 0) return;

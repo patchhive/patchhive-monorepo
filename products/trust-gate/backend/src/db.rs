@@ -15,6 +15,15 @@ fn connect() -> Result<Connection> {
     Connection::open(db_path()).context("failed to open TrustGate database")
 }
 
+pub fn health_check() -> bool {
+    connect()
+        .and_then(|conn| {
+            conn.query_row("SELECT 1", [], |row| row.get::<_, i64>(0))
+                .context("failed to query TrustGate database")
+        })
+        .is_ok()
+}
+
 pub fn normalize_repo_name(repo: &str) -> Option<String> {
     let trimmed = repo.trim().trim_matches('/');
     if trimmed.is_empty() {

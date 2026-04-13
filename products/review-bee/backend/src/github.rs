@@ -1,7 +1,7 @@
 use anyhow::Result;
 use patchhive_github_pr::{
     env_value, github_token_from_env, GitHubManagedCommentResult, GitHubPrClient,
-    GitHubPullRequest, GitHubPullReview, GitHubPullReviewThread,
+    GitHubPullRequestDetail, GitHubPullReview, GitHubPullReviewThread,
 };
 use reqwest::Client;
 
@@ -10,7 +10,7 @@ use crate::models::{GitHubReportOutcome, ReviewResult};
 const COMMENT_MARKER: &str = "<!-- patchhive-reviewbee-report -->";
 
 pub struct GitHubReviewContext {
-    pub pr: GitHubPullRequest,
+    pub pr: GitHubPullRequestDetail,
     pub reviews: Vec<GitHubPullReview>,
     pub threads: Vec<GitHubPullReviewThread>,
 }
