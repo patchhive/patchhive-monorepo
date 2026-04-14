@@ -1,15 +1,26 @@
+use once_cell::sync::OnceCell;
 use rusqlite::{params, params_from_iter, Connection, OptionalExtension};
+use std::sync::{Mutex, MutexGuard};
 
 use crate::models::{
     stable_memory_ref, HistoryItem, IngestRecord, KnownRepo, MemoryEntry, OverviewCounts,
 };
 
+static DB_CONN: OnceCell<Mutex<Connection>> = OnceCell::new();
+
 pub fn db_path() -> String {
     std::env::var("REPO_MEMORY_DB_PATH").unwrap_or_else(|_| "repo-memory.db".into())
 }
 
-fn connect() -> rusqlite::Result<Connection> {
-    Connection::open(db_path())
+fn open_connection() -> rusqlite::Result<Connection> {
+    let conn = Connection::open(db_path())?;
+    conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
+    Ok(conn)
+}
+
+fn connect() -> rusqlite::Result<MutexGuard<'static, Connection>> {
+    let mutex = DB_CONN.get_or_try_init(|| open_connection().map(Mutex::new))?;
+    mutex.lock().map_err(|_| rusqlite::Error::InvalidQuery)
 }
 
 pub fn health_check() -> bool {

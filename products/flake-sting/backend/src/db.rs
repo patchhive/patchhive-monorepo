@@ -1,14 +1,28 @@
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use rusqlite::{params, Connection, OptionalExtension};
+use once_cell::sync::OnceCell;
+use std::sync::{Mutex, MutexGuard};
 
 use crate::models::{compute_trend, FlakeScanResult, HistoryItem, OverviewCounts, OverviewPayload};
+
+static DB_CONN: OnceCell<Mutex<Connection>> = OnceCell::new();
 
 pub fn db_path() -> String {
     std::env::var("FLAKE_STING_DB_PATH").unwrap_or_else(|_| "flake-sting.db".into())
 }
 
-fn connect() -> Result<Connection> {
-    Connection::open(db_path()).context("Could not open FlakeSting database")
+fn open_connection() -> Result<Connection> {
+    let conn = Connection::open(db_path()).context("Could not open FlakeSting database")?;
+    conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")
+        .context("Could not initialize FlakeSting database pragmas")?;
+    Ok(conn)
+}
+
+fn connect() -> Result<MutexGuard<'static, Connection>> {
+    let mutex = DB_CONN.get_or_try_init(|| open_connection().map(Mutex::new))?;
+    mutex
+        .lock()
+        .map_err(|_| anyhow!("FlakeSting database mutex poisoned"))
 }
 
 pub fn health_check() -> bool {

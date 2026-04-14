@@ -4,11 +4,11 @@ use reqwest::{
     Client,
 };
 use serde::de::DeserializeOwned;
+use serde_json::Value;
 
 use crate::models::{
-    GitHubActionsWorkflowJob, GitHubActionsWorkflowJobsResponse, GitHubActionsWorkflowRun,
-    GitHubActionsWorkflowRunsResponse, GitHubCodeSearchResponse, GitHubIssue, GitHubPullFile,
-    GitHubPullRequest, GitHubRepository, GitHubReview, GitHubReviewComment,
+    GitHubActionsWorkflowJob, GitHubActionsWorkflowRun, GitHubCodeSearchResponse, GitHubIssue,
+    GitHubPullFile, GitHubPullRequest, GitHubRepository, GitHubReview, GitHubReviewComment,
     GitHubSearchRepositoriesResponse,
 };
 
@@ -117,6 +117,55 @@ pub async fn get_paginated_json<T: DeserializeOwned>(
     Ok(items)
 }
 
+pub async fn get_paginated_field_json<T: DeserializeOwned>(
+    client: &Client,
+    user_agent: &str,
+    path: &str,
+    query: &[(&str, String)],
+    token: Option<&str>,
+    array_key: &str,
+    max_items: usize,
+) -> Result<Vec<T>> {
+    if max_items == 0 {
+        return Ok(Vec::new());
+    }
+
+    let mut page = 1usize;
+    let mut items = Vec::new();
+
+    loop {
+        let remaining = max_items.saturating_sub(items.len());
+        if remaining == 0 {
+            break;
+        }
+
+        let mut page_query = query.to_vec();
+        let page_size = remaining.min(100);
+        page_query.push(("per_page", page_size.to_string()));
+        page_query.push(("page", page.to_string()));
+
+        let value: Value = get_json(client, user_agent, path, &page_query, token).await?;
+        let page_items = value[array_key]
+            .as_array()
+            .ok_or_else(|| anyhow!("GitHub response field `{array_key}` was not an array"))?;
+
+        let page_len = page_items.len();
+        for item in page_items {
+            items.push(
+                serde_json::from_value::<T>(item.clone())
+                    .with_context(|| format!("Could not decode GitHub JSON field `{array_key}` for {path}"))?,
+            );
+        }
+
+        if page_len < page_size {
+            break;
+        }
+        page += 1;
+    }
+
+    Ok(items)
+}
+
 async fn get_public_json<T: DeserializeOwned>(
     client: &Client,
     path: &str,
@@ -155,17 +204,23 @@ pub async fn search_repositories(
     sort: &str,
     order: &str,
 ) -> Result<GitHubSearchRepositoriesResponse> {
-    get_public_json(
+    let limit = per_page.clamp(1, 1000) as usize;
+    let token = github_token();
+    let items = get_paginated_field_json(
         client,
+        "patchhive-github-data/0.1",
         "/search/repositories",
         &[
             ("q", query.trim().to_string()),
             ("sort", sort.trim().to_string()),
             ("order", order.trim().to_string()),
-            ("per_page", per_page.min(100).max(1).to_string()),
         ],
+        token.as_deref(),
+        "items",
+        limit,
     )
-    .await
+    .await?;
+    Ok(GitHubSearchRepositoriesResponse { items })
 }
 
 pub async fn fetch_issues(
@@ -180,15 +235,17 @@ pub async fn fetch_issues(
         return Err(anyhow!("Repository must be in owner/name format"));
     }
 
-    get_public_json(
+    get_paginated_json(
         client,
+        "patchhive-github-data/0.1",
         &format!("/repos/{repo}/issues"),
         &[
             ("state", state.trim().to_string()),
             ("sort", sort.trim().to_string()),
             ("direction", direction.trim().to_string()),
-            ("per_page", per_page.min(100).max(1).to_string()),
         ],
+        github_token().as_deref(),
+        per_page.clamp(1, 1000) as usize,
     )
     .await
 }
@@ -205,15 +262,17 @@ pub async fn fetch_pull_requests(
         return Err(anyhow!("Repository must be in owner/name format"));
     }
 
-    get_public_json(
+    get_paginated_json(
         client,
+        "patchhive-github-data/0.1",
         &format!("/repos/{repo}/pulls"),
         &[
             ("state", state.trim().to_string()),
             ("sort", sort.trim().to_string()),
             ("direction", direction.trim().to_string()),
-            ("per_page", per_page.min(100).max(1).to_string()),
         ],
+        github_token().as_deref(),
+        per_page.clamp(1, 1000) as usize,
     )
     .await
 }
@@ -336,24 +395,22 @@ pub async fn fetch_workflow_runs(
         return Err(anyhow!("Repository must be in owner/name format"));
     }
 
-    let mut query = vec![
-        ("per_page", limit.min(100).max(1).to_string()),
-        ("exclude_pull_requests", "false".into()),
-    ];
+    let mut query = vec![("exclude_pull_requests", "false".into())];
 
     if let Some(branch) = branch.filter(|value| !value.trim().is_empty()) {
         query.push(("branch", branch.trim().to_string()));
     }
 
-    let response: GitHubActionsWorkflowRunsResponse = get_json(
+    get_paginated_field_json(
         client,
         "patchhive-github-data/0.1",
         &format!("/repos/{repo}/actions/runs"),
         &query,
         github_token().as_deref(),
+        "workflow_runs",
+        limit.clamp(1, 1000) as usize,
     )
-    .await?;
-    Ok(response.workflow_runs)
+    .await
 }
 
 pub async fn fetch_workflow_jobs(
@@ -365,11 +422,14 @@ pub async fn fetch_workflow_jobs(
         return Err(anyhow!("Repository must be in owner/name format"));
     }
 
-    let response: GitHubActionsWorkflowJobsResponse = get_public_json(
+    get_paginated_field_json(
         client,
+        "patchhive-github-data/0.1",
         &format!("/repos/{repo}/actions/runs/{run_id}/jobs"),
-        &[("per_page", "100".into())],
+        &[],
+        github_token().as_deref(),
+        "jobs",
+        1000,
     )
-    .await?;
-    Ok(response.jobs)
+    .await
 }

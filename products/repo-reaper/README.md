@@ -95,6 +95,20 @@ export PATCHHIVE_REPO_MEMORY_API_KEY=repo-memory_xxxxxxxxxxxxxxxx
 
 When configured, RepoReaper loads remembered repo conventions, hotspots, and failure patterns before patch generation and retry loops.
 
+## Safer Test Execution
+
+RepoReaper keeps untrusted repo test execution disabled by default.
+
+```bash
+export REAPER_ENABLE_UNTRUSTED_TESTS=true
+# optional, defaults to docker:
+export REAPER_TEST_SANDBOX=docker
+```
+
+- `docker` is the safer default and runs tests inside a constrained container.
+- `host` restores direct host execution only if you explicitly choose it.
+- `REAPER_TEST_TIMEOUT_SECONDS` can cap long-running test jobs.
+
 ---
 
 *RepoReaper by PatchHive — part of the PatchHive maintenance platform*

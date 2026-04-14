@@ -1372,9 +1372,9 @@ name = "patchhive-product-core"
 version = "0.1.0"
 
 [[patch.unused]]
-name = "patchhive-github-pr"
+name = "patchhive-github-security"
 version = "0.1.0"
 
 [[patch.unused]]
-name = "patchhive-github-security"
+name = "patchhive-github-pr"
 version = "0.1.0"

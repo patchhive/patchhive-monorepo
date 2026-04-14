@@ -3,6 +3,7 @@ use patchhive_github_pr::github_token_from_env;
 use std::path::{Path, PathBuf};
 use std::process::Output;
 use tokio::process::Command;
+use tokio::time::{timeout, Duration};
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
@@ -256,8 +257,117 @@ pub struct TestResult {
     pub runner: String,
 }
 
+struct RepoTestRunner {
+    runner: &'static str,
+    markers: &'static [&'static str],
+    image: &'static str,
+    command: &'static str,
+}
+
+fn trimmed_test_output(stdout: &[u8], stderr: &[u8]) -> String {
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(stdout),
+        String::from_utf8_lossy(stderr)
+    );
+    combined
+        .chars()
+        .rev()
+        .take(2000)
+        .collect::<String>()
+        .chars()
+        .rev()
+        .collect()
+}
+
+fn current_user_spec() -> Option<String> {
+    let uid = std::process::Command::new("id").arg("-u").output().ok()?;
+    let gid = std::process::Command::new("id").arg("-g").output().ok()?;
+    let uid = String::from_utf8(uid.stdout).ok()?.trim().to_string();
+    let gid = String::from_utf8(gid.stdout).ok()?.trim().to_string();
+    if uid.is_empty() || gid.is_empty() {
+        return None;
+    }
+    Some(format!("{uid}:{gid}"))
+}
+
+async fn run_docker_test(repo_dir: &Path, runner: &RepoTestRunner) -> Result<TestResult> {
+    let workspace = repo_dir.canonicalize()?;
+    let mut cmd = Command::new("docker");
+    cmd.args([
+        "run",
+        "--rm",
+        "--network",
+        "none",
+        "--cap-drop",
+        "ALL",
+        "--security-opt",
+        "no-new-privileges",
+        "--pids-limit",
+        "256",
+        "--memory",
+        "2g",
+        "--cpus",
+        "2",
+        "-v",
+        &format!("{}:/workspace", workspace.display()),
+        "-w",
+        "/workspace",
+    ]);
+    if let Some(user) = current_user_spec() {
+        cmd.args(["--user", &user]);
+    }
+    cmd.args([runner.image, "sh", "-lc", runner.command]);
+
+    let timeout_seconds = std::env::var("REAPER_TEST_TIMEOUT_SECONDS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(600);
+
+    let output = timeout(Duration::from_secs(timeout_seconds), cmd.output()).await;
+    let output = match output {
+        Ok(result) => result?,
+        Err(_) => {
+            return Ok(TestResult {
+                passed: false,
+                output: format!(
+                    "Sandboxed test run timed out after {timeout_seconds} seconds."
+                ),
+                runner: format!("docker:{}", runner.runner),
+            });
+        }
+    };
+
+    Ok(TestResult {
+        passed: output.status.success(),
+        output: trimmed_test_output(&output.stdout, &output.stderr),
+        runner: format!("docker:{}", runner.runner),
+    })
+}
+
+async fn run_host_test(repo_dir: &Path, runner: &RepoTestRunner) -> Result<TestResult> {
+    let mut parts = runner.command.split_whitespace();
+    let program = parts.next().ok_or_else(|| anyhow!("Missing host test program"))?;
+    let output = Command::new(program)
+        .args(parts)
+        .current_dir(repo_dir)
+        .output()
+        .await?;
+    Ok(TestResult {
+        passed: output.status.success(),
+        output: trimmed_test_output(&output.stdout, &output.stderr),
+        runner: format!("host:{}", runner.runner),
+    })
+}
+
 pub async fn run_tests(repo_dir: &Path) -> TestResult {
-    if !matches!(env_str("REAPER_ENABLE_UNTRUSTED_TESTS").to_ascii_lowercase().as_str(), "1" | "true" | "yes") {
+    if !matches!(
+        env_str("REAPER_ENABLE_UNTRUSTED_TESTS")
+            .to_ascii_lowercase()
+            .as_str(),
+        "1" | "true" | "yes"
+    ) {
         return TestResult {
             passed: false,
             output: "Unsafe test execution is disabled for untrusted repositories. Set REAPER_ENABLE_UNTRUSTED_TESTS=true to opt in.".into(),
@@ -265,27 +375,85 @@ pub async fn run_tests(repo_dir: &Path) -> TestResult {
         };
     }
 
-    let runners: &[(&[&str], Option<&str>)] = &[
-        (&["pytest", "--tb=short", "-q"], Some("pytest.ini")),
-        (&["python", "-m", "pytest", "-q"], None),
-        (&["cargo", "test", "--quiet"], Some("Cargo.toml")),
-        (&["go", "test", "./..."], Some("go.mod")),
-        (&["npm", "test", "--", "--watchAll=false"], Some("package.json")),
+    let sandbox = match env_str("REAPER_TEST_SANDBOX").to_ascii_lowercase().as_str() {
+        "" | "docker" => "docker",
+        "host" => "host",
+        other => {
+            return TestResult {
+                passed: false,
+                output: format!(
+                    "Unknown REAPER_TEST_SANDBOX value `{other}`. Use `docker` or `host`."
+                ),
+                runner: "invalid".into(),
+            }
+        }
+    };
+
+    let runners: &[RepoTestRunner] = &[
+        RepoTestRunner {
+            runner: "pytest",
+            markers: &["pytest.ini", "pyproject.toml", "requirements.txt", "setup.py"],
+            image: "python:3.12-alpine",
+            command: "pytest --tb=short -q",
+        },
+        RepoTestRunner {
+            runner: "python",
+            markers: &["pyproject.toml", "requirements.txt", "setup.py"],
+            image: "python:3.12-alpine",
+            command: "python -m pytest -q",
+        },
+        RepoTestRunner {
+            runner: "cargo",
+            markers: &["Cargo.toml"],
+            image: "rust:1.87-bookworm",
+            command: "cargo test --quiet",
+        },
+        RepoTestRunner {
+            runner: "go",
+            markers: &["go.mod"],
+            image: "golang:1.24-bookworm",
+            command: "go test ./...",
+        },
+        RepoTestRunner {
+            runner: "npm",
+            markers: &["package.json"],
+            image: "node:20-bookworm",
+            command: "npm test -- --watchAll=false",
+        },
     ];
 
-    for (cmd, marker) in runners {
-        if let Some(m) = marker {
-            if !repo_dir.join(m).exists() { continue; }
+    let mut attempted_runner = None;
+    let mut last_error = None;
+    for runner in runners {
+        if !runner.markers.is_empty() && !runner.markers.iter().any(|marker| repo_dir.join(marker).exists()) {
+            continue;
         }
-        let out = Command::new(cmd[0]).args(&cmd[1..]).current_dir(repo_dir).output().await;
-        match out {
-            Ok(o) => {
-                let combined = format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
-                let output: String = combined.chars().rev().take(2000).collect::<String>().chars().rev().collect();
-                return TestResult { passed: o.status.success(), output, runner: cmd[0].to_string() };
-            }
-            Err(_) => continue,
+        attempted_runner = Some(runner.runner);
+        let result = match sandbox {
+            "docker" => run_docker_test(repo_dir, runner).await,
+            "host" => run_host_test(repo_dir, runner).await,
+            _ => unreachable!(),
+        };
+        match result {
+            Ok(result) => return result,
+            Err(error) => last_error = Some(error.to_string()),
         }
     }
-    TestResult { passed: true, output: "No test runner found — skipped".into(), runner: "none".into() }
+
+    if let Some(runner) = attempted_runner {
+        return TestResult {
+            passed: false,
+            output: last_error.unwrap_or_else(|| {
+                format!("Found `{runner}` test runner, but could not execute it.")
+            }),
+            runner: format!("{sandbox}:{runner}"),
+        };
+    }
+
+    let output = if sandbox == "docker" {
+        "No supported test runner was found, or Docker was unavailable for the detected runner."
+    } else {
+        "No supported test runner was found — skipped"
+    };
+    TestResult { passed: true, output: output.into(), runner: "none".into() }
 }
