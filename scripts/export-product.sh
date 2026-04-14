@@ -47,6 +47,11 @@ if [[ ! -d "$PRODUCT_PREFIX" ]]; then
   exit 1
 fi
 
+if [[ -f "${PRODUCT_PREFIX}/backend/Cargo.toml" ]]; then
+  echo "Refreshing standalone Cargo.lock for ${PRODUCT_NAME} before export..."
+  "$ROOT_DIR/scripts/refresh-product-lockfile.sh" "$PRODUCT_NAME"
+fi
+
 SANITIZED_NAME="${PRODUCT_NAME//\//-}"
 EXPORT_BRANCH="export/${SANITIZED_NAME}"
 

@@ -32,8 +32,16 @@ If that new backend uses shared git crates such as `patchhive-product-core`, ref
 ./scripts/refresh-product-lockfile.sh review-bee
 ```
 
+`./scripts/export-product.sh` now does that automatically for Rust-backed products before it exports them.
+
 ## Standalone Repo
 
 `patchhive-product-starter` should be treated as an exported mirror of this directory, not the primary editing location.
+
+If the starter scaffold's shared git crate dependencies change, refresh its standalone-safe lockfile with:
+
+```bash
+./scripts/refresh-template-lockfile.sh product-starter
+```
 
 The actual scaffold files live under [scaffold/](/home/coemedia/Documents/code/patchhive/templates/product-starter/scaffold).

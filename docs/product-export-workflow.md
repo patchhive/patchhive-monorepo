@@ -89,6 +89,7 @@ The script is intentionally safe:
 
 - it does not overwrite an existing export branch
 - if `export/<product>` already exists, it creates a timestamped branch name instead
+- if the product has a Rust backend, it refreshes the standalone-safe `backend/Cargo.lock` before exporting
 
 ## Package Export Script
 
@@ -178,6 +179,8 @@ If a shared crate's git dependencies change, refresh its standalone-safe lockfil
 ./scripts/refresh-crate-lockfile.sh patchhive-github-security
 ```
 
+`export-crate.sh` now runs that refresh automatically before exporting.
+
 ## Crate Mirror Sync Script
 
 For shared crate repositories, PatchHive prefers clean crate-only mirror history over raw subtree history.
@@ -234,6 +237,8 @@ If you want to push directly to a standalone template remote:
 
 That creates a subtree export branch from `templates/product-starter` and can push it directly into a standalone template repository.
 
+If the template scaffold has a Rust backend, `export-template.sh` now refreshes the scaffold's standalone-safe `backend/Cargo.lock` before exporting.
+
 ## Recommended First Export
 
 1. Create an empty GitHub repository for the product.
@@ -258,6 +263,14 @@ That creates a subtree export branch from `templates/product-starter` and can pu
 3. Run the crate export script.
 4. Push the export branch to the crate repo.
 5. Point exported product backends at the crate's standalone git dependency.
+
+## Recommended Template Export
+
+1. Create an empty GitHub repository for the template.
+2. Add it as a remote in the monorepo.
+3. Run the template export script.
+4. Push the export branch to the template repo.
+5. Keep the canonical scaffold in the monorepo.
 6. After the initial export, prefer `sync-crate-mirror.sh` for future mirror updates.
 
 ## Recommended Template Export

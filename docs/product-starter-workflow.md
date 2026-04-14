@@ -95,12 +95,20 @@ Use it:
 - after shared git crate dependency changes
 - any time standalone CI says `cargo check --locked` wants to update the lockfile
 
+`export-product.sh` now runs this refresh automatically for Rust-backed products before export, so the helper is mostly useful when you want to preflight the lockfile without exporting yet.
+
 ## Standalone Template Repo
 
 If you want the starter itself to have its own GitHub repo mirror, use:
 
 ```bash
 ./scripts/export-template.sh product-starter <remote-name> main
+```
+
+If you need to refresh the template scaffold lockfile directly, use:
+
+```bash
+./scripts/refresh-template-lockfile.sh product-starter
 ```
 
 For PatchHive, `patchhive-product-starter` should still be treated as a mirror of `templates/product-starter`, not as the primary editing location.

@@ -46,6 +46,11 @@ if [[ ! -d "$TEMPLATE_PREFIX" ]]; then
   exit 1
 fi
 
+if [[ -f "${TEMPLATE_PREFIX}/scaffold/backend/Cargo.toml" ]]; then
+  echo "Refreshing standalone Cargo.lock for template ${TEMPLATE_NAME} before export..."
+  "$ROOT_DIR/scripts/refresh-template-lockfile.sh" "$TEMPLATE_NAME"
+fi
+
 SANITIZED_NAME="${TEMPLATE_NAME//\//-}"
 EXPORT_BRANCH="export-template/${SANITIZED_NAME}"
 

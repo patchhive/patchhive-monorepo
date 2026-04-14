@@ -47,6 +47,11 @@ if [[ ! -d "$CRATE_PREFIX" ]]; then
   exit 1
 fi
 
+if [[ -f "${CRATE_PREFIX}/Cargo.toml" ]]; then
+  echo "Refreshing standalone Cargo.lock for ${CRATE_NAME} before export..."
+  "$ROOT_DIR/scripts/refresh-crate-lockfile.sh" "$CRATE_NAME"
+fi
+
 SANITIZED_NAME="${CRATE_NAME//\//-}"
 EXPORT_BRANCH="export/crate-${SANITIZED_NAME}"
 
