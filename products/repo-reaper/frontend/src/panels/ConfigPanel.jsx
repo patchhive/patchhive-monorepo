@@ -71,7 +71,7 @@ export default function ConfigPanel({ existingConfig, apiKey = "", onSaved }) {
             value={cfg.BOT_GITHUB_TOKEN}
             onChange={set("BOT_GITHUB_TOKEN")}
             type="password"
-            placeholder={existingConfig?.BOT_GITHUB_TOKEN_SET ? "(saved, leave blank to keep)" : "ghp_…"}
+            placeholder={existingConfig?.BOT_GITHUB_TOKEN_SET ? "(saved, leave blank to keep)" : "github_pat_…"}
           />
         </div>
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>

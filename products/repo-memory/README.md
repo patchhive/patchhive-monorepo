@@ -41,7 +41,10 @@ Frontend: `http://localhost:5176`
 
 - The frontend uses `@patchhivehq/ui` and `@patchhivehq/product-shell`.
 - The backend stores runs and extracted memory entries in SQLite at `REPO_MEMORY_DB_PATH`.
+- Prefer a fine-grained personal access token over a classic PAT whenever your setup allows it.
+- If you only want RepoMemory on public repos, keep repository access public-only and avoid private repo access.
 - `BOT_GITHUB_TOKEN` or `GITHUB_TOKEN` is required for GitHub-backed ingestion.
+- RepoMemory mainly needs read access to merged PR history, reviews, and issues.
 - RepoMemory does not require a live AI provider for the MVP loop.
 - The generated prompt pack is meant to be copied into later agent flows, not treated as perfect truth.
 - `PATCHHIVE_REPO_MEMORY_URL` lets other PatchHive products retrieve repo context from this service.

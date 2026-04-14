@@ -35,7 +35,10 @@ Frontend: `http://localhost:5178`
 
 - The frontend uses `@patchhivehq/ui` and `@patchhivehq/product-shell`.
 - The backend stores readiness history in SQLite at `MERGE_KEEPER_DB_PATH`.
+- Prefer a fine-grained personal access token over a classic PAT whenever your GitHub setup allows it.
+- If you only want MergeKeeper on public repos, keep repository access public-only and avoid private repo access.
 - `BOT_GITHUB_TOKEN` or `GITHUB_TOKEN` is required for GitHub-backed PR readiness checks.
+- MergeKeeper mainly needs read access to pull requests, reviews, and commit health. Maintained PR comments or check-style output may need extra write permissions depending on your setup.
 - `MERGE_KEEPER_GITHUB_WEBHOOK_SECRET` enables signed GitHub webhook refreshes.
 - `MERGE_KEEPER_PUBLIC_URL` lets maintained PR comments link back to a saved MergeKeeper run with `?run=<id>`.
 - MergeKeeper does not require `PATCHHIVE_AI_URL` for the MVP loop.

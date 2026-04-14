@@ -160,7 +160,7 @@ export default function TeamPanel({ agents, logs, running, cooldowns, onAdd, onR
             </div>
             <div style={S.field}>
               <label style={S.label}>Bot GitHub Token (override)</label>
-              <Input value={form.bot_token} onChange={set("bot_token")} placeholder="ghp_…" type="password" />
+              <Input value={form.bot_token} onChange={set("bot_token")} placeholder="github_pat_…" type="password" />
             </div>
             <div style={{ gridColumn:"1/-1" }}>
               <Btn onClick={add} color="#c41e3a" style={{ width:"100%" }}>Recruit Agent</Btn>

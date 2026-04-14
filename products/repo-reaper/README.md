@@ -64,6 +64,12 @@ Frontend: `http://localhost:5173`
 - The standalone GitHub Actions workflow checks `cargo check --locked` for the backend and `npm run build` for the frontend.
 - The PatchHive monorepo remains the source of truth, but this repository is intended to be usable on its own.
 
+## GitHub Token Notes
+
+- Prefer a fine-grained personal access token over a classic PAT whenever your workflow allows it.
+- If you only want RepoReaper to work on public repos, keep repository access public-only and do not grant private repo access.
+- RepoReaper is write-capable, so give it only the write permissions it actually needs for the repos you want it to clone, push, and open PRs against.
+
 ## Local AI Gateway
 
 RepoReaper supports `PATCHHIVE_AI_URL` for OpenAI-compatible local gateways.

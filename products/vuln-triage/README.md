@@ -31,7 +31,10 @@ Frontend: `http://localhost:5181`
 
 - The frontend uses `@patchhivehq/ui` and `@patchhivehq/product-shell`.
 - The backend stores scan history in SQLite at `VULN_TRIAGE_DB_PATH`.
+- Prefer a fine-grained personal access token over a classic PAT whenever your setup allows it.
+- If you only want VulnTriage on public repos, keep repository access public-only and avoid private repo access.
 - `BOT_GITHUB_TOKEN` or `GITHUB_TOKEN` is strongly recommended. Code scanning may work with weaker/public access in some repos, but Dependabot alert reads require authenticated GitHub access.
+- VulnTriage mainly needs GitHub security read permissions such as code scanning alerts and Dependabot alerts.
 - VulnTriage uses `patchhive-github-security` for typed GitHub security reads and keeps the ranking logic product-owned.
 
 ## Standalone Repo Notes

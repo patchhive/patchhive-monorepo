@@ -224,7 +224,8 @@ The workflow is documented in [Product Starter Workflow](/home/coemedia/Document
 ```bash
 cd products/repo-reaper
 cp .env.example .env
-# fill in BOT_GITHUB_TOKEN, BOT_GITHUB_USER, PROVIDER_API_KEY
+# fill in BOT_GITHUB_TOKEN, BOT_GITHUB_USER, and either PROVIDER_API_KEY or PATCHHIVE_AI_URL
+# prefer a fine-grained PAT and keep repo access as narrow as possible
 
 # Dev
 cd backend && cargo run
@@ -240,6 +241,7 @@ docker-compose up --build
 cd products/signal-hive
 cp .env.example .env
 # fill in BOT_GITHUB_TOKEN
+# prefer a fine-grained PAT; public-only access is enough for the MVP
 
 # Dev
 cd backend && cargo run
@@ -255,6 +257,7 @@ docker-compose up --build
 cd products/review-bee
 cp .env.example .env
 # fill in BOT_GITHUB_TOKEN or GITHUB_TOKEN
+# prefer a fine-grained PAT unless your setup specifically needs classic PAT behavior
 
 # Dev
 cd backend && cargo run
@@ -284,6 +287,7 @@ docker-compose up --build
 cd products/repo-memory
 cp .env.example .env
 # fill in BOT_GITHUB_TOKEN
+# prefer a fine-grained PAT; public-only access is fine if that is all you need
 
 # Dev
 cd backend && cargo run
@@ -299,6 +303,7 @@ docker-compose up --build
 cd products/merge-keeper
 cp .env.example .env
 # fill in BOT_GITHUB_TOKEN or GITHUB_TOKEN
+# prefer a fine-grained PAT unless your setup specifically needs classic PAT behavior
 
 # Dev
 cd backend && cargo run
@@ -314,6 +319,7 @@ docker-compose up --build
 cd products/flake-sting
 cp .env.example .env
 # fill in BOT_GITHUB_TOKEN or GITHUB_TOKEN for better GitHub Actions access
+# prefer a fine-grained PAT; public-only access is enough for public repos
 
 # Dev
 cd backend && cargo run
@@ -329,6 +335,7 @@ docker-compose up --build
 cd products/dep-triage
 cp .env.example .env
 # fill in BOT_GITHUB_TOKEN or GITHUB_TOKEN for stronger GitHub reads and Dependabot alert access
+# prefer a fine-grained PAT; keep repo access public-only unless you intentionally need more
 
 # Dev
 cd backend && cargo run
@@ -344,6 +351,7 @@ docker-compose up --build
 cd products/vuln-triage
 cp .env.example .env
 # fill in BOT_GITHUB_TOKEN or GITHUB_TOKEN for stronger GitHub security reads
+# prefer a fine-grained PAT; keep repo access public-only unless you intentionally need more
 
 # Dev
 cd backend && cargo run
@@ -352,6 +360,14 @@ cd ../frontend && npm install && npm run dev
 # Docker
 docker-compose up --build
 ```
+
+## GitHub Token Guidance
+
+- Prefer fine-grained personal access tokens over classic PATs whenever GitHub supports the workflow you want.
+- If you only want PatchHive to work on public repos, do not grant private repository access. GitHub's fine-grained PAT docs say these tokens always include read-only access to all public repositories.
+- Start with the smallest repository permissions a product needs, then add more only if GitHub rejects a specific endpoint.
+- SignalHive's public-only MVP can start with a fine-grained PAT and read-side permissions such as `Metadata: Read` and `Issues: Read`; add `Contents: Read` only if GitHub blocks TODO/FIXME code-search counts in your setup.
+- Write-capable products such as RepoReaper and GitHub-reporting modes in TrustGate, ReviewBee, and MergeKeeper need narrower repo selection plus extra write permissions for the specific GitHub actions they perform.
 
 ## Local AI Gateway
 

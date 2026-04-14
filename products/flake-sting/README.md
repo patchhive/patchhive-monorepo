@@ -37,7 +37,10 @@ Frontend: `http://localhost:5179`
 
 - The frontend uses `@patchhivehq/ui` and `@patchhivehq/product-shell`.
 - The backend stores scan history in SQLite at `FLAKE_STING_DB_PATH`.
+- Prefer a fine-grained personal access token over a classic PAT whenever your setup allows it.
+- If you only want FlakeSting on public repos, keep repository access public-only and avoid private repo access.
 - `BOT_GITHUB_TOKEN` or `GITHUB_TOKEN` is strongly recommended so FlakeSting can read workflow runs and jobs with healthier rate limits.
+- FlakeSting mainly needs read access to GitHub Actions workflow runs and jobs.
 - FlakeSting does not require `PATCHHIVE_AI_URL` for the MVP loop.
 - The current scan loop reads recent GitHub Actions runs, looks for fail/pass swings, and ranks unstable test jobs or steps before they become background noise.
 - The current UI is designed for one repo at a time so the scoring, trend comparison, and evidence stay easy to trust while the product sharpens.

@@ -32,6 +32,9 @@ Frontend: `http://localhost:5180`
 ## Local Run Notes
 
 - `BOT_GITHUB_TOKEN` or `GITHUB_TOKEN` is recommended so DepTriage can read dependency PRs with healthier rate limits and query Dependabot alerts.
+- Prefer a fine-grained personal access token over a classic PAT whenever your setup allows it.
+- If you only want DepTriage on public repos, keep repository access public-only and avoid private repo access.
+- Dependabot alert reads need the matching read permission in GitHub. If you skip that, DepTriage can still triage open dependency PRs.
 - Dependabot alert reads require token access; if that fails, DepTriage will still score dependency PRs and surface a warning.
 - The frontend uses `@patchhivehq/ui` and `@patchhivehq/product-shell`.
 - The backend stores scan history in SQLite at `DEP_TRIAGE_DB_PATH`.

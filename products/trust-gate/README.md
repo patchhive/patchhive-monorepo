@@ -29,7 +29,7 @@ TrustGate is intentionally review-first. It does not write code or mutate reposi
 ```bash
 cp .env.example .env
 # Optional but recommended if you want private PR fetches and GitHub status/check output:
-# BOT_GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxx
+# BOT_GITHUB_TOKEN=github_pat_xxxxxxxxxxxxxxxxxxxxxxxxxxxx
 # TRUST_GITHUB_WEBHOOK_SECRET=replace-me
 # TRUSTGATE_PUBLIC_URL=https://trustgate.your-domain.example
 
@@ -48,11 +48,14 @@ Frontend: `http://localhost:5175`
 - The frontend uses `@patchhivehq/ui` from the public npm registry.
 - The frontend uses `@patchhivehq/product-shell` for the shared PatchHive API-key login flow.
 - The backend stores rules and review history in SQLite at `TRUST_DB_PATH`.
+- Prefer a fine-grained personal access token over a classic PAT whenever your setup allows it.
+- If you only want TrustGate on public repos, keep repository access public-only and avoid private repo access.
 - Repo-specific rule sets are the main product memory in the MVP.
 - Repo-specific GitHub report templates now sit beside the rule sets and control how TrustGate speaks back in GitHub.
 - Saved reviews can be reopened as print-friendly decision pages at `/history/:id` or `/print/:id`.
 - GitHub integration is optional; the core review loop still works on pasted diffs alone.
 - `BOT_GITHUB_TOKEN` or `GITHUB_TOKEN` enables private PR fetches plus GitHub report delivery.
+- GitHub read access is enough for direct PR diff fetches. Maintained PR comments and status-style output may need extra write permissions depending on your GitHub setup.
 - `TRUST_GITHUB_WEBHOOK_SECRET` enables signed `pull_request` webhook intake.
 - `TRUSTGATE_PUBLIC_URL` lets GitHub checks/statuses link back to TrustGate review details.
 - `PATCHHIVE_REPO_MEMORY_URL` optionally lets TrustGate enrich reviews with remembered testing expectations, hotspots, and failure patterns.

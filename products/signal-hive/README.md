@@ -42,6 +42,9 @@ Frontend: `http://localhost:5174`
 
 - The frontend uses `@patchhivehq/ui` from the public npm registry.
 - The backend stores scan history in SQLite at `SIGNAL_DB_PATH`.
+- Prefer a fine-grained personal access token over a classic PAT.
+- If you only want SignalHive to scan public repos, do not grant private repository access. Public-only access is enough for the MVP.
+- If you want to be explicit with permissions, start with `Metadata: Read` and `Issues: Read`; add `Contents: Read` only if GitHub blocks TODO/FIXME code-search counts in your setup.
 - This product is designed to be the visibility-first entry point into PatchHive.
 - Repo discovery can be constrained with allowlist, denylist, and opt-out controls in the UI.
 

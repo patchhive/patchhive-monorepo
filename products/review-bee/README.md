@@ -36,7 +36,10 @@ Frontend: `http://localhost:5177`
 
 - The frontend uses `@patchhivehq/ui` and `@patchhivehq/product-shell`.
 - The backend stores review history in SQLite at `REVIEW_BEE_DB_PATH`.
+- Prefer a fine-grained personal access token over a classic PAT whenever your GitHub setup allows it.
+- If you only want ReviewBee on public repos, keep repository access public-only and avoid private repo access.
 - `BOT_GITHUB_TOKEN` or `GITHUB_TOKEN` is required for GitHub-backed PR review analysis.
+- ReviewBee mainly needs pull request and review read access. If you enable maintained PR comments, add the smallest matching write permission for that artifact in your GitHub setup.
 - `REVIEW_BEE_GITHUB_WEBHOOK_SECRET` enables signed GitHub webhook refreshes on PR review activity.
 - `REVIEW_BEE_PUBLIC_URL` lets ReviewBee link maintained PR comments back to its own history view.
 - ReviewBee does not require `PATCHHIVE_AI_URL` for the MVP loop.
