@@ -110,7 +110,14 @@ fn request_token(headers: &HeaderMap) -> &str {
         .get("X-API-Key")
         .or_else(|| headers.get("Authorization"))
         .and_then(|value| value.to_str().ok())
-        .map(|value| value.trim_start_matches("Bearer ").trim())
+        .map(|value| {
+            let trimmed = value.trim();
+            if trimmed.len() >= 7 && trimmed[..7].eq_ignore_ascii_case("bearer ") {
+                trimmed[7..].trim()
+            } else {
+                trimmed
+            }
+        })
         .unwrap_or("")
 }
 
@@ -270,4 +277,73 @@ pub async fn auth_middleware(
     }
 
     next.run(request).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use http::HeaderValue;
+
+    fn test_config(env_var: &str, env_path: PathBuf) -> ApiKeyAuthConfig {
+        ApiKeyAuthConfig::new(env_var, "ph_").with_env_path(env_path)
+    }
+
+    fn clear_runtime_hash(env_var: &str) {
+        if let Ok(mut hashes) = runtime_hashes().write() {
+            hashes.remove(env_var);
+        }
+    }
+
+    #[test]
+    fn generate_and_save_key_persists_hash_and_verifies_token() {
+        let env_var = format!("PATCHHIVE_TEST_AUTH_{}", uuid::Uuid::new_v4().simple());
+        let env_path = std::env::temp_dir().join(format!("{env_var}.env"));
+        let config = test_config(&env_var, env_path.clone());
+
+        let key = generate_and_save_key(&config).expect("key generation should succeed");
+        let written = fs::read_to_string(&env_path).expect("env file should be written");
+
+        assert!(key.starts_with("ph_"));
+        assert!(written.contains(&format!("{}=", env_var)));
+        assert!(verify_token(&config, &key));
+        assert!(!verify_token(&config, "ph_wrong"));
+
+        clear_runtime_hash(&env_var);
+        let _ = fs::remove_file(env_path);
+    }
+
+    #[test]
+    fn auth_status_payload_reports_bootstrap_when_unconfigured() {
+        let env_var = format!("PATCHHIVE_TEST_AUTH_{}", uuid::Uuid::new_v4().simple());
+        let config = test_config(&env_var, PathBuf::from("/tmp/unused.env"));
+        clear_runtime_hash(&env_var);
+
+        let payload = auth_status_payload(&config);
+        assert_eq!(payload["auth_enabled"], false);
+        assert_eq!(payload["bootstrap_required"], true);
+        assert_eq!(payload["auth_storage"], "session");
+    }
+
+    #[test]
+    fn request_token_prefers_api_key_and_accepts_case_insensitive_bearer() {
+        let mut headers = HeaderMap::new();
+        headers.insert("Authorization", HeaderValue::from_static("bearer test-token"));
+        assert_eq!(request_token(&headers), "test-token");
+
+        headers.insert("X-API-Key", HeaderValue::from_static("direct-key"));
+        assert_eq!(request_token(&headers), "direct-key");
+    }
+
+    #[test]
+    fn bootstrap_request_allows_local_only_by_default() {
+        let mut local = HeaderMap::new();
+        local.insert("host", HeaderValue::from_static("127.0.0.1:8000"));
+        local.insert("origin", HeaderValue::from_static("http://localhost:5173"));
+        assert!(bootstrap_request_allowed(&local));
+
+        let mut remote = HeaderMap::new();
+        remote.insert("host", HeaderValue::from_static("0.0.0.0:8000"));
+        remote.insert("origin", HeaderValue::from_static("https://evil.example"));
+        assert!(!bootstrap_request_allowed(&remote));
+    }
 }

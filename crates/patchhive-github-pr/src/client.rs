@@ -595,3 +595,25 @@ fn split_repo(repo: &str) -> Result<(&str, &str)> {
 
     Ok((owner, name))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validate_repo_accepts_safe_owner_and_name() {
+        assert!(validate_repo("patchhive/repo.reaper_1").is_ok());
+    }
+
+    #[test]
+    fn validate_repo_rejects_extra_segments() {
+        let error = validate_repo("patchhive/repo/extra").expect_err("repo should be invalid");
+        assert!(error.to_string().contains("owner/name"));
+    }
+
+    #[test]
+    fn validate_repo_rejects_unsafe_segments() {
+        let error = validate_repo("patchhive/repo?bad").expect_err("repo should be invalid");
+        assert!(error.to_string().contains("safe owner/name"));
+    }
+}

@@ -1543,6 +1543,45 @@ mod tests {
 
         assert_eq!(ranked.first().map(|entry| entry.kind.as_str()), Some("reviewer_profile"));
     }
+
+    #[test]
+    fn pinned_policy_entries_survive_fallback_and_outrank_regular_entries() {
+        let mut policy = sample_entry(
+            "testing_expectation",
+            "Tests are expected for auth changes",
+            "Recent fixes around auth nearly always shipped with tests.",
+            "Add or update tests when touching auth behavior.",
+        );
+        policy.disposition = "policy".into();
+        policy.pinned = true;
+
+        let regular = sample_entry(
+            "review_rule",
+            "Use helper builders",
+            "The repo prefers shared helper builders for config wiring.",
+            "Prefer shared builders over inline config duplication.",
+        );
+
+        let ranked = rank_context_entries(&[regular, policy], "trust-gate", &[], "", "", 4);
+
+        assert_eq!(ranked.len(), 2);
+        assert_eq!(ranked.first().map(|entry| entry.disposition.as_str()), Some("policy"));
+        assert_eq!(ranked.first().map(|entry| entry.pinned), Some(true));
+    }
+
+    #[test]
+    fn suppressed_entries_are_filtered_out_of_context_results() {
+        let mut suppressed = sample_entry(
+            "failure_pattern",
+            "Old flaky pattern",
+            "A noisy signal that operators intentionally suppressed.",
+            "Ignore this pattern.",
+        );
+        suppressed.disposition = "suppressed".into();
+
+        let ranked = rank_context_entries(&[suppressed], "repo-reaper", &["src/lib.rs".into()], "", "", 4);
+        assert!(ranked.is_empty());
+    }
 }
 
 fn normalize_consumer(value: &str) -> String {

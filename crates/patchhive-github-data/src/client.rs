@@ -48,8 +48,16 @@ pub fn valid_repo(repo: &str) -> bool {
     let mut parts = repo.split('/');
     matches!(
         (parts.next(), parts.next(), parts.next()),
-        (Some(owner), Some(name), None) if !owner.trim().is_empty() && !name.trim().is_empty()
+        (Some(owner), Some(name), None)
+            if valid_repo_segment(owner) && valid_repo_segment(name)
     )
+}
+
+fn valid_repo_segment(segment: &str) -> bool {
+    !segment.trim().is_empty()
+        && segment
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
 }
 
 pub async fn get_json<T: DeserializeOwned>(
@@ -216,6 +224,42 @@ pub async fn fetch_pull_requests(
         ],
     )
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn valid_repo_accepts_safe_segments() {
+        assert!(valid_repo("patchhive/repo.reaper_1"));
+    }
+
+    #[test]
+    fn valid_repo_rejects_extra_or_unsafe_segments() {
+        assert!(!valid_repo("patchhive/repo/extra"));
+        assert!(!valid_repo("patchhive/repo?bad"));
+        assert!(!valid_repo("patchhive/"));
+    }
+
+    #[test]
+    fn request_headers_adds_bearer_token_when_present() {
+        let headers = request_headers("patchhive-test", Some("secret-token"))
+            .expect("headers should build");
+
+        assert_eq!(
+            headers
+                .get(AUTHORIZATION)
+                .and_then(|value| value.to_str().ok()),
+            Some("Bearer secret-token")
+        );
+        assert_eq!(
+            headers
+                .get(USER_AGENT)
+                .and_then(|value| value.to_str().ok()),
+            Some("patchhive-test")
+        );
+    }
 }
 
 pub async fn fetch_pull_reviews(
