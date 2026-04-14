@@ -1,6 +1,7 @@
 services:
   backend:
     build: ./backend
+    user: "${PATCHHIVE_BACKEND_UID:-0}:${PATCHHIVE_BACKEND_GID:-0}"
     ports:
       - "8000:8000"
     volumes:
