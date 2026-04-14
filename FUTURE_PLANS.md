@@ -8,6 +8,8 @@ Use this to capture later ideas so they do not get lost between product pushes.
 - Add a print-friendly in-app report route/view, not just exported HTML and markdown.
 - Add shareable report links or saved report snapshots once there is a safe persistence model for them.
 - Add optional delivery for scheduled scans: email, webhook, or digest-style summary output.
+- Add cross-repo pattern detection so SignalHive can surface ecosystem-level maintenance drift, not just one-repo snapshots.
+- Add orphan and maintainer-health detection so PatchHive can spot repos with rising debt and little human response.
 - Add repo watchlists or portfolio views so operators can track a curated set of repos over time instead of scanning one slice at a time.
 - Add per-repo signal suppression or “known noise” controls so the queue can stay useful after repeated scans.
 - Add confidence bands for duplicate and recurring-bug detection so noisy heuristics feel easier to trust.
@@ -29,6 +31,7 @@ Use this to capture later ideas so they do not get lost between product pushes.
 - Add incident-informed rule tuning later so painful failures can become future guardrails.
 - Make TrustGate the gate before RepoReaper opens or advances autonomous PRs.
 - IncidentEcho fits here as a capability that turns past failures, outages, and bad PR outcomes into future policy checks and guardrails.
+- Feed explicit rejection and painful-review outcomes back into TrustGate rule tuning so bad repo fits become future guardrails.
 - Add inline file-level findings with stronger path anchors so repo owners can see exactly which parts of a diff triggered the risk call.
 - Add simulation mode for historical PRs so teams can tune TrustGate rules against old merges before enforcing them live.
 - Add explicit override recording so maintainers can say “allowed this once for a reason” without losing the audit trail.
@@ -41,6 +44,7 @@ Use this to capture later ideas so they do not get lost between product pushes.
 - Add confidence decay and freshness aging so old conventions do not outweigh newer repo behavior forever.
 - Add conflict detection when two memories disagree, so operators can see when a repo’s conventions are in transition.
 - Add consumer-specific memory packs so RepoReaper, TrustGate, ReviewBee, and MergeKeeper can each pull the most relevant slice without overloading prompts.
+- Add maintainer relationship memory that captures tone, pacing, and recurring human preferences separately from code conventions.
 - Consider AI-assisted summarization or retrieval later through `patchhive-ai-local`, but keep the base memory loop useful without AI.
 - IncidentEcho also fits here as a capability that captures lessons from bugs, incidents, and painful reviews so the repo keeps institutional memory.
 
@@ -81,6 +85,7 @@ Use this to capture later ideas so they do not get lost between product pushes.
 - Add suppression or accepted-risk controls so known findings do not keep dominating every scan forever.
 - Add report export modes later once teams want to turn the ranked queue into a planning artifact or weekly security digest.
 - Add historical compare mode so operators can see which findings are new, which were cleared, and which keep surviving scan after scan.
+- Add time-to-patch tracking so PatchHive can measure how quickly monitored repos move from advisory to merged fix.
 - Consider AI-assisted finding summaries later through `patchhive-ai-local`, but keep the base ranking loop useful without AI.
 
 ## RepoReaper
@@ -91,6 +96,8 @@ Use this to capture later ideas so they do not get lost between product pushes.
 - Add resume-from-checkpoint support for long runs so failed hunts can continue without restarting the whole queue.
 - Add stronger maintainer-facing PR summaries that explain the issue, the fix approach, the test evidence, and any remaining uncertainty.
 - Add repo-level patch budgets and cooldowns so PatchHive can stay active without overwhelming one ecosystem or maintainer group.
+- Add warm-intro mode so PatchHive’s first PR to a new repo is intentionally small, conservative, and trust-building.
+- Add follow-up outcome tracking so merged RepoReaper fixes feed back into later PatchHive decisions.
 
 ## Shared Platform
 
@@ -101,9 +108,12 @@ Use this to capture later ideas so they do not get lost between product pushes.
 - Use `patchhive-github-data` for the next product that needs GitHub repo search, issue history, merged PR history, review/comment history, or Actions reads.
 - Use `patchhive-github-security` for the next product that needs code scanning alerts, Dependabot alerts, or advisory metadata.
 - Consider LiteLLM later only as an optional upstream behind `patchhive-ai-local`, not as the product-facing contract.
+- Add a `ph` CLI later so PatchHive’s analysis layer can be used locally without running the full platform.
+- Add better shared test coverage around auth, webhook verification, repo validation, and GitHub client behavior before the product count gets much larger.
 
 ## Product Direction
 
 - Keep SignalHive visibility-first.
 - Keep TrustGate / memory / safety layers ahead of broader autonomous write behavior.
 - Start HiveCore only after enough specialist products exist to make the orchestration seams obvious.
+- Build a public PatchHive transparency/dashboard layer later so reputation is earned through visible output, outcomes, and contribution quality.

@@ -1,13 +1,11 @@
 import { useEffect, useState } from "react";
+import { applyTheme } from "@patchhivehq/ui";
 import {
-  applyTheme,
-  Btn,
-  LoginPage,
-  PatchHiveFooter,
-  PatchHiveHeader,
-  TabBar,
-} from "@patchhivehq/ui";
-import { createApiFetcher, useApiKeyAuth } from "@patchhivehq/product-shell";
+  ProductAppFrame,
+  ProductSessionGate,
+  useApiFetcher,
+  useApiKeyAuth,
+} from "@patchhivehq/product-shell";
 import { API } from "./config.js";
 import TriagePanel from "./panels/TriagePanel.jsx";
 import HistoryPanel from "./panels/HistoryPanel.jsx";
@@ -33,7 +31,7 @@ export default function App() {
   const [scan, setScan] = useState(null);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
-  const fetch_ = createApiFetcher(apiKey);
+  const fetch_ = useApiFetcher(apiKey);
 
   useEffect(() => {
     applyTheme("dep-triage");
@@ -85,54 +83,44 @@ export default function App() {
     }
   }
 
-  if (!checked) {
-    return (
-      <div style={{ minHeight: "100vh", background: "#080810", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--accent)", fontSize: 26 }}>
-        📦
-      </div>
-    );
-  }
-
-  if (needsAuth) {
-    return (
-      <LoginPage
-        onLogin={login}
+  return (
+    <ProductSessionGate
+      checked={checked}
+      needsAuth={needsAuth}
+      onLogin={login}
+      icon="📦"
+      title="DepTriage"
+      storageKey="dep-triage_api_key"
+      apiBase={API}
+      authError={authError}
+      bootstrapRequired={bootstrapRequired}
+      onGenerateKey={generateKey}
+    >
+      <ProductAppFrame
         icon="📦"
         title="DepTriage"
-        subtitle="by PatchHive"
-        storageKey="dep-triage_api_key"
-        apiBase={API}
-        authError={authError}
-        bootstrapRequired={bootstrapRequired}
-        onGenerateKey={generateKey}
-      />
-      );
-  }
-
-  return (
-    <div style={{ minHeight: "100vh", background: "var(--bg)", color: "var(--text)", fontFamily: "'SF Mono','Fira Mono',monospace", fontSize: 12 }}>
-      <PatchHiveHeader icon="📦" title="DepTriage" version="v0.1.0" running={running}>
-        <div style={{ fontSize: 10, color: "var(--text-dim)" }}>Tell teams which dependency updates matter now and which ones can wait.</div>
-        {scan?.metrics?.update_now > 0 && (
-          <div style={{ fontSize: 10, color: "var(--accent)", fontWeight: 700 }}>
-            {scan.metrics.update_now} UPDATE NOW
-          </div>
-        )}
-        {apiKey && (
-          <Btn onClick={logout} style={{ padding: "4px 10px" }}>
-            Sign out
-          </Btn>
-        )}
-      </PatchHiveHeader>
-
-      <TabBar tabs={TABS} active={tab} onChange={setTab} />
-
-      <div style={{ padding: 24, maxWidth: 1200, margin: "0 auto", display: "grid", gap: 16 }}>
-        {error && (
-          <div style={{ border: "1px solid var(--accent)44", background: "var(--accent)10", color: "var(--accent)", borderRadius: 8, padding: "12px 14px" }}>
-            {error}
-          </div>
-        )}
+        product="DepTriage"
+        running={running}
+        headerChildren={
+          <>
+            <div style={{ fontSize: 10, color: "var(--text-dim)" }}>
+              Tell teams which dependency updates matter now and which ones can wait.
+            </div>
+            {scan?.metrics?.update_now > 0 && (
+              <div style={{ fontSize: 10, color: "var(--accent)", fontWeight: 700 }}>
+                {scan.metrics.update_now} UPDATE NOW
+              </div>
+            )}
+          </>
+        }
+        tabs={TABS}
+        activeTab={tab}
+        onTabChange={setTab}
+        error={error}
+        maxWidth={1200}
+        onSignOut={logout}
+        showSignOut={Boolean(apiKey)}
+      >
         {tab === "triage" && (
           <TriagePanel
             apiKey={apiKey}
@@ -152,9 +140,7 @@ export default function App() {
           />
         )}
         {tab === "checks" && <ChecksPanel apiKey={apiKey} />}
-      </div>
-
-      <PatchHiveFooter product="DepTriage" />
-    </div>
+      </ProductAppFrame>
+    </ProductSessionGate>
   );
 }

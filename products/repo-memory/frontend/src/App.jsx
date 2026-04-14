@@ -1,13 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
+import { applyTheme } from "@patchhivehq/ui";
 import {
-  applyTheme,
-  Btn,
-  LoginPage,
-  PatchHiveFooter,
-  PatchHiveHeader,
-  TabBar,
-} from "@patchhivehq/ui";
-import { createApiFetcher, useApiKeyAuth } from "@patchhivehq/product-shell";
+  ProductAppFrame,
+  ProductSessionGate,
+  useApiFetcher,
+  useApiKeyAuth,
+} from "@patchhivehq/product-shell";
 import { API } from "./config.js";
 import OverviewPanel from "./panels/OverviewPanel.jsx";
 import IngestPanel from "./panels/IngestPanel.jsx";
@@ -41,7 +39,7 @@ export default function App() {
   const [run, setRun] = useState(null);
   const [activeRepo, setActiveRepo] = useState("");
   const [error, setError] = useState("");
-  const fetch_ = createApiFetcher(apiKey);
+  const fetch_ = useApiFetcher(apiKey);
 
   useEffect(() => {
     applyTheme("repo-memory");
@@ -99,57 +97,44 @@ export default function App() {
     [fetch_]
   );
 
-  if (!checked) {
-    return (
-      <div style={{ minHeight: "100vh", background: "#080810", display: "flex", alignItems: "center", justifyContent: "center", color: "#2a8a4a", fontSize: 26 }}>
-        🧠
-      </div>
-    );
-  }
-
-  if (needsAuth) {
-    return (
-      <LoginPage
-        onLogin={login}
+  return (
+    <ProductSessionGate
+      checked={checked}
+      needsAuth={needsAuth}
+      onLogin={login}
+      icon="🧠"
+      title="RepoMemory"
+      storageKey="repo-memory_api_key"
+      apiBase={API}
+      authError={authError}
+      bootstrapRequired={bootstrapRequired}
+      onGenerateKey={generateKey}
+      loadingColor="#2a8a4a"
+    >
+      <ProductAppFrame
         icon="🧠"
         title="RepoMemory"
-        subtitle="by PatchHive"
-        storageKey="repo-memory_api_key"
-        apiBase={API}
-        authError={authError}
-        bootstrapRequired={bootstrapRequired}
-        onGenerateKey={generateKey}
-      />
-    );
-  }
-
-  return (
-    <div style={{ minHeight: "100vh", background: "var(--bg)", color: "var(--text)", fontFamily: "'SF Mono','Fira Mono',monospace", fontSize: 12 }}>
-      <PatchHiveHeader icon="🧠" title="RepoMemory" version="v0.1.0" running={running}>
-        <div style={{ fontSize: 10, color: "var(--text-dim)" }}>
-          Durable repo memory from merged history and review pain
-        </div>
-        {activeRepo && (
-          <div style={{ fontSize: 10, color: "var(--accent)" }}>
-            {activeRepo}
-          </div>
-        )}
-        {apiKey && (
-          <Btn onClick={logout} style={{ padding: "4px 10px" }}>
-            Sign out
-          </Btn>
-        )}
-      </PatchHiveHeader>
-
-      <TabBar tabs={TABS} active={tab} onChange={setTab} />
-
-      <div style={{ padding: 24, maxWidth: 1320, margin: "0 auto", display: "grid", gap: 16 }}>
-        {error && (
-          <div style={{ border: "1px solid var(--accent)44", background: "var(--accent)10", color: "var(--accent)", borderRadius: 8, padding: "12px 14px" }}>
-            {error}
-          </div>
-        )}
-
+        product="RepoMemory"
+        running={running}
+        headerChildren={
+          <>
+            <div style={{ fontSize: 10, color: "var(--text-dim)" }}>
+              Durable repo memory from merged history and review pain
+            </div>
+            {activeRepo && (
+              <div style={{ fontSize: 10, color: "var(--accent)" }}>
+                {activeRepo}
+              </div>
+            )}
+          </>
+        }
+        tabs={TABS}
+        activeTab={tab}
+        onTabChange={setTab}
+        error={error}
+        onSignOut={logout}
+        showSignOut={Boolean(apiKey)}
+      >
         {tab === "overview" && (
           <OverviewPanel apiKey={apiKey} activeRepo={activeRepo} setActiveRepo={setActiveRepo} onOpenIngest={() => setTab("ingest")} />
         )}
@@ -179,9 +164,7 @@ export default function App() {
           />
         )}
         {tab === "checks" && <ChecksPanel apiKey={apiKey} />}
-      </div>
-
-      <PatchHiveFooter product="RepoMemory" />
-    </div>
+      </ProductAppFrame>
+    </ProductSessionGate>
   );
 }

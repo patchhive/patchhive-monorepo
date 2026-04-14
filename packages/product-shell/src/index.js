@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+export { ProductAppFrame, ProductSessionGate } from "./ProductAppFrame.jsx";
 
 const apiFetcherCache = new Map();
 

@@ -10,11 +10,18 @@ The standalone package repository is mirrored to `patchhive/product-shell`, but 
 
 - `useApiKeyAuth` for API-key-based product login bootstrap
 - `createApiFetcher` for authenticated `fetch` calls against product backends
+- `ProductSessionGate` for shared loading and login handling
+- `ProductAppFrame` for the common PatchHive product shell
 
 ## Usage
 
 ```js
-import { createApiFetcher, useApiKeyAuth } from "@patchhivehq/product-shell";
+import {
+  createApiFetcher,
+  ProductAppFrame,
+  ProductSessionGate,
+  useApiKeyAuth,
+} from "@patchhivehq/product-shell";
 ```
 
 ## Publishing
