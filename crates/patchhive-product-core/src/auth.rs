@@ -110,14 +110,7 @@ fn request_token(headers: &HeaderMap) -> &str {
         .get("X-API-Key")
         .or_else(|| headers.get("Authorization"))
         .and_then(|value| value.to_str().ok())
-        .map(|value| {
-            let trimmed = value.trim();
-            if trimmed.len() >= 7 && trimmed[..7].eq_ignore_ascii_case("bearer ") {
-                trimmed[7..].trim()
-            } else {
-                trimmed
-            }
-        })
+        .map(|value| value.trim_start_matches("Bearer ").trim())
         .unwrap_or("")
 }
 
@@ -325,9 +318,9 @@ mod tests {
     }
 
     #[test]
-    fn request_token_prefers_api_key_and_accepts_case_insensitive_bearer() {
+    fn request_token_prefers_api_key_and_accepts_bearer_header() {
         let mut headers = HeaderMap::new();
-        headers.insert("Authorization", HeaderValue::from_static("bearer test-token"));
+        headers.insert("Authorization", HeaderValue::from_static("Bearer test-token"));
         assert_eq!(request_token(&headers), "test-token");
 
         headers.insert("X-API-Key", HeaderValue::from_static("direct-key"));

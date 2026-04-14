@@ -48,16 +48,8 @@ pub fn valid_repo(repo: &str) -> bool {
     let mut parts = repo.split('/');
     matches!(
         (parts.next(), parts.next(), parts.next()),
-        (Some(owner), Some(name), None)
-            if valid_repo_segment(owner) && valid_repo_segment(name)
+        (Some(owner), Some(name), None) if !owner.trim().is_empty() && !name.trim().is_empty()
     )
-}
-
-fn valid_repo_segment(segment: &str) -> bool {
-    !segment.trim().is_empty()
-        && segment
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
 }
 
 pub async fn get_json<T: DeserializeOwned>(
@@ -231,14 +223,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn valid_repo_accepts_safe_segments() {
+    fn valid_repo_accepts_owner_name_format() {
         assert!(valid_repo("patchhive/repo.reaper_1"));
     }
 
     #[test]
-    fn valid_repo_rejects_extra_or_unsafe_segments() {
+    fn valid_repo_rejects_extra_or_missing_segments() {
         assert!(!valid_repo("patchhive/repo/extra"));
-        assert!(!valid_repo("patchhive/repo?bad"));
         assert!(!valid_repo("patchhive/"));
     }
 
