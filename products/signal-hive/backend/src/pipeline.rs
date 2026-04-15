@@ -70,6 +70,21 @@ struct IssueAnalysis {
     recurring_bug_clusters: Vec<RecurringBugCluster>,
 }
 
+struct RepoAnalysisDraft {
+    repo: crate::models::SearchRepo,
+    issue_analysis: IssueAnalysis,
+    issue_only_priority_score: f64,
+}
+
+#[derive(Default)]
+struct MarkerCounts {
+    todo_count: u32,
+    fixme_count: u32,
+    todo_available: bool,
+    fixme_available: bool,
+    warnings: Vec<String>,
+}
+
 fn issue_age_days(updated_at: &str) -> i64 {
     DateTime::parse_from_rfc3339(updated_at)
         .ok()
@@ -83,6 +98,25 @@ fn round1(value: f64) -> f64 {
 
 fn recurring_issue_count(clusters: &[RecurringBugCluster]) -> i32 {
     clusters.iter().map(|cluster| cluster.issue_count as i32).sum()
+}
+
+fn marker_total(todo_count: u32, fixme_count: u32, todo_available: bool, fixme_available: bool) -> u32 {
+    let mut total = 0;
+    if todo_available {
+        total += todo_count;
+    }
+    if fixme_available {
+        total += fixme_count;
+    }
+    total
+}
+
+fn marker_scan_repo_limit() -> usize {
+    std::env::var("SIGNAL_MARKER_REPO_LIMIT")
+        .ok()
+        .and_then(|value| value.trim().parse::<usize>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(4)
 }
 
 fn title_tokens(title: &str) -> Vec<String> {
@@ -543,6 +577,9 @@ fn summary_from_signals(
     issue_analysis: &IssueAnalysis,
     todo_count: u32,
     fixme_count: u32,
+    todo_available: bool,
+    fixme_available: bool,
+    repo_warnings: &[String],
 ) -> (String, Vec<String>) {
     let mut signals = Vec::new();
 
@@ -582,10 +619,16 @@ fn summary_from_signals(
             issue_analysis.unlabeled_issues
         ));
     }
-    if todo_count > 0 || fixme_count > 0 {
+    if todo_available && fixme_available && (todo_count > 0 || fixme_count > 0) {
         signals.push(format!(
             "{todo_count} TODO and {fixme_count} FIXME markers were found in code search"
         ));
+    } else if !todo_available && !fixme_available {
+        signals.push("TODO/FIXME marker counts were unavailable for this repo in this scan".into());
+    } else if !todo_available {
+        signals.push("TODO marker counts were unavailable for this repo in this scan".into());
+    } else if !fixme_available {
+        signals.push("FIXME marker counts were unavailable for this repo in this scan".into());
     }
 
     let issue_density = (open_issues as f64 / stars.max(25) as f64) * 100.0;
@@ -599,57 +642,123 @@ fn summary_from_signals(
         signals.push("No major maintenance signals found in the current sample".into());
     }
 
+    for warning in repo_warnings {
+        if !signals.iter().any(|signal| signal == warning) {
+            signals.push(warning.clone());
+        }
+    }
+
     let summary = signals.iter().take(2).cloned().collect::<Vec<_>>().join(" · ");
     (summary, signals)
 }
 
-async fn analyze_repo(
+async fn analyze_repo_issue_draft(
     client: &reqwest::Client,
     repo: &crate::models::SearchRepo,
     params: &ScanParams,
-) -> Result<RepoSignal> {
+) -> Result<RepoAnalysisDraft> {
     let issues = github::fetch_open_issues(client, &repo.owner.login, &repo.name, params.issues_per_repo).await?;
     let issue_analysis = issue_signals(&issues, params.stale_days);
-    let todo_count = github::search_code_marker(client, &repo.full_name, "TODO").await;
-    let fixme_count = github::search_code_marker(client, &repo.full_name, "FIXME").await;
-    let (priority_score, score_breakdown) = priority_score(
+    let issue_only_priority_score = priority_score(
         repo.stargazers_count,
         repo.open_issues_count,
         &issue_analysis,
-        todo_count,
-        fixme_count,
+        0,
+        0,
+    )
+    .0;
+
+    Ok(RepoAnalysisDraft {
+        repo: repo.clone(),
+        issue_analysis,
+        issue_only_priority_score,
+    })
+}
+
+async fn collect_marker_counts(
+    client: &reqwest::Client,
+    full_name: &str,
+    code_search_rate_limited: &mut bool,
+) -> MarkerCounts {
+    if *code_search_rate_limited {
+        return MarkerCounts {
+            warnings: vec![
+                "GitHub code search was already rate-limited earlier in this scan, so later repos do not have TODO/FIXME counts.".into(),
+            ],
+            ..MarkerCounts::default()
+        };
+    }
+
+    let mut counts = MarkerCounts::default();
+    let todo_result = github::search_code_marker(client, full_name, "TODO").await;
+    counts.todo_count = todo_result.count;
+    counts.todo_available = todo_result.available;
+    if let Some(warning) = todo_result.warning {
+        counts.warnings.push(warning);
+    }
+    if todo_result.rate_limited {
+        *code_search_rate_limited = true;
+        return counts;
+    }
+
+    let fixme_result = github::search_code_marker(client, full_name, "FIXME").await;
+    counts.fixme_count = fixme_result.count;
+    counts.fixme_available = fixme_result.available;
+    if let Some(warning) = fixme_result.warning {
+        counts.warnings.push(warning);
+    }
+    if fixme_result.rate_limited {
+        *code_search_rate_limited = true;
+    }
+
+    counts
+}
+
+fn finalize_repo_signal(draft: RepoAnalysisDraft, marker_counts: MarkerCounts) -> RepoSignal {
+    let (priority_score, score_breakdown) = priority_score(
+        draft.repo.stargazers_count,
+        draft.repo.open_issues_count,
+        &draft.issue_analysis,
+        marker_counts.todo_count,
+        marker_counts.fixme_count,
     );
     let (summary, signals) = summary_from_signals(
-        repo.stargazers_count,
-        repo.open_issues_count,
-        &issue_analysis,
-        todo_count,
-        fixme_count,
+        draft.repo.stargazers_count,
+        draft.repo.open_issues_count,
+        &draft.issue_analysis,
+        marker_counts.todo_count,
+        marker_counts.fixme_count,
+        marker_counts.todo_available,
+        marker_counts.fixme_available,
+        &marker_counts.warnings,
     );
 
-    Ok(RepoSignal {
-        full_name: repo.full_name.clone(),
-        repo_url: repo.html_url.clone(),
-        description: repo.description.clone().unwrap_or_default(),
-        language: repo.language.clone().unwrap_or_else(|| "unknown".into()),
-        stars: repo.stargazers_count,
-        open_issues: repo.open_issues_count,
-        sampled_issues: issue_analysis.sampled_issues,
-        stale_issues: issue_analysis.stale_issues,
-        unlabeled_issues: issue_analysis.unlabeled_issues,
-        stale_bug_issues: issue_analysis.stale_bug_issues,
-        stale_high_comment_issues: issue_analysis.stale_high_comment_issues,
-        duplicate_candidates: issue_analysis.duplicate_candidates,
-        recurring_bug_clusters: issue_analysis.recurring_bug_clusters,
-        todo_count,
-        fixme_count,
+    RepoSignal {
+        full_name: draft.repo.full_name,
+        repo_url: draft.repo.html_url,
+        description: draft.repo.description.unwrap_or_default(),
+        language: draft.repo.language.unwrap_or_else(|| "unknown".into()),
+        stars: draft.repo.stargazers_count,
+        open_issues: draft.repo.open_issues_count,
+        sampled_issues: draft.issue_analysis.sampled_issues,
+        stale_issues: draft.issue_analysis.stale_issues,
+        unlabeled_issues: draft.issue_analysis.unlabeled_issues,
+        stale_bug_issues: draft.issue_analysis.stale_bug_issues,
+        stale_high_comment_issues: draft.issue_analysis.stale_high_comment_issues,
+        duplicate_candidates: draft.issue_analysis.duplicate_candidates,
+        recurring_bug_clusters: draft.issue_analysis.recurring_bug_clusters,
+        todo_count: marker_counts.todo_count,
+        fixme_count: marker_counts.fixme_count,
+        todo_available: marker_counts.todo_available,
+        fixme_available: marker_counts.fixme_available,
         priority_score,
         score_breakdown,
         summary,
         signals,
-        issue_examples: issue_analysis.issue_examples,
+        issue_examples: draft.issue_analysis.issue_examples,
+        warnings: marker_counts.warnings,
         trend: None,
-    })
+    }
 }
 
 fn repo_trend_status(
@@ -694,8 +803,18 @@ fn enrich_scan_trend(record: &mut ScanRecord, previous: &ScanRecord) {
 
     for repo in &mut record.repos {
         if let Some(previous_repo) = previous_repos.remove(&repo.full_name) {
-            let marker_delta = (repo.todo_count as i32 + repo.fixme_count as i32)
-                - (previous_repo.todo_count as i32 + previous_repo.fixme_count as i32);
+            let marker_delta = marker_total(
+                repo.todo_count,
+                repo.fixme_count,
+                repo.todo_available,
+                repo.fixme_available,
+            ) as i32
+                - marker_total(
+                    previous_repo.todo_count,
+                    previous_repo.fixme_count,
+                    previous_repo.todo_available,
+                    previous_repo.fixme_available,
+                ) as i32;
             let trend = RepoSignalTrend {
                 status: repo_trend_status(
                     round1(repo.priority_score - previous_repo.priority_score),
@@ -735,7 +854,12 @@ fn enrich_scan_trend(record: &mut ScanRecord, previous: &ScanRecord) {
                 priority_delta: round1(repo.priority_score),
                 stale_delta: repo.stale_issues as i32,
                 duplicate_delta: repo.duplicate_candidates.len() as i32,
-                marker_delta: (repo.todo_count + repo.fixme_count) as i32,
+                marker_delta: marker_total(
+                    repo.todo_count,
+                    repo.fixme_count,
+                    repo.todo_available,
+                    repo.fixme_available,
+                ) as i32,
                 recurring_delta: recurring_issue_count(&repo.recurring_bug_clusters),
             });
         }
@@ -841,6 +965,14 @@ fn build_scan_report(record: &ScanRecord) -> ScanReport {
         String::new(),
     ]);
 
+    if !record.warnings.is_empty() {
+        lines.extend(["## Scan Warnings".into(), String::new()]);
+        for warning in &record.warnings {
+            lines.push(format!("- {warning}"));
+        }
+        lines.push(String::new());
+    }
+
     if let Some(trend) = &record.trend {
         lines.extend([
             "## Trend vs Previous Similar Scan".into(),
@@ -880,8 +1012,16 @@ fn build_scan_report(record: &ScanRecord) -> ScanReport {
             repo.unlabeled_issues,
             repo.duplicate_candidates.len(),
             repo.recurring_bug_clusters.len(),
-            repo.todo_count,
-            repo.fixme_count
+            if repo.todo_available {
+                repo.todo_count.to_string()
+            } else {
+                "n/a".into()
+            },
+            if repo.fixme_available {
+                repo.fixme_count.to_string()
+            } else {
+                "n/a".into()
+            }
         ));
 
         if let Some(trend) = &repo.trend {
@@ -893,6 +1033,10 @@ fn build_scan_report(record: &ScanRecord) -> ScanReport {
 
         for signal in repo.signals.iter().take(3) {
             lines.push(format!("- Signal: {signal}"));
+        }
+
+        for warning in &repo.warnings {
+            lines.push(format!("- Warning: {warning}"));
         }
 
         if let Some(factor) = repo.score_breakdown.first() {
@@ -944,12 +1088,64 @@ pub async fn run_scan_record(
     let repos = github::discover_repositories(&state.http, &params, &allowlist, &denylist, &opt_out)
         .await?;
 
-    let mut signals = Vec::new();
+    let mut drafts = Vec::new();
+    let mut scan_warnings = Vec::new();
+    let mut seen_scan_warnings = HashSet::new();
+
     for repo in repos {
-        match analyze_repo(&state.http, &repo, &params).await {
-            Ok(signal) => signals.push(signal),
-            Err(err) => warn!("failed to analyze {}: {err}", repo.full_name),
+        match analyze_repo_issue_draft(&state.http, &repo, &params).await {
+            Ok(draft) => drafts.push(draft),
+            Err(err) => {
+                warn!("failed to analyze {}: {err}", repo.full_name);
+                let warning = format!(
+                    "SignalHive could not analyze `{}` in this scan: {}",
+                    repo.full_name, err
+                );
+                if seen_scan_warnings.insert(warning.clone()) {
+                    scan_warnings.push(warning);
+                }
+            }
         }
+    }
+
+    drafts.sort_by(|a, b| {
+        b.issue_only_priority_score
+            .partial_cmp(&a.issue_only_priority_score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| b.repo.stargazers_count.cmp(&a.repo.stargazers_count))
+    });
+
+    let marker_repo_limit = marker_scan_repo_limit();
+    if drafts.len() > marker_repo_limit {
+        let warning = format!(
+            "SignalHive only ran TODO/FIXME code search on the top {marker_repo_limit} repos in this scan to stay within GitHub search limits. Marker counts are unavailable for the rest of the queue."
+        );
+        if seen_scan_warnings.insert(warning.clone()) {
+            scan_warnings.push(warning);
+        }
+    }
+
+    let mut signals = Vec::new();
+    let mut code_search_rate_limited = false;
+
+    for (index, draft) in drafts.into_iter().enumerate() {
+        let marker_counts = if index < marker_repo_limit {
+            collect_marker_counts(&state.http, &draft.repo.full_name, &mut code_search_rate_limited).await
+        } else {
+            MarkerCounts {
+                warnings: vec![
+                    "SignalHive capped TODO/FIXME code search to the highest-priority repos in this scan, so the rest of the queue does not include marker counts.".into(),
+                ],
+                ..MarkerCounts::default()
+            }
+        };
+
+        for warning in &marker_counts.warnings {
+            if seen_scan_warnings.insert(warning.clone()) {
+                scan_warnings.push(warning.clone());
+            }
+        }
+        signals.push(finalize_repo_signal(draft, marker_counts));
     }
 
     signals.sort_by(|a, b| {
@@ -959,7 +1155,7 @@ pub async fn run_scan_record(
             .then_with(|| b.stars.cmp(&a.stars))
     });
 
-    let mut record = db::save_scan(&params, &signals, trigger_type, schedule_name)?;
+    let mut record = db::save_scan(&params, &signals, &scan_warnings, trigger_type, schedule_name)?;
     enrich_scan_record(&mut record)?;
     Ok(record)
 }

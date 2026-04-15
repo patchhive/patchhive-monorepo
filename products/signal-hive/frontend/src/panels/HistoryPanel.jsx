@@ -105,6 +105,7 @@ export default function HistoryPanel({ apiKey }) {
                   {scan.trigger_type || "manual"}
                 </Tag>
                 {scan.schedule_name && <Tag>{scan.schedule_name}</Tag>}
+                {scan.warning_count > 0 && <Tag color="var(--gold)">{scan.warning_count} warnings</Tag>}
               </div>
               <div style={{ color: "var(--text-muted)", fontSize: 10, marginTop: 6 }}>
                 {scan.search_query || scan.topics.join(", ") || scan.languages.join(", ")}
@@ -139,6 +140,7 @@ export default function HistoryPanel({ apiKey }) {
                     {selected.trigger_type || "manual"}
                   </Tag>
                   {selected.schedule_name && <Tag>{selected.schedule_name}</Tag>}
+                  {selected.warnings?.length > 0 && <Tag color="var(--gold)">{selected.warnings.length} warnings</Tag>}
                 </div>
               </div>
               <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
@@ -152,6 +154,27 @@ export default function HistoryPanel({ apiKey }) {
                 <div style={{ color: "var(--text-muted)", fontSize: 11 }}>Scan ID {selected.id}</div>
               </div>
             </div>
+
+            {selected.warnings?.length > 0 && (
+              <div
+                style={{
+                  ...S.panel,
+                  display: "grid",
+                  gap: 8,
+                  border: "1px solid color-mix(in srgb, var(--gold) 40%, var(--border))",
+                  background: "color-mix(in srgb, var(--gold) 10%, var(--bg))",
+                }}
+              >
+                <div style={{ fontSize: 13, fontWeight: 700, color: "var(--gold)" }}>
+                  Saved scan warnings
+                </div>
+                {selected.warnings.map((warning) => (
+                  <div key={warning} style={{ color: "var(--text)", fontSize: 12, lineHeight: 1.6 }}>
+                    {warning}
+                  </div>
+                ))}
+              </div>
+            )}
 
             {selected.trend && (
               <div style={{ ...S.panel, display: "grid", gap: 8 }}>

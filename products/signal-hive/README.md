@@ -47,6 +47,7 @@ SignalHive works best with a fine-grained personal access token.
 ## Local Notes
 
 - The backend stores scan history in SQLite at `SIGNAL_DB_PATH`.
+- SignalHive caps TODO/FIXME code search to the highest-priority repos in each scan by default so GitHub code-search limits do not overwhelm broader scans. Tune this with `SIGNAL_MARKER_REPO_LIMIT`.
 - The frontend uses `@patchhivehq/ui` and `@patchhivehq/product-shell`.
 - Generate the first local API key from `http://localhost:5174`.
 - If remote bootstrap is intentional, set `PATCHHIVE_ALLOW_REMOTE_BOOTSTRAP=true`.

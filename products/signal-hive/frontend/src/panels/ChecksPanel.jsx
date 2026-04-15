@@ -25,6 +25,9 @@ export default function ChecksPanel({ apiKey }) {
           <div style={{ color: "var(--text-dim)", fontSize: 12 }}>
             SignalHive is intentionally read-only. These checks focus on GitHub access and local storage readiness.
           </div>
+          <div style={{ color: "var(--text-muted)", fontSize: 11, marginTop: 6, maxWidth: 760, lineHeight: 1.5 }}>
+            TODO/FIXME code search has a much tighter GitHub limit than normal repo and issue reads, so wider scans may show partial marker counts even when the main scan succeeds.
+          </div>
         </div>
         <Btn onClick={refresh}>Refresh</Btn>
       </div>

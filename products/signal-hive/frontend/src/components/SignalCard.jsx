@@ -9,6 +9,10 @@ function Stat({ label, value }) {
   );
 }
 
+function markerValue(value, available) {
+  return available ? value : "n/a";
+}
+
 function impactColor(impact) {
   if (impact >= 15) {
     return "var(--accent)";
@@ -134,9 +138,23 @@ export default function SignalCard({ repo }) {
         <Stat label="Stale w/Discussion" value={repo.stale_high_comment_issues} />
         <Stat label="Recurring Bugs" value={repo.recurring_bug_clusters.length} />
         <Stat label="Duplicates" value={repo.duplicate_candidates.length} />
-        <Stat label="TODO" value={repo.todo_count} />
-        <Stat label="FIXME" value={repo.fixme_count} />
+        <Stat label="TODO" value={markerValue(repo.todo_count, repo.todo_available)} />
+        <Stat label="FIXME" value={markerValue(repo.fixme_count, repo.fixme_available)} />
       </div>
+
+      {repo.warnings?.length > 0 && (
+        <>
+          <Divider />
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <div style={S.label}>Scan Caveats</div>
+            {repo.warnings.map((warning) => (
+              <div key={`${repo.full_name}-${warning}`} style={{ color: "var(--gold)", fontSize: 12, lineHeight: 1.5 }}>
+                {warning}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
 
       {repo.score_breakdown?.length > 0 && (
         <>

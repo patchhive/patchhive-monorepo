@@ -562,7 +562,34 @@ export default function ScanPanel({ apiKey, params, setParams, running, onRun, s
                 {scan.trigger_type || "manual"}
               </Tag>
               {scan.schedule_name && <Tag>{scan.schedule_name}</Tag>}
+              {scan.warnings?.length > 0 && (
+                <Tag color="var(--gold)">
+                  {scan.warnings.length} warning{scan.warnings.length === 1 ? "" : "s"}
+                </Tag>
+              )}
             </div>
+
+            {scan.warnings?.length > 0 && (
+              <div
+                style={{
+                  border: "1px solid color-mix(in srgb, var(--gold) 40%, var(--border))",
+                  borderRadius: 8,
+                  padding: "12px 14px",
+                  background: "color-mix(in srgb, var(--gold) 10%, var(--bg))",
+                  display: "grid",
+                  gap: 8,
+                }}
+              >
+                <div style={{ fontSize: 13, fontWeight: 700, color: "var(--gold)" }}>
+                  This scan completed with partial warnings
+                </div>
+                {scan.warnings.map((warning) => (
+                  <div key={warning} style={{ color: "var(--text)", fontSize: 12, lineHeight: 1.6 }}>
+                    {warning}
+                  </div>
+                ))}
+              </div>
+            )}
 
             {scan.trend && (
               <div style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "12px 14px", background: "var(--bg)", display: "grid", gap: 8 }}>

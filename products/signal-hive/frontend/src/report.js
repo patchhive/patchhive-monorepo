@@ -10,6 +10,26 @@ export function downloadTextFile(filename, content, mimeType) {
   URL.revokeObjectURL(href);
 }
 
+export function markerCountTotal(repo) {
+  return (repo?.todo_available ? repo.todo_count : 0) + (repo?.fixme_available ? repo.fixme_count : 0);
+}
+
+export function markerCountsLabel(repo) {
+  if (!repo) {
+    return "n/a";
+  }
+  if (!repo.todo_available && !repo.fixme_available) {
+    return "n/a";
+  }
+  if (!repo.todo_available) {
+    return `TODO n/a • FIXME ${repo.fixme_count}`;
+  }
+  if (!repo.fixme_available) {
+    return `TODO ${repo.todo_count} • FIXME n/a`;
+  }
+  return `${repo.todo_count + repo.fixme_count}`;
+}
+
 function fmtSigned(value, digits = 0) {
   const rounded = digits > 0 ? Number(value).toFixed(digits) : `${Math.round(value)}`;
   return `${value >= 0 ? "+" : ""}${rounded}`;
@@ -37,9 +57,9 @@ export function summarizeScanHighlights(scan) {
   const topDuplicates = [...(scan?.repos || [])].sort(
     (left, right) => right.duplicate_candidates.length - left.duplicate_candidates.length,
   )[0];
-  const topMarkers = [...(scan?.repos || [])].sort(
-    (left, right) => (right.todo_count + right.fixme_count) - (left.todo_count + left.fixme_count),
-  )[0];
+  const topMarkers = [...(scan?.repos || [])]
+    .filter((repo) => repo.todo_available || repo.fixme_available)
+    .sort((left, right) => markerCountTotal(right) - markerCountTotal(left))[0];
   const risingRepos = (scan?.repos || []).filter((repo) => repo.trend?.status === "rising");
   const improvingRepos = (scan?.repos || []).filter((repo) => repo.trend?.status === "improving");
 
@@ -72,6 +92,9 @@ export function buildDashboardSummary(scan) {
       : null,
     scan.trend
       ? `Compared to the previous similar scan: signals ${fmtSigned(scan.trend.total_signals_delta)}, rising repos ${risingRepos.length}, improving repos ${improvingRepos.length}.`
+      : null,
+    scan?.warnings?.length
+      ? `This scan completed with ${scan.warnings.length} warning${scan.warnings.length === 1 ? "" : "s"}, so some marker counts may be partial or unavailable.`
       : null,
   ].filter(Boolean);
 
@@ -112,7 +135,7 @@ export function buildDashboardHtml(scan, timeline) {
           <td>${repo.stale_issues}</td>
           <td>${repo.duplicate_candidates.length}</td>
           <td>${repo.recurring_bug_clusters.length}</td>
-          <td>${repo.todo_count + repo.fixme_count}</td>
+          <td>${escapeHtml(markerCountsLabel(repo))}</td>
         </tr>`,
     )
     .join("");
@@ -139,6 +162,16 @@ export function buildDashboardHtml(scan, timeline) {
           <span class="pill neutral">${scan.trend.steady_repos} steady</span>
         </div>
         <p>Compared to ${escapeHtml(new Date(scan.trend.compared_to_created_at).toLocaleString())}, this queue has ${scan.trend.new_repos} new repos and ${scan.trend.dropped_repos} dropped repos.</p>
+      </div>`
+    : "";
+
+  const warningSummary = scan.warnings?.length
+    ? `
+      <div class="card">
+        <h2>Scan Warnings</h2>
+        <ul>
+          ${scan.warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join("")}
+        </ul>
       </div>`
     : "";
 
@@ -252,6 +285,7 @@ export function buildDashboardHtml(scan, timeline) {
         <div class="stat"><div class="label">Top Repo</div><div class="value" style="font-size:16px;">${escapeHtml(scan.summary.top_repo)}</div></div>
       </div>
     </div>
+    ${warningSummary}
     ${trendSummary}
     <div class="grid">
       <div class="card">
@@ -261,7 +295,7 @@ export function buildDashboardHtml(scan, timeline) {
           <li><strong>Most stale backlog:</strong> ${topStale ? `${escapeHtml(topStale.full_name)} with ${topStale.stale_issues} stale issues` : '<span>No stale backlog spike</span>'}</li>
           <li><strong>Recurring bug pressure:</strong> ${topRecurring ? `${escapeHtml(topRecurring.full_name)} with ${topRecurring.recurring_bug_clusters.length} clusters` : '<span>No major recurring cluster</span>'}</li>
           <li><strong>Duplicate issue pressure:</strong> ${topDuplicates ? `${escapeHtml(topDuplicates.full_name)} with ${topDuplicates.duplicate_candidates.length} likely duplicate pairs` : '<span>No duplicate hotspot</span>'}</li>
-          <li><strong>Code marker pressure:</strong> ${topMarkers ? `${escapeHtml(topMarkers.full_name)} with ${topMarkers.todo_count + topMarkers.fixme_count} TODO/FIXME markers` : '<span>No marker hotspot</span>'}</li>
+          <li><strong>Code marker pressure:</strong> ${topMarkers ? `${escapeHtml(topMarkers.full_name)} with ${escapeHtml(markerCountsLabel(topMarkers))}` : '<span>No marker hotspot</span>'}</li>
         </ul>
       </div>
       <div class="card">

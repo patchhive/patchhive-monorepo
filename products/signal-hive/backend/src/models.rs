@@ -79,11 +79,17 @@ pub struct RepoSignal {
     pub recurring_bug_clusters: Vec<RecurringBugCluster>,
     pub todo_count: u32,
     pub fixme_count: u32,
+    #[serde(default = "default_true")]
+    pub todo_available: bool,
+    #[serde(default = "default_true")]
+    pub fixme_available: bool,
     pub priority_score: f64,
     pub score_breakdown: Vec<ScoreFactor>,
     pub summary: String,
     pub signals: Vec<String>,
     pub issue_examples: Vec<IssueSample>,
+    #[serde(default)]
+    pub warnings: Vec<String>,
     #[serde(default)]
     pub trend: Option<RepoSignalTrend>,
 }
@@ -136,6 +142,8 @@ pub struct ScanRecord {
     pub summary: ScanSummary,
     pub repos: Vec<RepoSignal>,
     #[serde(default)]
+    pub warnings: Vec<String>,
+    #[serde(default)]
     pub trigger_type: String,
     #[serde(default)]
     pub schedule_name: Option<String>,
@@ -154,6 +162,8 @@ pub struct ScanHistoryItem {
     pub total_repos: u32,
     pub total_signals: u32,
     pub top_repo: String,
+    #[serde(default)]
+    pub warning_count: u32,
     #[serde(default)]
     pub trigger_type: String,
     #[serde(default)]
@@ -208,4 +218,8 @@ pub struct ScanTimelinePoint {
 pub struct ScanTimeline {
     pub current_scan_id: String,
     pub points: Vec<ScanTimelinePoint>,
+}
+
+fn default_true() -> bool {
+    true
 }

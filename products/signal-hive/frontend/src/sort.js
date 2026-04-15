@@ -1,3 +1,7 @@
+function markerTotal(repo) {
+  return (repo.todo_available ? repo.todo_count : 0) + (repo.fixme_available ? repo.fixme_count : 0);
+}
+
 export const SORT_OPTIONS = [
   { v: "priority", l: "Priority Score" },
   { v: "stale", l: "Most Stale Issues" },
@@ -38,7 +42,7 @@ export function sortRepos(repos, sortBy) {
         );
       case "markers":
         return (
-          right.todo_count + right.fixme_count - (left.todo_count + left.fixme_count) ||
+          markerTotal(right) - markerTotal(left) ||
           right.priority_score - left.priority_score
         );
       default:

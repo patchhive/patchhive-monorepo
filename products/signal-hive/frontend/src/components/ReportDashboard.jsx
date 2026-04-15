@@ -1,5 +1,5 @@
 import { Btn, S, Tag } from "@patchhivehq/ui";
-import { buildDashboardSummary, summarizeScanHighlights } from "../report.js";
+import { buildDashboardSummary, markerCountsLabel, summarizeScanHighlights } from "../report.js";
 
 function StatCard({ label, value, detail, color = "var(--text)" }) {
   return (
@@ -135,6 +135,28 @@ export default function ReportDashboard({
         </div>
       )}
 
+      {scan.warnings?.length > 0 && (
+        <div
+          style={{
+            border: "1px solid color-mix(in srgb, var(--gold) 40%, var(--border))",
+            borderRadius: 10,
+            padding: "12px 14px",
+            background: "color-mix(in srgb, var(--gold) 10%, var(--bg))",
+            display: "grid",
+            gap: 8,
+          }}
+        >
+          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--gold)", letterSpacing: "0.08em", textTransform: "uppercase" }}>
+            Partial Scan Warnings
+          </div>
+          {scan.warnings.map((warning) => (
+            <div key={warning} style={{ color: "var(--text)", fontSize: 12, lineHeight: 1.6 }}>
+              {warning}
+            </div>
+          ))}
+        </div>
+      )}
+
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 12 }}>
         <InsightCard title="Top Queue" accent="var(--accent)">
           <div style={{ display: "grid", gap: 8 }}>
@@ -187,7 +209,7 @@ export default function ReportDashboard({
             </div>
             <div>
               <span style={{ color: "var(--text-dim)" }}>Marker hotspot:</span>{" "}
-              {topMarkers ? `${topMarkers.full_name} • ${topMarkers.todo_count + topMarkers.fixme_count} TODO/FIXME markers` : "none"}
+              {topMarkers ? `${topMarkers.full_name} • ${markerCountsLabel(topMarkers)}` : "none"}
             </div>
             <div>
               <span style={{ color: "var(--text-dim)" }}>Recurring cluster leader:</span>{" "}

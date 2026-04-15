@@ -112,6 +112,11 @@ export default function App() {
                 {scan.summary.total_signals} signals
               </div>
             )}
+            {scan?.warnings?.length > 0 && (
+              <div style={{ fontSize: 10, color: "var(--gold)" }}>
+                {scan.warnings.length} warning{scan.warnings.length === 1 ? "" : "s"}
+              </div>
+            )}
           </>
         }
         tabs={TABS}

@@ -9,6 +9,14 @@ use tracing::warn;
 
 use crate::models::{GitHubIssue, ScanParams, SearchRepo};
 
+#[derive(Debug, Clone)]
+pub struct MarkerSearchResult {
+    pub count: u32,
+    pub available: bool,
+    pub rate_limited: bool,
+    pub warning: Option<String>,
+}
+
 pub async fn validate_token(client: &Client) -> Result<()> {
     validate_shared_token(client).await
 }
@@ -134,12 +142,43 @@ pub async fn fetch_open_issues(
     Ok(issues)
 }
 
-pub async fn search_code_marker(client: &Client, full_name: &str, marker: &str) -> u32 {
+fn is_rate_limit_error(message: &str) -> bool {
+    let lower = message.to_ascii_lowercase();
+    lower.contains("rate limit exceeded") || lower.contains("secondary rate limit")
+}
+
+pub async fn search_code_marker(
+    client: &Client,
+    full_name: &str,
+    marker: &str,
+) -> MarkerSearchResult {
     match code_search_count(client, &format!("{marker} repo:{full_name}")).await {
-        Ok(total_count) => total_count,
+        Ok(total_count) => MarkerSearchResult {
+            count: total_count,
+            available: true,
+            rate_limited: false,
+            warning: None,
+        },
         Err(err) => {
             warn!("code search failed for {full_name} marker {marker}: {err}");
-            0
+            let message = err.to_string();
+            let rate_limited = is_rate_limit_error(&message);
+            let warning = if rate_limited {
+                format!(
+                    "GitHub code search rate-limited TODO/FIXME scanning for `{full_name}`. Marker counts may be partial or unavailable in this scan."
+                )
+            } else {
+                format!(
+                    "GitHub code search failed for `{full_name}` while checking `{marker}` markers. Marker counts may be partial for this repo."
+                )
+            };
+
+            MarkerSearchResult {
+                count: 0,
+                available: false,
+                rate_limited,
+                warning: Some(warning),
+            }
         }
     }
 }

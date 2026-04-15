@@ -67,6 +67,7 @@ pub fn init_db() -> Result<()> {
             id TEXT PRIMARY KEY,
             created_at TEXT NOT NULL,
             params_signature TEXT NOT NULL DEFAULT '',
+            warnings_json TEXT NOT NULL DEFAULT '[]',
             trigger_type TEXT NOT NULL DEFAULT 'manual',
             schedule_name TEXT,
             search_query TEXT NOT NULL,
@@ -96,13 +97,17 @@ pub fn init_db() -> Result<()> {
             stale_bug_issues INTEGER NOT NULL DEFAULT 0,
             stale_high_comment_issues INTEGER NOT NULL DEFAULT 0,
             duplicate_candidates_json TEXT NOT NULL,
+            recurring_bug_clusters_json TEXT NOT NULL DEFAULT '[]',
             todo_count INTEGER NOT NULL,
             fixme_count INTEGER NOT NULL,
+            todo_available INTEGER NOT NULL DEFAULT 1,
+            fixme_available INTEGER NOT NULL DEFAULT 1,
             priority_score REAL NOT NULL,
             score_breakdown_json TEXT NOT NULL DEFAULT '[]',
             summary TEXT NOT NULL,
             signals_json TEXT NOT NULL,
-            issue_examples_json TEXT NOT NULL
+            issue_examples_json TEXT NOT NULL,
+            warnings_json TEXT NOT NULL DEFAULT '[]'
         );
 
         CREATE TABLE IF NOT EXISTS repo_lists (
@@ -139,6 +144,12 @@ pub fn init_db() -> Result<()> {
         "scans",
         "params_signature",
         "params_signature TEXT NOT NULL DEFAULT ''",
+    )?;
+    ensure_column(
+        &conn,
+        "scans",
+        "warnings_json",
+        "warnings_json TEXT NOT NULL DEFAULT '[]'",
     )?;
     ensure_column(
         &conn,
@@ -189,6 +200,24 @@ pub fn init_db() -> Result<()> {
         "recurring_bug_clusters_json",
         "recurring_bug_clusters_json TEXT NOT NULL DEFAULT '[]'",
     )?;
+    ensure_column(
+        &conn,
+        "repo_signals",
+        "todo_available",
+        "todo_available INTEGER NOT NULL DEFAULT 1",
+    )?;
+    ensure_column(
+        &conn,
+        "repo_signals",
+        "fixme_available",
+        "fixme_available INTEGER NOT NULL DEFAULT 1",
+    )?;
+    ensure_column(
+        &conn,
+        "repo_signals",
+        "warnings_json",
+        "warnings_json TEXT NOT NULL DEFAULT '[]'",
+    )?;
     Ok(())
 }
 
@@ -223,6 +252,7 @@ fn next_run_at(cadence_hours: u32) -> String {
 pub fn save_scan(
     params_in: &ScanParams,
     repos: &[RepoSignal],
+    warnings: &[String],
     trigger_type: &str,
     schedule_name: Option<&str>,
 ) -> Result<ScanRecord> {
@@ -244,6 +274,7 @@ pub fn save_scan(
         params: params_in.clone(),
         summary: summary.clone(),
         repos: repos.to_vec(),
+        warnings: warnings.to_vec(),
         trigger_type: trigger_type.to_string(),
         schedule_name: schedule_name.map(|value| value.to_string()),
         trend: None,
@@ -255,16 +286,17 @@ pub fn save_scan(
     tx.execute(
         r#"
         INSERT INTO scans (
-            id, created_at, params_signature, trigger_type, schedule_name,
+            id, created_at, params_signature, warnings_json, trigger_type, schedule_name,
             search_query, topics_json, languages_json,
             min_stars, max_repos, issues_per_repo, stale_days,
             total_repos, total_signals, top_repo
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
         "#,
         params![
             record.id,
             record.created_at,
             params_signature,
+            serde_json::to_string(&record.warnings)?,
             record.trigger_type,
             record.schedule_name,
             record.params.search_query,
@@ -287,9 +319,10 @@ pub fn save_scan(
                 scan_id, repo_full_name, repo_url, description, language, stars,
                 open_issues, sampled_issues, stale_issues, unlabeled_issues,
                 stale_bug_issues, stale_high_comment_issues, duplicate_candidates_json,
-                recurring_bug_clusters_json, todo_count, fixme_count, priority_score,
-                score_breakdown_json, summary, signals_json, issue_examples_json
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)
+                recurring_bug_clusters_json, todo_count, fixme_count, todo_available,
+                fixme_available, priority_score, score_breakdown_json, summary,
+                signals_json, issue_examples_json, warnings_json
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)
             "#,
             params![
                 record.id,
@@ -308,11 +341,14 @@ pub fn save_scan(
                 serde_json::to_string(&repo.recurring_bug_clusters)?,
                 repo.todo_count,
                 repo.fixme_count,
+                repo.todo_available,
+                repo.fixme_available,
                 repo.priority_score,
                 serde_json::to_string(&repo.score_breakdown)?,
                 repo.summary,
                 serde_json::to_string(&repo.signals)?,
                 serde_json::to_string(&repo.issue_examples)?,
+                serde_json::to_string(&repo.warnings)?,
             ],
         )?;
     }
@@ -326,7 +362,7 @@ pub fn list_scans() -> Result<Vec<ScanHistoryItem>> {
     let mut stmt = conn.prepare(
         r#"
         SELECT id, created_at, search_query, topics_json, languages_json,
-               max_repos, total_repos, total_signals, top_repo, trigger_type, schedule_name
+               max_repos, total_repos, total_signals, top_repo, warnings_json, trigger_type, schedule_name
         FROM scans
         ORDER BY created_at DESC
         LIMIT 25
@@ -344,8 +380,11 @@ pub fn list_scans() -> Result<Vec<ScanHistoryItem>> {
             total_repos: row.get(6)?,
             total_signals: row.get(7)?,
             top_repo: row.get(8)?,
-            trigger_type: row.get(9)?,
-            schedule_name: row.get(10)?,
+            warning_count: serde_json::from_str::<Vec<String>>(&row.get::<_, String>(9)?)
+                .unwrap_or_default()
+                .len() as u32,
+            trigger_type: row.get(10)?,
+            schedule_name: row.get(11)?,
         })
     })?;
 
@@ -363,7 +402,7 @@ pub fn get_scan(id: &str) -> Result<Option<ScanRecord>> {
         r#"
         SELECT created_at, search_query, topics_json, languages_json,
                min_stars, max_repos, issues_per_repo, stale_days,
-               total_repos, total_signals, top_repo, trigger_type, schedule_name
+               total_repos, total_signals, top_repo, warnings_json, trigger_type, schedule_name
         FROM scans
         WHERE id = ?1
         "#,
@@ -386,9 +425,10 @@ pub fn get_scan(id: &str) -> Result<Option<ScanRecord>> {
                     total_signals: row.get(9)?,
                     top_repo: row.get(10)?,
                 },
+                warnings: serde_json::from_str(&row.get::<_, String>(11)?).unwrap_or_default(),
                 repos: Vec::new(),
-                trigger_type: row.get(11)?,
-                schedule_name: row.get(12)?,
+                trigger_type: row.get(12)?,
+                schedule_name: row.get(13)?,
                 trend: None,
             })
         },
@@ -405,8 +445,9 @@ pub fn get_scan(id: &str) -> Result<Option<ScanRecord>> {
         SELECT repo_full_name, repo_url, description, language, stars,
                open_issues, sampled_issues, stale_issues, unlabeled_issues,
                stale_bug_issues, stale_high_comment_issues, duplicate_candidates_json,
-               recurring_bug_clusters_json, todo_count, fixme_count, priority_score,
-               score_breakdown_json, summary, signals_json, issue_examples_json
+               recurring_bug_clusters_json, todo_count, fixme_count, todo_available,
+               fixme_available, priority_score, score_breakdown_json, summary,
+               signals_json, issue_examples_json, warnings_json
         FROM repo_signals
         WHERE scan_id = ?1
         ORDER BY priority_score DESC, stars DESC
@@ -430,11 +471,14 @@ pub fn get_scan(id: &str) -> Result<Option<ScanRecord>> {
             recurring_bug_clusters: serde_json::from_str(&row.get::<_, String>(12)?).unwrap_or_default(),
             todo_count: row.get(13)?,
             fixme_count: row.get(14)?,
-            priority_score: row.get(15)?,
-            score_breakdown: serde_json::from_str(&row.get::<_, String>(16)?).unwrap_or_default(),
-            summary: row.get(17)?,
-            signals: serde_json::from_str(&row.get::<_, String>(18)?).unwrap_or_default(),
-            issue_examples: serde_json::from_str(&row.get::<_, String>(19)?).unwrap_or_default(),
+            todo_available: row.get(15)?,
+            fixme_available: row.get(16)?,
+            priority_score: row.get(17)?,
+            score_breakdown: serde_json::from_str(&row.get::<_, String>(18)?).unwrap_or_default(),
+            summary: row.get(19)?,
+            signals: serde_json::from_str(&row.get::<_, String>(20)?).unwrap_or_default(),
+            issue_examples: serde_json::from_str(&row.get::<_, String>(21)?).unwrap_or_default(),
+            warnings: serde_json::from_str(&row.get::<_, String>(22)?).unwrap_or_default(),
             trend: None,
         })
     })?;
