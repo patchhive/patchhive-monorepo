@@ -32,6 +32,7 @@ Frontend: `http://localhost:__FRONTEND_PORT__`
 - The backend stores starter state in SQLite at `__ENV_PREFIX___DB_PATH`.
 - If this product talks to GitHub, prefer a fine-grained personal access token over a classic PAT.
 - Keep repository access public-only unless the product really needs private repos.
+- Generate the first local API key from `http://localhost:__FRONTEND_PORT__`, not a LAN IP. If remote bootstrap is intentional, set `PATCHHIVE_ALLOW_REMOTE_BOOTSTRAP=true` in `.env`.
 - Replace the overview route, startup checks, and frontend copy as the real product logic appears.
 
 ## Standalone Repo Notes
