@@ -1,114 +1,80 @@
-# 🔱 RepoReaper by PatchHive
+# RepoReaper by PatchHive
 
-> Resolve selected repository issues automatically and open validated pull requests.
+RepoReaper autonomously fixes selected repository issues and opens validated pull requests.
 
-RepoReaper is a multi-agent GitHub bug-fixing system. It hunts open issues, scores them for fixability, generates patches, has them reviewed and refined, runs tests, and opens validated PRs — all autonomously.
+It is PatchHive's outbound contribution product: a multi-agent system that finds promising issues, selects likely code targets, generates patches, reviews and refines those patches, runs validation, and then opens a pull request when the result clears its gates.
 
----
+## Operating Model
 
-## Agent Roles
+| Role | Responsibility |
+| --- | --- |
+| Scout | Finds candidate issues and scores them for fixability. |
+| Judge | Narrows the patch to the most relevant files and code paths. |
+| Reaper | Generates the initial fix. |
+| Smith | Reviews and improves the patch before it moves forward. |
+| Gatekeeper | Runs validation and handles pull request delivery. |
 
-| Role | Icon | Job |
-|------|------|-----|
-| Scout | ◎ | Hunts repos and scores issues for fixability |
-| Judge | ⚖ | Targets the most relevant files for the kill |
-| Reaper | ⚔ | Forges the killing patch |
-| Smith | ⬢ | Refines and improves patches before they ship |
-| Gatekeeper | 🔒 | Runs tests and opens the PR |
+## What RepoReaper Already Does
 
----
+- hunts open GitHub issues and ranks them for fixability
+- supports multiple model providers and OpenAI-compatible local gateways
+- tracks patch confidence and rejected patch history
+- retries patch application and validation failures more intelligently
+- supports watch mode and dry-run targeting
+- stores run history, cost history, and pull request tracking
+- can enrich patch attempts with RepoMemory context before code generation
 
-## Features
+## Run Locally
 
-- **Multi-provider AI** — Anthropic, OpenAI, Gemini, Groq, Ollama
-- **Confidence scoring** — Reaper sets confidence per patch, Smith can reject low-confidence work
-- **Rejected patches log** — Every Smith rejection is recorded with feedback
-- **Self-healing patches** — Auto-retries on apply failure
-- **Configurable test retries** — Set how many times to retry on test failure
-- **Watch Mode** — Webhook-triggered auto-hunt on new bug issues
-- **Dry Stalk** — Preview targets without making any changes
-- **Presets** — Save and reload team configurations
-- **Cost tracking** — Per-run and lifetime cost across all providers
-- **PR Monitor** — Track all opened PRs and auto-cleanup merged branches
-
----
-
-## Quick Start
+### Docker
 
 ```bash
 cp .env.example .env
-# Fill in BOT_GITHUB_TOKEN, BOT_GITHUB_USER, and either PROVIDER_API_KEY or PATCHHIVE_AI_URL
+docker compose up --build
+```
 
-# Dev
+Frontend: `http://localhost:5173`
+Backend: `http://localhost:8000`
+
+### Split Backend and Frontend
+
+```bash
+cp .env.example .env
+
 cd backend && cargo run
 cd ../frontend && npm install && npm run dev
-
-# Docker
-docker-compose up --build
 ```
 
-Backend: `VITE_API_URL` or the current browser origin
-Frontend: `http://localhost:5173`
+## Required Configuration
 
----
+RepoReaper needs:
 
-## Stack
+- a GitHub token in `BOT_GITHUB_TOKEN`
+- a GitHub username in `BOT_GITHUB_USER`
+- either direct provider credentials or `PATCHHIVE_AI_URL`
 
-- **Backend** — Rust, axum, rusqlite, reqwest, tokio
-- **Frontend** — React, Vite
-- **AI** — Direct HTTP to all providers (no SDK dependencies)
+If you only want to work on public repositories, keep your GitHub token public-only. If you want RepoReaper to clone, push, and open pull requests against specific repositories, grant only the write permissions those repositories actually need.
 
-## Standalone Repo Notes
+## AI and Platform Integrations
 
-- The frontend installs `@patchhivehq/ui` from the public npm registry.
-- The standalone GitHub Actions workflow checks `cargo check --locked` for the backend and `npm run build` for the frontend.
-- The PatchHive monorepo remains the source of truth, but this repository is intended to be usable on its own.
-
-## GitHub Token Notes
-
-- Prefer a fine-grained personal access token over a classic PAT whenever your workflow allows it.
-- If you only want RepoReaper to work on public repos, keep repository access public-only and do not grant private repo access.
-- RepoReaper is write-capable, so give it only the write permissions it actually needs for the repos you want it to clone, push, and open PRs against.
-
-## Local AI Gateway
-
-RepoReaper supports `PATCHHIVE_AI_URL` for OpenAI-compatible local gateways.
+RepoReaper can run through direct provider APIs or through `@patchhive/ai-local`.
 
 ```bash
-# Start patchhive-ai-local in its own repo or from the PatchHive monorepo.
-# Then point RepoReaper at that local gateway:
-
-export PATCHHIVE_AI_URL=http://127.0.0.1:8787/v1
-cd backend
-cargo run
+PATCHHIVE_AI_URL=http://127.0.0.1:8787/v1
 ```
 
-If `PATCHHIVE_AI_URL` is set, RepoReaper uses it for the `openai` provider. `OPENAI_BASE_URL` still works as a compatibility fallback.
+Optional integrations:
 
-RepoReaper also supports optional RepoMemory context:
+- `PATCHHIVE_REPO_MEMORY_URL` to load remembered conventions, hotspots, and failure patterns
+- future TrustGate and MergeKeeper flows to gate outbound changes more tightly
 
-```bash
-export PATCHHIVE_REPO_MEMORY_URL=http://127.0.0.1:8030
-# Optional if RepoMemory auth is enabled:
-export PATCHHIVE_REPO_MEMORY_API_KEY=repo-memory_xxxxxxxxxxxxxxxx
-```
+## Safety Defaults
 
-When configured, RepoReaper loads remembered repo conventions, hotspots, and failure patterns before patch generation and retry loops.
+- first-time API-key bootstrap is localhost-first
+- untrusted repo test execution is disabled by default
+- if tests are enabled, Docker sandboxing is the safer default
+- validation and pull request publication are treated as explicit gates, not incidental side effects
 
-## Safer Test Execution
+## Repository Model
 
-RepoReaper keeps untrusted repo test execution disabled by default.
-
-```bash
-export REAPER_ENABLE_UNTRUSTED_TESTS=true
-# optional, defaults to docker:
-export REAPER_TEST_SANDBOX=docker
-```
-
-- `docker` is the safer default and runs tests inside a constrained container.
-- `host` restores direct host execution only if you explicitly choose it.
-- `REAPER_TEST_TIMEOUT_SECONDS` can cap long-running test jobs.
-
----
-
-*RepoReaper by PatchHive — part of the PatchHive maintenance platform*
+The PatchHive monorepo is the source of truth for RepoReaper development. The standalone `patchhive/reporeaper` repository is an exported mirror of this directory.

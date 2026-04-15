@@ -1,30 +1,27 @@
 # patchhive-github-data
 
-Shared Rust GitHub data client for PatchHive products.
+`patchhive-github-data` is the shared Rust GitHub data client for PatchHive products.
 
-This crate holds the repeated GitHub read-paths that started showing up across
-SignalHive, RepoMemory, and FlakeSting.
+It owns the read-heavy GitHub access patterns that recur across visibility and memory products such as SignalHive, RepoMemory, and FlakeSting.
 
 ## Current Scope
 
-- standard PatchHive GitHub token/env resolution
+- PatchHive-standard GitHub token and env resolution
 - repository fetch and repository search
-- issue and merged-PR history reads
-- pull-request review/comment/file reads for historical ingestion
+- issue history and merged pull request history reads
+- review, review comment, and file reads for historical ingestion
 - code search count reads
-- GitHub Actions workflow run and workflow job reads
+- GitHub Actions workflow run and job reads
 
-## Intent
+## Design Boundary
 
-`patchhive-github-data` should stay focused on GitHub data access and typed
-response shapes.
+This crate is for typed GitHub data access, not product interpretation.
 
-It should not absorb:
+It does not own:
 
-- PR webhook verification or PR comment/check publishing
-- product scoring heuristics
-- product policy logic
+- PR webhook verification or PR comment and check publishing
+- scoring heuristics
+- policy logic
 - product-specific route behavior
 
-That keeps the boundary clean alongside `patchhive-github-pr`, which owns the
-PR lifecycle plumbing instead.
+That keeps the boundary clean beside `patchhive-github-pr`, which owns the pull request lifecycle plumbing.

@@ -1,45 +1,32 @@
 # @patchhivehq/ui
 
-Shared React UI primitives and components for PatchHive products.
+`@patchhivehq/ui` is the shared React component library for PatchHive products.
 
-This package is the reusable frontend layer behind PatchHive products such as RepoReaper.
+It provides the common visual layer behind the PatchHive suite: themes, layout primitives, shared navigation, status components, and product-facing UI elements that let individual products feel related without looking copy-pasted.
 
 ## What It Includes
 
-- theme helpers such as `applyTheme`
-- shared style primitives such as `Btn`, `Input`, `Sel`, and `Divider`
-- shared product components such as `AgentCard`, `DiffViewer`, `IssueRow`, and `LoginPage`
+- theme helpers such as `applyTheme` and product theme maps
+- layout primitives such as buttons, inputs, tabs, dividers, and empty states
+- shared product chrome such as headers, footers, and status badges
+- reusable product components such as `AgentCard`, `DiffViewer`, `IssueRow`, and `LoginPage`
 
-## Usage
+## Example
 
 ```js
 import {
   applyTheme,
-  S,
   Btn,
   Input,
-  Sel,
   PatchHiveHeader,
   PatchHiveFooter,
   TabBar,
-  AgentCard,
-  DiffViewer,
   LoginPage,
 } from "@patchhivehq/ui";
 ```
 
-## Publishing
+## Publishing Model
 
-`@patchhivehq/ui` is published from the PatchHive monorepo, with `patchhive/patchhive-ui` kept as the standalone package repo mirror.
+`@patchhivehq/ui` is published to the public npm registry so standalone PatchHive product repositories can install it without private package registry auth.
 
-The intended release target is the public npm registry, so standalone PatchHive product repositories and outside contributors can install it without package-registry authentication.
-
-This package should be published as a public scoped package.
-
-## Monorepo Note
-
-The monorepo remains the source of truth for changes and releases.
-
-Inside the monorepo, products may temporarily depend on this package through a local workspace or `file:` path.
-
-Standalone product repositories should depend on a real versioned package release.
+The monorepo is the source of truth for development and releases. The standalone `patchhive/patchhive-ui` repository is a mirror for visibility, package-level CI, and external consumption.

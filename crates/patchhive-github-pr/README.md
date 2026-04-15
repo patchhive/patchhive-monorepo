@@ -1,15 +1,20 @@
 # patchhive-github-pr
 
-Shared Rust GitHub pull-request plumbing for PatchHive products.
+`patchhive-github-pr` is the shared Rust pull request plumbing crate for PatchHive.
 
-This crate focuses on the repeated mechanics around GitHub PR-driven products:
+It exists for the GitHub mechanics that PR-driven products should not each reimplement for themselves: webhook verification, pull request fetch paths, check publishing, status publishing, and maintained pull request comments.
 
-- resolving GitHub tokens from the standard PatchHive env vars
-- verifying signed GitHub webhooks
-- fetching PR metadata, merge/commit health, reviews, review threads, and unified diffs
-- publishing GitHub check runs and commit statuses
-- maintaining one managed PR comment instead of spamming review threads
+## Current Scope
 
-It is intentionally plumbing, not product logic. Products like TrustGate should
-format their own policy/report content and call this crate for transport and
-GitHub API operations.
+- PatchHive-standard GitHub token and env resolution
+- signed GitHub webhook verification
+- pull request metadata, diff, review, thread, and commit-health reads
+- GitHub check run publishing
+- commit status publishing
+- maintained pull request comment upsert
+
+## Design Boundary
+
+This crate is intentionally plumbing, not product logic.
+
+Products such as TrustGate, ReviewBee, and MergeKeeper should keep their own scoring, report language, and policy decisions local while using this crate for GitHub transport and lifecycle operations.

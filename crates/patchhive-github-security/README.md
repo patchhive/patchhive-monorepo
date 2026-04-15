@@ -1,28 +1,18 @@
 # patchhive-github-security
 
-Shared Rust GitHub security data client for PatchHive products.
+`patchhive-github-security` is the shared Rust security data client for PatchHive products.
 
-This crate holds the repeated GitHub security read paths that started showing up
-across DepTriage and VulnTriage.
+It owns the GitHub security and advisory reads that should stay consistent across products such as VulnTriage and DepTriage.
 
 ## Current Scope
 
-- standard PatchHive GitHub token/env resolution via `patchhive-github-data`
+- PatchHive-standard GitHub token and env resolution through `patchhive-github-data`
 - Dependabot alert reads
 - code scanning alert reads
-- advisory metadata, CWEs, references, and EPSS fields
+- typed advisory metadata, references, CWEs, and EPSS fields
 
-## Intent
+## Design Boundary
 
-`patchhive-github-security` should stay focused on typed GitHub security reads.
+This crate is for security data access, not product ranking.
 
-It should not absorb:
-
-- PR webhook verification or PR comment/check publishing
-- generic repository or issue history reads
-- product-specific scoring heuristics
-- product-specific route behavior or policy logic
-
-That keeps the boundary clean alongside `patchhive-github-data`, which owns the
-broader GitHub read layer, and `patchhive-github-pr`, which owns PR lifecycle
-plumbing.
+Products should keep their own scoring, prioritization, and explanation logic on top of the typed security data this crate provides.

@@ -1,47 +1,39 @@
 # PatchHive Product Starter
 
-Monorepo-first starter scaffold for new PatchHive products.
+The PatchHive Product Starter is the monorepo-first scaffold for new PatchHive products.
 
-This directory is the source for the shared starter used by:
+It gives new products the parts that should already be solved on day one: a shared frontend shell, shared backend auth and startup wiring, Docker support, API-key bootstrap, and standalone CI.
+
+## What Lives Here
+
+- `scaffold/` contains the files copied into each new product
+- the scaffold already includes:
+  - shared Rust backend auth and startup wiring
+  - shared React product shell wiring
+  - Docker support
+  - API-key bootstrap
+  - standalone GitHub Actions CI
+
+## Usage
+
+Create a new product from the monorepo:
 
 ```bash
 ./scripts/new-product.sh <product-slug>
 ```
 
-## What Lives Here
-
-- `scaffold/` contains the actual files copied into a new product
-- the scaffold includes:
-  - shared Rust backend auth/startup shell
-  - shared React frontend shell
-  - Docker files
-  - API-key auth bootstrap
-  - standalone GitHub Actions CI
-
-## How It Is Used
-
-Inside the monorepo, create a new product with:
+Example:
 
 ```bash
-./scripts/new-product.sh review-bee --icon "🐝" --tagline "Turn review churn into concrete follow-up work."
+./scripts/new-product.sh review-bee --icon "🐝" --tagline "Turn review churn into a concrete merge checklist."
 ```
 
-If that new backend uses shared git crates such as `patchhive-product-core`, refresh its standalone-safe lockfile before the first export:
+## Export Model
 
-```bash
-./scripts/refresh-product-lockfile.sh review-bee
-```
+The PatchHive monorepo is the source of truth for the starter. The standalone `patchhive/patchhive-product-starter` repository is an exported mirror.
 
-`./scripts/export-product.sh` now does that automatically for Rust-backed products before it exports them.
-
-## Standalone Repo
-
-`patchhive-product-starter` should be treated as an exported mirror of this directory, not the primary editing location.
-
-If the starter scaffold's shared git crate dependencies change, refresh its standalone-safe lockfile with:
+If the scaffold's shared Rust git dependencies change, refresh its standalone-safe lockfile with:
 
 ```bash
 ./scripts/refresh-template-lockfile.sh product-starter
 ```
-
-The actual scaffold files live under [scaffold/](/home/coemedia/Documents/code/patchhive/templates/product-starter/scaffold).

@@ -1,52 +1,57 @@
-# 🐝 ReviewBee by PatchHive
+# ReviewBee by PatchHive
 
-> Turn reviewer churn into a concrete merge checklist.
+ReviewBee turns reviewer churn into a concrete pull request checklist.
 
-ReviewBee reads pull request review comments, identifies which ones are actually actionable, groups similar requests together, and turns them into a clear checklist for the author. Instead of making engineers reread long review threads, it helps teams understand what still needs to change before a PR can merge.
+It reads review comments and review threads, separates actionable feedback from noise, groups similar requests into one follow-up item, and keeps the result attached to the pull request so authors can see what still matters.
 
-## What It Does
+## Core Workflow
 
-- fetches GitHub PR reviews and review threads for a target PR
-- filters out praise/noise and keeps the parts that still sound actionable
-- clusters similar review feedback into concrete checklist items
-- tracks resolved vs still-open review themes
-- suggests follow-up prompts the author or an agent can use to clear review churn faster
-- stores review history locally so teams can reload previous checklists
-- can maintain a single ReviewBee PR comment so the checklist stays attached to the pull request
-- can refresh itself from GitHub webhooks when new review activity lands
+- fetch reviews and review threads for a target pull request
+- keep the actionable parts and collapse repetition
+- cluster feedback into a concrete checklist
+- track what still appears unresolved
+- optionally maintain a single GitHub comment with the current checklist
+- refresh from signed webhooks when review activity changes
 
-ReviewBee is intentionally review-first. It helps close PRs faster, but it does not edit code. Its GitHub-facing artifact is a maintained checklist comment, not a write-to-code action.
+ReviewBee is intentionally review-first. It does not edit code. Its job is to make review work easier to understand and easier to clear.
 
-## Quick Start
+## Run Locally
+
+### Docker
+
+```bash
+cp .env.example .env
+docker compose up --build
+```
+
+Frontend: `http://localhost:5177`
+Backend: `http://localhost:8040`
+
+### Split Backend and Frontend
 
 ```bash
 cp .env.example .env
 
-# Backend
 cd backend && cargo run
-
-# Frontend
 cd ../frontend && npm install && npm run dev
 ```
 
-Backend: `http://localhost:8040`
-Frontend: `http://localhost:5177`
+## GitHub Access
 
-## Local Run Notes
+ReviewBee works best with a fine-grained personal access token.
 
-- The frontend uses `@patchhivehq/ui` and `@patchhivehq/product-shell`.
+- If you only want public repositories, keep the token public-only.
+- Reading pull requests, reviews, and review threads is enough for the core product loop.
+- If you want ReviewBee to maintain a checklist comment in GitHub, add the smallest write permission that supports PR comment updates in your environment.
+
+## Local Notes
+
 - The backend stores review history in SQLite at `REVIEW_BEE_DB_PATH`.
-- Prefer a fine-grained personal access token over a classic PAT whenever your GitHub setup allows it.
-- If you only want ReviewBee on public repos, keep repository access public-only and avoid private repo access.
-- `BOT_GITHUB_TOKEN` or `GITHUB_TOKEN` is required for GitHub-backed PR review analysis.
-- ReviewBee mainly needs pull request and review read access. If you enable maintained PR comments, add the smallest matching write permission for that artifact in your GitHub setup.
-- `REVIEW_BEE_GITHUB_WEBHOOK_SECRET` enables signed GitHub webhook refreshes on PR review activity.
-- `REVIEW_BEE_PUBLIC_URL` lets ReviewBee link maintained PR comments back to its own history view.
-- ReviewBee does not require `PATCHHIVE_AI_URL` for the MVP loop.
-- The current loop reads review threads and current resolution state, turns that into a merge checklist, and can keep one maintained PR comment in sync with the latest run.
+- The frontend uses `@patchhivehq/ui` and `@patchhivehq/product-shell`.
+- `REVIEW_BEE_GITHUB_WEBHOOK_SECRET` enables signed webhook refreshes.
+- `REVIEW_BEE_PUBLIC_URL` lets ReviewBee link maintained comments back to saved runs.
+- Generate the first local API key from `http://localhost:5177`.
 
-## Standalone Repo Notes
+## Repository Model
 
-ReviewBee should be developed in the PatchHive monorepo first. When it gets its own repository later, that standalone repo should be treated as an exported mirror of this product directory rather than a second source of truth.
-
-*ReviewBee by PatchHive — turn reviewer churn into a concrete merge checklist.*
+The PatchHive monorepo is the source of truth for ReviewBee development. The standalone `patchhive/reviewbee` repository is an exported mirror of this directory.

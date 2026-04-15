@@ -1,42 +1,46 @@
-# __PRODUCT_ICON__ __PRODUCT_TITLE__ by PatchHive
+# __PRODUCT_TITLE__ by PatchHive
 
-> __PRODUCT_TAGLINE__
+__PRODUCT_TAGLINE__
 
-__PRODUCT_TITLE__ starts from the shared PatchHive product starter. Replace this copy with the real pitch, operating model, and product boundary once the product direction settles.
+__PRODUCT_TITLE__ starts from the shared PatchHive product starter. Replace this README with the product's real positioning, workflow, and setup notes once the product direction settles, but keep the same professional repo shape.
 
-## What It Does
+## What The Starter Gives You
 
-- uses the shared PatchHive frontend shell and API-key auth flow
-- uses the shared Rust auth and startup primitives from `patchhive-product-core`
-- exposes a placeholder backend route and a basic frontend overview/checks loop
-- gives new products a consistent starting point before the product-specific logic exists
+- shared frontend shell and API-key auth flow
+- shared Rust auth and startup primitives from `patchhive-product-core`
+- a placeholder backend route and a basic frontend overview and checks loop
+- Docker setup and standalone CI from day one
 
-## Quick Start
+## Run Locally
+
+### Docker
+
+```bash
+cp .env.example .env
+docker compose up --build
+```
+
+Frontend: `http://localhost:__FRONTEND_PORT__`
+Backend: `http://localhost:__BACKEND_PORT__`
+
+### Split Backend and Frontend
 
 ```bash
 cp .env.example .env
 
-# Backend
 cd backend && cargo run
-
-# Frontend
 cd ../frontend && npm install && npm run dev
 ```
 
-Backend: `http://localhost:__BACKEND_PORT__`
-Frontend: `http://localhost:__FRONTEND_PORT__`
-
-## Local Run Notes
+## Local Notes
 
 - The frontend uses `@patchhivehq/ui` and `@patchhivehq/product-shell`.
 - The backend stores starter state in SQLite at `__ENV_PREFIX___DB_PATH`.
-- If this product talks to GitHub, prefer a fine-grained personal access token over a classic PAT.
-- Keep repository access public-only unless the product really needs private repos.
-- Generate the first local API key from `http://localhost:__FRONTEND_PORT__`, not a LAN IP. If remote bootstrap is intentional, set `PATCHHIVE_ALLOW_REMOTE_BOOTSTRAP=true` in `.env`.
-- Replace the overview route, startup checks, and frontend copy as the real product logic appears.
+- If the product talks to GitHub, prefer a fine-grained personal access token.
+- Keep repository access public-only unless the product truly needs private repositories.
+- Generate the first local API key from `http://localhost:__FRONTEND_PORT__`.
+- If remote bootstrap is intentional, set `PATCHHIVE_ALLOW_REMOTE_BOOTSTRAP=true`.
 
-## Standalone Repo Notes
+## Repository Model
 
-__PRODUCT_TITLE__ should be developed in the PatchHive monorepo first. When it gets its own repository later, that standalone repo should be treated as an exported mirror of this product directory rather than a second source of truth.
-
-*__PRODUCT_TITLE__ by PatchHive — __PRODUCT_TAGLINE__*
+__PRODUCT_TITLE__ should be developed in the PatchHive monorepo first. The standalone repository, when exported, should be treated as a mirror of this directory rather than a second source of truth.

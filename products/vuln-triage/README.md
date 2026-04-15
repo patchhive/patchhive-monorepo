@@ -1,44 +1,55 @@
-# 🛡 VulnTriage by PatchHive
+# VulnTriage by PatchHive
 
-> Turn vulnerability noise into a ranked engineering queue teams can actually act on.
+VulnTriage turns vulnerability noise into a ranked engineering queue.
 
-VulnTriage ingests GitHub code scanning alerts and dependency alerts, then ranks what matters most by severity, reachability proxy, owner hint, and the practical next action teams should take.
+It reads GitHub code scanning alerts and dependency alerts, then prioritizes those findings by severity, likely impact, owner hint, and next practical action so teams can stop treating every security finding like it deserves the same response.
 
-## What It Does
+## Core Workflow
 
-- reads GitHub code scanning alerts and Dependabot alerts for one repo at a time
-- turns open security findings into `fix now`, `plan next`, or `watch`
-- highlights where a finding lives, who should probably own it, and what the next engineering move should be
-- stores scan history in SQLite so earlier snapshots can be reloaded
-- stays read-only in the MVP: it does not dismiss alerts, patch repos, or open issues for you
+- read code scanning alerts and dependency alerts for a target repository
+- group the findings into a practical triage queue
+- rank each finding into action buckets such as `fix now`, `plan next`, or `watch`
+- highlight likely ownership and the most useful next step
+- save scan history so earlier snapshots can be reloaded and compared
 
-## Quick Start
+VulnTriage is intentionally read-only in the MVP. It does not dismiss alerts, patch repositories, or open issues for you.
+
+## Run Locally
+
+### Docker
+
+```bash
+cp .env.example .env
+docker compose up --build
+```
+
+Frontend: `http://localhost:5181`
+Backend: `http://localhost:8080`
+
+### Split Backend and Frontend
 
 ```bash
 cp .env.example .env
 
-# Backend
 cd backend && cargo run
-
-# Frontend
 cd ../frontend && npm install && npm run dev
 ```
 
-Backend: `http://localhost:8080`
-Frontend: `http://localhost:5181`
+## GitHub Access
 
-## Local Run Notes
+VulnTriage works best with a fine-grained personal access token.
 
-- The frontend uses `@patchhivehq/ui` and `@patchhivehq/product-shell`.
+- If you only want public repositories, keep the token public-only.
+- Dependabot and code scanning reads require the matching GitHub security permissions.
+- Put the token in `BOT_GITHUB_TOKEN`.
+
+## Local Notes
+
 - The backend stores scan history in SQLite at `VULN_TRIAGE_DB_PATH`.
-- Prefer a fine-grained personal access token over a classic PAT whenever your setup allows it.
-- If you only want VulnTriage on public repos, keep repository access public-only and avoid private repo access.
-- `BOT_GITHUB_TOKEN` or `GITHUB_TOKEN` is strongly recommended. Code scanning may work with weaker/public access in some repos, but Dependabot alert reads require authenticated GitHub access.
-- VulnTriage mainly needs GitHub security read permissions such as code scanning alerts and Dependabot alerts.
+- The frontend uses `@patchhivehq/ui` and `@patchhivehq/product-shell`.
 - VulnTriage uses `patchhive-github-security` for typed GitHub security reads and keeps the ranking logic product-owned.
+- Generate the first local API key from `http://localhost:5181`.
 
-## Standalone Repo Notes
+## Repository Model
 
-VulnTriage is developed in the PatchHive monorepo first, and `patchhive/vulntriage` is the exported standalone mirror for this product directory.
-
-*VulnTriage by PatchHive — Turn vulnerability noise into a ranked engineering queue teams can actually act on.*
+The PatchHive monorepo is the source of truth for VulnTriage development. The standalone `patchhive/vulntriage` repository is an exported mirror of this directory.

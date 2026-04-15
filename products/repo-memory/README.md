@@ -1,64 +1,66 @@
-# 🧠 RepoMemory by PatchHive
+# RepoMemory by PatchHive
 
-> Turn merged history and review pain into durable repo memory.
+RepoMemory turns merged history and review pain into durable repo memory.
 
-RepoMemory is the durable memory layer for PatchHive. It ingests merged PRs, reviewer feedback, recurring bug signals, and file hotspots so humans and agents can reuse what the repo has already learned instead of rediscovering the same rules every week.
+It captures what a repository has already learned from merged pull requests, reviewer feedback, recurring bug themes, and repeated hotspots so humans and agents do not keep rediscovering the same architectural expectations over and over.
 
-## What It Does
+## Core Workflow
 
-- ingests recent merged PRs for a target repo
-- mines reviewer comments and review summaries for repeated conventions
-- builds reviewer and maintainer profile memories from repeated feedback and merged work patterns
-- finds repeated bug terms in recent closed issues
-- tracks high-context hotspots where fixes and review churn keep landing
-- stores durable memory entries with evidence and confidence
-- generates a prompt-pack agents can reuse before they touch the repo
-- exposes a context endpoint other PatchHive products can query with changed paths and task summary
-- ranks reviewer and maintainer profile memory more aggressively when changed paths line up with where those patterns usually show up
-- lets operators pin, suppress, or promote extracted memories into repo policy
-- previews consumer-specific retrieval for RepoReaper and TrustGate before those products use the context live
-- compares each ingest with the previous run so you can see which memories are new, stronger, fading, or retired
-- keeps ingest history so teams can reopen prior memory snapshots
+- ingest merged pull requests, review feedback, issues, and file hotspots
+- extract memory entries with evidence and confidence
+- build reviewer and maintainer profile memories from repeated patterns
+- store curated memories as signals, policies, or suppressed items
+- expose prompt-pack and context endpoints for other PatchHive products
+- compare each ingest to the previous one so memory drift is visible over time
 
-RepoMemory is intentionally context-first. It does not open PRs or mutate repositories in the MVP.
+RepoMemory is intentionally context-first. It does not open pull requests or mutate repositories in the MVP.
 
-## Quick Start
+## Run Locally
+
+### Docker
+
+```bash
+cp .env.example .env
+docker compose up --build
+```
+
+Frontend: `http://localhost:5176`
+Backend: `http://localhost:8030`
+
+### Split Backend and Frontend
 
 ```bash
 cp .env.example .env
 
-# Backend
 cd backend && cargo run
-
-# Frontend
 cd ../frontend && npm install && npm run dev
 ```
 
-Backend: `http://localhost:8030`
-Frontend: `http://localhost:5176`
+## GitHub Access
 
-## Local Run Notes
+RepoMemory works best with a fine-grained personal access token.
 
+- If you only want public repositories, keep the token public-only.
+- Reading merged pull requests, reviews, and issues is enough for the core MVP loop.
+- Put the token in `BOT_GITHUB_TOKEN`.
+
+## Cross-Product Use
+
+RepoMemory is already useful on its own, but it also acts as infrastructure for the rest of PatchHive.
+
+- RepoReaper can use it before patch generation.
+- TrustGate can use it before diff review.
+- MergeKeeper can use it for repo-specific merge expectations.
+
+When enabled, downstream products can call RepoMemory through `PATCHHIVE_REPO_MEMORY_URL`.
+
+## Local Notes
+
+- The backend stores runs and memory entries in SQLite at `REPO_MEMORY_DB_PATH`.
 - The frontend uses `@patchhivehq/ui` and `@patchhivehq/product-shell`.
-- The backend stores runs and extracted memory entries in SQLite at `REPO_MEMORY_DB_PATH`.
-- Prefer a fine-grained personal access token over a classic PAT whenever your setup allows it.
-- If you only want RepoMemory on public repos, keep repository access public-only and avoid private repo access.
-- `BOT_GITHUB_TOKEN` or `GITHUB_TOKEN` is required for GitHub-backed ingestion.
-- RepoMemory mainly needs read access to merged PR history, reviews, and issues.
-- RepoMemory does not require a live AI provider for the MVP loop.
-- The generated prompt pack is meant to be copied into later agent flows, not treated as perfect truth.
-- `PATCHHIVE_REPO_MEMORY_URL` lets other PatchHive products retrieve repo context from this service.
-- If RepoMemory auth is enabled, downstream callers can use `PATCHHIVE_REPO_MEMORY_API_KEY` with an `X-API-Key` header.
-- Curation survives future ingests through stable memory references, so pinned/policy/suppressed decisions remain durable instead of resetting every run.
+- The generated prompt pack is meant to be reused as context, not treated as infallible policy.
+- Generate the first local API key from `http://localhost:5176`.
 
-## Standalone Repo Notes
+## Repository Model
 
-RepoMemory is developed in the PatchHive monorepo first. The standalone `patchhive/repomemory` repo should be treated as an exported mirror of this product directory rather than a second source of truth.
-
-## Local AI Gateway
-
-RepoMemory does not need `PATCHHIVE_AI_URL` for the first MVP loop. It currently builds memory from GitHub history plus deterministic extraction heuristics.
-
-That said, it fits naturally into the wider PatchHive platform and can later route memory summarization or embedding-style retrieval through `patchhive-ai-local` if that becomes valuable.
-
-*RepoMemory by PatchHive — memory before automation*
+The PatchHive monorepo is the source of truth for RepoMemory development. The standalone `patchhive/repomemory` repository is an exported mirror of this directory.

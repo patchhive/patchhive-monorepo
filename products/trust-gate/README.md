@@ -1,73 +1,58 @@
-# 🛡 TrustGate by PatchHive
+# TrustGate by PatchHive
 
-> Review AI-generated diffs before they move forward.
+TrustGate reviews diffs before they move forward.
 
-TrustGate is the trust and safety layer for PatchHive. It reviews AI-generated diffs against repo-specific risk rules, flags dangerous or suspicious changes, and returns a simple recommendation: `safe`, `warn`, or `block`.
+It is PatchHive's trust and safety layer: a product that checks AI-generated or pull-request-backed diffs against repo-specific risk rules, then returns a simple recommendation such as `safe`, `warn`, or `block` with the reasons made explicit.
 
-## What It Does
+## Core Workflow
 
-- ingests pasted unified diffs from AI-generated patches
-- fetches GitHub pull-request diffs directly from `owner/repo + PR number`
-- accepts signed `pull_request` webhook payloads so review can happen automatically on PR updates
-- pushes TrustGate recommendations back to GitHub as a check run when possible, with commit-status fallback
-- maintains a single PR comment with the current TrustGate report so maintainers can read the review in-thread
-- lets each repo save GitHub report templates so TrustGate's check output and PR comment tone can be tuned without changing the review logic
-- exposes a print-friendly decision view for saved reviews, with HTML export and browser print / save-to-PDF support
-- loads repo-specific risk rules for path restrictions, suspicious terms, and change limits
-- offers reusable rule packs for app, library, infra, and agent-generated patch repos
-- flags risky file changes such as workflow, infrastructure, migration, or auth-adjacent edits
-- escalates missing-test findings more aggressively when risky source files or larger diffs are involved
-- handles generated artifacts and large risky diffs more deliberately instead of treating them like ordinary source edits
-- highlights suspicious added lines such as secret-like material, `eval`, `unsafe`, or shell-heavy changes
-- stores review history so teams can look back at prior decisions
-- returns a clean recommendation that downstream automation can use
+- review pasted unified diffs or fetch pull request diffs directly from GitHub
+- apply repo-specific rules, starter rule packs, and saved report templates
+- flag risky paths, suspicious patterns, missing tests, and oversized change sets
+- publish the result back into GitHub through checks, statuses, and a maintained pull request comment
+- save decision history and expose a print-friendly decision view
 
-TrustGate is intentionally review-first. It does not write code or mutate repositories in the MVP.
+TrustGate is intentionally review-first. It does not rewrite code. Its job is to make risk visible before downstream automation or maintainers move a change forward.
 
-## Quick Start
+## Run Locally
+
+### Docker
 
 ```bash
 cp .env.example .env
-# Optional but recommended if you want private PR fetches and GitHub status/check output:
-# BOT_GITHUB_TOKEN=github_pat_xxxxxxxxxxxxxxxxxxxxxxxxxxxx
-# TRUST_GITHUB_WEBHOOK_SECRET=replace-me
-# TRUSTGATE_PUBLIC_URL=https://trustgate.your-domain.example
+docker compose up --build
+```
 
-# Backend
+Frontend: `http://localhost:5175`
+Backend: `http://localhost:8020`
+
+### Split Backend and Frontend
+
+```bash
+cp .env.example .env
+
 cd backend && cargo run
-
-# Frontend
 cd ../frontend && npm install && npm run dev
 ```
 
-Backend: `http://localhost:8020`
-Frontend: `http://localhost:5175`
+## GitHub Access
 
-## Local Run Notes
+TrustGate works without GitHub for pasted diff review, but GitHub integration is what makes it operational inside real pull request flow.
 
-- The frontend uses `@patchhivehq/ui` from the public npm registry.
-- The frontend uses `@patchhivehq/product-shell` for the shared PatchHive API-key login flow.
-- The backend stores rules and review history in SQLite at `TRUST_DB_PATH`.
-- Prefer a fine-grained personal access token over a classic PAT whenever your setup allows it.
-- If you only want TrustGate on public repos, keep repository access public-only and avoid private repo access.
-- Repo-specific rule sets are the main product memory in the MVP.
-- Repo-specific GitHub report templates now sit beside the rule sets and control how TrustGate speaks back in GitHub.
-- Saved reviews can be reopened as print-friendly decision pages at `/history/:id` or `/print/:id`.
-- GitHub integration is optional; the core review loop still works on pasted diffs alone.
-- `BOT_GITHUB_TOKEN` or `GITHUB_TOKEN` enables private PR fetches plus GitHub report delivery.
-- GitHub read access is enough for direct PR diff fetches. Maintained PR comments and status-style output may need extra write permissions depending on your GitHub setup.
-- `TRUST_GITHUB_WEBHOOK_SECRET` enables signed `pull_request` webhook intake.
-- `TRUSTGATE_PUBLIC_URL` lets GitHub checks/statuses link back to TrustGate review details.
-- `PATCHHIVE_REPO_MEMORY_URL` optionally lets TrustGate enrich reviews with remembered testing expectations, hotspots, and failure patterns.
+- Read access is enough for direct pull request diff fetches.
+- Maintained pull request comments, commit statuses, and check-style output may require additional write permissions.
+- `TRUST_GITHUB_WEBHOOK_SECRET` enables signed webhook intake.
+- `TRUSTGATE_PUBLIC_URL` lets GitHub artifacts link back to saved TrustGate views.
 
-## Standalone Repo Notes
+## Local Notes
 
-TrustGate is developed in the PatchHive monorepo first. The standalone `patchhive/trustgate` repo should be treated as an exported mirror of this product directory rather than a second source of truth.
+- The backend stores rule sets, templates, and review history in SQLite at `TRUST_DB_PATH`.
+- The frontend uses `@patchhivehq/ui` and `@patchhivehq/product-shell`.
+- Repo-specific templates control how TrustGate speaks in GitHub without changing the underlying review logic.
+- Saved decisions can be reopened as web views, printed, or exported.
+- `PATCHHIVE_REPO_MEMORY_URL` can optionally enrich reviews with remembered testing expectations, hotspots, and failure patterns.
+- Generate the first local API key from `http://localhost:5175`.
 
-## Local AI Gateway
+## Repository Model
 
-TrustGate reviews AI-generated diffs, but it does not need a live AI provider to make its first decisions. `PATCHHIVE_AI_URL` is not part of the MVP loop.
-
-That said, it still fits into the wider PatchHive platform and can eventually route richer policy summaries through `patchhive-ai-local` when that becomes valuable.
-
-*TrustGate by PatchHive — trust before automation*
+The PatchHive monorepo is the source of truth for TrustGate development. The standalone `patchhive/trustgate` repository is an exported mirror of this directory.

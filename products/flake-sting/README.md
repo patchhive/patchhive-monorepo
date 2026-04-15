@@ -1,52 +1,55 @@
-# 🦂 FlakeSting by PatchHive
+# FlakeSting by PatchHive
 
-> Spot flaky CI patterns before unreliable checks erode team trust.
+FlakeSting spots flaky CI patterns before unreliable checks erode team trust.
 
-FlakeSting reads recent GitHub Actions history, looks for fail/pass swings in test-like jobs and steps, and turns that churn into a ranked flaky-CI queue. Instead of waiting for engineers to develop a vague sense that a repo's CI is "kind of unreliable," it highlights the exact jobs, steps, and runner environments that keep wobbling between red and green.
+It reads recent GitHub Actions history, looks for fail or pass swings in test-like jobs and steps, and turns that churn into a ranked queue of likely flaky problems so teams can focus on the unstable parts of their delivery pipeline.
 
-## What It Does
+## Core Workflow
 
-- fetches recent GitHub Actions workflow runs and workflow jobs for a target repository
-- filters that history by branch and workflow name when you want a narrower view
-- detects fail/pass swings in test-like jobs and steps instead of treating every CI failure as equally meaningful
-- scores likely flaky signals as `suspect` or `quarantine`
-- surfaces rerun pressure, runner/environment hints, and evidence links back to the underlying GitHub runs
-- stores local scan history so teams can reload prior scans and compare recurring CI trust debt
-- compares each scan to the last comparable one so teams can tell whether flaky pressure is rising, improving, or just shifting around
-- lets operators sort the flaky queue and copy a scan summary for quick sharing
-- works without AI in the MVP loop by leaning on GitHub Actions history and deterministic heuristics
+- read recent workflow runs and jobs for a target repository
+- detect fail or pass swings instead of treating every red build the same
+- score unstable jobs and steps into a practical flaky queue
+- surface runner hints, rerun pressure, and direct evidence links
+- compare each scan to the previous comparable run so teams can see whether flake pressure is rising or improving
 
-FlakeSting is intentionally CI-trust-first. It does not rerun workflows, edit code, or rewrite CI config in the MVP. Its job is to make unstable checks visible before they quietly erode confidence in the rest of the delivery pipeline.
+FlakeSting is intentionally read-only in the MVP. It does not rerun workflows or edit CI configuration.
 
-## Quick Start
+## Run Locally
+
+### Docker
+
+```bash
+cp .env.example .env
+docker compose up --build
+```
+
+Frontend: `http://localhost:5179`
+Backend: `http://localhost:8060`
+
+### Split Backend and Frontend
 
 ```bash
 cp .env.example .env
 
-# Backend
 cd backend && cargo run
-
-# Frontend
 cd ../frontend && npm install && npm run dev
 ```
 
-Backend: `http://localhost:8060`
-Frontend: `http://localhost:5179`
+## GitHub Access
 
-## Local Run Notes
+FlakeSting works best with a fine-grained personal access token.
 
-- The frontend uses `@patchhivehq/ui` and `@patchhivehq/product-shell`.
+- If you only want public repositories, keep the token public-only.
+- GitHub Actions read access is the main requirement for the MVP.
+- Put the token in `BOT_GITHUB_TOKEN`.
+
+## Local Notes
+
 - The backend stores scan history in SQLite at `FLAKE_STING_DB_PATH`.
-- Prefer a fine-grained personal access token over a classic PAT whenever your setup allows it.
-- If you only want FlakeSting on public repos, keep repository access public-only and avoid private repo access.
-- `BOT_GITHUB_TOKEN` or `GITHUB_TOKEN` is strongly recommended so FlakeSting can read workflow runs and jobs with healthier rate limits.
-- FlakeSting mainly needs read access to GitHub Actions workflow runs and jobs.
-- FlakeSting does not require `PATCHHIVE_AI_URL` for the MVP loop.
-- The current scan loop reads recent GitHub Actions runs, looks for fail/pass swings, and ranks unstable test jobs or steps before they become background noise.
-- The current UI is designed for one repo at a time so the scoring, trend comparison, and evidence stay easy to trust while the product sharpens.
+- The frontend uses `@patchhivehq/ui` and `@patchhivehq/product-shell`.
+- The product currently focuses on one repository at a time so the evidence stays easy to trust.
+- Generate the first local API key from `http://localhost:5179`.
 
-## Standalone Repo Notes
+## Repository Model
 
-FlakeSting should be developed in the PatchHive monorepo first. Its standalone repo should be treated as an exported mirror of this product directory rather than a second source of truth.
-
-*FlakeSting by PatchHive — Spot flaky CI patterns before unreliable checks erode team trust.*
+The PatchHive monorepo is the source of truth for FlakeSting development. The standalone `patchhive/flakesting` repository is an exported mirror of this directory.

@@ -1,396 +1,111 @@
-# PatchHive Monorepo
+# PatchHive
 
-The maintenance layer for modern codebases.
+PatchHive is a product suite for software maintenance, review, and autonomous contribution.
 
-## Source Of Truth
+This repository is the PatchHive source-of-truth monorepo. New products, shared packages, and shared Rust crates are built here first, then exported into standalone repositories under [`patchhive`](https://github.com/patchhive) when they are ready to stand on their own.
 
-This repository is the canonical PatchHive development monorepo.
+## Product Suite
 
-- Shared packages are developed here first.
-- Products are developed here first.
-- Individual product repositories can be exported from this monorepo later for standalone distribution and visibility.
-- Until that split happens, this repo is the source of truth for code, docs, and history.
+| Product | Repo | Role |
+| --- | --- | --- |
+| RepoReaper | [`patchhive/reporeaper`](https://github.com/patchhive/reporeaper) | Autonomously fixes selected issues and opens validated pull requests. |
+| SignalHive | [`patchhive/signalhive`](https://github.com/patchhive/signalhive) | Surfaces stale work, duplicate issues, recurring bugs, and maintenance drag. |
+| ReviewBee | [`patchhive/reviewbee`](https://github.com/patchhive/reviewbee) | Turns review churn into an actionable pull request checklist. |
+| TrustGate | [`patchhive/trustgate`](https://github.com/patchhive/trustgate) | Reviews diffs against repo-specific safety and policy rules. |
+| RepoMemory | [`patchhive/repomemory`](https://github.com/patchhive/repomemory) | Builds durable repo memory from merged history, reviews, and recurring failures. |
+| MergeKeeper | [`patchhive/mergekeeper`](https://github.com/patchhive/mergekeeper) | Decides whether a pull request is actually ready to merge. |
+| FlakeSting | [`patchhive/flakesting`](https://github.com/patchhive/flakesting) | Detects flaky CI patterns from GitHub Actions history. |
+| DepTriage | [`patchhive/deptriage`](https://github.com/patchhive/deptriage) | Prioritizes dependency updates by urgency and practical impact. |
+| VulnTriage | [`patchhive/vulntriage`](https://github.com/patchhive/vulntriage) | Ranks code scanning and dependency alerts into a useful engineering queue. |
 
-The intended long-term flow is:
+## Shared Foundations
 
-1. Build and evolve products in this monorepo.
-2. Publish shared packages such as `@patchhivehq/ui`.
-3. Export products such as `products/repo-reaper` into their own GitHub repositories when they are ready.
+| Foundation | Repo | Purpose |
+| --- | --- | --- |
+| `@patchhivehq/ui` | [`patchhive/patchhive-ui`](https://github.com/patchhive/patchhive-ui) | Shared React components, layout primitives, and product themes. |
+| `@patchhivehq/product-shell` | [`patchhive/product-shell`](https://github.com/patchhive/product-shell) | Shared frontend auth bootstrap, session handling, and product app framing. |
+| `@patchhive/ai-local` | [`patchhive/patchhive-ai-local`](https://github.com/patchhive/patchhive-ai-local) | Local OpenAI-compatible gateway for Codex, Copilot, and future providers. |
+| `patchhive-product-core` | [`patchhive/patchhive-product-core`](https://github.com/patchhive/patchhive-product-core) | Shared Rust auth, startup, and cross-product service primitives. |
+| `patchhive-github-pr` | [`patchhive/patchhive-github-pr`](https://github.com/patchhive/patchhive-github-pr) | Shared Rust pull request, webhook, check, and comment plumbing. |
+| `patchhive-github-data` | [`patchhive/patchhive-github-data`](https://github.com/patchhive/patchhive-github-data) | Shared Rust repo, issue, PR history, and Actions data client. |
+| `patchhive-github-security` | [`patchhive/patchhive-github-security`](https://github.com/patchhive/patchhive-github-security) | Shared Rust security and advisory data client. |
+| Product Starter | [`patchhive/patchhive-product-starter`](https://github.com/patchhive/patchhive-product-starter) | Monorepo-first starter for new PatchHive products. |
 
-The export workflow is documented in [Product And Package Export Workflow](/home/coemedia/Documents/code/patchhive/docs/product-export-workflow.md).
+## Repository Layout
 
-## Structure
-
-```
+```text
 patchhive/
-  packages/
-    ui/                     ← @patchhivehq/ui — shared component library
-      src/
-        theme.js            ← base dark theme + per-product accent colors
-        primitives.jsx      ← Btn, Input, Sel, ScoreBadge, ConfidenceBar,
-                               PatchHiveHeader, PatchHiveFooter, TabBar, etc.
-        components/
-          AgentCard.jsx
-          DiffViewer.jsx
-          IssueRow.jsx
-          LoginPage.jsx     ← accepts icon/title/storageKey/apiBase props
-        index.js            ← re-exports everything
-    product-shell/          ← @patchhivehq/product-shell — shared frontend auth/bootstrap helpers
-      src/
-        index.js            ← API-key auth hook + authenticated fetch helpers
-    ai-local/               ← @patchhive/ai-local — localhost AI gateway
-      src/
-        index.js            ← gateway server + provider routing
-        cli.js              ← local entrypoint
-  crates/
-    patchhive-product-core/ shared Rust auth + startup primitives
-    patchhive-github-pr/    shared Rust GitHub PR/diff/check plumbing
-    patchhive-github-data/  shared Rust GitHub repo/issue/history/actions reads
-    patchhive-github-security/ shared Rust GitHub security/advisory reads
-  templates/
-    product-starter/        monorepo-first starter for new PatchHive products
-      scaffold/            actual files copied into new products
-  products/
-    repo-reaper/            ← RepoReaper v0.1.0
-      backend/              ← Rust (axum, rusqlite, reqwest, tokio)
-      frontend/             ← React (imports from @patchhivehq/ui)
-    signal-hive/            ← SignalHive v0.1.0
-      backend/              ← Rust read-only maintenance signal API
-      frontend/             ← React signal dashboard
-    review-bee/             ← ReviewBee v0.1.0
-      backend/              ← Rust PR review checklist API
-      frontend/             ← React PR checklist dashboard
-    trust-gate/             ← TrustGate v0.1.0
-      backend/              ← Rust diff review and policy engine
-      frontend/             ← React rule editor and review dashboard
-    repo-memory/            ← RepoMemory v0.1.0
-      backend/              ← Rust durable memory ingestion API
-      frontend/             ← React memory explorer and prompt-pack UI
-    merge-keeper/           ← MergeKeeper v0.1.0
-      backend/              ← Rust PR merge-readiness API
-      frontend/             ← React merge readiness dashboard
-    flake-sting/            ← FlakeSting v0.1.0
-      backend/              ← Rust flaky-CI signal API
-      frontend/             ← React flaky workflow dashboard
-    dep-triage/             ← DepTriage v0.1.0
-      backend/              ← Rust dependency-triage API
-      frontend/             ← React dependency queue dashboard
-    vuln-triage/            ← VulnTriage v0.1.0
-      backend/              ← Rust security finding triage API
-      frontend/             ← React vulnerability queue dashboard
+  products/     standalone products
+  packages/     shared frontend and gateway packages
+  crates/       shared Rust libraries
+  templates/    starter scaffolds and reusable repo templates
+  scripts/      export, release, and maintenance workflows
+  docs/         internal operating docs and release workflows
 ```
 
-## Adding a New Product
+## Getting Started
+
+### Prerequisites
+
+- Rust and Cargo
+- Node.js and npm
+- Docker and Docker Compose
+
+### Work on an Existing Product
 
 ```bash
-./scripts/new-product.sh <product-slug>
-```
+git clone https://github.com/patchhive/patchhive2.git patchhive
+cd patchhive
 
-That starter already wires in:
-
-- the shared Rust backend shell
-- the shared React/frontend shell
-- Docker files
-- API-key auth
-- standalone CI
-
-Product-specific logic should be added after the scaffold exists.
-
-## Shared UI Package (`@patchhivehq/ui`)
-
-```js
-import {
-  // Theme
-  applyTheme, PRODUCT_THEMES, PROVIDERS,
-
-  // Primitives
-  S, Btn, Input, Sel, Divider, EmptyState,
-  ScoreBadge, ConfidenceBar, StatusDot, Tag, timeAgo,
-
-  // Layout
-  PatchHiveHeader, PatchHiveFooter, TabBar,
-
-  // Components
-  AgentCard, DiffViewer, IssueRow, LoginPage,
-} from "@patchhivehq/ui";
-```
-
-## Shared Product Shell (`@patchhivehq/product-shell`)
-
-```js
-import {
-  createApiFetcher,
-  useApiKeyAuth,
-} from "@patchhivehq/product-shell";
-```
-
-This package holds repeated frontend shell behaviors that already show up across multiple PatchHive products:
-
-- API-key login bootstrap against `/auth/status` and `/auth/login`
-- authenticated `fetch` helpers for product backends
-
-## Shared Rust Product Core (`patchhive-product-core`)
-
-`patchhive-product-core` is the first shared Rust crate for backend overlap that is already real across multiple PatchHive products.
-
-It currently holds:
-
-- API-key auth hashing, verification, persistence, and axum middleware
-- typed startup checks and shared startup logging helpers
-
-Standalone Rust product repositories should consume the shared crate from its own repo, while the monorepo uses `.cargo/config.toml` to patch that git dependency back to the local crate path during development.
-
-Because that monorepo patch intentionally overrides a git dependency with a local path, strict `cargo check --locked` validation for product backends should live in the standalone repos. Inside the monorepo, use plain `cargo check` while iterating on shared Rust crate changes.
-
-## Shared GitHub PR Crate (`patchhive-github-pr`)
-
-`patchhive-github-pr` holds the repeated GitHub pull-request mechanics that would otherwise get reimplemented across PatchHive backend products.
-
-It currently covers:
-
-- standard PatchHive GitHub token/env resolution
-- signed GitHub webhook verification
-- pull request metadata fetch
-- pull request commit-health fetch
-- pull request review fetch
-- pull request review-thread fetch
-- unified diff fetch
-- GitHub check-run publishing
-- commit-status publishing
-- maintained PR comment upsert
-
-Products should keep policy, scoring, and report content local, but use `patchhive-github-pr` for the transport and GitHub API plumbing itself.
-
-## Shared GitHub Data Crate (`patchhive-github-data`)
-
-`patchhive-github-data` holds the repeated GitHub read paths that would otherwise keep reappearing across PatchHive backend products.
-
-It currently covers:
-
-- standard PatchHive GitHub token/env resolution
-- repository fetch and repository search
-- issue history reads
-- merged pull-request history reads
-- pull-request review, review-comment, and file reads for historical ingestion
-- code-search count reads
-- GitHub Actions workflow run and job reads
-
-Products should keep scoring, filtering, and interpretation local, but use `patchhive-github-data` for the typed GitHub data access itself.
-
-## Shared GitHub Security Crate (`patchhive-github-security`)
-
-`patchhive-github-security` holds the repeated GitHub security read paths that would otherwise keep reappearing across PatchHive backend products.
-
-It currently covers:
-
-- standard PatchHive GitHub token/env resolution via `patchhive-github-data`
-- Dependabot alert reads
-- code scanning alert reads
-- advisory metadata, CWEs, references, and EPSS fields
-
-Products should keep scoring, ranking, escalation, and report language local, but use `patchhive-github-security` for the typed GitHub security access itself.
-
-## Product Starter Template
-
-PatchHive now includes a monorepo-first starter template at `templates/product-starter`.
-
-Use:
-
-```bash
-./scripts/new-product.sh <product-slug>
-```
-
-This creates a new product with the shared Rust backend shell, React frontend shell, Docker files, API-key auth flow, and standalone CI already wired in.
-
-The workflow is documented in [Product Starter Workflow](/home/coemedia/Documents/code/patchhive/docs/product-starter-workflow.md).
-
-## Product Accent Colors
-
-| Product        | Accent  |
-|----------------|---------|
-| repo-reaper    | Crimson |
-| signal-hive    | Blue    |
-| review-bee     | Amber   |
-| trust-gate     | Purple  |
-| repo-memory    | Green   |
-| merge-keeper   | Blue    |
-| flake-sting    | Orange  |
-| dep-triage     | Amber   |
-| vuln-triage    | Crimson |
-| refactor-scout | Green   |
-
-## Quick Start — RepoReaper
-
-```bash
-cd products/repo-reaper
-cp .env.example .env
-# fill in BOT_GITHUB_TOKEN, BOT_GITHUB_USER, and either PROVIDER_API_KEY or PATCHHIVE_AI_URL
-# prefer a fine-grained PAT and keep repo access as narrow as possible
-
-# Dev
-cd backend && cargo run
-cd frontend && npm install && npm run dev
-
-# Docker
-docker-compose up --build
-```
-
-## Quick Start — SignalHive
-
-```bash
+# Example: SignalHive
 cd products/signal-hive
 cp .env.example .env
-# fill in BOT_GITHUB_TOKEN
-# prefer a fine-grained PAT; public-only access is enough for the MVP
+docker compose up --build
+```
 
-# Dev
+Most products also support a split local workflow:
+
+```bash
 cd backend && cargo run
 cd ../frontend && npm install && npm run dev
-
-# Docker
-docker-compose up --build
 ```
 
-## Quick Start — ReviewBee
+### Create a New Product
 
 ```bash
-cd products/review-bee
-cp .env.example .env
-# fill in BOT_GITHUB_TOKEN or GITHUB_TOKEN
-# prefer a fine-grained PAT unless your setup specifically needs classic PAT behavior
-
-# Dev
-cd backend && cargo run
-cd ../frontend && npm install && npm run dev
-
-# Docker
-docker-compose up --build
+./scripts/new-product.sh <product-slug>
 ```
 
-## Quick Start — TrustGate
+The starter includes:
 
-```bash
-cd products/trust-gate
-cp .env.example .env
+- shared Rust backend auth and startup wiring
+- shared frontend auth and app shell wiring
+- Docker and local-development setup
+- API-key bootstrap flow
+- standalone GitHub Actions CI
 
-# Dev
-cd backend && cargo run
-cd ../frontend && npm install && npm run dev
+## Development Model
 
-# Docker
-docker-compose up --build
-```
+PatchHive is intentionally monorepo-first.
 
-## Quick Start — RepoMemory
+- Build features here first.
+- Release shared packages from here first.
+- Export products, crates, and packages into standalone repos when they are ready.
+- Treat exported repositories as mirrors, not parallel sources of truth.
 
-```bash
-cd products/repo-memory
-cp .env.example .env
-# fill in BOT_GITHUB_TOKEN
-# prefer a fine-grained PAT; public-only access is fine if that is all you need
+The export flow is documented in [docs/product-export-workflow.md](docs/product-export-workflow.md), and the starter workflow is documented in [docs/product-starter-workflow.md](docs/product-starter-workflow.md).
 
-# Dev
-cd backend && cargo run
-cd ../frontend && npm install && npm run dev
+## Authentication Model
 
-# Docker
-docker-compose up --build
-```
+Every product ships with the same first-run API-key bootstrap pattern.
 
-## Quick Start — MergeKeeper
+- Open the product from `http://localhost:<frontend-port>` for first-time bootstrap.
+- Generate the first API key locally.
+- Use session storage in the browser for subsequent authenticated requests.
+- If remote bootstrap is truly intentional, opt in explicitly with `PATCHHIVE_ALLOW_REMOTE_BOOTSTRAP=true`.
 
-```bash
-cd products/merge-keeper
-cp .env.example .env
-# fill in BOT_GITHUB_TOKEN or GITHUB_TOKEN
-# prefer a fine-grained PAT unless your setup specifically needs classic PAT behavior
+GitHub-backed products are designed to work with fine-grained personal access tokens and can be run against public repositories only when that fits the use case.
 
-# Dev
-cd backend && cargo run
-cd ../frontend && npm install && npm run dev
+## Current Status
 
-# Docker
-docker-compose up --build
-```
-
-## Quick Start — FlakeSting
-
-```bash
-cd products/flake-sting
-cp .env.example .env
-# fill in BOT_GITHUB_TOKEN or GITHUB_TOKEN for better GitHub Actions access
-# prefer a fine-grained PAT; public-only access is enough for public repos
-
-# Dev
-cd backend && cargo run
-cd ../frontend && npm install && npm run dev
-
-# Docker
-docker-compose up --build
-```
-
-## Quick Start — DepTriage
-
-```bash
-cd products/dep-triage
-cp .env.example .env
-# fill in BOT_GITHUB_TOKEN or GITHUB_TOKEN for stronger GitHub reads and Dependabot alert access
-# prefer a fine-grained PAT; keep repo access public-only unless you intentionally need more
-
-# Dev
-cd backend && cargo run
-cd ../frontend && npm install && npm run dev
-
-# Docker
-docker-compose up --build
-```
-
-## Quick Start — VulnTriage
-
-```bash
-cd products/vuln-triage
-cp .env.example .env
-# fill in BOT_GITHUB_TOKEN or GITHUB_TOKEN for stronger GitHub security reads
-# prefer a fine-grained PAT; keep repo access public-only unless you intentionally need more
-
-# Dev
-cd backend && cargo run
-cd ../frontend && npm install && npm run dev
-
-# Docker
-docker-compose up --build
-```
-
-## GitHub Token Guidance
-
-- Prefer fine-grained personal access tokens over classic PATs whenever GitHub supports the workflow you want.
-- If you only want PatchHive to work on public repos, do not grant private repository access. GitHub's fine-grained PAT docs say these tokens always include read-only access to all public repositories.
-- Start with the smallest repository permissions a product needs, then add more only if GitHub rejects a specific endpoint.
-- SignalHive's public-only MVP can start with a fine-grained PAT and read-side permissions such as `Metadata: Read` and `Issues: Read`; add `Contents: Read` only if GitHub blocks TODO/FIXME code-search counts in your setup.
-- Write-capable products such as RepoReaper and GitHub-reporting modes in TrustGate, ReviewBee, and MergeKeeper need narrower repo selection plus extra write permissions for the specific GitHub actions they perform.
-
-## Local AI Gateway
-
-PatchHive includes `@patchhive/ai-local`, a localhost AI gateway for products that should route through a user's own Codex or Copilot session.
-
-```bash
-npm install
-npm run dev:ai-local
-```
-
-Point products at:
-
-```bash
-PATCHHIVE_AI_URL=http://127.0.0.1:8787/v1
-```
-
-RepoReaper uses `PATCHHIVE_AI_URL` first and falls back to `OPENAI_BASE_URL` for compatibility.
-
-## Platform Docs
-
-- [Platform Guardrails](/home/coemedia/Documents/code/patchhive/docs/platform-guardrails.md)
-- [Product API Contract v1](/home/coemedia/Documents/code/patchhive/docs/product-api-contract-v1.md)
-
----
-
-*PatchHive — visibility first, autonomy second.*
+PatchHive already has real standalone repositories, shared infrastructure, Docker support, exported mirrors, and CI across the suite. The focus now is deepening product quality while keeping shared seams stable enough for future orchestration through HiveCore.

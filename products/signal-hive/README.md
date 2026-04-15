@@ -1,62 +1,63 @@
-# 📡 SignalHive by PatchHive
+# SignalHive by PatchHive
 
-> See the maintenance work your team is missing.
+SignalHive shows teams the maintenance work they are not tracking well enough yet.
 
-SignalHive is the read-only reconnaissance layer for PatchHive. It scans repository and issue history to surface stale risks, duplicate issues, recurring bug patterns, TODO hotspots, and hidden maintenance drag before it turns into downtime or delivery friction.
+It is the read-only reconnaissance layer in PatchHive: a product that scans repository history, issue history, and lightweight code signals to surface stale work, duplicate reports, recurring bug patterns, and hidden backlog risk before those problems turn into delivery drag.
 
-## What It Does
+## Core Workflow
 
-- discovers repositories from broad search terms, topics, and languages
-- samples open issue history to find stale backlog risk
-- flags likely duplicate issue reports
-- clusters recurring bug-like issues into repeated failure patterns
-- counts TODO and FIXME hotspots through GitHub code search
-- respects allowlist, denylist, and opt-out controls during discovery
-- saves reusable scan presets for recurring maintenance views
-- saves scheduled scans that rerun maintenance views in the background
-- compares each scan against the previous scan with the same parameters
-- shows timeline visuals across matching scans so maintenance drift is easy to spot
-- exports ranked scan reports as markdown
-- exports a cleaner dashboard snapshot as standalone HTML for sharing
-- ranks repositories into a maintenance queue your team can actually work from
+- discover repositories from search terms, topics, languages, and repo controls
+- inspect issue history for stale backlog pressure and likely duplicate reports
+- detect recurring bug-like patterns and TODO or FIXME hotspots
+- rank repositories into a maintenance queue with explainable score drivers
+- save presets, schedules, trend history, and shareable reports
 
-SignalHive is intentionally read-only. It does not open pull requests, write code, or mutate repositories.
+SignalHive is intentionally read-only. It does not open pull requests, mutate repositories, or require AI for the first MVP loop.
 
-## Quick Start
+## Run Locally
+
+### Docker
 
 ```bash
 cp .env.example .env
-# Fill in BOT_GITHUB_TOKEN
+docker compose up --build
+```
 
-# Backend
+Frontend: `http://localhost:5174`
+Backend: `http://localhost:8010`
+
+### Split Backend and Frontend
+
+```bash
+cp .env.example .env
+
 cd backend && cargo run
-
-# Frontend
 cd ../frontend && npm install && npm run dev
 ```
 
-Backend: `http://localhost:8010`
-Frontend: `http://localhost:5174`
+## GitHub Access
 
-## Local Run Notes
+SignalHive works best with a fine-grained personal access token.
 
-- The frontend uses `@patchhivehq/ui` from the public npm registry.
+- If you only want public repositories, keep the token public-only.
+- Start with `Metadata: Read` and `Issues: Read`.
+- Add `Contents: Read` only if your setup needs GitHub-backed TODO or FIXME code-search reads.
+- Put the token in `BOT_GITHUB_TOKEN` inside `.env`.
+
+## Local Notes
+
 - The backend stores scan history in SQLite at `SIGNAL_DB_PATH`.
-- Prefer a fine-grained personal access token over a classic PAT.
-- If you only want SignalHive to scan public repos, do not grant private repository access. Public-only access is enough for the MVP.
-- If you want to be explicit with permissions, start with `Metadata: Read` and `Issues: Read`; add `Contents: Read` only if GitHub blocks TODO/FIXME code-search counts in your setup.
-- Generate the first local API key from `http://localhost:5174`, not a LAN IP. If you intentionally need remote bootstrap, set `PATCHHIVE_ALLOW_REMOTE_BOOTSTRAP=true` in `.env`.
-- This product is designed to be the visibility-first entry point into PatchHive.
-- Repo discovery can be constrained with allowlist, denylist, and opt-out controls in the UI.
+- The frontend uses `@patchhivehq/ui` and `@patchhivehq/product-shell`.
+- Generate the first local API key from `http://localhost:5174`.
+- If remote bootstrap is intentional, set `PATCHHIVE_ALLOW_REMOTE_BOOTSTRAP=true`.
+- Allowlist, denylist, and opt-out controls are built into the product for safer discovery.
 
-## Standalone Repo Notes
+## Product Boundary
 
-SignalHive is developed in the PatchHive monorepo first. When it gets its own repository later, that standalone repo should be treated as an exported mirror of this product directory rather than a second source of truth.
+SignalHive is designed to answer one question well: where is maintenance pressure building before anyone acts on it?
 
-## Local AI Gateway
+It is the visibility-first entry point into the PatchHive suite. Later products can use that signal, but SignalHive itself stays focused on discovery, ranking, and reporting.
 
-SignalHive does not require AI to produce its first signals, so `PATCHHIVE_AI_URL` is not part of the MVP loop.
+## Repository Model
 
-That said, it still fits into the wider PatchHive platform and can eventually route summarization or scoring work through `patchhive-ai-local` when that becomes valuable.
-
-*SignalHive by PatchHive — maintenance visibility before automation*
+The PatchHive monorepo is the source of truth for SignalHive development. The standalone `patchhive/signalhive` repository is an exported mirror of this directory.

@@ -1,16 +1,26 @@
 # patchhive-product-core
 
-Shared Rust backend primitives for PatchHive products.
+`patchhive-product-core` is the shared Rust foundation for PatchHive backends.
 
-This crate is the first shared Rust layer for code that is already repeated across multiple PatchHive products.
+It holds the backend behavior that already repeats across products and should stay consistent everywhere: auth bootstrap, auth verification, startup checks, and cross-product service primitives that make the suite easier to run independently today and easier to orchestrate later.
 
 ## Current Scope
 
-- API-key auth hashing, verification, persistence, and middleware enforcement
-- typed startup checks with shared logging helpers
+- API-key hashing, verification, persistence, and middleware
+- shared auth bootstrap behavior and error shapes
+- typed startup checks and shared startup logging helpers
+- shared cross-product client primitives such as RepoMemory context access
 
-## Intent
+## Design Boundary
 
-`patchhive-product-core` should hold the Rust backend seams that are truly shared across 2 or more products.
+`patchhive-product-core` is for real backend seams that are already shared across multiple products.
 
-Product-specific GitHub logic, scoring heuristics, pipelines, and route behavior should stay inside the products until they are clearly generic.
+It is not the place for:
+
+- product-specific GitHub logic
+- product scoring or policy heuristics
+- product route behavior that only one product owns
+
+## Repository Model
+
+The PatchHive monorepo is the source of truth for this crate. The standalone `patchhive/patchhive-product-core` repository is an exported mirror used by product repos and standalone CI.

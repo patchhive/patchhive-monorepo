@@ -1,47 +1,56 @@
-# 📦 DepTriage by PatchHive
+# DepTriage by PatchHive
 
-> Tell teams which dependency updates matter now and which ones can wait.
+DepTriage tells teams which dependency updates matter now and which ones can wait.
 
-DepTriage is PatchHive's dependency-noise filter. It reads open dependency PRs, optionally folds in Dependabot security alerts, and turns that flood into a ranked queue of `update now`, `watch`, and `ignore for now` calls. The goal is not to replace Dependabot or Renovate. The goal is to tell a team which updates are actually worth spending attention on right now.
+It is PatchHive's dependency-noise filter: a product that reads open dependency pull requests, optionally folds in Dependabot alerts, groups that activity by package, and turns the result into a ranked queue such as `update now`, `watch`, or `ignore for now`.
 
-## What It Does
+## Core Workflow
 
-- scans open dependency pull requests in a GitHub repo
-- optionally reads open Dependabot alerts for the same repo
-- groups overlapping PRs and alerts around the same package
-- scores each dependency into `update now`, `watch`, or `ignore for now`
-- saves scan history so teams can reopen prior triage calls later
+- read open dependency pull requests for a target repository
+- optionally read matching Dependabot alerts
+- group overlapping pull requests and alerts by package
+- rank each package into a practical action bucket
+- save scan history so teams can compare or revisit earlier triage decisions
 
-DepTriage is intentionally read-only in the MVP. It does not merge dependency PRs, close alerts, or rewrite update configuration.
+DepTriage is intentionally read-only in the MVP. It does not merge dependency pull requests or rewrite update configuration.
 
-## Quick Start
+## Run Locally
+
+### Docker
+
+```bash
+cp .env.example .env
+docker compose up --build
+```
+
+Frontend: `http://localhost:5180`
+Backend: `http://localhost:8070`
+
+### Split Backend and Frontend
 
 ```bash
 cp .env.example .env
 
-# Backend
 cd backend && cargo run
-
-# Frontend
 cd ../frontend && npm install && npm run dev
 ```
 
-Backend: `http://localhost:8070`
-Frontend: `http://localhost:5180`
+## GitHub Access
 
-## Local Run Notes
+DepTriage works best with a fine-grained personal access token.
 
-- `BOT_GITHUB_TOKEN` or `GITHUB_TOKEN` is recommended so DepTriage can read dependency PRs with healthier rate limits and query Dependabot alerts.
-- Prefer a fine-grained personal access token over a classic PAT whenever your setup allows it.
-- If you only want DepTriage on public repos, keep repository access public-only and avoid private repo access.
-- Dependabot alert reads need the matching read permission in GitHub. If you skip that, DepTriage can still triage open dependency PRs.
-- Dependabot alert reads require token access; if that fails, DepTriage will still score dependency PRs and surface a warning.
-- The frontend uses `@patchhivehq/ui` and `@patchhivehq/product-shell`.
+- If you only want public repositories, keep the token public-only.
+- Reading pull requests is enough for the base product loop.
+- Dependabot alert reads need the matching security permission in GitHub.
+- If Dependabot access is unavailable, DepTriage can still score dependency pull requests and show the limitation clearly.
+
+## Local Notes
+
 - The backend stores scan history in SQLite at `DEP_TRIAGE_DB_PATH`.
-- DepTriage does not require `PATCHHIVE_AI_URL` for the first MVP loop.
+- The frontend uses `@patchhivehq/ui` and `@patchhivehq/product-shell`.
+- The product does not require AI for the MVP loop.
+- Generate the first local API key from `http://localhost:5180`.
 
-## Standalone Repo Notes
+## Repository Model
 
-DepTriage should be developed in the PatchHive monorepo first. The standalone `patchhive/deptriage` repo should be treated as an exported mirror of this product directory rather than a second source of truth.
-
-*DepTriage by PatchHive — Tell teams which dependency updates matter now and which ones can wait.*
+The PatchHive monorepo is the source of truth for DepTriage development. The standalone `patchhive/deptriage` repository is an exported mirror of this directory.

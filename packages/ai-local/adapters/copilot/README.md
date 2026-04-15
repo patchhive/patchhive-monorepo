@@ -1,15 +1,17 @@
 # Copilot Adapter
 
-This directory is the future home of the Node adapter that wraps the official GitHub Copilot SDK.
+This directory holds the Copilot adapter for `@patchhive/ai-local`.
 
-Responsibilities:
+Its job is to wrap the official GitHub Copilot path behind the shared adapter protocol so PatchHive products can use Copilot through one stable localhost gateway.
+
+## Responsibilities
 
 - start and reuse the local Copilot client
-- authenticate through the user's GitHub / Copilot login
+- authenticate through the user's GitHub or Copilot login
 - execute completion requests
 - translate SDK results into the shared adapter protocol
 
-Current auth/bootstrap knobs:
+## Key Auth Controls
 
 - `PATCHHIVE_AI_COPILOT_GITHUB_TOKEN`
 - `PATCHHIVE_AI_COPILOT_USE_LOGGED_IN_USER`
@@ -18,13 +20,7 @@ Current auth/bootstrap knobs:
 - `PATCHHIVE_AI_COPILOT_CONFIG_DIR`
 - `PATCHHIVE_AI_COPILOT_CLI_PATH`
 
-The adapter prefers logged-in user auth by default and returns bootstrap hints through the shared `health` payload when Copilot is unavailable.
-
 Primary dependencies:
 
 - `@github/copilot-sdk`
 - `@github/copilot`
-
-The adapter should communicate with the Rust gateway over the protocol described in:
-
-- [Adapter Protocol v1](/home/coemedia/Documents/code/patchhive/packages/ai-local/contracts/adapter-v1.md)
