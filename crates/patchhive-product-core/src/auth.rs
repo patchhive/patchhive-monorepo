@@ -15,6 +15,8 @@ use std::{
     sync::{Mutex, OnceLock, RwLock},
 };
 
+pub type JsonApiError = (StatusCode, Json<serde_json::Value>);
+
 #[derive(Clone, Debug)]
 pub struct ApiKeyAuthConfig {
     pub hash_env_var: String,
@@ -180,11 +182,14 @@ pub fn bootstrap_request_allowed(headers: &HeaderMap) -> bool {
         return true;
     }
 
+    let mut saw_browser_local_hint = false;
+
     for header in ["origin", "referer"] {
         if let Some(value) = headers.get(header).and_then(|value| value.to_str().ok()) {
             if !local_endpoint(value) {
                 return false;
             }
+            saw_browser_local_hint = true;
         }
     }
 
@@ -195,11 +200,43 @@ pub fn bootstrap_request_allowed(headers: &HeaderMap) -> bool {
         }
     }
 
+    if saw_browser_local_hint {
+        return true;
+    }
+
     headers
         .get("host")
         .and_then(|value| value.to_str().ok())
         .map(local_endpoint)
         .unwrap_or(false)
+}
+
+pub fn auth_already_configured_error() -> JsonApiError {
+    (
+        StatusCode::FORBIDDEN,
+        Json(json!({
+            "error": "API-key auth is already configured for this product. Use the existing key instead of generating a new bootstrap key."
+        })),
+    )
+}
+
+pub fn bootstrap_localhost_required_error() -> JsonApiError {
+    (
+        StatusCode::FORBIDDEN,
+        Json(json!({
+            "error": "First-time API key generation is only allowed from localhost. Open this app via http://localhost on the same machine, or set PATCHHIVE_ALLOW_REMOTE_BOOTSTRAP=true if you intentionally want remote bootstrap."
+        })),
+    )
+}
+
+pub fn key_generation_failed_error(err: &anyhow::Error) -> JsonApiError {
+    tracing::error!("Failed to generate initial API key: {err:?}");
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(json!({
+            "error": "Could not generate the API key. Check that the product can write its .env file and restart if needed."
+        })),
+    )
 }
 
 pub fn auth_status_payload(config: &ApiKeyAuthConfig) -> serde_json::Value {
@@ -338,5 +375,13 @@ mod tests {
         remote.insert("host", HeaderValue::from_static("0.0.0.0:8000"));
         remote.insert("origin", HeaderValue::from_static("https://evil.example"));
         assert!(!bootstrap_request_allowed(&remote));
+    }
+
+    #[test]
+    fn bootstrap_request_allows_local_browser_through_reverse_proxy() {
+        let mut proxied = HeaderMap::new();
+        proxied.insert("host", HeaderValue::from_static("backend:8000"));
+        proxied.insert("origin", HeaderValue::from_static("http://localhost:5174"));
+        assert!(bootstrap_request_allowed(&proxied));
     }
 }

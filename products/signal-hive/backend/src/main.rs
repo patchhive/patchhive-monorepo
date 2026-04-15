@@ -95,14 +95,17 @@ async fn login(Json(body): Json<LoginBody>) -> Result<Json<serde_json::Value>, S
     Ok(Json(json!({"ok": true, "auth_enabled": true, "auth_configured": true})))
 }
 
-async fn gen_key(headers: axum::http::HeaderMap) -> Result<Json<serde_json::Value>, StatusCode> {
+async fn gen_key(
+    headers: axum::http::HeaderMap,
+) -> Result<Json<serde_json::Value>, patchhive_product_core::auth::JsonApiError> {
     if auth_enabled() {
-        return Err(StatusCode::FORBIDDEN);
+        return Err(patchhive_product_core::auth::auth_already_configured_error());
     }
     if !auth::bootstrap_request_allowed(&headers) {
-        return Err(StatusCode::FORBIDDEN);
+        return Err(patchhive_product_core::auth::bootstrap_localhost_required_error());
     }
-    let key = generate_and_save_key().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let key = generate_and_save_key()
+        .map_err(|err| patchhive_product_core::auth::key_generation_failed_error(&err))?;
     Ok(Json(json!({"api_key": key, "message": "Store this — it won't be shown again"})))
 }
 
