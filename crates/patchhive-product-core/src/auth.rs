@@ -193,15 +193,15 @@ pub fn bootstrap_request_allowed(headers: &HeaderMap) -> bool {
         }
     }
 
+    if saw_browser_local_hint {
+        return true;
+    }
+
     if let Some(value) = headers.get("x-forwarded-for").and_then(|value| value.to_str().ok()) {
         let client = value.split(',').next().unwrap_or("").trim();
         if !matches!(client, "" | "127.0.0.1" | "::1" | "[::1]") {
             return false;
         }
-    }
-
-    if saw_browser_local_hint {
-        return true;
     }
 
     headers
@@ -382,6 +382,7 @@ mod tests {
         let mut proxied = HeaderMap::new();
         proxied.insert("host", HeaderValue::from_static("backend:8000"));
         proxied.insert("origin", HeaderValue::from_static("http://localhost:5174"));
+        proxied.insert("x-forwarded-for", HeaderValue::from_static("172.20.0.1"));
         assert!(bootstrap_request_allowed(&proxied));
     }
 }
