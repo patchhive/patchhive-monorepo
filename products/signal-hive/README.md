@@ -50,6 +50,7 @@ SignalHive works best with a fine-grained personal access token.
 - SignalHive caps TODO/FIXME code search to the highest-priority repos in each scan by default so GitHub code-search limits do not overwhelm broader scans. Tune this with `SIGNAL_MARKER_REPO_LIMIT`.
 - The frontend uses `@patchhivehq/ui` and `@patchhivehq/product-shell`.
 - Generate the first local API key from `http://localhost:5174`.
+- If you want a stable password you can use from any browser, run `./scripts/set-signal-api-key.sh` from the monorepo root, restart SignalHive, and then use that same raw password in the login form. The script stores only the SHA-256 hash in `.env`.
 - If remote bootstrap is intentional, set `PATCHHIVE_ALLOW_REMOTE_BOOTSTRAP=true`.
 - Allowlist, denylist, and opt-out controls are built into the product for safer discovery.
 

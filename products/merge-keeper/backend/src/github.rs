@@ -127,70 +127,99 @@ fn markdown_signals(items: &[crate::models::MergeSignal], empty: &str) -> String
         .join("\n")
 }
 
+fn count_detail(count: u32, singular: &str, plural: &str) -> Option<String> {
+    if count == 0 {
+        None
+    } else {
+        Some(format!(
+            "{count} {}",
+            if count == 1 { singular } else { plural }
+        ))
+    }
+}
+
+fn detail_suffix(parts: Vec<String>) -> String {
+    if parts.is_empty() {
+        String::new()
+    } else {
+        format!(" ({})", parts.join(", "))
+    }
+}
+
 fn cross_product_markdown(assessment: &MergeAssessment) -> String {
     let mut lines = Vec::new();
 
     if let Some(review_bee) = assessment.review_bee.as_ref() {
+        let mut parts = Vec::new();
+        if let Some(detail) = count_detail(review_bee.open_items, "open item", "open items") {
+            parts.push(detail);
+        }
+        if let Some(detail) = count_detail(
+            review_bee.actionable_threads,
+            "actionable thread",
+            "actionable threads",
+        ) {
+            parts.push(detail);
+        }
         lines.push(format!(
-            "- **ReviewBee** `{}`: {} ({} open item{}, {} actionable thread{})",
+            "- **ReviewBee** `{}`: {}{}",
             if review_bee.status.trim().is_empty() {
                 "linked"
             } else {
                 review_bee.status.as_str()
             },
             review_bee.summary,
-            review_bee.open_items,
-            if review_bee.open_items == 1 { "" } else { "s" },
-            review_bee.actionable_threads,
-            if review_bee.actionable_threads == 1 {
-                ""
-            } else {
-                "s"
-            },
+            detail_suffix(parts),
         ));
     }
 
     if let Some(trust_gate) = assessment.trust_gate.as_ref() {
+        let mut parts = Vec::new();
+        if trust_gate.risk_score > 0 {
+            parts.push(format!("risk {}", trust_gate.risk_score));
+        }
+        if let Some(detail) = count_detail(
+            trust_gate.blocked_findings,
+            "blocked finding",
+            "blocked findings",
+        ) {
+            parts.push(detail);
+        }
+        if let Some(detail) = count_detail(
+            trust_gate.warning_findings,
+            "warning finding",
+            "warning findings",
+        ) {
+            parts.push(detail);
+        }
         lines.push(format!(
-            "- **TrustGate** `{}`: {} (risk {}, {} blocked finding{}, {} warning finding{})",
+            "- **TrustGate** `{}`: {}{}",
             if trust_gate.recommendation.trim().is_empty() {
                 "linked"
             } else {
                 trust_gate.recommendation.as_str()
             },
             trust_gate.summary,
-            trust_gate.risk_score,
-            trust_gate.blocked_findings,
-            if trust_gate.blocked_findings == 1 {
-                ""
-            } else {
-                "s"
-            },
-            trust_gate.warning_findings,
-            if trust_gate.warning_findings == 1 {
-                ""
-            } else {
-                "s"
-            },
+            detail_suffix(parts),
         ));
     }
 
     if let Some(repo_memory) = assessment.repo_memory.as_ref() {
+        let mut parts = Vec::new();
+        if let Some(detail) =
+            count_detail(repo_memory.policy_entries, "policy entry", "policy entries")
+        {
+            parts.push(detail);
+        }
+        if let Some(detail) =
+            count_detail(repo_memory.pinned_entries, "pinned entry", "pinned entries")
+        {
+            parts.push(detail);
+        }
         lines.push(format!(
-            "- **RepoMemory**: {} ({} policy entr{}, {} pinned entr{})",
+            "- **RepoMemory**: {}{}",
             repo_memory.summary,
-            repo_memory.policy_entries,
-            if repo_memory.policy_entries == 1 {
-                "y"
-            } else {
-                "ies"
-            },
-            repo_memory.pinned_entries,
-            if repo_memory.pinned_entries == 1 {
-                "y"
-            } else {
-                "ies"
-            },
+            detail_suffix(parts),
         ));
     }
 
@@ -198,6 +227,88 @@ fn cross_product_markdown(assessment: &MergeAssessment) -> String {
         "- No additional PatchHive context was linked for this run.".into()
     } else {
         lines.join("\n")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::cross_product_markdown;
+    use crate::models::{
+        MergeAssessment, RepoMemoryContextPreview, ReviewBeeContext, TrustGateContext,
+    };
+
+    #[test]
+    fn cross_product_markdown_suppresses_zero_value_context_counts() {
+        let markdown = cross_product_markdown(&MergeAssessment {
+            review_bee: Some(ReviewBeeContext {
+                status: "clear".into(),
+                summary: "Review follow-up looks clear.".into(),
+                open_items: 0,
+                actionable_threads: 0,
+                ..ReviewBeeContext::default()
+            }),
+            trust_gate: Some(TrustGateContext {
+                recommendation: "safe".into(),
+                summary: "Patch stays within the current repo rules.".into(),
+                risk_score: 0,
+                blocked_findings: 0,
+                warning_findings: 0,
+                ..TrustGateContext::default()
+            }),
+            repo_memory: Some(RepoMemoryContextPreview {
+                summary: "Repo conventions were loaded for this PR.".into(),
+                policy_entries: 0,
+                pinned_entries: 0,
+                ..RepoMemoryContextPreview::default()
+            }),
+            ..MergeAssessment::default()
+        });
+
+        assert!(markdown.contains("Review follow-up looks clear."));
+        assert!(markdown.contains("Patch stays within the current repo rules."));
+        assert!(markdown.contains("Repo conventions were loaded for this PR."));
+        assert!(!markdown.contains("0 open items"));
+        assert!(!markdown.contains("0 actionable threads"));
+        assert!(!markdown.contains("risk 0"));
+        assert!(!markdown.contains("0 blocked findings"));
+        assert!(!markdown.contains("0 warning findings"));
+        assert!(!markdown.contains("0 policy entries"));
+        assert!(!markdown.contains("0 pinned entries"));
+    }
+
+    #[test]
+    fn cross_product_markdown_keeps_positive_context_counts() {
+        let markdown = cross_product_markdown(&MergeAssessment {
+            review_bee: Some(ReviewBeeContext {
+                status: "attention".into(),
+                summary: "Review feedback still needs follow-up.".into(),
+                open_items: 2,
+                actionable_threads: 1,
+                ..ReviewBeeContext::default()
+            }),
+            trust_gate: Some(TrustGateContext {
+                recommendation: "warn".into(),
+                summary: "A couple of files deserve a closer look.".into(),
+                risk_score: 7,
+                blocked_findings: 0,
+                warning_findings: 2,
+                ..TrustGateContext::default()
+            }),
+            repo_memory: Some(RepoMemoryContextPreview {
+                summary: "RepoMemory found reusable conventions.".into(),
+                policy_entries: 3,
+                pinned_entries: 1,
+                ..RepoMemoryContextPreview::default()
+            }),
+            ..MergeAssessment::default()
+        });
+
+        assert!(markdown.contains("2 open items"));
+        assert!(markdown.contains("1 actionable thread"));
+        assert!(markdown.contains("risk 7"));
+        assert!(markdown.contains("2 warning findings"));
+        assert!(markdown.contains("3 policy entries"));
+        assert!(markdown.contains("1 pinned entry"));
     }
 }
 

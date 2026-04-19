@@ -108,6 +108,26 @@ fn recurring_issue_count(clusters: &[RecurringBugCluster]) -> i32 {
         .sum()
 }
 
+fn format_scope_text(params: &ScanParams) -> String {
+    let query = if params.search_query.is_empty() {
+        "no search query filter".to_string()
+    } else {
+        format!("search query `{}`", params.search_query)
+    };
+    let topics = if params.topics.is_empty() {
+        "no topic filter".to_string()
+    } else {
+        format!("topics `{}`", params.topics.join(", "))
+    };
+    let languages = if params.languages.is_empty() {
+        "all languages".to_string()
+    } else {
+        format!("languages `{}`", params.languages.join(", "))
+    };
+
+    format!("{query} · {topics} · {languages}")
+}
+
 fn marker_total(
     todo_count: u32,
     fixme_count: u32,
@@ -1009,24 +1029,7 @@ fn build_scan_report(record: &ScanRecord) -> ScanReport {
     }
 
     lines.extend([
-        format!(
-            "- Scope: query=`{}` topics=`{}` languages=`{}`",
-            if record.params.search_query.is_empty() {
-                "*none*"
-            } else {
-                &record.params.search_query
-            },
-            if record.params.topics.is_empty() {
-                "*none*".into()
-            } else {
-                record.params.topics.join(", ")
-            },
-            if record.params.languages.is_empty() {
-                "*none*".into()
-            } else {
-                record.params.languages.join(", ")
-            }
-        ),
+        format!("- Scope: {}", format_scope_text(&record.params)),
         format!(
             "- Coverage: {} repos scanned, {} signals found, top repo `{}`",
             record.summary.total_repos, record.summary.total_signals, record.summary.top_repo
@@ -1049,18 +1052,19 @@ fn build_scan_report(record: &ScanRecord) -> ScanReport {
             ),
             None => "- No ranked repos were returned in this scan.".into(),
         },
-        match top_stale {
+        match top_stale.filter(|repo| repo.stale_issues > 0) {
             Some(repo) => format!(
-                "- Largest stale backlog spike: `{}` with {} stale issues.",
+                "- Largest stale backlog: `{}` with {} stale issues.",
                 repo.full_name, repo.stale_issues
             ),
-            None => "- No stale backlog spike stood out in this scan.".into(),
+            None => "- No stale backlog stood out in this scan.".into(),
         },
-        match top_recurring {
+        match top_recurring.filter(|repo| !repo.recurring_bug_clusters.is_empty()) {
             Some(repo) => format!(
-                "- Strongest recurring bug pressure: `{}` with {} recurring clusters.",
+                "- Strongest recurring bug pressure: `{}` with {} recurring clusters covering {} issues.",
                 repo.full_name,
-                repo.recurring_bug_clusters.len()
+                repo.recurring_bug_clusters.len(),
+                recurring_issue_count(&repo.recurring_bug_clusters)
             ),
             None => "- No recurring bug cluster stood out in this scan.".into(),
         },
@@ -1154,6 +1158,80 @@ fn build_scan_report(record: &ScanRecord) -> ScanReport {
         filename: format!("signalhive-report-{}.md", &record.id[..8]),
         markdown: lines.join("\n"),
         exported_at: Utc::now().to_rfc3339(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::build_scan_report;
+    use crate::models::{RepoSignal, ScanParams, ScanRecord, ScanSummary};
+
+    fn sample_repo() -> RepoSignal {
+        RepoSignal {
+            full_name: "patchhive/example".into(),
+            repo_url: "https://github.com/patchhive/example".into(),
+            description: "example".into(),
+            language: "Rust".into(),
+            stars: 10,
+            open_issues: 2,
+            sampled_issues: 2,
+            stale_issues: 0,
+            unlabeled_issues: 0,
+            stale_bug_issues: 0,
+            stale_high_comment_issues: 0,
+            duplicate_candidates: Vec::new(),
+            recurring_bug_clusters: Vec::new(),
+            todo_count: 1,
+            fixme_count: 0,
+            todo_available: true,
+            fixme_available: true,
+            priority_score: 9.8,
+            score_breakdown: Vec::new(),
+            summary: "1 TODO and 0 FIXME markers were found in code search".into(),
+            signals: vec!["1 TODO and 0 FIXME markers were found in code search".into()],
+            issue_examples: Vec::new(),
+            warnings: Vec::new(),
+            trend: None,
+        }
+    }
+
+    #[test]
+    fn build_scan_report_uses_clear_scope_labels_and_suppresses_zero_value_callouts() {
+        let report = build_scan_report(&ScanRecord {
+            id: "124d10c2-ef5b-4584-a315-f137c3237624".into(),
+            created_at: "2026-04-19T18:19:55Z".into(),
+            params: ScanParams {
+                search_query: String::new(),
+                topics: Vec::new(),
+                languages: vec!["rust".into(), "typescript".into(), "python".into()],
+                min_stars: 25,
+                max_repos: 4,
+                issues_per_repo: 30,
+                stale_days: 45,
+            },
+            summary: ScanSummary {
+                total_repos: 1,
+                total_signals: 1,
+                top_repo: "patchhive/example".into(),
+            },
+            repos: vec![sample_repo()],
+            warnings: Vec::new(),
+            trigger_type: "manual".into(),
+            schedule_name: None,
+            trend: None,
+        });
+
+        assert!(report.markdown.contains(
+            "- Scope: no search query filter · no topic filter · languages `rust, typescript, python`"
+        ));
+        assert!(report
+            .markdown
+            .contains("- No stale backlog stood out in this scan."));
+        assert!(report
+            .markdown
+            .contains("- No recurring bug cluster stood out in this scan."));
+        assert!(!report.markdown.contains("*none*"));
+        assert!(!report.markdown.contains("with 0 recurring clusters"));
     }
 }
 
