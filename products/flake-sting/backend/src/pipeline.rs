@@ -15,8 +15,8 @@ use crate::{
     db, github,
     github::{GitHubWorkflowJob, GitHubWorkflowRun},
     models::{
-        compute_trend, FlakeMetrics, FlakeScanResult, FlakeSignal, HistoryItem,
-        OverviewPayload, ScanRequest,
+        compute_trend, FlakeMetrics, FlakeScanResult, FlakeSignal, HistoryItem, OverviewPayload,
+        ScanRequest,
     },
     state::AppState,
     STARTUP_CHECKS,
@@ -55,7 +55,9 @@ pub async fn login(Json(body): Json<LoginBody>) -> Result<Json<serde_json::Value
     if !verify_token(&body.api_key) {
         return Err(StatusCode::UNAUTHORIZED);
     }
-    Ok(Json(json!({"ok": true, "auth_enabled": true, "auth_configured": true})))
+    Ok(Json(
+        json!({"ok": true, "auth_enabled": true, "auth_configured": true}),
+    ))
 }
 
 pub async fn gen_key(
@@ -69,7 +71,9 @@ pub async fn gen_key(
     }
     let key = generate_and_save_key()
         .map_err(|err| patchhive_product_core::auth::key_generation_failed_error(&err))?;
-    Ok(Json(json!({"api_key": key, "message": "Store this — it won't be shown again"})))
+    Ok(Json(
+        json!({"api_key": key, "message": "Store this — it won't be shown again"}),
+    ))
 }
 
 pub async fn health() -> Json<serde_json::Value> {
@@ -134,7 +138,11 @@ pub async fn scan_github_actions(
     let runs = github::fetch_workflow_runs(
         &state.http,
         repo,
-        if branch.is_empty() { None } else { Some(branch.as_str()) },
+        if branch.is_empty() {
+            None
+        } else {
+            Some(branch.as_str())
+        },
         lookback_runs,
     )
     .await
@@ -265,7 +273,11 @@ fn record_bucket(
             conclusion
         },
         runner,
-        if run.html_url.trim().is_empty() { "" } else { " · " },
+        if run.html_url.trim().is_empty() {
+            ""
+        } else {
+            " · "
+        },
         evidence_url,
     );
     push_evidence(&mut bucket.evidence, line);
@@ -300,7 +312,10 @@ fn environment_hints(bucket: &SignalBucket) -> Vec<String> {
 fn signal_score(bucket: &SignalBucket) -> u32 {
     let overlap = bucket.failure_count.min(bucket.success_count);
     let mut score = overlap * 22 + bucket.failure_count * 16 + bucket.rerun_hits * 10;
-    if environment_hints(bucket).iter().any(|hint| hint.contains("clustering")) {
+    if environment_hints(bucket)
+        .iter()
+        .any(|hint| hint.contains("clustering"))
+    {
         score += 12;
     }
     score.min(100)
@@ -421,7 +436,10 @@ async fn build_scan_result(
                 );
             }
 
-            if !recorded_step && job_testish && (is_success(&job.conclusion) || is_failure(&job.conclusion)) {
+            if !recorded_step
+                && job_testish
+                && (is_success(&job.conclusion) || is_failure(&job.conclusion))
+            {
                 record_bucket(
                     &mut buckets,
                     "job",
@@ -532,12 +550,8 @@ mod tests {
             rerun_hits: 1,
             ..SignalBucket::default()
         };
-        bucket
-            .fail_envs
-            .insert("ubuntu-latest".into(), 2);
-        bucket
-            .success_envs
-            .insert("ubuntu-22.04".into(), 2);
+        bucket.fail_envs.insert("ubuntu-latest".into(), 2);
+        bucket.success_envs.insert("ubuntu-22.04".into(), 2);
 
         let signal = build_signal(bucket).expect("signal");
         assert_eq!(signal.status, "quarantine");

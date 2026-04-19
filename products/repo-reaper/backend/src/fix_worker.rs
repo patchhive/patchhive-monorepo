@@ -634,7 +634,10 @@ pub async fn fix_one(
     tx: Tx,
     http: reqwest::Client,
 ) {
-    let _permit = sem.acquire().await.unwrap();
+    let Ok(_permit) = sem.acquire().await else {
+        tracing::warn!("RepoReaper fix worker semaphore closed before issue execution");
+        return;
+    };
     if cancelled(&params) {
         return;
     }

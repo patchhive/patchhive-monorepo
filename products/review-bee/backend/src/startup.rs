@@ -9,9 +9,7 @@ pub async fn validate_config() -> Vec<StartupCheck> {
     )));
 
     if crate::auth::auth_enabled() {
-        checks.push(StartupCheck::info(
-            "API-key auth is enabled for ReviewBee.",
-        ));
+        checks.push(StartupCheck::info("API-key auth is enabled for ReviewBee."));
     } else {
         checks.push(StartupCheck::warn(
             "API-key auth is not enabled yet. Generate a key before exposing ReviewBee beyond local development.",

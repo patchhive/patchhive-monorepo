@@ -1,3 +1,4 @@
+use anyhow::{Context, Result};
 use axum::{
     extract::Request,
     http::{HeaderMap, StatusCode},
@@ -5,7 +6,6 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use anyhow::{Context, Result};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::{
@@ -197,7 +197,10 @@ pub fn bootstrap_request_allowed(headers: &HeaderMap) -> bool {
         return true;
     }
 
-    if let Some(value) = headers.get("x-forwarded-for").and_then(|value| value.to_str().ok()) {
+    if let Some(value) = headers
+        .get("x-forwarded-for")
+        .and_then(|value| value.to_str().ok())
+    {
         let client = value.split(',').next().unwrap_or("").trim();
         if !matches!(client, "" | "127.0.0.1" | "::1" | "[::1]") {
             return false;
@@ -357,7 +360,10 @@ mod tests {
     #[test]
     fn request_token_prefers_api_key_and_accepts_bearer_header() {
         let mut headers = HeaderMap::new();
-        headers.insert("Authorization", HeaderValue::from_static("Bearer test-token"));
+        headers.insert(
+            "Authorization",
+            HeaderValue::from_static("Bearer test-token"),
+        );
         assert_eq!(request_token(&headers), "test-token");
 
         headers.insert("X-API-Key", HeaderValue::from_static("direct-key"));

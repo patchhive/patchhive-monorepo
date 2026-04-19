@@ -1,4 +1,3 @@
-use std::collections::{BTreeSet, HashMap};
 use axum::{
     body::Bytes,
     extract::{Path, State},
@@ -9,6 +8,7 @@ use chrono::Utc;
 use patchhive_github_pr::verify_github_webhook_signature;
 use patchhive_product_core::startup::count_errors;
 use serde_json::{json, Value};
+use std::collections::{BTreeSet, HashMap};
 use uuid::Uuid;
 
 use crate::{
@@ -16,8 +16,8 @@ use crate::{
     db, github,
     github::GitHubReviewContext,
     models::{
-        ChecklistEvidence, ChecklistItem, GitHubReviewContext as ReviewTriggerContext,
-        HistoryItem, OverviewPayload, ReviewMetrics, ReviewRequest, ReviewResult,
+        ChecklistEvidence, ChecklistItem, GitHubReviewContext as ReviewTriggerContext, HistoryItem,
+        OverviewPayload, ReviewMetrics, ReviewRequest, ReviewResult,
     },
     state::AppState,
     STARTUP_CHECKS,
@@ -55,7 +55,9 @@ pub async fn login(Json(body): Json<LoginBody>) -> Result<Json<serde_json::Value
     if !verify_token(&body.api_key) {
         return Err(StatusCode::UNAUTHORIZED);
     }
-    Ok(Json(json!({"ok": true, "auth_enabled": true, "auth_configured": true})))
+    Ok(Json(
+        json!({"ok": true, "auth_enabled": true, "auth_configured": true}),
+    ))
 }
 
 pub async fn gen_key(
@@ -69,7 +71,9 @@ pub async fn gen_key(
     }
     let key = generate_and_save_key()
         .map_err(|err| patchhive_product_core::auth::key_generation_failed_error(&err))?;
-    Ok(Json(json!({"api_key": key, "message": "Store this — it won't be shown again"})))
+    Ok(Json(
+        json!({"api_key": key, "message": "Store this — it won't be shown again"}),
+    ))
 }
 
 pub async fn health() -> Json<serde_json::Value> {
@@ -248,14 +252,12 @@ pub async fn github_webhook(
             )
         })?
         .to_string();
-    let pr_number = payload["pull_request"]["number"]
-        .as_i64()
-        .ok_or_else(|| {
-            api_error(
-                StatusCode::BAD_REQUEST,
-                "Webhook payload was missing pull_request.number.",
-            )
-        })?;
+    let pr_number = payload["pull_request"]["number"].as_i64().ok_or_else(|| {
+        api_error(
+            StatusCode::BAD_REQUEST,
+            "Webhook payload was missing pull_request.number.",
+        )
+    })?;
 
     let review = run_github_pr_review(
         &state,
@@ -569,7 +571,9 @@ fn build_summary(metrics: &ReviewMetrics, checklist: &[ChecklistItem], status: &
 
     let mut category_counts = HashMap::new();
     for item in checklist.iter().filter(|item| item.status != "resolved") {
-        *category_counts.entry(item.category.as_str()).or_insert(0u32) += 1;
+        *category_counts
+            .entry(item.category.as_str())
+            .or_insert(0u32) += 1;
     }
     let mut top_categories = category_counts.into_iter().collect::<Vec<_>>();
     top_categories.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(right.0)));
@@ -717,19 +721,64 @@ fn classify_category(text: &str) -> (&'static str, &'static str) {
 
     if contains_any(&lower, &["test", "coverage", "assert", "spec", "fixture"]) {
         ("tests", "Tests")
-    } else if contains_any(&lower, &["validate", "validation", "guard", "sanitize", "edge case", "null", "nil"]) {
+    } else if contains_any(
+        &lower,
+        &[
+            "validate",
+            "validation",
+            "guard",
+            "sanitize",
+            "edge case",
+            "null",
+            "nil",
+        ],
+    ) {
         ("validation", "Validation")
-    } else if contains_any(&lower, &["rename", "naming", "consistent", "convention", "structure", "pattern"]) {
+    } else if contains_any(
+        &lower,
+        &[
+            "rename",
+            "naming",
+            "consistent",
+            "convention",
+            "structure",
+            "pattern",
+        ],
+    ) {
         ("naming", "Naming")
-    } else if contains_any(&lower, &["readme", "docs", "document", "comment", "explain"]) {
+    } else if contains_any(
+        &lower,
+        &["readme", "docs", "document", "comment", "explain"],
+    ) {
         ("docs", "Docs")
-    } else if contains_any(&lower, &["refactor", "simplify", "clean up", "cleanup", "helper", "reuse"]) {
+    } else if contains_any(
+        &lower,
+        &[
+            "refactor", "simplify", "clean up", "cleanup", "helper", "reuse",
+        ],
+    ) {
         ("cleanup", "Cleanup")
-    } else if contains_any(&lower, &["error", "logging", "log ", "fallback", "retry", "panic"]) {
+    } else if contains_any(
+        &lower,
+        &["error", "logging", "log ", "fallback", "retry", "panic"],
+    ) {
         ("errors", "Error handling")
-    } else if contains_any(&lower, &["api", "contract", "behavior", "return", "response", "interface"]) {
+    } else if contains_any(
+        &lower,
+        &[
+            "api",
+            "contract",
+            "behavior",
+            "return",
+            "response",
+            "interface",
+        ],
+    ) {
         ("api", "API behavior")
-    } else if contains_any(&lower, &["slow", "performance", "query", "n+1", "efficient"]) {
+    } else if contains_any(
+        &lower,
+        &["slow", "performance", "query", "n+1", "efficient"],
+    ) {
         ("performance", "Performance")
     } else if contains_any(&lower, &["style", "format", "lint", "indent", "spacing"]) {
         ("style", "Style")
@@ -782,7 +831,11 @@ fn status_rank(status: &str) -> i32 {
 }
 
 fn plural_suffix(count: u32) -> &'static str {
-    if count == 1 { "" } else { "s" }
+    if count == 1 {
+        ""
+    } else {
+        "s"
+    }
 }
 
 fn collapse_whitespace(value: &str) -> String {
@@ -798,7 +851,11 @@ fn truncate(value: &str, limit: usize) -> String {
     if compact.chars().count() <= limit {
         compact
     } else {
-        compact.chars().take(limit.saturating_sub(1)).collect::<String>() + "…"
+        compact
+            .chars()
+            .take(limit.saturating_sub(1))
+            .collect::<String>()
+            + "…"
     }
 }
 
@@ -829,7 +886,9 @@ mod tests {
     #[test]
     fn actionability_filters_praise_but_keeps_requests() {
         assert!(!actionable_text("LGTM, nice work."));
-        assert!(actionable_text("Could you add a regression test for this path?"));
+        assert!(actionable_text(
+            "Could you add a regression test for this path?"
+        ));
     }
 
     #[test]
@@ -846,7 +905,10 @@ mod tests {
             "pull_request_review_comment",
             "created"
         ));
-        assert!(supported_webhook_action("pull_request_review_thread", "resolved"));
+        assert!(supported_webhook_action(
+            "pull_request_review_thread",
+            "resolved"
+        ));
         assert!(!supported_webhook_action("issues", "opened"));
         assert!(!supported_webhook_action("pull_request", "closed"));
     }

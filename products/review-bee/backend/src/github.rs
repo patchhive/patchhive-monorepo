@@ -222,7 +222,10 @@ fn publish_success(
 
 pub async fn publish_review_outcome(client: &Client, review: &ReviewResult) -> GitHubReportOutcome {
     let Some(github) = review.github.as_ref() else {
-        return preview_review_outcome(review, "This review was not tied to a GitHub pull request.");
+        return preview_review_outcome(
+            review,
+            "This review was not tied to a GitHub pull request.",
+        );
     };
 
     if !github_token_configured() {

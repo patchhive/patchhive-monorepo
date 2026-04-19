@@ -46,7 +46,12 @@ pub async fn fetch_status(http: &Client) -> Value {
         return json!({ "configured": false });
     };
 
-    match http.get(health_url(&url)).timeout(Duration::from_secs(5)).send().await {
+    match http
+        .get(health_url(&url))
+        .timeout(Duration::from_secs(5))
+        .send()
+        .await
+    {
         Ok(resp) if resp.status().is_success() => match resp.json::<Value>().await {
             Ok(data) => json!({
                 "configured": true,
@@ -90,7 +95,9 @@ pub async fn fetch_models(http: &Client) -> Result<Vec<String>> {
         .timeout(Duration::from_secs(5))
         .send()
         .await
-        .map_err(|error| anyhow!("Could not reach PatchHive AI gateway models endpoint: {error}"))?;
+        .map_err(|error| {
+            anyhow!("Could not reach PatchHive AI gateway models endpoint: {error}")
+        })?;
 
     if !resp.status().is_success() {
         let status = resp.status();

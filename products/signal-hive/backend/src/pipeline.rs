@@ -1,25 +1,30 @@
 use std::collections::{HashMap, HashSet};
 
 use anyhow::Result;
-use axum::{extract::{Path, State}, http::StatusCode, Json};
+use axum::{
+    extract::{Path, State},
+    http::StatusCode,
+    Json,
+};
 use chrono::{DateTime, Utc};
 use serde_json::json;
 use tokio::time::{sleep, Duration};
 use tracing::{info, warn};
 
 use crate::{
-    db,
-    github,
+    db, github,
     models::{
         DuplicateCandidate, GitHubIssue, IssueSample, RecurringBugCluster, RepoSignal,
-        RepoSignalTrend, ScanParams, ScanRecord, ScanReport, ScanTrendSummary,
-        ScoreFactor,
+        RepoSignalTrend, ScanParams, ScanRecord, ScanReport, ScanTrendSummary, ScoreFactor,
     },
     state::AppState,
 };
 
 fn bad_request(message: impl Into<String>) -> (StatusCode, Json<serde_json::Value>) {
-    (StatusCode::BAD_REQUEST, Json(json!({ "error": message.into() })))
+    (
+        StatusCode::BAD_REQUEST,
+        Json(json!({ "error": message.into() })),
+    )
 }
 
 fn internal_error(err: anyhow::Error) -> (StatusCode, Json<serde_json::Value>) {
@@ -97,10 +102,18 @@ fn round1(value: f64) -> f64 {
 }
 
 fn recurring_issue_count(clusters: &[RecurringBugCluster]) -> i32 {
-    clusters.iter().map(|cluster| cluster.issue_count as i32).sum()
+    clusters
+        .iter()
+        .map(|cluster| cluster.issue_count as i32)
+        .sum()
 }
 
-fn marker_total(todo_count: u32, fixme_count: u32, todo_available: bool, fixme_available: bool) -> u32 {
+fn marker_total(
+    todo_count: u32,
+    fixme_count: u32,
+    todo_available: bool,
+    fixme_available: bool,
+) -> u32 {
     let mut total = 0;
     if todo_available {
         total += todo_count;
@@ -144,9 +157,25 @@ fn tokenize_title(title: &str) -> HashSet<String> {
 
 fn recurring_bug_tokens(title: &str) -> Vec<String> {
     const IGNORE: &[&str] = &[
-        "bug", "bugs", "error", "errors", "panic", "panics", "crash", "crashes", "broken",
-        "failure", "failures", "failing", "fails", "fail", "regression", "regressions",
-        "unexpected", "incorrect", "wrong",
+        "bug",
+        "bugs",
+        "error",
+        "errors",
+        "panic",
+        "panics",
+        "crash",
+        "crashes",
+        "broken",
+        "failure",
+        "failures",
+        "failing",
+        "fails",
+        "fail",
+        "regression",
+        "regressions",
+        "unexpected",
+        "incorrect",
+        "wrong",
     ];
 
     title_tokens(title)
@@ -177,9 +206,18 @@ fn label_names(issue: &GitHubIssue) -> Vec<String> {
 
 fn title_has_bug_hint(title: &str) -> bool {
     let lower = title.to_lowercase();
-    ["bug", "regression", "panic", "crash", "error", "broken", "fails", "failing"]
-        .iter()
-        .any(|hint| lower.contains(hint))
+    [
+        "bug",
+        "regression",
+        "panic",
+        "crash",
+        "error",
+        "broken",
+        "fails",
+        "failing",
+    ]
+    .iter()
+    .any(|hint| lower.contains(hint))
 }
 
 fn is_bug_issue(issue: &GitHubIssue) -> bool {
@@ -239,7 +277,11 @@ fn duplicate_candidates(issues: &[GitHubIssue]) -> Vec<DuplicateCandidate> {
         }
     }
 
-    pairs.sort_by(|a, b| b.similarity.partial_cmp(&a.similarity).unwrap_or(std::cmp::Ordering::Equal));
+    pairs.sort_by(|a, b| {
+        b.similarity
+            .partial_cmp(&a.similarity)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     pairs.truncate(3);
     pairs
 }
@@ -256,7 +298,11 @@ fn recurring_bug_clusters(issues: &[GitHubIssue]) -> Vec<RecurringBugCluster> {
 
     let token_sets = bug_issues
         .iter()
-        .map(|issue| recurring_bug_tokens(&issue.title).into_iter().collect::<HashSet<_>>())
+        .map(|issue| {
+            recurring_bug_tokens(&issue.title)
+                .into_iter()
+                .collect::<HashSet<_>>()
+        })
         .collect::<Vec<_>>();
 
     let mut adjacency = vec![Vec::<usize>::new(); bug_issues.len()];
@@ -270,7 +316,9 @@ fn recurring_bug_clusters(issues: &[GitHubIssue]) -> Vec<RecurringBugCluster> {
                 continue;
             }
 
-            let union = token_sets[left_index].union(&token_sets[right_index]).count() as f64;
+            let union = token_sets[left_index]
+                .union(&token_sets[right_index])
+                .count() as f64;
             let shared = token_sets[left_index]
                 .intersection(&token_sets[right_index])
                 .count() as f64;
@@ -330,7 +378,9 @@ fn recurring_bug_clusters(issues: &[GitHubIssue]) -> Vec<RecurringBugCluster> {
             .filter(|(_, count)| *count >= 2)
             .collect::<Vec<_>>();
         shared_terms.sort_by(|(left_term, left_count), (right_term, right_count)| {
-            right_count.cmp(left_count).then_with(|| left_term.cmp(right_term))
+            right_count
+                .cmp(left_count)
+                .then_with(|| left_term.cmp(right_term))
         });
 
         let shared_terms = shared_terms
@@ -361,12 +411,20 @@ fn recurring_bug_clusters(issues: &[GitHubIssue]) -> Vec<RecurringBugCluster> {
     }
 
     clusters.sort_by(|left, right| {
-        right
-            .issue_count
-            .cmp(&left.issue_count)
-            .then_with(|| right.examples.first().map(|example| example.comments).unwrap_or(0).cmp(
-                &left.examples.first().map(|example| example.comments).unwrap_or(0),
-            ))
+        right.issue_count.cmp(&left.issue_count).then_with(|| {
+            right
+                .examples
+                .first()
+                .map(|example| example.comments)
+                .unwrap_or(0)
+                .cmp(
+                    &left
+                        .examples
+                        .first()
+                        .map(|example| example.comments)
+                        .unwrap_or(0),
+                )
+        })
     });
     clusters.truncate(3);
     clusters
@@ -381,29 +439,43 @@ fn stale_issue_examples(issues: &[GitHubIssue], stale_days: u32) -> Vec<IssueSam
                 return None;
             }
 
-            Some(IssueSample { age_days, ..to_issue_sample(issue) })
+            Some(IssueSample {
+                age_days,
+                ..to_issue_sample(issue)
+            })
         })
         .collect::<Vec<_>>();
 
-    examples.sort_by(|a, b| b.age_days.cmp(&a.age_days).then_with(|| b.comments.cmp(&a.comments)));
+    examples.sort_by(|a, b| {
+        b.age_days
+            .cmp(&a.age_days)
+            .then_with(|| b.comments.cmp(&a.comments))
+    });
     examples.truncate(3);
     examples
 }
 
 fn issue_signals(issues: &[GitHubIssue], stale_days: u32) -> IssueAnalysis {
     let sampled_issues = issues.len() as u32;
-    let unlabeled_issues = issues.iter().filter(|issue| issue.labels.is_empty()).count() as u32;
+    let unlabeled_issues = issues
+        .iter()
+        .filter(|issue| issue.labels.is_empty())
+        .count() as u32;
     let stale_issues = issues
         .iter()
         .filter(|issue| issue_age_days(&issue.updated_at) >= stale_days as i64)
         .count() as u32;
     let stale_bug_issues = issues
         .iter()
-        .filter(|issue| issue_age_days(&issue.updated_at) >= stale_days as i64 && is_bug_issue(issue))
+        .filter(|issue| {
+            issue_age_days(&issue.updated_at) >= stale_days as i64 && is_bug_issue(issue)
+        })
         .count() as u32;
     let stale_high_comment_issues = issues
         .iter()
-        .filter(|issue| issue_age_days(&issue.updated_at) >= stale_days as i64 && issue.comments >= 3)
+        .filter(|issue| {
+            issue_age_days(&issue.updated_at) >= stale_days as i64 && issue.comments >= 3
+        })
         .count() as u32;
 
     IssueAnalysis {
@@ -442,8 +514,8 @@ fn priority_score(
 
     let mut breakdown = Vec::new();
 
-    let stale_backlog_impact =
-        (stale_ratio * 34.0).min(24.0) + (issue_analysis.stale_issues.min(6) as f64 * 2.2).min(12.0);
+    let stale_backlog_impact = (stale_ratio * 34.0).min(24.0)
+        + (issue_analysis.stale_issues.min(6) as f64 * 2.2).min(12.0);
     if issue_analysis.stale_issues > 0 {
         breakdown.push(ScoreFactor {
             key: "stale_backlog".into(),
@@ -469,7 +541,8 @@ fn priority_score(
         });
     }
 
-    let stalled_discussion_impact = (issue_analysis.stale_high_comment_issues.min(3) as f64 * 4.8).min(14.4);
+    let stalled_discussion_impact =
+        (issue_analysis.stale_high_comment_issues.min(3) as f64 * 4.8).min(14.4);
     if issue_analysis.stale_high_comment_issues > 0 {
         breakdown.push(ScoreFactor {
             key: "stalled_discussion".into(),
@@ -489,7 +562,12 @@ fn priority_score(
         let strongest = issue_analysis
             .recurring_bug_clusters
             .first()
-            .map(|cluster| format!("top pattern '{}' appears in {} issues", cluster.label, cluster.issue_count))
+            .map(|cluster| {
+                format!(
+                    "top pattern '{}' appears in {} issues",
+                    cluster.label, cluster.issue_count
+                )
+            })
             .unwrap_or_else(|| "bug reports cluster around repeated symptoms".into());
         breakdown.push(ScoreFactor {
             key: "recurring_bugs".into(),
@@ -505,12 +583,21 @@ fn priority_score(
     }
 
     let duplicate_impact = (duplicate_pressure * 10.0).min(14.0)
-        + if issue_analysis.duplicate_candidates.len() >= 2 { 3.0 } else { 0.0 };
+        + if issue_analysis.duplicate_candidates.len() >= 2 {
+            3.0
+        } else {
+            0.0
+        };
     if !issue_analysis.duplicate_candidates.is_empty() {
         let strongest = issue_analysis
             .duplicate_candidates
             .first()
-            .map(|pair| format!("strongest pair looks {}% alike", (pair.similarity * 100.0).round() as i64))
+            .map(|pair| {
+                format!(
+                    "strongest pair looks {}% alike",
+                    (pair.similarity * 100.0).round() as i64
+                )
+            })
             .unwrap_or_else(|| "title overlap suggests duplicate work".into());
         breakdown.push(ScoreFactor {
             key: "duplicates".into(),
@@ -524,8 +611,9 @@ fn priority_score(
         });
     }
 
-    let unlabeled_impact =
-        ((unlabeled_ratio * 18.0) + (issue_analysis.unlabeled_issues.min(4) as f64 * 1.4)).min(12.0);
+    let unlabeled_impact = ((unlabeled_ratio * 18.0)
+        + (issue_analysis.unlabeled_issues.min(4) as f64 * 1.4))
+        .min(12.0);
     if issue_analysis.unlabeled_issues > 0 {
         breakdown.push(ScoreFactor {
             key: "triage_gap".into(),
@@ -538,7 +626,8 @@ fn priority_score(
         });
     }
 
-    let marker_impact = (todo_count.min(20) as f64 * 0.45 + fixme_count.min(15) as f64 * 0.8).min(12.0);
+    let marker_impact =
+        (todo_count.min(20) as f64 * 0.45 + fixme_count.min(15) as f64 * 0.8).min(12.0);
     if todo_count > 0 || fixme_count > 0 {
         breakdown.push(ScoreFactor {
             key: "markers".into(),
@@ -567,7 +656,11 @@ fn priority_score(
             .unwrap_or(std::cmp::Ordering::Equal)
     });
 
-    let total = breakdown.iter().map(|factor| factor.impact).sum::<f64>().min(100.0);
+    let total = breakdown
+        .iter()
+        .map(|factor| factor.impact)
+        .sum::<f64>()
+        .min(100.0);
     (round1(total), breakdown)
 }
 
@@ -648,7 +741,12 @@ fn summary_from_signals(
         }
     }
 
-    let summary = signals.iter().take(2).cloned().collect::<Vec<_>>().join(" · ");
+    let summary = signals
+        .iter()
+        .take(2)
+        .cloned()
+        .collect::<Vec<_>>()
+        .join(" · ");
     (summary, signals)
 }
 
@@ -657,7 +755,13 @@ async fn analyze_repo_issue_draft(
     repo: &crate::models::SearchRepo,
     params: &ScanParams,
 ) -> Result<RepoAnalysisDraft> {
-    let issues = github::fetch_open_issues(client, &repo.owner.login, &repo.name, params.issues_per_repo).await?;
+    let issues = github::fetch_open_issues(
+        client,
+        &repo.owner.login,
+        &repo.name,
+        params.issues_per_repo,
+    )
+    .await?;
     let issue_analysis = issue_signals(&issues, params.stale_days);
     let issue_only_priority_score = priority_score(
         repo.stargazers_count,
@@ -869,7 +973,8 @@ fn enrich_scan_trend(record: &mut ScanRecord, previous: &ScanRecord) {
         compared_to_scan_id: previous.id.clone(),
         compared_to_created_at: previous.created_at.clone(),
         total_repos_delta: record.summary.total_repos as i32 - previous.summary.total_repos as i32,
-        total_signals_delta: record.summary.total_signals as i32 - previous.summary.total_signals as i32,
+        total_signals_delta: record.summary.total_signals as i32
+            - previous.summary.total_signals as i32,
         new_repos,
         dropped_repos: previous_repos.len() as u32,
         rising_repos,
@@ -880,10 +985,7 @@ fn enrich_scan_trend(record: &mut ScanRecord, previous: &ScanRecord) {
 
 fn build_scan_report(record: &ScanRecord) -> ScanReport {
     let top_repo = record.repos.first();
-    let top_stale = record
-        .repos
-        .iter()
-        .max_by_key(|repo| repo.stale_issues);
+    let top_stale = record.repos.iter().max_by_key(|repo| repo.stale_issues);
     let top_recurring = record.repos.iter().max_by_key(|repo| {
         repo.recurring_bug_clusters
             .iter()
@@ -1001,10 +1103,7 @@ fn build_scan_report(record: &ScanRecord) -> ScanReport {
 
     for (index, repo) in record.repos.iter().take(10).enumerate() {
         lines.push(format!("### {}. `{}`", index + 1, repo.full_name));
-        lines.push(format!(
-            "- Priority: {:.1}",
-            round1(repo.priority_score)
-        ));
+        lines.push(format!("- Priority: {:.1}", round1(repo.priority_score)));
         lines.push(format!("- Summary: {}", repo.summary));
         lines.push(format!(
             "- Stats: stale {} | unlabeled {} | duplicates {} | recurring clusters {} | TODO {} | FIXME {}",
@@ -1085,8 +1184,9 @@ pub async fn run_scan_record(
         );
     }
 
-    let repos = github::discover_repositories(&state.http, &params, &allowlist, &denylist, &opt_out)
-        .await?;
+    let repos =
+        github::discover_repositories(&state.http, &params, &allowlist, &denylist, &opt_out)
+            .await?;
 
     let mut drafts = Vec::new();
     let mut scan_warnings = Vec::new();
@@ -1130,7 +1230,12 @@ pub async fn run_scan_record(
 
     for (index, draft) in drafts.into_iter().enumerate() {
         let marker_counts = if index < marker_repo_limit {
-            collect_marker_counts(&state.http, &draft.repo.full_name, &mut code_search_rate_limited).await
+            collect_marker_counts(
+                &state.http,
+                &draft.repo.full_name,
+                &mut code_search_rate_limited,
+            )
+            .await
         } else {
             MarkerCounts {
                 warnings: vec![
@@ -1155,7 +1260,13 @@ pub async fn run_scan_record(
             .then_with(|| b.stars.cmp(&a.stars))
     });
 
-    let mut record = db::save_scan(&params, &signals, &scan_warnings, trigger_type, schedule_name)?;
+    let mut record = db::save_scan(
+        &params,
+        &signals,
+        &scan_warnings,
+        trigger_type,
+        schedule_name,
+    )?;
     enrich_scan_record(&mut record)?;
     Ok(record)
 }
@@ -1164,7 +1275,13 @@ pub async fn run_schedule_now(state: &AppState, schedule_name: &str) -> Result<S
     let schedule = db::get_scan_schedule(schedule_name)?
         .ok_or_else(|| anyhow::anyhow!("Schedule not found"))?;
 
-    let result = run_scan_record(state, schedule.params.clone(), "scheduled", Some(&schedule.name)).await;
+    let result = run_scan_record(
+        state,
+        schedule.params.clone(),
+        "scheduled",
+        Some(&schedule.name),
+    )
+    .await;
     match result {
         Ok(record) => {
             db::record_scan_schedule_result(&schedule.name, Some(&record.id), "ok", None)?;
@@ -1184,14 +1301,27 @@ pub fn start_scheduler(state: AppState) {
                 Ok(schedules) => {
                     for schedule in schedules {
                         let name = schedule.name.clone();
-                        match run_scan_record(&state, schedule.params.clone(), "scheduled", Some(&name)).await {
+                        match run_scan_record(
+                            &state,
+                            schedule.params.clone(),
+                            "scheduled",
+                            Some(&name),
+                        )
+                        .await
+                        {
                             Ok(record) => {
-                                if let Err(err) =
-                                    db::record_scan_schedule_result(&name, Some(&record.id), "ok", None)
-                                {
+                                if let Err(err) = db::record_scan_schedule_result(
+                                    &name,
+                                    Some(&record.id),
+                                    "ok",
+                                    None,
+                                ) {
                                     warn!("failed to store schedule result for {name}: {err}");
                                 }
-                                info!("SignalHive scheduled scan '{name}' completed as {}", record.id);
+                                info!(
+                                    "SignalHive scheduled scan '{name}' completed as {}",
+                                    record.id
+                                );
                             }
                             Err(err) => {
                                 if let Err(write_err) = db::record_scan_schedule_result(
@@ -1248,7 +1378,10 @@ pub async fn history_detail(
             enrich_scan_record(&mut scan).map_err(internal_error)?;
             Ok(Json(scan))
         }
-        None => Err((StatusCode::NOT_FOUND, Json(json!({ "error": "Scan not found" })))),
+        None => Err((
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Scan not found" })),
+        )),
     }
 }
 
@@ -1260,7 +1393,10 @@ pub async fn report(
             enrich_scan_record(&mut scan).map_err(internal_error)?;
             Ok(Json(build_scan_report(&scan)))
         }
-        None => Err((StatusCode::NOT_FOUND, Json(json!({ "error": "Scan not found" })))),
+        None => Err((
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Scan not found" })),
+        )),
     }
 }
 
@@ -1269,6 +1405,9 @@ pub async fn timeline(
 ) -> Result<Json<crate::models::ScanTimeline>, (StatusCode, Json<serde_json::Value>)> {
     match db::scan_timeline(&id, 12).map_err(internal_error)? {
         Some(timeline) => Ok(Json(timeline)),
-        None => Err((StatusCode::NOT_FOUND, Json(json!({ "error": "Scan not found" })))),
+        None => Err((
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "Scan not found" })),
+        )),
     }
 }

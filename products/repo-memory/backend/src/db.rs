@@ -80,7 +80,12 @@ pub fn init_db() -> rusqlite::Result<()> {
           ON memory_entries (repo, memory_ref);
         "#,
     )?;
-    ensure_column(&conn, "memory_entries", "memory_ref", "TEXT NOT NULL DEFAULT ''")?;
+    ensure_column(
+        &conn,
+        "memory_entries",
+        "memory_ref",
+        "TEXT NOT NULL DEFAULT ''",
+    )?;
     backfill_memory_refs(&conn)?;
     conn.execute(
         r#"
@@ -154,11 +159,9 @@ pub fn repo_count() -> u32 {
     connect()
         .ok()
         .and_then(|conn| {
-            conn.query_row(
-                "SELECT COUNT(DISTINCT repo) FROM memory_runs",
-                [],
-                |row| row.get::<_, i64>(0),
-            )
+            conn.query_row("SELECT COUNT(DISTINCT repo) FROM memory_runs", [], |row| {
+                row.get::<_, i64>(0)
+            })
             .ok()
         })
         .unwrap_or(0) as u32
@@ -244,9 +247,7 @@ pub fn featured_memories(limit: usize) -> rusqlite::Result<Vec<MemoryEntry>> {
 
 pub fn list_history(repo: Option<&str>) -> rusqlite::Result<Vec<HistoryItem>> {
     let conn = connect()?;
-    let mut sql = String::from(
-        "SELECT id, repo, created_at, summary_json FROM memory_runs",
-    );
+    let mut sql = String::from("SELECT id, repo, created_at, summary_json FROM memory_runs");
     let mut params = Vec::new();
 
     if let Some(repo) = repo.filter(|value| !value.trim().is_empty()) {
@@ -405,7 +406,12 @@ pub fn save_memory_curation(
     Ok(())
 }
 
-fn ensure_column(conn: &Connection, table: &str, column: &str, definition: &str) -> rusqlite::Result<()> {
+fn ensure_column(
+    conn: &Connection,
+    table: &str,
+    column: &str,
+    definition: &str,
+) -> rusqlite::Result<()> {
     let pragma = format!("PRAGMA table_info({table})");
     let mut stmt = conn.prepare(&pragma)?;
     let rows = stmt.query_map([], |row| row.get::<_, String>(1))?;

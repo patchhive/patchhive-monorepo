@@ -1,7 +1,7 @@
 use anyhow::Result;
 use patchhive_github_pr::{
-    env_value, github_token_from_env, GitHubCheckRunRequest, GitHubCommitStatusRequest,
-    GitHubCommitHealth, GitHubManagedCommentResult, GitHubPrClient, GitHubPullRequestDetail,
+    env_value, github_token_from_env, GitHubCheckRunRequest, GitHubCommitHealth,
+    GitHubCommitStatusRequest, GitHubManagedCommentResult, GitHubPrClient, GitHubPullRequestDetail,
     GitHubPullReview, GitHubPullReviewThread,
 };
 use reqwest::Client;
@@ -142,7 +142,11 @@ fn cross_product_markdown(assessment: &MergeAssessment) -> String {
             review_bee.open_items,
             if review_bee.open_items == 1 { "" } else { "s" },
             review_bee.actionable_threads,
-            if review_bee.actionable_threads == 1 { "" } else { "s" },
+            if review_bee.actionable_threads == 1 {
+                ""
+            } else {
+                "s"
+            },
         ));
     }
 
@@ -157,9 +161,17 @@ fn cross_product_markdown(assessment: &MergeAssessment) -> String {
             trust_gate.summary,
             trust_gate.risk_score,
             trust_gate.blocked_findings,
-            if trust_gate.blocked_findings == 1 { "" } else { "s" },
+            if trust_gate.blocked_findings == 1 {
+                ""
+            } else {
+                "s"
+            },
             trust_gate.warning_findings,
-            if trust_gate.warning_findings == 1 { "" } else { "s" },
+            if trust_gate.warning_findings == 1 {
+                ""
+            } else {
+                "s"
+            },
         ));
     }
 
@@ -168,9 +180,17 @@ fn cross_product_markdown(assessment: &MergeAssessment) -> String {
             "- **RepoMemory**: {} ({} policy entr{}, {} pinned entr{})",
             repo_memory.summary,
             repo_memory.policy_entries,
-            if repo_memory.policy_entries == 1 { "y" } else { "ies" },
+            if repo_memory.policy_entries == 1 {
+                "y"
+            } else {
+                "ies"
+            },
             repo_memory.pinned_entries,
-            if repo_memory.pinned_entries == 1 { "y" } else { "ies" },
+            if repo_memory.pinned_entries == 1 {
+                "y"
+            } else {
+                "ies"
+            },
         ));
     }
 
@@ -337,7 +357,9 @@ pub async fn publish_assessment_outcome(
             method = "check_run".into();
             delivered = true;
         }
-        Err(err) => details.push(format!("Check run failed, falling back to commit status: {err}")),
+        Err(err) => details.push(format!(
+            "Check run failed, falling back to commit status: {err}"
+        )),
     }
 
     if !delivered {

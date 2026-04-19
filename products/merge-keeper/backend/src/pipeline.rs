@@ -20,9 +20,9 @@ use crate::{
     github::GitHubMergeContext,
     integrations,
     models::{
-        AssessmentRequest, GitHubAssessmentContext, HistoryItem, MergeAssessment,
-        MergeMetrics, MergeSignal, OverviewPayload, RepoMemoryContextPreview,
-        ReviewBeeContext, ReviewerState, TrustGateContext,
+        AssessmentRequest, GitHubAssessmentContext, HistoryItem, MergeAssessment, MergeMetrics,
+        MergeSignal, OverviewPayload, RepoMemoryContextPreview, ReviewBeeContext, ReviewerState,
+        TrustGateContext,
     },
     state::AppState,
     STARTUP_CHECKS,
@@ -47,7 +47,9 @@ pub async fn login(Json(body): Json<LoginBody>) -> Result<Json<serde_json::Value
     if !verify_token(&body.api_key) {
         return Err(StatusCode::UNAUTHORIZED);
     }
-    Ok(Json(json!({"ok": true, "auth_enabled": true, "auth_configured": true})))
+    Ok(Json(
+        json!({"ok": true, "auth_enabled": true, "auth_configured": true}),
+    ))
 }
 
 pub async fn gen_key(
@@ -61,7 +63,9 @@ pub async fn gen_key(
     }
     let key = generate_and_save_key()
         .map_err(|err| patchhive_product_core::auth::key_generation_failed_error(&err))?;
-    Ok(Json(json!({"api_key": key, "message": "Store this — it won't be shown again"})))
+    Ok(Json(
+        json!({"api_key": key, "message": "Store this — it won't be shown again"}),
+    ))
 }
 
 pub async fn health() -> Json<serde_json::Value> {
@@ -197,9 +201,10 @@ fn supported_webhook_action(event: &str, action: &str) -> bool {
 fn extract_webhook_target(event: &str, payload: &Value) -> Option<(String, i64)> {
     let repo = payload["repository"]["full_name"].as_str()?.to_string();
     let pr_number = match event {
-        "pull_request" | "pull_request_review" | "pull_request_review_comment" | "pull_request_review_thread" => {
-            payload["pull_request"]["number"].as_i64()?
-        }
+        "pull_request"
+        | "pull_request_review"
+        | "pull_request_review_comment"
+        | "pull_request_review_thread" => payload["pull_request"]["number"].as_i64()?,
         "check_run" => payload["check_run"]["pull_requests"]
             .as_array()
             .and_then(|items| items.first())
@@ -342,7 +347,14 @@ fn actionable_text(text: &str) -> bool {
         "nit:",
         "nit ",
     ];
-    let praise_terms = ["lgtm", "looks good", "nice work", "great work", "thanks", "thank you"];
+    let praise_terms = [
+        "lgtm",
+        "looks good",
+        "nice work",
+        "great work",
+        "thanks",
+        "thank you",
+    ];
 
     if contains_any(&lower, &request_terms) {
         return true;
@@ -351,7 +363,15 @@ fn actionable_text(text: &str) -> bool {
     if lower.contains('?')
         && contains_any(
             &lower,
-            &["can", "could", "would", "should", "why", "what about", "do we"],
+            &[
+                "can",
+                "could",
+                "would",
+                "should",
+                "why",
+                "what about",
+                "do we",
+            ],
         )
     {
         return true;
@@ -373,7 +393,11 @@ fn truncate(value: &str, limit: usize) -> String {
     if compact.chars().count() <= limit {
         compact
     } else {
-        compact.chars().take(limit.saturating_sub(1)).collect::<String>() + "…"
+        compact
+            .chars()
+            .take(limit.saturating_sub(1))
+            .collect::<String>()
+            + "…"
     }
 }
 
@@ -414,7 +438,12 @@ fn current_review_counts(states: &[ReviewerState]) -> (u32, u32, u32, Vec<String
         }
     }
 
-    (approvals, changes_requested, comment_reviews, changed_requesters)
+    (
+        approvals,
+        changes_requested,
+        comment_reviews,
+        changed_requesters,
+    )
 }
 
 fn review_thread_metrics(context: &GitHubMergeContext) -> (u32, u32, u32, Vec<String>) {
@@ -427,7 +456,10 @@ fn review_thread_metrics(context: &GitHubMergeContext) -> (u32, u32, u32, Vec<St
             continue;
         }
         open_threads += 1;
-        let actionable = thread.comments.iter().any(|comment| actionable_text(&comment.body));
+        let actionable = thread
+            .comments
+            .iter()
+            .any(|comment| actionable_text(&comment.body));
         if actionable {
             actionable_open_threads += 1;
             if evidence.len() < 4 {
@@ -552,7 +584,9 @@ async fn build_assessment(state: &AppState, context: &GitHubMergeContext) -> Mer
 
     let mergeable = mergeable_value(context.pr.mergeable);
     let mergeable_state = normalize_mergeable_state(&context.pr.mergeable_state);
-    if context.pr.mergeable == Some(false) || matches!(mergeable_state.as_str(), "dirty" | "blocked") {
+    if context.pr.mergeable == Some(false)
+        || matches!(mergeable_state.as_str(), "dirty" | "blocked")
+    {
         blockers.push(make_signal(
             "merge-conflict",
             "block",
@@ -762,7 +796,12 @@ fn apply_review_bee_signals(
         return;
     }
 
-    let evidence = context.top_items.iter().take(4).cloned().collect::<Vec<_>>();
+    let evidence = context
+        .top_items
+        .iter()
+        .take(4)
+        .cloned()
+        .collect::<Vec<_>>();
     if context.status == "attention" && context.open_items >= 3 {
         blockers.push(make_signal(
             "review-bee-pressure",
@@ -803,7 +842,12 @@ fn apply_trust_gate_signals(
         return;
     };
 
-    let evidence = context.top_findings.iter().take(4).cloned().collect::<Vec<_>>();
+    let evidence = context
+        .top_findings
+        .iter()
+        .take(4)
+        .cloned()
+        .collect::<Vec<_>>();
     match context.recommendation.as_str() {
         "block" => blockers.push(make_signal(
             "trust-gate-block",
@@ -938,7 +982,11 @@ fn build_summary(
 }
 
 fn plural_suffix(count: u32) -> &'static str {
-    if count == 1 { "" } else { "s" }
+    if count == 1 {
+        ""
+    } else {
+        "s"
+    }
 }
 
 #[cfg(test)]
@@ -948,7 +996,9 @@ mod tests {
     #[test]
     fn actionable_text_ignores_pure_praise() {
         assert!(!actionable_text("LGTM, nice work."));
-        assert!(actionable_text("Could you add a test for the edge case here?"));
+        assert!(actionable_text(
+            "Could you add a test for the edge case here?"
+        ));
     }
 
     #[test]

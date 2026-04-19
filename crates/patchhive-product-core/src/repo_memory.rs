@@ -125,7 +125,9 @@ pub async fn fetch_repo_memory_context(
     let status = response.status();
     if !status.is_success() {
         let body = response.text().await.unwrap_or_default();
-        return Err(anyhow!("RepoMemory context request failed: {status} {body}"));
+        return Err(anyhow!(
+            "RepoMemory context request failed: {status} {body}"
+        ));
     }
 
     let parsed = response

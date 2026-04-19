@@ -12,8 +12,8 @@ use axum::{
     Router,
 };
 use once_cell::sync::OnceCell;
-use patchhive_product_core::startup::{listen_addr, log_checks, StartupCheck};
 use patchhive_product_core::startup::cors_layer;
+use patchhive_product_core::startup::{listen_addr, log_checks, StartupCheck};
 use tracing::info;
 
 use crate::state::AppState;

@@ -1,15 +1,12 @@
 use anyhow::Result;
-use axum::{
-    extract::Request,
-    http::HeaderMap,
-    middleware::Next,
-    response::Response,
-};
+use axum::{extract::Request, http::HeaderMap, middleware::Next, response::Response};
 use once_cell::sync::Lazy;
 use patchhive_product_core::auth::{
     auth_enabled as core_auth_enabled, auth_middleware as core_auth_middleware,
-    auth_status_payload as core_auth_status_payload, bootstrap_request_allowed as core_bootstrap_request_allowed,
-    generate_and_save_key as core_generate_and_save_key, verify_token as core_verify_token, ApiKeyAuthConfig,
+    auth_status_payload as core_auth_status_payload,
+    bootstrap_request_allowed as core_bootstrap_request_allowed,
+    generate_and_save_key as core_generate_and_save_key, verify_token as core_verify_token,
+    ApiKeyAuthConfig,
 };
 
 static AUTH_CONFIG: Lazy<ApiKeyAuthConfig> = Lazy::new(|| {

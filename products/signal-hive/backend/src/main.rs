@@ -14,7 +14,9 @@ use axum::{
     Json, Router,
 };
 use once_cell::sync::OnceCell;
-use patchhive_product_core::startup::{cors_layer, count_errors, listen_addr, log_checks, StartupCheck};
+use patchhive_product_core::startup::{
+    cors_layer, count_errors, listen_addr, log_checks, StartupCheck,
+};
 use serde_json::json;
 use tracing::info;
 
@@ -92,7 +94,9 @@ async fn login(Json(body): Json<LoginBody>) -> Result<Json<serde_json::Value>, S
     if !verify_token(&body.api_key) {
         return Err(StatusCode::UNAUTHORIZED);
     }
-    Ok(Json(json!({"ok": true, "auth_enabled": true, "auth_configured": true})))
+    Ok(Json(
+        json!({"ok": true, "auth_enabled": true, "auth_configured": true}),
+    ))
 }
 
 async fn gen_key(
@@ -106,17 +110,31 @@ async fn gen_key(
     }
     let key = generate_and_save_key()
         .map_err(|err| patchhive_product_core::auth::key_generation_failed_error(&err))?;
-    Ok(Json(json!({"api_key": key, "message": "Store this — it won't be shown again"})))
+    Ok(Json(
+        json!({"api_key": key, "message": "Store this — it won't be shown again"}),
+    ))
 }
 
 async fn health(State(_state): State<AppState>) -> Json<serde_json::Value> {
-    let errors = STARTUP_CHECKS.get().map(|checks| count_errors(checks)).unwrap_or(0);
+    let errors = STARTUP_CHECKS
+        .get()
+        .map(|checks| count_errors(checks))
+        .unwrap_or(0);
     let db_ok = db::health_check();
     let repo_lists = db::list_repo_lists().unwrap_or_default();
     let schedules = db::list_scan_schedules().unwrap_or_default();
-    let allowlist_count = repo_lists.iter().filter(|row| row.list_type == "allowlist").count();
-    let denylist_count = repo_lists.iter().filter(|row| row.list_type == "denylist").count();
-    let opt_out_count = repo_lists.iter().filter(|row| row.list_type == "opt_out").count();
+    let allowlist_count = repo_lists
+        .iter()
+        .filter(|row| row.list_type == "allowlist")
+        .count();
+    let denylist_count = repo_lists
+        .iter()
+        .filter(|row| row.list_type == "denylist")
+        .count();
+    let opt_out_count = repo_lists
+        .iter()
+        .filter(|row| row.list_type == "opt_out")
+        .count();
     let enabled_schedule_count = schedules.iter().filter(|schedule| schedule.enabled).count();
     let next_run_at = schedules
         .iter()
@@ -249,7 +267,9 @@ async fn run_scan_schedule_now(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
 }
 
-async fn add_repo_list(Json(body): Json<RepoListBody>) -> Result<Json<serde_json::Value>, StatusCode> {
+async fn add_repo_list(
+    Json(body): Json<RepoListBody>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
     let Some(repo) = db::normalize_repo_name(&body.repo) else {
         return Err(StatusCode::BAD_REQUEST);
     };
@@ -258,7 +278,9 @@ async fn add_repo_list(Json(body): Json<RepoListBody>) -> Result<Json<serde_json
     };
 
     db::save_repo_list(&repo, list_type).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    Ok(Json(json!({ "ok": true, "repo": repo, "list_type": list_type })))
+    Ok(Json(
+        json!({ "ok": true, "repo": repo, "list_type": list_type }),
+    ))
 }
 
 async fn remove_repo_list(

@@ -21,7 +21,10 @@ pub async fn validate_config(http: &Client) -> Vec<StartupCheck> {
         }
     }
 
-    if std::env::var("PROVIDER_API_KEY").unwrap_or_default().is_empty() {
+    if std::env::var("PROVIDER_API_KEY")
+        .unwrap_or_default()
+        .is_empty()
+    {
         if ai_local_url.is_some() {
             results.push(StartupCheck::ok(
                 "PATCHHIVE_AI_URL is set — OpenAI-compatible agents can use the local Codex/Copilot gateway",
@@ -39,14 +42,18 @@ pub async fn validate_config(http: &Client) -> Vec<StartupCheck> {
     // Validate GitHub token
     let token = github_token_from_env().unwrap_or_default();
     if !token.is_empty() {
-        match http.get("https://api.github.com/user")
+        match http
+            .get("https://api.github.com/user")
             .header("Authorization", format!("Bearer {token}"))
             .header("Accept", "application/vnd.github+json")
             .header("User-Agent", "repo-reaper/0.1")
-            .send().await
+            .send()
+            .await
         {
             Ok(r) if r.status() == 401 => {
-                results.push(StartupCheck::error("BOT_GITHUB_TOKEN is invalid or expired"));
+                results.push(StartupCheck::error(
+                    "BOT_GITHUB_TOKEN is invalid or expired",
+                ));
             }
             Ok(r) if r.status().is_success() => {
                 let data: serde_json::Value = r.json().await.unwrap_or_default();
@@ -75,8 +82,12 @@ pub async fn validate_config(http: &Client) -> Vec<StartupCheck> {
             let ready: Vec<String> = status["providers"]
                 .as_object()
                 .map(|providers| {
-                    providers.iter()
-                        .filter(|(_, data)| data["ok"].as_bool().unwrap_or(false) && data["logged_in"].as_bool().unwrap_or(false))
+                    providers
+                        .iter()
+                        .filter(|(_, data)| {
+                            data["ok"].as_bool().unwrap_or(false)
+                                && data["logged_in"].as_bool().unwrap_or(false)
+                        })
                         .map(|(name, _)| name.clone())
                         .collect()
                 })
@@ -105,9 +116,12 @@ pub async fn validate_config(http: &Client) -> Vec<StartupCheck> {
         ));
     }
 
-    if std::env::var("WEBHOOK_SECRET").unwrap_or_default().is_empty() {
+    if std::env::var("WEBHOOK_SECRET")
+        .unwrap_or_default()
+        .is_empty()
+    {
         results.push(StartupCheck::warn(
-            "WEBHOOK_SECRET is not set — GitHub webhook signature verification is disabled",
+            "WEBHOOK_SECRET is not set — the /webhook/github endpoint will reject webhook delivery until it is configured",
         ));
     } else {
         results.push(StartupCheck::ok(

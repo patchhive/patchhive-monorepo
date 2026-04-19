@@ -12,8 +12,7 @@ use uuid::Uuid;
 
 use crate::{
     auth::{auth_enabled, generate_and_save_key, verify_token},
-    db,
-    github,
+    db, github,
     models::{
         stable_memory_ref, ContextEntry, ContextRequest, ContextResponse, GitHubIssue,
         GitHubPullFile, GitHubPullRequest, GitHubReview, GitHubReviewComment, HistoryItem,
@@ -87,7 +86,9 @@ pub async fn login(Json(body): Json<LoginBody>) -> Result<Json<serde_json::Value
     if !verify_token(&body.api_key) {
         return Err(StatusCode::UNAUTHORIZED);
     }
-    Ok(Json(json!({"ok": true, "auth_enabled": true, "auth_configured": true})))
+    Ok(Json(
+        json!({"ok": true, "auth_enabled": true, "auth_configured": true}),
+    ))
 }
 
 pub async fn gen_key(
@@ -101,7 +102,9 @@ pub async fn gen_key(
     }
     let key = generate_and_save_key()
         .map_err(|err| patchhive_product_core::auth::key_generation_failed_error(&err))?;
-    Ok(Json(json!({"api_key": key, "message": "Store this — it won't be shown again"})))
+    Ok(Json(
+        json!({"api_key": key, "message": "Store this — it won't be shown again"}),
+    ))
 }
 
 pub async fn health(State(_state): State<AppState>) -> Json<serde_json::Value> {
@@ -166,10 +169,14 @@ pub async fn curate_memory(
     update.disposition = normalize_disposition(&update.disposition).to_string();
 
     if !valid_repo(&update.repo) {
-        return Err(bad_request("RepoMemory expects repos in owner/repo format."));
+        return Err(bad_request(
+            "RepoMemory expects repos in owner/repo format.",
+        ));
     }
     if update.memory_ref.is_empty() {
-        return Err(bad_request("RepoMemory needs a stable memory_ref to save curation."));
+        return Err(bad_request(
+            "RepoMemory needs a stable memory_ref to save curation.",
+        ));
     }
 
     db::save_memory_curation(
@@ -192,7 +199,9 @@ pub async fn curate_memory(
 pub async fn context(Json(request): Json<ContextRequest>) -> JsonResult<ContextResponse> {
     let repo = request.repo.trim().to_string();
     if !valid_repo(&repo) {
-        return Err(bad_request("RepoMemory expects repos in owner/repo format."));
+        return Err(bad_request(
+            "RepoMemory expects repos in owner/repo format.",
+        ));
     }
 
     let latest = db::list_history(Some(&repo))
@@ -247,13 +256,17 @@ pub async fn context(Json(request): Json<ContextRequest>) -> JsonResult<ContextR
         run_id: run.id,
         created_at: run.created_at,
         summary,
-        prompt_lines: entries.iter().map(|entry| entry.prompt_line.clone()).collect(),
+        prompt_lines: entries
+            .iter()
+            .map(|entry| entry.prompt_line.clone())
+            .collect(),
         entries,
     }))
 }
 
 pub async fn history(Query(query): Query<HistoryQuery>) -> JsonResult<serde_json::Value> {
-    let items: Vec<HistoryItem> = db::list_history(query.repo.as_deref()).map_err(internal_error)?;
+    let items: Vec<HistoryItem> =
+        db::list_history(query.repo.as_deref()).map_err(internal_error)?;
     Ok(Json(json!({ "history": items })))
 }
 
@@ -302,7 +315,9 @@ pub async fn ingest(
 ) -> JsonResult<IngestRecord> {
     let params = params.normalized();
     if !valid_repo(&params.repo) {
-        return Err(bad_request("RepoMemory expects repos in owner/repo format."));
+        return Err(bad_request(
+            "RepoMemory expects repos in owner/repo format.",
+        ));
     }
 
     let pulls = github::fetch_merged_pull_requests(
@@ -333,9 +348,14 @@ pub async fn ingest(
         });
     }
 
-    let issues = github::fetch_closed_issues(&state.http, &params.repo, params.issue_limit, params.since_days)
-        .await
-        .map_err(upstream_error)?;
+    let issues = github::fetch_closed_issues(
+        &state.http,
+        &params.repo,
+        params.issue_limit,
+        params.since_days,
+    )
+    .await
+    .map_err(upstream_error)?;
 
     let run = build_memory_run(params, bundles, issues).map_err(internal_from_anyhow)?;
     db::save_run(&run).map_err(internal_error)?;
@@ -546,7 +566,11 @@ fn build_memory_run(
 
     let mut hotspot_dirs: Vec<_> = dir_counts.into_iter().collect();
     hotspot_dirs.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
-    for (dir, frequency) in hotspot_dirs.into_iter().filter(|(_, count)| *count >= 2).take(3) {
+    for (dir, frequency) in hotspot_dirs
+        .into_iter()
+        .filter(|(_, count)| *count >= 2)
+        .take(3)
+    {
         entries.push(build_entry(
             &run_id,
             &repo,
@@ -564,8 +588,18 @@ fn build_memory_run(
     }
 
     let mut review_paths: Vec<_> = file_review_counts.into_iter().collect();
-    review_paths.sort_by(|left, right| right.1.frequency.cmp(&left.1.frequency).then_with(|| left.0.cmp(&right.0)));
-    for (path, bucket) in review_paths.into_iter().filter(|(_, bucket)| bucket.frequency >= 2).take(3) {
+    review_paths.sort_by(|left, right| {
+        right
+            .1
+            .frequency
+            .cmp(&left.1.frequency)
+            .then_with(|| left.0.cmp(&right.0))
+    });
+    for (path, bucket) in review_paths
+        .into_iter()
+        .filter(|(_, bucket)| bucket.frequency >= 2)
+        .take(3)
+    {
         entries.push(build_entry(
             &run_id,
             &repo,
@@ -583,8 +617,18 @@ fn build_memory_run(
     }
 
     let mut bug_terms: Vec<_> = bug_terms.into_iter().collect();
-    bug_terms.sort_by(|left, right| right.1.frequency.cmp(&left.1.frequency).then_with(|| left.0.cmp(&right.0)));
-    for (term, bucket) in bug_terms.into_iter().filter(|(_, bucket)| bucket.frequency >= 2).take(4) {
+    bug_terms.sort_by(|left, right| {
+        right
+            .1
+            .frequency
+            .cmp(&left.1.frequency)
+            .then_with(|| left.0.cmp(&right.0))
+    });
+    for (term, bucket) in bug_terms
+        .into_iter()
+        .filter(|(_, bucket)| bucket.frequency >= 2)
+        .take(4)
+    {
         entries.push(build_entry(
             &run_id,
             &repo,
@@ -715,7 +759,12 @@ fn build_memory_run(
             .then_with(|| right.frequency.cmp(&left.frequency))
     });
 
-    let summary = build_summary(&entries, bundles.len() as u32, review_feedback_items, issues.len() as u32);
+    let summary = build_summary(
+        &entries,
+        bundles.len() as u32,
+        review_feedback_items,
+        issues.len() as u32,
+    );
     let prompt_pack = build_prompt_pack(&repo, &summary, &entries);
 
     Ok(IngestRecord {
@@ -1001,8 +1050,10 @@ fn diff_item(current: &MemoryEntry, previous: Option<&MemoryEntry>) -> RunDiffIt
 
 fn sort_diff_items(items: &mut [RunDiffItem]) {
     items.sort_by(|left, right| {
-        let right_magnitude = right.delta_confidence.abs() + (right.delta_frequency.abs() as f64 * 5.0);
-        let left_magnitude = left.delta_confidence.abs() + (left.delta_frequency.abs() as f64 * 5.0);
+        let right_magnitude =
+            right.delta_confidence.abs() + (right.delta_frequency.abs() as f64 * 5.0);
+        let left_magnitude =
+            left.delta_confidence.abs() + (left.delta_frequency.abs() as f64 * 5.0);
         right_magnitude
             .partial_cmp(&left_magnitude)
             .unwrap_or(std::cmp::Ordering::Equal)
@@ -1051,8 +1102,7 @@ fn rank_context_entries(
             }
             let matched_paths = matching_entry_paths(entry, &clean_paths);
             let matched_terms = matching_entry_terms(entry, &context_tokens);
-            let retrieval_score =
-                entry.confidence * 0.48
+            let retrieval_score = entry.confidence * 0.48
                 + (entry.frequency as f64 * 6.0)
                 + (matched_paths.len() as f64 * 18.0)
                 + (matched_terms.len() as f64 * 7.0)
@@ -1084,7 +1134,9 @@ fn rank_context_entries(
         right
             .pinned
             .cmp(&left.pinned)
-            .then_with(|| disposition_rank(&right.disposition).cmp(&disposition_rank(&left.disposition)))
+            .then_with(|| {
+                disposition_rank(&right.disposition).cmp(&disposition_rank(&left.disposition))
+            })
             .then_with(|| {
                 right
                     .retrieval_score
@@ -1218,10 +1270,18 @@ fn profile_path_bonus(
         .min(3) as f64;
 
     match (consumer, entry.kind.as_str()) {
-        ("trust-gate", "reviewer_profile") => 16.0 + (matched_count * 5.0) + (coverage * 10.0) + (evidence_hits * 4.0),
-        ("trust-gate", "maintainer_profile") => 8.0 + (matched_count * 4.0) + (coverage * 8.0) + (evidence_hits * 3.0),
-        ("repo-reaper", "maintainer_profile") => 16.0 + (matched_count * 5.0) + (coverage * 10.0) + (evidence_hits * 4.0),
-        ("repo-reaper", "reviewer_profile") => 8.0 + (matched_count * 4.0) + (coverage * 8.0) + (evidence_hits * 3.0),
+        ("trust-gate", "reviewer_profile") => {
+            16.0 + (matched_count * 5.0) + (coverage * 10.0) + (evidence_hits * 4.0)
+        }
+        ("trust-gate", "maintainer_profile") => {
+            8.0 + (matched_count * 4.0) + (coverage * 8.0) + (evidence_hits * 3.0)
+        }
+        ("repo-reaper", "maintainer_profile") => {
+            16.0 + (matched_count * 5.0) + (coverage * 10.0) + (evidence_hits * 4.0)
+        }
+        ("repo-reaper", "reviewer_profile") => {
+            8.0 + (matched_count * 4.0) + (coverage * 8.0) + (evidence_hits * 3.0)
+        }
         (_, "reviewer_profile" | "maintainer_profile") => {
             10.0 + (matched_count * 4.0) + (coverage * 8.0) + (evidence_hits * 3.0)
         }
@@ -1359,7 +1419,13 @@ fn collect_feedback(
     matched
 }
 
-fn review_bucket_specs() -> Vec<(&'static str, &'static str, &'static str, &'static str, Vec<&'static str>)> {
+fn review_bucket_specs() -> Vec<(
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static str,
+    Vec<&'static str>,
+)> {
     vec![
         (
             "tests",
@@ -1411,19 +1477,48 @@ fn classify_feedback(sentence: &str) -> Option<(&'static str, &'static str)> {
     if contains_any(&lower, &["test", "coverage", "assert", "spec"]) {
         return Some(("tests", "tests"));
     }
-    if contains_any(&lower, &["helper", "utility", "shared", "common", "existing", "reuse"]) {
+    if contains_any(
+        &lower,
+        &["helper", "utility", "shared", "common", "existing", "reuse"],
+    ) {
         return Some(("helpers", "helpers"));
     }
-    if contains_any(&lower, &["validate", "validation", "guard", "sanitize", "check for", "edge case"]) {
+    if contains_any(
+        &lower,
+        &[
+            "validate",
+            "validation",
+            "guard",
+            "sanitize",
+            "check for",
+            "edge case",
+        ],
+    ) {
         return Some(("validation", "validation"));
     }
-    if contains_any(&lower, &["rename", "naming", "consistent", "convention", "style", "pattern"]) {
+    if contains_any(
+        &lower,
+        &[
+            "rename",
+            "naming",
+            "consistent",
+            "convention",
+            "style",
+            "pattern",
+        ],
+    ) {
         return Some(("naming", "naming"));
     }
-    if contains_any(&lower, &["readme", "docs", "document", "comment", "changelog"]) {
+    if contains_any(
+        &lower,
+        &["readme", "docs", "document", "comment", "changelog"],
+    ) {
         return Some(("docs", "docs"));
     }
-    if contains_any(&lower, &["error", "logging", "log ", "context", "fallback", "retry"]) {
+    if contains_any(
+        &lower,
+        &["error", "logging", "log ", "context", "fallback", "retry"],
+    ) {
         return Some(("errors", "errors"));
     }
     None
@@ -1517,7 +1612,10 @@ mod tests {
             4,
         );
 
-        assert_eq!(ranked.first().map(|entry| entry.kind.as_str()), Some("maintainer_profile"));
+        assert_eq!(
+            ranked.first().map(|entry| entry.kind.as_str()),
+            Some("maintainer_profile")
+        );
     }
 
     #[test]
@@ -1544,7 +1642,10 @@ mod tests {
             4,
         );
 
-        assert_eq!(ranked.first().map(|entry| entry.kind.as_str()), Some("reviewer_profile"));
+        assert_eq!(
+            ranked.first().map(|entry| entry.kind.as_str()),
+            Some("reviewer_profile")
+        );
     }
 
     #[test]
@@ -1568,7 +1669,10 @@ mod tests {
         let ranked = rank_context_entries(&[regular, policy], "trust-gate", &[], "", "", 4);
 
         assert_eq!(ranked.len(), 2);
-        assert_eq!(ranked.first().map(|entry| entry.disposition.as_str()), Some("policy"));
+        assert_eq!(
+            ranked.first().map(|entry| entry.disposition.as_str()),
+            Some("policy")
+        );
         assert_eq!(ranked.first().map(|entry| entry.pinned), Some(true));
     }
 
@@ -1582,7 +1686,14 @@ mod tests {
         );
         suppressed.disposition = "suppressed".into();
 
-        let ranked = rank_context_entries(&[suppressed], "repo-reaper", &["src/lib.rs".into()], "", "", 4);
+        let ranked = rank_context_entries(
+            &[suppressed],
+            "repo-reaper",
+            &["src/lib.rs".into()],
+            "",
+            "",
+            4,
+        );
         assert!(ranked.is_empty());
     }
 }

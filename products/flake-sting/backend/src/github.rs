@@ -7,8 +7,7 @@ use reqwest::Client;
 
 pub use patchhive_github_data::github_token_configured;
 pub use patchhive_github_data::models::{
-    GitHubActionsWorkflowJob as GitHubWorkflowJob,
-    GitHubActionsWorkflowRun as GitHubWorkflowRun,
+    GitHubActionsWorkflowJob as GitHubWorkflowJob, GitHubActionsWorkflowRun as GitHubWorkflowRun,
 };
 
 pub async fn fetch_workflow_runs(

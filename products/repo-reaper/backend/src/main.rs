@@ -1,10 +1,10 @@
-mod ai_local;
 mod agents;
+mod ai_local;
 mod auth;
 mod db;
 mod fix_worker;
-mod github;
 mod git_ops;
+mod github;
 mod pipeline;
 mod routes;
 mod startup;
@@ -17,10 +17,12 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use once_cell::sync::OnceCell;
+use patchhive_product_core::startup::{
+    cors_layer, count_errors, listen_addr, log_checks, StartupCheck,
+};
 use serde_json::json;
 use tracing::info;
-use once_cell::sync::OnceCell;
-use patchhive_product_core::startup::{cors_layer, count_errors, listen_addr, log_checks, StartupCheck};
 
 use crate::auth::{auth_enabled, generate_and_save_key, verify_token};
 use crate::state::AppState;
@@ -48,7 +50,9 @@ async fn main() {
     let state = AppState::new();
 
     if db::get_setting("watch_mode", "false") == "true" {
-        state.watch_mode.store(true, std::sync::atomic::Ordering::SeqCst);
+        state
+            .watch_mode
+            .store(true, std::sync::atomic::Ordering::SeqCst);
     }
 
     let checks = startup::validate_config(&state.http).await;
@@ -63,13 +67,13 @@ async fn main() {
     let cors = cors_layer();
 
     let app = Router::new()
-        .route("/auth/status",       get(auth_status))
-        .route("/auth/login",        post(login))
+        .route("/auth/status", get(auth_status))
+        .route("/auth/login", post(login))
         .route("/auth/generate-key", post(gen_key))
-        .route("/health",            get(health))
-        .route("/startup/checks",    get(startup_checks_route))
-        .route("/run",               post(pipeline::run))
-        .route("/dry-run",           post(pipeline::dry_run))
+        .route("/health", get(health))
+        .route("/startup/checks", get(startup_checks_route))
+        .route("/run", post(pipeline::run))
+        .route("/dry-run", post(pipeline::dry_run))
         .merge(routes::config::router())
         .merge(routes::history::router())
         .merge(routes::webhook::router())
@@ -92,12 +96,20 @@ async fn auth_status() -> Json<serde_json::Value> {
 }
 
 #[derive(serde::Deserialize)]
-struct LoginBody { api_key: String }
+struct LoginBody {
+    api_key: String,
+}
 
 async fn login(Json(body): Json<LoginBody>) -> Result<Json<serde_json::Value>, StatusCode> {
-    if !auth_enabled() { return Err(StatusCode::SERVICE_UNAVAILABLE); }
-    if !verify_token(&body.api_key) { return Err(StatusCode::UNAUTHORIZED); }
-    Ok(Json(json!({"ok": true, "auth_enabled": true, "auth_configured": true})))
+    if !auth_enabled() {
+        return Err(StatusCode::SERVICE_UNAVAILABLE);
+    }
+    if !verify_token(&body.api_key) {
+        return Err(StatusCode::UNAUTHORIZED);
+    }
+    Ok(Json(
+        json!({"ok": true, "auth_enabled": true, "auth_configured": true}),
+    ))
 }
 
 async fn gen_key(
@@ -111,12 +123,17 @@ async fn gen_key(
     }
     let key = generate_and_save_key()
         .map_err(|err| patchhive_product_core::auth::key_generation_failed_error(&err))?;
-    Ok(Json(json!({"api_key": key, "message": "Store this — it won't be shown again"})))
+    Ok(Json(
+        json!({"api_key": key, "message": "Store this — it won't be shown again"}),
+    ))
 }
 
 async fn health(State(state): State<AppState>) -> Json<serde_json::Value> {
     let agents_count = state.agents.read().await.len();
-    let errors = STARTUP_CHECKS.get().map(|checks| count_errors(checks)).unwrap_or(0);
+    let errors = STARTUP_CHECKS
+        .get()
+        .map(|checks| count_errors(checks))
+        .unwrap_or(0);
     let db_ok = db::health_check();
     Json(json!({
         "status": if errors > 0 || !db_ok { "degraded" } else { "ok" },

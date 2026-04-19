@@ -1,8 +1,8 @@
-use std::collections::HashMap;
-use std::sync::{Arc, atomic::AtomicBool};
-use tokio::sync::RwLock;
-use serde::{Deserialize, Serialize};
 use reqwest::Client;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::{atomic::AtomicBool, Arc};
+use tokio::sync::RwLock;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentConfig {

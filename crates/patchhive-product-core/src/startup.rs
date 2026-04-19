@@ -76,7 +76,8 @@ pub fn configured_port(port_env: &str, default_port: u16) -> u16 {
 }
 
 pub fn listen_addr(port_env: &str, default_port: u16) -> String {
-    format!("0.0.0.0:{}", configured_port(port_env, default_port))
+    let bind_addr = std::env::var("PATCHHIVE_BIND_ADDR").unwrap_or_else(|_| "0.0.0.0".to_string());
+    format!("{bind_addr}:{}", configured_port(port_env, default_port))
 }
 
 pub fn cors_layer() -> CorsLayer {
@@ -128,10 +129,6 @@ pub fn cors_layer() -> CorsLayer {
     } else {
         AllowOrigin::predicate(move |origin: &HeaderValue, _request_parts| {
             allowed_values.iter().any(|allowed| allowed == origin)
-                || origin
-                    .to_str()
-                    .map(|value| value.starts_with("http://localhost:") || value.starts_with("http://127.0.0.1:"))
-                    .unwrap_or(false)
         })
     };
 

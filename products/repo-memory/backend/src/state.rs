@@ -9,6 +9,8 @@ impl AppState {
     pub fn new() -> Self {
         let http = Client::builder()
             .user_agent("RepoMemory by PatchHive")
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .timeout(std::time::Duration::from_secs(30))
             .build()
             .expect("failed to create reqwest client");
 

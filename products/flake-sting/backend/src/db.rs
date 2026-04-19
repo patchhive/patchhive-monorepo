@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Context, Result};
-use rusqlite::{params, Connection, OptionalExtension};
 use once_cell::sync::OnceCell;
+use rusqlite::{params, Connection, OptionalExtension};
 use std::sync::{Mutex, MutexGuard};
 
 use crate::models::{compute_trend, FlakeScanResult, HistoryItem, OverviewCounts, OverviewPayload};

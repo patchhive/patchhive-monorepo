@@ -59,8 +59,7 @@ fn ensure_column(conn: &Connection, table: &str, column: &str, definition: &str)
     Ok(())
 }
 
-pub fn init_db() -> Result<()> {
-    let conn = connect()?;
+fn init_schema(conn: &Connection) -> Result<()> {
     conn.execute_batch(
         r#"
         CREATE TABLE IF NOT EXISTS scans (
@@ -157,12 +156,7 @@ pub fn init_db() -> Result<()> {
         "trigger_type",
         "trigger_type TEXT NOT NULL DEFAULT 'manual'",
     )?;
-    ensure_column(
-        &conn,
-        "scans",
-        "schedule_name",
-        "schedule_name TEXT",
-    )?;
+    ensure_column(&conn, "scans", "schedule_name", "schedule_name TEXT")?;
 
     ensure_column(
         &conn,
@@ -219,6 +213,11 @@ pub fn init_db() -> Result<()> {
         "warnings_json TEXT NOT NULL DEFAULT '[]'",
     )?;
     Ok(())
+}
+
+pub fn init_db() -> Result<()> {
+    let conn = connect()?;
+    init_schema(&conn)
 }
 
 fn normalized_signature_parts(values: &[String]) -> Vec<String> {
@@ -313,48 +312,57 @@ pub fn save_scan(
     )?;
 
     for repo in repos {
-        tx.execute(
-            r#"
-            INSERT INTO repo_signals (
-                scan_id, repo_full_name, repo_url, description, language, stars,
-                open_issues, sampled_issues, stale_issues, unlabeled_issues,
-                stale_bug_issues, stale_high_comment_issues, duplicate_candidates_json,
-                recurring_bug_clusters_json, todo_count, fixme_count, todo_available,
-                fixme_available, priority_score, score_breakdown_json, summary,
-                signals_json, issue_examples_json, warnings_json
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)
-            "#,
-            params![
-                record.id,
-                repo.full_name,
-                repo.repo_url,
-                repo.description,
-                repo.language,
-                repo.stars,
-                repo.open_issues,
-                repo.sampled_issues,
-                repo.stale_issues,
-                repo.unlabeled_issues,
-                repo.stale_bug_issues,
-                repo.stale_high_comment_issues,
-                serde_json::to_string(&repo.duplicate_candidates)?,
-                serde_json::to_string(&repo.recurring_bug_clusters)?,
-                repo.todo_count,
-                repo.fixme_count,
-                repo.todo_available,
-                repo.fixme_available,
-                repo.priority_score,
-                serde_json::to_string(&repo.score_breakdown)?,
-                repo.summary,
-                serde_json::to_string(&repo.signals)?,
-                serde_json::to_string(&repo.issue_examples)?,
-                serde_json::to_string(&repo.warnings)?,
-            ],
-        )?;
+        insert_repo_signal(&tx, &record.id, repo)?;
     }
 
     tx.commit()?;
     Ok(record)
+}
+
+fn insert_repo_signal(
+    tx: &rusqlite::Transaction<'_>,
+    scan_id: &str,
+    repo: &RepoSignal,
+) -> Result<()> {
+    tx.execute(
+        r#"
+        INSERT INTO repo_signals (
+            scan_id, repo_full_name, repo_url, description, language, stars,
+            open_issues, sampled_issues, stale_issues, unlabeled_issues,
+            stale_bug_issues, stale_high_comment_issues, duplicate_candidates_json,
+            recurring_bug_clusters_json, todo_count, fixme_count, todo_available,
+            fixme_available, priority_score, score_breakdown_json, summary,
+            signals_json, issue_examples_json, warnings_json
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24)
+        "#,
+        params![
+            scan_id,
+            repo.full_name,
+            repo.repo_url,
+            repo.description,
+            repo.language,
+            repo.stars,
+            repo.open_issues,
+            repo.sampled_issues,
+            repo.stale_issues,
+            repo.unlabeled_issues,
+            repo.stale_bug_issues,
+            repo.stale_high_comment_issues,
+            serde_json::to_string(&repo.duplicate_candidates)?,
+            serde_json::to_string(&repo.recurring_bug_clusters)?,
+            repo.todo_count,
+            repo.fixme_count,
+            repo.todo_available,
+            repo.fixme_available,
+            repo.priority_score,
+            serde_json::to_string(&repo.score_breakdown)?,
+            repo.summary,
+            serde_json::to_string(&repo.signals)?,
+            serde_json::to_string(&repo.issue_examples)?,
+            serde_json::to_string(&repo.warnings)?,
+        ],
+    )?;
+    Ok(())
 }
 
 pub fn list_scans() -> Result<Vec<ScanHistoryItem>> {
@@ -374,8 +382,10 @@ pub fn list_scans() -> Result<Vec<ScanHistoryItem>> {
             id: row.get(0)?,
             created_at: row.get(1)?,
             search_query: row.get(2)?,
-            topics: serde_json::from_str::<Vec<String>>(&row.get::<_, String>(3)?).unwrap_or_default(),
-            languages: serde_json::from_str::<Vec<String>>(&row.get::<_, String>(4)?).unwrap_or_default(),
+            topics: serde_json::from_str::<Vec<String>>(&row.get::<_, String>(3)?)
+                .unwrap_or_default(),
+            languages: serde_json::from_str::<Vec<String>>(&row.get::<_, String>(4)?)
+                .unwrap_or_default(),
             max_repos: row.get(5)?,
             total_repos: row.get(6)?,
             total_signals: row.get(7)?,
@@ -467,8 +477,10 @@ pub fn get_scan(id: &str) -> Result<Option<ScanRecord>> {
             unlabeled_issues: row.get(8)?,
             stale_bug_issues: row.get(9)?,
             stale_high_comment_issues: row.get(10)?,
-            duplicate_candidates: serde_json::from_str(&row.get::<_, String>(11)?).unwrap_or_default(),
-            recurring_bug_clusters: serde_json::from_str(&row.get::<_, String>(12)?).unwrap_or_default(),
+            duplicate_candidates: serde_json::from_str(&row.get::<_, String>(11)?)
+                .unwrap_or_default(),
+            recurring_bug_clusters: serde_json::from_str(&row.get::<_, String>(12)?)
+                .unwrap_or_default(),
             todo_count: row.get(13)?,
             fixme_count: row.get(14)?,
             todo_available: row.get(15)?,
@@ -664,13 +676,19 @@ pub fn save_scan_schedule(
             created_at,
             now,
             next_run,
-            existing.as_ref().and_then(|schedule| schedule.last_run_at.clone()),
-            existing.as_ref().and_then(|schedule| schedule.last_scan_id.clone()),
+            existing
+                .as_ref()
+                .and_then(|schedule| schedule.last_run_at.clone()),
+            existing
+                .as_ref()
+                .and_then(|schedule| schedule.last_scan_id.clone()),
             existing
                 .as_ref()
                 .map(|schedule| schedule.last_status.clone())
                 .unwrap_or_else(|| "idle".into()),
-            existing.as_ref().and_then(|schedule| schedule.last_error.clone()),
+            existing
+                .as_ref()
+                .and_then(|schedule| schedule.last_error.clone()),
         ],
     )?;
     Ok(())
@@ -706,7 +724,11 @@ pub fn claim_due_scan_schedules(limit: usize) -> Result<Vec<ScanSchedule>> {
             SET next_run_at = ?2, updated_at = ?3, last_status = 'running', last_error = NULL
             WHERE name = ?1
             "#,
-            params![schedule.name, next_run_at(schedule.cadence_hours), Utc::now().to_rfc3339()],
+            params![
+                schedule.name,
+                next_run_at(schedule.cadence_hours),
+                Utc::now().to_rfc3339()
+            ],
         )?;
         schedules.push(schedule);
     }
@@ -742,7 +764,10 @@ pub fn record_scan_schedule_result(
 pub fn scan_count() -> u32 {
     connect()
         .ok()
-        .and_then(|conn| conn.query_row("SELECT COUNT(*) FROM scans", [], |row| row.get(0)).ok())
+        .and_then(|conn| {
+            conn.query_row("SELECT COUNT(*) FROM scans", [], |row| row.get(0))
+                .ok()
+        })
         .unwrap_or(0)
 }
 
@@ -875,4 +900,53 @@ pub fn delete_scan_preset(name: &str) -> Result<()> {
     let conn = connect()?;
     conn.execute("DELETE FROM scan_presets WHERE name = ?1", [name])?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::RepoSignal;
+
+    fn sample_repo_signal() -> RepoSignal {
+        RepoSignal {
+            full_name: "patchhive/example".into(),
+            repo_url: "https://github.com/patchhive/example".into(),
+            description: "example".into(),
+            language: "Rust".into(),
+            stars: 42,
+            open_issues: 7,
+            sampled_issues: 5,
+            stale_issues: 2,
+            unlabeled_issues: 1,
+            stale_bug_issues: 1,
+            stale_high_comment_issues: 1,
+            duplicate_candidates: Vec::new(),
+            recurring_bug_clusters: Vec::new(),
+            todo_count: 3,
+            fixme_count: 1,
+            todo_available: true,
+            fixme_available: true,
+            priority_score: 18.5,
+            score_breakdown: Vec::new(),
+            summary: "test summary".into(),
+            signals: vec!["signal".into()],
+            issue_examples: Vec::new(),
+            warnings: vec!["warning".into()],
+            trend: None,
+        }
+    }
+
+    #[test]
+    fn insert_repo_signal_accepts_all_declared_columns() {
+        let conn = Connection::open_in_memory().expect("open in-memory db");
+        init_schema(&conn).expect("initialize schema");
+        let tx = conn.unchecked_transaction().expect("start transaction");
+
+        insert_repo_signal(&tx, "scan-1", &sample_repo_signal()).expect("insert repo signal");
+
+        let count: i64 = tx
+            .query_row("SELECT COUNT(*) FROM repo_signals", [], |row| row.get(0))
+            .expect("count repo signals");
+        assert_eq!(count, 1);
+    }
 }

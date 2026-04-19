@@ -4,8 +4,7 @@ use patchhive_github_data::{
     fetch_issues, fetch_pull_files as fetch_shared_pull_files,
     fetch_pull_requests as fetch_shared_pull_requests,
     fetch_pull_review_comments as fetch_shared_pull_review_comments,
-    fetch_pull_reviews as fetch_shared_pull_reviews,
-    validate_token as validate_shared_token,
+    fetch_pull_reviews as fetch_shared_pull_reviews, validate_token as validate_shared_token,
 };
 use reqwest::Client;
 
@@ -33,23 +32,25 @@ pub async fn fetch_merged_pull_requests(
     limit: u32,
     since_days: u32,
 ) -> Result<Vec<GitHubPullRequest>> {
-    let pulls = fetch_shared_pull_requests(
-        client,
-        repo,
-        "closed",
-        "updated",
-        "desc",
-        limit.min(50),
-    )
-    .await?;
+    let pulls =
+        fetch_shared_pull_requests(client, repo, "closed", "updated", "desc", limit.min(50))
+            .await?;
 
     Ok(pulls
         .into_iter()
-        .filter(|pr| pr.merged_at.as_deref().is_some_and(|merged| is_recent(merged, since_days)))
+        .filter(|pr| {
+            pr.merged_at
+                .as_deref()
+                .is_some_and(|merged| is_recent(merged, since_days))
+        })
         .collect())
 }
 
-pub async fn fetch_pr_reviews(client: &Client, repo: &str, number: u32) -> Result<Vec<GitHubReview>> {
+pub async fn fetch_pr_reviews(
+    client: &Client,
+    repo: &str,
+    number: u32,
+) -> Result<Vec<GitHubReview>> {
     fetch_shared_pull_reviews(client, repo, number).await
 }
 
@@ -61,7 +62,11 @@ pub async fn fetch_pr_review_comments(
     fetch_shared_pull_review_comments(client, repo, number).await
 }
 
-pub async fn fetch_pr_files(client: &Client, repo: &str, number: u32) -> Result<Vec<GitHubPullFile>> {
+pub async fn fetch_pr_files(
+    client: &Client,
+    repo: &str,
+    number: u32,
+) -> Result<Vec<GitHubPullFile>> {
     fetch_shared_pull_files(client, repo, number).await
 }
 
@@ -76,6 +81,11 @@ pub async fn fetch_closed_issues(
     Ok(issues
         .into_iter()
         .filter(|issue| issue.pull_request.is_none())
-        .filter(|issue| issue.closed_at.as_deref().is_some_and(|closed_at| is_recent(closed_at, since_days)))
+        .filter(|issue| {
+            issue
+                .closed_at
+                .as_deref()
+                .is_some_and(|closed_at| is_recent(closed_at, since_days))
+        })
         .collect())
 }
