@@ -1,0 +1,23 @@
+services:
+  backend:
+    build: ./backend
+    user: "${PATCHHIVE_BACKEND_UID:-0}:${PATCHHIVE_BACKEND_GID:-0}"
+    ports:
+      - "8090:8000"
+    volumes:
+      - ./data:/data
+    environment:
+      - REFACTOR_SCOUT_DB_PATH=/data/refactor-scout.db
+      - REFACTOR_SCOUT_PORT=8000
+      - RUST_LOG=info
+    env_file:
+      - .env
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "5182:8080"
+    depends_on:
+      - backend
+    restart: unless-stopped

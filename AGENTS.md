@@ -338,7 +338,6 @@ Important env vars:
 - FlakeSting: detect and explain flaky tests
 - DepTriage: dependency update prioritization
 - VulnTriage: rank security findings into engineering work
-- RefactorScout: surface safe high-value refactors
 - HiveCore: final unified PatchHive control plane / brain that connects the specialist products into one system
 
 ## SignalHive Notes
@@ -407,6 +406,14 @@ Important env vars:
 - The MVP should work without live AI providers by scoring severity, reachability proxy, owner hints, and practical next steps with deterministic heuristics.
 - VulnTriage should help small teams behave like they have an AppSec triage layer without forcing them to stare at raw GitHub alert noise.
 - VulnTriage should reuse `patchhive-github-security` for typed code scanning and Dependabot reads instead of growing another private GitHub security client.
+
+## RefactorScout Notes
+
+- RefactorScout should stay refactor-first, read-only, and conservative.
+- Its job is to surface cleanup work with a strong safety-to-value ratio before that structural debt turns into feature drag or bug-prone code paths.
+- The MVP should work without live AI providers by scanning local repository paths and ranking explainable heuristics such as oversized files, oversized functions, and repeated string literals.
+- RefactorScout should prefer explicit filesystem allowlists and localhost-only scanning by default so repo analysis does not quietly become arbitrary server file access.
+- The early UX should stay narrow and credible: one local repo path in, one ranked refactor queue out, with clear evidence and a suggested first move for each lead.
 
 ## IncidentEcho Notes
 
