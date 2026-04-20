@@ -1,0 +1,60 @@
+name: HiveCore CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Check backend
+        run: cargo check --locked
+
+  frontend:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: Install frontend dependencies
+        run: |
+          for attempt in 1 2 3 4 5; do
+            npm install --prefer-online && exit 0
+            if [ "$attempt" -eq 5 ]; then
+              exit 1
+            fi
+            echo "npm install failed, retrying after registry backoff..."
+            sleep 15
+          done
+
+      - name: Build frontend
+        run: npm run build

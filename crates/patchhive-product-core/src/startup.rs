@@ -107,6 +107,8 @@ pub fn cors_layer() -> CorsLayer {
         "http://localhost:5179".to_string(),
         "http://localhost:5180".to_string(),
         "http://localhost:5181".to_string(),
+        "http://localhost:5182".to_string(),
+        "http://localhost:5183".to_string(),
         "http://127.0.0.1:5173".to_string(),
         "http://127.0.0.1:5174".to_string(),
         "http://127.0.0.1:5175".to_string(),
@@ -116,6 +118,8 @@ pub fn cors_layer() -> CorsLayer {
         "http://127.0.0.1:5179".to_string(),
         "http://127.0.0.1:5180".to_string(),
         "http://127.0.0.1:5181".to_string(),
+        "http://127.0.0.1:5182".to_string(),
+        "http://127.0.0.1:5183".to_string(),
     ]);
 
     let allowed_values = allowed

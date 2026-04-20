@@ -80,6 +80,7 @@ patchhive/
     dep-triage/
     vuln-triage/
     refactor-scout/
+    hive-core/
   package.json              npm workspaces root
   README.md
   CLAUDE.md                 legacy Claude-oriented context file
@@ -213,6 +214,7 @@ Product accent keys live in `packages/ui/src/theme.js`:
 - `dep-triage`
 - `vuln-triage`
 - `refactor-scout`
+- `hive-core`
 
 ## Frontend Convention
 
@@ -328,8 +330,9 @@ Important env vars:
 - `REAPER_DB_PATH`
 - `REAPER_WORK_DIR`
 
-## Planned Products
+## Product Lineup
 
+- RepoReaper: autonomous patch-and-PR execution
 - SignalHive: maintenance signal and backlog risk detection
 - ReviewBee: turn PR review threads into actionable follow-up tasks
 - TrustGate: evaluate risk in AI-generated diffs
@@ -338,7 +341,8 @@ Important env vars:
 - FlakeSting: detect and explain flaky tests
 - DepTriage: dependency update prioritization
 - VulnTriage: rank security findings into engineering work
-- HiveCore: final unified PatchHive control plane / brain that connects the specialist products into one system
+- RefactorScout: surface safe high-value refactors
+- HiveCore: suite control plane for visibility, shared defaults, and launch control
 
 ## SignalHive Notes
 
@@ -414,6 +418,14 @@ Important env vars:
 - The MVP should work without live AI providers by scanning local repository paths and ranking explainable heuristics such as oversized files, oversized functions, and repeated string literals.
 - RefactorScout should prefer explicit filesystem allowlists and localhost-only scanning by default so repo analysis does not quietly become arbitrary server file access.
 - The early UX should stay narrow and credible: one local repo path in, one ranked refactor queue out, with clear evidence and a suggested first move for each lead.
+
+## HiveCore Notes
+
+- HiveCore should stay control-plane-first before it becomes orchestration-heavy.
+- Its first job is to make the PatchHive suite legible in one place: product health, launch links, shared defaults, and operational checks.
+- The MVP should work without commanding other products. Polling health, storing suite settings, and tracking per-product endpoints are enough for the first cut.
+- HiveCore should push the suite toward shared contracts instead of hiding differences forever. It should reveal where products drift and help standardize them.
+- Early future integrations worth keeping in mind: shared run history, suite-wide schedules, global allowlist and denylist propagation, and cross-product handoffs like SignalHive -> TrustGate -> RepoReaper.
 
 ## IncidentEcho Notes
 

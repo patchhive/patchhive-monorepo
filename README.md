@@ -18,6 +18,7 @@ This repository is the PatchHive source-of-truth monorepo. New products, shared 
 | DepTriage | [`patchhive/deptriage`](https://github.com/patchhive/deptriage) | Prioritizes dependency updates by urgency and practical impact. |
 | VulnTriage | [`patchhive/vulntriage`](https://github.com/patchhive/vulntriage) | Ranks code scanning and dependency alerts into a useful engineering queue. |
 | RefactorScout | [`patchhive/refactorscout`](https://github.com/patchhive/refactorscout) | Surfaces safe, high-value refactor opportunities before code quality drift compounds. |
+| HiveCore | [`patchhive/hivecore`](https://github.com/patchhive/hivecore) | Centralizes suite visibility, shared defaults, and launch control across PatchHive. |
 
 ## Shared Foundations
 
