@@ -26,7 +26,7 @@
     "auth"
   ],
   "dependencies": {
-    "@patchhivehq/ui": "^0.1.1"
+    "@patchhivehq/ui": "^0.1.2"
   },
   "publishConfig": {
     "registry": "https://registry.npmjs.org/",

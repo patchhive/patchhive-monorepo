@@ -1,6 +1,6 @@
 {
   "name": "@patchhivehq/ui",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Shared React UI primitives and components for PatchHive products.",
   "type": "module",
   "main": "./src/index.js",
