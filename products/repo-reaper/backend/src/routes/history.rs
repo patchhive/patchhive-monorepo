@@ -6,6 +6,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use patchhive_product_core::contract;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 
@@ -13,12 +14,36 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/history", get(get_history))
         .route("/history/:run_id", get(get_run))
+        .route("/runs", get(get_runs_contract))
+        .route("/runs/:run_id", get(get_run))
         .route("/diff/:run_id/:issue_number", get(get_diff))
         .route("/leaderboard", get(get_leaderboard))
         .route("/rejected", get(get_rejected))
         .route("/pr-tracking", get(get_tracked_prs))
         .route("/pr-tracking/:repo/:pr_number/refresh", post(refresh_pr))
         .route("/github/rate-limit", get(rate_limit_check))
+}
+
+async fn get_runs_contract(State(_): State<AppState>) -> Json<contract::ProductRunsResponse> {
+    let Ok(conn) = get_conn() else {
+        return Json(contract::runs_from_values("repo-reaper", Vec::new()));
+    };
+    let runs: Vec<Value> = conn.prepare(
+        "SELECT id, started_at, finished_at, total_fixed, total_attempted, total_cost_usd, status FROM runs ORDER BY started_at DESC LIMIT 30"
+    ).ok().and_then(|mut s| {
+        let mapped = s.query_map([], |r| Ok(json!({
+            "id": r.get::<_,String>(0)?,
+            "started_at": r.get::<_,String>(1)?,
+            "finished_at": r.get::<_,Option<String>>(2)?,
+            "total_fixed": r.get::<_,i64>(3)?,
+            "total_attempted": r.get::<_,i64>(4)?,
+            "total_cost_usd": r.get::<_,f64>(5)?,
+            "status": r.get::<_,String>(6)?,
+        }))).ok()?;
+        Some(mapped.flatten().collect())
+    }).unwrap_or_default();
+
+    Json(contract::runs_from_values("repo-reaper", runs))
 }
 
 async fn get_history(State(_): State<AppState>) -> Json<Value> {

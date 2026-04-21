@@ -4,6 +4,7 @@ use axum::{
     Json,
 };
 use chrono::Utc;
+use patchhive_product_core::contract;
 use patchhive_product_core::startup::count_errors;
 use serde_json::json;
 use uuid::Uuid;
@@ -12,7 +13,8 @@ use crate::{
     auth::{auth_enabled, generate_and_save_key, verify_token},
     db, github,
     models::{
-        HistoryItem, OverviewPayload, ScanRequest, VulnerabilityFinding, VulnMetrics, VulnScanResult,
+        HistoryItem, OverviewPayload, ScanRequest, VulnMetrics, VulnScanResult,
+        VulnerabilityFinding,
     },
     state::AppState,
     STARTUP_CHECKS,
@@ -26,6 +28,29 @@ pub struct LoginBody {
     api_key: String,
 }
 
+pub async fn capabilities() -> Json<contract::ProductCapabilities> {
+    Json(contract::capabilities(
+        "vuln-triage",
+        "VulnTriage",
+        vec![contract::action(
+            "scan_github_findings",
+            "Scan GitHub findings",
+            "POST",
+            "/scan/github/findings",
+            "Rank code scanning and dependency alerts into a practical security queue.",
+            true,
+        )],
+        vec![
+            contract::link("overview", "Overview", "/overview"),
+            contract::link("history", "History", "/history"),
+        ],
+    ))
+}
+
+pub async fn runs() -> Json<contract::ProductRunsResponse> {
+    Json(contract::runs_from_history("vuln-triage", db::history(30)))
+}
+
 pub async fn auth_status() -> Json<serde_json::Value> {
     Json(crate::auth::auth_status_payload())
 }
@@ -37,7 +62,9 @@ pub async fn login(Json(body): Json<LoginBody>) -> Result<Json<serde_json::Value
     if !verify_token(&body.api_key) {
         return Err(StatusCode::UNAUTHORIZED);
     }
-    Ok(Json(json!({"ok": true, "auth_enabled": true, "auth_configured": true})))
+    Ok(Json(
+        json!({"ok": true, "auth_enabled": true, "auth_configured": true}),
+    ))
 }
 
 pub async fn gen_key(
@@ -51,7 +78,9 @@ pub async fn gen_key(
     }
     let key = generate_and_save_key()
         .map_err(|err| patchhive_product_core::auth::key_generation_failed_error(&err))?;
-    Ok(Json(json!({"api_key": key, "message": "Store this — it won't be shown again"})))
+    Ok(Json(
+        json!({"api_key": key, "message": "Store this — it won't be shown again"}),
+    ))
 }
 
 pub async fn health() -> Json<serde_json::Value> {
@@ -188,8 +217,14 @@ async fn build_scan_result(
 
 fn build_metrics(findings: &[VulnerabilityFinding]) -> VulnMetrics {
     let mut metrics = VulnMetrics {
-        code_scanning_alerts: findings.iter().filter(|item| item.source == "code_scanning").count() as u32,
-        dependency_alerts: findings.iter().filter(|item| item.source == "dependency_alert").count() as u32,
+        code_scanning_alerts: findings
+            .iter()
+            .filter(|item| item.source == "code_scanning")
+            .count() as u32,
+        dependency_alerts: findings
+            .iter()
+            .filter(|item| item.source == "dependency_alert")
+            .count() as u32,
         tracked_findings: findings.len() as u32,
         ..VulnMetrics::default()
     };
@@ -200,7 +235,10 @@ fn build_metrics(findings: &[VulnerabilityFinding]) -> VulnMetrics {
             "plan_next" => metrics.plan_next += 1,
             _ => metrics.watch += 1,
         }
-        if matches!(finding.reachability.as_str(), "public surface" | "runtime path" | "runtime dependency") {
+        if matches!(
+            finding.reachability.as_str(),
+            "public surface" | "runtime path" | "runtime dependency"
+        ) {
             metrics.runtime_exposed += 1;
         }
         if finding.owner_hint != "repo maintainers" {
@@ -221,7 +259,11 @@ fn build_summary(repo: &str, metrics: &VulnMetrics, top: Option<&VulnerabilityFi
     let mut summary = format!(
         "VulnTriage ranked {} finding{} for `{repo}`: {} fix now, {} plan next, {} watch.",
         metrics.tracked_findings,
-        if metrics.tracked_findings == 1 { "" } else { "s" },
+        if metrics.tracked_findings == 1 {
+            ""
+        } else {
+            "s"
+        },
         metrics.fix_now,
         metrics.plan_next,
         metrics.watch,
@@ -238,9 +280,16 @@ fn code_scanning_to_finding(alert: github::GitHubCodeScanningAlert) -> Vulnerabi
         alert.most_recent_instance.location.start_line,
     );
     let severity = code_scanning_severity(&alert);
-    let reachability = code_scanning_reachability(&alert.most_recent_instance.location.path, &alert.most_recent_instance.classifications);
+    let reachability = code_scanning_reachability(
+        &alert.most_recent_instance.location.path,
+        &alert.most_recent_instance.classifications,
+    );
     let owner_hint = owner_hint_for_path(&alert.most_recent_instance.location.path);
-    let score = score_code_scanning(&severity, &reachability, &alert.most_recent_instance.classifications);
+    let score = score_code_scanning(
+        &severity,
+        &reachability,
+        &alert.most_recent_instance.classifications,
+    );
     let recommendation = recommend(score, &severity);
     let title = if !alert.rule.name.trim().is_empty() {
         alert.rule.name.clone()
@@ -255,7 +304,9 @@ fn code_scanning_to_finding(alert: github::GitHubCodeScanningAlert) -> Vulnerabi
         identifiers.push(alert.rule.id.clone());
     }
     identifiers.extend(
-        alert.rule.tags
+        alert
+            .rule
+            .tags
             .iter()
             .filter(|tag| tag.contains("cwe"))
             .cloned(),
@@ -326,11 +377,9 @@ fn dependabot_to_finding(alert: github::GitHubDependabotAlert) -> VulnerabilityF
         alert.security_vulnerability.package.ecosystem.clone()
     };
     let severity = dependabot_severity(&alert).to_string();
-    let reachability = dependency_reachability(
-        &alert.dependency.manifest_path,
-        &alert.dependency.scope,
-    )
-    .to_string();
+    let reachability =
+        dependency_reachability(&alert.dependency.manifest_path, &alert.dependency.scope)
+            .to_string();
     let owner_hint = owner_hint_for_path(&alert.dependency.manifest_path);
     let score = score_dependency_alert(&alert, &severity, &reachability);
     let recommendation = recommend(score, &severity);
@@ -349,7 +398,9 @@ fn dependabot_to_finding(alert: github::GitHubDependabotAlert) -> VulnerabilityF
         identifiers.push(alert.security_advisory.cve_id.clone());
     }
     identifiers.extend(
-        alert.security_advisory.cwes
+        alert
+            .security_advisory
+            .cwes
             .iter()
             .map(|cwe| cwe.cwe_id.clone())
             .filter(|value| !value.trim().is_empty()),
@@ -368,7 +419,12 @@ fn dependabot_to_finding(alert: github::GitHubDependabotAlert) -> VulnerabilityF
             alert.dependency.manifest_path
         ),
     );
-    if !alert.security_vulnerability.vulnerable_version_range.trim().is_empty() {
+    if !alert
+        .security_vulnerability
+        .vulnerable_version_range
+        .trim()
+        .is_empty()
+    {
         push_evidence(
             &mut evidence,
             format!(
@@ -387,10 +443,7 @@ fn dependabot_to_finding(alert: github::GitHubDependabotAlert) -> VulnerabilityF
     }
     if let Some(epss) = alert.security_advisory.epss.as_ref() {
         if epss.percentage > 0.0 {
-            push_evidence(
-                &mut evidence,
-                format!("epss {:.3}", epss.percentage),
-            );
+            push_evidence(&mut evidence, format!("epss {:.3}", epss.percentage));
         }
     }
 
@@ -456,7 +509,11 @@ fn dependency_next_action(alert: &github::GitHubDependabotAlert, owner_hint: &st
 
 fn code_scanning_severity(alert: &github::GitHubCodeScanningAlert) -> String {
     if !alert.rule.security_severity_level.trim().is_empty() {
-        alert.rule.security_severity_level.trim().to_ascii_lowercase()
+        alert
+            .rule
+            .security_severity_level
+            .trim()
+            .to_ascii_lowercase()
     } else if !alert.rule.severity.trim().is_empty() {
         normalize_severity(alert.rule.severity.trim())
     } else {
@@ -506,7 +563,11 @@ fn code_scanning_reachability(path: &str, classifications: &[String]) -> &'stati
     {
         return "public surface";
     }
-    if lower.contains("/src/") || lower.contains("/app/") || lower.contains("/lib/") || lower.contains("/backend/") {
+    if lower.contains("/src/")
+        || lower.contains("/app/")
+        || lower.contains("/lib/")
+        || lower.contains("/backend/")
+    {
         return "runtime path";
     }
     "unknown"
@@ -624,19 +685,61 @@ fn severity_rank(value: &str) -> u8 {
 
 fn owner_hint_for_path(path: &str) -> &'static str {
     let lower = path.to_ascii_lowercase();
-    if lower.starts_with(".github/") || lower.starts_with("ci/") || lower.contains("/workflows/") || lower.contains("/ci/") {
+    if lower.starts_with(".github/")
+        || lower.starts_with("ci/")
+        || lower.contains("/workflows/")
+        || lower.contains("/ci/")
+    {
         "platform / CI owners"
-    } else if lower.starts_with("frontend/") || lower.starts_with("web/") || lower.starts_with("ui/") || lower.contains("/frontend/") || lower.contains("/web/") || lower.contains("/ui/") {
+    } else if lower.starts_with("frontend/")
+        || lower.starts_with("web/")
+        || lower.starts_with("ui/")
+        || lower.contains("/frontend/")
+        || lower.contains("/web/")
+        || lower.contains("/ui/")
+    {
         "frontend owners"
-    } else if lower.starts_with("mobile/") || lower.starts_with("android/") || lower.starts_with("ios/") || lower.contains("/mobile/") || lower.contains("/android/") || lower.contains("/ios/") {
+    } else if lower.starts_with("mobile/")
+        || lower.starts_with("android/")
+        || lower.starts_with("ios/")
+        || lower.contains("/mobile/")
+        || lower.contains("/android/")
+        || lower.contains("/ios/")
+    {
         "mobile owners"
-    } else if lower.starts_with("infra/") || lower.starts_with("terraform/") || lower.starts_with("helm/") || lower.starts_with("k8s/") || lower.contains("/infra/") || lower.contains("/terraform/") || lower.contains("/helm/") || lower.contains("/k8s/") {
+    } else if lower.starts_with("infra/")
+        || lower.starts_with("terraform/")
+        || lower.starts_with("helm/")
+        || lower.starts_with("k8s/")
+        || lower.contains("/infra/")
+        || lower.contains("/terraform/")
+        || lower.contains("/helm/")
+        || lower.contains("/k8s/")
+    {
         "infrastructure owners"
-    } else if lower.starts_with("backend/") || lower.starts_with("server/") || lower.starts_with("api/") || lower.starts_with("routes/") || lower.contains("/backend/") || lower.contains("/server/") || lower.contains("/api/") || lower.contains("/routes/") {
+    } else if lower.starts_with("backend/")
+        || lower.starts_with("server/")
+        || lower.starts_with("api/")
+        || lower.starts_with("routes/")
+        || lower.contains("/backend/")
+        || lower.contains("/server/")
+        || lower.contains("/api/")
+        || lower.contains("/routes/")
+    {
         "backend owners"
-    } else if lower.starts_with("auth/") || lower.starts_with("security/") || lower.contains("/auth/") || lower.contains("/security/") {
+    } else if lower.starts_with("auth/")
+        || lower.starts_with("security/")
+        || lower.contains("/auth/")
+        || lower.contains("/security/")
+    {
         "auth / security owners"
-    } else if lower.starts_with("test/") || lower.starts_with("tests/") || lower.starts_with("spec/") || lower.contains("/test/") || lower.contains("/tests/") || lower.contains("/spec/") {
+    } else if lower.starts_with("test/")
+        || lower.starts_with("tests/")
+        || lower.starts_with("spec/")
+        || lower.contains("/test/")
+        || lower.contains("/tests/")
+        || lower.contains("/spec/")
+    {
         "quality owners"
     } else {
         "repo maintainers"
@@ -673,9 +776,7 @@ fn valid_repo(repo: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        code_scanning_reachability, owner_hint_for_path, recommend, score_code_scanning,
-    };
+    use super::{code_scanning_reachability, owner_hint_for_path, recommend, score_code_scanning};
 
     #[test]
     fn prefers_public_surface_code_paths() {
@@ -691,8 +792,14 @@ mod tests {
 
     #[test]
     fn owner_hints_follow_paths() {
-        assert_eq!(owner_hint_for_path("frontend/src/app.jsx"), "frontend owners");
-        assert_eq!(owner_hint_for_path(".github/workflows/ci.yml"), "platform / CI owners");
+        assert_eq!(
+            owner_hint_for_path("frontend/src/app.jsx"),
+            "frontend owners"
+        );
+        assert_eq!(
+            owner_hint_for_path(".github/workflows/ci.yml"),
+            "platform / CI owners"
+        );
     }
 
     #[test]

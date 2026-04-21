@@ -425,6 +425,7 @@ Important env vars:
 - Its first job is to make the PatchHive suite legible in one place: product health, launch links, shared defaults, and operational checks.
 - The MVP should work without commanding other products. Polling health, storing suite settings, and tracking per-product endpoints are enough for the first cut.
 - HiveCore should push the suite toward shared contracts instead of hiding differences forever. It should reveal where products drift and help standardize them.
+- HiveCore-enabled mode means HiveCore owns suite lifecycle coordination, but each product must remain standalone and expose product-owned APIs for that coordination.
 - Early future integrations worth keeping in mind: shared run history, suite-wide schedules, global allowlist and denylist propagation, and cross-product handoffs like SignalHive -> TrustGate -> RepoReaper.
 
 ## IncidentEcho Notes

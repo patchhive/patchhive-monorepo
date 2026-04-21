@@ -12,8 +12,8 @@ use axum::{
     Router,
 };
 use once_cell::sync::OnceCell;
-use patchhive_product_core::startup::{listen_addr, log_checks, StartupCheck};
 use patchhive_product_core::startup::cors_layer;
+use patchhive_product_core::startup::{listen_addr, log_checks, StartupCheck};
 use tracing::info;
 
 use crate::state::AppState;
@@ -46,10 +46,16 @@ async fn main() {
         .route("/auth/generate-key", post(pipeline::gen_key))
         .route("/health", get(pipeline::health))
         .route("/startup/checks", get(pipeline::startup_checks_route))
+        .route("/capabilities", get(pipeline::capabilities))
+        .route("/runs", get(pipeline::runs))
+        .route("/runs/:id", get(pipeline::history_detail))
         .route("/overview", get(pipeline::overview))
         .route("/history", get(pipeline::history))
         .route("/history/:id", get(pipeline::history_detail))
-        .route("/scan/github/dependencies", post(pipeline::scan_github_dependencies))
+        .route(
+            "/scan/github/dependencies",
+            post(pipeline::scan_github_dependencies),
+        )
         .layer(middleware::from_fn(auth::auth_middleware))
         .layer(cors)
         .with_state(state);

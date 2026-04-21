@@ -45,10 +45,16 @@ async fn main() {
         .route("/auth/generate-key", post(pipeline::gen_key))
         .route("/health", get(pipeline::health))
         .route("/startup/checks", get(pipeline::startup_checks_route))
+        .route("/capabilities", get(pipeline::capabilities))
+        .route("/runs", get(pipeline::runs))
+        .route("/runs/:id", get(pipeline::history_detail))
         .route("/overview", get(pipeline::overview))
         .route("/history", get(pipeline::history))
         .route("/history/:id", get(pipeline::history_detail))
-        .route("/scan/github/findings", post(pipeline::scan_github_findings))
+        .route(
+            "/scan/github/findings",
+            post(pipeline::scan_github_findings),
+        )
         .layer(middleware::from_fn(auth::auth_middleware))
         .layer(cors)
         .with_state(state);

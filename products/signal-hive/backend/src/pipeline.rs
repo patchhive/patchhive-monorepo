@@ -7,6 +7,7 @@ use axum::{
     Json,
 };
 use chrono::{DateTime, Utc};
+use patchhive_product_core::contract;
 use serde_json::json;
 use tokio::time::{sleep, Duration};
 use tracing::{info, warn};
@@ -33,6 +34,43 @@ fn internal_error(err: anyhow::Error) -> (StatusCode, Json<serde_json::Value>) {
         StatusCode::INTERNAL_SERVER_ERROR,
         Json(json!({ "error": err.to_string() })),
     )
+}
+
+pub async fn capabilities() -> Json<contract::ProductCapabilities> {
+    Json(contract::capabilities(
+        "signal-hive",
+        "SignalHive",
+        vec![
+            contract::action(
+                "scan",
+                "Run signal scan",
+                "POST",
+                "/scan",
+                "Discover maintenance signals across repositories from configured topics and languages.",
+                true,
+            ),
+            contract::action(
+                "run_schedule_now",
+                "Run saved schedule",
+                "POST",
+                "/schedules/{name}/run",
+                "Trigger a saved SignalHive scan schedule immediately.",
+                true,
+            ),
+        ],
+        vec![
+            contract::link("history", "History", "/history"),
+            contract::link("presets", "Presets", "/presets"),
+            contract::link("schedules", "Schedules", "/schedules"),
+        ],
+    ))
+}
+
+pub async fn runs() -> Json<contract::ProductRunsResponse> {
+    Json(contract::runs_from_history(
+        "signal-hive",
+        db::list_scans().unwrap_or_default(),
+    ))
 }
 
 fn clamp_params(mut params: ScanParams) -> ScanParams {

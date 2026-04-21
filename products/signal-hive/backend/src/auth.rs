@@ -16,6 +16,7 @@ static AUTH_CONFIG: Lazy<ApiKeyAuthConfig> = Lazy::new(|| {
         "/auth/status",
         "/auth/generate-key",
         "/startup/checks",
+        "/capabilities",
     ])
 });
 

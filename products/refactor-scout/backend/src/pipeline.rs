@@ -12,6 +12,7 @@ use axum::{
 };
 use chrono::Utc;
 use once_cell::sync::Lazy;
+use patchhive_product_core::contract;
 use patchhive_product_core::startup::count_errors;
 use regex::Regex;
 use serde_json::json;
@@ -31,6 +32,32 @@ use crate::{
 
 type ApiError = (StatusCode, Json<serde_json::Value>);
 type JsonResult<T> = Result<Json<T>, ApiError>;
+
+pub async fn capabilities() -> Json<contract::ProductCapabilities> {
+    Json(contract::capabilities(
+        "refactor-scout",
+        "RefactorScout",
+        vec![contract::action(
+            "scan_local_repo",
+            "Scan local repo",
+            "POST",
+            "/scan/local",
+            "Surface safe refactor opportunities from an allowed local repository path.",
+            true,
+        )],
+        vec![
+            contract::link("overview", "Overview", "/overview"),
+            contract::link("history", "History", "/history"),
+        ],
+    ))
+}
+
+pub async fn runs() -> Json<contract::ProductRunsResponse> {
+    Json(contract::runs_from_history(
+        "refactor-scout",
+        db::history(30),
+    ))
+}
 
 const MAX_SCAN_FILES: u32 = 1_500;
 const MAX_RETURNED_OPPORTUNITIES: usize = 60;

@@ -52,7 +52,9 @@ pub async fn fetch_pull_request_diff(
     repo: &str,
     pr_number: i64,
 ) -> Result<String> {
-    pr_client(client).fetch_pull_request_diff(repo, pr_number).await
+    pr_client(client)
+        .fetch_pull_request_diff(repo, pr_number)
+        .await
 }
 
 fn details_url(review: &ReviewResult) -> Option<String> {
@@ -123,7 +125,10 @@ fn plaintext_findings(review: &ReviewResult) -> String {
         .take(10)
         .map(|finding| {
             if finding.evidence.is_empty() {
-                format!("- [{}] {}: {}", finding.severity, finding.label, finding.detail)
+                format!(
+                    "- [{}] {}: {}",
+                    finding.severity, finding.label, finding.detail
+                )
             } else {
                 format!(
                     "- [{}] {}: {} ({})",
@@ -220,15 +225,21 @@ fn render_github_report(review: &ReviewResult) -> RenderedGitHubReport {
         ),
         (
             "pr_title",
-            github.map(|value| value.pr_title.clone()).unwrap_or_default(),
+            github
+                .map(|value| value.pr_title.clone())
+                .unwrap_or_default(),
         ),
         (
             "base_ref",
-            github.map(|value| value.base_ref.clone()).unwrap_or_default(),
+            github
+                .map(|value| value.base_ref.clone())
+                .unwrap_or_default(),
         ),
         (
             "head_ref",
-            github.map(|value| value.head_ref.clone()).unwrap_or_default(),
+            github
+                .map(|value| value.head_ref.clone())
+                .unwrap_or_default(),
         ),
         ("ai_source", review.ai_source.clone()),
         ("source_kind", review.source_kind.clone()),
@@ -241,7 +252,10 @@ fn render_github_report(review: &ReviewResult) -> RenderedGitHubReport {
         ("additions", review.metrics.additions.to_string()),
         ("deletions", review.metrics.deletions.to_string()),
         ("tests_changed", review.metrics.tests_changed.to_string()),
-        ("generated_files", review.metrics.generated_files.to_string()),
+        (
+            "generated_files",
+            review.metrics.generated_files.to_string(),
+        ),
         (
             "blocked_findings",
             review.metrics.blocked_findings.to_string(),
@@ -377,7 +391,9 @@ pub async fn publish_review_outcome(client: &Client, review: &ReviewResult) -> G
             method = "check_run".into();
             delivered = true;
         }
-        Err(err) => details.push(format!("Check run failed, falling back to commit status: {err}")),
+        Err(err) => details.push(format!(
+            "Check run failed, falling back to commit status: {err}"
+        )),
     }
 
     if !delivered {

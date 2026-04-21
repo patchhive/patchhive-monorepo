@@ -9,9 +9,8 @@ use axum::{
 use chrono::Utc;
 use glob::Pattern;
 use patchhive_github_pr::verify_github_webhook_signature;
-use patchhive_product_core::repo_memory::{
-    fetch_repo_memory_context, RepoMemoryContextRequest,
-};
+use patchhive_product_core::contract;
+use patchhive_product_core::repo_memory::{fetch_repo_memory_context, RepoMemoryContextRequest};
 use serde_json::{json, Value};
 use tracing::warn;
 use uuid::Uuid;
@@ -26,6 +25,51 @@ use crate::{
 };
 
 type ApiError = (StatusCode, Json<serde_json::Value>);
+
+pub async fn capabilities() -> Json<contract::ProductCapabilities> {
+    Json(contract::capabilities(
+        "trust-gate",
+        "TrustGate",
+        vec![
+            contract::action(
+                "review_diff",
+                "Review diff",
+                "POST",
+                "/review",
+                "Review a submitted diff against repo-specific safety and policy rules.",
+                true,
+            ),
+            contract::action(
+                "review_github_pr",
+                "Review GitHub PR",
+                "POST",
+                "/review/github/pr",
+                "Review a GitHub pull request diff against TrustGate rules.",
+                true,
+            ),
+            contract::action(
+                "github_webhook",
+                "Receive GitHub webhook",
+                "POST",
+                "/webhooks/github",
+                "Process a signed GitHub pull request webhook for diff review.",
+                true,
+            ),
+        ],
+        vec![
+            contract::link("history", "History", "/history"),
+            contract::link("rules", "Rules", "/rules"),
+            contract::link("templates", "Templates", "/templates"),
+        ],
+    ))
+}
+
+pub async fn runs() -> Json<contract::ProductRunsResponse> {
+    Json(contract::runs_from_history(
+        "trust-gate",
+        db::list_reviews().unwrap_or_default(),
+    ))
+}
 
 #[derive(Debug, Default)]
 struct FilePatch {
@@ -208,16 +252,22 @@ fn build_rule_packs() -> Vec<RulePack> {
         "api/".into(),
         "config/".into(),
     ]);
-    app.require_test_for_paths.extend(["ui/".into(), "components/".into()]);
+    app.require_test_for_paths
+        .extend(["ui/".into(), "components/".into()]);
     app.max_files = 14;
     app.max_additions = 550;
     app.max_deletions = 300;
     app.notes = "Balanced app policy pack: strict on auth, workflows, and data boundaries while allowing normal feature work.".into();
 
     let mut library = RepoRuleSet::default();
-    library.blocked_paths.extend(["examples/".into(), "benchmarks/".into()]);
-    library.warn_paths.extend(["public_api".into(), "include/".into()]);
-    library.require_test_for_paths
+    library
+        .blocked_paths
+        .extend(["examples/".into(), "benchmarks/".into()]);
+    library
+        .warn_paths
+        .extend(["public_api".into(), "include/".into()]);
+    library
+        .require_test_for_paths
         .extend(["crates/".into(), "packages/".into()]);
     library.max_files = 10;
     library.max_additions = 320;
@@ -230,7 +280,9 @@ fn build_rule_packs() -> Vec<RulePack> {
         "modules/".into(),
         "environments/prod".into(),
     ]);
-    infra.warn_paths.extend(["helm/".into(), "k8s/".into(), "deploy/".into()]);
+    infra
+        .warn_paths
+        .extend(["helm/".into(), "k8s/".into(), "deploy/".into()]);
     infra.require_test_for_paths = vec!["modules/".into(), "terraform/".into(), "scripts/".into()];
     infra.test_paths = vec!["tests/".into(), "plan/".into(), ".golden".into()];
     infra.max_files = 8;
@@ -239,11 +291,9 @@ fn build_rule_packs() -> Vec<RulePack> {
     infra.notes = "Infra pack: assumes runtime and deploy changes are high-risk, with low scope budgets and stronger escalation.".into();
 
     let mut agent_patch = RepoRuleSet::default();
-    agent_patch.blocked_paths.extend([
-        "prod/".into(),
-        "release/".into(),
-        "security/".into(),
-    ]);
+    agent_patch
+        .blocked_paths
+        .extend(["prod/".into(), "release/".into(), "security/".into()]);
     agent_patch.warn_paths.extend([
         "src/".into(),
         "app/".into(),
@@ -640,7 +690,9 @@ async fn review_diff(
         .filter(|file| file.status == "warn" || file.status == "block")
         .count() as u32;
 
-    if (files_changed > rules.max_files || additions > rules.max_additions || deletions > rules.max_deletions)
+    if (files_changed > rules.max_files
+        || additions > rules.max_additions
+        || deletions > rules.max_deletions)
         && risky_files >= 3
     {
         findings.push(make_finding(
@@ -661,7 +713,10 @@ async fn review_diff(
             let memory_testing_entries = context
                 .entries
                 .iter()
-                .filter(|entry| entry.kind == "testing_expectation" || entry.tags.iter().any(|tag| tag == "tests"))
+                .filter(|entry| {
+                    entry.kind == "testing_expectation"
+                        || entry.tags.iter().any(|tag| tag == "tests")
+                })
                 .take(4)
                 .collect::<Vec<_>>();
             let memory_testing = memory_testing_entries
@@ -1024,8 +1079,12 @@ pub async fn github_webhook(
         .and_then(|value| value.to_str().ok())
         .unwrap_or("")
         .to_string();
-    let payload: Value = serde_json::from_slice(&body)
-        .map_err(|_| api_error(StatusCode::BAD_REQUEST, "Could not decode GitHub webhook payload."))?;
+    let payload: Value = serde_json::from_slice(&body).map_err(|_| {
+        api_error(
+            StatusCode::BAD_REQUEST,
+            "Could not decode GitHub webhook payload.",
+        )
+    })?;
 
     if event != "pull_request" {
         return Ok(Json(json!({
@@ -1051,11 +1110,19 @@ pub async fn github_webhook(
 
     let repo = payload["repository"]["full_name"]
         .as_str()
-        .ok_or_else(|| api_error(StatusCode::BAD_REQUEST, "Webhook payload was missing repository.full_name."))?
+        .ok_or_else(|| {
+            api_error(
+                StatusCode::BAD_REQUEST,
+                "Webhook payload was missing repository.full_name.",
+            )
+        })?
         .to_string();
-    let pr_number = payload["pull_request"]["number"]
-        .as_i64()
-        .ok_or_else(|| api_error(StatusCode::BAD_REQUEST, "Webhook payload was missing pull_request.number."))?;
+    let pr_number = payload["pull_request"]["number"].as_i64().ok_or_else(|| {
+        api_error(
+            StatusCode::BAD_REQUEST,
+            "Webhook payload was missing pull_request.number.",
+        )
+    })?;
 
     let review = run_github_pr_review(
         &state.http,
@@ -1091,7 +1158,10 @@ pub async fn history_detail(Path(id): Path<String>) -> Result<Json<ReviewResult>
 
     match review {
         Some(review) => Ok(Json(review)),
-        None => Err(api_error(StatusCode::NOT_FOUND, "TrustGate review not found.")),
+        None => Err(api_error(
+            StatusCode::NOT_FOUND,
+            "TrustGate review not found.",
+        )),
     }
 }
 

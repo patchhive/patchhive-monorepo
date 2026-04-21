@@ -126,8 +126,8 @@ pub fn list_rules() -> Result<Vec<SavedRuleSet>> {
     rows.into_iter()
         .map(|row| {
             let (repo, rules_json, created_at, updated_at) = row?;
-            let rules =
-                serde_json::from_str::<RepoRuleSet>(&rules_json).context("failed to parse rule set")?;
+            let rules = serde_json::from_str::<RepoRuleSet>(&rules_json)
+                .context("failed to parse rule set")?;
             Ok(SavedRuleSet {
                 repo,
                 rules,
@@ -149,7 +149,9 @@ pub fn get_rules(repo: &str) -> Result<Option<RepoRuleSet>> {
         .optional()?;
 
     rules_json
-        .map(|value| serde_json::from_str::<RepoRuleSet>(&value).context("failed to parse rule set"))
+        .map(|value| {
+            serde_json::from_str::<RepoRuleSet>(&value).context("failed to parse rule set")
+        })
         .transpose()
 }
 
@@ -230,8 +232,11 @@ pub fn get_report_templates(repo: &str) -> Result<Option<ReportTemplateSet>> {
 
 pub fn delete_report_templates(repo: &str) -> Result<()> {
     let conn = connect()?;
-    conn.execute("DELETE FROM report_templates WHERE repo = ?1", params![repo])
-        .context("failed to delete TrustGate report template set")?;
+    conn.execute(
+        "DELETE FROM report_templates WHERE repo = ?1",
+        params![repo],
+    )
+    .context("failed to delete TrustGate report template set")?;
     Ok(())
 }
 
@@ -345,8 +350,10 @@ pub fn review_count() -> usize {
     connect()
         .ok()
         .and_then(|conn| {
-            conn.query_row("SELECT COUNT(*) FROM reviews", [], |row| row.get::<_, i64>(0))
-                .ok()
+            conn.query_row("SELECT COUNT(*) FROM reviews", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .ok()
         })
         .unwrap_or(0) as usize
 }
@@ -355,8 +362,10 @@ pub fn rule_count() -> usize {
     connect()
         .ok()
         .and_then(|conn| {
-            conn.query_row("SELECT COUNT(*) FROM rule_sets", [], |row| row.get::<_, i64>(0))
-                .ok()
+            conn.query_row("SELECT COUNT(*) FROM rule_sets", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .ok()
         })
         .unwrap_or(0) as usize
 }
@@ -365,8 +374,10 @@ pub fn template_count() -> usize {
     connect()
         .ok()
         .and_then(|conn| {
-            conn.query_row("SELECT COUNT(*) FROM report_templates", [], |row| row.get::<_, i64>(0))
-                .ok()
+            conn.query_row("SELECT COUNT(*) FROM report_templates", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .ok()
         })
         .unwrap_or(0) as usize
 }

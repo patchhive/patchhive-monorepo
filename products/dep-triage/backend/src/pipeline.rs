@@ -7,6 +7,7 @@ use axum::{
     Json,
 };
 use chrono::{DateTime, Utc};
+use patchhive_product_core::contract;
 use patchhive_product_core::startup::count_errors;
 use serde_json::json;
 use uuid::Uuid;
@@ -28,6 +29,29 @@ type JsonResult<T> = Result<Json<T>, ApiError>;
 #[derive(serde::Deserialize)]
 pub struct LoginBody {
     api_key: String,
+}
+
+pub async fn capabilities() -> Json<contract::ProductCapabilities> {
+    Json(contract::capabilities(
+        "dep-triage",
+        "DepTriage",
+        vec![contract::action(
+            "scan_github_dependencies",
+            "Scan GitHub dependencies",
+            "POST",
+            "/scan/github/dependencies",
+            "Rank dependency PRs and alerts into update, watch, and ignore decisions.",
+            true,
+        )],
+        vec![
+            contract::link("overview", "Overview", "/overview"),
+            contract::link("history", "History", "/history"),
+        ],
+    ))
+}
+
+pub async fn runs() -> Json<contract::ProductRunsResponse> {
+    Json(contract::runs_from_history("dep-triage", db::history(30)))
 }
 
 #[derive(Default)]
@@ -71,7 +95,9 @@ pub async fn login(Json(body): Json<LoginBody>) -> Result<Json<serde_json::Value
     if !verify_token(&body.api_key) {
         return Err(StatusCode::UNAUTHORIZED);
     }
-    Ok(Json(json!({"ok": true, "auth_enabled": true, "auth_configured": true})))
+    Ok(Json(
+        json!({"ok": true, "auth_enabled": true, "auth_configured": true}),
+    ))
 }
 
 pub async fn gen_key(
@@ -85,7 +111,9 @@ pub async fn gen_key(
     }
     let key = generate_and_save_key()
         .map_err(|err| patchhive_product_core::auth::key_generation_failed_error(&err))?;
-    Ok(Json(json!({"api_key": key, "message": "Store this — it won't be shown again"})))
+    Ok(Json(
+        json!({"api_key": key, "message": "Store this — it won't be shown again"}),
+    ))
 }
 
 pub async fn health() -> Json<serde_json::Value> {
@@ -229,9 +257,13 @@ async fn build_scan_result(
         }
         builder.strongest_update_kind =
             strongest_update_kind(&builder.strongest_update_kind, &analysis.update_kind).into();
-        builder.runtime_labels.insert(analysis.runtime_impact.clone());
+        builder
+            .runtime_labels
+            .insert(analysis.runtime_impact.clone());
         builder.stale_days = builder.stale_days.max(analysis.stale_days);
-        builder.manifests.extend(analysis.manifest_paths.iter().cloned());
+        builder
+            .manifests
+            .extend(analysis.manifest_paths.iter().cloned());
         builder
             .changed_paths
             .extend(analysis.changed_paths.iter().cloned());
@@ -281,7 +313,12 @@ async fn build_scan_result(
             .trim()
             .is_empty()
         {
-            alert.security_vulnerability.package.ecosystem.trim().to_string()
+            alert
+                .security_vulnerability
+                .package
+                .ecosystem
+                .trim()
+                .to_string()
         } else {
             "unknown".into()
         };
@@ -294,12 +331,11 @@ async fn build_scan_result(
         if builder.ecosystem.is_empty() {
             builder.ecosystem = ecosystem.clone();
         }
-        builder.highest_severity = strongest_severity(
-            &builder.highest_severity,
-            alert_severity(&alert),
-        )
-        .into();
-        builder.runtime_labels.insert(runtime_for_ecosystem(&ecosystem).into());
+        builder.highest_severity =
+            strongest_severity(&builder.highest_severity, alert_severity(&alert)).into();
+        builder
+            .runtime_labels
+            .insert(runtime_for_ecosystem(&ecosystem).into());
         builder.reasons.insert(format!(
             "Open {} severity alert is attached to this dependency.",
             alert_severity(&alert)
@@ -358,7 +394,10 @@ async fn build_scan_result(
 fn build_metrics(scanned_pull_requests: u32, items: &[DependencyTriageItem]) -> TriageMetrics {
     let mut metrics = TriageMetrics {
         scanned_pull_requests,
-        dependency_pull_requests: items.iter().map(|item| item.pull_requests.len() as u32).sum(),
+        dependency_pull_requests: items
+            .iter()
+            .map(|item| item.pull_requests.len() as u32)
+            .sum(),
         open_alerts: items.iter().map(|item| item.alerts.len() as u32).sum(),
         tracked_items: items.len() as u32,
         ..TriageMetrics::default()
@@ -381,7 +420,11 @@ fn build_metrics(scanned_pull_requests: u32, items: &[DependencyTriageItem]) -> 
     metrics
 }
 
-fn build_summary(repo: &str, metrics: &TriageMetrics, top: Option<&DependencyTriageItem>) -> String {
+fn build_summary(
+    repo: &str,
+    metrics: &TriageMetrics,
+    top: Option<&DependencyTriageItem>,
+) -> String {
     if metrics.tracked_items == 0 {
         return format!(
             "DepTriage did not find open dependency PRs or security alerts that need ranking in `{repo}` right now."
@@ -603,7 +646,12 @@ fn analyze_pull(
         .take(12)
         .collect::<Vec<_>>();
     let package_name = infer_package_name(pr.title.as_str(), pr.body.as_deref(), files)?;
-    let ecosystem = infer_ecosystem(&manifest_paths, pr.title.as_str(), pr.body.as_deref(), &package_name);
+    let ecosystem = infer_ecosystem(
+        &manifest_paths,
+        pr.title.as_str(),
+        pr.body.as_deref(),
+        &package_name,
+    );
     let update_kind = infer_update_kind(pr.title.as_str(), pr.body.as_deref());
     let runtime_impact = infer_runtime_impact(
         &manifest_paths,
@@ -686,11 +734,7 @@ fn dependency_manifest(path: &str) -> Option<(&'static str, &'static str)> {
     }
 
     match name {
-        "package.json"
-        | "package-lock.json"
-        | "yarn.lock"
-        | "pnpm-lock.yaml"
-        | "bun.lock"
+        "package.json" | "package-lock.json" | "yarn.lock" | "pnpm-lock.yaml" | "bun.lock"
         | "bun.lockb" => Some(("npm", "runtime")),
         "Cargo.toml" | "Cargo.lock" => Some(("cargo", "runtime")),
         "requirements.txt"
@@ -724,7 +768,11 @@ fn is_ignorable_dependency_change(path: &str) -> bool {
         || normalized.starts_with("docs/")
 }
 
-fn infer_package_name(title: &str, body: Option<&str>, files: &[github::GitHubPullFile]) -> Option<String> {
+fn infer_package_name(
+    title: &str,
+    body: Option<&str>,
+    files: &[github::GitHubPullFile],
+) -> Option<String> {
     parse_package_name(title)
         .or_else(|| body.and_then(parse_package_name))
         .or_else(|| {
@@ -755,7 +803,9 @@ fn parse_package_name(text: &str) -> Option<String> {
                 .split_whitespace()
                 .next()
                 .unwrap_or("")
-                .trim_matches(|c: char| matches!(c, '`' | '"' | '\'' | ':' | ',' | ';' | '(' | ')' ));
+                .trim_matches(|c: char| {
+                    matches!(c, '`' | '"' | '\'' | ':' | ',' | ';' | '(' | ')')
+                });
             if !token.is_empty() && !matches!(token, "from" | "to") {
                 return Some(token.to_string());
             }
@@ -808,7 +858,8 @@ fn infer_ecosystem(
     );
     if haystack.contains("cargo") || haystack.contains("crates.io") {
         "cargo".into()
-    } else if haystack.contains("pip") || haystack.contains("python") || haystack.contains("poetry") {
+    } else if haystack.contains("pip") || haystack.contains("python") || haystack.contains("poetry")
+    {
         "python".into()
     } else if haystack.contains("npm") || haystack.contains("pnpm") || haystack.contains("yarn") {
         "npm".into()
@@ -922,7 +973,11 @@ fn finalize_runtime_impact(labels: &BTreeSet<String>) -> String {
         return "unknown".into();
     }
     if labels.len() == 1 {
-        return labels.iter().next().cloned().unwrap_or_else(|| "unknown".into());
+        return labels
+            .iter()
+            .next()
+            .cloned()
+            .unwrap_or_else(|| "unknown".into());
     }
     if labels.contains("runtime") && (labels.contains("tooling") || labels.contains("ci")) {
         "mixed".into()
@@ -931,7 +986,11 @@ fn finalize_runtime_impact(labels: &BTreeSet<String>) -> String {
     } else if labels.contains("tooling") {
         "tooling".into()
     } else {
-        labels.iter().next().cloned().unwrap_or_else(|| "unknown".into())
+        labels
+            .iter()
+            .next()
+            .cloned()
+            .unwrap_or_else(|| "unknown".into())
     }
 }
 

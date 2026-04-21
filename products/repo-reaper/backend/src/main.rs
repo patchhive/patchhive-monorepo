@@ -18,6 +18,7 @@ use axum::{
     Json, Router,
 };
 use once_cell::sync::OnceCell;
+use patchhive_product_core::contract;
 use patchhive_product_core::startup::{
     cors_layer, count_errors, listen_addr, log_checks, StartupCheck,
 };
@@ -72,6 +73,7 @@ async fn main() {
         .route("/auth/generate-key", post(gen_key))
         .route("/health", get(health))
         .route("/startup/checks", get(startup_checks_route))
+        .route("/capabilities", get(capabilities))
         .route("/run", post(pipeline::run))
         .route("/dry-run", post(pipeline::dry_run))
         .merge(routes::config::router())
@@ -153,4 +155,35 @@ async fn health(State(state): State<AppState>) -> Json<serde_json::Value> {
 
 async fn startup_checks_route() -> Json<serde_json::Value> {
     Json(json!({"checks": STARTUP_CHECKS.get().cloned().unwrap_or_default()}))
+}
+
+async fn capabilities() -> Json<contract::ProductCapabilities> {
+    Json(contract::capabilities(
+        "repo-reaper",
+        "RepoReaper",
+        vec![
+            contract::action(
+                "run",
+                "Run autonomous patch hunt",
+                "POST",
+                "/run",
+                "Find candidate issues, generate fixes, validate them, and open pull requests.",
+                true,
+            ),
+            contract::action(
+                "dry_run",
+                "Run dry stalk",
+                "POST",
+                "/dry-run",
+                "Discover and score candidate work without writing patches or opening pull requests.",
+                true,
+            ),
+        ],
+        vec![
+            contract::link("history", "History", "/history"),
+            contract::link("leaderboard", "Leaderboard", "/leaderboard"),
+            contract::link("rejected", "Rejected patches", "/rejected"),
+            contract::link("pr_tracking", "PR tracking", "/pr-tracking"),
+        ],
+    ))
 }

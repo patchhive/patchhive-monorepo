@@ -6,6 +6,7 @@ use axum::{
     Json,
 };
 use chrono::Utc;
+use patchhive_product_core::contract;
 use patchhive_product_core::startup::count_errors;
 use serde_json::json;
 use uuid::Uuid;
@@ -28,6 +29,29 @@ type JsonResult<T> = Result<Json<T>, ApiError>;
 #[derive(serde::Deserialize)]
 pub struct LoginBody {
     api_key: String,
+}
+
+pub async fn capabilities() -> Json<contract::ProductCapabilities> {
+    Json(contract::capabilities(
+        "flake-sting",
+        "FlakeSting",
+        vec![contract::action(
+            "scan_github_actions",
+            "Scan GitHub Actions",
+            "POST",
+            "/scan/github/actions",
+            "Detect flaky workflow and test behavior from GitHub Actions history.",
+            true,
+        )],
+        vec![
+            contract::link("overview", "Overview", "/overview"),
+            contract::link("history", "History", "/history"),
+        ],
+    ))
+}
+
+pub async fn runs() -> Json<contract::ProductRunsResponse> {
+    Json(contract::runs_from_history("flake-sting", db::history(30)))
 }
 
 #[derive(Default)]

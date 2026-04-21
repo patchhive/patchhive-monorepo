@@ -7,6 +7,7 @@ use axum::{
     Json,
 };
 use chrono::Utc;
+use patchhive_product_core::contract;
 use serde_json::json;
 use uuid::Uuid;
 
@@ -29,6 +30,41 @@ type JsonResult<T> = Result<Json<T>, JsonError>;
 #[derive(serde::Deserialize)]
 pub struct LoginBody {
     api_key: String,
+}
+
+pub async fn capabilities() -> Json<contract::ProductCapabilities> {
+    Json(contract::capabilities(
+        "repo-memory",
+        "RepoMemory",
+        vec![
+            contract::action(
+                "ingest",
+                "Ingest repo history",
+                "POST",
+                "/ingest",
+                "Build durable repo memory from GitHub history and review feedback.",
+                true,
+            ),
+            contract::action(
+                "context",
+                "Fetch repo context",
+                "POST",
+                "/context",
+                "Return reusable repo-specific context for another PatchHive product or agent.",
+                false,
+            ),
+        ],
+        vec![
+            contract::link("overview", "Overview", "/overview"),
+            contract::link("history", "History", "/history"),
+            contract::link("memories", "Memories", "/memories"),
+        ],
+    ))
+}
+
+pub async fn runs() -> Json<contract::ProductRunsResponse> {
+    let items = db::list_history(None).unwrap_or_default();
+    Json(contract::runs_from_history("repo-memory", items))
 }
 
 #[derive(serde::Deserialize)]

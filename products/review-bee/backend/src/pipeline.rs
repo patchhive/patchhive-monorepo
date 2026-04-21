@@ -6,6 +6,7 @@ use axum::{
 };
 use chrono::Utc;
 use patchhive_github_pr::verify_github_webhook_signature;
+use patchhive_product_core::contract;
 use patchhive_product_core::startup::count_errors;
 use serde_json::{json, Value};
 use std::collections::{BTreeSet, HashMap};
@@ -29,6 +30,39 @@ type JsonResult<T> = Result<Json<T>, ApiError>;
 #[derive(serde::Deserialize)]
 pub struct LoginBody {
     api_key: String,
+}
+
+pub async fn capabilities() -> Json<contract::ProductCapabilities> {
+    Json(contract::capabilities(
+        "review-bee",
+        "ReviewBee",
+        vec![
+            contract::action(
+                "review_github_pr",
+                "Review PR threads",
+                "POST",
+                "/review/github/pr",
+                "Turn a GitHub pull request review thread history into an actionable checklist.",
+                true,
+            ),
+            contract::action(
+                "github_webhook",
+                "Receive GitHub webhook",
+                "POST",
+                "/webhooks/github",
+                "Process a signed GitHub pull request review webhook.",
+                true,
+            ),
+        ],
+        vec![
+            contract::link("overview", "Overview", "/overview"),
+            contract::link("history", "History", "/history"),
+        ],
+    ))
+}
+
+pub async fn runs() -> Json<contract::ProductRunsResponse> {
+    Json(contract::runs_from_history("review-bee", db::history(30)))
 }
 
 #[derive(Default)]

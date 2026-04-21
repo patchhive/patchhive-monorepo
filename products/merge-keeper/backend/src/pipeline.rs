@@ -8,6 +8,7 @@ use axum::{
 };
 use chrono::Utc;
 use patchhive_github_pr::verify_github_webhook_signature;
+use patchhive_product_core::contract;
 use patchhive_product_core::repo_memory::RepoMemoryContextRequest;
 use patchhive_product_core::startup::count_errors;
 use serde_json::{json, Value};
@@ -34,6 +35,39 @@ type JsonResult<T> = Result<Json<T>, ApiError>;
 #[derive(serde::Deserialize)]
 pub struct LoginBody {
     api_key: String,
+}
+
+pub async fn capabilities() -> Json<contract::ProductCapabilities> {
+    Json(contract::capabilities(
+        "merge-keeper",
+        "MergeKeeper",
+        vec![
+            contract::action(
+                "assess_github_pr",
+                "Assess PR readiness",
+                "POST",
+                "/assess/github/pr",
+                "Evaluate whether a GitHub pull request is merge-ready, blocked, or on hold.",
+                true,
+            ),
+            contract::action(
+                "github_webhook",
+                "Receive GitHub webhook",
+                "POST",
+                "/webhooks/github",
+                "Process a signed GitHub pull request webhook for readiness updates.",
+                true,
+            ),
+        ],
+        vec![
+            contract::link("overview", "Overview", "/overview"),
+            contract::link("history", "History", "/history"),
+        ],
+    ))
+}
+
+pub async fn runs() -> Json<contract::ProductRunsResponse> {
+    Json(contract::runs_from_history("merge-keeper", db::history(30)))
 }
 
 pub async fn auth_status() -> Json<serde_json::Value> {

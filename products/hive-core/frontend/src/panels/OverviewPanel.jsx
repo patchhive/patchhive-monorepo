@@ -61,6 +61,11 @@ function ProductStrip({ product }) {
             {product.health.startup_errors} startup error{product.health.startup_errors === 1 ? "" : "s"}
           </Tag>
         )}
+        {product.health.capabilities_ok && (
+          <Tag color="var(--green)">
+            {product.health.action_count} action{product.health.action_count === 1 ? "" : "s"}
+          </Tag>
+        )}
       </div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         {product.frontend_url && (

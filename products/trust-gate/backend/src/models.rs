@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use patchhive_product_core::repo_memory::RepoMemoryContextResponse;
+use serde::{Deserialize, Serialize};
 
 fn default_blocked_paths() -> Vec<String> {
     vec![
@@ -199,12 +199,18 @@ pub struct TemplateVariableDoc {
 pub fn report_template_variables() -> Vec<TemplateVariableDoc> {
     vec![
         ("repo", "Reviewed repo in owner/repo format."),
-        ("pr_number", "GitHub pull request number when reviewing a PR."),
+        (
+            "pr_number",
+            "GitHub pull request number when reviewing a PR.",
+        ),
         ("pr_title", "GitHub pull request title when available."),
         ("base_ref", "Base branch name for PR-backed reviews."),
         ("head_ref", "Head branch name for PR-backed reviews."),
         ("ai_source", "Reported AI source such as Codex or Copilot."),
-        ("source_kind", "Review source kind such as manual or github_pr."),
+        (
+            "source_kind",
+            "Review source kind such as manual or github_pr.",
+        ),
         ("emoji", "Recommendation emoji: green, yellow, or red."),
         ("recommendation", "Recommendation in lowercase."),
         ("recommendation_upper", "Recommendation in uppercase."),
@@ -218,11 +224,23 @@ pub fn report_template_variables() -> Vec<TemplateVariableDoc> {
         ("blocked_findings", "Count of blocking findings."),
         ("warning_findings", "Count of warning findings."),
         ("findings_markdown", "Markdown bullet list of findings."),
-        ("findings_plaintext", "Plaintext findings list for check output."),
-        ("file_hotspots_markdown", "Markdown bullet list of risky or interesting files."),
+        (
+            "findings_plaintext",
+            "Plaintext findings list for check output.",
+        ),
+        (
+            "file_hotspots_markdown",
+            "Markdown bullet list of risky or interesting files.",
+        ),
         ("next_move", "TrustGate's recommended next action."),
-        ("details_markdown", "Markdown line linking back to TrustGate details when available."),
-        ("details_url", "Direct TrustGate details URL when configured."),
+        (
+            "details_markdown",
+            "Markdown line linking back to TrustGate details when available.",
+        ),
+        (
+            "details_url",
+            "Direct TrustGate details URL when configured.",
+        ),
     ]
     .into_iter()
     .map(|(key, description)| TemplateVariableDoc {

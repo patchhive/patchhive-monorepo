@@ -5,6 +5,7 @@ use axum::{
     http::{HeaderMap, StatusCode},
     Json,
 };
+use patchhive_product_core::contract;
 use patchhive_product_core::startup::count_errors;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -38,6 +39,11 @@ struct ProductHealthBody {
 #[derive(Deserialize)]
 struct StartupChecksBody {
     checks: Vec<patchhive_product_core::startup::StartupCheck>,
+}
+
+#[derive(Deserialize)]
+struct ProductCapabilitiesBody {
+    actions: Vec<Value>,
 }
 
 pub async fn auth_status() -> Json<Value> {
@@ -89,6 +95,33 @@ pub async fn health() -> Json<Value> {
 
 pub async fn startup_checks_route() -> Json<Value> {
     Json(json!({ "checks": startup::startup_checks() }))
+}
+
+pub async fn capabilities() -> Json<contract::ProductCapabilities> {
+    let mut caps = contract::capabilities(
+        "hive-core",
+        "HiveCore",
+        vec![contract::action(
+            "save_settings",
+            "Save suite settings",
+            "PUT",
+            "/settings",
+            "Persist suite-wide defaults and per-product launch/API overrides.",
+            false,
+        )],
+        vec![
+            contract::link("overview", "Overview", "/overview"),
+            contract::link("products", "Products", "/products"),
+            contract::link("settings", "Settings", "/settings"),
+        ],
+    );
+    caps.hivecore.can_apply_settings = true;
+    caps.routes.settings_apply = Some("/settings".into());
+    Json(caps)
+}
+
+pub async fn runs() -> Json<contract::ProductRunsResponse> {
+    Json(contract::runs_from_values("hive-core", Vec::new()))
 }
 
 pub async fn overview(
@@ -333,25 +366,56 @@ async fn fetch_product_health(client: &reqwest::Client, api_url: &str) -> Produc
         Err(_) => (0, 0, 0, "Could not reach /startup/checks.".into()),
     };
 
+    let capabilities_url = format!("{normalized}/capabilities");
+    let capabilities_response = client
+        .get(&capabilities_url)
+        .timeout(Duration::from_secs(3))
+        .send()
+        .await;
+    let (capabilities_ok, action_count, capabilities_error) = match capabilities_response {
+        Ok(response) if response.status().is_success() => {
+            let body = response.json::<ProductCapabilitiesBody>().await.unwrap_or(
+                ProductCapabilitiesBody {
+                    actions: Vec::new(),
+                },
+            );
+            (true, body.actions.len() as u32, String::new())
+        }
+        Ok(response) => (
+            false,
+            0,
+            format!("/capabilities returned HTTP {}", response.status()),
+        ),
+        Err(_) => (false, 0, "Could not reach /capabilities.".into()),
+    };
+
     let config_errors = health_body.config_errors.unwrap_or(0);
     let base_status = health_body.status.unwrap_or_else(|| "unknown".into());
-    let status = if startup_errors > 0 || config_errors > 0 || base_status != "ok" {
-        "degraded"
-    } else {
-        "online"
-    };
+    let status =
+        if startup_errors > 0 || config_errors > 0 || base_status != "ok" || !capabilities_ok {
+            "degraded"
+        } else {
+            "online"
+        };
+    let error = [extra_error, capabilities_error]
+        .into_iter()
+        .filter(|item| !item.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
 
     ProductHealthSnapshot {
         status: status.into(),
         reachable: true,
         version: health_body.version.unwrap_or_default(),
+        capabilities_ok,
+        action_count,
         config_errors,
         startup_errors,
         startup_warns,
         startup_infos,
         db_ok: health_body.db_ok,
         checked_at,
-        error: extra_error,
+        error,
     }
 }
 
@@ -368,6 +432,8 @@ fn local_hive_core_health() -> ProductHealthSnapshot {
         status: status.into(),
         reachable: true,
         version: PRODUCT_VERSION.into(),
+        capabilities_ok: true,
+        action_count: 1,
         config_errors: startup_errors,
         startup_errors,
         startup_warns,

@@ -854,7 +854,6 @@ dependencies = [
 [[package]]
 name = "patchhive-github-data"
 version = "0.1.0"
-source = "git+https://github.com/patchhive/patchhive-github-data.git?rev=335ebec68a79098ed9eebdde90bff522146d493d#335ebec68a79098ed9eebdde90bff522146d493d"
 dependencies = [
  "anyhow",
  "reqwest",
@@ -865,7 +864,6 @@ dependencies = [
 [[package]]
 name = "patchhive-github-security"
 version = "0.1.0"
-source = "git+https://github.com/patchhive/patchhive-github-security.git?rev=4237fe35bde06b7795f04013dabbfd1034df9556#4237fe35bde06b7795f04013dabbfd1034df9556"
 dependencies = [
  "anyhow",
  "patchhive-github-data",
@@ -877,7 +875,6 @@ dependencies = [
 [[package]]
 name = "patchhive-product-core"
 version = "0.1.0"
-source = "git+https://github.com/patchhive/patchhive-product-core.git?rev=4234b0d5b52ab853b59c28c3a712bbe530b1f8ff#4234b0d5b52ab853b59c28c3a712bbe530b1f8ff"
 dependencies = [
  "anyhow",
  "axum",
@@ -2266,3 +2263,7 @@ name = "zmij"
 version = "1.0.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b8848ee67ecc8aedbaf3e4122217aff892639231befc6a1b58d29fff4c2cabaa"
+
+[[patch.unused]]
+name = "patchhive-github-pr"
+version = "0.1.0"

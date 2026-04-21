@@ -34,6 +34,8 @@ function ProductCard({ product }) {
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <Tag color="var(--accent)">{product.lane}</Tag>
         {health.version && <Tag color="var(--blue)">v{health.version}</Tag>}
+        {health.capabilities_ok && <Tag color="var(--green)">{health.action_count} action{health.action_count === 1 ? "" : "s"}</Tag>}
+        {!health.capabilities_ok && product.enabled && <Tag color="var(--gold)">contract pending</Tag>}
         {health.startup_warns > 0 && <Tag color="var(--gold)">{health.startup_warns} warn</Tag>}
         {health.startup_errors > 0 && <Tag color="var(--accent)">{health.startup_errors} error</Tag>}
       </div>
@@ -57,6 +59,12 @@ function ProductCard({ product }) {
             {health.startup_errors || health.startup_warns || health.startup_infos
               ? `${health.startup_errors || 0} error · ${health.startup_warns || 0} warn`
               : "No startup detail yet"}
+          </div>
+        </div>
+        <div>
+          <div style={S.label}>Lifecycle Contract</div>
+          <div style={{ fontSize: 11, color: health.capabilities_ok ? "var(--green)" : "var(--gold)" }}>
+            {health.capabilities_ok ? `${health.action_count || 0} exposed action${health.action_count === 1 ? "" : "s"}` : "Not available"}
           </div>
         </div>
         <div>
