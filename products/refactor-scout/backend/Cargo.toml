@@ -23,4 +23,4 @@ chrono = { version = "0.4", features = ["serde"] }
 regex = "1"
 uuid = { version = "1", features = ["serde", "v4"] }
 walkdir = "2"
-patchhive-product-core = { git = "https://github.com/patchhive/patchhive-product-core.git", rev = "4234b0d5b52ab853b59c28c3a712bbe530b1f8ff", version = "0.1.0" }
+patchhive-product-core = { git = "https://github.com/patchhive/patchhive-product-core.git", rev = "67cbd85292d91338e799b967db7a98ee15872e29", version = "0.1.0" }
