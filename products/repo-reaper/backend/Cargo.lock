@@ -956,7 +956,7 @@ dependencies = [
 [[package]]
 name = "patchhive-product-core"
 version = "0.1.0"
-source = "git+https://github.com/patchhive/patchhive-product-core.git?rev=67cbd85292d91338e799b967db7a98ee15872e29#67cbd85292d91338e799b967db7a98ee15872e29"
+source = "git+https://github.com/patchhive/patchhive-product-core.git?rev=fb4017179d0f195f8bf30f70cc70e2f617806ebd#fb4017179d0f195f8bf30f70cc70e2f617806ebd"
 dependencies = [
  "anyhow",
  "axum",
