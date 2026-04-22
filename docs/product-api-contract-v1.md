@@ -144,6 +144,36 @@ When HiveCore is enabled, products should expose enough lifecycle metadata for H
 
 HiveCore should consume these APIs. It should not reach into product databases or private implementation details.
 
+## HiveCore Action Dispatch
+
+HiveCore launches product work through advertised `/capabilities` actions instead of hard-coded product routes.
+
+HiveCore accepts:
+
+```http
+POST /products/:slug/actions/:action_id
+```
+
+Request body options:
+
+```json
+{
+  "payload": { "repo": "owner/repo" },
+  "path_params": { "name": "daily" },
+  "query": { "dry": "true" }
+}
+```
+
+If the body does not include `payload`, `path_params`, or `query`, HiveCore treats the entire JSON object as the product payload.
+
+Rules:
+
+- HiveCore must fetch the target product's `/capabilities` and only dispatch actions the product advertises.
+- HiveCore should use product-owned API keys stored in HiveCore settings; it should not expose those keys back to the frontend.
+- HiveCore should record every dispatch attempt with target URL, action ID, remote status, response body, and error text.
+- HiveCore should block advertised destructive actions until an explicit approval flow exists.
+- Products own request validation, side effects, and run history after dispatch.
+
 ## Required Integration Endpoints
 
 Every product should expose these endpoints in addition to any product-specific routes:

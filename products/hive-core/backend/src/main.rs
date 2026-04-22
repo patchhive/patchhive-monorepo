@@ -39,6 +39,11 @@ async fn main() {
         .route("/runs", get(pipeline::runs))
         .route("/overview", get(pipeline::overview))
         .route("/products", get(pipeline::products))
+        .route("/actions/recent", get(pipeline::recent_actions))
+        .route(
+            "/products/:slug/actions/:action_id",
+            axum::routing::post(pipeline::dispatch_product_action),
+        )
         .route(
             "/settings",
             get(pipeline::settings).put(pipeline::save_settings),

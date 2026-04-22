@@ -1,4 +1,5 @@
 use chrono::Utc;
+use patchhive_product_core::contract;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -113,6 +114,7 @@ pub struct ProductOverride {
     pub slug: String,
     pub frontend_url: String,
     pub api_url: String,
+    pub api_key: String,
     pub enabled: bool,
     pub notes: String,
     pub updated_at: String,
@@ -130,6 +132,7 @@ pub struct ProductSettingsItem {
     pub default_api_url: String,
     pub override_frontend_url: String,
     pub override_api_url: String,
+    pub api_key_configured: bool,
     pub enabled: bool,
     pub notes: String,
     pub updated_at: String,
@@ -181,9 +184,11 @@ pub struct ProductRuntimeItem {
     pub enabled: bool,
     pub frontend_url: String,
     pub api_url: String,
+    pub api_key_configured: bool,
     pub notes: String,
     pub status: String,
     pub health: ProductHealthSnapshot,
+    pub actions: Vec<contract::ProductAction>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -238,6 +243,30 @@ pub struct ProductOverrideInput {
     pub slug: String,
     pub frontend_url: String,
     pub api_url: String,
+    pub api_key: Option<String>,
     pub enabled: bool,
     pub notes: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProductActionEvent {
+    pub id: String,
+    pub product_slug: String,
+    pub action_id: String,
+    pub action_label: String,
+    pub method: String,
+    pub path: String,
+    pub target_url: String,
+    pub status: String,
+    pub remote_status: Option<u16>,
+    pub request_json: Value,
+    pub response_json: Value,
+    pub error: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DispatchActionResponse {
+    pub event: ProductActionEvent,
+    pub started_run: bool,
 }

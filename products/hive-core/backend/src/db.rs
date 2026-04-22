@@ -6,7 +6,7 @@ use std::{
 use once_cell::sync::OnceCell;
 use rusqlite::{params, Connection, OptionalExtension};
 
-use crate::models::{ProductOverride, SuiteSettings};
+use crate::models::{ProductActionEvent, ProductOverride, SuiteSettings};
 
 static DB_CONN: OnceCell<Mutex<Connection>> = OnceCell::new();
 
@@ -72,6 +72,42 @@ pub fn replace_product_overrides(overrides: &[ProductOverride]) -> rusqlite::Res
     replace_overrides(&mut conn, overrides)
 }
 
+pub fn record_action_event(event: &ProductActionEvent) -> rusqlite::Result<()> {
+    let conn = connect()?;
+    conn.execute(
+        r#"
+        INSERT INTO product_action_events (
+          id, product_slug, action_id, action_label, method, path, target_url,
+          status, remote_status, request_json, response_json, error, created_at
+        )
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+        "#,
+        params![
+            &event.id,
+            &event.product_slug,
+            &event.action_id,
+            &event.action_label,
+            &event.method,
+            &event.path,
+            &event.target_url,
+            &event.status,
+            event.remote_status.map(i64::from),
+            event.request_json.to_string(),
+            event.response_json.to_string(),
+            &event.error,
+            &event.created_at,
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn recent_action_events(limit: u32) -> Vec<ProductActionEvent> {
+    let Ok(conn) = connect() else {
+        return Vec::new();
+    };
+    load_action_events(&conn, limit).unwrap_or_default()
+}
+
 fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute_batch(
         r#"
@@ -93,12 +129,47 @@ fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
           slug TEXT PRIMARY KEY,
           frontend_url TEXT NOT NULL,
           api_url TEXT NOT NULL,
+          api_key TEXT NOT NULL DEFAULT '',
           enabled INTEGER NOT NULL,
           notes TEXT NOT NULL,
           updated_at TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS product_action_events (
+          id TEXT PRIMARY KEY,
+          product_slug TEXT NOT NULL,
+          action_id TEXT NOT NULL,
+          action_label TEXT NOT NULL,
+          method TEXT NOT NULL,
+          path TEXT NOT NULL,
+          target_url TEXT NOT NULL,
+          status TEXT NOT NULL,
+          remote_status INTEGER,
+          request_json TEXT NOT NULL,
+          response_json TEXT NOT NULL,
+          error TEXT NOT NULL,
+          created_at TEXT NOT NULL
+        );
         "#,
     )?;
+    migrate_schema(conn)?;
+    Ok(())
+}
+
+fn migrate_schema(conn: &Connection) -> rusqlite::Result<()> {
+    let has_api_key = conn
+        .prepare("PRAGMA table_info(product_overrides)")?
+        .query_map([], |row| row.get::<_, String>(1))?
+        .flatten()
+        .any(|column| column == "api_key");
+
+    if !has_api_key {
+        conn.execute(
+            "ALTER TABLE product_overrides ADD COLUMN api_key TEXT NOT NULL DEFAULT ''",
+            [],
+        )?;
+    }
+
     Ok(())
 }
 
@@ -180,7 +251,7 @@ fn write_suite_settings(conn: &Connection, settings: &SuiteSettings) -> rusqlite
 fn load_product_overrides(conn: &Connection) -> rusqlite::Result<HashMap<String, ProductOverride>> {
     let mut stmt = conn.prepare(
         r#"
-        SELECT slug, frontend_url, api_url, enabled, notes, updated_at
+        SELECT slug, frontend_url, api_url, api_key, enabled, notes, updated_at
         FROM product_overrides
         "#,
     )?;
@@ -189,9 +260,10 @@ fn load_product_overrides(conn: &Connection) -> rusqlite::Result<HashMap<String,
             slug: row.get(0)?,
             frontend_url: row.get(1)?,
             api_url: row.get(2)?,
-            enabled: row.get::<_, i64>(3)? != 0,
-            notes: row.get(4)?,
-            updated_at: row.get(5)?,
+            api_key: row.get(3)?,
+            enabled: row.get::<_, i64>(4)? != 0,
+            notes: row.get(5)?,
+            updated_at: row.get(6)?,
         })
     })?;
 
@@ -208,8 +280,8 @@ fn replace_overrides(conn: &mut Connection, overrides: &[ProductOverride]) -> ru
     {
         let mut stmt = tx.prepare(
             r#"
-            INSERT INTO product_overrides (slug, frontend_url, api_url, enabled, notes, updated_at)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+            INSERT INTO product_overrides (slug, frontend_url, api_url, api_key, enabled, notes, updated_at)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
             "#,
         )?;
         for item in overrides {
@@ -217,6 +289,7 @@ fn replace_overrides(conn: &mut Connection, overrides: &[ProductOverride]) -> ru
                 &item.slug,
                 &item.frontend_url,
                 &item.api_url,
+                &item.api_key,
                 if item.enabled { 1 } else { 0 },
                 &item.notes,
                 &item.updated_at,
@@ -227,14 +300,49 @@ fn replace_overrides(conn: &mut Connection, overrides: &[ProductOverride]) -> ru
     Ok(())
 }
 
+fn load_action_events(conn: &Connection, limit: u32) -> rusqlite::Result<Vec<ProductActionEvent>> {
+    let mut stmt = conn.prepare(
+        r#"
+        SELECT id, product_slug, action_id, action_label, method, path, target_url,
+               status, remote_status, request_json, response_json, error, created_at
+        FROM product_action_events
+        ORDER BY created_at DESC
+        LIMIT ?1
+        "#,
+    )?;
+    let rows = stmt.query_map([limit.clamp(1, 100)], |row| {
+        let request_json = row.get::<_, String>(9)?;
+        let response_json = row.get::<_, String>(10)?;
+        let remote_status = row.get::<_, Option<i64>>(8)?;
+        Ok(ProductActionEvent {
+            id: row.get(0)?,
+            product_slug: row.get(1)?,
+            action_id: row.get(2)?,
+            action_label: row.get(3)?,
+            method: row.get(4)?,
+            path: row.get(5)?,
+            target_url: row.get(6)?,
+            status: row.get(7)?,
+            remote_status: remote_status.map(|value| value as u16),
+            request_json: serde_json::from_str(&request_json).unwrap_or(serde_json::Value::Null),
+            response_json: serde_json::from_str(&response_json).unwrap_or(serde_json::Value::Null),
+            error: row.get(11)?,
+            created_at: row.get(12)?,
+        })
+    })?;
+
+    Ok(rows.flatten().collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        init_schema, load_product_overrides, load_suite_settings, replace_overrides,
-        write_suite_settings,
+        init_schema, load_action_events, load_product_overrides, load_suite_settings,
+        replace_overrides, write_suite_settings,
     };
-    use crate::models::{now_rfc3339, ProductOverride, SuiteSettings};
+    use crate::models::{now_rfc3339, ProductActionEvent, ProductOverride, SuiteSettings};
     use rusqlite::Connection;
+    use serde_json::json;
 
     #[test]
     fn suite_settings_round_trip_in_memory() {
@@ -261,6 +369,7 @@ mod tests {
             slug: "signal-hive".into(),
             frontend_url: "https://signal.example.com".into(),
             api_url: "https://signal-api.example.com".into(),
+            api_key: "sh_secret".into(),
             enabled: true,
             notes: "primary".into(),
             updated_at: now_rfc3339(),
@@ -271,6 +380,7 @@ mod tests {
             slug: "repo-reaper".into(),
             frontend_url: "https://reaper.example.com".into(),
             api_url: "https://reaper-api.example.com".into(),
+            api_key: "rr_secret".into(),
             enabled: false,
             notes: "manual only".into(),
             updated_at: now_rfc3339(),
@@ -281,5 +391,59 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert!(rows.contains_key("repo-reaper"));
         assert!(!rows.contains_key("signal-hive"));
+        assert_eq!(rows["repo-reaper"].api_key, "rr_secret");
+    }
+
+    #[test]
+    fn action_events_round_trip_in_memory() {
+        let conn = Connection::open_in_memory().expect("in-memory db should open");
+        init_schema(&conn).expect("schema should initialize");
+
+        let event = ProductActionEvent {
+            id: "evt_1".into(),
+            product_slug: "signal-hive".into(),
+            action_id: "scan".into(),
+            action_label: "Run signal scan".into(),
+            method: "POST".into(),
+            path: "/scan".into(),
+            target_url: "http://localhost:8010/scan".into(),
+            status: "dispatched".into(),
+            remote_status: Some(200),
+            request_json: json!({"languages": ["rust"]}),
+            response_json: json!({"ok": true}),
+            error: String::new(),
+            created_at: now_rfc3339(),
+        };
+
+        conn.execute(
+            r#"
+            INSERT INTO product_action_events (
+              id, product_slug, action_id, action_label, method, path, target_url,
+              status, remote_status, request_json, response_json, error, created_at
+            )
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+            "#,
+            rusqlite::params![
+                &event.id,
+                &event.product_slug,
+                &event.action_id,
+                &event.action_label,
+                &event.method,
+                &event.path,
+                &event.target_url,
+                &event.status,
+                event.remote_status.map(i64::from),
+                event.request_json.to_string(),
+                event.response_json.to_string(),
+                &event.error,
+                &event.created_at,
+            ],
+        )
+        .expect("event should insert");
+
+        let events = load_action_events(&conn, 10).expect("events should load");
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].product_slug, "signal-hive");
+        assert_eq!(events[0].response_json["ok"], true);
     }
 }

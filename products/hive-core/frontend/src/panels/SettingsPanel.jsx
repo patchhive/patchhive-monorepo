@@ -31,6 +31,9 @@ function ProductEditor({ product, onChange }) {
         <Tag color="var(--accent)">{product.lane}</Tag>
         <Tag color="var(--blue)">default UI {product.default_frontend_url}</Tag>
         <Tag color="var(--blue)">default API {product.default_api_url}</Tag>
+        <Tag color={product.api_key_configured ? "var(--green)" : "var(--gold)"}>
+          {product.api_key_configured ? "API key saved" : "API key needed"}
+        </Tag>
       </div>
 
       <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
@@ -48,6 +51,15 @@ function ProductEditor({ product, onChange }) {
             value={product.override_api_url}
             onChange={(value) => onChange({ ...product, override_api_url: value })}
             placeholder={product.default_api_url}
+          />
+        </div>
+        <div style={S.field}>
+          <div style={S.label}>Product API Key</div>
+          <Input
+            type="password"
+            value={product.api_key || ""}
+            onChange={(value) => onChange({ ...product, api_key: value })}
+            placeholder={product.api_key_configured ? "Stored - enter a new key to replace" : "Paste this product's API key"}
           />
         </div>
       </div>
@@ -111,6 +123,7 @@ export default function SettingsPanel({ fetchEnvelope, setRunning, setError }) {
             slug: product.slug,
             frontend_url: product.override_frontend_url,
             api_url: product.override_api_url,
+            api_key: product.api_key || "",
             enabled: product.enabled,
             notes: product.notes,
           })),

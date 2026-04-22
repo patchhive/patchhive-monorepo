@@ -1,23 +1,25 @@
 use std::{collections::HashMap, time::Duration};
 
 use axum::{
-    extract::State,
+    extract::{Path, State},
     http::{HeaderMap, StatusCode},
     Json,
 };
 use patchhive_product_core::contract;
 use patchhive_product_core::startup::count_errors;
+use reqwest::{Method, Url};
 use serde::Deserialize;
 use serde_json::{json, Value};
+use uuid::Uuid;
 
 use crate::{
     auth::{auth_enabled, generate_and_save_key, verify_token},
     db,
     models::{
-        error, now_rfc3339, ok, OverviewResponse, OverviewSummary, ProductHealthSnapshot,
-        ProductOverride, ProductOverrideInput, ProductRuntimeItem, ProductSettingsItem,
-        SaveSettingsRequest, SettingsResponse, SuiteSettings, SuiteSettingsInput, PRODUCT_TAGLINE,
-        PRODUCT_TITLE, PRODUCT_VERSION,
+        error, now_rfc3339, ok, DispatchActionResponse, OverviewResponse, OverviewSummary,
+        ProductActionEvent, ProductHealthSnapshot, ProductOverride, ProductOverrideInput,
+        ProductRuntimeItem, ProductSettingsItem, SaveSettingsRequest, SettingsResponse,
+        SuiteSettings, SuiteSettingsInput, PRODUCT_TAGLINE, PRODUCT_TITLE, PRODUCT_VERSION,
     },
     startup,
     state::{product_catalog, AppState, ProductDefinition},
@@ -41,9 +43,16 @@ struct StartupChecksBody {
     checks: Vec<patchhive_product_core::startup::StartupCheck>,
 }
 
-#[derive(Deserialize)]
-struct ProductCapabilitiesBody {
-    actions: Vec<Value>,
+struct ProductProbeSnapshot {
+    health: ProductHealthSnapshot,
+    actions: Vec<contract::ProductAction>,
+}
+
+#[derive(Debug, Default)]
+struct DispatchActionInput {
+    payload: Value,
+    path_params: HashMap<String, String>,
+    query: HashMap<String, String>,
 }
 
 pub async fn auth_status() -> Json<Value> {
@@ -149,6 +158,10 @@ pub async fn settings() -> Json<crate::models::ApiEnvelope<SettingsResponse>> {
     Json(ok(build_settings_response()))
 }
 
+pub async fn recent_actions() -> Json<crate::models::ApiEnvelope<Vec<ProductActionEvent>>> {
+    Json(ok(db::recent_action_events(30)))
+}
+
 pub async fn save_settings(
     Json(body): Json<SaveSettingsRequest>,
 ) -> Result<
@@ -156,7 +169,8 @@ pub async fn save_settings(
     (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
 > {
     let settings = sanitize_suite_settings(body.suite_settings);
-    let products = sanitize_product_overrides(body.products);
+    let existing_overrides = db::product_overrides();
+    let products = sanitize_product_overrides(body.products, &existing_overrides);
 
     let known: Vec<&str> = product_catalog()
         .iter()
@@ -199,6 +213,158 @@ pub async fn save_settings(
     Ok(Json(ok(build_settings_response())))
 }
 
+pub async fn dispatch_product_action(
+    State(state): State<AppState>,
+    Path((slug, action_id)): Path<(String, String)>,
+    Json(body): Json<Value>,
+) -> Result<
+    Json<crate::models::ApiEnvelope<DispatchActionResponse>>,
+    (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
+> {
+    let definition = product_catalog()
+        .iter()
+        .find(|product| product.slug == slug)
+        .ok_or_else(|| api_error(StatusCode::NOT_FOUND, "unknown_product", "Unknown product."))?;
+
+    if definition.slug == "hive-core" {
+        return Err(api_error(
+            StatusCode::BAD_REQUEST,
+            "unsupported_action",
+            "HiveCore self-actions are handled by native HiveCore routes.",
+        ));
+    }
+
+    let overrides = db::product_overrides();
+    let override_item = overrides.get(definition.slug);
+    let enabled = override_item.map(|item| item.enabled).unwrap_or(true);
+    if !enabled {
+        return Err(api_error(
+            StatusCode::CONFLICT,
+            "product_disabled",
+            "HiveCore will not dispatch actions to a disabled product.",
+        ));
+    }
+
+    let api_url = pick_url(
+        override_item.map(|item| item.api_url.as_str()),
+        definition.default_api_url,
+    );
+    if api_url.trim().is_empty() {
+        return Err(api_error(
+            StatusCode::BAD_REQUEST,
+            "product_unconfigured",
+            "Configure this product API URL before dispatching actions.",
+        ));
+    }
+
+    let api_key = override_item
+        .map(|item| item.api_key.trim().to_string())
+        .unwrap_or_default();
+    if api_key.is_empty() {
+        return Err(api_error(
+            StatusCode::BAD_REQUEST,
+            "product_api_key_missing",
+            "Save this product's API key in HiveCore settings before dispatching protected actions.",
+        ));
+    }
+
+    let capabilities = fetch_product_capabilities(&state.client, &api_url)
+        .await
+        .map_err(|message| {
+            api_error(StatusCode::BAD_GATEWAY, "capabilities_unavailable", message)
+        })?;
+    let action = capabilities
+        .actions
+        .iter()
+        .find(|action| action.id == action_id)
+        .cloned()
+        .ok_or_else(|| {
+            api_error(
+                StatusCode::NOT_FOUND,
+                "unknown_action",
+                "The product did not advertise that action.",
+            )
+        })?;
+
+    if action.destructive {
+        return Err(api_error(
+            StatusCode::FORBIDDEN,
+            "destructive_action_blocked",
+            "HiveCore does not dispatch destructive actions yet.",
+        ));
+    }
+
+    let input = parse_dispatch_input(body);
+    let path = fill_path_template(&action.path, &input.path_params)
+        .map_err(|message| api_error(StatusCode::BAD_REQUEST, "invalid_action_path", message))?;
+    let target_url = build_target_url(&api_url, &path, &input.query)
+        .map_err(|message| api_error(StatusCode::BAD_REQUEST, "invalid_action_url", message))?;
+    let method = Method::from_bytes(action.method.as_bytes()).map_err(|_| {
+        api_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_action_method",
+            "The product advertised an invalid HTTP method.",
+        )
+    })?;
+
+    let event_id = format!("evt_{}", Uuid::now_v7());
+    let mut event = ProductActionEvent {
+        id: event_id,
+        product_slug: definition.slug.into(),
+        action_id: action.id.clone(),
+        action_label: action.label.clone(),
+        method: action.method.clone(),
+        path: path.clone(),
+        target_url: target_url.to_string(),
+        status: "dispatching".into(),
+        remote_status: None,
+        request_json: input.payload.clone(),
+        response_json: Value::Null,
+        error: String::new(),
+        created_at: now_rfc3339(),
+    };
+
+    let mut request = state
+        .client
+        .request(method.clone(), target_url)
+        .header("X-API-Key", api_key);
+    if method != Method::GET && method != Method::HEAD {
+        request = request.json(&input.payload);
+    }
+
+    match request.send().await {
+        Ok(response) => {
+            let status = response.status();
+            let text = response.text().await.unwrap_or_default();
+            event.remote_status = Some(status.as_u16());
+            event.status = if status.is_success() {
+                "dispatched".into()
+            } else {
+                "failed".into()
+            };
+            event.response_json = parse_response_body(&text);
+            if !status.is_success() {
+                event.error = format!("Product returned HTTP {status}");
+            }
+        }
+        Err(err) => {
+            event.status = "failed".into();
+            event.error = err.to_string();
+            event.response_json = json!({ "error": err.to_string() });
+        }
+    }
+
+    if let Err(err) = db::record_action_event(&event) {
+        tracing::warn!("failed to record HiveCore product action event: {err}");
+    }
+
+    let response = DispatchActionResponse {
+        event,
+        started_run: action.starts_run,
+    };
+    Ok(Json(ok(response)))
+}
+
 async fn build_runtime_products(state: &AppState) -> Vec<ProductRuntimeItem> {
     let overrides = db::product_overrides();
     let mut products = Vec::new();
@@ -235,6 +401,9 @@ fn build_settings_response() -> SettingsResponse {
                 override_api_url: override_item
                     .map(|item| item.api_url.clone())
                     .unwrap_or_default(),
+                api_key_configured: override_item
+                    .map(|item| !item.api_key.trim().is_empty())
+                    .unwrap_or(false),
                 enabled: override_item.map(|item| item.enabled).unwrap_or(true),
                 notes: override_item
                     .map(|item| item.notes.clone())
@@ -272,19 +441,25 @@ async fn build_product_runtime(
         .map(|item| item.notes.clone())
         .unwrap_or_default();
 
-    let health = if definition.slug == "hive-core" {
-        local_hive_core_health()
+    let probe = if definition.slug == "hive-core" {
+        local_hive_core_probe()
     } else if !enabled {
-        ProductHealthSnapshot {
-            status: "disabled".into(),
-            checked_at: now_rfc3339(),
-            ..ProductHealthSnapshot::default()
+        ProductProbeSnapshot {
+            health: ProductHealthSnapshot {
+                status: "disabled".into(),
+                checked_at: now_rfc3339(),
+                ..ProductHealthSnapshot::default()
+            },
+            actions: Vec::new(),
         }
     } else if api_url.is_empty() {
-        ProductHealthSnapshot {
-            status: "unconfigured".into(),
-            checked_at: now_rfc3339(),
-            ..ProductHealthSnapshot::default()
+        ProductProbeSnapshot {
+            health: ProductHealthSnapshot {
+                status: "unconfigured".into(),
+                checked_at: now_rfc3339(),
+                ..ProductHealthSnapshot::default()
+            },
+            actions: Vec::new(),
         }
     } else {
         fetch_product_health(&state.client, &api_url).await
@@ -300,33 +475,43 @@ async fn build_product_runtime(
         enabled,
         frontend_url,
         api_url,
+        api_key_configured: override_item
+            .map(|item| !item.api_key.trim().is_empty())
+            .unwrap_or(false),
         notes,
-        status: health.status.clone(),
-        health,
+        status: probe.health.status.clone(),
+        health: probe.health,
+        actions: probe.actions,
     }
 }
 
-async fn fetch_product_health(client: &reqwest::Client, api_url: &str) -> ProductHealthSnapshot {
+async fn fetch_product_health(client: &reqwest::Client, api_url: &str) -> ProductProbeSnapshot {
     let normalized = api_url.trim_end_matches('/');
     let checked_at = now_rfc3339();
     let health_url = format!("{normalized}/health");
 
     let health_response = client.get(&health_url).send().await;
     let Ok(health_response) = health_response else {
-        return ProductHealthSnapshot {
-            status: "offline".into(),
-            checked_at,
-            error: "Could not reach /health.".into(),
-            ..ProductHealthSnapshot::default()
+        return ProductProbeSnapshot {
+            health: ProductHealthSnapshot {
+                status: "offline".into(),
+                checked_at,
+                error: "Could not reach /health.".into(),
+                ..ProductHealthSnapshot::default()
+            },
+            actions: Vec::new(),
         };
     };
 
     if !health_response.status().is_success() {
-        return ProductHealthSnapshot {
-            status: "offline".into(),
-            checked_at,
-            error: format!("/health returned HTTP {}", health_response.status()),
-            ..ProductHealthSnapshot::default()
+        return ProductProbeSnapshot {
+            health: ProductHealthSnapshot {
+                status: "offline".into(),
+                checked_at,
+                error: format!("/health returned HTTP {}", health_response.status()),
+                ..ProductHealthSnapshot::default()
+            },
+            actions: Vec::new(),
         };
     }
 
@@ -366,28 +551,12 @@ async fn fetch_product_health(client: &reqwest::Client, api_url: &str) -> Produc
         Err(_) => (0, 0, 0, "Could not reach /startup/checks.".into()),
     };
 
-    let capabilities_url = format!("{normalized}/capabilities");
-    let capabilities_response = client
-        .get(&capabilities_url)
-        .timeout(Duration::from_secs(3))
-        .send()
-        .await;
-    let (capabilities_ok, action_count, capabilities_error) = match capabilities_response {
-        Ok(response) if response.status().is_success() => {
-            let body = response.json::<ProductCapabilitiesBody>().await.unwrap_or(
-                ProductCapabilitiesBody {
-                    actions: Vec::new(),
-                },
-            );
-            (true, body.actions.len() as u32, String::new())
-        }
-        Ok(response) => (
-            false,
-            0,
-            format!("/capabilities returned HTTP {}", response.status()),
-        ),
-        Err(_) => (false, 0, "Could not reach /capabilities.".into()),
-    };
+    let (capabilities_ok, actions, capabilities_error) =
+        match fetch_product_capabilities(client, api_url).await {
+            Ok(body) => (true, body.actions, String::new()),
+            Err(message) => (false, Vec::new(), message),
+        };
+    let action_count = actions.len() as u32;
 
     let config_errors = health_body.config_errors.unwrap_or(0);
     let base_status = health_body.status.unwrap_or_else(|| "unknown".into());
@@ -403,23 +572,26 @@ async fn fetch_product_health(client: &reqwest::Client, api_url: &str) -> Produc
         .collect::<Vec<_>>()
         .join(" ");
 
-    ProductHealthSnapshot {
-        status: status.into(),
-        reachable: true,
-        version: health_body.version.unwrap_or_default(),
-        capabilities_ok,
-        action_count,
-        config_errors,
-        startup_errors,
-        startup_warns,
-        startup_infos,
-        db_ok: health_body.db_ok,
-        checked_at,
-        error,
+    ProductProbeSnapshot {
+        health: ProductHealthSnapshot {
+            status: status.into(),
+            reachable: true,
+            version: health_body.version.unwrap_or_default(),
+            capabilities_ok,
+            action_count,
+            config_errors,
+            startup_errors,
+            startup_warns,
+            startup_infos,
+            db_ok: health_body.db_ok,
+            checked_at,
+            error,
+        },
+        actions,
     }
 }
 
-fn local_hive_core_health() -> ProductHealthSnapshot {
+fn local_hive_core_probe() -> ProductProbeSnapshot {
     let checks = startup::startup_checks();
     let (startup_errors, startup_warns, startup_infos) = startup::summarize_check_levels(&checks);
     let db_ok = db::health_check();
@@ -428,19 +600,30 @@ fn local_hive_core_health() -> ProductHealthSnapshot {
     } else {
         "online"
     };
-    ProductHealthSnapshot {
-        status: status.into(),
-        reachable: true,
-        version: PRODUCT_VERSION.into(),
-        capabilities_ok: true,
-        action_count: 1,
-        config_errors: startup_errors,
-        startup_errors,
-        startup_warns,
-        startup_infos,
-        db_ok: Some(db_ok),
-        checked_at: now_rfc3339(),
-        error: String::new(),
+    let actions = vec![contract::action(
+        "save_settings",
+        "Save suite settings",
+        "PUT",
+        "/settings",
+        "Persist suite-wide defaults and per-product launch/API overrides.",
+        false,
+    )];
+    ProductProbeSnapshot {
+        health: ProductHealthSnapshot {
+            status: status.into(),
+            reachable: true,
+            version: PRODUCT_VERSION.into(),
+            capabilities_ok: true,
+            action_count: actions.len() as u32,
+            config_errors: startup_errors,
+            startup_errors,
+            startup_warns,
+            startup_infos,
+            db_ok: Some(db_ok),
+            checked_at: now_rfc3339(),
+            error: String::new(),
+        },
+        actions,
     }
 }
 
@@ -468,16 +651,29 @@ fn sanitize_suite_settings(input: SuiteSettingsInput) -> SuiteSettings {
     }
 }
 
-fn sanitize_product_overrides(products: Vec<ProductOverrideInput>) -> Vec<ProductOverride> {
+fn sanitize_product_overrides(
+    products: Vec<ProductOverrideInput>,
+    existing: &HashMap<String, ProductOverride>,
+) -> Vec<ProductOverride> {
     let mut deduped = HashMap::new();
     for product in products {
         let slug = product.slug.trim().to_string();
+        let supplied_api_key = product.api_key.unwrap_or_default().trim().to_string();
+        let api_key = if supplied_api_key.is_empty() {
+            existing
+                .get(&slug)
+                .map(|item| item.api_key.clone())
+                .unwrap_or_default()
+        } else {
+            supplied_api_key
+        };
         deduped.insert(
             slug.clone(),
             ProductOverride {
                 slug,
                 frontend_url: product.frontend_url.trim().to_string(),
                 api_url: product.api_url.trim().to_string(),
+                api_key,
                 enabled: product.enabled,
                 notes: product.notes.trim().to_string(),
                 updated_at: now_rfc3339(),
@@ -487,6 +683,126 @@ fn sanitize_product_overrides(products: Vec<ProductOverrideInput>) -> Vec<Produc
     let mut rows = deduped.into_values().collect::<Vec<_>>();
     rows.sort_by(|left, right| left.slug.cmp(&right.slug));
     rows
+}
+
+fn api_error(
+    status: StatusCode,
+    code: impl Into<String>,
+    message: impl Into<String>,
+) -> (StatusCode, Json<crate::models::ApiEnvelope<Value>>) {
+    (status, Json(error(code, message, false)))
+}
+
+async fn fetch_product_capabilities(
+    client: &reqwest::Client,
+    api_url: &str,
+) -> Result<contract::ProductCapabilities, String> {
+    let normalized = api_url.trim_end_matches('/');
+    let capabilities_url = format!("{normalized}/capabilities");
+    let response = client
+        .get(&capabilities_url)
+        .timeout(Duration::from_secs(3))
+        .send()
+        .await
+        .map_err(|_| "Could not reach /capabilities.".to_string())?;
+
+    if !response.status().is_success() {
+        return Err(format!("/capabilities returned HTTP {}", response.status()));
+    }
+
+    response
+        .json::<contract::ProductCapabilities>()
+        .await
+        .map_err(|err| format!("Could not parse /capabilities: {err}"))
+}
+
+fn parse_dispatch_input(raw: Value) -> DispatchActionInput {
+    let Some(object) = raw.as_object() else {
+        return DispatchActionInput {
+            payload: raw,
+            ..DispatchActionInput::default()
+        };
+    };
+
+    let has_wrapper_keys = object.contains_key("payload")
+        || object.contains_key("path_params")
+        || object.contains_key("query");
+    if !has_wrapper_keys {
+        return DispatchActionInput {
+            payload: raw,
+            ..DispatchActionInput::default()
+        };
+    }
+
+    DispatchActionInput {
+        payload: object.get("payload").cloned().unwrap_or(Value::Null),
+        path_params: string_map_from_value(object.get("path_params")),
+        query: string_map_from_value(object.get("query")),
+    }
+}
+
+fn string_map_from_value(value: Option<&Value>) -> HashMap<String, String> {
+    value
+        .and_then(Value::as_object)
+        .map(|object| {
+            object
+                .iter()
+                .map(|(key, value)| {
+                    (
+                        key.clone(),
+                        value
+                            .as_str()
+                            .map(ToOwned::to_owned)
+                            .unwrap_or_else(|| value.to_string()),
+                    )
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn fill_path_template(path: &str, path_params: &HashMap<String, String>) -> Result<String, String> {
+    let mut resolved = path.to_string();
+    for (key, value) in path_params {
+        resolved = resolved.replace(&format!("{{{key}}}"), value);
+    }
+
+    if resolved.contains('{') || resolved.contains('}') {
+        return Err(format!(
+            "Action path '{path}' requires path_params for every template value."
+        ));
+    }
+    Ok(resolved)
+}
+
+fn build_target_url(
+    api_url: &str,
+    path: &str,
+    query: &HashMap<String, String>,
+) -> Result<Url, String> {
+    let normalized = api_url.trim_end_matches('/');
+    let path = if path.starts_with('/') {
+        path.to_string()
+    } else {
+        format!("/{path}")
+    };
+    let mut url = Url::parse(&format!("{normalized}{path}"))
+        .map_err(|err| format!("Could not build product action URL: {err}"))?;
+    if !query.is_empty() {
+        let mut pairs = url.query_pairs_mut();
+        for (key, value) in query {
+            pairs.append_pair(key, value);
+        }
+    }
+    Ok(url)
+}
+
+fn parse_response_body(text: &str) -> Value {
+    if text.trim().is_empty() {
+        Value::Null
+    } else {
+        serde_json::from_str(text).unwrap_or_else(|_| json!({ "raw": text }))
+    }
 }
 
 fn summarize_products(products: &[ProductRuntimeItem]) -> OverviewSummary {
@@ -528,8 +844,10 @@ fn summarize_products(products: &[ProductRuntimeItem]) -> OverviewSummary {
 
 #[cfg(test)]
 mod tests {
-    use super::{pick_url, summarize_products};
+    use super::{fill_path_template, parse_dispatch_input, pick_url, summarize_products};
     use crate::models::{ProductHealthSnapshot, ProductRuntimeItem};
+    use serde_json::json;
+    use std::collections::HashMap;
 
     #[test]
     fn summarize_products_counts_each_runtime_status() {
@@ -544,9 +862,11 @@ mod tests {
                 enabled: true,
                 frontend_url: String::new(),
                 api_url: String::new(),
+                api_key_configured: false,
                 notes: String::new(),
                 status: "online".into(),
                 health: ProductHealthSnapshot::default(),
+                actions: Vec::new(),
             },
             ProductRuntimeItem {
                 slug: "repo-reaper".into(),
@@ -558,9 +878,11 @@ mod tests {
                 enabled: true,
                 frontend_url: String::new(),
                 api_url: String::new(),
+                api_key_configured: false,
                 notes: String::new(),
                 status: "degraded".into(),
                 health: ProductHealthSnapshot::default(),
+                actions: Vec::new(),
             },
             ProductRuntimeItem {
                 slug: "review-bee".into(),
@@ -572,9 +894,11 @@ mod tests {
                 enabled: true,
                 frontend_url: String::new(),
                 api_url: String::new(),
+                api_key_configured: false,
                 notes: String::new(),
                 status: "unconfigured".into(),
                 health: ProductHealthSnapshot::default(),
+                actions: Vec::new(),
             },
             ProductRuntimeItem {
                 slug: "merge-keeper".into(),
@@ -586,9 +910,11 @@ mod tests {
                 enabled: false,
                 frontend_url: String::new(),
                 api_url: String::new(),
+                api_key_configured: false,
                 notes: String::new(),
                 status: "disabled".into(),
                 health: ProductHealthSnapshot::default(),
+                actions: Vec::new(),
             },
         ];
 
@@ -615,5 +941,36 @@ mod tests {
             pick_url(None, "http://localhost:8010"),
             "http://localhost:8010"
         );
+    }
+
+    #[test]
+    fn parse_dispatch_input_accepts_wrapped_payloads() {
+        let input = parse_dispatch_input(json!({
+            "path_params": { "name": "daily" },
+            "query": { "dry": true },
+            "payload": { "repo": "patchhive/example" }
+        }));
+
+        assert_eq!(input.path_params["name"], "daily");
+        assert_eq!(input.query["dry"], "true");
+        assert_eq!(input.payload["repo"], "patchhive/example");
+    }
+
+    #[test]
+    fn parse_dispatch_input_treats_plain_object_as_payload() {
+        let input = parse_dispatch_input(json!({ "repo": "patchhive/example" }));
+        assert_eq!(input.payload["repo"], "patchhive/example");
+        assert!(input.path_params.is_empty());
+    }
+
+    #[test]
+    fn fill_path_template_requires_all_path_params() {
+        let mut params = HashMap::new();
+        params.insert("name".into(), "daily".into());
+        assert_eq!(
+            fill_path_template("/schedules/{name}/run", &params).unwrap(),
+            "/schedules/daily/run"
+        );
+        assert!(fill_path_template("/schedules/{missing}/run", &params).is_err());
     }
 }
