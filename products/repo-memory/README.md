@@ -10,7 +10,7 @@ It captures what a repository has already learned from merged pull requests, rev
 - extract memory entries with evidence and confidence
 - build reviewer and maintainer profile memories from repeated patterns
 - store curated memories as signals, policies, or suppressed items
-- capture FailGuard lessons from bugs, outages, rejected patches, and painful reviews
+- queue, review, dismiss, and promote FailGuard lessons from bugs, outages, rejected patches, and painful reviews
 - expose prompt-pack and context endpoints for other PatchHive products
 - compare each ingest to the previous one so memory drift is visible over time
 
@@ -52,15 +52,21 @@ RepoMemory is already useful on its own, but it also acts as infrastructure for 
 - RepoReaper can use it before patch generation.
 - TrustGate can use it before diff review.
 - MergeKeeper can use it for repo-specific merge expectations.
-- FailGuard uses it to turn bad outcomes into pinned failure-pattern policy memories.
+- FailGuard uses it to turn reviewed bad outcomes into pinned failure-pattern policy memories.
 
 When enabled, downstream products can call RepoMemory through `PATCHHIVE_REPO_MEMORY_URL`.
 
 ## FailGuard Lessons
 
-RepoMemory owns the first FailGuard slice through `POST /failguard/lessons`.
+RepoMemory owns the FailGuard review loop:
 
-The endpoint turns an operator-captured bad outcome into a curated `failure_pattern` memory with path evidence, a prevention rule, and policy/pinned curation by default. TrustGate already consumes these memories through the RepoMemory context endpoint, so captured lessons can become future warnings or blocks without making FailGuard a separate product.
+- `GET /failguard/candidates` lists suggested lessons by repo and status.
+- `POST /failguard/candidates` queues a bad outcome from an operator or another product.
+- `POST /failguard/candidates/:id/promote` turns a reviewed candidate into a curated `failure_pattern` memory.
+- `POST /failguard/candidates/:id/dismiss` rejects noisy or unhelpful candidates.
+- `POST /failguard/lessons` still captures an already-approved lesson directly.
+
+Promoted lessons carry path evidence, a prevention rule, and policy/pinned curation by default. TrustGate already consumes these memories through the RepoMemory context endpoint, so approved FailGuard lessons can become future warnings or blocks without making FailGuard a separate product.
 
 ## Local Notes
 

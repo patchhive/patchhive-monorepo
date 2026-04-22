@@ -71,6 +71,17 @@ function defaultActionRequest(product, action) {
       pinned: true,
     };
   }
+  if (action.id === "suggest_failguard_candidate") {
+    return {
+      repo: "owner/repo",
+      source_type: "repo-reaper-rejection",
+      source_ref: "run-id-or-pr-url",
+      title: "Generated patch skipped webhook signing",
+      outcome: "Smith rejected a generated patch because webhook verification failed open.",
+      affected_paths: ["backend/src/routes/webhook.rs"],
+      evidence: ["RepoReaper rejection summary"],
+    };
+  }
   if (action.id === "ingest") {
     return { repo: "owner/repo" };
   }

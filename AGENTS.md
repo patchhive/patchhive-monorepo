@@ -435,7 +435,7 @@ Important env vars:
 - On the RepoMemory side, that means capturing and storing lessons so humans and agents can reuse them later.
 - On the TrustGate side, that means converting those lessons into future warnings, checks, or blocking guardrails.
 - The intended flow is: incident or painful failure -> captured lesson -> durable memory -> future policy.
-- Initial implementation is complete in RepoMemory: `POST /failguard/lessons` creates pinned `failure_pattern` policy memories that TrustGate can consume through RepoMemory context.
+- FailGuard v1 is complete in RepoMemory: `POST /failguard/candidates` queues reviewable bad-outcome lessons, candidates can be promoted or dismissed, and `POST /failguard/lessons` still creates pinned `failure_pattern` policy memories directly.
 
 ## Key Decisions
 

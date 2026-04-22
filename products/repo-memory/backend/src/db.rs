@@ -3,7 +3,8 @@ use rusqlite::{params, params_from_iter, Connection, OptionalExtension};
 use std::sync::{Mutex, MutexGuard};
 
 use crate::models::{
-    stable_memory_ref, HistoryItem, IngestRecord, KnownRepo, MemoryEntry, OverviewCounts,
+    stable_memory_ref, FailGuardCandidate, HistoryItem, IngestRecord, KnownRepo, MemoryEntry,
+    OverviewCounts,
 };
 
 static DB_CONN: OnceCell<Mutex<Connection>> = OnceCell::new();
@@ -72,12 +73,33 @@ pub fn init_db() -> rusqlite::Result<()> {
           PRIMARY KEY (repo, memory_ref)
         );
 
+        CREATE TABLE IF NOT EXISTS failguard_candidates (
+          id TEXT PRIMARY KEY,
+          repo TEXT NOT NULL,
+          source_type TEXT NOT NULL,
+          source_ref TEXT NOT NULL DEFAULT '',
+          title TEXT NOT NULL,
+          outcome TEXT NOT NULL,
+          lesson TEXT NOT NULL,
+          prevention TEXT NOT NULL,
+          affected_paths_json TEXT NOT NULL,
+          evidence_json TEXT NOT NULL,
+          confidence REAL NOT NULL,
+          status TEXT NOT NULL DEFAULT 'open',
+          memory_ref TEXT NOT NULL DEFAULT '',
+          resolution_note TEXT NOT NULL DEFAULT '',
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+
         CREATE INDEX IF NOT EXISTS idx_memory_runs_repo_created
           ON memory_runs (repo, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_memory_entries_repo_kind_confidence
           ON memory_entries (repo, kind, confidence DESC, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_memory_entries_repo_ref
           ON memory_entries (repo, memory_ref);
+        CREATE INDEX IF NOT EXISTS idx_failguard_candidates_repo_status
+          ON failguard_candidates (repo, status, updated_at DESC);
         "#,
     )?;
     ensure_column(
@@ -406,6 +428,117 @@ pub fn save_memory_curation(
     Ok(())
 }
 
+pub fn save_failguard_candidate(candidate: &FailGuardCandidate) -> rusqlite::Result<()> {
+    let conn = connect()?;
+    conn.execute(
+        r#"
+        INSERT INTO failguard_candidates (
+          id, repo, source_type, source_ref, title, outcome, lesson, prevention,
+          affected_paths_json, evidence_json, confidence, status, memory_ref,
+          resolution_note, created_at, updated_at
+        )
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
+        "#,
+        params![
+            candidate.id,
+            candidate.repo,
+            candidate.source_type,
+            candidate.source_ref,
+            candidate.title,
+            candidate.outcome,
+            candidate.lesson,
+            candidate.prevention,
+            serde_json::to_string(&candidate.affected_paths).unwrap_or_else(|_| "[]".into()),
+            serde_json::to_string(&candidate.evidence).unwrap_or_else(|_| "[]".into()),
+            candidate.confidence,
+            candidate.status,
+            candidate.memory_ref,
+            candidate.resolution_note,
+            candidate.created_at,
+            candidate.updated_at,
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn list_failguard_candidates(
+    repo: Option<&str>,
+    status: Option<&str>,
+) -> rusqlite::Result<Vec<FailGuardCandidate>> {
+    let conn = connect()?;
+    let mut sql = String::from(
+        r#"
+        SELECT
+          id, repo, source_type, source_ref, title, outcome, lesson, prevention,
+          affected_paths_json, evidence_json, confidence, status, memory_ref,
+          resolution_note, created_at, updated_at
+        FROM failguard_candidates
+        WHERE 1=1
+        "#,
+    );
+    let mut params = Vec::new();
+
+    if let Some(repo) = repo.filter(|value| !value.trim().is_empty()) {
+        sql.push_str(&format!(" AND repo = ?{}", params.len() + 1));
+        params.push(repo.to_string());
+    }
+
+    if let Some(status) = status.filter(|value| !value.trim().is_empty() && *value != "all") {
+        sql.push_str(&format!(" AND status = ?{}", params.len() + 1));
+        params.push(status.to_string());
+    }
+
+    sql.push_str(
+        r#"
+        ORDER BY
+          CASE status WHEN 'open' THEN 0 WHEN 'promoted' THEN 1 ELSE 2 END,
+          confidence DESC,
+          updated_at DESC
+        "#,
+    );
+
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map(params_from_iter(params.iter()), decode_failguard_candidate)?;
+    rows.collect()
+}
+
+pub fn get_failguard_candidate(id: &str) -> rusqlite::Result<Option<FailGuardCandidate>> {
+    let conn = connect()?;
+    let mut stmt = conn.prepare(
+        r#"
+        SELECT
+          id, repo, source_type, source_ref, title, outcome, lesson, prevention,
+          affected_paths_json, evidence_json, confidence, status, memory_ref,
+          resolution_note, created_at, updated_at
+        FROM failguard_candidates
+        WHERE id = ?1
+        "#,
+    )?;
+    stmt.query_row(params![id], decode_failguard_candidate)
+        .optional()
+}
+
+pub fn update_failguard_candidate_status(
+    id: &str,
+    status: &str,
+    memory_ref: Option<&str>,
+    resolution_note: &str,
+) -> rusqlite::Result<bool> {
+    let conn = connect()?;
+    let changed = conn.execute(
+        r#"
+        UPDATE failguard_candidates
+        SET status = ?2,
+            memory_ref = COALESCE(?3, memory_ref),
+            resolution_note = ?4,
+            updated_at = datetime('now')
+        WHERE id = ?1
+        "#,
+        params![id, status, memory_ref, resolution_note],
+    )?;
+    Ok(changed > 0)
+}
+
 fn ensure_column(
     conn: &Connection,
     table: &str,
@@ -492,5 +625,28 @@ fn decode_memory_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<MemoryEntry>
         tags: serde_json::from_str(&tags_json).unwrap_or_default(),
         evidence: serde_json::from_str(&evidence_json).unwrap_or_default(),
         created_at: row.get(14)?,
+    })
+}
+
+fn decode_failguard_candidate(row: &rusqlite::Row<'_>) -> rusqlite::Result<FailGuardCandidate> {
+    let affected_paths_json: String = row.get(8)?;
+    let evidence_json: String = row.get(9)?;
+    Ok(FailGuardCandidate {
+        id: row.get(0)?,
+        repo: row.get(1)?,
+        source_type: row.get(2)?,
+        source_ref: row.get(3)?,
+        title: row.get(4)?,
+        outcome: row.get(5)?,
+        lesson: row.get(6)?,
+        prevention: row.get(7)?,
+        affected_paths: serde_json::from_str(&affected_paths_json).unwrap_or_default(),
+        evidence: serde_json::from_str(&evidence_json).unwrap_or_default(),
+        confidence: row.get(10)?,
+        status: row.get(11)?,
+        memory_ref: row.get(12)?,
+        resolution_note: row.get(13)?,
+        created_at: row.get(14)?,
+        updated_at: row.get(15)?,
     })
 }

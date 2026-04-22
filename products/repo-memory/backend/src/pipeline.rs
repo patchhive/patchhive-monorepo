@@ -15,7 +15,10 @@ use crate::{
     auth::{auth_enabled, generate_and_save_key, verify_token},
     db, github,
     models::{
-        stable_memory_ref, ContextEntry, ContextRequest, ContextResponse, FailGuardLessonRequest,
+        stable_memory_ref, ContextEntry, ContextRequest, ContextResponse, FailGuardCandidate,
+        FailGuardCandidateDismissRequest, FailGuardCandidateListResponse,
+        FailGuardCandidatePromoteRequest, FailGuardCandidatePromoteResponse,
+        FailGuardCandidateRequest, FailGuardCandidateResponse, FailGuardLessonRequest,
         FailGuardLessonResponse, GitHubIssue, GitHubPullFile, GitHubPullRequest, GitHubReview,
         GitHubReviewComment, HistoryItem, IngestParams, IngestRecord, IngestSummary, KnownRepo,
         MemoryCurationUpdate, MemoryEntry, MemoryEvidence, OverviewPayload, RunDiffItem,
@@ -62,11 +65,24 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
                 "Turn a painful outcome into a curated failure-pattern policy memory.",
                 true,
             ),
+            contract::action(
+                "suggest_failguard_candidate",
+                "Suggest FailGuard candidate",
+                "POST",
+                "/failguard/candidates",
+                "Queue a bad outcome for operator review before it becomes durable memory.",
+                false,
+            ),
         ],
         vec![
             contract::link("overview", "Overview", "/overview"),
             contract::link("history", "History", "/history"),
             contract::link("memories", "Memories", "/memories"),
+            contract::link(
+                "failguard-candidates",
+                "FailGuard candidates",
+                "/failguard/candidates",
+            ),
         ],
     ))
 }
@@ -87,6 +103,12 @@ pub struct MemoryQuery {
 #[derive(serde::Deserialize)]
 pub struct HistoryQuery {
     repo: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+pub struct FailGuardCandidateQuery {
+    repo: Option<String>,
+    status: Option<String>,
 }
 
 #[derive(Clone)]
@@ -242,8 +264,123 @@ pub async fn curate_memory(
 }
 
 pub async fn capture_failguard_lesson(
-    Json(mut request): Json<FailGuardLessonRequest>,
+    Json(request): Json<FailGuardLessonRequest>,
 ) -> JsonResult<FailGuardLessonResponse> {
+    Ok(Json(save_failguard_lesson(request)?))
+}
+
+pub async fn failguard_candidates(
+    Query(query): Query<FailGuardCandidateQuery>,
+) -> JsonResult<FailGuardCandidateListResponse> {
+    let status = normalize_candidate_status(query.status.as_deref().unwrap_or("open")).to_string();
+    let candidates = db::list_failguard_candidates(query.repo.as_deref(), Some(&status))
+        .map_err(internal_error)?;
+    Ok(Json(FailGuardCandidateListResponse { candidates }))
+}
+
+pub async fn create_failguard_candidate(
+    Json(mut request): Json<FailGuardCandidateRequest>,
+) -> JsonResult<FailGuardCandidateResponse> {
+    request.repo = request.repo.trim().to_string();
+    request.title = request.title.trim().to_string();
+    request.outcome = request.outcome.trim().to_string();
+    request.lesson = request.lesson.trim().to_string();
+    request.prevention = request.prevention.trim().to_string();
+    request.source_type = normalize_source_type(&request.source_type);
+    request.source_ref = request.source_ref.trim().to_string();
+
+    if !valid_repo(&request.repo) {
+        return Err(bad_request(
+            "RepoMemory expects repos in owner/repo format.",
+        ));
+    }
+    if request.title.is_empty() {
+        return Err(bad_request("FailGuard candidates need a short title."));
+    }
+    if request.outcome.is_empty() {
+        return Err(bad_request(
+            "FailGuard candidates need the bad outcome they came from.",
+        ));
+    }
+
+    let candidate = build_failguard_candidate(request);
+    db::save_failguard_candidate(&candidate).map_err(internal_error)?;
+
+    Ok(Json(FailGuardCandidateResponse {
+        ok: true,
+        message: "FailGuard candidate queued for review.".into(),
+        candidate,
+    }))
+}
+
+pub async fn promote_failguard_candidate(
+    Path(id): Path<String>,
+    Json(request): Json<FailGuardCandidatePromoteRequest>,
+) -> JsonResult<FailGuardCandidatePromoteResponse> {
+    let candidate = db::get_failguard_candidate(id.trim())
+        .map_err(internal_error)?
+        .ok_or_else(|| not_found("FailGuard candidate not found."))?;
+
+    if candidate.status != "open" {
+        return Err(bad_request("FailGuard can only promote open candidates."));
+    }
+
+    let response = save_failguard_lesson(candidate_to_lesson_request(&candidate, request))?;
+    let note = "Promoted to RepoMemory failure-pattern policy.";
+    db::update_failguard_candidate_status(
+        &candidate.id,
+        "promoted",
+        Some(&response.entry.memory_ref),
+        note,
+    )
+    .map_err(internal_error)?;
+    let updated = db::get_failguard_candidate(&candidate.id)
+        .map_err(internal_error)?
+        .unwrap_or(candidate);
+
+    Ok(Json(FailGuardCandidatePromoteResponse {
+        ok: true,
+        message: "FailGuard candidate promoted into RepoMemory.".into(),
+        candidate: updated,
+        run: response.run,
+        entry: response.entry,
+    }))
+}
+
+pub async fn dismiss_failguard_candidate(
+    Path(id): Path<String>,
+    Json(request): Json<FailGuardCandidateDismissRequest>,
+) -> JsonResult<FailGuardCandidateResponse> {
+    let candidate = db::get_failguard_candidate(id.trim())
+        .map_err(internal_error)?
+        .ok_or_else(|| not_found("FailGuard candidate not found."))?;
+
+    if candidate.status != "open" {
+        return Err(bad_request("FailGuard can only dismiss open candidates."));
+    }
+
+    let reason = request.reason.trim();
+    let note = if reason.is_empty() {
+        "Dismissed by operator."
+    } else {
+        reason
+    };
+    db::update_failguard_candidate_status(&candidate.id, "dismissed", None, note)
+        .map_err(internal_error)?;
+    let updated = db::get_failguard_candidate(&candidate.id)
+        .map_err(internal_error)?
+        .unwrap_or(candidate);
+
+    Ok(Json(FailGuardCandidateResponse {
+        ok: true,
+        message: "FailGuard candidate dismissed.".into(),
+        candidate: updated,
+    }))
+}
+
+fn save_failguard_lesson(
+    mut request: FailGuardLessonRequest,
+) -> std::result::Result<FailGuardLessonResponse, JsonError> {
     request.repo = request.repo.trim().to_string();
     request.title = request.title.trim().to_string();
     request.outcome = request.outcome.trim().to_string();
@@ -294,12 +431,12 @@ pub async fn capture_failguard_lesson(
     )
     .map_err(internal_error)?;
 
-    Ok(Json(FailGuardLessonResponse {
+    Ok(FailGuardLessonResponse {
         ok: true,
         message: "FailGuard lesson captured as a RepoMemory failure-pattern policy.".into(),
         run,
         entry,
-    }))
+    })
 }
 
 fn latest_repo_entries(repo: &str) -> std::result::Result<Vec<MemoryEntry>, JsonError> {
@@ -315,6 +452,147 @@ fn latest_repo_entries(repo: &str) -> std::result::Result<Vec<MemoryEntry>, Json
         .map_err(internal_error)?
         .ok_or_else(|| not_found("RepoMemory latest run not found."))?;
     Ok(run.entries)
+}
+
+fn build_failguard_candidate(request: FailGuardCandidateRequest) -> FailGuardCandidate {
+    let now = Utc::now().to_rfc3339();
+    let affected_paths = clean_failguard_items(request.affected_paths, 12);
+    let evidence = clean_failguard_items(request.evidence, 10);
+    let lesson = if request.lesson.trim().is_empty() {
+        draft_failguard_lesson(&request.title, &request.outcome)
+    } else {
+        truncate(request.lesson.trim(), 260)
+    };
+    let prevention = if request.prevention.trim().is_empty() {
+        draft_failguard_prevention(&request.title, &request.outcome, &affected_paths)
+    } else {
+        truncate(request.prevention.trim(), 260)
+    };
+
+    FailGuardCandidate {
+        id: Uuid::new_v4().to_string(),
+        repo: request.repo.trim().to_string(),
+        source_type: normalize_source_type(&request.source_type),
+        source_ref: request.source_ref.trim().to_string(),
+        title: truncate(request.title.trim(), 140),
+        outcome: truncate(request.outcome.trim(), 320),
+        lesson,
+        prevention,
+        affected_paths,
+        evidence,
+        confidence: normalized_candidate_confidence(request.confidence, &request.source_type),
+        status: "open".into(),
+        memory_ref: String::new(),
+        resolution_note: String::new(),
+        created_at: now.clone(),
+        updated_at: now,
+    }
+}
+
+fn candidate_to_lesson_request(
+    candidate: &FailGuardCandidate,
+    request: FailGuardCandidatePromoteRequest,
+) -> FailGuardLessonRequest {
+    let title = promote_text(request.title, &candidate.title);
+    let outcome = promote_text(request.outcome, &candidate.outcome);
+    let lesson = promote_text(request.lesson, &candidate.lesson);
+    let prevention = promote_text(request.prevention, &candidate.prevention);
+    let affected_paths = request
+        .affected_paths
+        .unwrap_or_else(|| candidate.affected_paths.clone());
+    let evidence = request
+        .evidence
+        .unwrap_or_else(|| candidate.evidence.clone());
+
+    FailGuardLessonRequest {
+        repo: candidate.repo.clone(),
+        title,
+        outcome,
+        lesson,
+        prevention,
+        affected_paths,
+        evidence,
+        disposition: normalize_disposition(&request.disposition).to_string(),
+        pinned: request.pinned,
+    }
+}
+
+fn promote_text(next: Option<String>, fallback: &str) -> String {
+    next.map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| fallback.to_string())
+}
+
+fn draft_failguard_lesson(title: &str, outcome: &str) -> String {
+    truncate(
+        &format!(
+            "A previous failure showed this repo must treat \"{}\" as a durable guardrail. Outcome to remember: {}",
+            title.trim(),
+            outcome.trim()
+        ),
+        260,
+    )
+}
+
+fn draft_failguard_prevention(title: &str, outcome: &str, affected_paths: &[String]) -> String {
+    let scope = affected_paths
+        .first()
+        .map(|path| format!(" around {path}"))
+        .unwrap_or_default();
+    truncate(
+        &format!(
+            "Before similar changes are accepted{scope}, verify the work prevents this failure mode: {}. Original signal: {}",
+            title.trim(),
+            outcome.trim()
+        ),
+        260,
+    )
+}
+
+fn normalized_candidate_confidence(confidence: Option<f64>, source_type: &str) -> f64 {
+    let default = match normalize_source_type(source_type).as_str() {
+        "trustgate-block" | "trust-gate-block" => 86.0,
+        "trustgate-warn" | "trust-gate-warn" => 78.0,
+        "repo-reaper-rejection" | "repo_reaper_rejection" => 82.0,
+        "reverted-pr" | "reverted_pr" => 88.0,
+        "reviewbee-thread" | "reviewbee_thread" => 74.0,
+        _ => 70.0,
+    };
+    let value = confidence.unwrap_or(default);
+    if value.is_finite() {
+        value.clamp(10.0, 96.0)
+    } else {
+        default
+    }
+}
+
+fn normalize_source_type(value: &str) -> String {
+    let mut out = String::new();
+    let mut last_dash = false;
+    for ch in value.trim().chars().flat_map(|ch| ch.to_lowercase()) {
+        if ch.is_ascii_alphanumeric() {
+            out.push(ch);
+            last_dash = false;
+        } else if !last_dash {
+            out.push('-');
+            last_dash = true;
+        }
+    }
+    let normalized = out.trim_matches('-');
+    if normalized.is_empty() {
+        "operator".into()
+    } else {
+        normalized.to_string()
+    }
+}
+
+fn normalize_candidate_status(value: &str) -> &str {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "all" => "all",
+        "promoted" => "promoted",
+        "dismissed" => "dismissed",
+        _ => "open",
+    }
 }
 
 pub async fn context(Json(request): Json<ContextRequest>) -> JsonResult<ContextResponse> {
@@ -2010,6 +2288,67 @@ mod tests {
             .entries
             .iter()
             .any(|entry| entry.title == "FailGuard: Webhook secrets must fail closed"));
+    }
+
+    #[test]
+    fn failguard_candidate_drafts_reviewable_lesson() {
+        let candidate = build_failguard_candidate(FailGuardCandidateRequest {
+            repo: "patchhive/example".into(),
+            source_type: "TrustGate block".into(),
+            source_ref: "review-42".into(),
+            title: "Diff touched auth without tests".into(),
+            outcome: "TrustGate blocked a generated patch because auth behavior changed without coverage.".into(),
+            lesson: String::new(),
+            prevention: String::new(),
+            affected_paths: vec!["src/auth.rs".into()],
+            evidence: vec!["TrustGate block #42".into()],
+            confidence: None,
+        });
+
+        assert_eq!(candidate.status, "open");
+        assert_eq!(candidate.source_type, "trustgate-block");
+        assert_eq!(candidate.confidence, 86.0);
+        assert!(candidate.lesson.contains("durable guardrail"));
+        assert!(candidate.prevention.contains("src/auth.rs"));
+    }
+
+    #[test]
+    fn failguard_candidate_promotion_allows_operator_edits() {
+        let candidate = build_failguard_candidate(FailGuardCandidateRequest {
+            repo: "patchhive/example".into(),
+            source_type: "repo-reaper-rejection".into(),
+            source_ref: "run-7".into(),
+            title: "Generated patch skipped webhook signing".into(),
+            outcome: "Smith rejected a patch because webhook verification failed open.".into(),
+            lesson: "Webhook verification cannot be optional on public routes.".into(),
+            prevention: "Reject public webhook requests when signing configuration is absent."
+                .into(),
+            affected_paths: vec!["backend/src/routes/webhook.rs".into()],
+            evidence: vec!["Smith rejection run-7".into()],
+            confidence: Some(81.0),
+        });
+
+        let lesson = candidate_to_lesson_request(
+            &candidate,
+            FailGuardCandidatePromoteRequest {
+                title: Some("Webhook signing must fail closed".into()),
+                prevention: Some("Return 403 when webhook signing is unavailable.".into()),
+                disposition: "policy".into(),
+                pinned: true,
+                ..Default::default()
+            },
+        );
+
+        assert_eq!(lesson.title, "Webhook signing must fail closed");
+        assert_eq!(lesson.outcome, candidate.outcome);
+        assert_eq!(lesson.lesson, candidate.lesson);
+        assert_eq!(
+            lesson.prevention,
+            "Return 403 when webhook signing is unavailable."
+        );
+        assert_eq!(lesson.affected_paths, candidate.affected_paths);
+        assert_eq!(lesson.disposition, "policy");
+        assert!(lesson.pinned);
     }
 
     #[test]

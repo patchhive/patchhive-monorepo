@@ -30,7 +30,7 @@ Use this to capture later ideas so they do not get lost between product pushes.
 
 - Add incident-informed rule tuning later so painful failures can become future guardrails.
 - Make TrustGate the gate before RepoReaper opens or advances autonomous PRs.
-- FailGuard initial slice is complete: RepoMemory captures manual lessons and TrustGate consumes curated failure-pattern policies as review context. Next step is automatic lesson suggestions from rejected patches, reverted PRs, and blocked reviews.
+- FailGuard review loop is complete in RepoMemory: bad outcomes can be queued as candidates, reviewed, promoted into policy memory, or dismissed. Next step is wiring TrustGate and RepoReaper to submit candidates automatically when they block or reject work.
 - Feed explicit rejection and painful-review outcomes back into TrustGate rule tuning so bad repo fits become future guardrails.
 - Add inline file-level findings with stronger path anchors so repo owners can see exactly which parts of a diff triggered the risk call.
 - Add simulation mode for historical PRs so teams can tune TrustGate rules against old merges before enforcing them live.
@@ -40,13 +40,13 @@ Use this to capture later ideas so they do not get lost between product pushes.
 ## RepoMemory
 
 - Add a print-friendly or shareable prompt-pack view once the format settles.
-- Add manual note and postmortem entry so important lessons can be captured even when GitHub history is too subtle to infer them automatically.
+- Add richer postmortem templates if FailGuard needs more structure than candidate title, outcome, lesson, prevention, paths, and evidence.
 - Add confidence decay and freshness aging so old conventions do not outweigh newer repo behavior forever.
 - Add conflict detection when two memories disagree, so operators can see when a repo’s conventions are in transition.
 - Add consumer-specific memory packs so RepoReaper, TrustGate, ReviewBee, and MergeKeeper can each pull the most relevant slice without overloading prompts.
 - Add maintainer relationship memory that captures tone, pacing, and recurring human preferences separately from code conventions.
 - Consider AI-assisted summarization or retrieval later through `patchhive-ai-local`, but keep the base memory loop useful without AI.
-- FailGuard initial slice is complete: `POST /failguard/lessons` captures bugs, incidents, and painful reviews as pinned failure-pattern memories. Next step is richer evidence linking and assisted lesson drafting.
+- FailGuard v1 is complete: RepoMemory now supports suggested lesson candidates plus direct `POST /failguard/lessons` capture. Next step is richer evidence linking and product-owned candidate producers.
 
 ## MergeKeeper
 

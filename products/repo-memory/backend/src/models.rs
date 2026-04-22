@@ -43,6 +43,10 @@ fn default_failguard_pinned() -> bool {
     true
 }
 
+fn default_failguard_source_type() -> String {
+    "operator".into()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IngestParams {
     pub repo: String,
@@ -298,6 +302,94 @@ pub struct FailGuardLessonRequest {
 pub struct FailGuardLessonResponse {
     pub ok: bool,
     pub message: String,
+    pub run: IngestRecord,
+    pub entry: MemoryEntry,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct FailGuardCandidate {
+    pub id: String,
+    pub repo: String,
+    pub source_type: String,
+    pub source_ref: String,
+    pub title: String,
+    pub outcome: String,
+    pub lesson: String,
+    pub prevention: String,
+    pub affected_paths: Vec<String>,
+    pub evidence: Vec<String>,
+    pub confidence: f64,
+    pub status: String,
+    pub memory_ref: String,
+    pub resolution_note: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct FailGuardCandidateRequest {
+    pub repo: String,
+    #[serde(default = "default_failguard_source_type")]
+    pub source_type: String,
+    #[serde(default)]
+    pub source_ref: String,
+    pub title: String,
+    pub outcome: String,
+    #[serde(default)]
+    pub lesson: String,
+    #[serde(default)]
+    pub prevention: String,
+    #[serde(default)]
+    pub affected_paths: Vec<String>,
+    #[serde(default)]
+    pub evidence: Vec<String>,
+    #[serde(default)]
+    pub confidence: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FailGuardCandidateListResponse {
+    pub candidates: Vec<FailGuardCandidate>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FailGuardCandidateResponse {
+    pub ok: bool,
+    pub message: String,
+    pub candidate: FailGuardCandidate,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct FailGuardCandidatePromoteRequest {
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub outcome: Option<String>,
+    #[serde(default)]
+    pub lesson: Option<String>,
+    #[serde(default)]
+    pub prevention: Option<String>,
+    #[serde(default)]
+    pub affected_paths: Option<Vec<String>>,
+    #[serde(default)]
+    pub evidence: Option<Vec<String>>,
+    #[serde(default = "default_failguard_disposition")]
+    pub disposition: String,
+    #[serde(default = "default_failguard_pinned")]
+    pub pinned: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct FailGuardCandidateDismissRequest {
+    #[serde(default)]
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FailGuardCandidatePromoteResponse {
+    pub ok: bool,
+    pub message: String,
+    pub candidate: FailGuardCandidate,
     pub run: IngestRecord,
     pub entry: MemoryEntry,
 }

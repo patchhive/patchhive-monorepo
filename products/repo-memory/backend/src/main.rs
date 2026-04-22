@@ -57,6 +57,18 @@ async fn main() {
             "/failguard/lessons",
             post(pipeline::capture_failguard_lesson),
         )
+        .route(
+            "/failguard/candidates",
+            get(pipeline::failguard_candidates).post(pipeline::create_failguard_candidate),
+        )
+        .route(
+            "/failguard/candidates/:id/promote",
+            post(pipeline::promote_failguard_candidate),
+        )
+        .route(
+            "/failguard/candidates/:id/dismiss",
+            post(pipeline::dismiss_failguard_candidate),
+        )
         .route("/context", post(pipeline::context))
         .route("/history", get(pipeline::history))
         .route("/history/:id", get(pipeline::history_detail))
