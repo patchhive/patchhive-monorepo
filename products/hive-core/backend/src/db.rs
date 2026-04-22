@@ -108,6 +108,13 @@ pub fn recent_action_events(limit: u32) -> Vec<ProductActionEvent> {
     load_action_events(&conn, limit).unwrap_or_default()
 }
 
+pub fn action_event(id: &str) -> Option<ProductActionEvent> {
+    let Ok(conn) = connect() else {
+        return None;
+    };
+    load_action_event(&conn, id).ok().flatten()
+}
+
 fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute_batch(
         r#"
@@ -334,11 +341,46 @@ fn load_action_events(conn: &Connection, limit: u32) -> rusqlite::Result<Vec<Pro
     Ok(rows.flatten().collect())
 }
 
+fn load_action_event(conn: &Connection, id: &str) -> rusqlite::Result<Option<ProductActionEvent>> {
+    conn.query_row(
+        r#"
+        SELECT id, product_slug, action_id, action_label, method, path, target_url,
+               status, remote_status, request_json, response_json, error, created_at
+        FROM product_action_events
+        WHERE id = ?1
+        "#,
+        [id],
+        |row| {
+            let request_json = row.get::<_, String>(9)?;
+            let response_json = row.get::<_, String>(10)?;
+            let remote_status = row.get::<_, Option<i64>>(8)?;
+            Ok(ProductActionEvent {
+                id: row.get(0)?,
+                product_slug: row.get(1)?,
+                action_id: row.get(2)?,
+                action_label: row.get(3)?,
+                method: row.get(4)?,
+                path: row.get(5)?,
+                target_url: row.get(6)?,
+                status: row.get(7)?,
+                remote_status: remote_status.map(|value| value as u16),
+                request_json: serde_json::from_str(&request_json)
+                    .unwrap_or(serde_json::Value::Null),
+                response_json: serde_json::from_str(&response_json)
+                    .unwrap_or(serde_json::Value::Null),
+                error: row.get(11)?,
+                created_at: row.get(12)?,
+            })
+        },
+    )
+    .optional()
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        init_schema, load_action_events, load_product_overrides, load_suite_settings,
-        replace_overrides, write_suite_settings,
+        init_schema, load_action_event, load_action_events, load_product_overrides,
+        load_suite_settings, replace_overrides, write_suite_settings,
     };
     use crate::models::{now_rfc3339, ProductActionEvent, ProductOverride, SuiteSettings};
     use rusqlite::Connection;
@@ -445,5 +487,10 @@ mod tests {
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].product_slug, "signal-hive");
         assert_eq!(events[0].response_json["ok"], true);
+
+        let loaded = load_action_event(&conn, "evt_1")
+            .expect("event lookup should work")
+            .expect("event should exist");
+        assert_eq!(loaded.action_id, "scan");
     }
 }

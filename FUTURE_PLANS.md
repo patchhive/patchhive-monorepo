@@ -99,6 +99,14 @@ Use this to capture later ideas so they do not get lost between product pushes.
 - Add warm-intro mode so PatchHive’s first PR to a new repo is intentionally small, conservative, and trust-building.
 - Add follow-up outcome tracking so merged RepoReaper fixes feed back into later PatchHive decisions.
 
+## HiveCore
+
+- Add product run detail drill-downs through product-owned `/runs/:id` endpoints without exposing stored product API keys to the browser.
+- Add suite-wide schedule views once more products expose schedule metadata through `/capabilities`.
+- Add global allowlist, denylist, and opt-out propagation only when each product supports explicit settings-apply semantics.
+- Add cross-product handoff flows such as SignalHive -> TrustGate -> RepoReaper after approval and safety controls are visible in HiveCore.
+- Add richer contract drift reporting so lagging products show exactly which endpoint or lifecycle field needs work.
+
 ## Shared Platform
 
 - Only extract more shared packages/crates when they are truly used in 2+ products.
@@ -115,5 +123,5 @@ Use this to capture later ideas so they do not get lost between product pushes.
 
 - Keep SignalHive visibility-first.
 - Keep TrustGate / memory / safety layers ahead of broader autonomous write behavior.
-- HiveCore is the next clean product push now that FailGuard v1 and the Hermes medium hardening pass are complete; keep it control-plane-first before deeper orchestration.
+- Keep HiveCore control-plane-first: product APIs remain the source of truth, and deeper orchestration should arrive through shared contracts instead of private database reads.
 - Build a public PatchHive transparency/dashboard layer later so reputation is earned through visible output, outcomes, and contribution quality.

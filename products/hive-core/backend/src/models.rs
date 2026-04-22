@@ -145,6 +145,8 @@ pub struct ProductHealthSnapshot {
     pub version: String,
     pub capabilities_ok: bool,
     pub action_count: u32,
+    pub runs_ok: bool,
+    pub run_count: u32,
     pub config_errors: u32,
     pub startup_errors: u32,
     pub startup_warns: u32,
@@ -152,6 +154,7 @@ pub struct ProductHealthSnapshot {
     pub db_ok: Option<bool>,
     pub checked_at: String,
     pub error: String,
+    pub runs_error: String,
 }
 
 impl Default for ProductHealthSnapshot {
@@ -162,6 +165,8 @@ impl Default for ProductHealthSnapshot {
             version: String::new(),
             capabilities_ok: false,
             action_count: 0,
+            runs_ok: false,
+            run_count: 0,
             config_errors: 0,
             startup_errors: 0,
             startup_warns: 0,
@@ -169,6 +174,7 @@ impl Default for ProductHealthSnapshot {
             db_ok: None,
             checked_at: now_rfc3339(),
             error: String::new(),
+            runs_error: String::new(),
         }
     }
 }
@@ -188,7 +194,11 @@ pub struct ProductRuntimeItem {
     pub notes: String,
     pub status: String,
     pub health: ProductHealthSnapshot,
+    pub hivecore: Option<contract::HiveCoreLifecycleSupport>,
     pub actions: Vec<contract::ProductAction>,
+    pub links: Vec<contract::ProductLink>,
+    pub run_detail_template: String,
+    pub recent_runs: Vec<contract::ProductRunSummary>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -217,6 +227,18 @@ pub struct SettingsResponse {
     pub tagline: &'static str,
     pub suite_settings: SuiteSettings,
     pub products: Vec<ProductSettingsItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProductRunsSnapshotResponse {
+    pub slug: String,
+    pub title: String,
+    pub api_url: String,
+    pub api_key_configured: bool,
+    pub runs_ok: bool,
+    pub checked_at: String,
+    pub error: String,
+    pub runs: Vec<contract::ProductRunSummary>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

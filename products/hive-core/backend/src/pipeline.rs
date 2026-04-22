@@ -18,8 +18,9 @@ use crate::{
     models::{
         error, now_rfc3339, ok, DispatchActionResponse, OverviewResponse, OverviewSummary,
         ProductActionEvent, ProductHealthSnapshot, ProductOverride, ProductOverrideInput,
-        ProductRuntimeItem, ProductSettingsItem, SaveSettingsRequest, SettingsResponse,
-        SuiteSettings, SuiteSettingsInput, PRODUCT_TAGLINE, PRODUCT_TITLE, PRODUCT_VERSION,
+        ProductRunsSnapshotResponse, ProductRuntimeItem, ProductSettingsItem, SaveSettingsRequest,
+        SettingsResponse, SuiteSettings, SuiteSettingsInput, PRODUCT_TAGLINE, PRODUCT_TITLE,
+        PRODUCT_VERSION,
     },
     startup,
     state::{product_catalog, AppState, ProductDefinition},
@@ -45,7 +46,11 @@ struct StartupChecksBody {
 
 struct ProductProbeSnapshot {
     health: ProductHealthSnapshot,
+    hivecore: Option<contract::HiveCoreLifecycleSupport>,
     actions: Vec<contract::ProductAction>,
+    links: Vec<contract::ProductLink>,
+    run_detail_template: String,
+    recent_runs: Vec<contract::ProductRunSummary>,
 }
 
 #[derive(Debug, Default)]
@@ -130,7 +135,18 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
 }
 
 pub async fn runs() -> Json<contract::ProductRunsResponse> {
-    Json(contract::runs_from_values("hive-core", Vec::new()))
+    Json(contract::runs_from_values(
+        "hive-core",
+        hive_core_action_run_values(30),
+    ))
+}
+
+pub async fn run_detail(
+    Path(id): Path<String>,
+) -> Result<Json<ProductActionEvent>, (StatusCode, Json<crate::models::ApiEnvelope<Value>>)> {
+    db::action_event(&id)
+        .map(Json)
+        .ok_or_else(|| api_error(StatusCode::NOT_FOUND, "run_not_found", "Run was not found."))
 }
 
 pub async fn overview(
@@ -152,6 +168,54 @@ pub async fn products(
     State(state): State<AppState>,
 ) -> Json<crate::models::ApiEnvelope<Vec<ProductRuntimeItem>>> {
     Json(ok(build_runtime_products(&state).await))
+}
+
+pub async fn product_runs(
+    State(state): State<AppState>,
+    Path(slug): Path<String>,
+) -> Result<
+    Json<crate::models::ApiEnvelope<ProductRunsSnapshotResponse>>,
+    (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
+> {
+    let definition = product_catalog()
+        .iter()
+        .find(|product| product.slug == slug)
+        .ok_or_else(|| api_error(StatusCode::NOT_FOUND, "unknown_product", "Unknown product."))?;
+    let overrides = db::product_overrides();
+    let override_item = overrides.get(definition.slug);
+    let api_url = pick_url(
+        override_item.map(|item| item.api_url.as_str()),
+        definition.default_api_url,
+    );
+    let api_key = override_item
+        .map(|item| item.api_key.trim().to_string())
+        .unwrap_or_default();
+
+    if definition.slug == "hive-core" {
+        let runs = contract::runs_from_values("hive-core", hive_core_action_run_values(30)).runs;
+        return Ok(Json(ok(ProductRunsSnapshotResponse {
+            slug: definition.slug.into(),
+            title: definition.title.into(),
+            api_url,
+            api_key_configured: true,
+            runs_ok: true,
+            checked_at: now_rfc3339(),
+            error: String::new(),
+            runs,
+        })));
+    }
+
+    let (runs_ok, runs, error) = fetch_product_runs(&state.client, &api_url, &api_key).await;
+    Ok(Json(ok(ProductRunsSnapshotResponse {
+        slug: definition.slug.into(),
+        title: definition.title.into(),
+        api_url,
+        api_key_configured: !api_key.is_empty(),
+        runs_ok,
+        checked_at: now_rfc3339(),
+        error,
+        runs,
+    })))
 }
 
 pub async fn settings() -> Json<crate::models::ApiEnvelope<SettingsResponse>> {
@@ -268,7 +332,7 @@ pub async fn dispatch_product_action(
         ));
     }
 
-    let capabilities = fetch_product_capabilities(&state.client, &api_url)
+    let capabilities = fetch_product_capabilities(&state.client, &api_url, &api_key)
         .await
         .map_err(|message| {
             api_error(StatusCode::BAD_GATEWAY, "capabilities_unavailable", message)
@@ -440,6 +504,9 @@ async fn build_product_runtime(
     let notes = override_item
         .map(|item| item.notes.clone())
         .unwrap_or_default();
+    let api_key = override_item
+        .map(|item| item.api_key.trim().to_string())
+        .unwrap_or_default();
 
     let probe = if definition.slug == "hive-core" {
         local_hive_core_probe()
@@ -450,7 +517,11 @@ async fn build_product_runtime(
                 checked_at: now_rfc3339(),
                 ..ProductHealthSnapshot::default()
             },
+            hivecore: None,
             actions: Vec::new(),
+            links: Vec::new(),
+            run_detail_template: String::new(),
+            recent_runs: Vec::new(),
         }
     } else if api_url.is_empty() {
         ProductProbeSnapshot {
@@ -459,10 +530,14 @@ async fn build_product_runtime(
                 checked_at: now_rfc3339(),
                 ..ProductHealthSnapshot::default()
             },
+            hivecore: None,
             actions: Vec::new(),
+            links: Vec::new(),
+            run_detail_template: String::new(),
+            recent_runs: Vec::new(),
         }
     } else {
-        fetch_product_health(&state.client, &api_url).await
+        fetch_product_health(&state.client, &api_url, &api_key).await
     };
 
     ProductRuntimeItem {
@@ -481,16 +556,24 @@ async fn build_product_runtime(
         notes,
         status: probe.health.status.clone(),
         health: probe.health,
+        hivecore: probe.hivecore,
         actions: probe.actions,
+        links: probe.links,
+        run_detail_template: probe.run_detail_template,
+        recent_runs: probe.recent_runs,
     }
 }
 
-async fn fetch_product_health(client: &reqwest::Client, api_url: &str) -> ProductProbeSnapshot {
+async fn fetch_product_health(
+    client: &reqwest::Client,
+    api_url: &str,
+    api_key: &str,
+) -> ProductProbeSnapshot {
     let normalized = api_url.trim_end_matches('/');
     let checked_at = now_rfc3339();
     let health_url = format!("{normalized}/health");
 
-    let health_response = client.get(&health_url).send().await;
+    let health_response = authorized_get(client, &health_url, api_key).send().await;
     let Ok(health_response) = health_response else {
         return ProductProbeSnapshot {
             health: ProductHealthSnapshot {
@@ -499,7 +582,11 @@ async fn fetch_product_health(client: &reqwest::Client, api_url: &str) -> Produc
                 error: "Could not reach /health.".into(),
                 ..ProductHealthSnapshot::default()
             },
+            hivecore: None,
             actions: Vec::new(),
+            links: Vec::new(),
+            run_detail_template: String::new(),
+            recent_runs: Vec::new(),
         };
     };
 
@@ -511,7 +598,11 @@ async fn fetch_product_health(client: &reqwest::Client, api_url: &str) -> Produc
                 error: format!("/health returned HTTP {}", health_response.status()),
                 ..ProductHealthSnapshot::default()
             },
+            hivecore: None,
             actions: Vec::new(),
+            links: Vec::new(),
+            run_detail_template: String::new(),
+            recent_runs: Vec::new(),
         };
     }
 
@@ -527,8 +618,7 @@ async fn fetch_product_health(client: &reqwest::Client, api_url: &str) -> Produc
             });
 
     let checks_url = format!("{normalized}/startup/checks");
-    let checks_response = client
-        .get(&checks_url)
+    let checks_response = authorized_get(client, &checks_url, api_key)
         .timeout(Duration::from_secs(3))
         .send()
         .await;
@@ -551,21 +641,35 @@ async fn fetch_product_health(client: &reqwest::Client, api_url: &str) -> Produc
         Err(_) => (0, 0, 0, "Could not reach /startup/checks.".into()),
     };
 
-    let (capabilities_ok, actions, capabilities_error) =
-        match fetch_product_capabilities(client, api_url).await {
-            Ok(body) => (true, body.actions, String::new()),
-            Err(message) => (false, Vec::new(), message),
+    let (capabilities_ok, actions, links, hivecore, run_detail_template, capabilities_error) =
+        match fetch_product_capabilities(client, api_url, api_key).await {
+            Ok(body) => (
+                true,
+                body.actions,
+                body.links,
+                Some(body.hivecore),
+                body.routes.run_detail_template,
+                String::new(),
+            ),
+            Err(message) => (false, Vec::new(), Vec::new(), None, String::new(), message),
         };
     let action_count = actions.len() as u32;
+    let (runs_ok, recent_runs, runs_error) = fetch_product_runs(client, api_url, api_key).await;
+    let run_count = recent_runs.len() as u32;
 
     let config_errors = health_body.config_errors.unwrap_or(0);
     let base_status = health_body.status.unwrap_or_else(|| "unknown".into());
-    let status =
-        if startup_errors > 0 || config_errors > 0 || base_status != "ok" || !capabilities_ok {
-            "degraded"
-        } else {
-            "online"
-        };
+    let runs_integration_failed = !api_key.trim().is_empty() && !runs_ok;
+    let status = if startup_errors > 0
+        || config_errors > 0
+        || base_status != "ok"
+        || !capabilities_ok
+        || runs_integration_failed
+    {
+        "degraded"
+    } else {
+        "online"
+    };
     let error = [extra_error, capabilities_error]
         .into_iter()
         .filter(|item| !item.is_empty())
@@ -579,6 +683,8 @@ async fn fetch_product_health(client: &reqwest::Client, api_url: &str) -> Produc
             version: health_body.version.unwrap_or_default(),
             capabilities_ok,
             action_count,
+            runs_ok,
+            run_count,
             config_errors,
             startup_errors,
             startup_warns,
@@ -586,8 +692,13 @@ async fn fetch_product_health(client: &reqwest::Client, api_url: &str) -> Produc
             db_ok: health_body.db_ok,
             checked_at,
             error,
+            runs_error,
         },
+        hivecore,
         actions,
+        links,
+        run_detail_template,
+        recent_runs,
     }
 }
 
@@ -608,6 +719,7 @@ fn local_hive_core_probe() -> ProductProbeSnapshot {
         "Persist suite-wide defaults and per-product launch/API overrides.",
         false,
     )];
+    let recent_runs = contract::runs_from_values("hive-core", hive_core_action_run_values(6)).runs;
     ProductProbeSnapshot {
         health: ProductHealthSnapshot {
             status: status.into(),
@@ -615,6 +727,8 @@ fn local_hive_core_probe() -> ProductProbeSnapshot {
             version: PRODUCT_VERSION.into(),
             capabilities_ok: true,
             action_count: actions.len() as u32,
+            runs_ok: true,
+            run_count: recent_runs.len() as u32,
             config_errors: startup_errors,
             startup_errors,
             startup_warns,
@@ -622,8 +736,23 @@ fn local_hive_core_probe() -> ProductProbeSnapshot {
             db_ok: Some(db_ok),
             checked_at: now_rfc3339(),
             error: String::new(),
+            runs_error: String::new(),
         },
+        hivecore: Some(contract::HiveCoreLifecycleSupport {
+            can_launch: true,
+            can_start_runs: false,
+            can_list_runs: true,
+            can_read_run_detail: true,
+            can_apply_settings: true,
+        }),
         actions,
+        links: vec![
+            contract::link("overview", "Overview", "/overview"),
+            contract::link("products", "Products", "/products"),
+            contract::link("settings", "Settings", "/settings"),
+        ],
+        run_detail_template: "/runs/{id}".into(),
+        recent_runs,
     }
 }
 
@@ -634,6 +763,36 @@ fn pick_url(override_url: Option<&str>, default_url: &str) -> String {
     } else {
         override_url.to_string()
     }
+}
+
+fn hive_core_action_run_values(limit: u32) -> Vec<Value> {
+    db::recent_action_events(limit)
+        .into_iter()
+        .map(|event| {
+            let summary = if event.error.is_empty() {
+                format!(
+                    "{} {} returned {}",
+                    event.method,
+                    event.path,
+                    event
+                        .remote_status
+                        .map(|status| status.to_string())
+                        .unwrap_or_else(|| "no remote status".into())
+                )
+            } else {
+                event.error.clone()
+            };
+            json!({
+                "id": event.id.clone(),
+                "status": event.status.clone(),
+                "title": format!("{} · {}", event.product_slug, event.action_label),
+                "summary": summary,
+                "created_at": event.created_at.clone(),
+                "updated_at": event.created_at.clone(),
+                "raw": event,
+            })
+        })
+        .collect()
 }
 
 fn sanitize_suite_settings(input: SuiteSettingsInput) -> SuiteSettings {
@@ -696,11 +855,11 @@ fn api_error(
 async fn fetch_product_capabilities(
     client: &reqwest::Client,
     api_url: &str,
+    api_key: &str,
 ) -> Result<contract::ProductCapabilities, String> {
     let normalized = api_url.trim_end_matches('/');
     let capabilities_url = format!("{normalized}/capabilities");
-    let response = client
-        .get(&capabilities_url)
+    let response = authorized_get(client, &capabilities_url, api_key)
         .timeout(Duration::from_secs(3))
         .send()
         .await
@@ -714,6 +873,54 @@ async fn fetch_product_capabilities(
         .json::<contract::ProductCapabilities>()
         .await
         .map_err(|err| format!("Could not parse /capabilities: {err}"))
+}
+
+async fn fetch_product_runs(
+    client: &reqwest::Client,
+    api_url: &str,
+    api_key: &str,
+) -> (bool, Vec<contract::ProductRunSummary>, String) {
+    if api_key.trim().is_empty() {
+        return (
+            false,
+            Vec::new(),
+            "Product API key missing; recent runs unavailable.".into(),
+        );
+    }
+
+    let normalized = api_url.trim_end_matches('/');
+    let runs_url = format!("{normalized}/runs");
+    let response = authorized_get(client, &runs_url, api_key)
+        .timeout(Duration::from_secs(3))
+        .send()
+        .await;
+
+    let Ok(response) = response else {
+        return (false, Vec::new(), "Could not reach /runs.".into());
+    };
+
+    if !response.status().is_success() {
+        return (
+            false,
+            Vec::new(),
+            format!("/runs returned HTTP {}", response.status()),
+        );
+    }
+
+    match response.json::<contract::ProductRunsResponse>().await {
+        Ok(body) => (true, body.runs.into_iter().take(6).collect(), String::new()),
+        Err(err) => (false, Vec::new(), format!("Could not parse /runs: {err}")),
+    }
+}
+
+fn authorized_get(client: &reqwest::Client, url: &str, api_key: &str) -> reqwest::RequestBuilder {
+    let request = client.get(url);
+    let api_key = api_key.trim();
+    if api_key.is_empty() {
+        request
+    } else {
+        request.header("X-API-Key", api_key)
+    }
 }
 
 fn parse_dispatch_input(raw: Value) -> DispatchActionInput {
@@ -866,7 +1073,11 @@ mod tests {
                 notes: String::new(),
                 status: "online".into(),
                 health: ProductHealthSnapshot::default(),
+                hivecore: None,
                 actions: Vec::new(),
+                links: Vec::new(),
+                run_detail_template: String::new(),
+                recent_runs: Vec::new(),
             },
             ProductRuntimeItem {
                 slug: "repo-reaper".into(),
@@ -882,7 +1093,11 @@ mod tests {
                 notes: String::new(),
                 status: "degraded".into(),
                 health: ProductHealthSnapshot::default(),
+                hivecore: None,
                 actions: Vec::new(),
+                links: Vec::new(),
+                run_detail_template: String::new(),
+                recent_runs: Vec::new(),
             },
             ProductRuntimeItem {
                 slug: "review-bee".into(),
@@ -898,7 +1113,11 @@ mod tests {
                 notes: String::new(),
                 status: "unconfigured".into(),
                 health: ProductHealthSnapshot::default(),
+                hivecore: None,
                 actions: Vec::new(),
+                links: Vec::new(),
+                run_detail_template: String::new(),
+                recent_runs: Vec::new(),
             },
             ProductRuntimeItem {
                 slug: "merge-keeper".into(),
@@ -914,7 +1133,11 @@ mod tests {
                 notes: String::new(),
                 status: "disabled".into(),
                 health: ProductHealthSnapshot::default(),
+                hivecore: None,
                 actions: Vec::new(),
+                links: Vec::new(),
+                run_detail_template: String::new(),
+                recent_runs: Vec::new(),
             },
         ];
 

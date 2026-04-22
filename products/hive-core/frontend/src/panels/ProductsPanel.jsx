@@ -23,6 +23,14 @@ function actionColor(status) {
   return "var(--gold)";
 }
 
+function runColor(status) {
+  const normalized = String(status || "").toLowerCase();
+  if (["completed", "success", "safe", "ready", "dispatched"].includes(normalized)) return "var(--green)";
+  if (["running", "queued", "hold", "warn"].includes(normalized)) return "var(--gold)";
+  if (["failed", "blocked", "block", "cancelled"].includes(normalized)) return "var(--accent)";
+  return "var(--blue)";
+}
+
 function pretty(value) {
   return JSON.stringify(value, null, 2);
 }
@@ -147,10 +155,70 @@ function RecentActivity({ events }) {
   );
 }
 
+function RunHistory({ product }) {
+  const runs = product.recent_runs || [];
+  if (!product.enabled) {
+    return (
+      <div style={{ borderTop: "1px solid var(--border)", paddingTop: 12, fontSize: 11, color: "var(--text-dim)" }}>
+        Product is disabled in HiveCore Settings.
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ borderTop: "1px solid var(--border)", paddingTop: 12, display: "grid", gap: 8 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+        <div>
+          <div style={{ fontSize: 12, fontWeight: 800 }}>Recent Runs</div>
+          <div style={{ fontSize: 10, color: "var(--text-dim)" }}>
+            Latest product-owned work.
+          </div>
+        </div>
+        <Tag color={product.health?.runs_ok ? "var(--green)" : "var(--gold)"}>
+          {product.health?.runs_ok ? `${runs.length} visible` : "locked"}
+        </Tag>
+      </div>
+      {!product.health?.runs_ok ? (
+        <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.5 }}>
+          {product.health?.runs_error || "Save this product's API key in Settings to show run history."}
+        </div>
+      ) : runs.length === 0 ? (
+        <div style={{ fontSize: 11, color: "var(--text-dim)" }}>No run history visible yet.</div>
+      ) : (
+        <div style={{ display: "grid", gap: 7 }}>
+          {runs.slice(0, 3).map((run) => (
+            <div
+              key={run.id}
+              style={{
+                display: "grid",
+                gap: 3,
+                padding: "8px 9px",
+                border: "1px solid var(--border)",
+                borderRadius: 8,
+                background: "rgba(255,255,255,0.025)",
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+                <strong style={{ fontSize: 11, color: "var(--text)" }}>{run.title || run.id}</strong>
+                <Tag color={runColor(run.status)}>{run.status || "unknown"}</Tag>
+              </div>
+              {run.summary && <div style={{ fontSize: 10, color: "var(--text-dim)", lineHeight: 1.45 }}>{run.summary}</div>}
+              {(run.updated_at || run.created_at) && (
+                <div style={{ fontSize: 9, color: "var(--text-muted)" }}>{run.updated_at || run.created_at}</div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ProductCard({ product, onDispatch }) {
   const health = product.health || {};
   const actions = product.actions || [];
   const dispatchableActions = actions.filter((action) => !action.destructive && product.slug !== "hive-core");
+  const lifecycle = product.hivecore || {};
   const [selectedActionId, setSelectedActionId] = useState(dispatchableActions[0]?.id || "");
   const selectedAction = useMemo(
     () => dispatchableActions.find((action) => action.id === selectedActionId) || dispatchableActions[0],
@@ -220,6 +288,12 @@ function ProductCard({ product, onDispatch }) {
         {health.version && <Tag color="var(--blue)">v{health.version}</Tag>}
         {health.capabilities_ok && <Tag color="var(--green)">{health.action_count} action{health.action_count === 1 ? "" : "s"}</Tag>}
         {!health.capabilities_ok && product.enabled && <Tag color="var(--gold)">contract pending</Tag>}
+        {product.enabled &&
+          (health.runs_ok ? (
+            <Tag color="var(--blue)">{health.run_count} run{health.run_count === 1 ? "" : "s"}</Tag>
+          ) : (
+            <Tag color="var(--gold)">runs locked</Tag>
+          ))}
         <Tag color={product.api_key_configured ? "var(--green)" : "var(--gold)"}>
           {product.api_key_configured ? "key linked" : "key missing"}
         </Tag>
@@ -243,7 +317,9 @@ function ProductCard({ product, onDispatch }) {
         <div>
           <div style={S.label}>Lifecycle Contract</div>
           <div style={{ fontSize: 11, color: health.capabilities_ok ? "var(--green)" : "var(--gold)" }}>
-            {health.capabilities_ok ? `${health.action_count || 0} exposed action${health.action_count === 1 ? "" : "s"}` : "Not available"}
+            {health.capabilities_ok
+              ? `${lifecycle.can_start_runs ? "start" : "view"} · ${lifecycle.can_list_runs ? "runs" : "no runs"}`
+              : "Not available"}
           </div>
         </div>
         <div>
@@ -253,6 +329,8 @@ function ProductCard({ product, onDispatch }) {
           </div>
         </div>
       </div>
+
+      <RunHistory product={product} />
 
       {dispatchableActions.length > 0 && (
         <div style={{ borderTop: "1px solid var(--border)", paddingTop: 12, display: "grid", gap: 10 }}>
@@ -428,6 +506,7 @@ export default function ProductsPanel({ fetchEnvelope, setRunning, setError }) {
           <Tag color="var(--green)">{products.filter((product) => product.status === "online").length} online</Tag>
           <Tag color="var(--gold)">{products.filter((product) => product.status === "degraded").length} degraded</Tag>
           <Tag color="var(--blue)">{products.reduce((total, product) => total + ((product.actions || []).length), 0)} advertised actions</Tag>
+          <Tag color="var(--accent)">{products.reduce((total, product) => total + (product.health?.run_count || 0), 0)} visible runs</Tag>
           <Tag color="var(--accent)">{products.filter((product) => product.api_key_configured).length} keyed products</Tag>
         </div>
       </div>

@@ -21,6 +21,28 @@ function statusColor(status) {
   return "var(--accent)";
 }
 
+function runColor(status) {
+  const normalized = String(status || "").toLowerCase();
+  if (["completed", "success", "safe", "ready", "dispatched"].includes(normalized)) return "var(--green)";
+  if (["running", "queued", "hold", "warn"].includes(normalized)) return "var(--gold)";
+  if (["failed", "blocked", "block", "cancelled"].includes(normalized)) return "var(--accent)";
+  return "var(--blue)";
+}
+
+function recentRuns(products) {
+  return products
+    .flatMap((product) =>
+      (product.recent_runs || []).map((run) => ({
+        ...run,
+        product_slug: product.slug,
+        product_title: product.title,
+        product_icon: product.icon,
+      })),
+    )
+    .sort((left, right) => String(right.updated_at || right.created_at).localeCompare(String(left.updated_at || left.created_at)))
+    .slice(0, 8);
+}
+
 function MetricCard({ label, value, tone = "var(--text)" }) {
   return (
     <div style={{ ...S.panel, display: "grid", gap: 6 }}>
@@ -66,7 +88,26 @@ function ProductStrip({ product }) {
             {product.health.action_count} action{product.health.action_count === 1 ? "" : "s"}
           </Tag>
         )}
+        {product.enabled &&
+          (product.health.runs_ok ? (
+            <Tag color="var(--blue)">
+              {product.health.run_count} recent run{product.health.run_count === 1 ? "" : "s"}
+            </Tag>
+          ) : (
+            <Tag color="var(--gold)">runs locked</Tag>
+          ))}
       </div>
+      {(product.recent_runs || [])[0] && (
+        <div style={{ display: "grid", gap: 3, borderTop: "1px solid var(--border)", paddingTop: 8 }}>
+          <div style={S.label}>Latest run</div>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+            <span style={{ fontSize: 11, color: "var(--text-dim)", minWidth: 0 }}>
+              {(product.recent_runs || [])[0].title || (product.recent_runs || [])[0].id}
+            </span>
+            <Tag color={runColor((product.recent_runs || [])[0].status)}>{(product.recent_runs || [])[0].status}</Tag>
+          </div>
+        </div>
+      )}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         {product.frontend_url && (
           <a href={product.frontend_url} target="_blank" rel="noreferrer" style={{ color: "var(--accent)", fontSize: 11 }}>
@@ -134,6 +175,9 @@ export default function OverviewPanel({ fetchEnvelope, setRunning, setError }) {
   );
   const featured = preferred || overview.products.find((product) => product.status === "online") || overview.products[0];
   const unstable = overview.products.filter((product) => product.status === "degraded" || product.status === "offline");
+  const runs = recentRuns(overview.products);
+  const totalRuns = overview.products.reduce((total, product) => total + (product.health?.run_count || 0), 0);
+  const contractReady = overview.products.filter((product) => product.health?.capabilities_ok).length;
 
   return (
     <div style={{ display: "grid", gap: 16 }}>
@@ -220,8 +264,53 @@ export default function OverviewPanel({ fetchEnvelope, setRunning, setError }) {
         <MetricCard label="Products" value={overview.summary.total_products} />
         <MetricCard label="Online" value={overview.summary.online_products} tone="var(--green)" />
         <MetricCard label="Degraded" value={overview.summary.degraded_products} tone="var(--gold)" />
-        <MetricCard label="Offline" value={overview.summary.offline_products} tone="var(--accent)" />
-        <MetricCard label="Disabled" value={overview.summary.disabled_products} tone="var(--text-dim)" />
+        <MetricCard label="Contract Ready" value={contractReady} tone="var(--blue)" />
+        <MetricCard label="Recent Runs" value={totalRuns} tone="var(--accent)" />
+      </div>
+
+      <div style={{ ...S.panel, display: "grid", gap: 12 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+          <div>
+            <div style={{ fontSize: 18, fontWeight: 800 }}>Suite Run Stream</div>
+            <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
+              Recent product-owned work across the suite.
+            </div>
+          </div>
+          <Tag color={runs.length > 0 ? "var(--green)" : "var(--gold)"}>
+            {runs.length > 0 ? `${runs.length} visible` : "Product keys needed"}
+          </Tag>
+        </div>
+        {runs.length === 0 ? (
+          <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
+            No run history is visible yet. Keyed products will appear here after their next run.
+          </div>
+        ) : (
+          <div style={{ display: "grid", gap: 8 }}>
+            {runs.map((run) => (
+              <div
+                key={`${run.product_slug}-${run.id}`}
+                style={{
+                  display: "grid",
+                  gap: 4,
+                  padding: "9px 10px",
+                  border: "1px solid var(--border)",
+                  borderRadius: 8,
+                  background: "rgba(255,255,255,0.025)",
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+                  <strong style={{ fontSize: 12 }}>
+                    {run.product_icon} {run.product_title} · {run.title || run.id}
+                  </strong>
+                  <Tag color={runColor(run.status)}>{run.status || "unknown"}</Tag>
+                </div>
+                <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.5 }}>
+                  {run.summary || "No summary returned."}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div style={{ display: "grid", gap: 10 }}>

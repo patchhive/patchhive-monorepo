@@ -60,6 +60,7 @@ Every product backend should converge toward:
 - consistent `request_id`, `run_id`, `job_id`, and `event_id` formats
 - shared async lifecycle states for long-running operations
 - consistent webhook and SSE event semantics
+- product-owned `/capabilities` and `/runs` endpoints that HiveCore can consume without private database access
 
 See:
 
