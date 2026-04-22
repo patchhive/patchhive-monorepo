@@ -14,6 +14,7 @@ use axum::{
     Json, Router,
 };
 use once_cell::sync::OnceCell;
+use patchhive_product_core::rate_limit::rate_limit_middleware;
 use patchhive_product_core::startup::{
     cors_layer, count_errors, listen_addr, log_checks, StartupCheck,
 };
@@ -68,6 +69,7 @@ async fn main() {
         .route("/history/:id/timeline", get(pipeline::timeline))
         .route("/history/:id/report", get(pipeline::report))
         .layer(middleware::from_fn(auth::auth_middleware))
+        .layer(middleware::from_fn(rate_limit_middleware))
         .layer(cors)
         .with_state(state);
 

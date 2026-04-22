@@ -101,7 +101,11 @@ The 2 new criticals (C1, C2) found in this review were not covered by Vex's prev
 
 - **C1 resolved:** `collect_files_selective_sync` now canonicalizes requested files through a repo-root containment helper before reading them, and the regression test `collect_files_selective_skips_paths_outside_repo_root` verifies outside paths are ignored.
 - **C2 resolved:** `/webhook/github` now returns `403 Forbidden` when `WEBHOOK_SECRET` is missing, before payload handling can trigger any work. The regression test `webhook_signature_rejects_missing_secret` covers the fail-closed path.
-- **Verification:** `cargo test --manifest-path products/repo-reaper/backend/Cargo.toml --offline`.
+- **M1 resolved:** RepoReaper now handles a closed fix-worker semaphore with a warning and early return instead of an `unwrap()` panic.
+- **M2 resolved:** MergeKeeper, ReviewBee, FlakeSting, and RepoMemory now build `reqwest` clients with connect and full request timeouts; TrustGate's timed client builder no longer falls back to an unbounded `Client::new()`.
+- **M3 resolved:** Shared CORS now allows configured origins plus known PatchHive dev frontend ports only; arbitrary localhost ports are not accepted by default.
+- **M4 resolved:** `patchhive-product-core` now provides shared in-memory API rate limiting, and every product backend plus the starter template layers it outside auth. Auth and mutating/action routes use the stricter sensitive bucket.
+- **Verification:** `cargo test --manifest-path products/repo-reaper/backend/Cargo.toml --offline`; `cargo test --manifest-path crates/patchhive-product-core/Cargo.toml --offline`; `cargo check --offline` pass for all real product backends.
 - **Code fix commit:** `86b860b` (`fix: address Hermes findings across products`).
 
 ## Summary
@@ -110,4 +114,4 @@ The 2 new criticals (C1, C2) found in this review were not covered by Vex's prev
 1. Path traversal via AI-supplied file paths in repo-reaper's git_ops
 2. Unauthenticated webhook trigger when WEBHOOK_SECRET is not set
 
-The critical findings are now marked completed. Medium and low items remain tracked as hardening follow-ups.
+The critical and medium findings are now marked completed. Low items remain tracked as hardening follow-ups.

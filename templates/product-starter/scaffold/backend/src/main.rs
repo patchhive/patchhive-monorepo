@@ -10,7 +10,10 @@ use axum::{
     Json, Router,
 };
 use once_cell::sync::OnceCell;
-use patchhive_product_core::startup::{cors_layer, count_errors, listen_addr, log_checks, StartupCheck};
+use patchhive_product_core::rate_limit::rate_limit_middleware;
+use patchhive_product_core::startup::{
+    cors_layer, count_errors, listen_addr, log_checks, StartupCheck,
+};
 use serde_json::json;
 use tracing::info;
 
@@ -48,6 +51,7 @@ async fn main() {
         .route("/startup/checks", get(startup_checks_route))
         .route("/overview", get(overview))
         .layer(middleware::from_fn(auth::auth_middleware))
+        .layer(middleware::from_fn(rate_limit_middleware))
         .layer(cors)
         .with_state(AppState::new());
 
@@ -77,7 +81,9 @@ async fn login(Json(body): Json<LoginBody>) -> Result<Json<serde_json::Value>, S
     if !verify_token(&body.api_key) {
         return Err(StatusCode::UNAUTHORIZED);
     }
-    Ok(Json(json!({"ok": true, "auth_enabled": true, "auth_configured": true})))
+    Ok(Json(
+        json!({"ok": true, "auth_enabled": true, "auth_configured": true}),
+    ))
 }
 
 async fn gen_key(headers: axum::http::HeaderMap) -> Result<Json<serde_json::Value>, StatusCode> {
@@ -88,11 +94,16 @@ async fn gen_key(headers: axum::http::HeaderMap) -> Result<Json<serde_json::Valu
         return Err(StatusCode::FORBIDDEN);
     }
     let key = generate_and_save_key().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    Ok(Json(json!({"api_key": key, "message": "Store this — it won't be shown again"})))
+    Ok(Json(
+        json!({"api_key": key, "message": "Store this — it won't be shown again"}),
+    ))
 }
 
 async fn health() -> Json<serde_json::Value> {
-    let errors = STARTUP_CHECKS.get().map(|checks| count_errors(checks)).unwrap_or(0);
+    let errors = STARTUP_CHECKS
+        .get()
+        .map(|checks| count_errors(checks))
+        .unwrap_or(0);
     let db_ok = db::health_check();
 
     Json(json!({

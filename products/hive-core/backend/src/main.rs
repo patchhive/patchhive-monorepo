@@ -6,6 +6,7 @@ mod startup;
 mod state;
 
 use axum::{middleware, routing::get, Router};
+use patchhive_product_core::rate_limit::rate_limit_middleware;
 use patchhive_product_core::startup::{cors_layer, listen_addr, log_checks};
 use tracing::info;
 
@@ -49,6 +50,7 @@ async fn main() {
             get(pipeline::settings).put(pipeline::save_settings),
         )
         .layer(middleware::from_fn(auth::auth_middleware))
+        .layer(middleware::from_fn(rate_limit_middleware))
         .layer(cors_layer())
         .with_state(state);
 

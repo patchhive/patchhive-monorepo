@@ -85,6 +85,8 @@ Suggested common codes:
 - `concurrency_conflict`
 - `internal_error`
 
+Rate-limited responses should use HTTP `429`, the `rate_limited` code, and a `Retry-After` header when the backend can calculate a retry window.
+
 ## Async Run Lifecycle
 
 All long-running product operations should converge on the same lifecycle vocabulary:

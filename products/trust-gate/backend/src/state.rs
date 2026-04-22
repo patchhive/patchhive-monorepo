@@ -13,7 +13,7 @@ impl AppState {
             .connect_timeout(Duration::from_secs(10))
             .timeout(Duration::from_secs(30))
             .build()
-            .unwrap_or_else(|_| Client::new());
+            .expect("failed to build reqwest client");
 
         Self { http }
     }

@@ -46,6 +46,7 @@ Operational rules:
 - Quality gates should be stricter than discovery gates.
 - Products should prefer sending no PR over sending a weak PR.
 - Rate limits should be enforced in the backend, not just the UI.
+- Every product backend should layer `patchhive-product-core` API rate limiting so auth, mutating, and run-triggering routes share the same guardrail.
 - HiveCore should inherit and coordinate these caps, not bypass them.
 
 ## 3. Shared API And Lifecycle Contracts
@@ -69,5 +70,6 @@ See:
 Current status:
 
 - RepoReaper already has repo list controls and now supports `allowlist`, `denylist`, and `opt_out`.
+- `patchhive-product-core` provides shared CORS, API-key auth helpers, startup helpers, and API rate limiting for all product backends.
 - `@patchhive/ai-local` already uses explicit internal contracts for its Rust <-> Node adapter boundary.
 - Cross-product HTTP contracts are still a platform task and should be treated as an early shared-infrastructure requirement, not a cleanup pass for later.

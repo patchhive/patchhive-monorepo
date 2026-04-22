@@ -115,5 +115,5 @@ Use this to capture later ideas so they do not get lost between product pushes.
 
 - Keep SignalHive visibility-first.
 - Keep TrustGate / memory / safety layers ahead of broader autonomous write behavior.
-- Start HiveCore only after enough specialist products exist to make the orchestration seams obvious.
+- HiveCore is the next clean product push now that FailGuard v1 and the Hermes medium hardening pass are complete; keep it control-plane-first before deeper orchestration.
 - Build a public PatchHive transparency/dashboard layer later so reputation is earned through visible output, outcomes, and contribution quality.

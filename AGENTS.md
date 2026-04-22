@@ -92,6 +92,7 @@ patchhive/
 Backend:
 - Rust
 - `axum`, `rusqlite`, `reqwest`, `tokio`, `serde`, `serde_json`, `chrono`, `uuid`, `anyhow`, `tracing`
+- Shared API rate limiting defaults to 300 standard requests/minute and 30 auth or mutating requests/minute; tune with `PATCHHIVE_RATE_LIMIT_MAX`, `PATCHHIVE_RATE_LIMIT_SENSITIVE_MAX`, and `PATCHHIVE_RATE_LIMIT_WINDOW_SECS`.
 
 Frontend:
 - React + Vite
@@ -118,6 +119,7 @@ Shared platform guidance:
 - Keep product APIs close enough that HiveCore can orchestrate them without heavy translation layers.
 - Standardize request/response envelopes, error shapes, run/job identifiers, and async webhook/run lifecycle patterns as products are built out.
 - Treat repo discovery safety, output caps, and cross-product contracts as platform guardrails, not optional product polish.
+- All product routers should layer `patchhive_product_core::rate_limit::rate_limit_middleware` so auth, mutating, and run-triggering routes share backend rate limiting.
 - When the same Rust backend seam exists in 2 or more products, prefer extracting it into `crates/patchhive-product-core` before starting another product.
 - See [docs/platform-guardrails.md](/home/coemedia/Documents/code/patchhive/docs/platform-guardrails.md) and [docs/product-api-contract-v1.md](/home/coemedia/Documents/code/patchhive/docs/product-api-contract-v1.md).
 

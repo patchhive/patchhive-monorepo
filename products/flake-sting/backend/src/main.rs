@@ -12,6 +12,7 @@ use axum::{
     Router,
 };
 use once_cell::sync::OnceCell;
+use patchhive_product_core::rate_limit::rate_limit_middleware;
 use patchhive_product_core::startup::cors_layer;
 use patchhive_product_core::startup::{listen_addr, log_checks, StartupCheck};
 use tracing::info;
@@ -53,6 +54,7 @@ async fn main() {
         .route("/history/:id", get(pipeline::history_detail))
         .route("/scan/github/actions", post(pipeline::scan_github_actions))
         .layer(middleware::from_fn(auth::auth_middleware))
+        .layer(middleware::from_fn(rate_limit_middleware))
         .layer(cors)
         .with_state(AppState::new());
 
