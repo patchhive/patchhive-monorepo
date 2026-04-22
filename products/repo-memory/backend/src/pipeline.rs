@@ -457,7 +457,15 @@ fn latest_repo_entries(repo: &str) -> std::result::Result<Vec<MemoryEntry>, Json
 fn build_failguard_candidate(request: FailGuardCandidateRequest) -> FailGuardCandidate {
     let now = Utc::now().to_rfc3339();
     let affected_paths = clean_failguard_items(request.affected_paths, 12);
-    let evidence = clean_failguard_items(request.evidence, 10);
+    let mut evidence = clean_failguard_items(request.evidence, 10);
+    if !request.source_ref.trim().is_empty()
+        && !evidence
+            .iter()
+            .any(|item| item.trim() == request.source_ref.trim())
+    {
+        evidence.insert(0, request.source_ref.trim().to_string());
+        evidence.truncate(10);
+    }
     let lesson = if request.lesson.trim().is_empty() {
         draft_failguard_lesson(&request.title, &request.outcome)
     } else {
@@ -2310,6 +2318,7 @@ mod tests {
         assert_eq!(candidate.confidence, 86.0);
         assert!(candidate.lesson.contains("durable guardrail"));
         assert!(candidate.prevention.contains("src/auth.rs"));
+        assert!(candidate.evidence.iter().any(|item| item == "review-42"));
     }
 
     #[test]

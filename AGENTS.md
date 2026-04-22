@@ -436,6 +436,8 @@ Important env vars:
 - On the TrustGate side, that means converting those lessons into future warnings, checks, or blocking guardrails.
 - The intended flow is: incident or painful failure -> captured lesson -> durable memory -> future policy.
 - FailGuard v1 is complete in RepoMemory: `POST /failguard/candidates` queues reviewable bad-outcome lessons, candidates can be promoted or dismissed, and `POST /failguard/lessons` still creates pinned `failure_pattern` policy memories directly.
+- TrustGate automatically submits FailGuard candidates for `warn` and `block` reviews when `PATCHHIVE_REPO_MEMORY_URL` is configured.
+- RepoReaper automatically submits FailGuard candidates when Smith rejects a generated patch below `MIN_REVIEW_CONFIDENCE`.
 
 ## Key Decisions
 

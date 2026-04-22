@@ -51,6 +51,7 @@ TrustGate works without GitHub for pasted diff review, but GitHub integration is
 - Repo-specific templates control how TrustGate speaks in GitHub without changing the underlying review logic.
 - Saved decisions can be reopened as web views, printed, or exported.
 - `PATCHHIVE_REPO_MEMORY_URL` can optionally enrich reviews with remembered testing expectations, hotspots, and failure patterns.
+- When RepoMemory is configured, `warn` and `block` results are submitted as FailGuard lesson candidates with finding evidence and affected paths.
 - Generate the first local API key from `http://localhost:5175`.
 
 ## Repository Model

@@ -56,11 +56,11 @@ pub async fn validate_config() -> Vec<StartupCheck> {
 
     if patchhive_product_core::repo_memory::repo_memory_url().is_some() {
         checks.push(StartupCheck::info(
-            "RepoMemory context is configured. TrustGate can enrich reviews with remembered repo conventions and failure patterns.",
+            "RepoMemory context is configured. TrustGate can enrich reviews and queue FailGuard candidates when it warns or blocks.",
         ));
     } else {
         checks.push(StartupCheck::info(
-            "RepoMemory context is not configured. TrustGate will rely on repo rules alone until PATCHHIVE_REPO_MEMORY_URL is set.",
+            "RepoMemory context is not configured. TrustGate will rely on repo rules alone and skip FailGuard candidate submission until PATCHHIVE_REPO_MEMORY_URL is set.",
         ));
     }
 

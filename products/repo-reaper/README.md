@@ -23,6 +23,7 @@ It is PatchHive's outbound contribution product: a multi-agent system that finds
 - supports watch mode and dry-run targeting
 - stores run history, cost history, and pull request tracking
 - can enrich patch attempts with RepoMemory context before code generation
+- queues FailGuard lesson candidates when Smith rejects generated patches
 
 ## Run Locally
 
@@ -65,7 +66,7 @@ PATCHHIVE_AI_URL=http://127.0.0.1:8787/v1
 
 Optional integrations:
 
-- `PATCHHIVE_REPO_MEMORY_URL` to load remembered conventions, hotspots, and failure patterns
+- `PATCHHIVE_REPO_MEMORY_URL` to load remembered conventions, hotspots, and failure patterns, and to queue FailGuard candidates from Smith rejections
 - future TrustGate and MergeKeeper flows to gate outbound changes more tightly
 
 ## Safety Defaults

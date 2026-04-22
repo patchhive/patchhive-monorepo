@@ -61,12 +61,14 @@ When enabled, downstream products can call RepoMemory through `PATCHHIVE_REPO_ME
 RepoMemory owns the FailGuard review loop:
 
 - `GET /failguard/candidates` lists suggested lessons by repo and status.
-- `POST /failguard/candidates` queues a bad outcome from an operator or another product.
+- `POST /failguard/candidates` queues a bad outcome from an operator, TrustGate, RepoReaper, or another product.
 - `POST /failguard/candidates/:id/promote` turns a reviewed candidate into a curated `failure_pattern` memory.
 - `POST /failguard/candidates/:id/dismiss` rejects noisy or unhelpful candidates.
 - `POST /failguard/lessons` still captures an already-approved lesson directly.
 
 Promoted lessons carry path evidence, a prevention rule, and policy/pinned curation by default. TrustGate already consumes these memories through the RepoMemory context endpoint, so approved FailGuard lessons can become future warnings or blocks without making FailGuard a separate product.
+
+TrustGate now submits candidates automatically when it returns `warn` or `block`. RepoReaper submits candidates automatically when Smith rejects a generated patch below the configured confidence threshold. Both integrations are best-effort and are skipped when `PATCHHIVE_REPO_MEMORY_URL` is not configured.
 
 ## Local Notes
 

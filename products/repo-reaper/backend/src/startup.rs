@@ -112,7 +112,7 @@ pub async fn validate_config(http: &Client) -> Vec<StartupCheck> {
 
     if repo_memory_url().is_some() {
         results.push(StartupCheck::info(
-            "PATCHHIVE_REPO_MEMORY_URL is set — RepoReaper can enrich patch generation with remembered repo conventions and failures",
+            "PATCHHIVE_REPO_MEMORY_URL is set — RepoReaper can enrich patch generation and queue FailGuard candidates when Smith rejects work",
         ));
     }
 

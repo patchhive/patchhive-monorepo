@@ -87,6 +87,37 @@ pub struct RepoMemoryContextResponse {
     pub entries: Vec<RepoMemoryContextEntry>,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct FailGuardCandidateRequest {
+    pub repo: String,
+    #[serde(default)]
+    pub source_type: String,
+    #[serde(default)]
+    pub source_ref: String,
+    pub title: String,
+    pub outcome: String,
+    #[serde(default)]
+    pub lesson: String,
+    #[serde(default)]
+    pub prevention: String,
+    #[serde(default)]
+    pub affected_paths: Vec<String>,
+    #[serde(default)]
+    pub evidence: Vec<String>,
+    #[serde(default)]
+    pub confidence: Option<f64>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct FailGuardCandidateResponse {
+    #[serde(default)]
+    pub ok: bool,
+    #[serde(default)]
+    pub message: String,
+    #[serde(default)]
+    pub candidate: serde_json::Value,
+}
+
 pub fn repo_memory_url() -> Option<String> {
     std::env::var("PATCHHIVE_REPO_MEMORY_URL")
         .ok()
@@ -134,6 +165,41 @@ pub async fn fetch_repo_memory_context(
         .json::<RepoMemoryContextResponse>()
         .await
         .context("Could not decode RepoMemory context response")?;
+
+    Ok(Some(parsed))
+}
+
+pub async fn submit_failguard_candidate(
+    client: &Client,
+    request: &FailGuardCandidateRequest,
+) -> Result<Option<FailGuardCandidateResponse>> {
+    let Some(base_url) = repo_memory_url() else {
+        return Ok(None);
+    };
+
+    let url = format!("{base_url}/failguard/candidates");
+    let mut http = client.post(url).json(request);
+    if let Some(api_key) = repo_memory_api_key() {
+        http = http.header("X-API-Key", api_key);
+    }
+
+    let response = http
+        .send()
+        .await
+        .context("RepoMemory FailGuard candidate request failed")?;
+
+    let status = response.status();
+    if !status.is_success() {
+        let body = response.text().await.unwrap_or_default();
+        return Err(anyhow!(
+            "RepoMemory FailGuard candidate request failed: {status} {body}"
+        ));
+    }
+
+    let parsed = response
+        .json::<FailGuardCandidateResponse>()
+        .await
+        .context("Could not decode RepoMemory FailGuard candidate response")?;
 
     Ok(Some(parsed))
 }
