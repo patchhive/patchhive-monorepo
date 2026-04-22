@@ -95,10 +95,19 @@ The 14 criticals Vex found were addressed in commits through 04/15 (`0aceb3f` "C
 
 The 2 new criticals (C1, C2) found in this review were not covered by Vex's previous findings.
 
+## Resolution Status
+
+**Completed:** 2026-04-22
+
+- **C1 resolved:** `collect_files_selective_sync` now canonicalizes requested files through a repo-root containment helper before reading them, and the regression test `collect_files_selective_skips_paths_outside_repo_root` verifies outside paths are ignored.
+- **C2 resolved:** `/webhook/github` now returns `403 Forbidden` when `WEBHOOK_SECRET` is missing, before payload handling can trigger any work. The regression test `webhook_signature_rejects_missing_secret` covers the fail-closed path.
+- **Verification:** `cargo test --manifest-path products/repo-reaper/backend/Cargo.toml --offline`.
+- **Code fix commit:** `86b860b` (`fix: address Hermes findings across products`).
+
 ## Summary
 
-**2 critical, 4 medium, 3 low issues found.** The codebase is in good shape overall — the Vex fixes held. The 2 criticals are:
+**2 critical, 4 medium, 3 low issues found.** The codebase is in good shape overall — the Vex fixes held. The 2 criticals were:
 1. Path traversal via AI-supplied file paths in repo-reaper's git_ops
 2. Unauthenticated webhook trigger when WEBHOOK_SECRET is not set
 
-No files were modified during this review.
+The critical findings are now marked completed. Medium and low items remain tracked as hardening follow-ups.

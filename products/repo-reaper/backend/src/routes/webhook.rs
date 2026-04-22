@@ -3,7 +3,7 @@ use crate::state::AppState;
 use axum::{
     body::Body,
     extract::{Request, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     routing::{delete, get, patch, post},
     Json, Router,
 };
@@ -112,6 +112,24 @@ async fn toggle_schedule(
 
 // ── Webhook handler ────────────────────────────────────────────────────────────
 
+fn verify_webhook_signature_or_forbid(
+    headers: &HeaderMap,
+    body_bytes: &[u8],
+    secret: Option<&str>,
+) -> Result<(), StatusCode> {
+    let Some(secret) = secret.filter(|value| !value.trim().is_empty()) else {
+        return Err(StatusCode::FORBIDDEN);
+    };
+
+    verify_github_webhook_signature(headers, body_bytes, secret).map_err(|err| {
+        if err.to_string().contains("Could not initialize") {
+            StatusCode::INTERNAL_SERVER_ERROR
+        } else {
+            StatusCode::UNAUTHORIZED
+        }
+    })
+}
+
 async fn github_webhook(
     State(state): State<AppState>,
     req: Request<Body>,
@@ -128,16 +146,7 @@ async fn github_webhook(
 
     // Verify signature
     let secret = env_value(&["WEBHOOK_SECRET"]).unwrap_or_default();
-    if secret.is_empty() {
-        return Err(StatusCode::FORBIDDEN);
-    }
-    verify_github_webhook_signature(&headers, &body_bytes, &secret).map_err(|err| {
-        if err.to_string().contains("Could not initialize") {
-            StatusCode::INTERNAL_SERVER_ERROR
-        } else {
-            StatusCode::UNAUTHORIZED
-        }
-    })?;
+    verify_webhook_signature_or_forbid(&headers, &body_bytes, Some(&secret))?;
 
     let payload: Value = serde_json::from_slice(&body_bytes).unwrap_or_default();
 
@@ -447,5 +456,20 @@ pub async fn scheduler_loop(state: AppState) {
                 });
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::verify_webhook_signature_or_forbid;
+    use axum::http::{HeaderMap, StatusCode};
+
+    #[test]
+    fn webhook_signature_rejects_missing_secret() {
+        let headers = HeaderMap::new();
+
+        let result = verify_webhook_signature_or_forbid(&headers, b"{}", None);
+
+        assert_eq!(result, Err(StatusCode::FORBIDDEN));
     }
 }
