@@ -430,8 +430,9 @@ Important env vars:
 
 - HiveCore should stay control-plane-first before it becomes orchestration-heavy.
 - Its first job is to make the PatchHive suite legible in one place: product health, launch links, shared defaults, and operational checks.
-- The control-plane v1 surface polls health, startup checks, capabilities, and product-owned `/runs` history; stored product API keys unlock protected run reads and capability-driven action dispatch.
+- The control-plane v1 surface polls health, startup checks, capabilities, product-owned `/runs` history, and server-side `/runs/:id` detail; stored product API keys unlock protected run reads and capability-driven action dispatch without exposing product keys to the browser.
 - HiveCore should push the suite toward shared contracts instead of hiding differences forever. It should reveal where products drift and help standardize them.
+- HiveCore now reports per-product contract drift for health, startup checks, capabilities, run lists, and run detail support.
 - HiveCore-enabled mode means HiveCore owns suite lifecycle coordination, but each product must remain standalone and expose product-owned APIs for that coordination.
 - Early future integrations worth keeping in mind: shared run history, suite-wide schedules, global allowlist and denylist propagation, and cross-product handoffs like SignalHive -> TrustGate -> RepoReaper.
 

@@ -101,11 +101,12 @@ Use this to capture later ideas so they do not get lost between product pushes.
 
 ## HiveCore
 
-- Add product run detail drill-downs through product-owned `/runs/:id` endpoints without exposing stored product API keys to the browser.
+- Product run detail drill-downs are in place through HiveCore's server-side `/products/:slug/runs/:id` proxy, so stored product API keys stay off the browser.
+- Contract drift reporting now shows health, startup checks, capabilities, run list, and run detail support for each product.
 - Add suite-wide schedule views once more products expose schedule metadata through `/capabilities`.
 - Add global allowlist, denylist, and opt-out propagation only when each product supports explicit settings-apply semantics.
 - Add cross-product handoff flows such as SignalHive -> TrustGate -> RepoReaper after approval and safety controls are visible in HiveCore.
-- Add richer contract drift reporting so lagging products show exactly which endpoint or lifecycle field needs work.
+- Extend contract drift reporting later with field-level schema validation once product contracts start versioning beyond `patchhive.product.contract.v1`.
 
 ## Shared Platform
 

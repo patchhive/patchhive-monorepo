@@ -23,6 +23,12 @@ function actionColor(status) {
   return "var(--gold)";
 }
 
+function contractColor(check) {
+  if (check?.ok) return "var(--green)";
+  if (["locked", "skipped", "disabled", "unconfigured"].includes(check?.status)) return "var(--gold)";
+  return "var(--accent)";
+}
+
 function runColor(status) {
   const normalized = String(status || "").toLowerCase();
   if (["completed", "success", "safe", "ready", "dispatched"].includes(normalized)) return "var(--green)";
@@ -33,6 +39,11 @@ function runColor(status) {
 
 function pretty(value) {
   return JSON.stringify(value, null, 2);
+}
+
+function shortJson(value, maxLength = 2200) {
+  const text = pretty(value ?? null);
+  return text.length > maxLength ? `${text.slice(0, maxLength)}\n...` : text;
 }
 
 function defaultActionRequest(product, action) {
@@ -155,7 +166,47 @@ function RecentActivity({ events }) {
   );
 }
 
-function RunHistory({ product }) {
+function ContractChecklist({ product }) {
+  const checks = product.contract_checks || [];
+  if (checks.length === 0) return null;
+
+  return (
+    <div style={{ borderTop: "1px solid var(--border)", paddingTop: 12, display: "grid", gap: 8 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+        <div style={{ fontSize: 12, fontWeight: 800 }}>Contract</div>
+        <Tag color={product.contract_drift_count > 0 ? "var(--accent)" : "var(--green)"}>
+          {product.contract_drift_count || 0} drift
+        </Tag>
+      </div>
+      <div style={{ display: "grid", gap: 6 }}>
+        {checks.map((check) => (
+          <div
+            key={check.id}
+            style={{
+              display: "grid",
+              gridTemplateColumns: "minmax(88px, 0.85fr) minmax(80px, 1fr) auto",
+              gap: 8,
+              alignItems: "center",
+              fontSize: 10,
+              color: "var(--text-dim)",
+            }}
+          >
+            <strong style={{ color: "var(--text)" }}>{check.label}</strong>
+            <span style={{ wordBreak: "break-all" }}>{check.path}</span>
+            <Tag color={contractColor(check)}>{check.status}</Tag>
+            {check.error && (
+              <div style={{ gridColumn: "1 / -1", color: "var(--gold)", lineHeight: 1.45 }}>
+                {check.error}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function RunHistory({ product, onOpenRun }) {
   const runs = product.recent_runs || [];
   if (!product.enabled) {
     return (
@@ -187,8 +238,10 @@ function RunHistory({ product }) {
       ) : (
         <div style={{ display: "grid", gap: 7 }}>
           {runs.slice(0, 3).map((run) => (
-            <div
+            <button
               key={run.id}
+              type="button"
+              onClick={() => onOpenRun(product, run)}
               style={{
                 display: "grid",
                 gap: 3,
@@ -196,6 +249,10 @@ function RunHistory({ product }) {
                 border: "1px solid var(--border)",
                 borderRadius: 8,
                 background: "rgba(255,255,255,0.025)",
+                textAlign: "left",
+                cursor: "pointer",
+                color: "inherit",
+                font: "inherit",
               }}
             >
               <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
@@ -206,7 +263,7 @@ function RunHistory({ product }) {
               {(run.updated_at || run.created_at) && (
                 <div style={{ fontSize: 9, color: "var(--text-muted)" }}>{run.updated_at || run.created_at}</div>
               )}
-            </div>
+            </button>
           ))}
         </div>
       )}
@@ -214,7 +271,98 @@ function RunHistory({ product }) {
   );
 }
 
-function ProductCard({ product, onDispatch }) {
+function DispatchResult({ event }) {
+  return (
+    <div
+      style={{
+        border: `1px solid ${actionColor(event.status)}55`,
+        borderRadius: 8,
+        padding: 10,
+        display: "grid",
+        gap: 8,
+        fontSize: 11,
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+        <strong style={{ color: actionColor(event.status) }}>
+          {event.status}{event.remote_status ? ` · HTTP ${event.remote_status}` : ""}
+        </strong>
+        {event.id && <Tag color="var(--blue)">{event.id}</Tag>}
+      </div>
+      {event.target_url && (
+        <div style={{ color: "var(--text-dim)", wordBreak: "break-all" }}>{event.target_url}</div>
+      )}
+      {event.error && <div style={{ color: "var(--gold)" }}>{event.error}</div>}
+      {event.response_json !== undefined && event.response_json !== null && (
+        <pre
+          style={{
+            ...payloadStyle,
+            minHeight: 0,
+            maxHeight: 210,
+            overflow: "auto",
+            margin: 0,
+            whiteSpace: "pre-wrap",
+          }}
+        >
+          {shortJson(event.response_json)}
+        </pre>
+      )}
+    </div>
+  );
+}
+
+function RunDetailPanel({ detail, loading, onClose }) {
+  if (!detail && !loading) return null;
+  const product = detail?.product;
+  const run = detail?.run;
+  const payload = detail?.data;
+
+  return (
+    <div style={{ ...S.panel, display: "grid", gap: 12, borderColor: "var(--blue)" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
+        <div>
+          <div style={{ fontSize: 16, fontWeight: 900 }}>
+            {product?.title || "Product"} · {run?.title || run?.id || "Run detail"}
+          </div>
+          <div style={{ fontSize: 11, color: "var(--text-dim)", wordBreak: "break-all" }}>
+            {payload?.detail_path || run?.detail_path || ""}
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          {payload && (
+            <Tag color={payload.detail_ok ? "var(--green)" : "var(--gold)"}>
+              {payload.detail_ok ? "detail loaded" : "detail blocked"}
+            </Tag>
+          )}
+          <Btn onClick={onClose}>Close</Btn>
+        </div>
+      </div>
+      {loading ? (
+        <div style={{ fontSize: 12, color: "var(--text-dim)" }}>Loading run detail...</div>
+      ) : detail?.error ? (
+        <div style={{ fontSize: 12, color: "var(--gold)" }}>{detail.error}</div>
+      ) : (
+        <div style={{ display: "grid", gap: 8 }}>
+          {payload?.error && <div style={{ fontSize: 12, color: "var(--gold)" }}>{payload.error}</div>}
+          <pre
+            style={{
+              ...payloadStyle,
+              minHeight: 280,
+              maxHeight: 520,
+              overflow: "auto",
+              margin: 0,
+              whiteSpace: "pre-wrap",
+            }}
+          >
+            {shortJson(payload?.detail ?? payload, 9000)}
+          </pre>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProductCard({ product, onDispatch, onOpenRun }) {
   const health = product.health || {};
   const actions = product.actions || [];
   const dispatchableActions = actions.filter((action) => !action.destructive && product.slug !== "hive-core");
@@ -254,6 +402,20 @@ function ProductCard({ product, onDispatch }) {
       setLocalResult({ status: "failed", error: err.message || "Dispatch failed." });
     } finally {
       setDispatching(false);
+    }
+  }
+
+  function resetPayload() {
+    setPayloadText(pretty(defaultActionRequest(product, selectedAction)));
+    setLocalResult(null);
+  }
+
+  function formatPayload() {
+    try {
+      setPayloadText(pretty(parsePayload(payloadText)));
+      setLocalResult(null);
+    } catch (err) {
+      setLocalResult({ status: "failed", error: `Invalid JSON · ${err.message}` });
     }
   }
 
@@ -330,7 +492,9 @@ function ProductCard({ product, onDispatch }) {
         </div>
       </div>
 
-      <RunHistory product={product} />
+      <ContractChecklist product={product} />
+
+      <RunHistory product={product} onOpenRun={onOpenRun} />
 
       {dispatchableActions.length > 0 && (
         <div style={{ borderTop: "1px solid var(--border)", paddingTop: 12, display: "grid", gap: 10 }}>
@@ -375,24 +539,13 @@ function ProductCard({ product, onDispatch }) {
             <Btn onClick={dispatchSelected} disabled={!canDispatch || dispatching} color="var(--green)">
               {dispatching ? "Dispatching..." : "Dispatch action"}
             </Btn>
+            <Btn onClick={formatPayload}>Format JSON</Btn>
+            <Btn onClick={resetPayload}>Reset</Btn>
             {!product.api_key_configured && <span style={{ fontSize: 11, color: "var(--gold)" }}>Save this product's API key in Settings first.</span>}
             {!health.capabilities_ok && <span style={{ fontSize: 11, color: "var(--gold)" }}>Contract check is not passing yet.</span>}
           </div>
 
-          {localResult && (
-            <div
-              style={{
-                border: `1px solid ${actionColor(localResult.status)}55`,
-                borderRadius: 8,
-                padding: 10,
-                color: actionColor(localResult.status),
-                fontSize: 11,
-              }}
-            >
-              {localResult.status}{localResult.remote_status ? ` · HTTP ${localResult.remote_status}` : ""}
-              {localResult.error ? ` · ${localResult.error}` : ""}
-            </div>
-          )}
+          {localResult && <DispatchResult event={localResult} />}
         </div>
       )}
 
@@ -437,6 +590,8 @@ function ProductCard({ product, onDispatch }) {
 export default function ProductsPanel({ fetchEnvelope, setRunning, setError }) {
   const [products, setProducts] = useState([]);
   const [recentActions, setRecentActions] = useState([]);
+  const [runDetail, setRunDetail] = useState(null);
+  const [runDetailLoading, setRunDetailLoading] = useState(false);
 
   async function refresh() {
     setRunning(true);
@@ -478,6 +633,23 @@ export default function ProductsPanel({ fetchEnvelope, setRunning, setError }) {
     }
   }
 
+  async function openRunDetail(product, run) {
+    setRunning(true);
+    setError("");
+    setRunDetail({ product, run });
+    setRunDetailLoading(true);
+    try {
+      const data = await fetchEnvelope(`/products/${product.slug}/runs/${encodeURIComponent(run.id)}`);
+      setRunDetail({ product, run, data });
+    } catch (err) {
+      setRunDetail({ product, run, error: err.message || "HiveCore could not load run detail." });
+      setError(err.message || "HiveCore could not load run detail.");
+    } finally {
+      setRunDetailLoading(false);
+      setRunning(false);
+    }
+  }
+
   useEffect(() => {
     refresh();
   }, []);
@@ -513,6 +685,12 @@ export default function ProductsPanel({ fetchEnvelope, setRunning, setError }) {
 
       <RecentActivity events={recentActions} />
 
+      <RunDetailPanel
+        detail={runDetail}
+        loading={runDetailLoading}
+        onClose={() => setRunDetail(null)}
+      />
+
       {products.length === 0 ? (
         <EmptyState icon="⬢" text="HiveCore does not have any product status to show yet." />
       ) : (
@@ -522,6 +700,7 @@ export default function ProductsPanel({ fetchEnvelope, setRunning, setError }) {
               key={product.slug}
               product={product}
               onDispatch={dispatchAction}
+              onOpenRun={openRunDetail}
             />
           ))}
         </div>

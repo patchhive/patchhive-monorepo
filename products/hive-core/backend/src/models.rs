@@ -180,6 +180,16 @@ impl Default for ProductHealthSnapshot {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProductContractCheck {
+    pub id: String,
+    pub label: String,
+    pub path: String,
+    pub ok: bool,
+    pub status: String,
+    pub error: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProductRuntimeItem {
     pub slug: String,
     pub title: String,
@@ -197,6 +207,8 @@ pub struct ProductRuntimeItem {
     pub hivecore: Option<contract::HiveCoreLifecycleSupport>,
     pub actions: Vec<contract::ProductAction>,
     pub links: Vec<contract::ProductLink>,
+    pub contract_checks: Vec<ProductContractCheck>,
+    pub contract_drift_count: u32,
     pub run_detail_template: String,
     pub recent_runs: Vec<contract::ProductRunSummary>,
 }
@@ -239,6 +251,20 @@ pub struct ProductRunsSnapshotResponse {
     pub checked_at: String,
     pub error: String,
     pub runs: Vec<contract::ProductRunSummary>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProductRunDetailResponse {
+    pub slug: String,
+    pub title: String,
+    pub api_url: String,
+    pub api_key_configured: bool,
+    pub checked_at: String,
+    pub detail_path: String,
+    pub detail_ok: bool,
+    pub remote_status: Option<u16>,
+    pub error: String,
+    pub detail: Value,
 }
 
 #[derive(Debug, Clone, Deserialize)]

@@ -42,6 +42,10 @@ async fn main() {
         .route("/overview", get(pipeline::overview))
         .route("/products", get(pipeline::products))
         .route("/products/:slug/runs", get(pipeline::product_runs))
+        .route(
+            "/products/:slug/runs/:id",
+            get(pipeline::product_run_detail),
+        )
         .route("/actions/recent", get(pipeline::recent_actions))
         .route(
             "/products/:slug/actions/:action_id",

@@ -17,10 +17,10 @@ use crate::{
     db,
     models::{
         error, now_rfc3339, ok, DispatchActionResponse, OverviewResponse, OverviewSummary,
-        ProductActionEvent, ProductHealthSnapshot, ProductOverride, ProductOverrideInput,
-        ProductRunsSnapshotResponse, ProductRuntimeItem, ProductSettingsItem, SaveSettingsRequest,
-        SettingsResponse, SuiteSettings, SuiteSettingsInput, PRODUCT_TAGLINE, PRODUCT_TITLE,
-        PRODUCT_VERSION,
+        ProductActionEvent, ProductContractCheck, ProductHealthSnapshot, ProductOverride,
+        ProductOverrideInput, ProductRunDetailResponse, ProductRunsSnapshotResponse,
+        ProductRuntimeItem, ProductSettingsItem, SaveSettingsRequest, SettingsResponse,
+        SuiteSettings, SuiteSettingsInput, PRODUCT_TAGLINE, PRODUCT_TITLE, PRODUCT_VERSION,
     },
     startup,
     state::{product_catalog, AppState, ProductDefinition},
@@ -49,6 +49,7 @@ struct ProductProbeSnapshot {
     hivecore: Option<contract::HiveCoreLifecycleSupport>,
     actions: Vec<contract::ProductAction>,
     links: Vec<contract::ProductLink>,
+    contract_checks: Vec<ProductContractCheck>,
     run_detail_template: String,
     recent_runs: Vec<contract::ProductRunSummary>,
 }
@@ -215,6 +216,131 @@ pub async fn product_runs(
         checked_at: now_rfc3339(),
         error,
         runs,
+    })))
+}
+
+pub async fn product_run_detail(
+    State(state): State<AppState>,
+    Path((slug, id)): Path<(String, String)>,
+) -> Result<
+    Json<crate::models::ApiEnvelope<ProductRunDetailResponse>>,
+    (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
+> {
+    let definition = product_catalog()
+        .iter()
+        .find(|product| product.slug == slug)
+        .ok_or_else(|| api_error(StatusCode::NOT_FOUND, "unknown_product", "Unknown product."))?;
+    let overrides = db::product_overrides();
+    let override_item = overrides.get(definition.slug);
+    let api_url = pick_url(
+        override_item.map(|item| item.api_url.as_str()),
+        definition.default_api_url,
+    );
+
+    if definition.slug == "hive-core" {
+        let detail = db::action_event(&id)
+            .map(|event| serde_json::to_value(event).unwrap_or(Value::Null))
+            .ok_or_else(|| {
+                api_error(StatusCode::NOT_FOUND, "run_not_found", "Run was not found.")
+            })?;
+        return Ok(Json(ok(ProductRunDetailResponse {
+            slug: definition.slug.into(),
+            title: definition.title.into(),
+            api_url,
+            api_key_configured: true,
+            checked_at: now_rfc3339(),
+            detail_path: format!("/runs/{id}"),
+            detail_ok: true,
+            remote_status: Some(200),
+            error: String::new(),
+            detail,
+        })));
+    }
+
+    let enabled = override_item.map(|item| item.enabled).unwrap_or(true);
+    if !enabled {
+        return Err(api_error(
+            StatusCode::CONFLICT,
+            "product_disabled",
+            "HiveCore will not fetch run detail from a disabled product.",
+        ));
+    }
+    if api_url.trim().is_empty() {
+        return Err(api_error(
+            StatusCode::BAD_REQUEST,
+            "product_unconfigured",
+            "Configure this product API URL before fetching run detail.",
+        ));
+    }
+
+    let api_key = override_item
+        .map(|item| item.api_key.trim().to_string())
+        .unwrap_or_default();
+    if api_key.is_empty() {
+        return Err(api_error(
+            StatusCode::BAD_REQUEST,
+            "product_api_key_missing",
+            "Save this product's API key in HiveCore settings before fetching protected run detail.",
+        ));
+    }
+
+    let capabilities = fetch_product_capabilities(&state.client, &api_url, &api_key)
+        .await
+        .map_err(|message| {
+            api_error(StatusCode::BAD_GATEWAY, "capabilities_unavailable", message)
+        })?;
+    if !capabilities.hivecore.can_read_run_detail {
+        return Err(api_error(
+            StatusCode::CONFLICT,
+            "run_detail_unsupported",
+            "This product does not advertise run detail support yet.",
+        ));
+    }
+
+    let detail_path = build_run_detail_path(&capabilities.routes.run_detail_template, &id)
+        .map_err(|message| api_error(StatusCode::BAD_REQUEST, "invalid_run_id", message))?;
+    let detail_url = build_target_url(&api_url, &detail_path, &HashMap::new())
+        .map_err(|message| api_error(StatusCode::BAD_REQUEST, "invalid_run_detail_url", message))?;
+    let response = authorized_get(&state.client, detail_url.as_str(), &api_key)
+        .timeout(Duration::from_secs(3))
+        .send()
+        .await;
+
+    let checked_at = now_rfc3339();
+    let (detail_ok, remote_status, error, detail) = match response {
+        Ok(response) => {
+            let status = response.status();
+            let text = response.text().await.unwrap_or_default();
+            (
+                status.is_success(),
+                Some(status.as_u16()),
+                if status.is_success() {
+                    String::new()
+                } else {
+                    format!("{} returned HTTP {status}", detail_path)
+                },
+                parse_response_body(&text),
+            )
+        }
+        Err(err) => (
+            false,
+            None,
+            format!("Could not reach {detail_path}: {err}"),
+            json!({ "error": err.to_string() }),
+        ),
+    };
+
+    Ok(Json(ok(ProductRunDetailResponse {
+        slug: definition.slug.into(),
+        title: definition.title.into(),
+        api_url,
+        api_key_configured: true,
+        checked_at,
+        detail_path,
+        detail_ok,
+        remote_status,
+        error,
+        detail,
     })))
 }
 
@@ -520,6 +646,7 @@ async fn build_product_runtime(
             hivecore: None,
             actions: Vec::new(),
             links: Vec::new(),
+            contract_checks: contract_checks_for_unavailable_product("disabled"),
             run_detail_template: String::new(),
             recent_runs: Vec::new(),
         }
@@ -533,6 +660,7 @@ async fn build_product_runtime(
             hivecore: None,
             actions: Vec::new(),
             links: Vec::new(),
+            contract_checks: contract_checks_for_unavailable_product("unconfigured"),
             run_detail_template: String::new(),
             recent_runs: Vec::new(),
         }
@@ -550,15 +678,18 @@ async fn build_product_runtime(
         enabled,
         frontend_url,
         api_url,
-        api_key_configured: override_item
-            .map(|item| !item.api_key.trim().is_empty())
-            .unwrap_or(false),
+        api_key_configured: definition.slug == "hive-core"
+            || override_item
+                .map(|item| !item.api_key.trim().is_empty())
+                .unwrap_or(false),
         notes,
         status: probe.health.status.clone(),
         health: probe.health,
         hivecore: probe.hivecore,
         actions: probe.actions,
         links: probe.links,
+        contract_drift_count: contract_drift_count(&probe.contract_checks),
+        contract_checks: probe.contract_checks,
         run_detail_template: probe.run_detail_template,
         recent_runs: probe.recent_runs,
     }
@@ -585,6 +716,7 @@ async fn fetch_product_health(
             hivecore: None,
             actions: Vec::new(),
             links: Vec::new(),
+            contract_checks: contract_checks_for_failed_health(),
             run_detail_template: String::new(),
             recent_runs: Vec::new(),
         };
@@ -601,6 +733,10 @@ async fn fetch_product_health(
             hivecore: None,
             actions: Vec::new(),
             links: Vec::new(),
+            contract_checks: contract_checks_with_health_error(format!(
+                "/health returned HTTP {}",
+                health_response.status()
+            )),
             run_detail_template: String::new(),
             recent_runs: Vec::new(),
         };
@@ -623,23 +759,25 @@ async fn fetch_product_health(
         .send()
         .await;
 
-    let (startup_errors, startup_warns, startup_infos, extra_error) = match checks_response {
-        Ok(response) if response.status().is_success() => {
-            let body = response
-                .json::<StartupChecksBody>()
-                .await
-                .unwrap_or(StartupChecksBody { checks: Vec::new() });
-            let (errors, warns, infos) = startup::summarize_check_levels(&body.checks);
-            (errors, warns, infos, String::new())
-        }
-        Ok(response) => (
-            0,
-            0,
-            0,
-            format!("/startup/checks returned HTTP {}", response.status()),
-        ),
-        Err(_) => (0, 0, 0, "Could not reach /startup/checks.".into()),
-    };
+    let (startup_errors, startup_warns, startup_infos, startup_ok, extra_error) =
+        match checks_response {
+            Ok(response) if response.status().is_success() => {
+                let body = response
+                    .json::<StartupChecksBody>()
+                    .await
+                    .unwrap_or(StartupChecksBody { checks: Vec::new() });
+                let (errors, warns, infos) = startup::summarize_check_levels(&body.checks);
+                (errors, warns, infos, true, String::new())
+            }
+            Ok(response) => (
+                0,
+                0,
+                0,
+                false,
+                format!("/startup/checks returned HTTP {}", response.status()),
+            ),
+            Err(_) => (0, 0, 0, false, "Could not reach /startup/checks.".into()),
+        };
 
     let (capabilities_ok, actions, links, hivecore, run_detail_template, capabilities_error) =
         match fetch_product_capabilities(client, api_url, api_key).await {
@@ -656,6 +794,67 @@ async fn fetch_product_health(
     let action_count = actions.len() as u32;
     let (runs_ok, recent_runs, runs_error) = fetch_product_runs(client, api_url, api_key).await;
     let run_count = recent_runs.len() as u32;
+    let run_detail_ok = hivecore
+        .as_ref()
+        .map(|support| support.can_read_run_detail && !run_detail_template.trim().is_empty())
+        .unwrap_or(false);
+    let contract_checks = vec![
+        contract_check("health", "Health", "/health", true, "ok", ""),
+        contract_check(
+            "startup_checks",
+            "Startup checks",
+            "/startup/checks",
+            startup_ok,
+            if startup_ok { "ok" } else { "failed" },
+            &extra_error,
+        ),
+        contract_check(
+            "capabilities",
+            "Capabilities",
+            "/capabilities",
+            capabilities_ok,
+            if capabilities_ok { "ok" } else { "failed" },
+            &capabilities_error,
+        ),
+        contract_check(
+            "runs",
+            "Runs",
+            "/runs",
+            runs_ok,
+            if runs_ok {
+                "ok"
+            } else if api_key.trim().is_empty() {
+                "locked"
+            } else {
+                "failed"
+            },
+            &runs_error,
+        ),
+        contract_check(
+            "run_detail",
+            "Run detail",
+            if run_detail_template.trim().is_empty() {
+                "/runs/{id}"
+            } else {
+                run_detail_template.as_str()
+            },
+            run_detail_ok,
+            if run_detail_ok {
+                "advertised"
+            } else if !capabilities_ok {
+                "skipped"
+            } else {
+                "missing"
+            },
+            if run_detail_ok {
+                ""
+            } else if !capabilities_ok {
+                "Capabilities must pass before HiveCore can confirm run detail support."
+            } else {
+                "Product does not advertise run detail support."
+            },
+        ),
+    ];
 
     let config_errors = health_body.config_errors.unwrap_or(0);
     let base_status = health_body.status.unwrap_or_else(|| "unknown".into());
@@ -697,6 +896,7 @@ async fn fetch_product_health(
         hivecore,
         actions,
         links,
+        contract_checks,
         run_detail_template,
         recent_runs,
     }
@@ -751,6 +951,34 @@ fn local_hive_core_probe() -> ProductProbeSnapshot {
             contract::link("products", "Products", "/products"),
             contract::link("settings", "Settings", "/settings"),
         ],
+        contract_checks: vec![
+            contract_check("health", "Health", "/health", true, "ok", ""),
+            contract_check(
+                "startup_checks",
+                "Startup checks",
+                "/startup/checks",
+                true,
+                "ok",
+                "",
+            ),
+            contract_check(
+                "capabilities",
+                "Capabilities",
+                "/capabilities",
+                true,
+                "ok",
+                "",
+            ),
+            contract_check("runs", "Runs", "/runs", true, "ok", ""),
+            contract_check(
+                "run_detail",
+                "Run detail",
+                "/runs/{id}",
+                true,
+                "advertised",
+                "",
+            ),
+        ],
         run_detail_template: "/runs/{id}".into(),
         recent_runs,
     }
@@ -763,6 +991,98 @@ fn pick_url(override_url: Option<&str>, default_url: &str) -> String {
     } else {
         override_url.to_string()
     }
+}
+
+fn contract_check(
+    id: impl Into<String>,
+    label: impl Into<String>,
+    path: impl Into<String>,
+    ok: bool,
+    status: impl Into<String>,
+    error: impl Into<String>,
+) -> ProductContractCheck {
+    ProductContractCheck {
+        id: id.into(),
+        label: label.into(),
+        path: path.into(),
+        ok,
+        status: status.into(),
+        error: error.into(),
+    }
+}
+
+fn contract_drift_count(checks: &[ProductContractCheck]) -> u32 {
+    checks
+        .iter()
+        .filter(|check| {
+            !check.ok
+                && !matches!(
+                    check.status.as_str(),
+                    "locked" | "skipped" | "disabled" | "unconfigured"
+                )
+        })
+        .count() as u32
+}
+
+fn contract_checks_for_unavailable_product(status: &str) -> Vec<ProductContractCheck> {
+    let reason = if status == "disabled" {
+        "Product is disabled in HiveCore settings."
+    } else {
+        "Product API URL is not configured."
+    };
+    [
+        ("health", "Health", "/health"),
+        ("startup_checks", "Startup checks", "/startup/checks"),
+        ("capabilities", "Capabilities", "/capabilities"),
+        ("runs", "Runs", "/runs"),
+        ("run_detail", "Run detail", "/runs/{id}"),
+    ]
+    .into_iter()
+    .map(|(id, label, path)| contract_check(id, label, path, false, status, reason))
+    .collect()
+}
+
+fn contract_checks_for_failed_health() -> Vec<ProductContractCheck> {
+    contract_checks_with_health_error("Could not reach /health.")
+}
+
+fn contract_checks_with_health_error(error: impl Into<String>) -> Vec<ProductContractCheck> {
+    let error = error.into();
+    vec![
+        contract_check("health", "Health", "/health", false, "failed", error),
+        contract_check(
+            "startup_checks",
+            "Startup checks",
+            "/startup/checks",
+            false,
+            "skipped",
+            "Health must pass before startup checks are meaningful.",
+        ),
+        contract_check(
+            "capabilities",
+            "Capabilities",
+            "/capabilities",
+            false,
+            "skipped",
+            "Health must pass before capabilities are meaningful.",
+        ),
+        contract_check(
+            "runs",
+            "Runs",
+            "/runs",
+            false,
+            "skipped",
+            "Health must pass before run history is meaningful.",
+        ),
+        contract_check(
+            "run_detail",
+            "Run detail",
+            "/runs/{id}",
+            false,
+            "skipped",
+            "Health must pass before run detail support is meaningful.",
+        ),
+    ]
 }
 
 fn hive_core_action_run_values(limit: u32) -> Vec<Value> {
@@ -982,6 +1302,31 @@ fn fill_path_template(path: &str, path_params: &HashMap<String, String>) -> Resu
     Ok(resolved)
 }
 
+fn build_run_detail_path(template: &str, id: &str) -> Result<String, String> {
+    let id = id.trim();
+    if id.is_empty() {
+        return Err("Run id is required.".into());
+    }
+    if id.contains('/')
+        || id.contains('?')
+        || id.contains('#')
+        || id.contains('{')
+        || id.contains('}')
+    {
+        return Err(
+            "Run id contains characters HiveCore will not place into a product path.".into(),
+        );
+    }
+    let mut params = HashMap::new();
+    params.insert("id".into(), id.to_string());
+    let template = if template.trim().is_empty() {
+        "/runs/{id}"
+    } else {
+        template.trim()
+    };
+    fill_path_template(template, &params)
+}
+
 fn build_target_url(
     api_url: &str,
     path: &str,
@@ -1051,7 +1396,10 @@ fn summarize_products(products: &[ProductRuntimeItem]) -> OverviewSummary {
 
 #[cfg(test)]
 mod tests {
-    use super::{fill_path_template, parse_dispatch_input, pick_url, summarize_products};
+    use super::{
+        build_run_detail_path, contract_check, contract_drift_count, fill_path_template,
+        parse_dispatch_input, pick_url, summarize_products,
+    };
     use crate::models::{ProductHealthSnapshot, ProductRuntimeItem};
     use serde_json::json;
     use std::collections::HashMap;
@@ -1076,6 +1424,8 @@ mod tests {
                 hivecore: None,
                 actions: Vec::new(),
                 links: Vec::new(),
+                contract_checks: Vec::new(),
+                contract_drift_count: 0,
                 run_detail_template: String::new(),
                 recent_runs: Vec::new(),
             },
@@ -1096,6 +1446,8 @@ mod tests {
                 hivecore: None,
                 actions: Vec::new(),
                 links: Vec::new(),
+                contract_checks: Vec::new(),
+                contract_drift_count: 0,
                 run_detail_template: String::new(),
                 recent_runs: Vec::new(),
             },
@@ -1116,6 +1468,8 @@ mod tests {
                 hivecore: None,
                 actions: Vec::new(),
                 links: Vec::new(),
+                contract_checks: Vec::new(),
+                contract_drift_count: 0,
                 run_detail_template: String::new(),
                 recent_runs: Vec::new(),
             },
@@ -1136,6 +1490,8 @@ mod tests {
                 hivecore: None,
                 actions: Vec::new(),
                 links: Vec::new(),
+                contract_checks: Vec::new(),
+                contract_drift_count: 0,
                 run_detail_template: String::new(),
                 recent_runs: Vec::new(),
             },
@@ -1195,5 +1551,25 @@ mod tests {
             "/schedules/daily/run"
         );
         assert!(fill_path_template("/schedules/{missing}/run", &params).is_err());
+    }
+
+    #[test]
+    fn build_run_detail_path_rejects_unsafe_ids() {
+        assert_eq!(
+            build_run_detail_path("/runs/{id}", "run_123").unwrap(),
+            "/runs/run_123"
+        );
+        assert!(build_run_detail_path("/runs/{id}", "../secret").is_err());
+        assert!(build_run_detail_path("/runs/{id}", "run?x=1").is_err());
+    }
+
+    #[test]
+    fn contract_drift_ignores_operator_locked_states() {
+        let checks = vec![
+            contract_check("health", "Health", "/health", true, "ok", ""),
+            contract_check("runs", "Runs", "/runs", false, "locked", "API key missing"),
+            contract_check("detail", "Run detail", "/runs/{id}", false, "missing", ""),
+        ];
+        assert_eq!(contract_drift_count(&checks), 1);
     }
 }

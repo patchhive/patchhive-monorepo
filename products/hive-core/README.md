@@ -15,6 +15,8 @@ This is intentionally narrower than full orchestration. HiveCore should earn tha
 - suite overview with quick launch links
 - live product health polling across the PatchHive product catalog
 - product-owned run history surfaced through each product's `/runs` contract
+- server-side product run detail drill-downs through each product's `/runs/:id` contract
+- per-product contract drift reporting for health, startup checks, capabilities, run lists, and run detail support
 - capability-driven action dispatch through advertised product actions
 - persistent global defaults for topics, languages, repo guardrails, and operator notes
 - per-product frontend/API overrides for subdomains or remote deployments
