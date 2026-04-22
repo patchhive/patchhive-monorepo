@@ -39,12 +39,108 @@ pub fn health_check() -> bool {
         .is_ok()
 }
 
-fn column_exists(conn: &Connection, table: &str, column: &str) -> Result<bool> {
-    let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+#[derive(Clone, Copy)]
+enum MigrationColumn {
+    ScansParamsSignature,
+    ScansWarningsJson,
+    ScansTriggerType,
+    ScansScheduleName,
+    RepoSignalsSampledIssues,
+    RepoSignalsUnlabeledIssues,
+    RepoSignalsStaleBugIssues,
+    RepoSignalsStaleHighCommentIssues,
+    RepoSignalsScoreBreakdownJson,
+    RepoSignalsRecurringBugClustersJson,
+    RepoSignalsTodoAvailable,
+    RepoSignalsFixmeAvailable,
+    RepoSignalsWarningsJson,
+}
+
+impl MigrationColumn {
+    fn column_name(self) -> &'static str {
+        match self {
+            Self::ScansParamsSignature => "params_signature",
+            Self::ScansWarningsJson | Self::RepoSignalsWarningsJson => "warnings_json",
+            Self::ScansTriggerType => "trigger_type",
+            Self::ScansScheduleName => "schedule_name",
+            Self::RepoSignalsSampledIssues => "sampled_issues",
+            Self::RepoSignalsUnlabeledIssues => "unlabeled_issues",
+            Self::RepoSignalsStaleBugIssues => "stale_bug_issues",
+            Self::RepoSignalsStaleHighCommentIssues => "stale_high_comment_issues",
+            Self::RepoSignalsScoreBreakdownJson => "score_breakdown_json",
+            Self::RepoSignalsRecurringBugClustersJson => "recurring_bug_clusters_json",
+            Self::RepoSignalsTodoAvailable => "todo_available",
+            Self::RepoSignalsFixmeAvailable => "fixme_available",
+        }
+    }
+
+    fn table_info_sql(self) -> &'static str {
+        match self {
+            Self::ScansParamsSignature
+            | Self::ScansWarningsJson
+            | Self::ScansTriggerType
+            | Self::ScansScheduleName => "PRAGMA table_info(scans)",
+            Self::RepoSignalsSampledIssues
+            | Self::RepoSignalsUnlabeledIssues
+            | Self::RepoSignalsStaleBugIssues
+            | Self::RepoSignalsStaleHighCommentIssues
+            | Self::RepoSignalsScoreBreakdownJson
+            | Self::RepoSignalsRecurringBugClustersJson
+            | Self::RepoSignalsTodoAvailable
+            | Self::RepoSignalsFixmeAvailable
+            | Self::RepoSignalsWarningsJson => "PRAGMA table_info(repo_signals)",
+        }
+    }
+
+    fn add_column_sql(self) -> &'static str {
+        match self {
+            Self::ScansParamsSignature => {
+                "ALTER TABLE scans ADD COLUMN params_signature TEXT NOT NULL DEFAULT '';"
+            }
+            Self::ScansWarningsJson => {
+                "ALTER TABLE scans ADD COLUMN warnings_json TEXT NOT NULL DEFAULT '[]';"
+            }
+            Self::ScansTriggerType => {
+                "ALTER TABLE scans ADD COLUMN trigger_type TEXT NOT NULL DEFAULT 'manual';"
+            }
+            Self::ScansScheduleName => "ALTER TABLE scans ADD COLUMN schedule_name TEXT;",
+            Self::RepoSignalsSampledIssues => {
+                "ALTER TABLE repo_signals ADD COLUMN sampled_issues INTEGER NOT NULL DEFAULT 0;"
+            }
+            Self::RepoSignalsUnlabeledIssues => {
+                "ALTER TABLE repo_signals ADD COLUMN unlabeled_issues INTEGER NOT NULL DEFAULT 0;"
+            }
+            Self::RepoSignalsStaleBugIssues => {
+                "ALTER TABLE repo_signals ADD COLUMN stale_bug_issues INTEGER NOT NULL DEFAULT 0;"
+            }
+            Self::RepoSignalsStaleHighCommentIssues => {
+                "ALTER TABLE repo_signals ADD COLUMN stale_high_comment_issues INTEGER NOT NULL DEFAULT 0;"
+            }
+            Self::RepoSignalsScoreBreakdownJson => {
+                "ALTER TABLE repo_signals ADD COLUMN score_breakdown_json TEXT NOT NULL DEFAULT '[]';"
+            }
+            Self::RepoSignalsRecurringBugClustersJson => {
+                "ALTER TABLE repo_signals ADD COLUMN recurring_bug_clusters_json TEXT NOT NULL DEFAULT '[]';"
+            }
+            Self::RepoSignalsTodoAvailable => {
+                "ALTER TABLE repo_signals ADD COLUMN todo_available INTEGER NOT NULL DEFAULT 1;"
+            }
+            Self::RepoSignalsFixmeAvailable => {
+                "ALTER TABLE repo_signals ADD COLUMN fixme_available INTEGER NOT NULL DEFAULT 1;"
+            }
+            Self::RepoSignalsWarningsJson => {
+                "ALTER TABLE repo_signals ADD COLUMN warnings_json TEXT NOT NULL DEFAULT '[]';"
+            }
+        }
+    }
+}
+
+fn column_exists(conn: &Connection, column: MigrationColumn) -> Result<bool> {
+    let mut stmt = conn.prepare(column.table_info_sql())?;
     let rows = stmt.query_map([], |row| row.get::<_, String>(1))?;
 
     for row in rows {
-        if row? == column {
+        if row? == column.column_name() {
             return Ok(true);
         }
     }
@@ -52,9 +148,9 @@ fn column_exists(conn: &Connection, table: &str, column: &str) -> Result<bool> {
     Ok(false)
 }
 
-fn ensure_column(conn: &Connection, table: &str, column: &str, definition: &str) -> Result<()> {
-    if !column_exists(conn, table, column)? {
-        conn.execute_batch(&format!("ALTER TABLE {table} ADD COLUMN {definition};"))?;
+fn ensure_column(conn: &Connection, column: MigrationColumn) -> Result<()> {
+    if !column_exists(conn, column)? {
+        conn.execute_batch(column.add_column_sql())?;
     }
     Ok(())
 }
@@ -138,80 +234,19 @@ fn init_schema(conn: &Connection) -> Result<()> {
         "#,
     )?;
 
-    ensure_column(
-        &conn,
-        "scans",
-        "params_signature",
-        "params_signature TEXT NOT NULL DEFAULT ''",
-    )?;
-    ensure_column(
-        &conn,
-        "scans",
-        "warnings_json",
-        "warnings_json TEXT NOT NULL DEFAULT '[]'",
-    )?;
-    ensure_column(
-        &conn,
-        "scans",
-        "trigger_type",
-        "trigger_type TEXT NOT NULL DEFAULT 'manual'",
-    )?;
-    ensure_column(&conn, "scans", "schedule_name", "schedule_name TEXT")?;
-
-    ensure_column(
-        &conn,
-        "repo_signals",
-        "sampled_issues",
-        "sampled_issues INTEGER NOT NULL DEFAULT 0",
-    )?;
-    ensure_column(
-        &conn,
-        "repo_signals",
-        "unlabeled_issues",
-        "unlabeled_issues INTEGER NOT NULL DEFAULT 0",
-    )?;
-    ensure_column(
-        &conn,
-        "repo_signals",
-        "stale_bug_issues",
-        "stale_bug_issues INTEGER NOT NULL DEFAULT 0",
-    )?;
-    ensure_column(
-        &conn,
-        "repo_signals",
-        "stale_high_comment_issues",
-        "stale_high_comment_issues INTEGER NOT NULL DEFAULT 0",
-    )?;
-    ensure_column(
-        &conn,
-        "repo_signals",
-        "score_breakdown_json",
-        "score_breakdown_json TEXT NOT NULL DEFAULT '[]'",
-    )?;
-    ensure_column(
-        &conn,
-        "repo_signals",
-        "recurring_bug_clusters_json",
-        "recurring_bug_clusters_json TEXT NOT NULL DEFAULT '[]'",
-    )?;
-    ensure_column(
-        &conn,
-        "repo_signals",
-        "todo_available",
-        "todo_available INTEGER NOT NULL DEFAULT 1",
-    )?;
-    ensure_column(
-        &conn,
-        "repo_signals",
-        "fixme_available",
-        "fixme_available INTEGER NOT NULL DEFAULT 1",
-    )?;
-    ensure_column(
-        &conn,
-        "repo_signals",
-        "warnings_json",
-        "warnings_json TEXT NOT NULL DEFAULT '[]'",
-    )?;
+    ensure_column(conn, MigrationColumn::ScansParamsSignature)?;
+    ensure_column(conn, MigrationColumn::ScansWarningsJson)?;
+    ensure_column(conn, MigrationColumn::ScansTriggerType)?;
+    ensure_column(conn, MigrationColumn::ScansScheduleName)?;
+    ensure_column(conn, MigrationColumn::RepoSignalsSampledIssues)?;
+    ensure_column(conn, MigrationColumn::RepoSignalsUnlabeledIssues)?;
+    ensure_column(conn, MigrationColumn::RepoSignalsStaleBugIssues)?;
+    ensure_column(conn, MigrationColumn::RepoSignalsStaleHighCommentIssues)?;
+    ensure_column(conn, MigrationColumn::RepoSignalsScoreBreakdownJson)?;
+    ensure_column(conn, MigrationColumn::RepoSignalsRecurringBugClustersJson)?;
+    ensure_column(conn, MigrationColumn::RepoSignalsTodoAvailable)?;
+    ensure_column(conn, MigrationColumn::RepoSignalsFixmeAvailable)?;
+    ensure_column(conn, MigrationColumn::RepoSignalsWarningsJson)?;
     Ok(())
 }
 

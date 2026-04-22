@@ -11,6 +11,21 @@ fn env_str(k: &str) -> String {
     std::env::var(k).unwrap_or_default()
 }
 
+fn env_truthy(key: &str) -> bool {
+    matches!(
+        env_str(key).to_ascii_lowercase().as_str(),
+        "1" | "true" | "yes"
+    )
+}
+
+fn test_timeout_seconds() -> u64 {
+    std::env::var("REAPER_TEST_TIMEOUT_SECONDS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(600)
+}
+
 async fn runcmd(args: &[&str], cwd: Option<&Path>) -> Result<Output> {
     let mut cmd = Command::new(args[0]);
     cmd.args(&args[1..]);
@@ -412,13 +427,9 @@ async fn run_docker_test(repo_dir: &Path, runner: &RepoTestRunner) -> Result<Tes
         cmd.args(["--user", &user]);
     }
     cmd.args([runner.image, "sh", "-lc", runner.command]);
+    cmd.kill_on_drop(true);
 
-    let timeout_seconds = std::env::var("REAPER_TEST_TIMEOUT_SECONDS")
-        .ok()
-        .and_then(|value| value.parse::<u64>().ok())
-        .filter(|value| *value > 0)
-        .unwrap_or(600);
-
+    let timeout_seconds = test_timeout_seconds();
     let output = timeout(Duration::from_secs(timeout_seconds), cmd.output()).await;
     let output = match output {
         Ok(result) => result?,
@@ -443,11 +454,20 @@ async fn run_host_test(repo_dir: &Path, runner: &RepoTestRunner) -> Result<TestR
     let program = parts
         .next()
         .ok_or_else(|| anyhow!("Missing host test program"))?;
-    let output = Command::new(program)
-        .args(parts)
-        .current_dir(repo_dir)
-        .output()
-        .await?;
+    let timeout_seconds = test_timeout_seconds();
+    let mut cmd = Command::new(program);
+    cmd.args(parts).current_dir(repo_dir).kill_on_drop(true);
+    let output = timeout(Duration::from_secs(timeout_seconds), cmd.output()).await;
+    let output = match output {
+        Ok(result) => result?,
+        Err(_) => {
+            return Ok(TestResult {
+                passed: false,
+                output: format!("Host test run timed out after {timeout_seconds} seconds."),
+                runner: format!("host:{}", runner.runner),
+            });
+        }
+    };
     Ok(TestResult {
         passed: output.status.success(),
         output: trimmed_test_output(&output.stdout, &output.stderr),
@@ -456,12 +476,7 @@ async fn run_host_test(repo_dir: &Path, runner: &RepoTestRunner) -> Result<TestR
 }
 
 pub async fn run_tests(repo_dir: &Path) -> TestResult {
-    if !matches!(
-        env_str("REAPER_ENABLE_UNTRUSTED_TESTS")
-            .to_ascii_lowercase()
-            .as_str(),
-        "1" | "true" | "yes"
-    ) {
+    if !env_truthy("REAPER_ENABLE_UNTRUSTED_TESTS") {
         return TestResult {
             passed: false,
             output: "Unsafe test execution is disabled for untrusted repositories. Set REAPER_ENABLE_UNTRUSTED_TESTS=true to opt in.".into(),
@@ -482,6 +497,14 @@ pub async fn run_tests(repo_dir: &Path) -> TestResult {
             }
         }
     };
+
+    if sandbox == "host" && !env_truthy("REAPER_ALLOW_HOST_TESTS") {
+        return TestResult {
+            passed: false,
+            output: "Host test execution is disabled. Use the Docker sandbox, or set REAPER_ALLOW_HOST_TESTS=true in addition to REAPER_ENABLE_UNTRUSTED_TESTS=true to explicitly accept host execution risk.".into(),
+            runner: "host-disabled".into(),
+        };
+    }
 
     let runners: &[RepoTestRunner] = &[
         RepoTestRunner {
@@ -568,8 +591,18 @@ pub async fn run_tests(repo_dir: &Path) -> TestResult {
 
 #[cfg(test)]
 mod tests {
-    use super::collect_files_selective_sync;
-    use std::fs;
+    use super::{collect_files_selective_sync, run_tests};
+    use std::{env, fs, sync::Mutex};
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    fn restore_env_var(key: &str, value: Option<String>) {
+        if let Some(value) = value {
+            env::set_var(key, value);
+        } else {
+            env::remove_var(key);
+        }
+    }
 
     #[test]
     fn collect_files_selective_skips_paths_outside_repo_root() {
@@ -599,5 +632,31 @@ mod tests {
 
         let _ = fs::remove_dir_all(&root);
         let _ = fs::remove_file(&outside);
+    }
+
+    #[tokio::test]
+    async fn run_tests_requires_separate_host_execution_opt_in() {
+        let _guard = ENV_LOCK.lock().expect("lock test env");
+        let previous_enabled = env::var("REAPER_ENABLE_UNTRUSTED_TESTS").ok();
+        let previous_sandbox = env::var("REAPER_TEST_SANDBOX").ok();
+        let previous_allow_host = env::var("REAPER_ALLOW_HOST_TESTS").ok();
+        let root =
+            std::env::temp_dir().join(format!("repo-reaper-git-ops-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&root).expect("create repo root");
+
+        env::set_var("REAPER_ENABLE_UNTRUSTED_TESTS", "true");
+        env::set_var("REAPER_TEST_SANDBOX", "host");
+        env::remove_var("REAPER_ALLOW_HOST_TESTS");
+
+        let result = run_tests(&root).await;
+
+        assert!(!result.passed);
+        assert_eq!(result.runner, "host-disabled");
+        assert!(result.output.contains("REAPER_ALLOW_HOST_TESTS=true"));
+
+        let _ = fs::remove_dir_all(&root);
+        restore_env_var("REAPER_ENABLE_UNTRUSTED_TESTS", previous_enabled);
+        restore_env_var("REAPER_TEST_SANDBOX", previous_sandbox);
+        restore_env_var("REAPER_ALLOW_HOST_TESTS", previous_allow_host);
     }
 }

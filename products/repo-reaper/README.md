@@ -73,7 +73,9 @@ Optional integrations:
 
 - first-time API-key bootstrap is localhost-first
 - untrusted repo test execution is disabled by default
-- if tests are enabled, Docker sandboxing is the safer default
+- if tests are enabled, Docker sandboxing is the default
+- host test execution requires both `REAPER_ENABLE_UNTRUSTED_TESTS=true` and `REAPER_ALLOW_HOST_TESTS=true`
+- validation commands time out after `REAPER_TEST_TIMEOUT_SECONDS` seconds, defaulting to `600`
 - validation and pull request publication are treated as explicit gates, not incidental side effects
 
 ## Repository Model

@@ -154,6 +154,7 @@ Every product backend that repeats PatchHive's API-key auth or typed startup che
 Rules:
 - If a Rust backend seam already exists in 2 or more products, extract it into `patchhive-product-core` before a third product repeats it.
 - Keep the crate focused on backend primitives, not product behavior.
+- Product backends should use `listen_addr()` so `PATCHHIVE_BIND_ADDR` can force loopback-only local runs when Docker-style `0.0.0.0` binding is not desired.
 - Good candidates: auth middleware, startup/health helpers, generic ID or envelope helpers, generic named preset storage interfaces.
 - Bad candidates until proven generic: GitHub search logic, scoring heuristics, pipelines, route behavior, and product-specific SQLite schemas.
 
@@ -328,6 +329,10 @@ Important env vars:
 - `COST_BUDGET_USD`
 - `MIN_REVIEW_CONFIDENCE`
 - `RETRY_COUNT`
+- `REAPER_ENABLE_UNTRUSTED_TESTS`
+- `REAPER_TEST_SANDBOX`
+- `REAPER_ALLOW_HOST_TESTS`
+- `REAPER_TEST_TIMEOUT_SECONDS`
 - `WEBHOOK_SECRET`
 - `REAPER_DB_PATH`
 - `REAPER_WORK_DIR`

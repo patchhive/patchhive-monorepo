@@ -72,6 +72,8 @@ cd backend && cargo run
 cd ../frontend && npm install && npm run dev
 ```
 
+Backends bind to `0.0.0.0` by default for Docker compatibility. For loopback-only local runs, set `PATCHHIVE_BIND_ADDR=127.0.0.1` before starting a backend.
+
 ### Create a New Product
 
 ```bash
