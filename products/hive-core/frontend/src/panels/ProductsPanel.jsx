@@ -58,6 +58,19 @@ function defaultActionRequest(product, action) {
   if (action.id === "context") {
     return { repo: "owner/repo", query: "testing conventions", max_items: 8 };
   }
+  if (action.id === "capture_failguard_lesson") {
+    return {
+      repo: "owner/repo",
+      title: "Webhook endpoints must fail closed without a secret",
+      outcome: "Unsigned webhook payloads could trigger protected automation.",
+      lesson: "Public webhook routes must not accept unsigned payloads or silently skip signature verification.",
+      prevention: "Reject webhook delivery when the signing secret is missing.",
+      affected_paths: ["backend/src/routes/webhook.rs"],
+      evidence: ["FailGuard lesson captured by the operator"],
+      disposition: "policy",
+      pinned: true,
+    };
+  }
   if (action.id === "ingest") {
     return { repo: "owner/repo" };
   }

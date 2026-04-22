@@ -102,7 +102,7 @@ Why it's differentiated: It complements existing agents instead of competing wit
 
 MVP scope in 1 week: PR diff ingestion, simple risk scoring, policy rules, `safe/warn/block` output, GitHub status check.
 
-IncidentEcho fits here as a capability that turns past failures, outages, and bad PR outcomes into future policy checks and guardrails.
+FailGuard fits here as a capability that turns past failures, outages, and bad PR outcomes into future policy checks and guardrails.
 
 ### 4. RepoMemory by PatchHive
 
@@ -114,7 +114,7 @@ Why it's differentiated: Repo-specific memory is still a real gap; most agents a
 
 MVP scope in 1 week: Ingest merged PRs, extract conventions and past failures, searchable memory store, prompt-pack generation for agents.
 
-IncidentEcho also fits here as a capability that captures lessons from bugs, incidents, and painful reviews so the repo keeps institutional memory.
+FailGuard also fits here as a capability that captures lessons from bugs, incidents, and painful reviews so the repo keeps institutional memory.
 
 ### 5. MergeKeeper by PatchHive
 
@@ -417,7 +417,7 @@ Why it's differentiated: It complements existing agents instead of competing wit
 
 MVP scope in 1 week: PR diff ingestion, simple risk scoring, policy rules, `safe/warn/block` output, GitHub status check.
 
-IncidentEcho fits here as a capability that turns past failures, outages, and bad PR outcomes into future policy checks and guardrails.
+FailGuard fits here as a capability that turns past failures, outages, and bad PR outcomes into future policy checks and guardrails.
 
 ### 4. RepoMemory by PatchHive
 
@@ -431,7 +431,7 @@ Why it's differentiated: Repo-specific memory is still a real gap; most agents a
 
 MVP scope in 1 week: Ingest merged PRs, extract conventions and past failures, searchable memory store, prompt-pack generation for agents.
 
-IncidentEcho also fits here as a capability that captures lessons from bugs, incidents, and painful reviews so the repo keeps institutional memory.
+FailGuard also fits here as a capability that captures lessons from bugs, incidents, and painful reviews so the repo keeps institutional memory.
 
 ### 5. MergeKeeper by PatchHive
 

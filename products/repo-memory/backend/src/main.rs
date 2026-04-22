@@ -53,6 +53,10 @@ async fn main() {
         .route("/repos", get(pipeline::known_repos))
         .route("/memories", get(pipeline::memories))
         .route("/memories/curation", post(pipeline::curate_memory))
+        .route(
+            "/failguard/lessons",
+            post(pipeline::capture_failguard_lesson),
+        )
         .route("/context", post(pipeline::context))
         .route("/history", get(pipeline::history))
         .route("/history/:id", get(pipeline::history_detail))

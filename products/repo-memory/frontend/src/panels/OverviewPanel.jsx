@@ -9,7 +9,7 @@ function confidenceColor(confidence) {
   return "var(--accent)";
 }
 
-export default function OverviewPanel({ apiKey, activeRepo, setActiveRepo, onOpenIngest }) {
+export default function OverviewPanel({ apiKey, activeRepo, setActiveRepo, onOpenIngest, onOpenFailGuard }) {
   const [overview, setOverview] = useState(null);
   const fetch_ = createApiFetcher(apiKey);
 
@@ -44,6 +44,7 @@ export default function OverviewPanel({ apiKey, activeRepo, setActiveRepo, onOpe
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <Btn onClick={refresh}>Refresh</Btn>
             <Btn onClick={onOpenIngest}>Ingest a repo</Btn>
+            <Btn onClick={onOpenFailGuard}>Capture FailGuard lesson</Btn>
           </div>
         </div>
       </div>

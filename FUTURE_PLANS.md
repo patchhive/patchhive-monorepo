@@ -30,7 +30,7 @@ Use this to capture later ideas so they do not get lost between product pushes.
 
 - Add incident-informed rule tuning later so painful failures can become future guardrails.
 - Make TrustGate the gate before RepoReaper opens or advances autonomous PRs.
-- IncidentEcho fits here as a capability that turns past failures, outages, and bad PR outcomes into future policy checks and guardrails.
+- FailGuard initial slice is complete: RepoMemory captures manual lessons and TrustGate consumes curated failure-pattern policies as review context. Next step is automatic lesson suggestions from rejected patches, reverted PRs, and blocked reviews.
 - Feed explicit rejection and painful-review outcomes back into TrustGate rule tuning so bad repo fits become future guardrails.
 - Add inline file-level findings with stronger path anchors so repo owners can see exactly which parts of a diff triggered the risk call.
 - Add simulation mode for historical PRs so teams can tune TrustGate rules against old merges before enforcing them live.
@@ -46,7 +46,7 @@ Use this to capture later ideas so they do not get lost between product pushes.
 - Add consumer-specific memory packs so RepoReaper, TrustGate, ReviewBee, and MergeKeeper can each pull the most relevant slice without overloading prompts.
 - Add maintainer relationship memory that captures tone, pacing, and recurring human preferences separately from code conventions.
 - Consider AI-assisted summarization or retrieval later through `patchhive-ai-local`, but keep the base memory loop useful without AI.
-- IncidentEcho also fits here as a capability that captures lessons from bugs, incidents, and painful reviews so the repo keeps institutional memory.
+- FailGuard initial slice is complete: `POST /failguard/lessons` captures bugs, incidents, and painful reviews as pinned failure-pattern memories. Next step is richer evidence linking and assisted lesson drafting.
 
 ## MergeKeeper
 

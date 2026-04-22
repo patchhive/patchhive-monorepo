@@ -35,6 +35,14 @@ fn default_context_consumer() -> String {
     String::new()
 }
 
+fn default_failguard_disposition() -> String {
+    "policy".into()
+}
+
+fn default_failguard_pinned() -> bool {
+    true
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IngestParams {
     pub repo: String,
@@ -267,4 +275,29 @@ pub struct MemoryCurationUpdate {
     pub disposition: String,
     #[serde(default)]
     pub pinned: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct FailGuardLessonRequest {
+    pub repo: String,
+    pub title: String,
+    pub outcome: String,
+    pub lesson: String,
+    pub prevention: String,
+    #[serde(default)]
+    pub affected_paths: Vec<String>,
+    #[serde(default)]
+    pub evidence: Vec<String>,
+    #[serde(default = "default_failguard_disposition")]
+    pub disposition: String,
+    #[serde(default = "default_failguard_pinned")]
+    pub pinned: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FailGuardLessonResponse {
+    pub ok: bool,
+    pub message: String,
+    pub run: IngestRecord,
+    pub entry: MemoryEntry,
 }

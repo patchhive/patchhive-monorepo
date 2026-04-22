@@ -428,13 +428,14 @@ Important env vars:
 - HiveCore-enabled mode means HiveCore owns suite lifecycle coordination, but each product must remain standalone and expose product-owned APIs for that coordination.
 - Early future integrations worth keeping in mind: shared run history, suite-wide schedules, global allowlist and denylist propagation, and cross-product handoffs like SignalHive -> TrustGate -> RepoReaper.
 
-## IncidentEcho Notes
+## FailGuard Notes
 
-- IncidentEcho is a cross-cutting capability, not a standalone product by default.
+- FailGuard is a cross-cutting capability, not a standalone product by default.
 - Its job is to turn bugs, outages, painful reviews, reverted PRs, and other bad outcomes into reusable future knowledge.
 - On the RepoMemory side, that means capturing and storing lessons so humans and agents can reuse them later.
 - On the TrustGate side, that means converting those lessons into future warnings, checks, or blocking guardrails.
 - The intended flow is: incident or painful failure -> captured lesson -> durable memory -> future policy.
+- Initial implementation is complete in RepoMemory: `POST /failguard/lessons` creates pinned `failure_pattern` policy memories that TrustGate can consume through RepoMemory context.
 
 ## Key Decisions
 

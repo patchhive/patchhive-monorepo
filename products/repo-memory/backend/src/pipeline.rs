@@ -15,10 +15,11 @@ use crate::{
     auth::{auth_enabled, generate_and_save_key, verify_token},
     db, github,
     models::{
-        stable_memory_ref, ContextEntry, ContextRequest, ContextResponse, GitHubIssue,
-        GitHubPullFile, GitHubPullRequest, GitHubReview, GitHubReviewComment, HistoryItem,
-        IngestParams, IngestRecord, IngestSummary, KnownRepo, MemoryCurationUpdate, MemoryEntry,
-        MemoryEvidence, OverviewPayload, RunDiffItem, RunDiffResponse, RunDiffSummary,
+        stable_memory_ref, ContextEntry, ContextRequest, ContextResponse, FailGuardLessonRequest,
+        FailGuardLessonResponse, GitHubIssue, GitHubPullFile, GitHubPullRequest, GitHubReview,
+        GitHubReviewComment, HistoryItem, IngestParams, IngestRecord, IngestSummary, KnownRepo,
+        MemoryCurationUpdate, MemoryEntry, MemoryEvidence, OverviewPayload, RunDiffItem,
+        RunDiffResponse, RunDiffSummary,
     },
     state::AppState,
     STARTUP_CHECKS,
@@ -52,6 +53,14 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
                 "/context",
                 "Return reusable repo-specific context for another PatchHive product or agent.",
                 false,
+            ),
+            contract::action(
+                "capture_failguard_lesson",
+                "Capture FailGuard lesson",
+                "POST",
+                "/failguard/lessons",
+                "Turn a painful outcome into a curated failure-pattern policy memory.",
+                true,
             ),
         ],
         vec![
@@ -230,6 +239,82 @@ pub async fn curate_memory(
         "disposition": update.disposition,
         "pinned": update.pinned,
     })))
+}
+
+pub async fn capture_failguard_lesson(
+    Json(mut request): Json<FailGuardLessonRequest>,
+) -> JsonResult<FailGuardLessonResponse> {
+    request.repo = request.repo.trim().to_string();
+    request.title = request.title.trim().to_string();
+    request.outcome = request.outcome.trim().to_string();
+    request.lesson = request.lesson.trim().to_string();
+    request.prevention = request.prevention.trim().to_string();
+    request.disposition = normalize_disposition(&request.disposition).to_string();
+
+    if !valid_repo(&request.repo) {
+        return Err(bad_request(
+            "RepoMemory expects repos in owner/repo format.",
+        ));
+    }
+    if request.title.is_empty() {
+        return Err(bad_request("FailGuard needs a short lesson title."));
+    }
+    if request.outcome.is_empty() {
+        return Err(bad_request(
+            "FailGuard needs the bad outcome this lesson came from.",
+        ));
+    }
+    if request.lesson.is_empty() {
+        return Err(bad_request(
+            "FailGuard needs the durable lesson this repo should remember.",
+        ));
+    }
+    if request.prevention.is_empty() {
+        return Err(bad_request(
+            "FailGuard needs the future prevention rule or guardrail.",
+        ));
+    }
+
+    let carry_forward = latest_repo_entries(&request.repo)?;
+    let captured_title = format!("FailGuard: {}", request.title);
+    let run = build_failguard_lesson_run(request, carry_forward);
+    let entry = run
+        .entries
+        .iter()
+        .find(|entry| entry.title == captured_title)
+        .cloned()
+        .ok_or_else(|| internal_error(anyhow::anyhow!("FailGuard lesson did not create memory")))?;
+
+    db::save_run(&run).map_err(internal_error)?;
+    db::save_memory_curation(
+        &entry.repo,
+        &entry.memory_ref,
+        &entry.disposition,
+        entry.pinned,
+    )
+    .map_err(internal_error)?;
+
+    Ok(Json(FailGuardLessonResponse {
+        ok: true,
+        message: "FailGuard lesson captured as a RepoMemory failure-pattern policy.".into(),
+        run,
+        entry,
+    }))
+}
+
+fn latest_repo_entries(repo: &str) -> std::result::Result<Vec<MemoryEntry>, JsonError> {
+    let latest = db::list_history(Some(repo))
+        .map_err(internal_error)?
+        .into_iter()
+        .next();
+    let Some(latest) = latest else {
+        return Ok(Vec::new());
+    };
+
+    let run = db::get_history(&latest.id)
+        .map_err(internal_error)?
+        .ok_or_else(|| not_found("RepoMemory latest run not found."))?;
+    Ok(run.entries)
 }
 
 pub async fn context(Json(request): Json<ContextRequest>) -> JsonResult<ContextResponse> {
@@ -812,6 +897,156 @@ fn build_memory_run(
         prompt_pack,
         entries,
     })
+}
+
+fn build_failguard_lesson_run(
+    request: FailGuardLessonRequest,
+    carry_forward: Vec<MemoryEntry>,
+) -> IngestRecord {
+    let run_id = Uuid::new_v4().to_string();
+    let created_at = Utc::now().to_rfc3339();
+    let repo = request.repo.trim().to_string();
+    let title = request.title.trim().to_string();
+    let disposition = normalize_disposition(&request.disposition).to_string();
+    let pinned = request.pinned || disposition == "policy";
+    let affected_paths = clean_failguard_items(request.affected_paths, 12);
+    let evidence_notes = clean_failguard_items(request.evidence, 8);
+    let memory_title = format!("FailGuard: {title}");
+    let outcome = truncate(request.outcome.trim(), 260);
+    let lesson = truncate(request.lesson.trim(), 260);
+    let prevention = truncate(request.prevention.trim(), 260);
+    let detail = format!("Outcome: {outcome}\nLesson: {lesson}\nPrevention: {prevention}");
+    let prompt_line = format!("FailGuard policy for {repo}: {prevention} Remember: {lesson}");
+
+    let mut tags = vec![
+        "failguard".to_string(),
+        "manual".to_string(),
+        "failure".to_string(),
+        "policy".to_string(),
+    ];
+    for path in &affected_paths {
+        let bucket = path_bucket(path);
+        if !bucket.is_empty() {
+            tags.push(bucket);
+        }
+    }
+    tags.sort();
+    tags.dedup();
+
+    let mut evidence = Vec::new();
+    for path in &affected_paths {
+        evidence.push(MemoryEvidence {
+            source_type: "failguard_path".into(),
+            title: "Affected path".into(),
+            url: String::new(),
+            path: Some(path.clone()),
+            excerpt: truncate(&format!("FailGuard lesson applies here: {prevention}"), 220),
+        });
+    }
+
+    for note in &evidence_notes {
+        let url = if note.starts_with("http://") || note.starts_with("https://") {
+            note.clone()
+        } else {
+            String::new()
+        };
+        evidence.push(MemoryEvidence {
+            source_type: "failguard_evidence".into(),
+            title: if url.is_empty() {
+                "Operator evidence".into()
+            } else {
+                "External evidence".into()
+            },
+            url,
+            path: None,
+            excerpt: truncate(note, 260),
+        });
+    }
+
+    if evidence.is_empty() {
+        evidence.push(MemoryEvidence {
+            source_type: "failguard_lesson".into(),
+            title: memory_title.clone(),
+            url: String::new(),
+            path: None,
+            excerpt: truncate(&detail, 320),
+        });
+    }
+
+    let new_memory_ref = stable_memory_ref(&repo, "failure_pattern", &memory_title);
+    let entry = MemoryEntry {
+        id: Uuid::new_v4().to_string(),
+        memory_ref: new_memory_ref.clone(),
+        run_id: run_id.clone(),
+        repo: repo.clone(),
+        kind: "failure_pattern".into(),
+        title: memory_title.clone(),
+        detail,
+        prompt_line: prompt_line.clone(),
+        confidence: if disposition == "policy" { 94.0 } else { 82.0 },
+        frequency: 1,
+        disposition,
+        pinned,
+        tags,
+        evidence,
+        created_at: created_at.clone(),
+    };
+
+    let mut entries = carry_forward
+        .into_iter()
+        .filter(|entry| entry.memory_ref != new_memory_ref)
+        .map(|mut entry| {
+            entry.id = Uuid::new_v4().to_string();
+            entry.run_id = run_id.clone();
+            entry.created_at = created_at.clone();
+            entry
+        })
+        .collect::<Vec<_>>();
+    entries.push(entry);
+    entries.sort_by(|left, right| {
+        right
+            .pinned
+            .cmp(&left.pinned)
+            .then_with(|| {
+                disposition_rank(&right.disposition).cmp(&disposition_rank(&left.disposition))
+            })
+            .then_with(|| {
+                right
+                    .confidence
+                    .partial_cmp(&left.confidence)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .then_with(|| right.frequency.cmp(&left.frequency))
+    });
+    let summary = build_summary(&entries, 0, 0, 0);
+    let prompt_pack = build_prompt_pack(&repo, &summary, &entries);
+
+    IngestRecord {
+        id: run_id,
+        repo: repo.clone(),
+        created_at,
+        params: IngestParams {
+            repo,
+            merged_pr_limit: 0,
+            issue_limit: 0,
+            since_days: 0,
+        },
+        summary,
+        prompt_pack,
+        entries,
+    }
+}
+
+fn clean_failguard_items(items: Vec<String>, limit: usize) -> Vec<String> {
+    let mut clean = items
+        .into_iter()
+        .map(|item| item.trim().trim_start_matches("./").to_string())
+        .filter(|item| !item.is_empty())
+        .take(limit)
+        .collect::<Vec<_>>();
+    clean.sort();
+    clean.dedup();
+    clean
 }
 
 fn build_summary(
@@ -1710,6 +1945,71 @@ mod tests {
             Some("policy")
         );
         assert_eq!(ranked.first().map(|entry| entry.pinned), Some(true));
+    }
+
+    #[test]
+    fn failguard_lesson_builds_policy_failure_memory() {
+        let run = build_failguard_lesson_run(
+            FailGuardLessonRequest {
+                repo: "patchhive/example".into(),
+                title: "Webhook secrets must fail closed".into(),
+                outcome: "Unsigned webhook could trigger autonomous work.".into(),
+                lesson: "Public webhook routes must not accept unsigned payloads.".into(),
+                prevention: "Reject webhook delivery when the signing secret is missing.".into(),
+                affected_paths: vec!["backend/src/routes/webhook.rs".into()],
+                evidence: vec!["Hermes review C2".into()],
+                disposition: "policy".into(),
+                pinned: true,
+            },
+            Vec::new(),
+        );
+
+        assert_eq!(run.summary.failures, 1);
+        assert_eq!(run.entries.len(), 1);
+        let entry = &run.entries[0];
+        assert_eq!(entry.kind, "failure_pattern");
+        assert_eq!(entry.disposition, "policy");
+        assert!(entry.pinned);
+        assert!(entry.tags.iter().any(|tag| tag == "failguard"));
+        assert!(entry
+            .evidence
+            .iter()
+            .any(|item| item.path.as_deref() == Some("backend/src/routes/webhook.rs")));
+    }
+
+    #[test]
+    fn failguard_lesson_carries_forward_existing_snapshot() {
+        let existing = sample_entry(
+            "testing_expectation",
+            "Tests are expected for auth changes",
+            "Recent fixes around auth nearly always shipped with tests.",
+            "Add or update tests when touching auth behavior.",
+        );
+
+        let run = build_failguard_lesson_run(
+            FailGuardLessonRequest {
+                repo: "patchhive/example".into(),
+                title: "Webhook secrets must fail closed".into(),
+                outcome: "Unsigned webhook could trigger autonomous work.".into(),
+                lesson: "Public webhook routes must not accept unsigned payloads.".into(),
+                prevention: "Reject webhook delivery when the signing secret is missing.".into(),
+                affected_paths: vec!["backend/src/routes/webhook.rs".into()],
+                evidence: Vec::new(),
+                disposition: "policy".into(),
+                pinned: true,
+            },
+            vec![existing],
+        );
+
+        assert_eq!(run.entries.len(), 2);
+        assert!(run
+            .entries
+            .iter()
+            .any(|entry| entry.kind == "testing_expectation"));
+        assert!(run
+            .entries
+            .iter()
+            .any(|entry| entry.title == "FailGuard: Webhook secrets must fail closed"));
     }
 
     #[test]

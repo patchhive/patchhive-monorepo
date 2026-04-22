@@ -9,6 +9,7 @@ import {
 import { API } from "./config.js";
 import OverviewPanel from "./panels/OverviewPanel.jsx";
 import IngestPanel from "./panels/IngestPanel.jsx";
+import FailGuardPanel from "./panels/FailGuardPanel.jsx";
 import MemoryPanel from "./panels/MemoryPanel.jsx";
 import HistoryPanel from "./panels/HistoryPanel.jsx";
 import ChecksPanel from "./panels/ChecksPanel.jsx";
@@ -16,6 +17,7 @@ import ChecksPanel from "./panels/ChecksPanel.jsx";
 const TABS = [
   { id: "overview", label: "🧠 Overview" },
   { id: "ingest", label: "◎ Ingest" },
+  { id: "failguard", label: "FailGuard" },
   { id: "memory", label: "Memory" },
   { id: "history", label: "History" },
   { id: "checks", label: "Checks" },
@@ -136,7 +138,13 @@ export default function App() {
         showSignOut={Boolean(apiKey)}
       >
         {tab === "overview" && (
-          <OverviewPanel apiKey={apiKey} activeRepo={activeRepo} setActiveRepo={setActiveRepo} onOpenIngest={() => setTab("ingest")} />
+          <OverviewPanel
+            apiKey={apiKey}
+            activeRepo={activeRepo}
+            setActiveRepo={setActiveRepo}
+            onOpenIngest={() => setTab("ingest")}
+            onOpenFailGuard={() => setTab("failguard")}
+          />
         )}
         {tab === "ingest" && (
           <IngestPanel
@@ -145,6 +153,22 @@ export default function App() {
             running={running}
             onRun={runIngest}
             run={run}
+            onShowMemory={() => setTab("memory")}
+          />
+        )}
+        {tab === "failguard" && (
+          <FailGuardPanel
+            apiKey={apiKey}
+            activeRepo={activeRepo}
+            setActiveRepo={setActiveRepo}
+            running={running}
+            setRunning={setRunning}
+            setError={setError}
+            onCaptured={(nextRun) => {
+              setRun(nextRun);
+              setActiveRepo(nextRun.repo);
+              setForm((prev) => ({ ...prev, repo: nextRun.repo }));
+            }}
             onShowMemory={() => setTab("memory")}
           />
         )}
