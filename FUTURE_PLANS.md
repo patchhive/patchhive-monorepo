@@ -136,7 +136,7 @@ back here instead of living in parallel long-term.
 
 ## PatchHive Identity & Reputation
 
-- Build a public PatchHive contributor profile page on GitHub and patchhive.live with contribution philosophy, contact info, acceptance-rate trends, and enough context for maintainers to understand PatchHive quickly.
+- Build a public PatchHive contributor profile page on GitHub and patchhive.dev with contribution philosophy, contact info, acceptance-rate trends, and enough context for maintainers to understand PatchHive quickly.
 - Build a public PatchHive transparency dashboard with PRs opened, acceptance rate, median time to merge, product breakdowns, ecosystem breakdowns, safety outcomes, and contribution quality over time.
 - Track reputation at the PatchHive account level so maintainers can judge the bot by visible contribution history instead of marketing claims.
 - Explore small sponsorships from the PatchHive account to repos it contributes to most, so the project supports the ecosystem it depends on.

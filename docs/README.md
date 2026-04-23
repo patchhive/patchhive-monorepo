@@ -22,7 +22,7 @@ The product documentation set is in [products/](products/).
 | ReviewBee | [products/review-bee.md](products/review-bee.md) |
 | TrustGate | [products/trust-gate.md](products/trust-gate.md) |
 | RepoMemory | [products/repo-memory.md](products/repo-memory.md) |
-| FailGuard | [products/failguard.md](products/failguard.md) |
+| FailGuard capability | [products/failguard.md](products/failguard.md) |
 | MergeKeeper | [products/merge-keeper.md](products/merge-keeper.md) |
 | FlakeSting | [products/flake-sting.md](products/flake-sting.md) |
 | DepTriage | [products/dep-triage.md](products/dep-triage.md) |
@@ -33,6 +33,7 @@ The product documentation set is in [products/](products/).
 ## Platform Docs
 
 - [Platform guardrails](platform-guardrails.md)
+- [HiveCore first-stack readiness audit](hivecore-first-stack-readiness.md)
 - [Product API contract v1](product-api-contract-v1.md)
 - [Product export workflow](product-export-workflow.md)
 - [Product starter workflow](product-starter-workflow.md)

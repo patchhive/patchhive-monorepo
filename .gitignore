@@ -40,3 +40,6 @@ tmp/
 
 # Local tool state
 .codex
+
+# Nested standalone site checkout
+patchhive-sites/

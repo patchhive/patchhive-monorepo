@@ -20,7 +20,7 @@ through product-owned APIs; it does not replace standalone product operation.
 | ReviewBee | PR review checklist extraction | [review-bee.md](review-bee.md) |
 | TrustGate | Diff risk review and safety gating | [trust-gate.md](trust-gate.md) |
 | RepoMemory | Durable repo knowledge and prompt context | [repo-memory.md](repo-memory.md) |
-| FailGuard | Failure lessons and future guardrails | [failguard.md](failguard.md) |
+| FailGuard capability | Cross-cutting failure lessons and future guardrails | [failguard.md](failguard.md) |
 | MergeKeeper | Merge readiness decisions | [merge-keeper.md](merge-keeper.md) |
 | FlakeSting | Flaky CI detection | [flake-sting.md](flake-sting.md) |
 | DepTriage | Dependency update prioritization | [dep-triage.md](dep-triage.md) |

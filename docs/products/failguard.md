@@ -8,8 +8,9 @@ FailGuard is PatchHive's failure-learning capability. It turns rejected patches,
 painful reviews, outages, bugs, reverted work, and other bad outcomes into
 reviewable lessons that can become future guardrails.
 
-FailGuard is not a standalone product by default. RepoMemory owns the storage
-and review loop, while TrustGate and RepoReaper can submit lesson candidates.
+FailGuard is a cross-cutting capability, not a standalone product. RepoMemory
+owns the storage and review loop, while TrustGate and RepoReaper can submit
+lesson candidates.
 
 ## Product Role
 
@@ -67,4 +68,3 @@ rejects generated work below the configured confidence threshold.
 HiveCore should treat FailGuard as a cross-product capability surfaced through
 RepoMemory first. Later, HiveCore can expose suite-level failure lessons and show
 which products are producing or consuming them.
-

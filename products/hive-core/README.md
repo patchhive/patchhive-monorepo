@@ -10,6 +10,21 @@ HiveCore is the PatchHive control plane. The first MVP does three things well:
 
 This is intentionally narrower than full orchestration. HiveCore should earn that role by first making the suite visible, configurable, and operationally legible.
 
+## Product Documentation
+
+- GitHub-facing product doc: [docs/products/hive-core.md](../../docs/products/hive-core.md)
+- Product docs index: [docs/products/README.md](../../docs/products/README.md)
+- First-stack readiness audit: [docs/hivecore-first-stack-readiness.md](../../docs/hivecore-first-stack-readiness.md)
+
+## Core Workflow
+
+- keep the PatchHive product catalog visible in one place
+- poll product-owned health, startup checks, capabilities, runs, and run details
+- store suite-wide defaults and per-product endpoint overrides
+- store per-product API keys server-side for protected reads and action dispatch
+- dispatch only advertised product actions through the shared capability contract
+- report contract drift instead of hiding product API differences
+
 ## What It Covers Today
 
 - suite overview with quick launch links
@@ -44,6 +59,19 @@ cd backend && cargo run
 cd ../frontend && npm install && npm run dev
 ```
 
+## Important Configuration
+
+| Variable | Purpose |
+| --- | --- |
+| `BOT_GITHUB_TOKEN` | Optional GitHub token reserved for future control-plane reads. |
+| `HIVE_CORE_API_KEY_HASH` | Optional pre-seeded app auth hash. Otherwise generate the first local key from the UI. |
+| `HIVE_CORE_DB_PATH` | SQLite path for suite settings, product overrides, and action events. |
+| `HIVE_CORE_PORT` | Backend port for split local runs. |
+| `PATCHHIVE_ALLOW_REMOTE_BOOTSTRAP` | Allows first-time key bootstrap from non-localhost clients. Keep unset for local use. |
+| `RUST_LOG` | Rust logging level. |
+
+Save per-product API keys in Settings when you want HiveCore to read protected `/runs` data or dispatch advertised product actions. Those keys stay server-side.
+
 ## Product Registry Defaults
 
 HiveCore starts with built-in localhost defaults for the current PatchHive suite:
@@ -64,14 +92,19 @@ If you run products on subdomains or remote hosts, save the new targets in HiveC
 
 HiveCore does not read product databases. It uses product-owned APIs and saved product API keys, so each product remains independently runnable and keeps ownership of its own run history and validation.
 
+## Safety Boundary
+
+HiveCore is a control plane, not a replacement runtime for products. It does not read private product databases, bypass product auth, or dispatch destructive actions without explicit product capability support and approval flow. Each product remains standalone.
+
+## HiveCore Fit
+
+HiveCore is the suite fit layer. It brings standalone products into one operator surface for health, launch links, shared defaults, run history, action dispatch, and contract drift. Deeper orchestration should build on shared product APIs, not private implementation shortcuts.
+
 ## Local Notes
 
 - The frontend uses `@patchhivehq/ui` and `@patchhivehq/product-shell`.
-- The backend stores state in SQLite at `HIVE_CORE_DB_PATH`.
 - Generate the first local API key from `http://localhost:5183`.
-- Save per-product API keys in Settings if you want HiveCore to show protected run history or dispatch product actions.
-- If remote bootstrap is intentional, set `PATCHHIVE_ALLOW_REMOTE_BOOTSTRAP=true`.
 
-## Repository Model
+## Standalone Repository
 
-HiveCore should be developed in the PatchHive monorepo first. The standalone repository should mirror this directory rather than becoming a second source of truth.
+HiveCore should be developed in the PatchHive monorepo first. The standalone [`patchhive/hivecore`](https://github.com/patchhive/hivecore) repository should mirror this directory rather than becoming a second source of truth.

@@ -4,6 +4,21 @@ RepoReaper autonomously fixes selected repository issues and opens validated pul
 
 It is PatchHive's outbound contribution product: a multi-agent system that finds promising issues, selects likely code targets, generates patches, reviews and refines those patches, runs validation, and then opens a pull request when the result clears its gates.
 
+## Product Documentation
+
+- GitHub-facing product doc: [docs/products/repo-reaper.md](../../docs/products/repo-reaper.md)
+- Product docs index: [docs/products/README.md](../../docs/products/README.md)
+
+## Core Workflow
+
+- hunt open GitHub issues and rank them for fixability
+- choose relevant files and code paths before patch generation
+- generate, review, and refine a proposed fix through product-owned agents
+- run validation inside configured safety limits
+- open an attributed PatchHive pull request only when the result clears the gates
+- enrich patch attempts with RepoMemory context when configured
+- queue FailGuard candidates in RepoMemory when Smith rejects generated work
+
 ## Operating Model
 
 | Role | Responsibility |
@@ -13,17 +28,6 @@ It is PatchHive's outbound contribution product: a multi-agent system that finds
 | Reaper | Generates the initial fix. |
 | Smith | Reviews and improves the patch before it moves forward. |
 | Gatekeeper | Runs validation and handles pull request delivery. |
-
-## What RepoReaper Already Does
-
-- hunts open GitHub issues and ranks them for fixability
-- supports multiple model providers and OpenAI-compatible local gateways
-- tracks patch confidence and rejected patch history
-- retries patch application and validation failures more intelligently
-- supports watch mode and dry-run targeting
-- stores run history, cost history, and pull request tracking
-- can enrich patch attempts with RepoMemory context before code generation
-- queues FailGuard lesson candidates when Smith rejects generated patches
 
 ## Run Locally
 
@@ -46,13 +50,28 @@ cd backend && cargo run
 cd ../frontend && npm install && npm run dev
 ```
 
-## Required Configuration
+## Important Configuration
 
-RepoReaper needs:
-
-- a GitHub token in `BOT_GITHUB_TOKEN`
-- a GitHub username in `BOT_GITHUB_USER`
-- either direct provider credentials or `PATCHHIVE_AI_URL`
+| Variable | Purpose |
+| --- | --- |
+| `BOT_GITHUB_TOKEN` | GitHub token used for repo discovery, clone, push, and pull request creation. |
+| `BOT_GITHUB_USER` / `BOT_GITHUB_EMAIL` | Git identity for PatchHive commits and pull requests. |
+| `PROVIDER_API_KEY` | Direct AI provider API key when not using a local OpenAI-compatible gateway. |
+| `PATCHHIVE_AI_URL` | Optional OpenAI-compatible local gateway such as `@patchhive/ai-local`. |
+| `OLLAMA_BASE_URL` | Optional Ollama endpoint. |
+| `COST_BUDGET_USD` | Run budget cap. |
+| `MIN_REVIEW_CONFIDENCE` | Minimum Smith confidence before validation and PR delivery. |
+| `RETRY_COUNT` | Patch or validation retry count. |
+| `REAPER_ENABLE_UNTRUSTED_TESTS` | Enables validation commands for untrusted repos. Default is disabled. |
+| `REAPER_TEST_SANDBOX` | Test sandbox mode, usually `docker`. |
+| `REAPER_ALLOW_HOST_TESTS` | Allows host test execution when explicitly enabled. |
+| `REAPER_TEST_TIMEOUT_SECONDS` | Validation timeout, defaulting to `600`. |
+| `WEBHOOK_SECRET` | Optional webhook secret for watch-mode triggers. |
+| `PATCHHIVE_REPO_MEMORY_URL` / `PATCHHIVE_REPO_MEMORY_API_KEY` | Optional RepoMemory context and FailGuard candidate destination. |
+| `REAPER_API_KEY_HASH` | Optional pre-seeded app auth hash. Otherwise generate the first local key from the UI. |
+| `REAPER_DB_PATH` | SQLite path for runs, costs, and PR tracking. |
+| `REAPER_WORK_DIR` | Local workspace used for cloned repositories and patch attempts. |
+| `REAPER_PORT` | Backend port for split local runs. |
 
 If you only want to work on public repositories, keep your GitHub token public-only. If you want RepoReaper to clone, push, and open pull requests against specific repositories, grant only the write permissions those repositories actually need.
 
@@ -69,7 +88,7 @@ Optional integrations:
 - `PATCHHIVE_REPO_MEMORY_URL` to load remembered conventions, hotspots, and failure patterns, and to queue FailGuard candidates from Smith rejections
 - future TrustGate and MergeKeeper flows to gate outbound changes more tightly
 
-## Safety Defaults
+## Safety Boundary
 
 - first-time API-key bootstrap is localhost-first
 - untrusted repo test execution is disabled by default
@@ -77,7 +96,14 @@ Optional integrations:
 - host test execution requires both `REAPER_ENABLE_UNTRUSTED_TESTS=true` and `REAPER_ALLOW_HOST_TESTS=true`
 - validation commands time out after `REAPER_TEST_TIMEOUT_SECONDS` seconds, defaulting to `600`
 - validation and pull request publication are treated as explicit gates, not incidental side effects
+- FailGuard is cross-cutting: RepoReaper can suggest candidates from Smith rejections, but RepoMemory owns review and promotion
 
-## Repository Model
+RepoReaper is the only current PatchHive product that writes code and opens pull requests. It should be the last step in the early suite loop, after signal and trust layers have made the candidate work visible and reviewable.
 
-The PatchHive monorepo is the source of truth for RepoReaper development. The standalone `patchhive/reporeaper` repository is an exported mirror of this directory.
+## HiveCore Fit
+
+HiveCore should treat RepoReaper as a product-owned autonomous action surface. It can show health, capabilities, run history, dispatchable actions, and PR outcomes, but RepoReaper keeps ownership of patch generation, validation, attribution, and pull request delivery.
+
+## Standalone Repository
+
+The PatchHive monorepo is the source of truth for RepoReaper development. The standalone [`patchhive/reporeaper`](https://github.com/patchhive/reporeaper) repository is an exported mirror of this directory.

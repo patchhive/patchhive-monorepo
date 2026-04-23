@@ -438,7 +438,7 @@ Important env vars:
 
 ## FailGuard Notes
 
-- FailGuard is a cross-cutting capability, not a standalone product by default.
+- FailGuard is a cross-cutting capability, not a standalone product.
 - Its job is to turn bugs, outages, painful reviews, reverted PRs, and other bad outcomes into reusable future knowledge.
 - On the RepoMemory side, that means capturing and storing lessons so humans and agents can reuse them later.
 - On the TrustGate side, that means converting those lessons into future warnings, checks, or blocking guardrails.
