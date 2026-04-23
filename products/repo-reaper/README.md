@@ -69,11 +69,14 @@ cd ../frontend && npm install && npm run dev
 | `WEBHOOK_SECRET` | Optional webhook secret for watch-mode triggers. |
 | `PATCHHIVE_REPO_MEMORY_URL` / `PATCHHIVE_REPO_MEMORY_API_KEY` | Optional RepoMemory context and FailGuard candidate destination. |
 | `REAPER_API_KEY_HASH` | Optional pre-seeded app auth hash. Otherwise generate the first local key from the UI. |
+| `REAPER_SERVICE_TOKEN_HASH` | Optional service-token hash for HiveCore or other PatchHive service callers. |
 | `REAPER_DB_PATH` | SQLite path for runs, costs, and PR tracking. |
 | `REAPER_WORK_DIR` | Local workspace used for cloned repositories and patch attempts. |
 | `REAPER_PORT` | Backend port for split local runs. |
 
 To reuse the same password across SignalHive, TrustGate, RepoReaper, and HiveCore, run `./scripts/set-suite-api-key.sh --stack first` from the monorepo root before starting the stack. For every PatchHive product, run `./scripts/set-suite-api-key.sh`. Once the hash is pre-seeded, RepoReaper can be used through a subdomain without remote bootstrap.
+
+To give HiveCore a dedicated machine credential instead of reusing the operator login secret, generate a service token from `POST /auth/generate-service-token` and save that token in HiveCore Settings.
 
 If you only want to work on public repositories, keep your GitHub token public-only. If you want RepoReaper to clone, push, and open pull requests against specific repositories, grant only the write permissions those repositories actually need.
 

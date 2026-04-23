@@ -5,6 +5,7 @@ use axum::{
     http::{HeaderMap, StatusCode},
     Json,
 };
+use patchhive_product_core::auth::SERVICE_TOKEN_HEADER;
 use patchhive_product_core::contract;
 use patchhive_product_core::startup::count_errors;
 use reqwest::{Method, Url};
@@ -13,7 +14,10 @@ use serde_json::{json, Value};
 use uuid::Uuid;
 
 use crate::{
-    auth::{auth_enabled, generate_and_save_key, verify_token},
+    auth::{
+        auth_enabled, generate_and_save_key, generate_and_save_service_token,
+        service_auth_enabled, service_token_generation_allowed, verify_token,
+    },
     db,
     models::{
         error, now_rfc3339, ok, DispatchActionResponse, OverviewResponse, OverviewSummary,
@@ -88,6 +92,20 @@ pub async fn gen_key(headers: HeaderMap) -> Result<Json<Value>, StatusCode> {
     Ok(Json(
         json!({"api_key": key, "message": "Store this — it won't be shown again"}),
     ))
+}
+
+pub async fn gen_service_token(headers: HeaderMap) -> Result<Json<Value>, StatusCode> {
+    if service_auth_enabled() {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    if !service_token_generation_allowed(&headers) {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    let token = generate_and_save_service_token().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(json!({
+        "service_token": token,
+        "message": "Store this for HiveCore or other PatchHive service callers — it won't be shown again"
+    })))
 }
 
 pub async fn health() -> Json<Value> {
@@ -280,7 +298,7 @@ pub async fn product_run_detail(
         return Err(api_error(
             StatusCode::BAD_REQUEST,
             "product_api_key_missing",
-            "Save this product's API key in HiveCore settings before fetching protected run detail.",
+            "Save this product's access token in HiveCore settings before fetching protected run detail.",
         ));
     }
 
@@ -454,7 +472,7 @@ pub async fn dispatch_product_action(
         return Err(api_error(
             StatusCode::BAD_REQUEST,
             "product_api_key_missing",
-            "Save this product's API key in HiveCore settings before dispatching protected actions.",
+            "Save this product's access token in HiveCore settings before dispatching protected actions.",
         ));
     }
 
@@ -514,10 +532,7 @@ pub async fn dispatch_product_action(
         created_at: now_rfc3339(),
     };
 
-    let mut request = state
-        .client
-        .request(method.clone(), target_url)
-        .header("X-API-Key", api_key);
+    let mut request = authorized_request(state.client.request(method.clone(), target_url), &api_key);
     if method != Method::GET && method != Method::HEAD {
         request = request.json(&input.payload);
     }
@@ -1235,11 +1250,20 @@ async fn fetch_product_runs(
 
 fn authorized_get(client: &reqwest::Client, url: &str, api_key: &str) -> reqwest::RequestBuilder {
     let request = client.get(url);
+    authorized_request(request, api_key)
+}
+
+fn authorized_request(
+    request: reqwest::RequestBuilder,
+    api_key: &str,
+) -> reqwest::RequestBuilder {
     let api_key = api_key.trim();
     if api_key.is_empty() {
         request
     } else {
-        request.header("X-API-Key", api_key)
+        request
+            .header("X-API-Key", api_key)
+            .header(SERVICE_TOKEN_HEADER, api_key)
     }
 }
 

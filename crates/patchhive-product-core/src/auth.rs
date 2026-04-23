@@ -16,6 +16,13 @@ use std::{
 };
 
 pub type JsonApiError = (StatusCode, Json<serde_json::Value>);
+pub const SERVICE_TOKEN_HEADER: &str = "X-PatchHive-Service-Token";
+
+#[derive(Clone, Debug)]
+pub struct ServiceTokenAuthConfig {
+    pub hash_env_var: String,
+    pub key_prefix: String,
+}
 
 #[derive(Clone, Debug)]
 pub struct ApiKeyAuthConfig {
@@ -24,6 +31,7 @@ pub struct ApiKeyAuthConfig {
     pub env_path: PathBuf,
     pub public_paths: Vec<String>,
     pub unauthorized_message: String,
+    pub service: Option<ServiceTokenAuthConfig>,
 }
 
 impl ApiKeyAuthConfig {
@@ -34,6 +42,7 @@ impl ApiKeyAuthConfig {
             env_path: PathBuf::from(".env"),
             public_paths: Vec::new(),
             unauthorized_message: "Unauthorized — provide X-API-Key header".into(),
+            service: None,
         }
     }
 
@@ -55,6 +64,18 @@ impl ApiKeyAuthConfig {
         self.unauthorized_message = message.into();
         self
     }
+
+    pub fn with_service_token(
+        mut self,
+        hash_env_var: impl Into<String>,
+        key_prefix: impl Into<String>,
+    ) -> Self {
+        self.service = Some(ServiceTokenAuthConfig {
+            hash_env_var: hash_env_var.into(),
+            key_prefix: key_prefix.into(),
+        });
+        self
+    }
 }
 
 fn hash_token(token: &str) -> String {
@@ -73,12 +94,24 @@ fn warned_configs() -> &'static Mutex<HashSet<String>> {
     WARNED.get_or_init(|| Mutex::new(HashSet::new()))
 }
 
-fn stored_hash(config: &ApiKeyAuthConfig) -> String {
+fn stored_hash_for_env(env_var: &str) -> String {
     runtime_hashes()
         .read()
         .ok()
-        .and_then(|hashes| hashes.get(&config.hash_env_var).cloned())
-        .or_else(|| std::env::var(&config.hash_env_var).ok())
+        .and_then(|hashes| hashes.get(env_var).cloned())
+        .or_else(|| std::env::var(env_var).ok())
+        .unwrap_or_default()
+}
+
+fn stored_hash(config: &ApiKeyAuthConfig) -> String {
+    stored_hash_for_env(&config.hash_env_var)
+}
+
+fn stored_service_hash(config: &ApiKeyAuthConfig) -> String {
+    config
+        .service
+        .as_ref()
+        .map(|service| stored_hash_for_env(&service.hash_env_var))
         .unwrap_or_default()
 }
 
@@ -116,14 +149,27 @@ fn request_token(headers: &HeaderMap) -> &str {
         .unwrap_or("")
 }
 
+fn request_service_token(headers: &HeaderMap) -> &str {
+    headers
+        .get(SERVICE_TOKEN_HEADER)
+        .or_else(|| headers.get("X-Service-Token"))
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .unwrap_or("")
+}
+
 pub fn auth_enabled(config: &ApiKeyAuthConfig) -> bool {
     !stored_hash(config).is_empty()
+}
+
+pub fn service_auth_enabled(config: &ApiKeyAuthConfig) -> bool {
+    config.service.is_some() && !stored_service_hash(config).is_empty()
 }
 
 fn warn_auth_unconfigured(config: &ApiKeyAuthConfig) {
     let Ok(mut warned) = warned_configs().lock() else {
         tracing::warn!(
-            "{} auth is not configured; protected endpoints are unavailable until /auth/generate-key succeeds",
+            "{} auth is not configured; protected endpoints are unavailable until /auth/generate-key or service-token setup succeeds",
             config.hash_env_var
         );
         return;
@@ -131,14 +177,13 @@ fn warn_auth_unconfigured(config: &ApiKeyAuthConfig) {
 
     if warned.insert(config.hash_env_var.clone()) {
         tracing::warn!(
-            "{} auth is not configured; protected endpoints are unavailable until /auth/generate-key succeeds",
+            "{} auth is not configured; protected endpoints are unavailable until /auth/generate-key or service-token setup succeeds",
             config.hash_env_var
         );
     }
 }
 
-pub fn verify_token(config: &ApiKeyAuthConfig, token: &str) -> bool {
-    let stored = stored_hash(config);
+fn verify_hash(token: &str, stored: String) -> bool {
     if stored.is_empty() {
         return false;
     }
@@ -156,6 +201,14 @@ pub fn verify_token(config: &ApiKeyAuthConfig, token: &str) -> bool {
         == 0
 }
 
+pub fn verify_token(config: &ApiKeyAuthConfig, token: &str) -> bool {
+    verify_hash(token, stored_hash(config))
+}
+
+pub fn verify_service_token(config: &ApiKeyAuthConfig, token: &str) -> bool {
+    verify_hash(token, stored_service_hash(config))
+}
+
 pub fn generate_and_save_key(config: &ApiKeyAuthConfig) -> Result<String> {
     let key = format!(
         "{}{}",
@@ -169,6 +222,27 @@ pub fn generate_and_save_key(config: &ApiKeyAuthConfig) -> Result<String> {
         .map_err(|_| anyhow::anyhow!("failed to acquire runtime auth lock"))?
         .insert(config.hash_env_var.clone(), hash.clone());
     persist_hash(&config.env_path, &config.hash_env_var, &hash)?;
+    Ok(key)
+}
+
+pub fn generate_and_save_service_token(config: &ApiKeyAuthConfig) -> Result<String> {
+    let service = config
+        .service
+        .as_ref()
+        .context("service-token auth is not configured for this product")?;
+
+    let key = format!(
+        "{}{}",
+        service.key_prefix,
+        uuid::Uuid::new_v4().to_string().replace('-', "")
+    );
+    let hash = hash_token(&key);
+
+    runtime_hashes()
+        .write()
+        .map_err(|_| anyhow::anyhow!("failed to acquire runtime service-auth lock"))?
+        .insert(service.hash_env_var.clone(), hash.clone());
+    persist_hash(&config.env_path, &service.hash_env_var, &hash)?;
     Ok(key)
 }
 
@@ -223,11 +297,29 @@ pub fn auth_already_configured_error() -> JsonApiError {
     )
 }
 
+pub fn service_auth_already_configured_error() -> JsonApiError {
+    (
+        StatusCode::FORBIDDEN,
+        Json(json!({
+            "error": "Service-token auth is already configured for this product. Rotate it intentionally instead of generating a second bootstrap token."
+        })),
+    )
+}
+
 pub fn bootstrap_localhost_required_error() -> JsonApiError {
     (
         StatusCode::FORBIDDEN,
         Json(json!({
             "error": "First-time API key generation is only allowed from localhost. Open this app via http://localhost on the same machine, or set PATCHHIVE_ALLOW_REMOTE_BOOTSTRAP=true if you intentionally want remote bootstrap."
+        })),
+    )
+}
+
+pub fn service_token_generation_forbidden_error() -> JsonApiError {
+    (
+        StatusCode::FORBIDDEN,
+        Json(json!({
+            "error": "Service-token generation requires a localhost bootstrap session before operator auth exists, or a valid operator X-API-Key after auth is configured."
         })),
     )
 }
@@ -242,13 +334,37 @@ pub fn key_generation_failed_error(err: &anyhow::Error) -> JsonApiError {
     )
 }
 
+pub fn service_token_generation_failed_error(err: &anyhow::Error) -> JsonApiError {
+    tracing::error!("Failed to generate initial service token: {err:?}");
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(json!({
+            "error": "Could not generate the service token. Check that the product can write its .env file and restart if needed."
+        })),
+    )
+}
+
+pub fn service_token_generation_allowed(config: &ApiKeyAuthConfig, headers: &HeaderMap) -> bool {
+    if auth_enabled(config) {
+        let token = request_token(headers);
+        !token.is_empty() && verify_token(config, token)
+    } else {
+        bootstrap_request_allowed(headers)
+    }
+}
+
 pub fn auth_status_payload(config: &ApiKeyAuthConfig) -> serde_json::Value {
     let configured = auth_enabled(config);
+    let service_configured = service_auth_enabled(config);
     json!({
         "auth_enabled": configured,
         "auth_configured": configured,
         "bootstrap_required": !configured,
         "auth_storage": "session",
+        "service_auth_supported": config.service.is_some(),
+        "service_auth_enabled": service_configured,
+        "service_auth_configured": service_configured,
+        "service_bootstrap_required": config.service.is_some() && !service_configured,
     })
 }
 
@@ -289,19 +405,31 @@ pub async fn auth_middleware(
         return next.run(request).await;
     }
 
-    if !auth_enabled(config) {
+    let operator_enabled = auth_enabled(config);
+    let service_enabled = service_auth_enabled(config);
+
+    if !operator_enabled && !service_enabled {
         warn_auth_unconfigured(config);
         return (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(json!({
-                "error": "API key auth is not configured yet. Generate the first key from a localhost session before using protected endpoints."
+                "error": "Operator API key auth and service-token auth are not configured yet. Generate the first key from a localhost session before using protected endpoints."
             })),
         )
             .into_response();
     }
 
+    let service_token = request_service_token(&headers);
+    if service_enabled && !service_token.is_empty() && verify_service_token(config, service_token) {
+        return next.run(request).await;
+    }
+
     let token = request_token(&headers);
-    if token.is_empty() || !verify_token(config, token) {
+    if operator_enabled && !token.is_empty() && verify_token(config, token) {
+        return next.run(request).await;
+    }
+
+    if token.is_empty() && service_token.is_empty() {
         return (
             StatusCode::UNAUTHORIZED,
             Json(json!({ "error": config.unauthorized_message })),
@@ -309,7 +437,11 @@ pub async fn auth_middleware(
             .into_response();
     }
 
-    next.run(request).await
+    (
+        StatusCode::UNAUTHORIZED,
+        Json(json!({ "error": config.unauthorized_message })),
+    )
+        .into_response()
 }
 
 #[cfg(test)]
@@ -325,6 +457,16 @@ mod tests {
         if let Ok(mut hashes) = runtime_hashes().write() {
             hashes.remove(env_var);
         }
+    }
+
+    fn test_config_with_service(
+        env_var: &str,
+        service_env_var: &str,
+        env_path: PathBuf,
+    ) -> ApiKeyAuthConfig {
+        ApiKeyAuthConfig::new(env_var, "ph_")
+            .with_env_path(env_path)
+            .with_service_token(service_env_var, "svc_")
     }
 
     #[test]
@@ -355,6 +497,44 @@ mod tests {
         assert_eq!(payload["auth_enabled"], false);
         assert_eq!(payload["bootstrap_required"], true);
         assert_eq!(payload["auth_storage"], "session");
+        assert_eq!(payload["service_auth_supported"], false);
+    }
+
+    #[test]
+    fn generate_and_save_service_token_persists_hash_and_verifies_token() {
+        let env_var = format!("PATCHHIVE_TEST_AUTH_{}", uuid::Uuid::new_v4().simple());
+        let service_env_var = format!("PATCHHIVE_TEST_SERVICE_AUTH_{}", uuid::Uuid::new_v4().simple());
+        let env_path = std::env::temp_dir().join(format!("{env_var}.env"));
+        let config = test_config_with_service(&env_var, &service_env_var, env_path.clone());
+
+        let key =
+            generate_and_save_service_token(&config).expect("service token generation should succeed");
+        let written = fs::read_to_string(&env_path).expect("env file should be written");
+
+        assert!(key.starts_with("svc_"));
+        assert!(written.contains(&format!("{}=", service_env_var)));
+        assert!(verify_service_token(&config, &key));
+        assert!(!verify_service_token(&config, "svc_wrong"));
+
+        clear_runtime_hash(&env_var);
+        clear_runtime_hash(&service_env_var);
+        let _ = fs::remove_file(env_path);
+    }
+
+    #[test]
+    fn auth_status_payload_reports_service_bootstrap_when_supported() {
+        let env_var = format!("PATCHHIVE_TEST_AUTH_{}", uuid::Uuid::new_v4().simple());
+        let service_env_var = format!("PATCHHIVE_TEST_SERVICE_AUTH_{}", uuid::Uuid::new_v4().simple());
+        let config =
+            test_config_with_service(&env_var, &service_env_var, PathBuf::from("/tmp/unused.env"));
+        clear_runtime_hash(&env_var);
+        clear_runtime_hash(&service_env_var);
+
+        let payload = auth_status_payload(&config);
+        assert_eq!(payload["auth_enabled"], false);
+        assert_eq!(payload["service_auth_supported"], true);
+        assert_eq!(payload["service_auth_enabled"], false);
+        assert_eq!(payload["service_bootstrap_required"], true);
     }
 
     #[test]

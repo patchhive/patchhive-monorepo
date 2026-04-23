@@ -44,6 +44,7 @@ cd ../frontend && npm install && npm run dev
 | --- | --- |
 | `BOT_GITHUB_TOKEN` | GitHub token for repo, issue, and optional code-search reads. |
 | `SIGNAL_API_KEY_HASH` | Optional pre-seeded app auth hash. The monorepo helper can set it for a stable suite password. |
+| `SIGNAL_SERVICE_TOKEN_HASH` | Optional service-token hash for HiveCore or other PatchHive service callers. |
 | `PATCHHIVE_ALLOW_REMOTE_BOOTSTRAP` | Allows first-time key bootstrap from non-localhost clients. Keep unset for local use. |
 | `SIGNAL_DB_PATH` | SQLite path for scan history. |
 | `SIGNAL_PORT` | Backend port for split local runs. |
@@ -53,6 +54,8 @@ cd ../frontend && npm install && npm run dev
 SignalHive works best with a fine-grained GitHub token. For public-only scanning, start with `Metadata: Read` and `Issues: Read`; add `Contents: Read` only if your setup needs GitHub-backed TODO or FIXME code-search reads.
 
 To keep the same password across SignalHive, TrustGate, RepoReaper, and HiveCore, run `./scripts/set-suite-api-key.sh --stack first` from the monorepo root and restart the stack. For every PatchHive product, run `./scripts/set-suite-api-key.sh` with no extra flags. Once the hash is pre-seeded, logging in through a subdomain works normally without remote bootstrap.
+
+To give HiveCore a dedicated machine credential instead of reusing the operator login secret, generate a service token from `POST /auth/generate-service-token` and save that token in HiveCore Settings.
 
 ## Safety Boundary
 

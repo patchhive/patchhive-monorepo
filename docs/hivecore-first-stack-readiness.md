@@ -15,16 +15,16 @@ The goal is not full orchestration yet. The goal is to make the first loop legib
 3. RepoReaper acts only when its own gates clear.
 4. HiveCore shows health, startup checks, capabilities, run history, and contract drift from one place.
 
-Each product remains standalone. HiveCore consumes product-owned APIs and saved product API keys.
+Each product remains standalone. HiveCore consumes product-owned APIs and saved product access tokens.
 
 ## Target Stack
 
 | Product | Role | Frontend | API | Required first-pass config |
 | --- | --- | --- | --- | --- |
-| SignalHive | Read-only maintenance discovery | `http://localhost:5174` | `http://localhost:8010` | `BOT_GITHUB_TOKEN`, optional `SIGNAL_API_KEY_HASH` |
-| TrustGate | Diff and PR risk review | `http://localhost:5175` | `http://localhost:8020` | Optional `BOT_GITHUB_TOKEN`, optional `PATCHHIVE_REPO_MEMORY_URL` |
-| RepoReaper | Autonomous patch and PR execution | `http://localhost:5173` | `http://localhost:8000` | `BOT_GITHUB_TOKEN`, `BOT_GITHUB_USER`, `BOT_GITHUB_EMAIL`, AI credentials or `PATCHHIVE_AI_URL` |
-| HiveCore | Suite control plane | `http://localhost:5183` | `http://localhost:8100` | Optional `HIVE_CORE_API_KEY_HASH`, saved product API keys for protected reads |
+| SignalHive | Read-only maintenance discovery | `http://localhost:5174` | `http://localhost:8010` | `BOT_GITHUB_TOKEN`, optional `SIGNAL_API_KEY_HASH`, optional `SIGNAL_SERVICE_TOKEN_HASH` |
+| TrustGate | Diff and PR risk review | `http://localhost:5175` | `http://localhost:8020` | Optional `BOT_GITHUB_TOKEN`, optional `PATCHHIVE_REPO_MEMORY_URL`, optional `TRUST_SERVICE_TOKEN_HASH` |
+| RepoReaper | Autonomous patch and PR execution | `http://localhost:5173` | `http://localhost:8000` | `BOT_GITHUB_TOKEN`, `BOT_GITHUB_USER`, `BOT_GITHUB_EMAIL`, AI credentials or `PATCHHIVE_AI_URL`, optional `REAPER_SERVICE_TOKEN_HASH` |
+| HiveCore | Suite control plane | `http://localhost:5183` | `http://localhost:8100` | Optional `HIVE_CORE_API_KEY_HASH`, optional `HIVE_CORE_SERVICE_TOKEN_HASH`, saved product access tokens for protected reads |
 
 Docker Compose maps every backend container to port `8000` internally and exposes the public API ports above. Those exposed ports match HiveCore's built-in product registry defaults.
 
@@ -78,16 +78,16 @@ HiveCore expects products to expose:
 
 SignalHive, TrustGate, RepoReaper, and HiveCore all expose the shared health, startup, capability, and run list contracts. HiveCore reports contract drift if any endpoint is missing, locked, or malformed.
 
-## API Key Notes
+## Auth Notes
 
-First-time product API key generation is localhost-first. Open each product through its local frontend and generate the first key from the login screen, or pre-seed the matching hash in `.env`:
+First-time operator API key generation is localhost-first. Open each product through its local frontend and generate the first key from the login screen, or pre-seed the matching hash in `.env`:
 
-| Product | Hash variable |
-| --- | --- |
-| SignalHive | `SIGNAL_API_KEY_HASH` |
-| TrustGate | `TRUST_API_KEY_HASH` |
-| RepoReaper | `REAPER_API_KEY_HASH` |
-| HiveCore | `HIVE_CORE_API_KEY_HASH` |
+| Product | Operator hash | Service-token hash |
+| --- | --- | --- |
+| SignalHive | `SIGNAL_API_KEY_HASH` | `SIGNAL_SERVICE_TOKEN_HASH` |
+| TrustGate | `TRUST_API_KEY_HASH` | `TRUST_SERVICE_TOKEN_HASH` |
+| RepoReaper | `REAPER_API_KEY_HASH` | `REAPER_SERVICE_TOKEN_HASH` |
+| HiveCore | `HIVE_CORE_API_KEY_HASH` | `HIVE_CORE_SERVICE_TOKEN_HASH` |
 
 If you want the same password across the first stack and plan to use subdomains or other remote hosts, run this from the monorepo root before starting the products:
 
@@ -97,7 +97,15 @@ If you want the same password across the first stack and plan to use subdomains 
 
 That writes the same SHA-256 hash into the first-stack `.env` files. After restart, use the same raw password in SignalHive, TrustGate, RepoReaper, and HiveCore.
 
-After generating product keys, save the SignalHive, TrustGate, and RepoReaper API keys in HiveCore Settings. HiveCore keeps those keys server-side and uses them for protected `/runs` reads and advertised action dispatch.
+For product-to-product auth, generate dedicated service tokens from the product backends and save those in HiveCore Settings:
+
+```bash
+curl -s -X POST http://localhost:8010/auth/generate-service-token -H "X-API-Key: <signal-operator-key>"
+curl -s -X POST http://localhost:8020/auth/generate-service-token -H "X-API-Key: <trust-operator-key>"
+curl -s -X POST http://localhost:8000/auth/generate-service-token -H "X-API-Key: <reaper-operator-key>"
+```
+
+After generating product service tokens, save the SignalHive, TrustGate, and RepoReaper access tokens in HiveCore Settings. HiveCore keeps those tokens server-side and uses them for protected `/runs` reads and advertised action dispatch.
 
 ## First Test Path
 
@@ -105,7 +113,7 @@ After generating product keys, save the SignalHive, TrustGate, and RepoReaper AP
 2. Start TrustGate and review a pasted diff first. Move to GitHub PR diff review after token permissions are confirmed.
 3. Start RepoReaper in the safest mode available for the target: low budget, high confidence threshold, untrusted tests disabled unless Docker sandboxing is configured, and dry-run targeting before real PR delivery.
 4. Start HiveCore and confirm each product shows health, startup checks, capabilities, runs, and run detail support without contract errors.
-5. Save product API keys in HiveCore Settings and confirm protected run history appears.
+5. Save product service tokens in HiveCore Settings and confirm protected run history appears.
 
 ## FailGuard Readiness
 

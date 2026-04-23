@@ -23,11 +23,11 @@ what work has happened, and where product contracts have drifted.
 - Startup check visibility.
 - Capability and contract drift reporting.
 - Product-owned run history.
-- Server-side run detail proxying so product API keys stay off the browser.
+- Server-side run detail proxying so product access tokens stay off the browser.
 - Capability-driven action dispatch through advertised product actions.
 - Global defaults for topics, languages, repo guardrails, and operator notes.
 - Per-product frontend and API overrides.
-- Server-side storage for per-product API keys.
+- Server-side storage for per-product access tokens.
 
 ## Product Registry Defaults
 
@@ -75,6 +75,7 @@ npm run dev
 | Variable | Purpose |
 | --- | --- |
 | `HIVE_CORE_API_KEY_HASH` | Optional preconfigured API-key hash. |
+| `HIVE_CORE_SERVICE_TOKEN_HASH` | Optional service-token hash for HiveCore as a machine caller. |
 | `HIVE_CORE_DB_PATH` | SQLite database path. |
 | `HIVE_CORE_PORT` | Backend port. |
 | `BOT_GITHUB_TOKEN` | Optional GitHub token for future integrations. |
@@ -94,4 +95,3 @@ Current required product endpoints:
 
 Future orchestration should arrive through explicit contracts, approvals, and
 product-advertised actions rather than hidden coupling.
-

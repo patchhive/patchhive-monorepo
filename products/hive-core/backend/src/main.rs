@@ -34,6 +34,10 @@ async fn main() {
         .route("/auth/status", get(pipeline::auth_status))
         .route("/auth/login", axum::routing::post(pipeline::login))
         .route("/auth/generate-key", axum::routing::post(pipeline::gen_key))
+        .route(
+            "/auth/generate-service-token",
+            axum::routing::post(pipeline::gen_service_token),
+        )
         .route("/health", get(pipeline::health))
         .route("/startup/checks", get(pipeline::startup_checks_route))
         .route("/capabilities", get(pipeline::capabilities))

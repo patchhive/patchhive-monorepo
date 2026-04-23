@@ -87,6 +87,7 @@ npm run dev
 | --- | --- |
 | `BOT_GITHUB_TOKEN` | Optional GitHub token for PR diff reads and publishing. |
 | `TRUST_API_KEY_HASH` | Optional preconfigured API-key hash. |
+| `TRUST_SERVICE_TOKEN_HASH` | Optional service-token hash for HiveCore or other PatchHive service callers. |
 | `TRUST_DB_PATH` | SQLite database path. |
 | `TRUSTGATE_PORT` | Backend port. |
 | `TRUST_GITHUB_WEBHOOK_SECRET` | Signed webhook secret. |

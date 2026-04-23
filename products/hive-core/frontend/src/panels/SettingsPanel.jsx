@@ -32,7 +32,7 @@ function ProductEditor({ product, onChange }) {
         <Tag color="var(--blue)">default UI {product.default_frontend_url}</Tag>
         <Tag color="var(--blue)">default API {product.default_api_url}</Tag>
         <Tag color={product.api_key_configured ? "var(--green)" : "var(--gold)"}>
-          {product.api_key_configured ? "API key saved" : "API key needed"}
+          {product.api_key_configured ? "Access token saved" : "Access token needed"}
         </Tag>
       </div>
 
@@ -54,12 +54,16 @@ function ProductEditor({ product, onChange }) {
           />
         </div>
         <div style={S.field}>
-          <div style={S.label}>Product API Key</div>
+          <div style={S.label}>Product Access Token</div>
           <Input
             type="password"
             value={product.api_key || ""}
             onChange={(value) => onChange({ ...product, api_key: value })}
-            placeholder={product.api_key_configured ? "Stored - enter a new key to replace" : "Paste this product's API key"}
+            placeholder={
+              product.api_key_configured
+                ? "Stored - enter a new token to replace"
+                : "Paste a service token or legacy API key"
+            }
           />
         </div>
       </div>
@@ -169,7 +173,7 @@ export default function SettingsPanel({ fetchEnvelope, setRunning, setError }) {
           <div>
             <div style={{ fontSize: 18, fontWeight: 800 }}>Settings</div>
             <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
-              Persist suite defaults, launch targets, and subdomain overrides.
+              Persist suite defaults, launch targets, subdomain overrides, and product access tokens.
             </div>
           </div>
           <Btn onClick={refresh}>Reload</Btn>

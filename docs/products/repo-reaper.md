@@ -104,6 +104,8 @@ npm run dev
 | `MIN_REVIEW_CONFIDENCE` | Minimum confidence before Smith lets work continue. |
 | `RETRY_COUNT` | Patch and validation retry count. |
 | `WEBHOOK_SECRET` | Secret for watch mode webhooks. |
+| `REAPER_API_KEY_HASH` | Optional operator API-key hash. |
+| `REAPER_SERVICE_TOKEN_HASH` | Optional service-token hash for HiveCore or other PatchHive service callers. |
 | `PATCHHIVE_REPO_MEMORY_URL` | Optional RepoMemory integration. |
 
 ## HiveCore Fit
@@ -118,4 +120,3 @@ The long-term handoff path is:
 2. TrustGate checks risk before or during action.
 3. RepoMemory provides repo context and failure lessons.
 4. RepoReaper acts only when the candidate is inside configured guardrails.
-

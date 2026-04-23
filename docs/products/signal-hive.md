@@ -85,6 +85,7 @@ npm run dev
 | --- | --- |
 | `BOT_GITHUB_TOKEN` | GitHub read token. |
 | `SIGNAL_API_KEY_HASH` | Optional preconfigured API-key hash. |
+| `SIGNAL_SERVICE_TOKEN_HASH` | Optional service-token hash for HiveCore or other PatchHive service callers. |
 | `SIGNAL_DB_PATH` | SQLite database path. |
 | `SIGNAL_PORT` | Backend port. |
 | `SIGNAL_MARKER_REPO_LIMIT` | Cap for TODO/FIXME code-search reads. |
@@ -96,4 +97,3 @@ SignalHive should be the first source of candidate work for the suite. HiveCore
 can monitor its health, expose saved runs, and eventually coordinate approved
 handoffs into TrustGate and RepoReaper without making SignalHive dependent on
 HiveCore at runtime.
-

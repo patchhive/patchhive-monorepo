@@ -57,11 +57,14 @@ For split local runs, the backend listens on `8000` by default and the frontend 
 | `TRUSTGATE_PUBLIC_URL` | Optional public URL for links from GitHub artifacts back to saved decisions. |
 | `PATCHHIVE_REPO_MEMORY_URL` / `PATCHHIVE_REPO_MEMORY_API_KEY` | Optional RepoMemory context and FailGuard candidate destination. |
 | `TRUST_API_KEY_HASH` | Optional pre-seeded app auth hash. Otherwise generate the first local key from the UI. |
+| `TRUST_SERVICE_TOKEN_HASH` | Optional service-token hash for HiveCore or other PatchHive service callers. |
 | `TRUST_DB_PATH` | SQLite path for rules, templates, and review history. |
 | `TRUSTGATE_PORT` | Backend port for split local runs. |
 | `RUST_LOG` | Rust logging level. |
 
 To reuse the same password across SignalHive, TrustGate, RepoReaper, and HiveCore, run `./scripts/set-suite-api-key.sh --stack first` from the monorepo root before starting the stack. For every PatchHive product, run `./scripts/set-suite-api-key.sh`. Once the hash is pre-seeded, TrustGate can be used through a subdomain without remote bootstrap.
+
+To give HiveCore a dedicated machine credential instead of reusing the operator login secret, generate a service token from `POST /auth/generate-service-token` and save that token in HiveCore Settings.
 
 TrustGate works without GitHub for pasted diff review, but GitHub integration is what makes it operational inside real pull request flow. Direct pull request diff fetches need read access; maintained comments, statuses, or check-style output may require the smallest write permission your environment supports.
 

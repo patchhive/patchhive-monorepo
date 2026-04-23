@@ -457,7 +457,7 @@ function ProductCard({ product, onDispatch, onOpenRun }) {
             <Tag color="var(--gold)">runs locked</Tag>
           ))}
         <Tag color={product.api_key_configured ? "var(--green)" : "var(--gold)"}>
-          {product.api_key_configured ? "key linked" : "key missing"}
+          {product.api_key_configured ? "token linked" : "token missing"}
         </Tag>
         {health.startup_warns > 0 && <Tag color="var(--gold)">{health.startup_warns} warn</Tag>}
         {health.startup_errors > 0 && <Tag color="var(--accent)">{health.startup_errors} error</Tag>}
@@ -541,7 +541,7 @@ function ProductCard({ product, onDispatch, onOpenRun }) {
             </Btn>
             <Btn onClick={formatPayload}>Format JSON</Btn>
             <Btn onClick={resetPayload}>Reset</Btn>
-            {!product.api_key_configured && <span style={{ fontSize: 11, color: "var(--gold)" }}>Save this product's API key in Settings first.</span>}
+            {!product.api_key_configured && <span style={{ fontSize: 11, color: "var(--gold)" }}>Save this product's access token in Settings first.</span>}
             {!health.capabilities_ok && <span style={{ fontSize: 11, color: "var(--gold)" }}>Contract check is not passing yet.</span>}
           </div>
 
@@ -669,7 +669,7 @@ export default function ProductsPanel({ fetchEnvelope, setRunning, setError }) {
           <div>
             <div style={{ fontSize: 20, fontWeight: 900 }}>HiveCore Command Surface</div>
             <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
-              Live contract polling, saved product keys, and dispatch controls for every enabled PatchHive product.
+              Live contract polling, saved product access tokens, and dispatch controls for every enabled PatchHive product.
             </div>
           </div>
           <Btn onClick={refresh}>Refresh suite</Btn>
@@ -679,7 +679,7 @@ export default function ProductsPanel({ fetchEnvelope, setRunning, setError }) {
           <Tag color="var(--gold)">{products.filter((product) => product.status === "degraded").length} degraded</Tag>
           <Tag color="var(--blue)">{products.reduce((total, product) => total + ((product.actions || []).length), 0)} advertised actions</Tag>
           <Tag color="var(--accent)">{products.reduce((total, product) => total + (product.health?.run_count || 0), 0)} visible runs</Tag>
-          <Tag color="var(--accent)">{products.filter((product) => product.api_key_configured).length} keyed products</Tag>
+          <Tag color="var(--accent)">{products.filter((product) => product.api_key_configured).length} access tokens linked</Tag>
         </div>
       </div>
 

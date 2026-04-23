@@ -21,7 +21,7 @@ This is intentionally narrower than full orchestration. HiveCore should earn tha
 - keep the PatchHive product catalog visible in one place
 - poll product-owned health, startup checks, capabilities, runs, and run details
 - store suite-wide defaults and per-product endpoint overrides
-- store per-product API keys server-side for protected reads and action dispatch
+- store per-product access tokens server-side for protected reads and action dispatch
 - dispatch only advertised product actions through the shared capability contract
 - report contract drift instead of hiding product API differences
 
@@ -35,7 +35,7 @@ This is intentionally narrower than full orchestration. HiveCore should earn tha
 - capability-driven action dispatch through advertised product actions
 - persistent global defaults for topics, languages, repo guardrails, and operator notes
 - per-product frontend/API overrides for subdomains or remote deployments
-- per-product API keys stored server-side for protected `/runs` reads and action dispatch
+- per-product access tokens stored server-side for protected `/runs` reads and action dispatch
 - shared PatchHive API-key bootstrap flow
 
 ## Run Locally
@@ -65,6 +65,7 @@ cd ../frontend && npm install && npm run dev
 | --- | --- |
 | `BOT_GITHUB_TOKEN` | Optional GitHub token reserved for future control-plane reads. |
 | `HIVE_CORE_API_KEY_HASH` | Optional pre-seeded app auth hash. Otherwise generate the first local key from the UI. |
+| `HIVE_CORE_SERVICE_TOKEN_HASH` | Optional service-token hash for HiveCore as a machine caller. |
 | `HIVE_CORE_DB_PATH` | SQLite path for suite settings, product overrides, and action events. |
 | `HIVE_CORE_PORT` | Backend port for split local runs. |
 | `PATCHHIVE_ALLOW_REMOTE_BOOTSTRAP` | Allows first-time key bootstrap from non-localhost clients. Keep unset for local use. |
@@ -72,7 +73,7 @@ cd ../frontend && npm install && npm run dev
 
 To reuse the same password across SignalHive, TrustGate, RepoReaper, and HiveCore, run `./scripts/set-suite-api-key.sh --stack first` from the monorepo root before starting the stack. For every PatchHive product, run `./scripts/set-suite-api-key.sh`. Once the hash is pre-seeded, HiveCore can be used through a subdomain without remote bootstrap.
 
-Save per-product API keys in Settings when you want HiveCore to read protected `/runs` data or dispatch advertised product actions. Those keys stay server-side.
+Save per-product access tokens in Settings when you want HiveCore to read protected `/runs` data or dispatch advertised product actions. Dedicated service tokens are preferred; legacy product API keys still work during the transition. Those tokens stay server-side.
 
 ## Product Registry Defaults
 
@@ -92,7 +93,7 @@ HiveCore starts with built-in localhost defaults for the current PatchHive suite
 
 If you run products on subdomains or remote hosts, save the new targets in HiveCore's Settings tab. Those overrides persist in the HiveCore SQLite database.
 
-HiveCore does not read product databases. It uses product-owned APIs and saved product API keys, so each product remains independently runnable and keeps ownership of its own run history and validation.
+HiveCore does not read product databases. It uses product-owned APIs and saved product access tokens, so each product remains independently runnable and keeps ownership of its own run history and validation.
 
 ## Safety Boundary
 

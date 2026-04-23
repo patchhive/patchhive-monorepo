@@ -26,7 +26,10 @@ use patchhive_product_core::startup::{
 use serde_json::json;
 use tracing::info;
 
-use crate::auth::{auth_enabled, generate_and_save_key, verify_token};
+use crate::auth::{
+    auth_enabled, generate_and_save_key, generate_and_save_service_token,
+    service_auth_enabled, service_token_generation_allowed, verify_token,
+};
 use crate::state::AppState;
 
 static STARTUP_CHECKS: OnceCell<Vec<StartupCheck>> = OnceCell::new();
@@ -72,6 +75,7 @@ async fn main() {
         .route("/auth/status", get(auth_status))
         .route("/auth/login", post(login))
         .route("/auth/generate-key", post(gen_key))
+        .route("/auth/generate-service-token", post(gen_service_token))
         .route("/health", get(health))
         .route("/startup/checks", get(startup_checks_route))
         .route("/capabilities", get(capabilities))
@@ -130,6 +134,23 @@ async fn gen_key(
     Ok(Json(
         json!({"api_key": key, "message": "Store this — it won't be shown again"}),
     ))
+}
+
+async fn gen_service_token(
+    headers: axum::http::HeaderMap,
+) -> Result<Json<serde_json::Value>, patchhive_product_core::auth::JsonApiError> {
+    if service_auth_enabled() {
+        return Err(patchhive_product_core::auth::service_auth_already_configured_error());
+    }
+    if !service_token_generation_allowed(&headers) {
+        return Err(patchhive_product_core::auth::service_token_generation_forbidden_error());
+    }
+    let token = generate_and_save_service_token()
+        .map_err(|err| patchhive_product_core::auth::service_token_generation_failed_error(&err))?;
+    Ok(Json(json!({
+        "service_token": token,
+        "message": "Store this for HiveCore or other PatchHive service callers — it won't be shown again"
+    })))
 }
 
 async fn health(State(state): State<AppState>) -> Json<serde_json::Value> {
