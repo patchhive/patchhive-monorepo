@@ -18,7 +18,14 @@ It is PatchHive's trust and safety layer: a product that checks AI-generated or 
 - submit FailGuard candidates to RepoMemory for `warn` and `block` results when RepoMemory is configured
 - save decision history and expose a print-friendly decision view
 
-## Run Locally
+## Port Reference
+
+| Mode | Frontend | Backend | Notes |
+| --- | --- | --- | --- |
+| Docker Compose | `http://localhost:5175` | `http://localhost:8020` | External host ports from `docker compose.yml` |
+| Split local dev | `http://localhost:5175` | `http://localhost:8000` | `npm run dev` plus `cargo run` |
+| Frontend preview | `http://localhost:4175` | `http://localhost:8000` | `npm run preview` plus backend running locally |
+| Container internal | `http://frontend:8080` | `http://backend:8000` | Internal service ports inside Docker |
 
 ### Docker
 
@@ -39,6 +46,8 @@ cd backend && cargo run
 cd ../frontend && npm install && npm run dev
 ```
 
+For split local runs, the backend listens on `8000` by default and the frontend listens on `5175`.
+
 ## Important Configuration
 
 | Variable | Purpose |
@@ -51,6 +60,8 @@ cd ../frontend && npm install && npm run dev
 | `TRUST_DB_PATH` | SQLite path for rules, templates, and review history. |
 | `TRUSTGATE_PORT` | Backend port for split local runs. |
 | `RUST_LOG` | Rust logging level. |
+
+To reuse the same password across SignalHive, TrustGate, RepoReaper, and HiveCore, run `./scripts/set-suite-api-key.sh --stack first` from the monorepo root before starting the stack. For every PatchHive product, run `./scripts/set-suite-api-key.sh`. Once the hash is pre-seeded, TrustGate can be used through a subdomain without remote bootstrap.
 
 TrustGate works without GitHub for pasted diff review, but GitHub integration is what makes it operational inside real pull request flow. Direct pull request diff fetches need read access; maintained comments, statuses, or check-style output may require the smallest write permission your environment supports.
 

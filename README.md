@@ -107,7 +107,9 @@ Every product ships with the same first-run API-key bootstrap pattern.
 
 - Open the product from `http://localhost:<frontend-port>` for first-time bootstrap.
 - Generate the first API key locally.
+- If you want the same password across products, pre-seed the suite hashes with `./scripts/set-suite-api-key.sh` before starting them.
 - Use session storage in the browser for subsequent authenticated requests.
+- Once a product hash is configured, logging in through a subdomain or other remote host works normally.
 - If remote bootstrap is truly intentional, opt in explicitly with `PATCHHIVE_ALLOW_REMOTE_BOOTSTRAP=true`.
 
 GitHub-backed products are designed to work with fine-grained personal access tokens and can be run against public repositories only when that fits the use case.

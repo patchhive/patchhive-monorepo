@@ -89,6 +89,14 @@ First-time product API key generation is localhost-first. Open each product thro
 | RepoReaper | `REAPER_API_KEY_HASH` |
 | HiveCore | `HIVE_CORE_API_KEY_HASH` |
 
+If you want the same password across the first stack and plan to use subdomains or other remote hosts, run this from the monorepo root before starting the products:
+
+```bash
+./scripts/set-suite-api-key.sh --stack first
+```
+
+That writes the same SHA-256 hash into the first-stack `.env` files. After restart, use the same raw password in SignalHive, TrustGate, RepoReaper, and HiveCore.
+
 After generating product keys, save the SignalHive, TrustGate, and RepoReaper API keys in HiveCore Settings. HiveCore keeps those keys server-side and uses them for protected `/runs` reads and advertised action dispatch.
 
 ## First Test Path

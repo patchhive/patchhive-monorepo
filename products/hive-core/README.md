@@ -70,6 +70,8 @@ cd ../frontend && npm install && npm run dev
 | `PATCHHIVE_ALLOW_REMOTE_BOOTSTRAP` | Allows first-time key bootstrap from non-localhost clients. Keep unset for local use. |
 | `RUST_LOG` | Rust logging level. |
 
+To reuse the same password across SignalHive, TrustGate, RepoReaper, and HiveCore, run `./scripts/set-suite-api-key.sh --stack first` from the monorepo root before starting the stack. For every PatchHive product, run `./scripts/set-suite-api-key.sh`. Once the hash is pre-seeded, HiveCore can be used through a subdomain without remote bootstrap.
+
 Save per-product API keys in Settings when you want HiveCore to read protected `/runs` data or dispatch advertised product actions. Those keys stay server-side.
 
 ## Product Registry Defaults

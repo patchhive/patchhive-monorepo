@@ -49,7 +49,14 @@ TrustGate is review-first. It should not rewrite code, merge pull requests, or
 hide product-specific policy decisions inside shared crates. Its value is the
 clear risk call and the evidence behind it.
 
-## Local Development
+## Port Reference
+
+| Mode | Frontend | Backend | Notes |
+| --- | --- | --- | --- |
+| Docker Compose | `http://localhost:5175` | `http://localhost:8020` | External host ports from `docker-compose.yml` |
+| Split local dev | `http://localhost:5175` | `http://localhost:8000` | `npm run dev` plus `cargo run` |
+| Frontend preview | `http://localhost:4175` | `http://localhost:8000` | `npm run preview` plus backend running locally |
+| Container internal | `http://frontend:8080` | `http://backend:8000` | Internal service ports inside Docker |
 
 ```bash
 cd products/trust-gate
@@ -91,4 +98,3 @@ npm run dev
 TrustGate is the gate before autonomous write behavior becomes comfortable.
 HiveCore can surface TrustGate health, run history, and capabilities, then use
 advertised actions when a product handoff needs a safety decision.
-

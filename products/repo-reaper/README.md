@@ -73,6 +73,8 @@ cd ../frontend && npm install && npm run dev
 | `REAPER_WORK_DIR` | Local workspace used for cloned repositories and patch attempts. |
 | `REAPER_PORT` | Backend port for split local runs. |
 
+To reuse the same password across SignalHive, TrustGate, RepoReaper, and HiveCore, run `./scripts/set-suite-api-key.sh --stack first` from the monorepo root before starting the stack. For every PatchHive product, run `./scripts/set-suite-api-key.sh`. Once the hash is pre-seeded, RepoReaper can be used through a subdomain without remote bootstrap.
+
 If you only want to work on public repositories, keep your GitHub token public-only. If you want RepoReaper to clone, push, and open pull requests against specific repositories, grant only the write permissions those repositories actually need.
 
 ## AI and Platform Integrations
