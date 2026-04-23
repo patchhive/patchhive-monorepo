@@ -76,6 +76,7 @@ npm run dev
 | --- | --- |
 | `BOT_GITHUB_TOKEN` | GitHub read token. |
 | `REPO_MEMORY_API_KEY_HASH` | Optional preconfigured API-key hash. |
+| `REPO_MEMORY_SERVICE_TOKEN_HASH` | Optional pre-seeded service-token hash for HiveCore or other PatchHive product callers. |
 | `REPO_MEMORY_DB_PATH` | SQLite database path. |
 | `REPO_MEMORY_PORT` | Backend port. |
 

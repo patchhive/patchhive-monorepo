@@ -47,6 +47,7 @@ cd ../frontend && npm install && npm run dev
 | --- | --- |
 | `BOT_GITHUB_TOKEN` | Optional GitHub token for merged PR, review, issue, and file hotspot reads. |
 | `REPO_MEMORY_API_KEY_HASH` | Optional pre-seeded app auth hash. Otherwise generate the first local key from the UI. |
+| `REPO_MEMORY_SERVICE_TOKEN_HASH` | Optional pre-seeded service-token hash for HiveCore or other PatchHive product callers. |
 | `REPO_MEMORY_DB_PATH` | SQLite path for runs and memory entries. |
 | `REPO_MEMORY_PORT` | Backend port for split local runs. |
 | `RUST_LOG` | Rust logging level. |

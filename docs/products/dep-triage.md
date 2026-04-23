@@ -75,6 +75,7 @@ npm run dev
 | `BOT_GITHUB_TOKEN` | GitHub token for pull request and optional alert reads. |
 | `GITHUB_TOKEN` | Optional fallback GitHub token. |
 | `DEP_TRIAGE_API_KEY_HASH` | Optional preconfigured API-key hash. |
+| `DEP_TRIAGE_SERVICE_TOKEN_HASH` | Optional pre-seeded service-token hash for HiveCore or other PatchHive product callers. |
 | `DEP_TRIAGE_DB_PATH` | SQLite database path. |
 | `DEP_TRIAGE_PORT` | Backend port. |
 

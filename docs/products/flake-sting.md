@@ -74,6 +74,7 @@ npm run dev
 | `BOT_GITHUB_TOKEN` | GitHub token for Actions reads. |
 | `GITHUB_TOKEN` | Optional fallback GitHub token. |
 | `FLAKE_STING_API_KEY_HASH` | Optional preconfigured API-key hash. |
+| `FLAKE_STING_SERVICE_TOKEN_HASH` | Optional pre-seeded service-token hash for HiveCore or other PatchHive product callers. |
 | `FLAKE_STING_DB_PATH` | SQLite database path. |
 | `FLAKE_STING_PORT` | Backend port. |
 

@@ -77,6 +77,7 @@ npm run dev
 | `BOT_GITHUB_TOKEN` | GitHub token for pull request and review reads. |
 | `GITHUB_TOKEN` | Optional fallback GitHub token. |
 | `REVIEW_BEE_API_KEY_HASH` | Optional preconfigured API-key hash. |
+| `REVIEW_BEE_SERVICE_TOKEN_HASH` | Optional pre-seeded service-token hash for HiveCore or other PatchHive product callers. |
 | `REVIEW_BEE_DB_PATH` | SQLite database path. |
 | `REVIEW_BEE_PORT` | Backend port. |
 | `REVIEW_BEE_GITHUB_WEBHOOK_SECRET` | Signed webhook secret. |

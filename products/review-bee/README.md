@@ -47,6 +47,7 @@ cd ../frontend && npm install && npm run dev
 | `REVIEW_BEE_GITHUB_WEBHOOK_SECRET` | Optional signed webhook secret for review refreshes. |
 | `REVIEW_BEE_PUBLIC_URL` | Optional public URL for links from maintained comments back to saved runs. |
 | `REVIEW_BEE_API_KEY_HASH` | Optional pre-seeded app auth hash. Otherwise generate the first local key from the UI. |
+| `REVIEW_BEE_SERVICE_TOKEN_HASH` | Optional pre-seeded service-token hash for HiveCore or other PatchHive product callers. |
 | `REVIEW_BEE_DB_PATH` | SQLite path for review history. |
 | `REVIEW_BEE_PORT` | Backend port for split local runs. |
 | `RUST_LOG` | Rust logging level. |

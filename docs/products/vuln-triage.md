@@ -75,6 +75,7 @@ npm run dev
 | `BOT_GITHUB_TOKEN` | GitHub token for security alert reads. |
 | `GITHUB_TOKEN` | Optional fallback GitHub token. |
 | `VULN_TRIAGE_API_KEY_HASH` | Optional preconfigured API-key hash. |
+| `VULN_TRIAGE_SERVICE_TOKEN_HASH` | Optional pre-seeded service-token hash for HiveCore or other PatchHive product callers. |
 | `VULN_TRIAGE_DB_PATH` | SQLite database path. |
 | `VULN_TRIAGE_PORT` | Backend port. |
 

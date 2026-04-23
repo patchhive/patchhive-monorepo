@@ -108,7 +108,7 @@ Every product ships with the same first-run API-key bootstrap pattern.
 - Open the product from `http://localhost:<frontend-port>` for first-time bootstrap.
 - Generate the first API key locally.
 - If you want the same password across products, pre-seed the suite hashes with `./scripts/set-suite-api-key.sh` before starting them.
-- First-stack products can also generate a dedicated service token from `POST /auth/generate-service-token` for HiveCore or other PatchHive service callers.
+- Products can also generate a dedicated service token from `POST /auth/generate-service-token` for HiveCore or other PatchHive service callers.
 - Use session storage in the browser for subsequent authenticated requests.
 - Once a product hash is configured, logging in through a subdomain or other remote host works normally.
 - If remote bootstrap is truly intentional, opt in explicitly with `PATCHHIVE_ALLOW_REMOTE_BOOTSTRAP=true`.

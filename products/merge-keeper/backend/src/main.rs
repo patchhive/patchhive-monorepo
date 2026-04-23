@@ -45,6 +45,10 @@ async fn main() {
         .route("/auth/status", get(pipeline::auth_status))
         .route("/auth/login", post(pipeline::login))
         .route("/auth/generate-key", post(pipeline::gen_key))
+        .route(
+            "/auth/generate-service-token",
+            post(pipeline::gen_service_token),
+        )
         .route("/health", get(pipeline::health))
         .route("/startup/checks", get(pipeline::startup_checks_route))
         .route("/capabilities", get(pipeline::capabilities))

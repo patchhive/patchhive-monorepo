@@ -77,6 +77,7 @@ npm run dev
 | `BOT_GITHUB_TOKEN` | GitHub token for PR, review, and check reads. |
 | `GITHUB_TOKEN` | Optional fallback GitHub token. |
 | `MERGE_KEEPER_API_KEY_HASH` | Optional preconfigured API-key hash. |
+| `MERGE_KEEPER_SERVICE_TOKEN_HASH` | Optional pre-seeded service-token hash for HiveCore or other PatchHive product callers. |
 | `MERGE_KEEPER_DB_PATH` | SQLite database path. |
 | `MERGE_KEEPER_PORT` | Backend port. |
 | `MERGE_KEEPER_GITHUB_WEBHOOK_SECRET` | Signed webhook secret. |

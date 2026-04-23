@@ -79,6 +79,7 @@ npm run dev
 | Variable | Purpose |
 | --- | --- |
 | `REFACTOR_SCOUT_API_KEY_HASH` | Optional preconfigured API-key hash. |
+| `REFACTOR_SCOUT_SERVICE_TOKEN_HASH` | Optional pre-seeded service-token hash for HiveCore or other PatchHive product callers. |
 | `REFACTOR_SCOUT_DB_PATH` | SQLite database path. |
 | `REFACTOR_SCOUT_PORT` | Backend port. |
 | `REFACTOR_SCOUT_ALLOWED_ROOTS` | Colon-separated filesystem roots allowed for scans. |

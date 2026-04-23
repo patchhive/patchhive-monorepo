@@ -44,6 +44,7 @@ cd ../frontend && npm install && npm run dev
 | --- | --- |
 | `BOT_GITHUB_TOKEN` or `GITHUB_TOKEN` | Optional GitHub token for workflow run and job reads. |
 | `FLAKE_STING_API_KEY_HASH` | Optional pre-seeded app auth hash. Otherwise generate the first local key from the UI. |
+| `FLAKE_STING_SERVICE_TOKEN_HASH` | Optional pre-seeded service-token hash for HiveCore or other PatchHive product callers. |
 | `FLAKE_STING_DB_PATH` | SQLite path for flaky scan history. |
 | `FLAKE_STING_PORT` | Backend port for split local runs. |
 | `RUST_LOG` | Rust logging level. |

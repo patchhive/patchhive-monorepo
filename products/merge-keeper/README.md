@@ -49,6 +49,7 @@ cd ../frontend && npm install && npm run dev
 | `PATCHHIVE_TRUST_GATE_URL` / `PATCHHIVE_TRUST_GATE_API_KEY` | Optional TrustGate context. |
 | `PATCHHIVE_REPO_MEMORY_URL` / `PATCHHIVE_REPO_MEMORY_API_KEY` | Optional RepoMemory merge expectations. |
 | `MERGE_KEEPER_API_KEY_HASH` | Optional pre-seeded app auth hash. Otherwise generate the first local key from the UI. |
+| `MERGE_KEEPER_SERVICE_TOKEN_HASH` | Optional pre-seeded service-token hash for HiveCore or other PatchHive product callers. |
 | `MERGE_KEEPER_DB_PATH` | SQLite path for readiness history. |
 | `MERGE_KEEPER_PORT` | Backend port for split local runs. |
 | `RUST_LOG` | Rust logging level. |

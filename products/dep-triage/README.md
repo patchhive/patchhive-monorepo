@@ -44,6 +44,7 @@ cd ../frontend && npm install && npm run dev
 | --- | --- |
 | `BOT_GITHUB_TOKEN` or `GITHUB_TOKEN` | Optional GitHub token for dependency pull request and Dependabot reads. |
 | `DEP_TRIAGE_API_KEY_HASH` | Optional pre-seeded app auth hash. Otherwise generate the first local key from the UI. |
+| `DEP_TRIAGE_SERVICE_TOKEN_HASH` | Optional pre-seeded service-token hash for HiveCore or other PatchHive product callers. |
 | `DEP_TRIAGE_DB_PATH` | SQLite path for scan history. |
 | `DEP_TRIAGE_PORT` | Backend port for split local runs. |
 | `RUST_LOG` | Rust logging level. |
