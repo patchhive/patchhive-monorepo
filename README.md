@@ -20,6 +20,8 @@ This repository is the PatchHive source-of-truth monorepo. New products, shared 
 | RefactorScout | [`patchhive/refactorscout`](https://github.com/patchhive/refactorscout) | Surfaces safe, high-value refactor opportunities before code quality drift compounds. |
 | HiveCore | [`patchhive/hivecore`](https://github.com/patchhive/hivecore) | Centralizes suite visibility, shared defaults, and launch control across PatchHive. |
 
+Detailed product documentation lives in [docs/products](docs/products/).
+
 ## Shared Foundations
 
 | Foundation | Repo | Purpose |

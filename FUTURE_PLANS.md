@@ -2,14 +2,19 @@
 
 Tracked planning scratchpad for PatchHive.
 Use this to capture later ideas so they do not get lost between product pushes.
+This is the canonical roadmap scratchpad; exploratory notes should be folded
+back here instead of living in parallel long-term.
 
 ## SignalHive
 
 - Add a print-friendly in-app report route/view, not just exported HTML and markdown.
 - Add shareable report links or saved report snapshots once there is a safe persistence model for them.
 - Add optional delivery for scheduled scans: email, webhook, or digest-style summary output.
-- Add cross-repo pattern detection so SignalHive can surface ecosystem-level maintenance drift, not just one-repo snapshots.
-- Add orphan and maintainer-health detection so PatchHive can spot repos with rising debt and little human response.
+- Add cross-repo pattern detection so SignalHive can surface ecosystem-level maintenance drift, not just one-repo snapshots: repeated bug classes, deprecated APIs spreading across packages, downstream advisory impact, and similar recurring maintenance pressure.
+- Add orphan and maintainer-health detection so PatchHive can spot repos with rising debt and little human response: response-time trends, contributor churn, bus-factor hints, failing CI, and growing backlogs.
+- Add ecosystem health dashboards that aggregate signal across monitored repos and show which ecosystems are improving, which are accumulating debt, and where maintainer pressure is concentrated.
+- Add blast-radius analysis so PatchHive can prioritize work by downstream impact, package reach, dependency graph exposure, and practical ecosystem value.
+- Add a public signal feed later for discovered-but-unfixed work that humans can pick up, with PatchHive credited for discovery and humans credited for fixes.
 - Add repo watchlists or portfolio views so operators can track a curated set of repos over time instead of scanning one slice at a time.
 - Add per-repo signal suppression or “known noise” controls so the queue can stay useful after repeated scans.
 - Add confidence bands for duplicate and recurring-bug detection so noisy heuristics feel easier to trust.
@@ -44,7 +49,8 @@ Use this to capture later ideas so they do not get lost between product pushes.
 - Add confidence decay and freshness aging so old conventions do not outweigh newer repo behavior forever.
 - Add conflict detection when two memories disagree, so operators can see when a repo’s conventions are in transition.
 - Add consumer-specific memory packs so RepoReaper, TrustGate, ReviewBee, and MergeKeeper can each pull the most relevant slice without overloading prompts.
-- Add maintainer relationship memory that captures tone, pacing, and recurring human preferences separately from code conventions.
+- Add maintainer relationship memory that captures tone, pacing, acceptance/rejection patterns, review preferences, and recurring human expectations separately from code conventions.
+- Add a rejection learning loop where rejected PRs, maintainer edits, rejection reasons, and follow-up outcomes feed back into RepoMemory and TrustGate so PatchHive gets measurably better after each interaction.
 - Consider AI-assisted summarization or retrieval later through `patchhive-ai-local`, but keep the base memory loop useful without AI.
 - FailGuard v1 is complete: RepoMemory supports suggested lesson candidates, TrustGate and RepoReaper produce candidates automatically, and direct `POST /failguard/lessons` capture remains available.
 
@@ -86,6 +92,8 @@ Use this to capture later ideas so they do not get lost between product pushes.
 - Add report export modes later once teams want to turn the ranked queue into a planning artifact or weekly security digest.
 - Add historical compare mode so operators can see which findings are new, which were cleared, and which keep surviving scan after scan.
 - Add time-to-patch tracking so PatchHive can measure how quickly monitored repos move from advisory to merged fix.
+- Add a real-time CVE response workflow where VulnTriage identifies affected monitored repos, assesses severity and exploitability, queues fix candidates, and sends them through TrustGate before RepoReaper acts.
+- Add coordinated disclosure mode for vulnerabilities PatchHive discovers directly, including private reporting, embargo-aware handling, and CVE filing assistance where appropriate.
 - Consider AI-assisted finding summaries later through `patchhive-ai-local`, but keep the base ranking loop useful without AI.
 
 ## RepoReaper
@@ -96,8 +104,11 @@ Use this to capture later ideas so they do not get lost between product pushes.
 - Add resume-from-checkpoint support for long runs so failed hunts can continue without restarting the whole queue.
 - Add stronger maintainer-facing PR summaries that explain the issue, the fix approach, the test evidence, and any remaining uncertainty.
 - Add repo-level patch budgets and cooldowns so PatchHive can stay active without overwhelming one ecosystem or maintainer group.
-- Add warm-intro mode so PatchHive’s first PR to a new repo is intentionally small, conservative, and trust-building.
-- Add follow-up outcome tracking so merged RepoReaper fixes feed back into later PatchHive decisions.
+- Add warm-intro mode so PatchHive’s first PR to a new repo is intentionally small, conservative, heavily documented, and trust-building before it attempts more ambitious work.
+- Add smart PR batching so related fixes can be grouped into fewer coherent PRs instead of overwhelming maintainers with a high-volume trickle.
+- Add maintainer pacing awareness so PatchHive can back off when maintainers are slow, avoid bad timing, and respect repo-specific review cadence.
+- Add follow-up outcome tracking so merged RepoReaper fixes feed back into later PatchHive decisions, including downstream effects, maintainer refactors, follow-up issues, and related failures.
+- Add DepTriage -> RepoReaper dependency migration execution for cases where the right next step is not just ranking an update, but making the version bump, fixing breakage, running tests, and opening the PR.
 
 ## HiveCore
 
@@ -107,6 +118,7 @@ Use this to capture later ideas so they do not get lost between product pushes.
 - Add global allowlist, denylist, and opt-out propagation only when each product supports explicit settings-apply semantics.
 - Add cross-product handoff flows such as SignalHive -> TrustGate -> RepoReaper after approval and safety controls are visible in HiveCore.
 - Extend contract drift reporting later with field-level schema validation once product contracts start versioning beyond `patchhive.product.contract.v1`.
+- Add a PatchHive status view or public status page later that shows product availability, recent activity, and suite health once PatchHive is trusted as an ongoing contributor.
 
 ## Shared Platform
 
@@ -117,12 +129,33 @@ Use this to capture later ideas so they do not get lost between product pushes.
 - Use `patchhive-github-data` for the next product that needs GitHub repo search, issue history, merged PR history, review/comment history, or Actions reads.
 - Use `patchhive-github-security` for the next product that needs code scanning alerts, Dependabot alerts, or advisory metadata.
 - Consider LiteLLM later only as an optional upstream behind `patchhive-ai-local`, not as the product-facing contract.
-- Add a `ph` CLI later so PatchHive’s analysis layer can be used locally without running the full platform.
+- Add a `ph` CLI later so PatchHive’s analysis layer can be used locally without running the full platform: `ph scan`, `ph triage`, `ph review`, and `ph check`.
+- Add git hook integration for local TrustGate and ReviewBee checks so teams can catch issues before they hit GitHub.
+- Add IDE extension support later for VS Code, Zed, and JetBrains so PatchHive signals can surface near the code instead of only in reports.
 - Add better shared test coverage around auth, webhook verification, repo validation, and GitHub client behavior before the product count gets much larger.
+
+## PatchHive Identity & Reputation
+
+- Build a public PatchHive contributor profile page on GitHub and patchhive.live with contribution philosophy, contact info, acceptance-rate trends, and enough context for maintainers to understand PatchHive quickly.
+- Build a public PatchHive transparency dashboard with PRs opened, acceptance rate, median time to merge, product breakdowns, ecosystem breakdowns, safety outcomes, and contribution quality over time.
+- Track reputation at the PatchHive account level so maintainers can judge the bot by visible contribution history instead of marketing claims.
+- Explore small sponsorships from the PatchHive account to repos it contributes to most, so the project supports the ecosystem it depends on.
+
+## Community, Cloud, and Enterprise
+
+- Consider a genuinely useful PatchHive Community edition for self-hosted use and a PatchHive Cloud offering for hosted suite operation, team features, and shared portfolios.
+- Add team and enterprise features later: multi-user auth, shared repo portfolios, team-level signal aggregation, role-based access, and audit-friendly run history.
+- Add compliance-ready output modes that show which signals triggered which patches, what TrustGate evaluated, what confidence scores were used, and which human or automation step approved action.
+- Consider a GitHub Marketplace listing once the suite is mature enough to meet teams where they already buy developer tools.
+
+## Wild Cards
+
+- Explore PatchHive as an anonymized dataset about open source health, maintenance patterns, vulnerability response, dependency drift, and contribution outcomes.
+- Explore a “PatchHive Confirmed” badge for repos that meet living maintenance-health thresholds like active maintainers, passing tests, current dependencies, and healthy issue triage. This should be a transparent signal, not a static audit badge.
 
 ## Product Direction
 
 - Keep SignalHive visibility-first.
 - Keep TrustGate / memory / safety layers ahead of broader autonomous write behavior.
 - Keep HiveCore control-plane-first: product APIs remain the source of truth, and deeper orchestration should arrive through shared contracts instead of private database reads.
-- Build a public PatchHive transparency/dashboard layer later so reputation is earned through visible output, outcomes, and contribution quality.
+- Build public PatchHive identity and transparency layers later so reputation is earned through visible output, outcomes, contribution quality, and maintainer trust.
