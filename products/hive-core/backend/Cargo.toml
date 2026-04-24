@@ -22,4 +22,4 @@ once_cell = "1"
 chrono = { version = "0.4", features = ["serde"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 uuid = { version = "1", features = ["serde", "v7"] }
-patchhive-product-core = { git = "https://github.com/patchhive/patchhive-product-core.git", rev = "41a8f22a449481ca6c2e2bd556b9d85d23e4e0b3", version = "0.1.0" }
+patchhive-product-core = { git = "https://github.com/patchhive/patchhive-product-core.git", rev = "6345dcd503d85d5855d430258062d3fe6b0341de", version = "0.1.0" }
