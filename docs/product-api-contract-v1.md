@@ -171,7 +171,8 @@ If the body does not include `payload`, `path_params`, or `query`, HiveCore trea
 Rules:
 
 - HiveCore must fetch the target product's `/capabilities` and only dispatch actions the product advertises.
-- HiveCore should use product-owned API keys stored in HiveCore settings; it should not expose those keys back to the frontend.
+- HiveCore should use product-owned service tokens stored in HiveCore settings; it should not expose those tokens back to the frontend. Legacy operator API keys are a temporary fallback only.
+- HiveCore should treat `required_scopes` as the minimum scope set for a service-token dispatch and block requests when the configured machine credential does not cover them.
 - HiveCore should record every dispatch attempt with target URL, action ID, remote status, response body, and error text.
 - HiveCore should block advertised destructive actions until an explicit approval flow exists.
 - Products own request validation, side effects, and run history after dispatch.
@@ -227,7 +228,8 @@ Optional:
       "path": "/scan",
       "description": "Discover maintenance signals.",
       "starts_run": true,
-      "destructive": false
+      "destructive": false,
+      "required_scopes": ["actions:dispatch"]
     }
   ],
   "links": [

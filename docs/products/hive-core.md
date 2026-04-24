@@ -23,11 +23,12 @@ what work has happened, and where product contracts have drifted.
 - Startup check visibility.
 - Capability and contract drift reporting.
 - Product-owned run history.
-- Server-side run detail proxying so product access tokens stay off the browser.
+- Server-side run detail proxying so product service tokens stay off the browser.
 - Capability-driven action dispatch through advertised product actions.
 - Global defaults for topics, languages, repo guardrails, and operator notes.
 - Per-product frontend and API overrides.
-- Server-side storage for per-product access tokens.
+- Provisioning and rotation flow that exchanges an operator API key for a dedicated product service token.
+- Server-side storage for per-product service tokens, with legacy operator-key fallback during the transition.
 
 ## Product Registry Defaults
 

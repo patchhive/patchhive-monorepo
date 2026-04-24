@@ -114,7 +114,8 @@ pub struct ProductOverride {
     pub slug: String,
     pub frontend_url: String,
     pub api_url: String,
-    pub api_key: String,
+    pub service_token: String,
+    pub legacy_api_key: String,
     pub enabled: bool,
     pub notes: String,
     pub updated_at: String,
@@ -132,7 +133,10 @@ pub struct ProductSettingsItem {
     pub default_api_url: String,
     pub override_frontend_url: String,
     pub override_api_url: String,
-    pub api_key_configured: bool,
+    pub auth_mode: String,
+    pub machine_auth_configured: bool,
+    pub service_token_configured: bool,
+    pub legacy_api_key_configured: bool,
     pub enabled: bool,
     pub notes: String,
     pub updated_at: String,
@@ -200,7 +204,10 @@ pub struct ProductRuntimeItem {
     pub enabled: bool,
     pub frontend_url: String,
     pub api_url: String,
-    pub api_key_configured: bool,
+    pub auth_mode: String,
+    pub machine_auth_configured: bool,
+    pub service_token_configured: bool,
+    pub legacy_api_key_configured: bool,
     pub notes: String,
     pub status: String,
     pub health: ProductHealthSnapshot,
@@ -246,7 +253,10 @@ pub struct ProductRunsSnapshotResponse {
     pub slug: String,
     pub title: String,
     pub api_url: String,
-    pub api_key_configured: bool,
+    pub auth_mode: String,
+    pub machine_auth_configured: bool,
+    pub service_token_configured: bool,
+    pub legacy_api_key_configured: bool,
     pub runs_ok: bool,
     pub checked_at: String,
     pub error: String,
@@ -258,7 +268,10 @@ pub struct ProductRunDetailResponse {
     pub slug: String,
     pub title: String,
     pub api_url: String,
-    pub api_key_configured: bool,
+    pub auth_mode: String,
+    pub machine_auth_configured: bool,
+    pub service_token_configured: bool,
+    pub legacy_api_key_configured: bool,
     pub checked_at: String,
     pub detail_path: String,
     pub detail_ok: bool,
@@ -291,9 +304,26 @@ pub struct ProductOverrideInput {
     pub slug: String,
     pub frontend_url: String,
     pub api_url: String,
-    pub api_key: Option<String>,
+    #[serde(default)]
+    pub service_token: Option<String>,
+    #[serde(default, alias = "api_key")]
+    pub legacy_api_key: Option<String>,
     pub enabled: bool,
     pub notes: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ProvisionServiceTokenRequest {
+    #[serde(default)]
+    pub operator_api_key: Option<String>,
+    #[serde(default)]
+    pub api_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProvisionServiceTokenResponse {
+    pub product: ProductSettingsItem,
+    pub message: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

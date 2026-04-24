@@ -49,6 +49,10 @@ async fn main() {
             "/auth/generate-service-token",
             post(pipeline::gen_service_token),
         )
+        .route(
+            "/auth/rotate-service-token",
+            post(pipeline::rotate_service_token),
+        )
         .route("/health", get(pipeline::health))
         .route("/startup/checks", get(pipeline::startup_checks_route))
         .route("/capabilities", get(pipeline::capabilities))

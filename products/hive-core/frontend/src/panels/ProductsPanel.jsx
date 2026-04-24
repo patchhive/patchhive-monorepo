@@ -37,6 +37,20 @@ function runColor(status) {
   return "var(--blue)";
 }
 
+function authColor(product) {
+  if (product.slug === "hive-core") return "var(--blue)";
+  if (product.service_token_configured) return "var(--green)";
+  if (product.legacy_api_key_configured) return "var(--gold)";
+  return "var(--accent)";
+}
+
+function authLabel(product) {
+  if (product.slug === "hive-core") return "native";
+  if (product.service_token_configured) return "service token";
+  if (product.legacy_api_key_configured) return "legacy key";
+  return "token missing";
+}
+
 function pretty(value) {
   return JSON.stringify(value, null, 2);
 }
@@ -231,7 +245,7 @@ function RunHistory({ product, onOpenRun }) {
       </div>
       {!product.health?.runs_ok ? (
         <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.5 }}>
-          {product.health?.runs_error || "Save this product's API key in Settings to show run history."}
+          {product.health?.runs_error || "Provision this product's service token in Settings to show run history."}
         </div>
       ) : runs.length === 0 ? (
         <div style={{ fontSize: 11, color: "var(--text-dim)" }}>No run history visible yet.</div>
@@ -423,7 +437,7 @@ function ProductCard({ product, onDispatch, onOpenRun }) {
     product.enabled &&
     product.api_url &&
     health.capabilities_ok &&
-    product.api_key_configured &&
+    product.machine_auth_configured &&
     selectedAction;
 
   return (
@@ -456,9 +470,10 @@ function ProductCard({ product, onDispatch, onOpenRun }) {
           ) : (
             <Tag color="var(--gold)">runs locked</Tag>
           ))}
-        <Tag color={product.api_key_configured ? "var(--green)" : "var(--gold)"}>
-          {product.api_key_configured ? "token linked" : "token missing"}
-        </Tag>
+        <Tag color={authColor(product)}>{authLabel(product)}</Tag>
+        {product.legacy_api_key_configured && !product.service_token_configured && (
+          <Tag color="var(--gold)">replace fallback</Tag>
+        )}
         {health.startup_warns > 0 && <Tag color="var(--gold)">{health.startup_warns} warn</Tag>}
         {health.startup_errors > 0 && <Tag color="var(--accent)">{health.startup_errors} error</Tag>}
       </div>
@@ -474,6 +489,18 @@ function ProductCard({ product, onDispatch, onOpenRun }) {
           <div style={S.label}>API</div>
           <div style={{ fontSize: 11, color: "var(--text-dim)", wordBreak: "break-all" }}>
             {product.api_url || "Not configured"}
+          </div>
+        </div>
+        <div>
+          <div style={S.label}>Auth Path</div>
+          <div style={{ fontSize: 11, color: authColor(product) }}>
+            {product.slug === "hive-core"
+              ? "Native control plane"
+              : product.service_token_configured
+                ? "Dedicated service token"
+                : product.legacy_api_key_configured
+                  ? "Legacy operator key fallback"
+                  : "Not provisioned"}
           </div>
         </div>
         <div>
@@ -525,6 +552,12 @@ function ProductCard({ product, onDispatch, onOpenRun }) {
               <strong style={{ color: "var(--text)" }}>{selectedAction.method} {selectedAction.path}</strong>
               <br />
               {selectedAction.description}
+              {selectedAction.required_scopes?.length ? (
+                <>
+                  <br />
+                  Requires scopes: {selectedAction.required_scopes.join(", ")}
+                </>
+              ) : null}
             </div>
           )}
 
@@ -541,7 +574,10 @@ function ProductCard({ product, onDispatch, onOpenRun }) {
             </Btn>
             <Btn onClick={formatPayload}>Format JSON</Btn>
             <Btn onClick={resetPayload}>Reset</Btn>
-            {!product.api_key_configured && <span style={{ fontSize: 11, color: "var(--gold)" }}>Save this product's access token in Settings first.</span>}
+            {!product.machine_auth_configured && <span style={{ fontSize: 11, color: "var(--gold)" }}>Provision this product's service token in Settings first.</span>}
+            {product.legacy_api_key_configured && !product.service_token_configured && (
+              <span style={{ fontSize: 11, color: "var(--gold)" }}>Dispatch is using a legacy operator key fallback until a service token is provisioned.</span>
+            )}
             {!health.capabilities_ok && <span style={{ fontSize: 11, color: "var(--gold)" }}>Contract check is not passing yet.</span>}
           </div>
 
@@ -669,7 +705,7 @@ export default function ProductsPanel({ fetchEnvelope, setRunning, setError }) {
           <div>
             <div style={{ fontSize: 20, fontWeight: 900 }}>HiveCore Command Surface</div>
             <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
-              Live contract polling, saved product access tokens, and dispatch controls for every enabled PatchHive product.
+              Live contract polling, saved product service tokens, and dispatch controls for every enabled PatchHive product.
             </div>
           </div>
           <Btn onClick={refresh}>Refresh suite</Btn>
@@ -679,7 +715,8 @@ export default function ProductsPanel({ fetchEnvelope, setRunning, setError }) {
           <Tag color="var(--gold)">{products.filter((product) => product.status === "degraded").length} degraded</Tag>
           <Tag color="var(--blue)">{products.reduce((total, product) => total + ((product.actions || []).length), 0)} advertised actions</Tag>
           <Tag color="var(--accent)">{products.reduce((total, product) => total + (product.health?.run_count || 0), 0)} visible runs</Tag>
-          <Tag color="var(--accent)">{products.filter((product) => product.api_key_configured).length} access tokens linked</Tag>
+          <Tag color="var(--green)">{products.filter((product) => product.service_token_configured).length} service tokens linked</Tag>
+          <Tag color="var(--gold)">{products.filter((product) => product.legacy_api_key_configured && !product.service_token_configured).length} legacy fallbacks</Tag>
         </div>
       </div>
 

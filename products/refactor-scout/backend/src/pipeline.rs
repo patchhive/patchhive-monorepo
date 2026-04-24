@@ -22,7 +22,8 @@ use walkdir::{DirEntry, WalkDir};
 use crate::{
     auth::{
         auth_enabled, generate_and_save_key, generate_and_save_service_token,
-        service_auth_enabled, service_token_generation_allowed, verify_token,
+        rotate_and_save_service_token, service_auth_enabled, service_token_generation_allowed,
+        service_token_rotation_allowed, verify_token,
     },
     db,
     models::{
@@ -156,6 +157,23 @@ pub async fn gen_service_token(
     Ok(Json(json!({
         "service_token": token,
         "message": "Store this for HiveCore or other PatchHive service callers — it won't be shown again"
+    })))
+}
+
+pub async fn rotate_service_token(
+    headers: HeaderMap,
+) -> Result<Json<serde_json::Value>, patchhive_product_core::auth::JsonApiError> {
+    if !service_auth_enabled() {
+        return Err(patchhive_product_core::auth::service_auth_not_configured_error());
+    }
+    if !service_token_rotation_allowed(&headers) {
+        return Err(patchhive_product_core::auth::service_token_rotation_forbidden_error());
+    }
+    let token = rotate_and_save_service_token()
+        .map_err(|err| patchhive_product_core::auth::service_token_rotation_failed_error(&err))?;
+    Ok(Json(json!({
+        "service_token": token,
+        "message": "Store this replacement service token for HiveCore or other PatchHive service callers — it won't be shown again"
     })))
 }
 

@@ -7,7 +7,36 @@ const textareaStyle = {
   resize: "vertical",
 };
 
-function ProductEditor({ product, onChange }) {
+function authTone(product) {
+  if (product.slug === "hive-core") return "var(--blue)";
+  if (product.service_token_configured) return "var(--green)";
+  if (product.legacy_api_key_configured) return "var(--gold)";
+  return "var(--accent)";
+}
+
+function authLabel(product) {
+  if (product.slug === "hive-core") return "Native control plane";
+  if (product.service_token_configured) return "Service token saved";
+  if (product.legacy_api_key_configured) return "Legacy operator key saved";
+  return "Service token needed";
+}
+
+function ProductEditor({ product, onChange, onProvision }) {
+  const [operatorApiKey, setOperatorApiKey] = useState("");
+  const [provisioning, setProvisioning] = useState(false);
+  const isNative = product.slug === "hive-core";
+  const apiTarget = product.override_api_url || product.default_api_url;
+
+  async function provision() {
+    setProvisioning(true);
+    try {
+      await onProvision(product, operatorApiKey);
+      setOperatorApiKey("");
+    } finally {
+      setProvisioning(false);
+    }
+  }
+
   return (
     <div style={{ ...S.panel, display: "grid", gap: 10 }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
@@ -31,9 +60,10 @@ function ProductEditor({ product, onChange }) {
         <Tag color="var(--accent)">{product.lane}</Tag>
         <Tag color="var(--blue)">default UI {product.default_frontend_url}</Tag>
         <Tag color="var(--blue)">default API {product.default_api_url}</Tag>
-        <Tag color={product.api_key_configured ? "var(--green)" : "var(--gold)"}>
-          {product.api_key_configured ? "Access token saved" : "Access token needed"}
-        </Tag>
+        <Tag color={authTone(product)}>{authLabel(product)}</Tag>
+        {product.legacy_api_key_configured && !product.service_token_configured && (
+          <Tag color="var(--gold)">Replace with service token</Tag>
+        )}
       </div>
 
       <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
@@ -53,20 +83,62 @@ function ProductEditor({ product, onChange }) {
             placeholder={product.default_api_url}
           />
         </div>
-        <div style={S.field}>
-          <div style={S.label}>Product Access Token</div>
-          <Input
-            type="password"
-            value={product.api_key || ""}
-            onChange={(value) => onChange({ ...product, api_key: value })}
-            placeholder={
-              product.api_key_configured
-                ? "Stored - enter a new token to replace"
-                : "Paste a service token or legacy API key"
-            }
-          />
-        </div>
+        {!isNative && (
+          <div style={S.field}>
+            <div style={S.label}>Service Token</div>
+            <Input
+              type="password"
+              value={product.service_token || ""}
+              onChange={(value) => onChange({ ...product, service_token: value })}
+              placeholder={
+                product.service_token_configured
+                  ? "Stored - enter a new token to replace"
+                  : product.legacy_api_key_configured
+                    ? "Paste a service token to replace the legacy key"
+                    : "Paste an existing service token"
+              }
+            />
+          </div>
+        )}
       </div>
+
+      {isNative ? (
+        <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.55 }}>
+          HiveCore uses its own operator session here. It does not need a saved per-product service token to call itself.
+        </div>
+      ) : (
+        <div style={{ display: "grid", gap: 10 }}>
+          <div style={{ display: "grid", gap: 10, gridTemplateColumns: "minmax(240px, 1fr) auto" }}>
+            <div style={S.field}>
+              <div style={S.label}>One-time Operator API Key</div>
+              <Input
+                type="password"
+                value={operatorApiKey}
+                onChange={setOperatorApiKey}
+                placeholder="Used only to mint or rotate a service token. Not stored."
+              />
+            </div>
+            <div style={{ display: "grid", alignItems: "end" }}>
+              <Btn onClick={provision} disabled={provisioning} color="var(--green)">
+                {provisioning
+                  ? "Working..."
+                  : product.service_token_configured
+                    ? "Rotate service token"
+                    : "Provision service token"}
+              </Btn>
+            </div>
+          </div>
+
+          <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.55 }}>
+            HiveCore will call <span style={{ color: "var(--text)" }}>{apiTarget}</span> and use
+            <code> /auth/generate-service-token </code>
+            for first-time setup or
+            <code> /auth/rotate-service-token </code>
+            when the product already has service auth enabled.
+            If the product already requires operator login, the one-time operator API key is used only for that request and is not stored in HiveCore.
+          </div>
+        </div>
+      )}
 
       <div style={S.field}>
         <div style={S.label}>Notes</div>
@@ -127,7 +199,7 @@ export default function SettingsPanel({ fetchEnvelope, setRunning, setError }) {
             slug: product.slug,
             frontend_url: product.override_frontend_url,
             api_url: product.override_api_url,
-            api_key: product.api_key || "",
+            service_token: product.service_token || "",
             enabled: product.enabled,
             notes: product.notes,
           })),
@@ -139,6 +211,35 @@ export default function SettingsPanel({ fetchEnvelope, setRunning, setError }) {
       setError(err.message || "HiveCore could not save suite settings.");
     } finally {
       setSaving(false);
+      setRunning(false);
+    }
+  }
+
+  async function provisionServiceToken(product, operatorApiKey) {
+    setRunning(true);
+    setError("");
+    setSavedMessage("");
+    try {
+      const data = await fetchEnvelope(`/products/${product.slug}/provision-service-token`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          operator_api_key: operatorApiKey || "",
+          api_url: product.override_api_url || "",
+        }),
+      });
+
+      setSettings((current) => ({
+        ...current,
+        products: current.products.map((item) =>
+          item.slug === data.product.slug ? { ...data.product } : item,
+        ),
+      }));
+      setSavedMessage(data.message || `HiveCore provisioned a service token for ${product.title}.`);
+    } catch (err) {
+      setError(err.message || "HiveCore could not provision the product service token.");
+      throw err;
+    } finally {
       setRunning(false);
     }
   }
@@ -173,7 +274,7 @@ export default function SettingsPanel({ fetchEnvelope, setRunning, setError }) {
           <div>
             <div style={{ fontSize: 18, fontWeight: 800 }}>Settings</div>
             <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
-              Persist suite defaults, launch targets, subdomain overrides, and product access tokens.
+              Persist suite defaults, launch targets, and product service-token provisioning.
             </div>
           </div>
           <Btn onClick={refresh}>Reload</Btn>
@@ -305,6 +406,7 @@ export default function SettingsPanel({ fetchEnvelope, setRunning, setError }) {
             key={product.slug}
             product={product}
             onChange={(nextProduct) => updateProduct(index, nextProduct)}
+            onProvision={provisionServiceToken}
           />
         ))}
       </div>

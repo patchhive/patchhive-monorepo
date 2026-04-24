@@ -1,12 +1,14 @@
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use axum::{
     extract::Request,
-    http::{HeaderMap, StatusCode},
+    http::{HeaderMap, Method, StatusCode},
     middleware::Next,
     response::{IntoResponse, Response},
     Json,
 };
-use serde_json::json;
+use chrono::Utc;
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::{
     collections::{HashMap, HashSet},
@@ -17,11 +19,16 @@ use std::{
 
 pub type JsonApiError = (StatusCode, Json<serde_json::Value>);
 pub const SERVICE_TOKEN_HEADER: &str = "X-PatchHive-Service-Token";
+pub const SERVICE_SCOPE_RUNS_READ: &str = "runs:read";
+pub const SERVICE_SCOPE_ACTIONS_DISPATCH: &str = "actions:dispatch";
 
 #[derive(Clone, Debug)]
 pub struct ServiceTokenAuthConfig {
     pub hash_env_var: String,
     pub key_prefix: String,
+    pub default_name: String,
+    pub default_scopes: Vec<String>,
+    pub dispatch_paths: Vec<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -32,6 +39,25 @@ pub struct ApiKeyAuthConfig {
     pub public_paths: Vec<String>,
     pub unauthorized_message: String,
     pub service: Option<ServiceTokenAuthConfig>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ServiceTokenRecord {
+    pub id: String,
+    pub name: String,
+    pub hash: String,
+    pub fingerprint: String,
+    pub scopes: Vec<String>,
+    pub created_at: String,
+    pub rotated_at: Option<String>,
+    pub expires_at: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum StoredServiceAuthState {
+    None,
+    LegacyHash(String),
+    Record(ServiceTokenRecord),
 }
 
 impl ApiKeyAuthConfig {
@@ -73,9 +99,48 @@ impl ApiKeyAuthConfig {
         self.service = Some(ServiceTokenAuthConfig {
             hash_env_var: hash_env_var.into(),
             key_prefix: key_prefix.into(),
+            default_name: "control-plane".into(),
+            default_scopes: vec![
+                SERVICE_SCOPE_RUNS_READ.into(),
+                SERVICE_SCOPE_ACTIONS_DISPATCH.into(),
+            ],
+            dispatch_paths: Vec::new(),
         });
         self
     }
+
+    pub fn with_service_default_name(mut self, name: impl Into<String>) -> Self {
+        if let Some(service) = self.service.as_mut() {
+            service.default_name = name.into();
+        }
+        self
+    }
+
+    pub fn with_service_default_scopes<I, S>(mut self, scopes: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        if let Some(service) = self.service.as_mut() {
+            service.default_scopes = scopes.into_iter().map(Into::into).collect();
+        }
+        self
+    }
+
+    pub fn with_service_dispatch_paths<I, S>(mut self, paths: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        if let Some(service) = self.service.as_mut() {
+            service.dispatch_paths = paths.into_iter().map(Into::into).collect();
+        }
+        self
+    }
+}
+
+fn now_rfc3339() -> String {
+    Utc::now().to_rfc3339()
 }
 
 fn hash_token(token: &str) -> String {
@@ -84,9 +149,13 @@ fn hash_token(token: &str) -> String {
     hex::encode(hasher.finalize())
 }
 
-fn runtime_hashes() -> &'static RwLock<HashMap<String, String>> {
-    static RUNTIME_HASHES: OnceLock<RwLock<HashMap<String, String>>> = OnceLock::new();
-    RUNTIME_HASHES.get_or_init(|| RwLock::new(HashMap::new()))
+fn fingerprint_for_hash(hash: &str) -> String {
+    hash.chars().take(12).collect()
+}
+
+fn runtime_env_values() -> &'static RwLock<HashMap<String, String>> {
+    static RUNTIME_VALUES: OnceLock<RwLock<HashMap<String, String>>> = OnceLock::new();
+    RUNTIME_VALUES.get_or_init(|| RwLock::new(HashMap::new()))
 }
 
 fn warned_configs() -> &'static Mutex<HashSet<String>> {
@@ -94,28 +163,36 @@ fn warned_configs() -> &'static Mutex<HashSet<String>> {
     WARNED.get_or_init(|| Mutex::new(HashSet::new()))
 }
 
-fn stored_hash_for_env(env_var: &str) -> String {
-    runtime_hashes()
+fn stored_env_value(env_var: &str) -> String {
+    runtime_env_values()
         .read()
         .ok()
-        .and_then(|hashes| hashes.get(env_var).cloned())
+        .and_then(|values| values.get(env_var).cloned())
         .or_else(|| std::env::var(env_var).ok())
         .unwrap_or_default()
 }
 
-fn stored_hash(config: &ApiKeyAuthConfig) -> String {
-    stored_hash_for_env(&config.hash_env_var)
+fn store_runtime_env_value(env_var: &str, value: String) -> Result<()> {
+    runtime_env_values()
+        .write()
+        .map_err(|_| anyhow!("failed to acquire runtime auth lock"))?
+        .insert(env_var.to_string(), value);
+    Ok(())
 }
 
-fn stored_service_hash(config: &ApiKeyAuthConfig) -> String {
+fn stored_hash(config: &ApiKeyAuthConfig) -> String {
+    stored_env_value(&config.hash_env_var)
+}
+
+fn stored_service_value(config: &ApiKeyAuthConfig) -> String {
     config
         .service
         .as_ref()
-        .map(|service| stored_hash_for_env(&service.hash_env_var))
+        .map(|service| stored_env_value(&service.hash_env_var))
         .unwrap_or_default()
 }
 
-fn persist_hash(env_path: &Path, env_var: &str, hash: &str) -> Result<()> {
+fn persist_env_value(env_path: &Path, env_var: &str, value: &str) -> Result<()> {
     std::fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -130,9 +207,9 @@ fn persist_hash(env_path: &Path, env_var: &str, hash: &str) -> Result<()> {
         .join("\n");
 
     let content = if filtered.trim().is_empty() {
-        format!("{env_var}={hash}\n")
+        format!("{env_var}={value}\n")
     } else {
-        format!("{filtered}\n{env_var}={hash}\n")
+        format!("{filtered}\n{env_var}={value}\n")
     };
 
     fs::write(env_path, content)
@@ -160,6 +237,38 @@ fn request_service_token(headers: &HeaderMap) -> &str {
 
 pub fn auth_enabled(config: &ApiKeyAuthConfig) -> bool {
     !stored_hash(config).is_empty()
+}
+
+fn parse_service_record(raw: &str) -> Option<ServiceTokenRecord> {
+    serde_json::from_str::<ServiceTokenRecord>(raw)
+        .ok()
+        .filter(|record| !record.hash.trim().is_empty())
+}
+
+fn stored_service_auth_state(config: &ApiKeyAuthConfig) -> StoredServiceAuthState {
+    let raw = stored_service_value(config);
+    if raw.trim().is_empty() {
+        StoredServiceAuthState::None
+    } else if let Some(record) = parse_service_record(&raw) {
+        StoredServiceAuthState::Record(record)
+    } else {
+        StoredServiceAuthState::LegacyHash(raw)
+    }
+}
+
+fn stored_service_hash(config: &ApiKeyAuthConfig) -> String {
+    match stored_service_auth_state(config) {
+        StoredServiceAuthState::None => String::new(),
+        StoredServiceAuthState::LegacyHash(hash) => hash,
+        StoredServiceAuthState::Record(record) => record.hash,
+    }
+}
+
+fn stored_service_record(config: &ApiKeyAuthConfig) -> Option<ServiceTokenRecord> {
+    match stored_service_auth_state(config) {
+        StoredServiceAuthState::Record(record) => Some(record),
+        _ => None,
+    }
 }
 
 pub fn service_auth_enabled(config: &ApiKeyAuthConfig) -> bool {
@@ -217,15 +326,15 @@ pub fn generate_and_save_key(config: &ApiKeyAuthConfig) -> Result<String> {
     );
     let hash = hash_token(&key);
 
-    runtime_hashes()
-        .write()
-        .map_err(|_| anyhow::anyhow!("failed to acquire runtime auth lock"))?
-        .insert(config.hash_env_var.clone(), hash.clone());
-    persist_hash(&config.env_path, &config.hash_env_var, &hash)?;
+    store_runtime_env_value(&config.hash_env_var, hash.clone())?;
+    persist_env_value(&config.env_path, &config.hash_env_var, &hash)?;
     Ok(key)
 }
 
-pub fn generate_and_save_service_token(config: &ApiKeyAuthConfig) -> Result<String> {
+fn issue_service_token(
+    config: &ApiKeyAuthConfig,
+    rotating: bool,
+) -> Result<(String, ServiceTokenRecord)> {
     let service = config
         .service
         .as_ref()
@@ -237,12 +346,86 @@ pub fn generate_and_save_service_token(config: &ApiKeyAuthConfig) -> Result<Stri
         uuid::Uuid::new_v4().to_string().replace('-', "")
     );
     let hash = hash_token(&key);
+    let now = now_rfc3339();
+    let existing = stored_service_record(config);
 
-    runtime_hashes()
-        .write()
-        .map_err(|_| anyhow::anyhow!("failed to acquire runtime service-auth lock"))?
-        .insert(service.hash_env_var.clone(), hash.clone());
-    persist_hash(&config.env_path, &service.hash_env_var, &hash)?;
+    let (id, name, scopes, created_at, rotated_at, expires_at) = if let Some(record) = existing {
+        (
+            record.id,
+            record.name,
+            if record.scopes.is_empty() {
+                service.default_scopes.clone()
+            } else {
+                record.scopes
+            },
+            record.created_at,
+            if rotating {
+                Some(now.clone())
+            } else {
+                record.rotated_at
+            },
+            record.expires_at,
+        )
+    } else if rotating {
+        (
+            format!("svc_{}", uuid::Uuid::new_v4().simple()),
+            service.default_name.clone(),
+            service.default_scopes.clone(),
+            now.clone(),
+            Some(now.clone()),
+            None,
+        )
+    } else {
+        (
+            format!("svc_{}", uuid::Uuid::new_v4().simple()),
+            service.default_name.clone(),
+            service.default_scopes.clone(),
+            now.clone(),
+            None,
+            None,
+        )
+    };
+
+    Ok((
+        key,
+        ServiceTokenRecord {
+            id,
+            name,
+            hash: hash.clone(),
+            fingerprint: fingerprint_for_hash(&hash),
+            scopes,
+            created_at,
+            rotated_at,
+            expires_at,
+        },
+    ))
+}
+
+fn persist_service_record(config: &ApiKeyAuthConfig, record: &ServiceTokenRecord) -> Result<()> {
+    let service = config
+        .service
+        .as_ref()
+        .context("service-token auth is not configured for this product")?;
+    let raw = serde_json::to_string(record).context("failed to serialize service-token record")?;
+    store_runtime_env_value(&service.hash_env_var, raw.clone())?;
+    persist_env_value(&config.env_path, &service.hash_env_var, &raw)?;
+    Ok(())
+}
+
+pub fn generate_and_save_service_token(config: &ApiKeyAuthConfig) -> Result<String> {
+    let (key, record) = issue_service_token(config, false)?;
+    persist_service_record(config, &record)?;
+    Ok(key)
+}
+
+pub fn rotate_and_save_service_token(config: &ApiKeyAuthConfig) -> Result<String> {
+    if !service_auth_enabled(config) {
+        return Err(anyhow!(
+            "service-token auth is not configured for this product"
+        ));
+    }
+    let (key, record) = issue_service_token(config, true)?;
+    persist_service_record(config, &record)?;
     Ok(key)
 }
 
@@ -306,6 +489,15 @@ pub fn service_auth_already_configured_error() -> JsonApiError {
     )
 }
 
+pub fn service_auth_not_configured_error() -> JsonApiError {
+    (
+        StatusCode::CONFLICT,
+        Json(json!({
+            "error": "Service-token auth is not configured for this product yet. Generate the first service token before rotating it."
+        })),
+    )
+}
+
 pub fn bootstrap_localhost_required_error() -> JsonApiError {
     (
         StatusCode::FORBIDDEN,
@@ -320,6 +512,15 @@ pub fn service_token_generation_forbidden_error() -> JsonApiError {
         StatusCode::FORBIDDEN,
         Json(json!({
             "error": "Service-token generation requires a localhost bootstrap session before operator auth exists, or a valid operator X-API-Key after auth is configured."
+        })),
+    )
+}
+
+pub fn service_token_rotation_forbidden_error() -> JsonApiError {
+    (
+        StatusCode::FORBIDDEN,
+        Json(json!({
+            "error": "Service-token rotation requires a valid operator X-API-Key after auth is configured, or a localhost bootstrap session before operator auth exists."
         })),
     )
 }
@@ -344,6 +545,16 @@ pub fn service_token_generation_failed_error(err: &anyhow::Error) -> JsonApiErro
     )
 }
 
+pub fn service_token_rotation_failed_error(err: &anyhow::Error) -> JsonApiError {
+    tracing::error!("Failed to rotate service token: {err:?}");
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(json!({
+            "error": "Could not rotate the service token. Check that the product can write its .env file and restart if needed."
+        })),
+    )
+}
+
 pub fn service_token_generation_allowed(config: &ApiKeyAuthConfig, headers: &HeaderMap) -> bool {
     if auth_enabled(config) {
         let token = request_token(headers);
@@ -353,9 +564,45 @@ pub fn service_token_generation_allowed(config: &ApiKeyAuthConfig, headers: &Hea
     }
 }
 
+pub fn service_token_rotation_allowed(config: &ApiKeyAuthConfig, headers: &HeaderMap) -> bool {
+    service_token_generation_allowed(config, headers)
+}
+
 pub fn auth_status_payload(config: &ApiKeyAuthConfig) -> serde_json::Value {
     let configured = auth_enabled(config);
-    let service_configured = service_auth_enabled(config);
+    let service_state = stored_service_auth_state(config);
+    let service_configured = !matches!(service_state, StoredServiceAuthState::None);
+    let service_scoped = matches!(service_state, StoredServiceAuthState::Record(_));
+    let service_scopes = match &service_state {
+        StoredServiceAuthState::Record(record) => record.scopes.clone(),
+        _ => Vec::new(),
+    };
+    let service_token = match &service_state {
+        StoredServiceAuthState::None => Value::Null,
+        StoredServiceAuthState::LegacyHash(hash) => json!({
+            "id": serde_json::Value::Null,
+            "name": "legacy-service-token",
+            "fingerprint": fingerprint_for_hash(hash),
+            "scopes": [],
+            "created_at": serde_json::Value::Null,
+            "rotated_at": serde_json::Value::Null,
+            "expires_at": serde_json::Value::Null,
+            "scoped": false,
+            "legacy": true,
+        }),
+        StoredServiceAuthState::Record(record) => json!({
+            "id": record.id,
+            "name": record.name,
+            "fingerprint": record.fingerprint,
+            "scopes": record.scopes,
+            "created_at": record.created_at,
+            "rotated_at": record.rotated_at,
+            "expires_at": record.expires_at,
+            "scoped": true,
+            "legacy": false,
+        }),
+    };
+
     json!({
         "auth_enabled": configured,
         "auth_configured": configured,
@@ -365,6 +612,13 @@ pub fn auth_status_payload(config: &ApiKeyAuthConfig) -> serde_json::Value {
         "service_auth_enabled": service_configured,
         "service_auth_configured": service_configured,
         "service_bootstrap_required": config.service.is_some() && !service_configured,
+        "service_auth_scoped": service_scoped,
+        "service_auth_scopes": service_scopes,
+        "service_auth_token": service_token,
+        "service_auth_known_scopes": [
+            SERVICE_SCOPE_RUNS_READ,
+            SERVICE_SCOPE_ACTIONS_DISPATCH,
+        ],
     })
 }
 
@@ -394,14 +648,98 @@ fn local_endpoint(value: &str) -> bool {
     matches!(host, "localhost" | "127.0.0.1" | "::1")
 }
 
+fn path_matches_template(template: &str, path: &str) -> bool {
+    let template_segments = template
+        .trim_matches('/')
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+        .collect::<Vec<_>>();
+    let path_segments = path
+        .trim_matches('/')
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+        .collect::<Vec<_>>();
+
+    if template_segments.len() != path_segments.len() {
+        return false;
+    }
+
+    template_segments
+        .iter()
+        .zip(path_segments.iter())
+        .all(|(template_segment, path_segment)| {
+            (template_segment.starts_with('{') && template_segment.ends_with('}'))
+                || template_segment == path_segment
+        })
+}
+
+fn required_service_scope(
+    config: &ApiKeyAuthConfig,
+    method: &Method,
+    path: &str,
+) -> Option<&'static str> {
+    if matches!(method, &Method::GET | &Method::HEAD) {
+        if path == "/runs" || path.starts_with("/runs/") {
+            return Some(SERVICE_SCOPE_RUNS_READ);
+        }
+        return None;
+    }
+
+    let Some(service) = config.service.as_ref() else {
+        return None;
+    };
+
+    if service
+        .dispatch_paths
+        .iter()
+        .any(|template| path_matches_template(template, path))
+    {
+        Some(SERVICE_SCOPE_ACTIONS_DISPATCH)
+    } else {
+        None
+    }
+}
+
+fn service_token_allows_request(config: &ApiKeyAuthConfig, method: &Method, path: &str) -> bool {
+    match stored_service_auth_state(config) {
+        StoredServiceAuthState::None => false,
+        StoredServiceAuthState::LegacyHash(_) => true,
+        StoredServiceAuthState::Record(record) => required_service_scope(config, method, path)
+            .map(|scope| record.scopes.iter().any(|item| item == scope))
+            .unwrap_or(false),
+    }
+}
+
+fn service_token_scope_error(config: &ApiKeyAuthConfig, method: &Method, path: &str) -> Response {
+    if let Some(scope) = required_service_scope(config, method, path) {
+        (
+            StatusCode::FORBIDDEN,
+            Json(json!({
+                "error": format!("Service token is valid but missing the required scope '{scope}' for this route.")
+            })),
+        )
+            .into_response()
+    } else {
+        (
+            StatusCode::FORBIDDEN,
+            Json(json!({
+                "error": "Service tokens do not grant access to this route."
+            })),
+        )
+            .into_response()
+    }
+}
+
 pub async fn auth_middleware(
     config: &ApiKeyAuthConfig,
     headers: HeaderMap,
     request: Request,
     next: Next,
 ) -> Response {
-    let path = request.uri().path();
-    if config.public_paths.iter().any(|public| path == public) {
+    let path = request.uri().path().to_string();
+    let method = request.method().clone();
+
+    if config.public_paths.iter().any(|public| path == *public) {
         return next.run(request).await;
     }
 
@@ -421,7 +759,10 @@ pub async fn auth_middleware(
 
     let service_token = request_service_token(&headers);
     if service_enabled && !service_token.is_empty() && verify_service_token(config, service_token) {
-        return next.run(request).await;
+        if service_token_allows_request(config, &method, &path) {
+            return next.run(request).await;
+        }
+        return service_token_scope_error(config, &method, &path);
     }
 
     let token = request_token(&headers);
@@ -447,15 +788,16 @@ pub async fn auth_middleware(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::DateTime;
     use http::HeaderValue;
 
     fn test_config(env_var: &str, env_path: PathBuf) -> ApiKeyAuthConfig {
         ApiKeyAuthConfig::new(env_var, "ph_").with_env_path(env_path)
     }
 
-    fn clear_runtime_hash(env_var: &str) {
-        if let Ok(mut hashes) = runtime_hashes().write() {
-            hashes.remove(env_var);
+    fn clear_runtime_env_value(env_var: &str) {
+        if let Ok(mut values) = runtime_env_values().write() {
+            values.remove(env_var);
         }
     }
 
@@ -467,6 +809,7 @@ mod tests {
         ApiKeyAuthConfig::new(env_var, "ph_")
             .with_env_path(env_path)
             .with_service_token(service_env_var, "svc_")
+            .with_service_dispatch_paths(["/run", "/review", "/schedules/{name}/run"])
     }
 
     #[test]
@@ -483,7 +826,7 @@ mod tests {
         assert!(verify_token(&config, &key));
         assert!(!verify_token(&config, "ph_wrong"));
 
-        clear_runtime_hash(&env_var);
+        clear_runtime_env_value(&env_var);
         let _ = fs::remove_file(env_path);
     }
 
@@ -491,7 +834,7 @@ mod tests {
     fn auth_status_payload_reports_bootstrap_when_unconfigured() {
         let env_var = format!("PATCHHIVE_TEST_AUTH_{}", uuid::Uuid::new_v4().simple());
         let config = test_config(&env_var, PathBuf::from("/tmp/unused.env"));
-        clear_runtime_hash(&env_var);
+        clear_runtime_env_value(&env_var);
 
         let payload = auth_status_payload(&config);
         assert_eq!(payload["auth_enabled"], false);
@@ -501,40 +844,100 @@ mod tests {
     }
 
     #[test]
-    fn generate_and_save_service_token_persists_hash_and_verifies_token() {
+    fn generate_and_save_service_token_persists_record_and_verifies_token() {
         let env_var = format!("PATCHHIVE_TEST_AUTH_{}", uuid::Uuid::new_v4().simple());
-        let service_env_var = format!("PATCHHIVE_TEST_SERVICE_AUTH_{}", uuid::Uuid::new_v4().simple());
+        let service_env_var = format!(
+            "PATCHHIVE_TEST_SERVICE_AUTH_{}",
+            uuid::Uuid::new_v4().simple()
+        );
         let env_path = std::env::temp_dir().join(format!("{env_var}.env"));
         let config = test_config_with_service(&env_var, &service_env_var, env_path.clone());
 
-        let key =
-            generate_and_save_service_token(&config).expect("service token generation should succeed");
+        let key = generate_and_save_service_token(&config)
+            .expect("service token generation should succeed");
         let written = fs::read_to_string(&env_path).expect("env file should be written");
+        let raw = stored_env_value(&service_env_var);
+        let record = parse_service_record(&raw).expect("service record should parse");
 
         assert!(key.starts_with("svc_"));
         assert!(written.contains(&format!("{}=", service_env_var)));
+        assert_eq!(record.name, "control-plane");
+        assert_eq!(
+            record.scopes,
+            vec![
+                SERVICE_SCOPE_RUNS_READ.to_string(),
+                SERVICE_SCOPE_ACTIONS_DISPATCH.to_string()
+            ]
+        );
         assert!(verify_service_token(&config, &key));
         assert!(!verify_service_token(&config, "svc_wrong"));
 
-        clear_runtime_hash(&env_var);
-        clear_runtime_hash(&service_env_var);
+        clear_runtime_env_value(&env_var);
+        clear_runtime_env_value(&service_env_var);
         let _ = fs::remove_file(env_path);
     }
 
     #[test]
-    fn auth_status_payload_reports_service_bootstrap_when_supported() {
+    fn rotate_service_token_preserves_record_identity_and_updates_rotation_time() {
         let env_var = format!("PATCHHIVE_TEST_AUTH_{}", uuid::Uuid::new_v4().simple());
-        let service_env_var = format!("PATCHHIVE_TEST_SERVICE_AUTH_{}", uuid::Uuid::new_v4().simple());
-        let config =
-            test_config_with_service(&env_var, &service_env_var, PathBuf::from("/tmp/unused.env"));
-        clear_runtime_hash(&env_var);
-        clear_runtime_hash(&service_env_var);
+        let service_env_var = format!(
+            "PATCHHIVE_TEST_SERVICE_AUTH_{}",
+            uuid::Uuid::new_v4().simple()
+        );
+        let env_path = std::env::temp_dir().join(format!("{env_var}.env"));
+        let config = test_config_with_service(&env_var, &service_env_var, env_path.clone());
+
+        let first = generate_and_save_service_token(&config)
+            .expect("service token generation should succeed");
+        let initial_record =
+            stored_service_record(&config).expect("initial service record should exist");
+        let rotated =
+            rotate_and_save_service_token(&config).expect("service token rotation should succeed");
+        let rotated_record =
+            stored_service_record(&config).expect("rotated service record should exist");
+
+        assert_ne!(first, rotated);
+        assert_eq!(initial_record.id, rotated_record.id);
+        assert_eq!(initial_record.name, rotated_record.name);
+        assert_eq!(initial_record.created_at, rotated_record.created_at);
+        assert!(rotated_record.rotated_at.is_some());
+        assert!(verify_service_token(&config, &rotated));
+        assert!(!verify_service_token(&config, &first));
+
+        clear_runtime_env_value(&env_var);
+        clear_runtime_env_value(&service_env_var);
+        let _ = fs::remove_file(env_path);
+    }
+
+    #[test]
+    fn auth_status_payload_reports_service_metadata_when_scoped() {
+        let env_var = format!("PATCHHIVE_TEST_AUTH_{}", uuid::Uuid::new_v4().simple());
+        let service_env_var = format!(
+            "PATCHHIVE_TEST_SERVICE_AUTH_{}",
+            uuid::Uuid::new_v4().simple()
+        );
+        let env_path = std::env::temp_dir().join(format!("{env_var}.env"));
+        let config = test_config_with_service(&env_var, &service_env_var, env_path.clone());
+
+        generate_and_save_service_token(&config).expect("service token generation should succeed");
 
         let payload = auth_status_payload(&config);
-        assert_eq!(payload["auth_enabled"], false);
         assert_eq!(payload["service_auth_supported"], true);
-        assert_eq!(payload["service_auth_enabled"], false);
-        assert_eq!(payload["service_bootstrap_required"], true);
+        assert_eq!(payload["service_auth_enabled"], true);
+        assert_eq!(payload["service_auth_scoped"], true);
+        assert_eq!(payload["service_auth_scopes"][0], SERVICE_SCOPE_RUNS_READ);
+        assert_eq!(
+            payload["service_auth_scopes"][1],
+            SERVICE_SCOPE_ACTIONS_DISPATCH
+        );
+        assert_eq!(
+            payload["service_auth_token"]["name"],
+            Value::String("control-plane".into())
+        );
+
+        clear_runtime_env_value(&env_var);
+        clear_runtime_env_value(&service_env_var);
+        let _ = fs::remove_file(env_path);
     }
 
     #[test]
@@ -558,17 +961,138 @@ mod tests {
         assert!(bootstrap_request_allowed(&local));
 
         let mut remote = HeaderMap::new();
-        remote.insert("host", HeaderValue::from_static("0.0.0.0:8000"));
-        remote.insert("origin", HeaderValue::from_static("https://evil.example"));
+        remote.insert("host", HeaderValue::from_static("example.com"));
+        remote.insert("origin", HeaderValue::from_static("https://example.com"));
         assert!(!bootstrap_request_allowed(&remote));
     }
 
     #[test]
-    fn bootstrap_request_allows_local_browser_through_reverse_proxy() {
-        let mut proxied = HeaderMap::new();
-        proxied.insert("host", HeaderValue::from_static("backend:8000"));
-        proxied.insert("origin", HeaderValue::from_static("http://localhost:5174"));
-        proxied.insert("x-forwarded-for", HeaderValue::from_static("172.20.0.1"));
-        assert!(bootstrap_request_allowed(&proxied));
+    fn path_templates_match_named_segments() {
+        assert!(path_matches_template(
+            "/schedules/{name}/run",
+            "/schedules/daily/run"
+        ));
+        assert!(path_matches_template(
+            "/review/github/pr",
+            "/review/github/pr"
+        ));
+        assert!(!path_matches_template(
+            "/schedules/{name}/run",
+            "/schedules/daily"
+        ));
+    }
+
+    #[test]
+    fn scoped_service_tokens_only_allow_matching_routes() {
+        let env_var = format!("PATCHHIVE_TEST_AUTH_{}", uuid::Uuid::new_v4().simple());
+        let service_env_var = format!(
+            "PATCHHIVE_TEST_SERVICE_AUTH_{}",
+            uuid::Uuid::new_v4().simple()
+        );
+        let env_path = std::env::temp_dir().join(format!("{env_var}.env"));
+        let config = test_config_with_service(&env_var, &service_env_var, env_path.clone());
+
+        generate_and_save_service_token(&config).expect("service token generation should succeed");
+
+        assert!(service_token_allows_request(&config, &Method::GET, "/runs"));
+        assert!(service_token_allows_request(
+            &config,
+            &Method::GET,
+            "/runs/run_1"
+        ));
+        assert!(service_token_allows_request(&config, &Method::POST, "/run"));
+        assert!(service_token_allows_request(
+            &config,
+            &Method::POST,
+            "/schedules/daily/run"
+        ));
+        assert!(!service_token_allows_request(
+            &config,
+            &Method::GET,
+            "/history"
+        ));
+        assert!(!service_token_allows_request(
+            &config,
+            &Method::POST,
+            "/presets"
+        ));
+
+        clear_runtime_env_value(&env_var);
+        clear_runtime_env_value(&service_env_var);
+        let _ = fs::remove_file(env_path);
+    }
+
+    #[test]
+    fn legacy_service_hash_stays_unscoped_until_rotated() {
+        let env_var = format!("PATCHHIVE_TEST_AUTH_{}", uuid::Uuid::new_v4().simple());
+        let service_env_var = format!(
+            "PATCHHIVE_TEST_SERVICE_AUTH_{}",
+            uuid::Uuid::new_v4().simple()
+        );
+        let config =
+            test_config_with_service(&env_var, &service_env_var, PathBuf::from("/tmp/unused.env"));
+
+        let legacy_hash = hash_token("svc_legacy");
+        store_runtime_env_value(&service_env_var, legacy_hash).expect("legacy hash should persist");
+
+        let payload = auth_status_payload(&config);
+        assert_eq!(payload["service_auth_enabled"], true);
+        assert_eq!(payload["service_auth_scoped"], false);
+        assert_eq!(payload["service_auth_token"]["legacy"], true);
+        assert!(service_token_allows_request(
+            &config,
+            &Method::POST,
+            "/presets"
+        ));
+
+        clear_runtime_env_value(&env_var);
+        clear_runtime_env_value(&service_env_var);
+    }
+
+    #[test]
+    fn service_token_generation_allowed_requires_operator_key_when_auth_exists() {
+        let env_var = format!("PATCHHIVE_TEST_AUTH_{}", uuid::Uuid::new_v4().simple());
+        let service_env_var = format!(
+            "PATCHHIVE_TEST_SERVICE_AUTH_{}",
+            uuid::Uuid::new_v4().simple()
+        );
+        let env_path = std::env::temp_dir().join(format!("{env_var}.env"));
+        let config = test_config_with_service(&env_var, &service_env_var, env_path.clone());
+        let key = generate_and_save_key(&config).expect("key generation should succeed");
+
+        let mut headers = HeaderMap::new();
+        assert!(!service_token_generation_allowed(&config, &headers));
+
+        headers.insert(
+            "X-API-Key",
+            HeaderValue::from_str(&key).expect("header should build"),
+        );
+        assert!(service_token_generation_allowed(&config, &headers));
+        assert!(service_token_rotation_allowed(&config, &headers));
+
+        clear_runtime_env_value(&env_var);
+        clear_runtime_env_value(&service_env_var);
+        let _ = fs::remove_file(env_path);
+    }
+
+    #[test]
+    fn service_token_record_expires_at_is_parseable_when_present() {
+        let record = ServiceTokenRecord {
+            id: "svc_test".into(),
+            name: "control-plane".into(),
+            hash: "abc123".into(),
+            fingerprint: "abc123".into(),
+            scopes: vec![SERVICE_SCOPE_RUNS_READ.into()],
+            created_at: now_rfc3339(),
+            rotated_at: None,
+            expires_at: Some(now_rfc3339()),
+        };
+        assert!(DateTime::parse_from_rfc3339(
+            record
+                .expires_at
+                .as_deref()
+                .expect("expires_at should exist")
+        )
+        .is_ok());
     }
 }

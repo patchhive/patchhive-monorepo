@@ -45,6 +45,8 @@ pub struct ProductAction {
     pub description: String,
     pub starts_run: bool,
     pub destructive: bool,
+    #[serde(default)]
+    pub required_scopes: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -122,6 +124,7 @@ pub fn action(
         description: description.into(),
         starts_run,
         destructive: false,
+        required_scopes: vec![crate::auth::SERVICE_SCOPE_ACTIONS_DISPATCH.into()],
     }
 }
 
@@ -270,6 +273,10 @@ mod tests {
         assert!(caps.standalone);
         assert!(caps.hivecore.can_start_runs);
         assert_eq!(caps.routes.runs, "/runs");
+        assert_eq!(
+            caps.actions[0].required_scopes,
+            vec![crate::auth::SERVICE_SCOPE_ACTIONS_DISPATCH.to_string()]
+        );
     }
 
     #[test]

@@ -136,6 +136,7 @@ fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
           slug TEXT PRIMARY KEY,
           frontend_url TEXT NOT NULL,
           api_url TEXT NOT NULL,
+          service_token TEXT NOT NULL DEFAULT '',
           api_key TEXT NOT NULL DEFAULT '',
           enabled INTEGER NOT NULL,
           notes TEXT NOT NULL,
@@ -164,15 +165,25 @@ fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
 }
 
 fn migrate_schema(conn: &Connection) -> rusqlite::Result<()> {
-    let has_api_key = conn
+    let columns = conn
         .prepare("PRAGMA table_info(product_overrides)")?
         .query_map([], |row| row.get::<_, String>(1))?
         .flatten()
-        .any(|column| column == "api_key");
+        .collect::<Vec<_>>();
+
+    let has_api_key = columns.iter().any(|column| column == "api_key");
+    let has_service_token = columns.iter().any(|column| column == "service_token");
 
     if !has_api_key {
         conn.execute(
             "ALTER TABLE product_overrides ADD COLUMN api_key TEXT NOT NULL DEFAULT ''",
+            [],
+        )?;
+    }
+
+    if !has_service_token {
+        conn.execute(
+            "ALTER TABLE product_overrides ADD COLUMN service_token TEXT NOT NULL DEFAULT ''",
             [],
         )?;
     }
@@ -258,7 +269,7 @@ fn write_suite_settings(conn: &Connection, settings: &SuiteSettings) -> rusqlite
 fn load_product_overrides(conn: &Connection) -> rusqlite::Result<HashMap<String, ProductOverride>> {
     let mut stmt = conn.prepare(
         r#"
-        SELECT slug, frontend_url, api_url, api_key, enabled, notes, updated_at
+        SELECT slug, frontend_url, api_url, service_token, api_key, enabled, notes, updated_at
         FROM product_overrides
         "#,
     )?;
@@ -267,10 +278,11 @@ fn load_product_overrides(conn: &Connection) -> rusqlite::Result<HashMap<String,
             slug: row.get(0)?,
             frontend_url: row.get(1)?,
             api_url: row.get(2)?,
-            api_key: row.get(3)?,
-            enabled: row.get::<_, i64>(4)? != 0,
-            notes: row.get(5)?,
-            updated_at: row.get(6)?,
+            service_token: row.get(3)?,
+            legacy_api_key: row.get(4)?,
+            enabled: row.get::<_, i64>(5)? != 0,
+            notes: row.get(6)?,
+            updated_at: row.get(7)?,
         })
     })?;
 
@@ -287,8 +299,10 @@ fn replace_overrides(conn: &mut Connection, overrides: &[ProductOverride]) -> ru
     {
         let mut stmt = tx.prepare(
             r#"
-            INSERT INTO product_overrides (slug, frontend_url, api_url, api_key, enabled, notes, updated_at)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+            INSERT INTO product_overrides (
+              slug, frontend_url, api_url, service_token, api_key, enabled, notes, updated_at
+            )
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
             "#,
         )?;
         for item in overrides {
@@ -296,7 +310,8 @@ fn replace_overrides(conn: &mut Connection, overrides: &[ProductOverride]) -> ru
                 &item.slug,
                 &item.frontend_url,
                 &item.api_url,
-                &item.api_key,
+                &item.service_token,
+                &item.legacy_api_key,
                 if item.enabled { 1 } else { 0 },
                 &item.notes,
                 &item.updated_at,
@@ -411,7 +426,8 @@ mod tests {
             slug: "signal-hive".into(),
             frontend_url: "https://signal.example.com".into(),
             api_url: "https://signal-api.example.com".into(),
-            api_key: "sh_secret".into(),
+            service_token: "svc_signal".into(),
+            legacy_api_key: "sh_secret".into(),
             enabled: true,
             notes: "primary".into(),
             updated_at: now_rfc3339(),
@@ -422,7 +438,8 @@ mod tests {
             slug: "repo-reaper".into(),
             frontend_url: "https://reaper.example.com".into(),
             api_url: "https://reaper-api.example.com".into(),
-            api_key: "rr_secret".into(),
+            service_token: "svc_reaper".into(),
+            legacy_api_key: "rr_secret".into(),
             enabled: false,
             notes: "manual only".into(),
             updated_at: now_rfc3339(),
@@ -433,7 +450,8 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert!(rows.contains_key("repo-reaper"));
         assert!(!rows.contains_key("signal-hive"));
-        assert_eq!(rows["repo-reaper"].api_key, "rr_secret");
+        assert_eq!(rows["repo-reaper"].service_token, "svc_reaper");
+        assert_eq!(rows["repo-reaper"].legacy_api_key, "rr_secret");
     }
 
     #[test]

@@ -21,7 +21,7 @@ This is intentionally narrower than full orchestration. HiveCore should earn tha
 - keep the PatchHive product catalog visible in one place
 - poll product-owned health, startup checks, capabilities, runs, and run details
 - store suite-wide defaults and per-product endpoint overrides
-- store per-product access tokens server-side for protected reads and action dispatch
+- provision and store per-product service tokens server-side for protected reads and action dispatch
 - dispatch only advertised product actions through the shared capability contract
 - report contract drift instead of hiding product API differences
 
@@ -35,7 +35,8 @@ This is intentionally narrower than full orchestration. HiveCore should earn tha
 - capability-driven action dispatch through advertised product actions
 - persistent global defaults for topics, languages, repo guardrails, and operator notes
 - per-product frontend/API overrides for subdomains or remote deployments
-- per-product access tokens stored server-side for protected `/runs` reads and action dispatch
+- one-time per-product service-token provisioning from HiveCore Settings
+- per-product service tokens stored server-side for protected `/runs` reads and action dispatch
 - shared PatchHive API-key bootstrap flow
 
 ## Run Locally
@@ -73,7 +74,7 @@ cd ../frontend && npm install && npm run dev
 
 To reuse the same password across SignalHive, TrustGate, RepoReaper, and HiveCore, run `./scripts/set-suite-api-key.sh --stack first` from the monorepo root before starting the stack. For every PatchHive product, run `./scripts/set-suite-api-key.sh`. Once the hash is pre-seeded, HiveCore can be used through a subdomain without remote bootstrap.
 
-Save per-product access tokens in Settings when you want HiveCore to read protected `/runs` data or dispatch advertised product actions. Dedicated service tokens are preferred; legacy product API keys still work during the transition. Those tokens stay server-side.
+HiveCore Settings can now provision or rotate a dedicated service token for each product by using a one-time operator API key against that product's `POST /auth/generate-service-token` or `POST /auth/rotate-service-token` route. HiveCore stores only the returned service token. Operator login credentials are not persisted. Legacy product API keys still work as an explicit fallback during the transition.
 
 ## Product Registry Defaults
 
@@ -93,7 +94,7 @@ HiveCore starts with built-in localhost defaults for the current PatchHive suite
 
 If you run products on subdomains or remote hosts, save the new targets in HiveCore's Settings tab. Those overrides persist in the HiveCore SQLite database.
 
-HiveCore does not read product databases. It uses product-owned APIs and saved product access tokens, so each product remains independently runnable and keeps ownership of its own run history and validation.
+HiveCore does not read product databases. It uses product-owned APIs and saved product service tokens, so each product remains independently runnable and keeps ownership of its own run history and validation.
 
 ## Safety Boundary
 

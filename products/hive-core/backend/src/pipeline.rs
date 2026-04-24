@@ -16,15 +16,17 @@ use uuid::Uuid;
 use crate::{
     auth::{
         auth_enabled, generate_and_save_key, generate_and_save_service_token,
-        service_auth_enabled, service_token_generation_allowed, verify_token,
+        rotate_and_save_service_token, service_auth_enabled, service_token_generation_allowed,
+        service_token_rotation_allowed, verify_token,
     },
     db,
     models::{
         error, now_rfc3339, ok, DispatchActionResponse, OverviewResponse, OverviewSummary,
         ProductActionEvent, ProductContractCheck, ProductHealthSnapshot, ProductOverride,
         ProductOverrideInput, ProductRunDetailResponse, ProductRunsSnapshotResponse,
-        ProductRuntimeItem, ProductSettingsItem, SaveSettingsRequest, SettingsResponse,
-        SuiteSettings, SuiteSettingsInput, PRODUCT_TAGLINE, PRODUCT_TITLE, PRODUCT_VERSION,
+        ProductRuntimeItem, ProductSettingsItem, ProvisionServiceTokenRequest,
+        ProvisionServiceTokenResponse, SaveSettingsRequest, SettingsResponse, SuiteSettings,
+        SuiteSettingsInput, PRODUCT_TAGLINE, PRODUCT_TITLE, PRODUCT_VERSION,
     },
     startup,
     state::{product_catalog, AppState, ProductDefinition},
@@ -46,6 +48,61 @@ struct ProductHealthBody {
 #[derive(Deserialize)]
 struct StartupChecksBody {
     checks: Vec<patchhive_product_core::startup::StartupCheck>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct ProductStoredAuth {
+    service_token: String,
+    legacy_api_key: String,
+}
+
+impl ProductStoredAuth {
+    fn from_override(override_item: Option<&ProductOverride>) -> Self {
+        Self {
+            service_token: override_item
+                .map(|item| item.service_token.trim().to_string())
+                .unwrap_or_default(),
+            legacy_api_key: override_item
+                .map(|item| item.legacy_api_key.trim().to_string())
+                .unwrap_or_default(),
+        }
+    }
+
+    fn service_token_configured(&self) -> bool {
+        !self.service_token.is_empty()
+    }
+
+    fn legacy_api_key_configured(&self) -> bool {
+        !self.legacy_api_key.is_empty()
+    }
+
+    fn machine_auth_configured(&self) -> bool {
+        self.service_token_configured() || self.legacy_api_key_configured()
+    }
+
+    fn auth_mode(&self) -> &'static str {
+        if self.service_token_configured() {
+            "service_token"
+        } else if self.legacy_api_key_configured() {
+            "legacy_api_key"
+        } else {
+            "none"
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+struct ProductAuthStatusBody {
+    #[serde(default)]
+    auth_enabled: bool,
+    #[serde(default)]
+    service_auth_supported: bool,
+    #[serde(default)]
+    service_auth_enabled: bool,
+    #[serde(default)]
+    service_auth_scoped: bool,
+    #[serde(default)]
+    service_auth_scopes: Vec<String>,
 }
 
 struct ProductProbeSnapshot {
@@ -81,30 +138,53 @@ pub async fn login(Json(body): Json<LoginBody>) -> Result<Json<Value>, StatusCod
     ))
 }
 
-pub async fn gen_key(headers: HeaderMap) -> Result<Json<Value>, StatusCode> {
+pub async fn gen_key(
+    headers: HeaderMap,
+) -> Result<Json<Value>, patchhive_product_core::auth::JsonApiError> {
     if auth_enabled() {
-        return Err(StatusCode::FORBIDDEN);
+        return Err(patchhive_product_core::auth::auth_already_configured_error());
     }
     if !crate::auth::bootstrap_request_allowed(&headers) {
-        return Err(StatusCode::FORBIDDEN);
+        return Err(patchhive_product_core::auth::bootstrap_localhost_required_error());
     }
-    let key = generate_and_save_key().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let key = generate_and_save_key()
+        .map_err(|err| patchhive_product_core::auth::key_generation_failed_error(&err))?;
     Ok(Json(
         json!({"api_key": key, "message": "Store this — it won't be shown again"}),
     ))
 }
 
-pub async fn gen_service_token(headers: HeaderMap) -> Result<Json<Value>, StatusCode> {
+pub async fn gen_service_token(
+    headers: HeaderMap,
+) -> Result<Json<Value>, patchhive_product_core::auth::JsonApiError> {
     if service_auth_enabled() {
-        return Err(StatusCode::FORBIDDEN);
+        return Err(patchhive_product_core::auth::service_auth_already_configured_error());
     }
     if !service_token_generation_allowed(&headers) {
-        return Err(StatusCode::FORBIDDEN);
+        return Err(patchhive_product_core::auth::service_token_generation_forbidden_error());
     }
-    let token = generate_and_save_service_token().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let token = generate_and_save_service_token()
+        .map_err(|err| patchhive_product_core::auth::service_token_generation_failed_error(&err))?;
     Ok(Json(json!({
         "service_token": token,
         "message": "Store this for HiveCore or other PatchHive service callers — it won't be shown again"
+    })))
+}
+
+pub async fn rotate_service_token(
+    headers: HeaderMap,
+) -> Result<Json<Value>, patchhive_product_core::auth::JsonApiError> {
+    if !service_auth_enabled() {
+        return Err(patchhive_product_core::auth::service_auth_not_configured_error());
+    }
+    if !service_token_rotation_allowed(&headers) {
+        return Err(patchhive_product_core::auth::service_token_rotation_forbidden_error());
+    }
+    let token = rotate_and_save_service_token()
+        .map_err(|err| patchhive_product_core::auth::service_token_rotation_failed_error(&err))?;
+    Ok(Json(json!({
+        "service_token": token,
+        "message": "Store this replacement service token for HiveCore or other PatchHive service callers — it won't be shown again"
     })))
 }
 
@@ -206,9 +286,7 @@ pub async fn product_runs(
         override_item.map(|item| item.api_url.as_str()),
         definition.default_api_url,
     );
-    let api_key = override_item
-        .map(|item| item.api_key.trim().to_string())
-        .unwrap_or_default();
+    let auth = ProductStoredAuth::from_override(override_item);
 
     if definition.slug == "hive-core" {
         let runs = contract::runs_from_values("hive-core", hive_core_action_run_values(30)).runs;
@@ -216,7 +294,10 @@ pub async fn product_runs(
             slug: definition.slug.into(),
             title: definition.title.into(),
             api_url,
-            api_key_configured: true,
+            auth_mode: resolved_auth_mode(definition, &auth),
+            machine_auth_configured: resolved_machine_auth_configured(definition, &auth),
+            service_token_configured: resolved_service_token_configured(definition, &auth),
+            legacy_api_key_configured: resolved_legacy_api_key_configured(definition, &auth),
             runs_ok: true,
             checked_at: now_rfc3339(),
             error: String::new(),
@@ -224,12 +305,15 @@ pub async fn product_runs(
         })));
     }
 
-    let (runs_ok, runs, error) = fetch_product_runs(&state.client, &api_url, &api_key).await;
+    let (runs_ok, runs, error) = fetch_product_runs(&state.client, &api_url, &auth).await;
     Ok(Json(ok(ProductRunsSnapshotResponse {
         slug: definition.slug.into(),
         title: definition.title.into(),
         api_url,
-        api_key_configured: !api_key.is_empty(),
+        auth_mode: resolved_auth_mode(definition, &auth),
+        machine_auth_configured: resolved_machine_auth_configured(definition, &auth),
+        service_token_configured: resolved_service_token_configured(definition, &auth),
+        legacy_api_key_configured: resolved_legacy_api_key_configured(definition, &auth),
         runs_ok,
         checked_at: now_rfc3339(),
         error,
@@ -254,6 +338,7 @@ pub async fn product_run_detail(
         override_item.map(|item| item.api_url.as_str()),
         definition.default_api_url,
     );
+    let auth = ProductStoredAuth::from_override(override_item);
 
     if definition.slug == "hive-core" {
         let detail = db::action_event(&id)
@@ -265,7 +350,10 @@ pub async fn product_run_detail(
             slug: definition.slug.into(),
             title: definition.title.into(),
             api_url,
-            api_key_configured: true,
+            auth_mode: resolved_auth_mode(definition, &auth),
+            machine_auth_configured: resolved_machine_auth_configured(definition, &auth),
+            service_token_configured: resolved_service_token_configured(definition, &auth),
+            legacy_api_key_configured: resolved_legacy_api_key_configured(definition, &auth),
             checked_at: now_rfc3339(),
             detail_path: format!("/runs/{id}"),
             detail_ok: true,
@@ -291,18 +379,15 @@ pub async fn product_run_detail(
         ));
     }
 
-    let api_key = override_item
-        .map(|item| item.api_key.trim().to_string())
-        .unwrap_or_default();
-    if api_key.is_empty() {
+    if !auth.machine_auth_configured() {
         return Err(api_error(
             StatusCode::BAD_REQUEST,
-            "product_api_key_missing",
-            "Save this product's access token in HiveCore settings before fetching protected run detail.",
+            "product_service_token_missing",
+            "Save or provision this product's service token in HiveCore settings before fetching protected run detail.",
         ));
     }
 
-    let capabilities = fetch_product_capabilities(&state.client, &api_url, &api_key)
+    let capabilities = fetch_product_capabilities(&state.client, &api_url, &auth)
         .await
         .map_err(|message| {
             api_error(StatusCode::BAD_GATEWAY, "capabilities_unavailable", message)
@@ -319,7 +404,7 @@ pub async fn product_run_detail(
         .map_err(|message| api_error(StatusCode::BAD_REQUEST, "invalid_run_id", message))?;
     let detail_url = build_target_url(&api_url, &detail_path, &HashMap::new())
         .map_err(|message| api_error(StatusCode::BAD_REQUEST, "invalid_run_detail_url", message))?;
-    let response = authorized_get(&state.client, detail_url.as_str(), &api_key)
+    let response = authorized_get(&state.client, detail_url.as_str(), &auth)
         .timeout(Duration::from_secs(3))
         .send()
         .await;
@@ -352,7 +437,10 @@ pub async fn product_run_detail(
         slug: definition.slug.into(),
         title: definition.title.into(),
         api_url,
-        api_key_configured: true,
+        auth_mode: resolved_auth_mode(definition, &auth),
+        machine_auth_configured: resolved_machine_auth_configured(definition, &auth),
+        service_token_configured: resolved_service_token_configured(definition, &auth),
+        legacy_api_key_configured: resolved_legacy_api_key_configured(definition, &auth),
         checked_at,
         detail_path,
         detail_ok,
@@ -368,6 +456,176 @@ pub async fn settings() -> Json<crate::models::ApiEnvelope<SettingsResponse>> {
 
 pub async fn recent_actions() -> Json<crate::models::ApiEnvelope<Vec<ProductActionEvent>>> {
     Json(ok(db::recent_action_events(30)))
+}
+
+pub async fn provision_service_token(
+    State(state): State<AppState>,
+    Path(slug): Path<String>,
+    Json(body): Json<ProvisionServiceTokenRequest>,
+) -> Result<
+    Json<crate::models::ApiEnvelope<ProvisionServiceTokenResponse>>,
+    (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
+> {
+    let definition = product_catalog()
+        .iter()
+        .find(|product| product.slug == slug)
+        .ok_or_else(|| api_error(StatusCode::NOT_FOUND, "unknown_product", "Unknown product."))?;
+
+    if definition.slug == "hive-core" {
+        return Err(api_error(
+            StatusCode::BAD_REQUEST,
+            "unsupported_product",
+            "HiveCore does not provision a product service token for itself.",
+        ));
+    }
+
+    let overrides = db::product_overrides();
+    let override_item = overrides.get(definition.slug);
+    let api_url_override = body.api_url.unwrap_or_default().trim().to_string();
+    let effective_api_url = if api_url_override.is_empty() {
+        pick_url(
+            override_item.map(|item| item.api_url.as_str()),
+            definition.default_api_url,
+        )
+    } else {
+        api_url_override.clone()
+    };
+
+    if effective_api_url.trim().is_empty() {
+        return Err(api_error(
+            StatusCode::BAD_REQUEST,
+            "product_unconfigured",
+            "Configure this product API URL before provisioning a service token.",
+        ));
+    }
+
+    let auth_status = fetch_product_auth_status(&state.client, &effective_api_url)
+        .await
+        .map_err(|message| {
+            api_error(StatusCode::BAD_GATEWAY, "auth_status_unavailable", message)
+        })?;
+
+    if !auth_status.service_auth_supported {
+        return Err(api_error(
+            StatusCode::CONFLICT,
+            "service_auth_unsupported",
+            "This product does not advertise service-token auth yet.",
+        ));
+    }
+
+    let operator_api_key = body.operator_api_key.unwrap_or_default().trim().to_string();
+    if auth_status.auth_enabled && operator_api_key.is_empty() {
+        return Err(api_error(
+            StatusCode::BAD_REQUEST,
+            "operator_api_key_required",
+            "This product already requires operator login. Paste a one-time operator API key so HiveCore can mint or rotate a dedicated service token.",
+        ));
+    }
+
+    let normalized = effective_api_url.trim_end_matches('/');
+    let token_path = if auth_status.service_auth_enabled {
+        "/auth/rotate-service-token"
+    } else {
+        "/auth/generate-service-token"
+    };
+    let token_url = format!("{normalized}{token_path}");
+    let mut request = state.client.post(token_url).timeout(Duration::from_secs(5));
+    if auth_status.auth_enabled {
+        request = request.header("X-API-Key", operator_api_key);
+    }
+
+    let response = request.send().await.map_err(|_| {
+        api_error(
+            StatusCode::BAD_GATEWAY,
+            "service_token_provision_failed",
+            "HiveCore could not reach the product service-token endpoint.",
+        )
+    })?;
+
+    let remote_status = response.status();
+    let remote_body = response.text().await.unwrap_or_default();
+    let remote_json = parse_response_body(&remote_body);
+
+    if !remote_status.is_success() {
+        let message = remote_error_message(&remote_json)
+            .unwrap_or_else(|| format!("{token_path} returned HTTP {remote_status}"));
+        return Err(api_error(
+            if remote_status.is_client_error() {
+                StatusCode::BAD_REQUEST
+            } else {
+                StatusCode::BAD_GATEWAY
+            },
+            "service_token_provision_rejected",
+            message,
+        ));
+    }
+
+    let token = remote_json
+        .get("service_token")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            api_error(
+                StatusCode::BAD_GATEWAY,
+                "service_token_missing",
+                "The product did not return a service token.",
+            )
+        })?;
+
+    let updated_override = ProductOverride {
+        slug: definition.slug.into(),
+        frontend_url: override_item
+            .map(|item| item.frontend_url.clone())
+            .unwrap_or_default(),
+        api_url: if api_url_override.is_empty() {
+            override_item
+                .map(|item| item.api_url.clone())
+                .unwrap_or_default()
+        } else {
+            api_url_override
+        },
+        service_token: token.to_string(),
+        legacy_api_key: String::new(),
+        enabled: override_item.map(|item| item.enabled).unwrap_or(true),
+        notes: override_item
+            .map(|item| item.notes.clone())
+            .unwrap_or_default(),
+        updated_at: now_rfc3339(),
+    };
+
+    persist_product_override(updated_override.clone()).map_err(|_| {
+        api_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "internal_error",
+            "HiveCore could not save the provisioned service token.",
+        )
+    })?;
+
+    let product = build_settings_product_item(definition, Some(&updated_override));
+    let message = if auth_status.service_auth_enabled && auth_status.auth_enabled {
+        format!(
+            "HiveCore rotated the existing service token for {} using a one-time operator API key and stored only the replacement service token.",
+            definition.title
+        )
+    } else if auth_status.service_auth_enabled {
+        format!(
+            "HiveCore rotated the existing service token for {} through the product bootstrap flow and stored only the replacement service token.",
+            definition.title
+        )
+    } else if auth_status.auth_enabled {
+        format!(
+            "HiveCore provisioned a dedicated service token for {} using a one-time operator API key and stored only the service token.",
+            definition.title
+        )
+    } else {
+        format!(
+            "HiveCore provisioned a dedicated service token for {} through the product bootstrap flow and stored it server-side.",
+            definition.title
+        )
+    };
+
+    Ok(Json(ok(ProvisionServiceTokenResponse { product, message })))
 }
 
 pub async fn save_settings(
@@ -465,18 +723,16 @@ pub async fn dispatch_product_action(
         ));
     }
 
-    let api_key = override_item
-        .map(|item| item.api_key.trim().to_string())
-        .unwrap_or_default();
-    if api_key.is_empty() {
+    let auth = ProductStoredAuth::from_override(override_item);
+    if !auth.machine_auth_configured() {
         return Err(api_error(
             StatusCode::BAD_REQUEST,
-            "product_api_key_missing",
-            "Save this product's access token in HiveCore settings before dispatching protected actions.",
+            "product_service_token_missing",
+            "Save or provision this product's service token in HiveCore settings before dispatching protected actions.",
         ));
     }
 
-    let capabilities = fetch_product_capabilities(&state.client, &api_url, &api_key)
+    let capabilities = fetch_product_capabilities(&state.client, &api_url, &auth)
         .await
         .map_err(|message| {
             api_error(StatusCode::BAD_GATEWAY, "capabilities_unavailable", message)
@@ -500,6 +756,40 @@ pub async fn dispatch_product_action(
             "destructive_action_blocked",
             "HiveCore does not dispatch destructive actions yet.",
         ));
+    }
+
+    if auth.service_token_configured() && !action.required_scopes.is_empty() {
+        let auth_status = fetch_product_auth_status(&state.client, &api_url)
+            .await
+            .map_err(|message| {
+                api_error(StatusCode::BAD_GATEWAY, "auth_status_unavailable", message)
+            })?;
+
+        if auth_status.service_auth_enabled && auth_status.service_auth_scoped {
+            let missing_scopes = action
+                .required_scopes
+                .iter()
+                .filter(|scope| {
+                    !auth_status
+                        .service_auth_scopes
+                        .iter()
+                        .any(|item| item == *scope)
+                })
+                .cloned()
+                .collect::<Vec<_>>();
+
+            if !missing_scopes.is_empty() {
+                return Err(api_error(
+                    StatusCode::FORBIDDEN,
+                    "service_token_scope_missing",
+                    format!(
+                        "The saved service token for {} is missing required scopes: {}.",
+                        definition.title,
+                        missing_scopes.join(", ")
+                    ),
+                ));
+            }
+        }
     }
 
     let input = parse_dispatch_input(body);
@@ -532,7 +822,7 @@ pub async fn dispatch_product_action(
         created_at: now_rfc3339(),
     };
 
-    let mut request = authorized_request(state.client.request(method.clone(), target_url), &api_key);
+    let mut request = authorized_request(state.client.request(method.clone(), target_url), &auth);
     if method != Method::GET && method != Method::HEAD {
         request = request.json(&input.payload);
     }
@@ -589,35 +879,7 @@ fn build_settings_response() -> SettingsResponse {
 
     let products = product_catalog()
         .iter()
-        .map(|definition| {
-            let override_item = overrides.get(definition.slug);
-            ProductSettingsItem {
-                slug: definition.slug.into(),
-                title: definition.title.into(),
-                icon: definition.icon.into(),
-                lane: definition.lane.into(),
-                role: definition.role.into(),
-                repo: definition.repo.into(),
-                default_frontend_url: definition.default_frontend_url.into(),
-                default_api_url: definition.default_api_url.into(),
-                override_frontend_url: override_item
-                    .map(|item| item.frontend_url.clone())
-                    .unwrap_or_default(),
-                override_api_url: override_item
-                    .map(|item| item.api_url.clone())
-                    .unwrap_or_default(),
-                api_key_configured: override_item
-                    .map(|item| !item.api_key.trim().is_empty())
-                    .unwrap_or(false),
-                enabled: override_item.map(|item| item.enabled).unwrap_or(true),
-                notes: override_item
-                    .map(|item| item.notes.clone())
-                    .unwrap_or_default(),
-                updated_at: override_item
-                    .map(|item| item.updated_at.clone())
-                    .unwrap_or_default(),
-            }
-        })
+        .map(|definition| build_settings_product_item(definition, overrides.get(definition.slug)))
         .collect();
 
     SettingsResponse {
@@ -645,9 +907,7 @@ async fn build_product_runtime(
     let notes = override_item
         .map(|item| item.notes.clone())
         .unwrap_or_default();
-    let api_key = override_item
-        .map(|item| item.api_key.trim().to_string())
-        .unwrap_or_default();
+    let auth = ProductStoredAuth::from_override(override_item);
 
     let probe = if definition.slug == "hive-core" {
         local_hive_core_probe()
@@ -680,7 +940,7 @@ async fn build_product_runtime(
             recent_runs: Vec::new(),
         }
     } else {
-        fetch_product_health(&state.client, &api_url, &api_key).await
+        fetch_product_health(&state.client, &api_url, &auth).await
     };
 
     ProductRuntimeItem {
@@ -693,10 +953,10 @@ async fn build_product_runtime(
         enabled,
         frontend_url,
         api_url,
-        api_key_configured: definition.slug == "hive-core"
-            || override_item
-                .map(|item| !item.api_key.trim().is_empty())
-                .unwrap_or(false),
+        auth_mode: resolved_auth_mode(definition, &auth),
+        machine_auth_configured: resolved_machine_auth_configured(definition, &auth),
+        service_token_configured: resolved_service_token_configured(definition, &auth),
+        legacy_api_key_configured: resolved_legacy_api_key_configured(definition, &auth),
         notes,
         status: probe.health.status.clone(),
         health: probe.health,
@@ -713,13 +973,13 @@ async fn build_product_runtime(
 async fn fetch_product_health(
     client: &reqwest::Client,
     api_url: &str,
-    api_key: &str,
+    auth: &ProductStoredAuth,
 ) -> ProductProbeSnapshot {
     let normalized = api_url.trim_end_matches('/');
     let checked_at = now_rfc3339();
     let health_url = format!("{normalized}/health");
 
-    let health_response = authorized_get(client, &health_url, api_key).send().await;
+    let health_response = authorized_get(client, &health_url, auth).send().await;
     let Ok(health_response) = health_response else {
         return ProductProbeSnapshot {
             health: ProductHealthSnapshot {
@@ -769,7 +1029,7 @@ async fn fetch_product_health(
             });
 
     let checks_url = format!("{normalized}/startup/checks");
-    let checks_response = authorized_get(client, &checks_url, api_key)
+    let checks_response = authorized_get(client, &checks_url, auth)
         .timeout(Duration::from_secs(3))
         .send()
         .await;
@@ -795,7 +1055,7 @@ async fn fetch_product_health(
         };
 
     let (capabilities_ok, actions, links, hivecore, run_detail_template, capabilities_error) =
-        match fetch_product_capabilities(client, api_url, api_key).await {
+        match fetch_product_capabilities(client, api_url, auth).await {
             Ok(body) => (
                 true,
                 body.actions,
@@ -807,7 +1067,7 @@ async fn fetch_product_health(
             Err(message) => (false, Vec::new(), Vec::new(), None, String::new(), message),
         };
     let action_count = actions.len() as u32;
-    let (runs_ok, recent_runs, runs_error) = fetch_product_runs(client, api_url, api_key).await;
+    let (runs_ok, recent_runs, runs_error) = fetch_product_runs(client, api_url, auth).await;
     let run_count = recent_runs.len() as u32;
     let run_detail_ok = hivecore
         .as_ref()
@@ -838,7 +1098,7 @@ async fn fetch_product_health(
             runs_ok,
             if runs_ok {
                 "ok"
-            } else if api_key.trim().is_empty() {
+            } else if !auth.machine_auth_configured() {
                 "locked"
             } else {
                 "failed"
@@ -873,7 +1133,7 @@ async fn fetch_product_health(
 
     let config_errors = health_body.config_errors.unwrap_or(0);
     let base_status = health_body.status.unwrap_or_else(|| "unknown".into());
-    let runs_integration_failed = !api_key.trim().is_empty() && !runs_ok;
+    let runs_integration_failed = auth.machine_auth_configured() && !runs_ok;
     let status = if startup_errors > 0
         || config_errors > 0
         || base_status != "ok"
@@ -996,6 +1256,69 @@ fn local_hive_core_probe() -> ProductProbeSnapshot {
         ],
         run_detail_template: "/runs/{id}".into(),
         recent_runs,
+    }
+}
+
+fn resolved_auth_mode(definition: &ProductDefinition, auth: &ProductStoredAuth) -> String {
+    if definition.slug == "hive-core" {
+        "native".into()
+    } else {
+        auth.auth_mode().into()
+    }
+}
+
+fn resolved_machine_auth_configured(
+    definition: &ProductDefinition,
+    auth: &ProductStoredAuth,
+) -> bool {
+    definition.slug == "hive-core" || auth.machine_auth_configured()
+}
+
+fn resolved_service_token_configured(
+    definition: &ProductDefinition,
+    auth: &ProductStoredAuth,
+) -> bool {
+    definition.slug != "hive-core" && auth.service_token_configured()
+}
+
+fn resolved_legacy_api_key_configured(
+    definition: &ProductDefinition,
+    auth: &ProductStoredAuth,
+) -> bool {
+    definition.slug != "hive-core" && auth.legacy_api_key_configured()
+}
+
+fn build_settings_product_item(
+    definition: &ProductDefinition,
+    override_item: Option<&ProductOverride>,
+) -> ProductSettingsItem {
+    let auth = ProductStoredAuth::from_override(override_item);
+    ProductSettingsItem {
+        slug: definition.slug.into(),
+        title: definition.title.into(),
+        icon: definition.icon.into(),
+        lane: definition.lane.into(),
+        role: definition.role.into(),
+        repo: definition.repo.into(),
+        default_frontend_url: definition.default_frontend_url.into(),
+        default_api_url: definition.default_api_url.into(),
+        override_frontend_url: override_item
+            .map(|item| item.frontend_url.clone())
+            .unwrap_or_default(),
+        override_api_url: override_item
+            .map(|item| item.api_url.clone())
+            .unwrap_or_default(),
+        auth_mode: resolved_auth_mode(definition, &auth),
+        machine_auth_configured: resolved_machine_auth_configured(definition, &auth),
+        service_token_configured: resolved_service_token_configured(definition, &auth),
+        legacy_api_key_configured: resolved_legacy_api_key_configured(definition, &auth),
+        enabled: override_item.map(|item| item.enabled).unwrap_or(true),
+        notes: override_item
+            .map(|item| item.notes.clone())
+            .unwrap_or_default(),
+        updated_at: override_item
+            .map(|item| item.updated_at.clone())
+            .unwrap_or_default(),
     }
 }
 
@@ -1152,22 +1475,44 @@ fn sanitize_product_overrides(
     let mut deduped = HashMap::new();
     for product in products {
         let slug = product.slug.trim().to_string();
-        let supplied_api_key = product.api_key.unwrap_or_default().trim().to_string();
-        let api_key = if supplied_api_key.is_empty() {
-            existing
-                .get(&slug)
-                .map(|item| item.api_key.clone())
+        let existing_item = existing.get(&slug);
+        let supplied_service_token = product.service_token.unwrap_or_default().trim().to_string();
+        let supplied_legacy_api_key = product
+            .legacy_api_key
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+
+        let service_token = if slug == "hive-core" {
+            String::new()
+        } else if supplied_service_token.is_empty() {
+            existing_item
+                .map(|item| item.service_token.clone())
                 .unwrap_or_default()
         } else {
-            supplied_api_key
+            supplied_service_token.clone()
         };
+
+        let legacy_api_key = if slug == "hive-core" {
+            String::new()
+        } else if !supplied_service_token.is_empty() && supplied_legacy_api_key.is_empty() {
+            String::new()
+        } else if supplied_legacy_api_key.is_empty() {
+            existing_item
+                .map(|item| item.legacy_api_key.clone())
+                .unwrap_or_default()
+        } else {
+            supplied_legacy_api_key
+        };
+
         deduped.insert(
             slug.clone(),
             ProductOverride {
                 slug,
                 frontend_url: product.frontend_url.trim().to_string(),
                 api_url: product.api_url.trim().to_string(),
-                api_key,
+                service_token,
+                legacy_api_key,
                 enabled: product.enabled,
                 notes: product.notes.trim().to_string(),
                 updated_at: now_rfc3339(),
@@ -1179,6 +1524,14 @@ fn sanitize_product_overrides(
     rows
 }
 
+fn persist_product_override(product: ProductOverride) -> Result<(), ()> {
+    let mut overrides = db::product_overrides();
+    overrides.insert(product.slug.clone(), product);
+    let mut rows = overrides.into_values().collect::<Vec<_>>();
+    rows.sort_by(|left, right| left.slug.cmp(&right.slug));
+    db::replace_product_overrides(&rows).map_err(|_| ())
+}
+
 fn api_error(
     status: StatusCode,
     code: impl Into<String>,
@@ -1187,14 +1540,37 @@ fn api_error(
     (status, Json(error(code, message, false)))
 }
 
+async fn fetch_product_auth_status(
+    client: &reqwest::Client,
+    api_url: &str,
+) -> Result<ProductAuthStatusBody, String> {
+    let normalized = api_url.trim_end_matches('/');
+    let auth_status_url = format!("{normalized}/auth/status");
+    let response = client
+        .get(&auth_status_url)
+        .timeout(Duration::from_secs(3))
+        .send()
+        .await
+        .map_err(|_| "Could not reach /auth/status.".to_string())?;
+
+    if !response.status().is_success() {
+        return Err(format!("/auth/status returned HTTP {}", response.status()));
+    }
+
+    response
+        .json::<ProductAuthStatusBody>()
+        .await
+        .map_err(|err| format!("Could not parse /auth/status: {err}"))
+}
+
 async fn fetch_product_capabilities(
     client: &reqwest::Client,
     api_url: &str,
-    api_key: &str,
+    auth: &ProductStoredAuth,
 ) -> Result<contract::ProductCapabilities, String> {
     let normalized = api_url.trim_end_matches('/');
     let capabilities_url = format!("{normalized}/capabilities");
-    let response = authorized_get(client, &capabilities_url, api_key)
+    let response = authorized_get(client, &capabilities_url, auth)
         .timeout(Duration::from_secs(3))
         .send()
         .await
@@ -1213,19 +1589,19 @@ async fn fetch_product_capabilities(
 async fn fetch_product_runs(
     client: &reqwest::Client,
     api_url: &str,
-    api_key: &str,
+    auth: &ProductStoredAuth,
 ) -> (bool, Vec<contract::ProductRunSummary>, String) {
-    if api_key.trim().is_empty() {
+    if !auth.machine_auth_configured() {
         return (
             false,
             Vec::new(),
-            "Product API key missing; recent runs unavailable.".into(),
+            "Product service token missing; recent runs unavailable.".into(),
         );
     }
 
     let normalized = api_url.trim_end_matches('/');
     let runs_url = format!("{normalized}/runs");
-    let response = authorized_get(client, &runs_url, api_key)
+    let response = authorized_get(client, &runs_url, auth)
         .timeout(Duration::from_secs(3))
         .send()
         .await;
@@ -1248,22 +1624,39 @@ async fn fetch_product_runs(
     }
 }
 
-fn authorized_get(client: &reqwest::Client, url: &str, api_key: &str) -> reqwest::RequestBuilder {
+fn remote_error_message(value: &Value) -> Option<String> {
+    value
+        .get("error")
+        .and_then(Value::as_str)
+        .map(|message| message.to_string())
+        .or_else(|| {
+            value
+                .get("error")
+                .and_then(|error| error.get("message"))
+                .and_then(Value::as_str)
+                .map(|message| message.to_string())
+        })
+}
+
+fn authorized_get(
+    client: &reqwest::Client,
+    url: &str,
+    auth: &ProductStoredAuth,
+) -> reqwest::RequestBuilder {
     let request = client.get(url);
-    authorized_request(request, api_key)
+    authorized_request(request, auth)
 }
 
 fn authorized_request(
     request: reqwest::RequestBuilder,
-    api_key: &str,
+    auth: &ProductStoredAuth,
 ) -> reqwest::RequestBuilder {
-    let api_key = api_key.trim();
-    if api_key.is_empty() {
-        request
+    if auth.service_token_configured() {
+        request.header(SERVICE_TOKEN_HEADER, auth.service_token.trim())
+    } else if auth.legacy_api_key_configured() {
+        request.header("X-API-Key", auth.legacy_api_key.trim())
     } else {
         request
-            .header("X-API-Key", api_key)
-            .header(SERVICE_TOKEN_HEADER, api_key)
     }
 }
 
@@ -1421,10 +1814,15 @@ fn summarize_products(products: &[ProductRuntimeItem]) -> OverviewSummary {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_run_detail_path, contract_check, contract_drift_count, fill_path_template,
-        parse_dispatch_input, pick_url, summarize_products,
+        authorized_request, build_run_detail_path, contract_check, contract_drift_count,
+        fill_path_template, parse_dispatch_input, pick_url, sanitize_product_overrides,
+        summarize_products, ProductStoredAuth, SERVICE_TOKEN_HEADER,
     };
-    use crate::models::{ProductHealthSnapshot, ProductRuntimeItem};
+    use crate::models::{
+        now_rfc3339, ProductHealthSnapshot, ProductOverride, ProductOverrideInput,
+        ProductRuntimeItem,
+    };
+    use reqwest::Client;
     use serde_json::json;
     use std::collections::HashMap;
 
@@ -1441,7 +1839,10 @@ mod tests {
                 enabled: true,
                 frontend_url: String::new(),
                 api_url: String::new(),
-                api_key_configured: false,
+                auth_mode: "none".into(),
+                machine_auth_configured: false,
+                service_token_configured: false,
+                legacy_api_key_configured: false,
                 notes: String::new(),
                 status: "online".into(),
                 health: ProductHealthSnapshot::default(),
@@ -1463,7 +1864,10 @@ mod tests {
                 enabled: true,
                 frontend_url: String::new(),
                 api_url: String::new(),
-                api_key_configured: false,
+                auth_mode: "none".into(),
+                machine_auth_configured: false,
+                service_token_configured: false,
+                legacy_api_key_configured: false,
                 notes: String::new(),
                 status: "degraded".into(),
                 health: ProductHealthSnapshot::default(),
@@ -1485,7 +1889,10 @@ mod tests {
                 enabled: true,
                 frontend_url: String::new(),
                 api_url: String::new(),
-                api_key_configured: false,
+                auth_mode: "none".into(),
+                machine_auth_configured: false,
+                service_token_configured: false,
+                legacy_api_key_configured: false,
                 notes: String::new(),
                 status: "unconfigured".into(),
                 health: ProductHealthSnapshot::default(),
@@ -1507,7 +1914,10 @@ mod tests {
                 enabled: false,
                 frontend_url: String::new(),
                 api_url: String::new(),
-                api_key_configured: false,
+                auth_mode: "none".into(),
+                machine_auth_configured: false,
+                service_token_configured: false,
+                legacy_api_key_configured: false,
                 notes: String::new(),
                 status: "disabled".into(),
                 health: ProductHealthSnapshot::default(),
@@ -1595,5 +2005,61 @@ mod tests {
             contract_check("detail", "Run detail", "/runs/{id}", false, "missing", ""),
         ];
         assert_eq!(contract_drift_count(&checks), 1);
+    }
+
+    #[test]
+    fn sanitize_product_overrides_replaces_legacy_key_when_service_token_is_supplied() {
+        let existing = HashMap::from([(
+            "signal-hive".to_string(),
+            ProductOverride {
+                slug: "signal-hive".into(),
+                frontend_url: String::new(),
+                api_url: "http://localhost:8010".into(),
+                service_token: String::new(),
+                legacy_api_key: "signal-operator".into(),
+                enabled: true,
+                notes: String::new(),
+                updated_at: now_rfc3339(),
+            },
+        )]);
+
+        let sanitized = sanitize_product_overrides(
+            vec![ProductOverrideInput {
+                slug: "signal-hive".into(),
+                frontend_url: String::new(),
+                api_url: "http://localhost:8010".into(),
+                service_token: Some("svc_signal".into()),
+                legacy_api_key: None,
+                enabled: true,
+                notes: String::new(),
+            }],
+            &existing,
+        );
+
+        assert_eq!(sanitized.len(), 1);
+        assert_eq!(sanitized[0].service_token, "svc_signal");
+        assert!(sanitized[0].legacy_api_key.is_empty());
+    }
+
+    #[test]
+    fn authorized_request_prefers_service_token_header() {
+        let request = authorized_request(
+            Client::new().get("http://example.com"),
+            &ProductStoredAuth {
+                service_token: "svc_signal".into(),
+                legacy_api_key: "signal-operator".into(),
+            },
+        )
+        .build()
+        .expect("request should build");
+
+        assert_eq!(
+            request
+                .headers()
+                .get(SERVICE_TOKEN_HEADER)
+                .and_then(|value| value.to_str().ok()),
+            Some("svc_signal")
+        );
+        assert!(request.headers().get("X-API-Key").is_none());
     }
 }
