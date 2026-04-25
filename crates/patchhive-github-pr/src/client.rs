@@ -114,6 +114,7 @@ impl GitHubPrClient {
     ) -> Result<Vec<Value>> {
         let mut items = Vec::new();
         let mut page = 1u32;
+        const MAX_PAGES: u32 = 10; // at most 1000 items
 
         loop {
             let mut page_query = query.to_vec();
@@ -139,6 +140,9 @@ impl GitHubPrClient {
                 break;
             }
             page += 1;
+            if page > MAX_PAGES {
+                break; // silently cap at 10 pages (1000 items)
+            }
         }
 
         Ok(items)

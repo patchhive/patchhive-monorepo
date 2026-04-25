@@ -259,17 +259,22 @@ pub fn update_perf(
 
 pub fn recover_orphaned_runs() -> Vec<String> {
     let Ok(conn) = get_conn() else { return vec![] };
+    // Only mark as crashed if started >10 min ago — a freshly-started run
+    // that survived a brief restart shouldn't be killed.
+    let cutoff = (Utc::now() - chrono::Duration::minutes(10)).to_rfc3339();
     let ids: Vec<String> = conn
-        .prepare("SELECT id FROM runs WHERE status='running'")
+        .prepare(
+            "SELECT id FROM runs WHERE status='running' AND started_at < ?1"
+        )
         .and_then(|mut s| {
-            s.query_map([], |r| r.get(0))
+            s.query_map(params![cutoff], |r| r.get(0))
                 .map(|rows| rows.flatten().collect())
         })
         .unwrap_or_default();
     if !ids.is_empty() {
         let _ = conn.execute(
-            "UPDATE runs SET status='crashed', finished_at=?1 WHERE status='running'",
-            params![Utc::now().to_rfc3339()],
+            "UPDATE runs SET status='crashed', finished_at=?1 WHERE status='running' AND started_at < ?2",
+            params![Utc::now().to_rfc3339(), cutoff],
         );
     }
     ids

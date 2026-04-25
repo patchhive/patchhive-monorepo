@@ -28,7 +28,9 @@ fn cost_rates(provider: &str, model: &str) -> (f64, f64) {
 
 fn estimate_cost(prompt: &str, response: &str, provider: &str, model: &str) -> f64 {
     let (ic, oc) = cost_rates(provider, model);
-    (prompt.len() as f64 / 4.0 / 1000.0) * ic + (response.len() as f64 / 4.0 / 1000.0) * oc
+    // Use char count instead of byte count — more accurate for non-ASCII content.
+    (prompt.chars().count() as f64 / 4.0 / 1000.0) * ic
+        + (response.chars().count() as f64 / 4.0 / 1000.0) * oc
 }
 
 fn strip_json_fence(s: &str) -> &str {

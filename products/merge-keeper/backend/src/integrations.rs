@@ -140,7 +140,10 @@ async fn post_json<TReq: Serialize, TRes: for<'de> Deserialize<'de>>(
     api_key: Option<String>,
     body: &TReq,
 ) -> Result<TRes> {
-    let mut request = client.post(url).json(body);
+    let mut request = client
+        .post(url)
+        .timeout(std::time::Duration::from_secs(30))
+        .json(body);
     if let Some(api_key) = api_key {
         request = request.header("X-API-Key", api_key);
     }

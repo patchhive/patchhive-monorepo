@@ -325,16 +325,32 @@ pub async fn gh_pr_base_branch(
 }
 
 pub async fn search_repos(http: &Client, query: &str, max_repos: usize) -> Result<Vec<Value>> {
-    let data = gh_get(
-        http,
-        "/search/repositories",
-        &[
-            ("q", query),
-            ("sort", "updated"),
-            ("per_page", &max_repos.to_string()),
-        ],
-        None,
-    )
-    .await?;
-    Ok(data["items"].as_array().cloned().unwrap_or_default())
+    // GitHub Search API caps per_page at 100. Paginate when max_repos exceeds the cap.
+    let mut all_items = Vec::new();
+    let per_page = max_repos.min(100);
+    let pages_needed = (max_repos + per_page - 1) / per_page;
+
+    for page in 1..=pages_needed {
+        let data = gh_get(
+            http,
+            "/search/repositories",
+            &[
+                ("q", query),
+                ("sort", "updated"),
+                ("per_page", &per_page.to_string()),
+                ("page", &page.to_string()),
+            ],
+            None,
+        )
+        .await?;
+        if let Some(items) = data["items"].as_array() {
+            all_items.extend(items.clone());
+        }
+        // Stop early if GitHub returned fewer items than requested (last page).
+        if data["items"].as_array().map_or(true, |a| a.len() < per_page) {
+            break;
+        }
+    }
+    all_items.truncate(max_repos);
+    Ok(all_items)
 }
