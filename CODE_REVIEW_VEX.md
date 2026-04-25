@@ -13,7 +13,19 @@
 | C2 | CRITICAL | ✅ Already fixed — legacy tokens scoped to `runs:read` only |
 | C3 | CRITICAL | ✅ Fixed — `pick_fix_agents` returns `Result`, validates non-empty |
 | C4 | CRITICAL | ⏳ Deferred — cross-product `Mutex`→`RwLock` (11 db.rs + template) |
-| W1-W13 | WARNING | ⏳ Open |
+| W1 | WARNING | ✅ Fixed — `PATCHHIVE_TRUST_PROXY` guard for x-forwarded-for |
+| W2 | WARNING | ✅ Fixed — atomic write-to-tmp + rename for persist_env_value |
+| W3 | WARNING | ✅ Fixed — periodic sweep of empty rate-limit buckets |
+| W4 | WARNING | ✅ Fixed — IP-based anonymous rate-limit identity |
+| W5 | WARNING | ✅ Fixed — gh_fork exponential backoff (1s→16s, 5 retries) |
+| W6 | WARNING | ✅ Fixed — gh_delete checks response status |
+| W7 | WARNING | ✅ Fixed — search_repos paginates when max_repos > 100 |
+| W8 | WARNING | ✅ Fixed — get_paginated_array max 10 pages (1000 items) |
+| W9 | WARNING | ⏳ Deferred — fix_one 656-line god function (refactor risky) |
+| W10 | WARNING | ✅ Fixed — 10-min started_at grace period before marking crashed |
+| W11 | WARNING | ✅ Fixed — chars().count() instead of len() for cost estimation |
+| W12 | WARNING | ✅ Fixed — 30s reqwest timeout on integration post_json |
+| W13 | WARNING | ⏳ Deferred — docker test runner docs (static command, no injection) |
 | S1-S8 | SUGGESTION | ⏳ Backlog |  
 
 ---
