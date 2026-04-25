@@ -77,10 +77,20 @@ pub async fn gh_post(
 }
 
 pub async fn gh_delete(http: &Client, path: &str, token: Option<&str>) -> Result<()> {
-    http.delete(format!("{GH_API}{path}"))
+    let resp = http
+        .delete(format!("{GH_API}{path}"))
         .headers(gh_headers(token))
         .send()
         .await?;
+    let status = resp.status();
+    if !status.is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        anyhow::bail!(
+            "gh_delete {path}: HTTP {} — {}",
+            status.as_u16(),
+            body.chars().take(200).collect::<String>(),
+        );
+    }
     Ok(())
 }
 
@@ -105,14 +115,17 @@ pub async fn gh_fork(
     .await
     .ok();
 
-    for _ in 0..20 {
-        sleep(Duration::from_secs(4)).await;
+    let mut delay = Duration::from_secs(1);
+    for attempt in 0..5 {
+        sleep(delay).await;
         if let Ok(fork) = gh_get(http, &format!("/repos/{user}/{repo_name}"), &[], Some(&tok)).await
         {
             if fork["full_name"].is_string() {
                 return Ok(fork);
             }
         }
+        delay = delay.saturating_mul(2); // 1s, 2s, 4s, 8s, 16s
+        tracing::debug!("gh_fork {repo}: attempt {}/5 not ready, retrying in {delay:?}", attempt + 1);
     }
     Err(anyhow!("Fork timed out: {repo}"))
 }

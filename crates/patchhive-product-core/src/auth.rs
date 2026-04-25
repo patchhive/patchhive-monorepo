@@ -6,7 +6,7 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use chrono::Utc;
+use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -21,6 +21,7 @@ pub type JsonApiError = (StatusCode, Json<serde_json::Value>);
 pub const SERVICE_TOKEN_HEADER: &str = "X-PatchHive-Service-Token";
 pub const SERVICE_SCOPE_RUNS_READ: &str = "runs:read";
 pub const SERVICE_SCOPE_ACTIONS_DISPATCH: &str = "actions:dispatch";
+const SERVICE_TOKEN_EXPIRY_WARN_DAYS: i64 = 7;
 
 #[derive(Clone, Debug)]
 pub struct ServiceTokenAuthConfig {
@@ -58,6 +59,12 @@ enum StoredServiceAuthState {
     None,
     LegacyHash(String),
     Record(ServiceTokenRecord),
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct ServiceTokenExpiryState {
+    expired: bool,
+    expires_soon: bool,
 }
 
 impl ApiKeyAuthConfig {
@@ -193,12 +200,6 @@ fn stored_service_value(config: &ApiKeyAuthConfig) -> String {
 }
 
 fn persist_env_value(env_path: &Path, env_var: &str, value: &str) -> Result<()> {
-    std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(env_path)
-        .with_context(|| format!("failed to open {}", env_path.display()))?;
-
     let existing = fs::read_to_string(env_path).unwrap_or_default();
     let filtered = existing
         .lines()
@@ -212,8 +213,17 @@ fn persist_env_value(env_path: &Path, env_var: &str, value: &str) -> Result<()> 
         format!("{filtered}\n{env_var}={value}\n")
     };
 
-    fs::write(env_path, content)
-        .with_context(|| format!("failed to write {}", env_path.display()))?;
+    // Atomic write: write to a temp file then rename to avoid TOCTOU.
+    let tmp_path = env_path.with_file_name(
+        format!(
+            "{}.tmp",
+            env_path.file_name().unwrap_or_default().to_string_lossy()
+        )
+    );
+    fs::write(&tmp_path, content)
+        .with_context(|| format!("failed to write temp env file {}", tmp_path.display()))?;
+    fs::rename(&tmp_path, env_path)
+        .with_context(|| format!("failed to atomically replace {}", env_path.display()))?;
     Ok(())
 }
 
@@ -271,6 +281,38 @@ fn stored_service_record(config: &ApiKeyAuthConfig) -> Option<ServiceTokenRecord
     }
 }
 
+fn service_token_expiry_state(record: &ServiceTokenRecord) -> ServiceTokenExpiryState {
+    let Some(raw_expires_at) = record.expires_at.as_deref() else {
+        return ServiceTokenExpiryState::default();
+    };
+
+    let Ok(expires_at) =
+        DateTime::parse_from_rfc3339(raw_expires_at).map(|value| value.with_timezone(&Utc))
+    else {
+        return ServiceTokenExpiryState {
+            expired: true,
+            expires_soon: false,
+        };
+    };
+
+    let now = Utc::now();
+    if expires_at <= now {
+        ServiceTokenExpiryState {
+            expired: true,
+            expires_soon: false,
+        }
+    } else {
+        ServiceTokenExpiryState {
+            expired: false,
+            expires_soon: expires_at <= now + Duration::days(SERVICE_TOKEN_EXPIRY_WARN_DAYS),
+        }
+    }
+}
+
+fn service_token_record_expired(record: &ServiceTokenRecord) -> bool {
+    service_token_expiry_state(record).expired
+}
+
 pub fn service_auth_enabled(config: &ApiKeyAuthConfig) -> bool {
     config.service.is_some() && !stored_service_hash(config).is_empty()
 }
@@ -315,7 +357,13 @@ pub fn verify_token(config: &ApiKeyAuthConfig, token: &str) -> bool {
 }
 
 pub fn verify_service_token(config: &ApiKeyAuthConfig, token: &str) -> bool {
-    verify_hash(token, stored_service_hash(config))
+    match stored_service_auth_state(config) {
+        StoredServiceAuthState::None => false,
+        StoredServiceAuthState::LegacyHash(hash) => verify_hash(token, hash),
+        StoredServiceAuthState::Record(record) => {
+            !service_token_record_expired(&record) && verify_hash(token, record.hash)
+        }
+    }
 }
 
 pub fn generate_and_save_key(config: &ApiKeyAuthConfig) -> Result<String> {
@@ -458,6 +506,13 @@ pub fn bootstrap_request_allowed(headers: &HeaderMap) -> bool {
         .get("x-forwarded-for")
         .and_then(|value| value.to_str().ok())
     {
+        // Only trust x-forwarded-for when explicitly behind a trusted proxy.
+        if !matches!(
+            std::env::var("PATCHHIVE_TRUST_PROXY").ok().as_deref(),
+            Some("1" | "true" | "TRUE" | "yes" | "on")
+        ) {
+            return false;
+        }
         let client = value.split(',').next().unwrap_or("").trim();
         if !matches!(client, "" | "127.0.0.1" | "::1" | "[::1]") {
             return false;
@@ -573,9 +628,15 @@ pub fn auth_status_payload(config: &ApiKeyAuthConfig) -> serde_json::Value {
     let service_state = stored_service_auth_state(config);
     let service_configured = !matches!(service_state, StoredServiceAuthState::None);
     let service_scoped = matches!(service_state, StoredServiceAuthState::Record(_));
+    let service_legacy = matches!(service_state, StoredServiceAuthState::LegacyHash(_));
     let service_scopes = match &service_state {
         StoredServiceAuthState::Record(record) => record.scopes.clone(),
+        StoredServiceAuthState::LegacyHash(_) => vec![SERVICE_SCOPE_RUNS_READ.into()],
         _ => Vec::new(),
+    };
+    let service_expiry = match &service_state {
+        StoredServiceAuthState::Record(record) => service_token_expiry_state(record),
+        _ => ServiceTokenExpiryState::default(),
     };
     let service_token = match &service_state {
         StoredServiceAuthState::None => Value::Null,
@@ -583,12 +644,14 @@ pub fn auth_status_payload(config: &ApiKeyAuthConfig) -> serde_json::Value {
             "id": serde_json::Value::Null,
             "name": "legacy-service-token",
             "fingerprint": fingerprint_for_hash(hash),
-            "scopes": [],
+            "scopes": [SERVICE_SCOPE_RUNS_READ],
             "created_at": serde_json::Value::Null,
             "rotated_at": serde_json::Value::Null,
             "expires_at": serde_json::Value::Null,
             "scoped": false,
             "legacy": true,
+            "expired": false,
+            "expires_soon": false,
         }),
         StoredServiceAuthState::Record(record) => json!({
             "id": record.id,
@@ -600,6 +663,8 @@ pub fn auth_status_payload(config: &ApiKeyAuthConfig) -> serde_json::Value {
             "expires_at": record.expires_at,
             "scoped": true,
             "legacy": false,
+            "expired": service_expiry.expired,
+            "expires_soon": service_expiry.expires_soon,
         }),
     };
 
@@ -613,7 +678,10 @@ pub fn auth_status_payload(config: &ApiKeyAuthConfig) -> serde_json::Value {
         "service_auth_configured": service_configured,
         "service_bootstrap_required": config.service.is_some() && !service_configured,
         "service_auth_scoped": service_scoped,
+        "service_auth_legacy": service_legacy,
         "service_auth_scopes": service_scopes,
+        "service_auth_expired": service_expiry.expired,
+        "service_auth_expires_soon": service_expiry.expires_soon,
         "service_auth_token": service_token,
         "service_auth_known_scopes": [
             SERVICE_SCOPE_RUNS_READ,
@@ -703,10 +771,18 @@ fn required_service_scope(
 fn service_token_allows_request(config: &ApiKeyAuthConfig, method: &Method, path: &str) -> bool {
     match stored_service_auth_state(config) {
         StoredServiceAuthState::None => false,
-        StoredServiceAuthState::LegacyHash(_) => true,
-        StoredServiceAuthState::Record(record) => required_service_scope(config, method, path)
-            .map(|scope| record.scopes.iter().any(|item| item == scope))
+        StoredServiceAuthState::LegacyHash(_) => required_service_scope(config, method, path)
+            .map(|scope| scope == SERVICE_SCOPE_RUNS_READ)
             .unwrap_or(false),
+        StoredServiceAuthState::Record(record) => {
+            if service_token_record_expired(&record) {
+                return false;
+            }
+
+            required_service_scope(config, method, path)
+                .map(|scope| record.scopes.iter().any(|item| item == scope))
+                .unwrap_or(false)
+        }
     }
 }
 
@@ -1023,7 +1099,7 @@ mod tests {
     }
 
     #[test]
-    fn legacy_service_hash_stays_unscoped_until_rotated() {
+    fn legacy_service_hash_only_allows_runs_read_until_rotated() {
         let env_var = format!("PATCHHIVE_TEST_AUTH_{}", uuid::Uuid::new_v4().simple());
         let service_env_var = format!(
             "PATCHHIVE_TEST_SERVICE_AUTH_{}",
@@ -1038,12 +1114,77 @@ mod tests {
         let payload = auth_status_payload(&config);
         assert_eq!(payload["service_auth_enabled"], true);
         assert_eq!(payload["service_auth_scoped"], false);
+        assert_eq!(payload["service_auth_legacy"], true);
         assert_eq!(payload["service_auth_token"]["legacy"], true);
+        assert_eq!(payload["service_auth_scopes"][0], SERVICE_SCOPE_RUNS_READ);
+        assert!(service_token_allows_request(&config, &Method::GET, "/runs"));
         assert!(service_token_allows_request(
+            &config,
+            &Method::GET,
+            "/runs/run_1"
+        ));
+        assert!(service_token_allows_request(&config, &Method::GET, "/runs"));
+        assert!(!service_token_allows_request(
+            &config,
+            &Method::POST,
+            "/run"
+        ));
+        assert!(!service_token_allows_request(
             &config,
             &Method::POST,
             "/presets"
         ));
+
+        clear_runtime_env_value(&env_var);
+        clear_runtime_env_value(&service_env_var);
+    }
+
+    #[test]
+    fn expired_service_token_is_rejected_and_reported() {
+        let env_var = format!("PATCHHIVE_TEST_AUTH_{}", uuid::Uuid::new_v4().simple());
+        let service_env_var = format!(
+            "PATCHHIVE_TEST_SERVICE_AUTH_{}",
+            uuid::Uuid::new_v4().simple()
+        );
+        let config =
+            test_config_with_service(&env_var, &service_env_var, PathBuf::from("/tmp/unused.env"));
+
+        let token = "svc_expired";
+        let hash = hash_token(token);
+        let record = ServiceTokenRecord {
+            id: "svc_test".into(),
+            name: "control-plane".into(),
+            hash: hash.clone(),
+            fingerprint: fingerprint_for_hash(&hash),
+            scopes: vec![
+                SERVICE_SCOPE_RUNS_READ.into(),
+                SERVICE_SCOPE_ACTIONS_DISPATCH.into(),
+            ],
+            created_at: now_rfc3339(),
+            rotated_at: None,
+            expires_at: Some((Utc::now() - Duration::minutes(1)).to_rfc3339()),
+        };
+        store_runtime_env_value(
+            &service_env_var,
+            serde_json::to_string(&record).expect("record should serialize"),
+        )
+        .expect("expired record should persist");
+
+        assert!(!verify_service_token(&config, token));
+        assert!(!service_token_allows_request(
+            &config,
+            &Method::GET,
+            "/runs"
+        ));
+        assert!(!service_token_allows_request(
+            &config,
+            &Method::POST,
+            "/run"
+        ));
+
+        let payload = auth_status_payload(&config);
+        assert_eq!(payload["service_auth_expired"], true);
+        assert_eq!(payload["service_auth_token"]["expired"], true);
 
         clear_runtime_env_value(&env_var);
         clear_runtime_env_value(&service_env_var);
