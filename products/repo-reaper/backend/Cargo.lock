@@ -185,9 +185,9 @@ checksum = "1e748733b7cbc798e1434b6ac524f0c1ff2ab456fe201501e6497c8417a4fc33"
 
 [[package]]
 name = "cc"
-version = "1.2.60"
+version = "1.2.61"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "43c5703da9466b66a946814e1adf53ea2c90f10063b86290cc9eb67ce3478a20"
+checksum = "d16d90359e986641506914ba71350897565610e87ce0ad9e6f28569db3dd5c6d"
 dependencies = [
  "find-msvc-tools",
  "shlex",
@@ -941,6 +941,7 @@ dependencies = [
 [[package]]
 name = "patchhive-github-pr"
 version = "0.1.0"
+source = "git+https://github.com/patchhive/patchhive-github-pr.git?rev=18d9e3517fa9daca2b8ddfac4ce692de7d1d0aa6#18d9e3517fa9daca2b8ddfac4ce692de7d1d0aa6"
 dependencies = [
  "anyhow",
  "hex",
@@ -955,6 +956,7 @@ dependencies = [
 [[package]]
 name = "patchhive-product-core"
 version = "0.1.0"
+source = "git+https://github.com/patchhive/patchhive-product-core.git?rev=80f3b28d827120a2494959c6d44a89918791f954#80f3b28d827120a2494959c6d44a89918791f954"
 dependencies = [
  "anyhow",
  "axum",
@@ -1269,9 +1271,9 @@ dependencies = [
 
 [[package]]
 name = "rustls-pki-types"
-version = "1.14.0"
+version = "1.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "be040f8b0a225e40375822a563fa9524378b9d63112f53e19ffff34df5d33fdd"
+checksum = "30a7197ae7eb376e574fe940d068c30fe0462554a3ddbe4eca7838e049c937a9"
 dependencies = [
  "web-time",
  "zeroize",
@@ -2371,11 +2373,3 @@ name = "zmij"
 version = "1.0.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b8848ee67ecc8aedbaf3e4122217aff892639231befc6a1b58d29fff4c2cabaa"
-
-[[patch.unused]]
-name = "patchhive-github-security"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "patchhive-github-data"
-version = "0.1.0"

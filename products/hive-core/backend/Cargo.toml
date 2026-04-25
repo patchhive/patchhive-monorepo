@@ -25,4 +25,4 @@ hex = "0.4"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 sha2 = "0.10"
 uuid = { version = "1", features = ["serde", "v7"] }
-patchhive-product-core = { git = "https://github.com/patchhive/patchhive-product-core.git", rev = "6345dcd503d85d5855d430258062d3fe6b0341de", version = "0.1.0" }
+patchhive-product-core = { git = "https://github.com/patchhive/patchhive-product-core.git", rev = "80f3b28d827120a2494959c6d44a89918791f954", version = "0.1.0" }
