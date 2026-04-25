@@ -163,24 +163,31 @@ fn pick_fix_agents(
     reapers: &[AgentConfig],
     smiths: &[AgentConfig],
     gatekeepers: &[AgentConfig],
-) -> FixAgents {
+) -> AnyhowResult<FixAgents> {
+    if reapers.is_empty() {
+        anyhow::bail!("no reaper agents configured — at least one reaper is required");
+    }
+    if judges.is_empty() {
+        anyhow::bail!("no judge agents configured — at least one judge is required");
+    }
+    if smiths.is_empty() {
+        anyhow::bail!("no smith agents configured — at least one smith is required");
+    }
+
     let judge_idx = idx % judges.len().max(1);
     let reaper_idx = idx % reapers.len().max(1);
     let smith_idx = idx % smiths.len().max(1);
     let gatekeeper_idx = idx % gatekeepers.len().max(1);
 
-    FixAgents {
+    Ok(FixAgents {
         judge: judges.get(judge_idx).cloned(),
-        reaper: reapers
-            .get(reaper_idx)
-            .cloned()
-            .unwrap_or_else(|| reapers[0].clone()),
+        reaper: reapers[reaper_idx].clone(),
         smith: smiths.get(smith_idx).cloned(),
         gatekeeper: gatekeepers
             .get(gatekeeper_idx)
             .cloned()
             .unwrap_or_else(|| reapers[reaper_idx.min(reapers.len().saturating_sub(1))].clone()),
-    }
+    })
 }
 
 fn build_issue_scope(issue: &Value) -> IssueScope {
@@ -778,7 +785,13 @@ pub async fn fix_one(
         return;
     }
 
-    let agents = pick_fix_agents(idx, &judges, &reapers, &smiths, &gatekeepers);
+    let agents = match pick_fix_agents(idx, &judges, &reapers, &smiths, &gatekeepers) {
+        Ok(a) => a,
+        Err(e) => {
+            tracing::error!("Cannot pick fix agents: {e:#}");
+            return;
+        }
+    };
     let scope = build_issue_scope(&issue);
     let attempt_id = Uuid::new_v4().to_string()[..12].to_string();
     let t_start = std::time::Instant::now();

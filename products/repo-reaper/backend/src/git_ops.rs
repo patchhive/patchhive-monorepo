@@ -67,7 +67,9 @@ fn shell_single_quote(value: &str) -> String {
 
 fn write_askpass_script(user: &str, token: &str) -> Result<(PathBuf, PathBuf)> {
     let auth_dir = std::env::temp_dir().join(format!("repo-reaper-auth-{}", uuid::Uuid::new_v4()));
-    std::fs::create_dir_all(&auth_dir)?;
+    // create_dir (not create_dir_all) — parent /tmp always exists, UUID guarantees freshness.
+    // Permissions are set immediately to minimize the window before the token file is written.
+    std::fs::create_dir(&auth_dir)?;
     #[cfg(unix)]
     std::fs::set_permissions(&auth_dir, std::fs::Permissions::from_mode(0o700))?;
 
