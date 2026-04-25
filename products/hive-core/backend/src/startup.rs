@@ -1,6 +1,8 @@
 use once_cell::sync::OnceCell;
 use patchhive_product_core::startup::{StartupCheck, StartupCheckLevel};
 
+use crate::secrets::TokenProtector;
+
 static STARTUP_CHECKS: OnceCell<Vec<StartupCheck>> = OnceCell::new();
 
 pub fn set_startup_checks(checks: Vec<StartupCheck>) {
@@ -42,6 +44,43 @@ pub async fn validate_config() -> Vec<StartupCheck> {
             override_count,
             if override_count == 1 { "" } else { "s" }
         )));
+    }
+
+    let token_stats = crate::db::service_token_storage_stats();
+    let protector = TokenProtector::from_env();
+    if token_stats.total == 0 {
+        checks.push(StartupCheck::info(
+            "HiveCore has no saved downstream product service tokens yet.",
+        ));
+    } else if protector.configured() {
+        if token_stats.plaintext == 0 {
+            checks.push(StartupCheck::ok(format!(
+                "HiveCore has {} saved product service token{} encrypted at rest.",
+                token_stats.total,
+                if token_stats.total == 1 { "" } else { "s" }
+            )));
+        } else {
+            checks.push(StartupCheck::warn(format!(
+                "HiveCore still has {} plaintext product service token{} in SQLite. Restart with HIVECORE_ENCRYPTION_KEY and let boot migration finish before trusting at-rest protection.",
+                token_stats.plaintext,
+                if token_stats.plaintext == 1 { "" } else { "s" }
+            )));
+        }
+    } else {
+        if token_stats.encrypted > 0 {
+            checks.push(StartupCheck::warn(format!(
+                "HIVECORE_ENCRYPTION_KEY is not set, but {} saved product service token{} are encrypted. HiveCore cannot read them until that key is restored.",
+                token_stats.encrypted,
+                if token_stats.encrypted == 1 { "" } else { "s" }
+            )));
+        }
+        if token_stats.plaintext > 0 {
+            checks.push(StartupCheck::warn(format!(
+                "HIVECORE_ENCRYPTION_KEY is not set. HiveCore currently keeps {} product service token{} in plaintext SQLite storage.",
+                token_stats.plaintext,
+                if token_stats.plaintext == 1 { "" } else { "s" }
+            )));
+        }
     }
 
     checks.push(StartupCheck::info(

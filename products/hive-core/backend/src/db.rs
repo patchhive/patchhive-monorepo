@@ -1,3 +1,4 @@
+use anyhow::{Context, Result};
 use std::{
     collections::HashMap,
     sync::{Mutex, MutexGuard},
@@ -7,8 +8,16 @@ use once_cell::sync::OnceCell;
 use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::models::{ProductActionEvent, ProductOverride, SuiteSettings};
+use crate::secrets::TokenProtector;
 
 static DB_CONN: OnceCell<Mutex<Connection>> = OnceCell::new();
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ServiceTokenStorageStats {
+    pub total: usize,
+    pub encrypted: usize,
+    pub plaintext: usize,
+}
 
 pub fn db_path() -> String {
     std::env::var("HIVE_CORE_DB_PATH").unwrap_or_else(|_| "hive-core.db".into())
@@ -29,10 +38,11 @@ pub fn health_check() -> bool {
         .is_ok()
 }
 
-pub fn init_db() -> rusqlite::Result<()> {
+pub fn init_db() -> Result<()> {
     let conn = connect()?;
     init_schema(&conn)?;
     seed_defaults(&conn)?;
+    migrate_service_token_storage(&conn)?;
     Ok(())
 }
 
@@ -64,12 +74,25 @@ pub fn product_overrides() -> HashMap<String, ProductOverride> {
     let Ok(conn) = connect() else {
         return HashMap::new();
     };
-    load_product_overrides(&conn).unwrap_or_default()
+    match load_product_overrides(&conn, &TokenProtector::from_env()) {
+        Ok(overrides) => overrides,
+        Err(err) => {
+            tracing::warn!("failed to load HiveCore product overrides: {err}");
+            HashMap::new()
+        }
+    }
 }
 
-pub fn replace_product_overrides(overrides: &[ProductOverride]) -> rusqlite::Result<()> {
+pub fn replace_product_overrides(overrides: &[ProductOverride]) -> Result<()> {
     let mut conn = connect()?;
-    replace_overrides(&mut conn, overrides)
+    replace_overrides(&mut conn, overrides, &TokenProtector::from_env())
+}
+
+pub fn service_token_storage_stats() -> ServiceTokenStorageStats {
+    let Ok(conn) = connect() else {
+        return ServiceTokenStorageStats::default();
+    };
+    load_service_token_storage_stats(&conn).unwrap_or_default()
 }
 
 pub fn record_action_event(event: &ProductActionEvent) -> rusqlite::Result<()> {
@@ -191,6 +214,41 @@ fn migrate_schema(conn: &Connection) -> rusqlite::Result<()> {
     Ok(())
 }
 
+fn migrate_service_token_storage(conn: &Connection) -> Result<()> {
+    let protector = TokenProtector::from_env();
+    if !protector.configured() {
+        return Ok(());
+    }
+
+    let mut stmt = conn.prepare(
+        r#"
+        SELECT slug, service_token
+        FROM product_overrides
+        WHERE TRIM(service_token) != ''
+        "#,
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    })?;
+
+    for row in rows {
+        let (slug, raw_service_token) = row?;
+        if TokenProtector::is_encrypted_value(&raw_service_token) {
+            continue;
+        }
+
+        let encrypted = protector
+            .protect_for_storage(&raw_service_token)
+            .with_context(|| format!("failed to encrypt HiveCore service token for {slug}"))?;
+        conn.execute(
+            "UPDATE product_overrides SET service_token = ?1 WHERE slug = ?2",
+            params![encrypted, slug],
+        )?;
+    }
+
+    Ok(())
+}
+
 fn seed_defaults(conn: &Connection) -> rusqlite::Result<()> {
     if load_suite_settings(conn)?.operator_label.is_empty() {
         write_suite_settings(conn, &SuiteSettings::default())?;
@@ -266,34 +324,45 @@ fn write_suite_settings(conn: &Connection, settings: &SuiteSettings) -> rusqlite
     Ok(())
 }
 
-fn load_product_overrides(conn: &Connection) -> rusqlite::Result<HashMap<String, ProductOverride>> {
+fn load_product_overrides(
+    conn: &Connection,
+    protector: &TokenProtector,
+) -> Result<HashMap<String, ProductOverride>> {
     let mut stmt = conn.prepare(
         r#"
         SELECT slug, frontend_url, api_url, service_token, api_key, enabled, notes, updated_at
         FROM product_overrides
         "#,
     )?;
-    let rows = stmt.query_map([], |row| {
-        Ok(ProductOverride {
-            slug: row.get(0)?,
+
+    let mut overrides = HashMap::new();
+    let mut rows = stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        let slug = row.get::<_, String>(0)?;
+        let raw_service_token = row.get::<_, String>(3)?;
+        let service_token = protector
+            .reveal_from_storage(&raw_service_token)
+            .with_context(|| format!("failed to reveal HiveCore service token for {slug}"))?;
+        let override_item = ProductOverride {
+            slug: slug.clone(),
             frontend_url: row.get(1)?,
             api_url: row.get(2)?,
-            service_token: row.get(3)?,
+            service_token,
             legacy_api_key: row.get(4)?,
             enabled: row.get::<_, i64>(5)? != 0,
             notes: row.get(6)?,
             updated_at: row.get(7)?,
-        })
-    })?;
-
-    let mut overrides = HashMap::new();
-    for row in rows.flatten() {
-        overrides.insert(row.slug.clone(), row);
+        };
+        overrides.insert(slug, override_item);
     }
     Ok(overrides)
 }
 
-fn replace_overrides(conn: &mut Connection, overrides: &[ProductOverride]) -> rusqlite::Result<()> {
+fn replace_overrides(
+    conn: &mut Connection,
+    overrides: &[ProductOverride],
+    protector: &TokenProtector,
+) -> Result<()> {
     let tx = conn.transaction()?;
     tx.execute("DELETE FROM product_overrides", [])?;
     {
@@ -306,11 +375,16 @@ fn replace_overrides(conn: &mut Connection, overrides: &[ProductOverride]) -> ru
             "#,
         )?;
         for item in overrides {
+            let protected_service_token = protector
+                .protect_for_storage(&item.service_token)
+                .with_context(|| {
+                    format!("failed to protect HiveCore service token for {}", item.slug)
+                })?;
             stmt.execute(params![
                 &item.slug,
                 &item.frontend_url,
                 &item.api_url,
-                &item.service_token,
+                &protected_service_token,
                 &item.legacy_api_key,
                 if item.enabled { 1 } else { 0 },
                 &item.notes,
@@ -320,6 +394,26 @@ fn replace_overrides(conn: &mut Connection, overrides: &[ProductOverride]) -> ru
     }
     tx.commit()?;
     Ok(())
+}
+
+fn load_service_token_storage_stats(
+    conn: &Connection,
+) -> rusqlite::Result<ServiceTokenStorageStats> {
+    let mut stmt = conn.prepare("SELECT service_token FROM product_overrides")?;
+    let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+    let mut stats = ServiceTokenStorageStats::default();
+    for raw in rows.flatten() {
+        if raw.trim().is_empty() {
+            continue;
+        }
+        stats.total += 1;
+        if TokenProtector::is_encrypted_value(&raw) {
+            stats.encrypted += 1;
+        } else {
+            stats.plaintext += 1;
+        }
+    }
+    Ok(stats)
 }
 
 fn load_action_events(conn: &Connection, limit: u32) -> rusqlite::Result<Vec<ProductActionEvent>> {
@@ -395,9 +489,11 @@ fn load_action_event(conn: &Connection, id: &str) -> rusqlite::Result<Option<Pro
 mod tests {
     use super::{
         init_schema, load_action_event, load_action_events, load_product_overrides,
-        load_suite_settings, replace_overrides, write_suite_settings,
+        load_service_token_storage_stats, load_suite_settings, replace_overrides,
+        write_suite_settings, ServiceTokenStorageStats,
     };
     use crate::models::{now_rfc3339, ProductActionEvent, ProductOverride, SuiteSettings};
+    use crate::secrets::TokenProtector;
     use rusqlite::Connection;
     use serde_json::json;
 
@@ -421,6 +517,7 @@ mod tests {
     fn replacing_overrides_rewrites_rows() {
         let mut conn = Connection::open_in_memory().expect("in-memory db should open");
         init_schema(&conn).expect("schema should initialize");
+        let protector = TokenProtector::default();
 
         let first = vec![ProductOverride {
             slug: "signal-hive".into(),
@@ -432,7 +529,7 @@ mod tests {
             notes: "primary".into(),
             updated_at: now_rfc3339(),
         }];
-        replace_overrides(&mut conn, &first).expect("first save should work");
+        replace_overrides(&mut conn, &first, &protector).expect("first save should work");
 
         let second = vec![ProductOverride {
             slug: "repo-reaper".into(),
@@ -444,9 +541,9 @@ mod tests {
             notes: "manual only".into(),
             updated_at: now_rfc3339(),
         }];
-        replace_overrides(&mut conn, &second).expect("second save should work");
+        replace_overrides(&mut conn, &second, &protector).expect("second save should work");
 
-        let rows = load_product_overrides(&conn).expect("rows should load");
+        let rows = load_product_overrides(&conn, &protector).expect("rows should load");
         assert_eq!(rows.len(), 1);
         assert!(rows.contains_key("repo-reaper"));
         assert!(!rows.contains_key("signal-hive"));
@@ -510,5 +607,46 @@ mod tests {
             .expect("event lookup should work")
             .expect("event should exist");
         assert_eq!(loaded.action_id, "scan");
+    }
+
+    #[test]
+    fn replacing_overrides_encrypts_service_tokens_when_key_is_configured() {
+        let mut conn = Connection::open_in_memory().expect("in-memory db should open");
+        init_schema(&conn).expect("schema should initialize");
+        let protector = TokenProtector::from_secret(Some("test-secret"));
+
+        let rows = vec![ProductOverride {
+            slug: "signal-hive".into(),
+            frontend_url: "https://signal.example.com".into(),
+            api_url: "https://signal-api.example.com".into(),
+            service_token: "svc_signal".into(),
+            legacy_api_key: String::new(),
+            enabled: true,
+            notes: String::new(),
+            updated_at: now_rfc3339(),
+        }];
+        replace_overrides(&mut conn, &rows, &protector).expect("save should work");
+
+        let raw: String = conn
+            .query_row(
+                "SELECT service_token FROM product_overrides WHERE slug = 'signal-hive'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("encrypted token should exist");
+        assert!(TokenProtector::is_encrypted_value(&raw));
+
+        let loaded = load_product_overrides(&conn, &protector).expect("rows should decrypt");
+        assert_eq!(loaded["signal-hive"].service_token, "svc_signal");
+
+        let stats = load_service_token_storage_stats(&conn).expect("stats should load");
+        assert_eq!(
+            stats,
+            ServiceTokenStorageStats {
+                total: 1,
+                encrypted: 1,
+                plaintext: 0,
+            }
+        );
     }
 }

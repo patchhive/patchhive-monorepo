@@ -28,7 +28,7 @@ what work has happened, and where product contracts have drifted.
 - Global defaults for topics, languages, repo guardrails, and operator notes.
 - Per-product frontend and API overrides.
 - Provisioning and rotation flow that exchanges an operator API key for a dedicated product service token.
-- Server-side storage for per-product service tokens, with legacy operator-key fallback during the transition.
+- Server-side storage for per-product service tokens, with optional at-rest encryption via `HIVECORE_ENCRYPTION_KEY` and legacy operator-key fallback during the transition.
 
 ## Product Registry Defaults
 
@@ -79,6 +79,7 @@ npm run dev
 | `HIVE_CORE_SERVICE_TOKEN_HASH` | Optional service-token hash for HiveCore as a machine caller. |
 | `HIVE_CORE_DB_PATH` | SQLite database path. |
 | `HIVE_CORE_PORT` | Backend port. |
+| `HIVECORE_ENCRYPTION_KEY` | Encrypts saved downstream product service tokens at rest in HiveCore SQLite. |
 | `BOT_GITHUB_TOKEN` | Optional GitHub token for future integrations. |
 
 ## Boundary

@@ -36,7 +36,7 @@ This is intentionally narrower than full orchestration. HiveCore should earn tha
 - persistent global defaults for topics, languages, repo guardrails, and operator notes
 - per-product frontend/API overrides for subdomains or remote deployments
 - one-time per-product service-token provisioning from HiveCore Settings
-- per-product service tokens stored server-side for protected `/runs` reads and action dispatch
+- per-product service tokens stored server-side for protected `/runs` reads and action dispatch, with optional at-rest encryption via `HIVECORE_ENCRYPTION_KEY`
 - shared PatchHive API-key bootstrap flow
 
 ## Run Locally
@@ -69,12 +69,13 @@ cd ../frontend && npm install && npm run dev
 | `HIVE_CORE_SERVICE_TOKEN_HASH` | Optional service-token hash for HiveCore as a machine caller. |
 | `HIVE_CORE_DB_PATH` | SQLite path for suite settings, product overrides, and action events. |
 | `HIVE_CORE_PORT` | Backend port for split local runs. |
+| `HIVECORE_ENCRYPTION_KEY` | Encrypts saved downstream product service tokens at rest in HiveCore SQLite and auto-migrates existing plaintext rows on boot. |
 | `PATCHHIVE_ALLOW_REMOTE_BOOTSTRAP` | Allows first-time key bootstrap from non-localhost clients. Keep unset for local use. |
 | `RUST_LOG` | Rust logging level. |
 
 To reuse the same password across SignalHive, TrustGate, RepoReaper, and HiveCore, run `./scripts/set-suite-api-key.sh --stack first` from the monorepo root before starting the stack. For every PatchHive product, run `./scripts/set-suite-api-key.sh`. Once the hash is pre-seeded, HiveCore can be used through a subdomain without remote bootstrap.
 
-HiveCore Settings can now provision or rotate a dedicated service token for each product by using a one-time operator API key against that product's `POST /auth/generate-service-token` or `POST /auth/rotate-service-token` route. HiveCore stores only the returned service token. Operator login credentials are not persisted. Legacy product API keys still work as an explicit fallback during the transition.
+HiveCore Settings can now provision or rotate a dedicated service token for each product by using a one-time operator API key against that product's `POST /auth/generate-service-token` or `POST /auth/rotate-service-token` route. HiveCore stores only the returned service token, and encrypts it at rest when `HIVECORE_ENCRYPTION_KEY` is configured. Operator login credentials are not persisted. Legacy product API keys still work as an explicit fallback during the transition, but legacy service-token hashes are now limited to `runs:read` until they are rotated into scoped records.
 
 ## Product Registry Defaults
 

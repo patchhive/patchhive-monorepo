@@ -2,6 +2,7 @@ mod auth;
 mod db;
 mod models;
 mod pipeline;
+mod secrets;
 mod startup;
 mod state;
 

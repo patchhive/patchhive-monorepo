@@ -24,7 +24,7 @@ Each product remains standalone. HiveCore consumes product-owned APIs and saved 
 | SignalHive | Read-only maintenance discovery | `http://localhost:5174` | `http://localhost:8010` | `BOT_GITHUB_TOKEN`, optional `SIGNAL_API_KEY_HASH`, optional `SIGNAL_SERVICE_TOKEN_HASH` |
 | TrustGate | Diff and PR risk review | `http://localhost:5175` | `http://localhost:8020` | Optional `BOT_GITHUB_TOKEN`, optional `PATCHHIVE_REPO_MEMORY_URL`, optional `TRUST_SERVICE_TOKEN_HASH` |
 | RepoReaper | Autonomous patch and PR execution | `http://localhost:5173` | `http://localhost:8000` | `BOT_GITHUB_TOKEN`, `BOT_GITHUB_USER`, `BOT_GITHUB_EMAIL`, AI credentials or `PATCHHIVE_AI_URL`, optional `REAPER_SERVICE_TOKEN_HASH` |
-| HiveCore | Suite control plane | `http://localhost:5183` | `http://localhost:8100` | Optional `HIVE_CORE_API_KEY_HASH`, optional `HIVE_CORE_SERVICE_TOKEN_HASH`, saved product service tokens for protected reads |
+| HiveCore | Suite control plane | `http://localhost:5183` | `http://localhost:8100` | Optional `HIVE_CORE_API_KEY_HASH`, optional `HIVE_CORE_SERVICE_TOKEN_HASH`, optional `HIVECORE_ENCRYPTION_KEY`, saved product service tokens for protected reads |
 
 Docker Compose maps every backend container to port `8000` internally and exposes the public API ports above. Those exposed ports match HiveCore's built-in product registry defaults.
 
@@ -105,7 +105,7 @@ curl -s -X POST http://localhost:8020/auth/generate-service-token -H "X-API-Key:
 curl -s -X POST http://localhost:8000/auth/generate-service-token -H "X-API-Key: <reaper-operator-key>"
 ```
 
-After generating or rotating product service tokens, save the SignalHive, TrustGate, and RepoReaper service tokens in HiveCore Settings. HiveCore keeps those tokens server-side and uses them for protected `/runs` reads and advertised action dispatch.
+After generating or rotating product service tokens, save the SignalHive, TrustGate, and RepoReaper service tokens in HiveCore Settings. HiveCore keeps those tokens server-side and uses them for protected `/runs` reads and advertised action dispatch. Set `HIVECORE_ENCRYPTION_KEY` before doing that if you want those saved downstream tokens encrypted at rest in HiveCore SQLite; once configured, HiveCore migrates existing plaintext rows on boot.
 
 ## First Test Path
 

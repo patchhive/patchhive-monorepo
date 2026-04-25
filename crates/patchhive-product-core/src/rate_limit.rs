@@ -97,6 +97,10 @@ impl RateLimiter {
         }
 
         bucket.push_back(now);
+        // W3: periodic sweep of empty buckets to prevent unbounded memory growth.
+        if buckets.len() % 100 == 0 {
+            buckets.retain(|_, v| !v.is_empty());
+        }
         Ok(())
     }
 }
@@ -153,7 +157,31 @@ fn is_sensitive_request(method: &Method, path: &str) -> bool {
 fn request_identity(headers: &HeaderMap) -> String {
     header_token(headers)
         .map(|token| format!("api:{}", hash_identity(&token)))
-        .unwrap_or_else(|| "anonymous".to_string())
+        .unwrap_or_else(|| {
+            // W4: use IP-based identity for anonymous requests to avoid shared buckets.
+            // Only trust x-forwarded-for when explicitly behind a trusted proxy.
+            if let Some(ip) = client_ip(headers) {
+                format!("anon:{}", hash_identity(&ip))
+            } else {
+                "anonymous".to_string()
+            }
+        })
+}
+
+/// Extract the client IP, respecting PATCHHIVE_TRUST_PROXY for x-forwarded-for.
+fn client_ip(headers: &HeaderMap) -> Option<String> {
+    if matches!(
+        std::env::var("PATCHHIVE_TRUST_PROXY").ok().as_deref(),
+        Some("1" | "true" | "TRUE" | "yes" | "on")
+    ) {
+        if let Some(value) = headers
+            .get("x-forwarded-for")
+            .and_then(|v| v.to_str().ok())
+        {
+            return Some(value.split(',').next()?.trim().to_string());
+        }
+    }
+    None
 }
 
 fn header_token(headers: &HeaderMap) -> Option<String> {
