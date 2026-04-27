@@ -6,19 +6,15 @@ use anyhow::Result;
 use chrono::Utc;
 use uuid::Uuid;
 
-use crate::{
-    db,
-    models::{
-        stable_memory_ref, IngestParams, IngestRecord, IngestSummary, MemoryEntry,
+use crate::models::{
+        IngestParams, IngestRecord,
         MemoryEvidence,
-    },
-};
+    };
 
 // Use shared helpers from parent module
 use super::{
-    build_entry, build_prompt_pack, build_summary, confidence_for,
-    path_bucket, SignalBucket, ReviewerProfileBucket, MaintainerProfileBucket,
-    JsonError, STOPWORDS,
+    build_entry, build_prompt_pack, build_summary,
+    path_bucket, SignalBucket, ReviewerProfileBucket, MaintainerProfileBucket, STOPWORDS,
 };
 
 pub fn build_memory_run(

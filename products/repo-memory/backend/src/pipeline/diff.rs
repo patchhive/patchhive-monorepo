@@ -2,9 +2,8 @@
 
 use std::collections::HashMap;
 
-use crate::models::{stable_memory_ref, MemoryEntry, RunDiffItem, RunDiffResponse, RunDiffSummary};
+use crate::models::{MemoryEntry, RunDiffItem, RunDiffResponse, RunDiffSummary};
 
-use super::{build_entry, confidence_for, JsonError, JsonResult};
 
 pub fn build_run_diff(current: IngestRecord, previous: Option<IngestRecord>) -> RunDiffResponse {
     let Some(previous) = previous else {

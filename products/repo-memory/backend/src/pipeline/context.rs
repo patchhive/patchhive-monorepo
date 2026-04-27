@@ -1,12 +1,12 @@
 // context.rs - Context ranking for memory retrieval
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use crate::models::{ContextEntry, MemoryEntry};
 
 use super::{
-    build_entry, confidence_for, path_bucket, tokenize_context,
-    normalize_disposition, JsonError,
+    path_bucket, tokenize_context,
+    normalize_disposition,
 };
 
 pub fn rank_context_entries(

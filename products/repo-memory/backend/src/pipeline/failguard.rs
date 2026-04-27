@@ -1,25 +1,21 @@
 // failguard.rs - FailGuard related route handlers and helpers
 
-use anyhow::Result;
 use axum::{
-    extract::{Json, Path, Query},
-    http::StatusCode,
-    Json as JsonResponse,
+ extract::{Json, Path, Query},
+ Json as JsonResponse,
 };
 use chrono::Utc;
-use serde_json::json;
 use uuid::Uuid;
 
 use crate::{
-    auth::verify_token,
-    db,
-    models::{
-        stable_memory_ref, FailGuardCandidate, FailGuardCandidateDismissRequest,
-        FailGuardCandidateListResponse, FailGuardCandidatePromoteRequest,
-        FailGuardCandidatePromoteResponse, FailGuardCandidateRequest,
-        FailGuardCandidateResponse, FailGuardLessonRequest, FailGuardLessonResponse,
-        IngestRecord, MemoryEntry, MemoryEvidence,
-    },
+ db,
+ models::{
+  FailGuardCandidate, FailGuardCandidateDismissRequest,
+  FailGuardCandidateListResponse, FailGuardCandidatePromoteRequest,
+  FailGuardCandidatePromoteResponse, FailGuardCandidateRequest,
+  FailGuardCandidateResponse, FailGuardLessonRequest, FailGuardLessonResponse,
+  IngestRecord, MemoryEntry, MemoryEvidence, stable_memory_ref,
+ },
 };
 
 // Import shared helpers from parent module

@@ -1,38 +1,33 @@
 // pipeline.rs - Main route handlers and shared helpers for RepoMemory
 // Refactored from 2568 lines into modular structure
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use anyhow::Result;
 use axum::{
-    extract::{Path, Query, State},
-    http::{HeaderMap, StatusCode},
-    Json,
+ extract::{Path, Query, State},
+ http::{HeaderMap, StatusCode},
+ Json,
 };
-use chrono::Utc;
 use patchhive_product_core::contract;
 use serde_json::json;
 use uuid::Uuid;
 
 use crate::{
-    auth::{
-        auth_enabled, generate_and_save_key, generate_and_save_service_token,
-        rotate_and_save_service_token, service_auth_enabled, service_token_generation_allowed,
-        service_token_rotation_allowed, verify_token,
-    },
-    db, github,
-    models::{
-        stable_memory_ref, ContextEntry, ContextRequest, ContextResponse, FailGuardCandidate,
-        FailGuardCandidateDismissRequest, FailGuardCandidateListResponse,
-        FailGuardCandidatePromoteRequest, FailGuardCandidatePromoteResponse,
-        FailGuardCandidateRequest, FailGuardCandidateResponse, FailGuardLessonRequest,
-        FailGuardLessonResponse, GitHubIssue, GitHubPullFile, GitHubPullRequest, GitHubReview,
-        GitHubReviewComment, HistoryItem, IngestParams, IngestRecord, IngestSummary, KnownRepo,
-        MemoryCurationUpdate, MemoryEntry, MemoryEvidence, OverviewPayload, RunDiffItem,
-        RunDiffResponse, RunDiffSummary,
-    },
-    state::AppState,
-    STARTUP_CHECKS,
+ auth::{
+  auth_enabled, generate_and_save_key, generate_and_save_service_token,
+  rotate_and_save_service_token, service_auth_enabled, service_token_generation_allowed,
+  service_token_rotation_allowed, verify_token,
+ },
+ db, github,
+ models::{
+  stable_memory_ref, ContextRequest, ContextResponse, GitHubPullFile, GitHubPullRequest, GitHubReview,
+  GitHubReviewComment, HistoryItem, IngestParams, IngestRecord, IngestSummary, KnownRepo,
+  MemoryCurationUpdate, MemoryEntry, MemoryEvidence, OverviewPayload,
+  RunDiffResponse,
+ },
+ state::AppState,
+ STARTUP_CHECKS,
 };
 
 // Type aliases used across modules
@@ -82,28 +77,20 @@ mod utils;
 // This allows main.rs to still use `pipeline::capture_failguard_lesson` etc.
 pub use failguard::{
     capture_failguard_lesson, failguard_candidates, create_failguard_candidate,
-    promote_failguard_candidate, dismiss_failguard_candidate, save_failguard_lesson,
-    build_failguard_lesson_run, clean_failguard_items,
+    promote_failguard_candidate, dismiss_failguard_candidate,
 };
 pub use memory_run::{
-    build_memory_run, collect_feedback, review_bucket_specs, classify_feedback,
-    category_label, top_named_counts, top_string_counts, is_source_file,
-    is_test_file, looks_bug_like, tokenize, contains_any,
-    split_feedback_sentences, push_evidence, truncate,
+    build_memory_run, truncate,
 };
 pub use context::{
-    rank_context_entries, matching_entry_paths, matching_entry_terms,
-    context_kind_bonus, profile_path_bonus, entry_path_focuses_on,
-    path_matches_candidate, curation_bonus, disposition_rank,
+    rank_context_entries, disposition_rank,
 };
-pub use diff::{
-    build_run_diff, diff_item, sort_diff_items,
-};
+pub use diff::build_run_diff;
 pub use utils::{
-    normalize_consumer, normalize_disposition, normalize_candidate_status,
-    path_bucket, tokenize_context,
-    internal_error, internal_from_anyhow,
-    upstream_error, bad_request, not_found, valid_repo, STOPWORDS,
+ normalize_consumer, normalize_disposition,
+ path_bucket,
+ internal_error, internal_from_anyhow,
+ upstream_error, bad_request, not_found, valid_repo, STOPWORDS,
 };
 
 // Query structs
