@@ -4,10 +4,8 @@ use std::collections::HashSet;
 
 use crate::models::{ContextEntry, MemoryEntry};
 
-use super::{
-    path_bucket, tokenize_context,
-    normalize_disposition,
-};
+use crate::pipeline::utils::{path_bucket, tokenize_context};
+use super::normalize_disposition;
 
 pub fn rank_context_entries(
     entries: &[MemoryEntry],

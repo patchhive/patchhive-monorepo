@@ -23,6 +23,7 @@ use super::{
     build_prompt_pack, build_summary, disposition_rank, normalize_disposition, path_bucket,
     truncate, valid_repo, JsonError, JsonResult, internal_error, bad_request, not_found,
 };
+use crate::pipeline::utils::normalize_candidate_status;
 
 pub async fn capture_failguard_lesson(
     Json(request): Json<FailGuardLessonRequest>,
@@ -33,7 +34,7 @@ pub async fn capture_failguard_lesson(
 pub async fn failguard_candidates(
     Query(query): Query<FailGuardCandidateQuery>,
 ) -> JsonResult<FailGuardCandidateListResponse> {
-    let status = super::normalize_candidate_status(query.status.as_deref().unwrap_or("open")).to_string();
+    let status = normalize_candidate_status(query.status.as_deref().unwrap_or("open")).to_string();
     let candidates = db::list_failguard_candidates(query.repo.as_deref(), Some(&status))
         .map_err(internal_error)?;
     Ok(JsonResponse(FailGuardCandidateListResponse { candidates }))
@@ -352,15 +353,6 @@ pub fn normalize_source_type(value: &str) -> String {
         "operator".into()
     } else {
         normalized.to_string()
-    }
-}
-
-fn normalize_candidate_status(value: &str) -> &str {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "all" => "all",
-        "promoted" => "promoted",
-        "dismissed" => "dismissed",
-        _ => "open",
     }
 }
 
