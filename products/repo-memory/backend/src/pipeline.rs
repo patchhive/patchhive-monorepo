@@ -78,6 +78,7 @@ mod utils;
 pub use failguard::{
     capture_failguard_lesson, failguard_candidates, create_failguard_candidate,
     promote_failguard_candidate, dismiss_failguard_candidate,
+    build_failguard_lesson_run, build_failguard_candidate, candidate_to_lesson_request,
 };
 pub use memory_run::{
     build_memory_run, truncate,
@@ -641,6 +642,7 @@ pub fn build_prompt_pack(repo: &str, summary: &IngestSummary, entries: &[MemoryE
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::{FailGuardCandidatePromoteRequest, FailGuardCandidateRequest, FailGuardLessonRequest};
 
     fn sample_entry(kind: &str, title: &str, detail: &str, prompt_line: &str) -> MemoryEntry {
         MemoryEntry {
