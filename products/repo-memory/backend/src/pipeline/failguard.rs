@@ -482,7 +482,7 @@ pub fn build_failguard_lesson_run(
         id: run_id,
         repo: repo.clone(),
         created_at,
-        params: super::IngestParams {
+        params: crate::models::IngestParams {
             repo,
             merged_pr_limit: 0,
             issue_limit: 0,
