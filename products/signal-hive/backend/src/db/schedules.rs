@@ -1,6 +1,6 @@
 use anyhow::Result;
 use chrono::{Duration, Utc};
-use rusqlite::params;
+use rusqlite::{params, OptionalExtension};
 
 use crate::models::{ScanParams, ScanSchedule};
 
