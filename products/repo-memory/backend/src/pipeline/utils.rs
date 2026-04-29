@@ -22,25 +22,6 @@ pub fn normalize_candidate_status(value: &str) -> &str {
     }
 }
 
-pub fn contains_any(haystack: &str, needles: &[&str]) -> bool {
-    needles.iter().any(|needle| haystack.contains(needle))
-}
-
-pub fn split_feedback_sentences(body: &str) -> Vec<String> {
-    body.replace('\r', "\n")
-        .split(['\n', '.', '!', '?'])
-        .map(str::trim)
-        .filter(|part| part.len() >= 18)
-        .map(str::to_string)
-        .collect()
-}
-
-pub fn push_evidence(target: &mut Vec<crate::models::MemoryEvidence>, evidence: crate::models::MemoryEvidence) {
-    if target.len() < 4 {
-        target.push(evidence);
-    }
-}
-
 pub fn path_bucket(path: &str) -> String {
     let clean = path.trim_matches('/');
     let parts: Vec<_> = clean.split('/').take(2).collect();
@@ -51,68 +32,12 @@ pub fn path_bucket(path: &str) -> String {
     }
 }
 
-pub fn is_source_file(path: &str) -> bool {
-    let lower = path.to_ascii_lowercase();
-    let source_like = [
-        ".rs", ".js", ".jsx", ".ts", ".tsx", ".py", ".go", ".java", ".kt", ".rb", ".php", ".c",
-        ".cc", ".cpp", ".h", ".hpp",
-    ];
-    source_like.iter().any(|ext| lower.ends_with(ext)) && !is_test_file(path)
-}
-
-pub fn is_test_file(path: &str) -> bool {
-    let lower = path.to_ascii_lowercase();
-    lower.contains("/test")
-        || lower.contains("/tests/")
-        || lower.contains("__tests__")
-        || lower.contains(".spec.")
-        || lower.contains(".test.")
-}
-
-pub fn looks_bug_like(issue: &crate::models::GitHubIssue) -> bool {
-    let lower = format!(
-        "{} {} {}",
-        issue.title,
-        issue.body.clone().unwrap_or_default(),
-        issue
-            .labels
-            .iter()
-            .map(|label| label.name.as_str())
-            .collect::<Vec<_>>()
-            .join(" ")
-    )
-    .to_ascii_lowercase();
-
-    contains_any(
-        &lower,
-        &[
-            "bug", "regression", "panic", "crash", "timeout", "failure", "failing",
-            "broken", "error", "race", "leak",
-        ],
-    )
-}
-
-pub fn tokenize(text: &str) -> std::collections::HashSet<String> {
-    text.split(|ch: char| !ch.is_ascii_alphanumeric())
-        .map(|part| part.trim().to_ascii_lowercase())
-        .filter(|part| part.len() >= 4)
-        .collect()
-}
-
 pub fn tokenize_context(text: &str) -> std::collections::HashSet<String> {
     text.split(|ch: char| !ch.is_ascii_alphanumeric())
         .map(|part| part.trim().to_ascii_lowercase())
         .filter(|part| part.len() >= 3)
         .filter(|part| !STOPWORDS.contains(&part.as_str()))
         .collect()
-}
-
-pub fn truncate(value: &str, limit: usize) -> String {
-    if value.chars().count() <= limit {
-        return value.to_string();
-    }
-    let truncated: String = value.chars().take(limit.saturating_sub(1)).collect();
-    format!("{truncated}…")
 }
 
 pub fn internal_error(err: impl std::fmt::Display) -> super::JsonError {
@@ -157,8 +82,7 @@ pub fn valid_repo(repo: &str) -> bool {
 
 pub const STOPWORDS: &[&str] = &[
     "with", "that", "this", "from", "when", "into", "after", "before", "still", "only", "over",
-    "have", "more", "than", "they", "them", "then", "their", "there", "should", "could",
-    "would", "about", "around", "while", "where", "which", "issue", "issues", "repo", "pull",
-    "request", "closed", "merge", "merged", "fails", "failing", "tests", "test", "code",
-    "review",
+    "have", "more", "than", "they", "them", "then", "their", "there", "should", "could", "would",
+    "about", "around", "while", "where", "which", "issue", "issues", "repo", "pull", "request",
+    "closed", "merge", "merged", "fails", "failing", "tests", "test", "code", "review",
 ];

@@ -1,6 +1,4 @@
-use crate::models::{ChecklistEvidence, ChecklistItem};
-
-use super::review::ChecklistCluster;
+use crate::models::ChecklistEvidence;
 
 pub(crate) fn checklist_title(category: &str, path_hint: &str) -> String {
     let area = if path_hint == "general" {

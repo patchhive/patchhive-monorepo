@@ -80,7 +80,10 @@ pub(crate) fn push_warning(warnings: &mut Vec<String>, warning: String) {
     }
 }
 
-pub(crate) fn scan_request_allowed(headers: &axum::http::HeaderMap, remote_fs_enabled: bool) -> bool {
+pub(crate) fn scan_request_allowed(
+    headers: &axum::http::HeaderMap,
+    remote_fs_enabled: bool,
+) -> bool {
     if remote_fs_enabled {
         return true;
     }

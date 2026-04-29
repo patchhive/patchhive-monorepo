@@ -8,7 +8,6 @@ use patchhive_github_pr::verify_github_webhook_signature;
 use patchhive_product_core::contract;
 use patchhive_product_core::startup::count_errors;
 use serde_json::{json, Value};
-use uuid::Uuid;
 
 use crate::{
     auth::{
@@ -17,10 +16,7 @@ use crate::{
         service_token_rotation_allowed, verify_token,
     },
     db, github,
-    models::{
-        GitHubReviewContext as ReviewTriggerContext, HistoryItem, OverviewPayload, ReviewRequest,
-        ReviewResult,
-    },
+    models::{HistoryItem, OverviewPayload, ReviewRequest, ReviewResult},
     state::AppState,
     STARTUP_CHECKS,
 };

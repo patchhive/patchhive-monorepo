@@ -20,11 +20,7 @@ use crate::{
     STARTUP_CHECKS,
 };
 
-use super::{
-    analysis::build_scan_result,
-    utils::valid_repo,
-    ApiError, JsonResult,
-};
+use super::{analysis::build_scan_result, utils::valid_repo, ApiError, JsonResult};
 
 #[derive(serde::Deserialize)]
 pub struct LoginBody {

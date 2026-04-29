@@ -1,27 +1,26 @@
 // failguard.rs - FailGuard related route handlers and helpers
 
 use axum::{
- extract::{Json, Path, Query},
- Json as JsonResponse,
+    extract::{Json, Path, Query},
+    Json as JsonResponse,
 };
 use chrono::Utc;
 use uuid::Uuid;
 
 use crate::{
- db,
- models::{
-  FailGuardCandidate, FailGuardCandidateDismissRequest,
-  FailGuardCandidateListResponse, FailGuardCandidatePromoteRequest,
-  FailGuardCandidatePromoteResponse, FailGuardCandidateRequest,
-  FailGuardCandidateResponse, FailGuardLessonRequest, FailGuardLessonResponse,
-  IngestRecord, MemoryEntry, MemoryEvidence, stable_memory_ref,
- },
+    db,
+    models::{
+        stable_memory_ref, FailGuardCandidate, FailGuardCandidateDismissRequest,
+        FailGuardCandidateListResponse, FailGuardCandidatePromoteRequest,
+        FailGuardCandidatePromoteResponse, FailGuardCandidateRequest, FailGuardCandidateResponse,
+        FailGuardLessonRequest, FailGuardLessonResponse, IngestRecord, MemoryEntry, MemoryEvidence,
+    },
 };
 
 // Import shared helpers from parent module
 use super::{
-    build_prompt_pack, build_summary, disposition_rank, normalize_disposition, path_bucket,
-    truncate, valid_repo, JsonError, JsonResult, internal_error, bad_request, not_found,
+    bad_request, build_prompt_pack, build_summary, disposition_rank, internal_error,
+    normalize_disposition, not_found, path_bucket, truncate, valid_repo, JsonError, JsonResult,
 };
 use crate::pipeline::utils::normalize_candidate_status;
 

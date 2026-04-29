@@ -1,5 +1,5 @@
 use anyhow::Result;
-use chrono::{Duration, Utc};
+use chrono::Utc;
 use rusqlite::{params, OptionalExtension};
 
 use crate::models::{
@@ -7,7 +7,7 @@ use crate::models::{
     ScanTimelinePoint,
 };
 
-use super::schema::{connect, init_schema};
+use super::schema::connect;
 
 fn normalized_signature_parts(values: &[String]) -> Vec<String> {
     let mut parts = values

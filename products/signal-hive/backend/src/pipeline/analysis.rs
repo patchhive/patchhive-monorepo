@@ -5,8 +5,7 @@ use anyhow::Result;
 use crate::models::{RepoSignal, ScanParams};
 
 use super::scoring::{
-    issue_signals, priority_score, summary_from_signals, MarkerCounts,
-    RepoAnalysisDraft,
+    issue_signals, priority_score, summary_from_signals, MarkerCounts, RepoAnalysisDraft,
 };
 
 pub async fn analyze_repo_issue_draft(

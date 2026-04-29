@@ -7,7 +7,7 @@ use regex::Regex;
 use uuid::Uuid;
 use walkdir::{DirEntry, WalkDir};
 
-use crate::models::{RefactorOpportunity, RefactorScanResult, ScanMetrics};
+use crate::models::{RefactorOpportunity, RefactorScanResult};
 
 use super::analysis::*;
 

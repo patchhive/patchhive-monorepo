@@ -4,23 +4,14 @@ mod scanning;
 
 // Re-export all public route handlers for main.rs.
 pub use routes::{
-    auth_status, capabilities, gen_key, gen_service_token, health, history, history_detail,
-    login, overview, rotate_service_token, runs, scan_local_repo, startup_checks_route,
+    auth_status, capabilities, gen_key, gen_service_token, health, history, history_detail, login,
+    overview, rotate_service_token, runs, scan_local_repo, startup_checks_route,
 };
-
-// Exposed for tests.
-#[cfg(test)]
-pub(crate) use routes::api_error;
-pub(crate) use routes::LoginBody;
-pub use routes::JsonResult;
-
-#[cfg(test)]
-pub(crate) use scanning::{analyze_file, build_scan_result, resolve_scan_root};
 
 #[cfg(test)]
 mod tests {
-    use super::scanning::{analyze_file, resolve_scan_root};
     use super::analysis::build_summary;
+    use super::scanning::{analyze_file, resolve_scan_root};
     use crate::{models::ScanMetrics, state::AppState};
     use std::{fs, path::PathBuf};
 

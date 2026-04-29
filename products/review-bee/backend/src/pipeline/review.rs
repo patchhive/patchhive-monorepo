@@ -4,8 +4,8 @@ use uuid::Uuid;
 
 use crate::github::GitHubReviewContext;
 use crate::models::{
-    ChecklistEvidence, ChecklistItem, ReviewMetrics, ReviewResult,
-    GitHubReviewContext as ReviewTriggerContext,
+    ChecklistEvidence, ChecklistItem, GitHubReviewContext as ReviewTriggerContext, ReviewMetrics,
+    ReviewResult,
 };
 
 use super::analysis::*;
@@ -304,7 +304,11 @@ pub(crate) fn overall_status(metrics: &ReviewMetrics, requested_changes_reviews:
     "follow-up".into()
 }
 
-pub(crate) fn build_summary(metrics: &ReviewMetrics, checklist: &[ChecklistItem], status: &str) -> String {
+pub(crate) fn build_summary(
+    metrics: &ReviewMetrics,
+    checklist: &[ChecklistItem],
+    status: &str,
+) -> String {
     if checklist.is_empty() {
         return "ReviewBee did not find actionable review feedback in the current PR threads. This PR looks close to merge from a comment-clustering perspective.".into();
     }

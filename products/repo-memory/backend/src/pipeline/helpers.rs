@@ -2,9 +2,7 @@
 
 use uuid::Uuid;
 
-use crate::models::{
-    stable_memory_ref, IngestSummary, MemoryEntry, MemoryEvidence,
-};
+use crate::models::{stable_memory_ref, IngestSummary, MemoryEntry, MemoryEvidence};
 
 pub fn build_entry(
     run_id: &str,
@@ -120,10 +118,7 @@ pub fn build_prompt_pack(repo: &str, summary: &IngestSummary, entries: &[MemoryE
         ));
     }
     if !hotspot_lines.is_empty() {
-        sections.push(format!(
-            "## Hotspots\n{}",
-            hotspot_lines.join("\n")
-        ));
+        sections.push(format!("## Hotspots\n{}", hotspot_lines.join("\n")));
     }
     if !reviewer_lines.is_empty() {
         sections.push(format!(

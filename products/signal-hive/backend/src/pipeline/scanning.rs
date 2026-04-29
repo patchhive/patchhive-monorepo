@@ -6,9 +6,7 @@ use anyhow::Result;
 use chrono::Utc;
 use tracing::{info, warn};
 
-use crate::models::{
-    RepoSignalTrend, ScanRecord, ScanReport, ScanTrendSummary,
-};
+use crate::models::{RepoSignalTrend, ScanRecord, ScanReport, ScanTrendSummary};
 use crate::state::AppState;
 
 use super::analysis::{analyze_repo_issue_draft, collect_marker_counts, finalize_repo_signal};
@@ -425,7 +423,12 @@ pub async fn run_schedule_now(state: &AppState, schedule_name: &str) -> Result<S
             Ok(record)
         }
         Err(err) => {
-            crate::db::record_scan_schedule_result(&schedule.name, None, "error", Some(&err.to_string()))?;
+            crate::db::record_scan_schedule_result(
+                &schedule.name,
+                None,
+                "error",
+                Some(&err.to_string()),
+            )?;
             Err(err)
         }
     }

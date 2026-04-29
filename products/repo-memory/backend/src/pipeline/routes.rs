@@ -28,7 +28,10 @@ use super::{
     context::rank_context_entries,
     diff::build_run_diff,
     memory_run::build_memory_run,
-    utils::{bad_request, internal_error, internal_from_anyhow, not_found, upstream_error, valid_repo, normalize_disposition},
+    utils::{
+        bad_request, internal_error, internal_from_anyhow, normalize_disposition, not_found,
+        upstream_error, valid_repo,
+    },
     JsonResult, PullBundle,
 };
 

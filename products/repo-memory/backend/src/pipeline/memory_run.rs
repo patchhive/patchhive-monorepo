@@ -6,15 +6,12 @@ use anyhow::Result;
 use chrono::Utc;
 use uuid::Uuid;
 
-use crate::models::{
-        IngestParams, IngestRecord,
-        MemoryEvidence,
-    };
+use crate::models::{IngestParams, IngestRecord, MemoryEvidence};
 
 // Use shared helpers from parent module
 use super::{
-    build_entry, build_prompt_pack, build_summary,
-    path_bucket, SignalBucket, ReviewerProfileBucket, MaintainerProfileBucket, STOPWORDS,
+    build_entry, build_prompt_pack, build_summary, path_bucket, MaintainerProfileBucket,
+    ReviewerProfileBucket, SignalBucket, STOPWORDS,
 };
 
 pub fn build_memory_run(
@@ -60,7 +57,10 @@ pub fn build_memory_run(
             *count += 1;
             if let Some(author) = author_login.as_ref() {
                 let profile = maintainer_profiles.entry(author.clone()).or_default();
-                let path_count = profile.path_counts.entry(path_bucket(&file.filename)).or_insert(0);
+                let path_count = profile
+                    .path_counts
+                    .entry(path_bucket(&file.filename))
+                    .or_insert(0);
                 *path_count += 1;
             }
         }
@@ -468,8 +468,17 @@ pub fn looks_bug_like(issue: &crate::models::GitHubIssue) -> bool {
     contains_any(
         &lower,
         &[
-            "bug", "regression", "panic", "crash", "timeout", "failure", "failing",
-            "broken", "error", "race", "leak",
+            "bug",
+            "regression",
+            "panic",
+            "crash",
+            "timeout",
+            "failure",
+            "failing",
+            "broken",
+            "error",
+            "race",
+            "leak",
         ],
     )
 }
@@ -618,18 +627,33 @@ pub fn classify_feedback(sentence: &str) -> Option<(&'static str, &'static str)>
     if contains_any(
         &lower,
         &[
-            "validate", "validation", "guard", "sanitize", "check for", "edge case",
+            "validate",
+            "validation",
+            "guard",
+            "sanitize",
+            "check for",
+            "edge case",
         ],
     ) {
         return Some(("validation", "validation"));
     }
     if contains_any(
         &lower,
-        &["rename", "naming", "consistent", "convention", "style", "pattern"],
+        &[
+            "rename",
+            "naming",
+            "consistent",
+            "convention",
+            "style",
+            "pattern",
+        ],
     ) {
         return Some(("naming", "naming"));
     }
-    if contains_any(&lower, &["readme", "docs", "document", "comment", "changelog"]) {
+    if contains_any(
+        &lower,
+        &["readme", "docs", "document", "comment", "changelog"],
+    ) {
         return Some(("docs", "docs"));
     }
     if contains_any(

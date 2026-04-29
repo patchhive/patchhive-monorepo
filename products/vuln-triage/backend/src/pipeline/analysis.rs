@@ -3,7 +3,11 @@
 use chrono::Utc;
 use uuid::Uuid;
 
-use crate::{github, models::{VulnMetrics, VulnScanResult, VulnerabilityFinding}, state::AppState};
+use crate::{
+    github,
+    models::{VulnMetrics, VulnScanResult, VulnerabilityFinding},
+    state::AppState,
+};
 
 use super::{
     scoring::{

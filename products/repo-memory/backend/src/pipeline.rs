@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 
-use crate::models::{MemoryEvidence, OverviewPayload};
+use crate::models::MemoryEvidence;
 
 // Type aliases used across modules
 pub type JsonError = (axum::http::StatusCode, axum::Json<serde_json::Value>);
@@ -42,48 +42,41 @@ pub struct MaintainerProfileBucket {
 }
 
 // Module declarations
-mod failguard;
-mod memory_run;
 mod context;
 mod diff;
+mod failguard;
 mod helpers;
+mod memory_run;
 mod routes;
 mod utils;
 
 // Re-export public functions from submodules for backward compatibility
+pub use context::{disposition_rank, rank_context_entries};
 pub use failguard::{
-    capture_failguard_lesson, failguard_candidates, create_failguard_candidate,
-    promote_failguard_candidate, dismiss_failguard_candidate,
-    build_failguard_lesson_run, build_failguard_candidate, candidate_to_lesson_request,
+    build_failguard_candidate, build_failguard_lesson_run, candidate_to_lesson_request,
+    capture_failguard_lesson, create_failguard_candidate, dismiss_failguard_candidate,
+    failguard_candidates, promote_failguard_candidate,
 };
-pub use memory_run::{
-    build_memory_run, truncate,
-};
-pub use context::{
-    rank_context_entries, disposition_rank,
-};
-pub use diff::build_run_diff;
-pub use helpers::{
-    build_entry, confidence_for, build_summary, build_prompt_pack,
-};
+pub use helpers::{build_entry, build_prompt_pack, build_summary};
+pub use memory_run::truncate;
 pub use routes::{
-    capabilities, runs, auth_status, login, gen_key, gen_service_token,
-    rotate_service_token, health, startup_checks_route,
-    overview, known_repos, memories, curate_memory,
-    context, history, history_detail, history_diff, prompt_pack, ingest,
+    auth_status, capabilities, context, curate_memory, gen_key, gen_service_token, health, history,
+    history_detail, history_diff, ingest, known_repos, login, memories, overview, prompt_pack,
+    rotate_service_token, runs, startup_checks_route,
 };
 pub use utils::{
-    normalize_consumer, normalize_disposition,
-    path_bucket,
-    internal_error, internal_from_anyhow,
-    upstream_error, bad_request, not_found, valid_repo, STOPWORDS,
+    bad_request, internal_error, normalize_disposition, not_found, path_bucket, valid_repo,
+    STOPWORDS,
 };
 
 // Tests
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{FailGuardCandidatePromoteRequest, FailGuardCandidateRequest, FailGuardLessonRequest, MemoryEntry};
+    use crate::models::{
+        FailGuardCandidatePromoteRequest, FailGuardCandidateRequest, FailGuardLessonRequest,
+        MemoryEntry,
+    };
 
     fn sample_entry(kind: &str, title: &str, detail: &str, prompt_line: &str) -> MemoryEntry {
         MemoryEntry {
@@ -290,7 +283,8 @@ mod tests {
             title: "Generated patch skipped webhook signing".into(),
             outcome: "Smith rejected a patch because webhook verification failed open.".into(),
             lesson: "Webhook verification cannot be optional on public routes.".into(),
-            prevention: "Reject public webhook requests when signing configuration is absent.".into(),
+            prevention: "Reject public webhook requests when signing configuration is absent."
+                .into(),
             affected_paths: vec!["backend/src/routes/webhook.rs".into()],
             evidence: vec!["Smith rejection run-7".into()],
             confidence: Some(81.0),

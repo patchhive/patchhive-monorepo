@@ -1,9 +1,6 @@
 // pipeline.rs - Module hub for VulnTriage
 
-use axum::{
-    http::StatusCode,
-    Json,
-};
+use axum::{http::StatusCode, Json};
 
 pub type ApiError = (StatusCode, Json<serde_json::Value>);
 pub type JsonResult<T> = Result<Json<T>, ApiError>;
@@ -14,15 +11,15 @@ mod scoring;
 mod utils;
 
 pub use routes::{
-    capabilities, runs, auth_status, login, gen_key, gen_service_token,
-    rotate_service_token, health, startup_checks_route,
-    overview, history, history_detail, scan_github_findings,
-    api_error,
+    auth_status, capabilities, gen_key, gen_service_token, health, history, history_detail, login,
+    overview, rotate_service_token, runs, scan_github_findings, startup_checks_route,
 };
 
 #[cfg(test)]
 mod tests {
-    use super::scoring::{code_scanning_reachability, owner_hint_for_path, recommend, score_code_scanning};
+    use super::scoring::{
+        code_scanning_reachability, owner_hint_for_path, recommend, score_code_scanning,
+    };
 
     #[test]
     fn prefers_public_surface_code_paths() {

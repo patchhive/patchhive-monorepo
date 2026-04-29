@@ -4,7 +4,6 @@ use std::collections::HashMap;
 
 use crate::models::{MemoryEntry, RunDiffItem, RunDiffResponse, RunDiffSummary};
 
-
 pub fn build_run_diff(current: IngestRecord, previous: Option<IngestRecord>) -> RunDiffResponse {
     let Some(previous) = previous else {
         return RunDiffResponse {
