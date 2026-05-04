@@ -331,7 +331,28 @@ pub struct SetupLauncherStatus {
     pub available: bool,
     pub message: String,
     pub repo_root: String,
+    pub docker_available: bool,
     pub docker_compose_available: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SetupLauncherProductStatus {
+    pub slug: String,
+    pub title: String,
+    pub product_dir: String,
+    pub compose_file: String,
+    pub compose_exists: bool,
+    pub env_file: String,
+    pub env_exists: bool,
+    pub env_example_exists: bool,
+    pub suite_bootstrap_configured: bool,
+    pub frontend_port: u16,
+    pub api_port: u16,
+    pub frontend_port_open: bool,
+    pub api_port_open: bool,
+    pub compose_running: bool,
+    pub status: String,
+    pub blockers: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -340,6 +361,7 @@ pub struct SetupProductStatus {
     pub auth_status: Option<crate::pipeline::ProductAuthStatusBody>,
     pub auth_status_error: String,
     pub pairing_ready: bool,
+    pub launcher: Option<SetupLauncherProductStatus>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -349,6 +371,13 @@ pub struct FirstStackSetupResponse {
     pub suite_bootstrap_configured: bool,
     pub actions: Vec<String>,
     pub products: Vec<SetupProductStatus>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SetupProductLogsResponse {
+    pub slug: String,
+    pub title: String,
+    pub logs: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

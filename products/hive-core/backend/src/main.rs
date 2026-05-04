@@ -63,6 +63,22 @@ async fn main() {
             "/setup/first-stack/stop",
             axum::routing::post(pipeline::stop_first_stack),
         )
+        .route(
+            "/setup/products/:slug/start",
+            axum::routing::post(pipeline::start_setup_product),
+        )
+        .route(
+            "/setup/products/:slug/stop",
+            axum::routing::post(pipeline::stop_setup_product),
+        )
+        .route(
+            "/setup/products/:slug/restart",
+            axum::routing::post(pipeline::restart_setup_product),
+        )
+        .route(
+            "/setup/products/:slug/logs",
+            get(pipeline::setup_product_logs),
+        )
         .route("/products/:slug/runs", get(pipeline::product_runs))
         .route(
             "/products/:slug/runs/:id",

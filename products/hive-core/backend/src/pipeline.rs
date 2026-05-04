@@ -28,8 +28,9 @@ pub(crate) use patchhive_product_core::auth::SERVICE_TOKEN_HEADER;
 pub use routes::{
     auth_status, capabilities, dispatch_product_action, first_stack_status, gen_key,
     gen_service_token, health, login, overview, pair_first_stack, product_run_detail, product_runs,
-    products, provision_service_token, recent_actions, rotate_service_token, run_detail, runs,
-    save_settings, settings, start_first_stack, startup_checks_route, stop_first_stack,
+    products, provision_service_token, recent_actions, restart_setup_product, rotate_service_token,
+    run_detail, runs, save_settings, settings, setup_product_logs, start_first_stack,
+    start_setup_product, startup_checks_route, stop_first_stack, stop_setup_product,
 };
 
 fn hive_core_action_run_values(limit: u32) -> Vec<Value> {

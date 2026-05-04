@@ -1,13 +1,20 @@
-use std::{env, time::Duration};
+use std::{collections::HashMap, env, time::Duration};
 
-use axum::{extract::State, http::StatusCode, Json};
+use axum::{
+    extract::{Path, Query, State},
+    http::StatusCode,
+    Json,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::time::sleep;
 
 use crate::{
     db,
-    models::{ok, FirstStackSetupResponse, SetupLauncherStatus, SetupProductStatus},
+    models::{
+        ok, FirstStackSetupResponse, SetupLauncherProductStatus, SetupLauncherStatus,
+        SetupProductLogsResponse, SetupProductStatus,
+    },
     state::{product_catalog, AppState},
 };
 
@@ -15,33 +22,24 @@ use super::overview::build_runtime_products;
 use super::provision::provision_service_token_for_product;
 use super::{api_error, fetch_product_auth_status, pick_url};
 
+const DOWNSTREAM_FIRST_STACK_SLUGS: [&str; 3] = ["signal-hive", "trust-gate", "repo-reaper"];
 const FIRST_STACK_SLUGS: [&str; 4] = ["signal-hive", "trust-gate", "repo-reaper", "hive-core"];
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-struct LauncherProductStatusBody {
-    slug: String,
-    title: String,
-    product_dir: String,
-    compose_file: String,
-    compose_exists: bool,
-    env_file: String,
-    env_exists: bool,
-    env_example_exists: bool,
-}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 struct LauncherStackStatusBody {
     launcher_available: bool,
     message: String,
     repo_root: String,
+    docker_available: bool,
     docker_compose_available: bool,
-    products: Vec<LauncherProductStatusBody>,
+    products: Vec<SetupLauncherProductStatus>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 struct LauncherActionBody {
     ok: bool,
     actions: Vec<String>,
+    products: Vec<SetupLauncherProductStatus>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -53,6 +51,22 @@ struct LauncherStartRequest<'a> {
 #[derive(Debug, Clone, Serialize)]
 struct LauncherStopRequest {
     remove: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct LauncherProductActionRequest<'a> {
+    suite_bootstrap_secret: &'a str,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ProductLogsQuery {
+    pub tail: Option<u16>,
+}
+
+#[derive(Debug, Clone)]
+struct LauncherSnapshot {
+    status: SetupLauncherStatus,
+    products: HashMap<String, SetupLauncherProductStatus>,
 }
 
 pub(super) async fn first_stack_status(
@@ -119,18 +133,120 @@ pub(super) async fn stop_first_stack(
     .await)))
 }
 
+pub(super) async fn start_setup_product(
+    State(state): State<AppState>,
+    Path(slug): Path<String>,
+) -> Result<
+    Json<crate::models::ApiEnvelope<FirstStackSetupResponse>>,
+    (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
+> {
+    ensure_launcher_product_slug(&slug)?;
+    let secret = ensure_suite_bootstrap_secret();
+    let launcher = run_launcher_product_action(&state, &slug, "start", Some(&secret)).await?;
+    let mut actions = launcher.actions;
+    wait_for_products(&state, &[slug.as_str()], &mut actions).await;
+    auto_pair_products(&state, &secret, &[slug.as_str()], &mut actions).await;
+    Ok(Json(ok(build_first_stack_response(&state, actions).await)))
+}
+
+pub(super) async fn stop_setup_product(
+    State(state): State<AppState>,
+    Path(slug): Path<String>,
+) -> Result<
+    Json<crate::models::ApiEnvelope<FirstStackSetupResponse>>,
+    (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
+> {
+    ensure_launcher_product_slug(&slug)?;
+    let launcher = run_launcher_product_action(&state, &slug, "stop", None).await?;
+    Ok(Json(ok(build_first_stack_response(
+        &state,
+        launcher.actions,
+    )
+    .await)))
+}
+
+pub(super) async fn restart_setup_product(
+    State(state): State<AppState>,
+    Path(slug): Path<String>,
+) -> Result<
+    Json<crate::models::ApiEnvelope<FirstStackSetupResponse>>,
+    (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
+> {
+    ensure_launcher_product_slug(&slug)?;
+    let secret = ensure_suite_bootstrap_secret();
+    let launcher = run_launcher_product_action(&state, &slug, "restart", Some(&secret)).await?;
+    let mut actions = launcher.actions;
+    wait_for_products(&state, &[slug.as_str()], &mut actions).await;
+    auto_pair_products(&state, &secret, &[slug.as_str()], &mut actions).await;
+    Ok(Json(ok(build_first_stack_response(&state, actions).await)))
+}
+
+pub(super) async fn setup_product_logs(
+    State(state): State<AppState>,
+    Path(slug): Path<String>,
+    Query(query): Query<ProductLogsQuery>,
+) -> Result<
+    Json<crate::models::ApiEnvelope<SetupProductLogsResponse>>,
+    (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
+> {
+    ensure_launcher_product_slug(&slug)?;
+    let tail = query.tail.unwrap_or(120).clamp(20, 500);
+    let url = format!(
+        "{}/products/{}/logs?tail={}",
+        launcher_base_url().trim_end_matches('/'),
+        slug,
+        tail
+    );
+    let response = state
+        .client
+        .get(url)
+        .timeout(Duration::from_secs(20))
+        .send()
+        .await
+        .map_err(|_| {
+            api_error(
+                StatusCode::BAD_GATEWAY,
+                "launcher_unavailable",
+                "HiveCore could not reach patchhive-launcher to read product logs.",
+            )
+        })?;
+
+    if !response.status().is_success() {
+        return Err(
+            launcher_rejected(response, "patchhive-launcher could not read product logs.").await,
+        );
+    }
+
+    let body = response
+        .json::<SetupProductLogsResponse>()
+        .await
+        .map_err(|_| {
+            api_error(
+                StatusCode::BAD_GATEWAY,
+                "launcher_invalid_response",
+                "HiveCore could not parse the launcher logs response.",
+            )
+        })?;
+
+    Ok(Json(ok(body)))
+}
+
 async fn build_first_stack_response(
     state: &AppState,
     actions: Vec<String>,
 ) -> FirstStackSetupResponse {
     let runtimes = build_runtime_products(state).await;
-    let launcher = fetch_launcher_status(state)
+    let launcher = fetch_launcher_snapshot(state)
         .await
-        .unwrap_or_else(|message| SetupLauncherStatus {
-            available: false,
-            message,
-            repo_root: String::new(),
-            docker_compose_available: false,
+        .unwrap_or_else(|message| LauncherSnapshot {
+            status: SetupLauncherStatus {
+                available: false,
+                message,
+                repo_root: String::new(),
+                docker_available: false,
+                docker_compose_available: false,
+            },
+            products: HashMap::new(),
         });
 
     let mut products = Vec::new();
@@ -155,6 +271,7 @@ async fn build_first_stack_response(
                 .unwrap_or(false);
 
         products.push(SetupProductStatus {
+            launcher: launcher.products.get(&runtime.slug).cloned(),
             runtime,
             auth_status,
             auth_status_error,
@@ -164,7 +281,7 @@ async fn build_first_stack_response(
 
     FirstStackSetupResponse {
         stack_id: "first-stack".into(),
-        launcher,
+        launcher: launcher.status,
         suite_bootstrap_configured: configured_suite_bootstrap_secret().is_some(),
         actions,
         products,
@@ -192,7 +309,7 @@ fn ensure_suite_bootstrap_secret() -> String {
     generated
 }
 
-async fn fetch_launcher_status(state: &AppState) -> Result<SetupLauncherStatus, String> {
+async fn fetch_launcher_snapshot(state: &AppState) -> Result<LauncherSnapshot, String> {
     let url = format!("{}/stacks/first", launcher_base_url().trim_end_matches('/'));
     let response = state
         .client
@@ -214,11 +331,21 @@ async fn fetch_launcher_status(state: &AppState) -> Result<SetupLauncherStatus, 
         .await
         .map_err(|err| format!("HiveCore could not parse patchhive-launcher status: {err}"))?;
 
-    Ok(SetupLauncherStatus {
-        available: body.launcher_available,
-        message: body.message,
-        repo_root: body.repo_root,
-        docker_compose_available: body.docker_compose_available,
+    let products = body
+        .products
+        .into_iter()
+        .map(|product| (product.slug.clone(), product))
+        .collect();
+
+    Ok(LauncherSnapshot {
+        status: SetupLauncherStatus {
+            available: body.launcher_available,
+            message: body.message,
+            repo_root: body.repo_root,
+            docker_available: body.docker_available,
+            docker_compose_available: body.docker_compose_available,
+        },
+        products,
     })
 }
 
@@ -276,6 +403,66 @@ async fn start_launcher_stack(
             "HiveCore could not parse the launcher start response.",
         )
     })
+}
+
+async fn run_launcher_product_action(
+    state: &AppState,
+    slug: &str,
+    action: &str,
+    suite_bootstrap_secret: Option<&str>,
+) -> Result<LauncherActionBody, (StatusCode, Json<crate::models::ApiEnvelope<Value>>)> {
+    let url = format!(
+        "{}/products/{}/{}",
+        launcher_base_url().trim_end_matches('/'),
+        slug,
+        action
+    );
+    let mut request = state.client.post(url).timeout(Duration::from_secs(180));
+    request = if let Some(secret) = suite_bootstrap_secret {
+        request.json(&LauncherProductActionRequest {
+            suite_bootstrap_secret: secret,
+        })
+    } else {
+        request.json(&serde_json::json!({}))
+    };
+
+    let response = request.send().await.map_err(|_| {
+        api_error(
+            StatusCode::BAD_GATEWAY,
+            "launcher_unavailable",
+            format!("HiveCore could not reach patchhive-launcher to {action} {slug}."),
+        )
+    })?;
+
+    if !response.status().is_success() {
+        return Err(launcher_rejected(
+            response,
+            &format!("patchhive-launcher could not {action} {slug}."),
+        )
+        .await);
+    }
+
+    response.json::<LauncherActionBody>().await.map_err(|_| {
+        api_error(
+            StatusCode::BAD_GATEWAY,
+            "launcher_invalid_response",
+            format!("HiveCore could not parse the launcher {action} response."),
+        )
+    })
+}
+
+fn ensure_launcher_product_slug(
+    slug: &str,
+) -> Result<(), (StatusCode, Json<crate::models::ApiEnvelope<Value>>)> {
+    if DOWNSTREAM_FIRST_STACK_SLUGS.contains(&slug) {
+        Ok(())
+    } else {
+        Err(api_error(
+            StatusCode::BAD_REQUEST,
+            "unsupported_setup_product",
+            "HiveCore setup controls currently manage SignalHive, TrustGate, and RepoReaper. HiveCore itself stays self-hosted.",
+        ))
+    }
 }
 
 async fn downstream_products_to_start(state: &AppState) -> Vec<String> {
@@ -340,17 +527,39 @@ async fn stop_launcher_stack(
     })
 }
 
+async fn launcher_rejected(
+    response: reqwest::Response,
+    fallback: &str,
+) -> (StatusCode, Json<crate::models::ApiEnvelope<Value>>) {
+    let error = response
+        .json::<serde_json::Value>()
+        .await
+        .ok()
+        .and_then(|value| {
+            value
+                .get("error")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        })
+        .unwrap_or_else(|| fallback.into());
+    api_error(StatusCode::BAD_GATEWAY, "launcher_rejected", error)
+}
+
 async fn wait_for_first_stack(state: &AppState, actions: &mut Vec<String>) {
+    wait_for_products(state, &DOWNSTREAM_FIRST_STACK_SLUGS, actions).await;
+}
+
+async fn wait_for_products(state: &AppState, slugs: &[&str], actions: &mut Vec<String>) {
     let overrides = db::product_overrides();
-    for slug in ["signal-hive", "trust-gate", "repo-reaper"] {
+    for slug in slugs {
         let Some(definition) = product_catalog()
             .iter()
-            .find(|product| product.slug == slug)
+            .find(|product| product.slug == *slug)
         else {
             continue;
         };
         let api_url = pick_url(
-            overrides.get(slug).map(|item| item.api_url.as_str()),
+            overrides.get(*slug).map(|item| item.api_url.as_str()),
             definition.default_api_url,
         );
         let ok = wait_for_health(state, &api_url).await;
@@ -383,18 +592,27 @@ async fn wait_for_health(state: &AppState, api_url: &str) -> bool {
 }
 
 async fn auto_pair_first_stack(state: &AppState, secret: &str, actions: &mut Vec<String>) {
+    auto_pair_products(state, secret, &DOWNSTREAM_FIRST_STACK_SLUGS, actions).await;
+}
+
+async fn auto_pair_products(
+    state: &AppState,
+    secret: &str,
+    slugs: &[&str],
+    actions: &mut Vec<String>,
+) {
     let runtimes = build_runtime_products(state).await;
     let overrides = db::product_overrides();
 
-    for slug in ["signal-hive", "trust-gate", "repo-reaper"] {
+    for slug in slugs {
         let Some(definition) = product_catalog()
             .iter()
-            .find(|product| product.slug == slug)
+            .find(|product| product.slug == *slug)
         else {
             continue;
         };
-        let runtime = runtimes.iter().find(|item| item.slug == slug);
-        let override_item = overrides.get(slug);
+        let runtime = runtimes.iter().find(|item| item.slug == *slug);
+        let override_item = overrides.get(*slug);
 
         let Some(runtime) = runtime else {
             actions.push(format!(

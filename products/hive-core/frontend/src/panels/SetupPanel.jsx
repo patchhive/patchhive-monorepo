@@ -23,8 +23,18 @@ function authLabel(item) {
   return "service token missing";
 }
 
-function ProductCard({ item }) {
+function launcherTone(status) {
+  if (status === "running") return "var(--green)";
+  if (status === "blocked") return "var(--accent)";
+  return "var(--gold)";
+}
+
+function ProductCard({ item, busyAction, onProductAction, onLoadLogs }) {
   const authStatus = item.auth_status;
+  const launcher = item.launcher;
+  const actionPrefix = `${item.runtime.slug}:`;
+  const busy = Boolean(busyAction);
+  const busyForProduct = busyAction.startsWith(actionPrefix);
   return (
     <div
       style={{
@@ -49,6 +59,7 @@ function ProductCard({ item }) {
         <Tag color={authTone(item)}>{authLabel(item)}</Tag>
         {authStatus?.suite_bootstrap_enabled && <Tag color="var(--blue)">suite bootstrap ready</Tag>}
         {item.pairing_ready && <Tag color="var(--green)">ready to pair</Tag>}
+        {launcher && <Tag color={launcherTone(launcher.status)}>launcher {launcher.status}</Tag>}
       </div>
 
       <div style={{ display: "grid", gap: 6, fontSize: 11 }}>
@@ -71,6 +82,56 @@ function ProductCard({ item }) {
         {item.auth_status_error && <div style={{ color: "var(--gold)" }}>{item.auth_status_error}</div>}
       </div>
 
+      {launcher && (
+        <div
+          style={{
+            display: "grid",
+            gap: 7,
+            padding: "10px",
+            border: "1px solid var(--border)",
+            borderRadius: 10,
+            background: "color-mix(in srgb, var(--bg) 42%, transparent)",
+            fontSize: 11,
+          }}
+        >
+          <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+            <Tag color={launcher.compose_exists ? "var(--green)" : "var(--accent)"}>
+              compose {launcher.compose_exists ? "found" : "missing"}
+            </Tag>
+            <Tag color={launcher.env_exists ? "var(--green)" : "var(--gold)"}>
+              env {launcher.env_exists ? "ready" : "from example"}
+            </Tag>
+            <Tag color={launcher.suite_bootstrap_configured ? "var(--green)" : "var(--gold)"}>
+              bootstrap {launcher.suite_bootstrap_configured ? "synced" : "missing"}
+            </Tag>
+            <Tag color={launcher.compose_running ? "var(--green)" : "var(--gold)"}>
+              compose {launcher.compose_running ? "running" : "not running"}
+            </Tag>
+          </div>
+          <div style={{ display: "grid", gap: 4, color: "var(--text-dim)" }}>
+            <div>
+              API port {launcher.api_port}:{" "}
+              <span style={{ color: launcher.api_port_open ? "var(--green)" : "var(--gold)" }}>
+                {launcher.api_port_open ? "open" : "closed"}
+              </span>
+            </div>
+            <div>
+              UI port {launcher.frontend_port}:{" "}
+              <span style={{ color: launcher.frontend_port_open ? "var(--green)" : "var(--gold)" }}>
+                {launcher.frontend_port_open ? "open" : "closed"}
+              </span>
+            </div>
+          </div>
+          {launcher.blockers?.length > 0 && (
+            <div style={{ display: "grid", gap: 4, color: "var(--accent)" }}>
+              {launcher.blockers.map((blocker) => (
+                <div key={blocker}>{blocker}</div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         {item.runtime.frontend_url && (
           <a href={item.runtime.frontend_url} target="_blank" rel="noreferrer" style={{ color: "var(--accent)", fontSize: 11 }}>
@@ -83,6 +144,23 @@ function ProductCard({ item }) {
           </a>
         )}
       </div>
+
+      {item.runtime.slug !== "hive-core" && (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <Btn onClick={() => onProductAction(item.runtime.slug, "start")} disabled={busy} color="var(--green)">
+            {busyAction === `${actionPrefix}start` ? "Starting..." : "Start"}
+          </Btn>
+          <Btn onClick={() => onProductAction(item.runtime.slug, "restart")} disabled={busy} color="var(--blue)">
+            {busyAction === `${actionPrefix}restart` ? "Restarting..." : "Restart"}
+          </Btn>
+          <Btn onClick={() => onProductAction(item.runtime.slug, "stop")} disabled={busy}>
+            {busyAction === `${actionPrefix}stop` ? "Stopping..." : "Stop"}
+          </Btn>
+          <Btn onClick={() => onLoadLogs(item.runtime.slug)} disabled={busy}>
+            {busyAction === `${actionPrefix}logs` ? "Loading logs..." : "Logs"}
+          </Btn>
+        </div>
+      )}
     </div>
   );
 }
@@ -90,6 +168,7 @@ function ProductCard({ item }) {
 export default function SetupPanel({ fetchEnvelope, setRunning, setError }) {
   const [setup, setSetup] = useState(null);
   const [busyAction, setBusyAction] = useState("");
+  const [logs, setLogs] = useState(null);
 
   async function refresh() {
     setRunning(true);
@@ -118,6 +197,40 @@ export default function SetupPanel({ fetchEnvelope, setRunning, setError }) {
       setSetup(data);
     } catch (err) {
       setError(err.message || `HiveCore could not ${label.toLowerCase()}.`);
+    } finally {
+      setBusyAction("");
+      setRunning(false);
+    }
+  }
+
+  async function runProductAction(slug, action) {
+    setBusyAction(`${slug}:${action}`);
+    setRunning(true);
+    setError("");
+    try {
+      const data = await fetchEnvelope(`/setup/products/${slug}/${action}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      setSetup(data);
+    } catch (err) {
+      setError(err.message || `HiveCore could not ${action} ${slug}.`);
+    } finally {
+      setBusyAction("");
+      setRunning(false);
+    }
+  }
+
+  async function loadLogs(slug) {
+    setBusyAction(`${slug}:logs`);
+    setRunning(true);
+    setError("");
+    try {
+      const data = await fetchEnvelope(`/setup/products/${slug}/logs?tail=160`);
+      setLogs(data);
+    } catch (err) {
+      setError(err.message || `HiveCore could not load logs for ${slug}.`);
     } finally {
       setBusyAction("");
       setRunning(false);
@@ -201,6 +314,9 @@ export default function SetupPanel({ fetchEnvelope, setRunning, setError }) {
           <Tag color={setup.launcher.docker_compose_available ? "var(--green)" : "var(--gold)"}>
             docker compose {setup.launcher.docker_compose_available ? "ready" : "missing"}
           </Tag>
+          <Tag color={setup.launcher.docker_available ? "var(--green)" : "var(--gold)"}>
+            docker {setup.launcher.docker_available ? "reachable" : "offline"}
+          </Tag>
           <Tag color={setup.suite_bootstrap_configured ? "var(--green)" : "var(--gold)"}>
             suite bootstrap {setup.suite_bootstrap_configured ? "configured" : "not configured"}
           </Tag>
@@ -236,9 +352,44 @@ export default function SetupPanel({ fetchEnvelope, setRunning, setError }) {
         </div>
       )}
 
+      {logs && (
+        <div style={{ ...S.panel, display: "grid", gap: 10 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
+            <div>
+              <div style={{ fontSize: 15, fontWeight: 800 }}>{logs.title} Recent Logs</div>
+              <div style={{ fontSize: 11, color: "var(--text-dim)" }}>Read through HiveCore from patchhive-launcher.</div>
+            </div>
+            <Btn onClick={() => setLogs(null)}>Close</Btn>
+          </div>
+          <pre
+            style={{
+              margin: 0,
+              maxHeight: 360,
+              overflow: "auto",
+              whiteSpace: "pre-wrap",
+              wordBreak: "break-word",
+              fontSize: 11,
+              lineHeight: 1.45,
+              padding: 12,
+              borderRadius: 10,
+              border: "1px solid var(--border)",
+              background: "var(--bg)",
+            }}
+          >
+            {logs.logs || "No recent logs returned."}
+          </pre>
+        </div>
+      )}
+
       <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))" }}>
         {setup.products.map((item) => (
-          <ProductCard key={item.runtime.slug} item={item} />
+          <ProductCard
+            key={item.runtime.slug}
+            item={item}
+            busyAction={busyAction}
+            onProductAction={runProductAction}
+            onLoadLogs={loadLogs}
+          />
         ))}
       </div>
     </div>

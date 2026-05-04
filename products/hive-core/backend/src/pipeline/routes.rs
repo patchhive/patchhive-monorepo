@@ -242,6 +242,47 @@ pub async fn stop_first_stack(
     super::setup::stop_first_stack(State(state)).await
 }
 
+pub async fn start_setup_product(
+    State(state): State<AppState>,
+    Path(slug): Path<String>,
+) -> Result<
+    Json<crate::models::ApiEnvelope<crate::models::FirstStackSetupResponse>>,
+    (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
+> {
+    super::setup::start_setup_product(State(state), Path(slug)).await
+}
+
+pub async fn stop_setup_product(
+    State(state): State<AppState>,
+    Path(slug): Path<String>,
+) -> Result<
+    Json<crate::models::ApiEnvelope<crate::models::FirstStackSetupResponse>>,
+    (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
+> {
+    super::setup::stop_setup_product(State(state), Path(slug)).await
+}
+
+pub async fn restart_setup_product(
+    State(state): State<AppState>,
+    Path(slug): Path<String>,
+) -> Result<
+    Json<crate::models::ApiEnvelope<crate::models::FirstStackSetupResponse>>,
+    (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
+> {
+    super::setup::restart_setup_product(State(state), Path(slug)).await
+}
+
+pub async fn setup_product_logs(
+    State(state): State<AppState>,
+    Path(slug): Path<String>,
+    axum::extract::Query(query): axum::extract::Query<super::setup::ProductLogsQuery>,
+) -> Result<
+    Json<crate::models::ApiEnvelope<crate::models::SetupProductLogsResponse>>,
+    (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
+> {
+    super::setup::setup_product_logs(State(state), Path(slug), axum::extract::Query(query)).await
+}
+
 pub async fn dispatch_product_action(
     State(state): State<AppState>,
     Path((slug, action_id)): Path<(String, String)>,
