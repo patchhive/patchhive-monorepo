@@ -259,7 +259,9 @@ async fn build_first_stack_response(
                 Ok(status) => (Some(status), String::new()),
                 Err(message) => (None, message),
             };
-        let pairing_ready = runtime.slug != "hive-core"
+        let needs_pair = !runtime.service_token_configured || runtime.legacy_api_key_configured;
+        let pairing_ready = needs_pair
+            && runtime.slug != "hive-core"
             && runtime.enabled
             && matches!(runtime.status.as_str(), "online" | "degraded")
             && auth_status
