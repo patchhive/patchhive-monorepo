@@ -29,6 +29,32 @@ function launcherTone(status) {
   return "var(--gold)";
 }
 
+function LaunchGauge({ label, value, total, tone = "var(--accent)" }) {
+  const pct = total > 0 ? Math.round((value / total) * 100) : 0;
+  return (
+    <div
+      style={{
+        display: "grid",
+        gap: 7,
+        padding: "11px 12px",
+        border: "1px solid var(--border)",
+        borderRadius: 12,
+        background: "rgba(0,0,0,0.2)",
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+        <span style={{ fontSize: 10, color: "var(--text-dim)", letterSpacing: "0.14em", textTransform: "uppercase" }}>{label}</span>
+        <strong style={{ fontSize: 12, color: tone }}>
+          {value}/{total}
+        </strong>
+      </div>
+      <div style={{ height: 7, borderRadius: 999, background: "rgba(255,255,255,0.06)", overflow: "hidden" }}>
+        <div style={{ width: `${pct}%`, height: "100%", borderRadius: 999, background: tone }} />
+      </div>
+    </div>
+  );
+}
+
 function ProductCard({ item, busyAction, onProductAction, onLoadLogs }) {
   const authStatus = item.auth_status;
   const launcher = item.launcher;
@@ -267,17 +293,34 @@ export default function SetupPanel({ fetchEnvelope, setRunning, setError }) {
       <div
         style={{
           ...S.panel,
+          position: "relative",
+          overflow: "hidden",
           display: "grid",
-          gap: 12,
+          gap: 16,
           background:
-            "linear-gradient(135deg, color-mix(in srgb, var(--accent) 18%, var(--bg-panel)) 0%, var(--bg-panel) 52%, color-mix(in srgb, var(--blue) 16%, var(--bg-panel)) 100%)",
+            "linear-gradient(135deg, color-mix(in srgb, var(--accent) 22%, var(--bg-panel)) 0%, var(--bg-panel) 45%, color-mix(in srgb, var(--blue) 20%, var(--bg-panel)) 100%)",
         }}
       >
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+        <div
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            inset: 0,
+            background:
+              "linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px), linear-gradient(0deg, rgba(255,255,255,0.018) 1px, transparent 1px)",
+            backgroundSize: "34px 34px",
+            opacity: 0.8,
+            pointerEvents: "none",
+          }}
+        />
+        <div style={{ position: "relative", display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
           <div>
-            <div style={{ fontSize: 22, fontWeight: 900, letterSpacing: "-0.03em" }}>First-Stack Setup</div>
+            <div style={{ fontSize: 11, letterSpacing: "0.18em", color: "var(--accent)", textTransform: "uppercase" }}>
+              Launch preset / first stack
+            </div>
+            <div style={{ fontSize: 30, fontWeight: 950, letterSpacing: "-0.05em" }}>Bring the first squad online.</div>
             <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
-              HiveCore should adapt to already-running products and only use the launcher for what is missing.
+              HiveCore controls the full 11-product fleet; this preset starts the first operational trio and pairs them for orchestration.
             </div>
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -307,7 +350,7 @@ export default function SetupPanel({ fetchEnvelope, setRunning, setError }) {
           </div>
         </div>
 
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <div style={{ position: "relative", display: "flex", gap: 8, flexWrap: "wrap" }}>
           <Tag color={setup.launcher.available ? "var(--green)" : "var(--accent)"}>
             launcher {setup.launcher.available ? "available" : "unavailable"}
           </Tag>
@@ -324,7 +367,13 @@ export default function SetupPanel({ fetchEnvelope, setRunning, setError }) {
           <Tag color={pairedCount === 3 ? "var(--green)" : "var(--gold)"}>{pairedCount}/3 paired</Tag>
         </div>
 
-        <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6 }}>
+        <div style={{ position: "relative", display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
+          <LaunchGauge label="Downstream reachable" value={onlineCount} total={3} tone={onlineCount === 3 ? "var(--green)" : "var(--gold)"} />
+          <LaunchGauge label="Machine pairing" value={pairedCount} total={3} tone={pairedCount === 3 ? "var(--green)" : "var(--blue)"} />
+          <LaunchGauge label="Fleet catalog" value={setup.products.length} total={11} tone="var(--accent)" />
+        </div>
+
+        <div style={{ position: "relative", fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6 }}>
           {setup.launcher.message}
           {setup.launcher.repo_root ? ` Repo root: ${setup.launcher.repo_root}` : ""}
         </div>
