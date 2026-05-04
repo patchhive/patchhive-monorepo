@@ -3,6 +3,7 @@ import { applyTheme } from "@patchhivehq/ui";
 import {
   ProductAppFrame,
   ProductSessionGate,
+  ProductSetupWizard,
   useApiFetcher,
   useApiKeyAuth,
 } from "@patchhivehq/product-shell";
@@ -13,8 +14,24 @@ import ChecksPanel from "./panels/ChecksPanel.jsx";
 
 const TABS = [
   { id: "triage", label: "🛡 Triage" },
+  { id: "setup", label: "Setup" },
   { id: "history", label: "◎ History" },
   { id: "checks", label: "Checks" },
+];
+
+const SETUP_STEPS = [
+  {
+    title: "Connect GitHub security reads first",
+    detail: "VulnTriage becomes trustworthy once code scanning and dependency alert access are available for the repositories you plan to triage.",
+    tab: "checks",
+    actionLabel: "Review Checks",
+  },
+  {
+    title: "Validate the ranking on one repo",
+    detail: "Start with a single repository and inspect what lands in fix now, plan next, and watch before acting on the queue more broadly.",
+    tab: "triage",
+    actionLabel: "Open Triage",
+  },
 ];
 
 export default function App() {
@@ -121,6 +138,17 @@ export default function App() {
         onSignOut={logout}
         showSignOut={Boolean(apiKey)}
       >
+        {tab === "setup" && (
+          <ProductSetupWizard
+            apiBase={API}
+            fetch_={fetch_}
+            product="VulnTriage"
+            icon="🛡"
+            description="VulnTriage should turn noisy findings into a practical engineering queue. The shared setup wizard keeps the boot path clear before you trust that ranking."
+            steps={SETUP_STEPS}
+            onOpenTab={setTab}
+          />
+        )}
         {tab === "triage" && (
           <TriagePanel
             apiKey={apiKey}

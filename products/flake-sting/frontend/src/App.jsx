@@ -3,6 +3,7 @@ import { applyTheme } from "@patchhivehq/ui";
 import {
   ProductAppFrame,
   ProductSessionGate,
+  ProductSetupWizard,
   useApiFetcher,
   useApiKeyAuth,
 } from "@patchhivehq/product-shell";
@@ -13,8 +14,24 @@ import ChecksPanel from "./panels/ChecksPanel.jsx";
 
 const TABS = [
   { id: "scan", label: "🦂 Scan" },
+  { id: "setup", label: "Setup" },
   { id: "history", label: "◎ History" },
   { id: "checks", label: "Checks" },
+];
+
+const SETUP_STEPS = [
+  {
+    title: "Connect GitHub with Actions history access",
+    detail: "FlakeSting needs enough GitHub access to read workflow runs, jobs, and rerun patterns before it can rank flaky pressure well.",
+    tab: "checks",
+    actionLabel: "Review Checks",
+  },
+  {
+    title: "Start with one workflow and short lookback",
+    detail: "Validate the signal on a single repository and workflow before widening the scan window or treating jobs as real quarantine candidates.",
+    tab: "scan",
+    actionLabel: "Open Scan",
+  },
 ];
 
 export default function App() {
@@ -127,6 +144,17 @@ export default function App() {
         onSignOut={logout}
         showSignOut={Boolean(apiKey)}
       >
+        {tab === "setup" && (
+          <ProductSetupWizard
+            apiBase={API}
+            fetch_={fetch_}
+            product="FlakeSting"
+            icon="🦂"
+            description="FlakeSting should restore CI trust, not create false alarms. Use the shared wizard to confirm GitHub access and test one narrow workflow scan first."
+            steps={SETUP_STEPS}
+            onOpenTab={setTab}
+          />
+        )}
         {tab === "scan" && (
           <ScanPanel
             apiKey={apiKey}

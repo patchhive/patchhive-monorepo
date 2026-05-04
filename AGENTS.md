@@ -143,6 +143,7 @@ Every product frontend that uses PatchHive's API-key login flow should import sh
 Rules:
 - If API-key login bootstrap is the same across 2 or more products, keep it in `product-shell`, not inside a product `App.jsx`.
 - If authenticated backend `fetch` behavior is repeated across 2 or more products, keep it in `product-shell`.
+- If setup, readiness, or first-run wizard UI is shared across 2 or more products, keep it in `product-shell` unless HiveCore-specific orchestration behavior is required.
 - Avoid direct `localStorage` reads across individual panels when the app shell can pass the resolved API key down instead.
 
 ## Shared Rust Product Core

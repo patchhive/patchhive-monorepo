@@ -3,6 +3,7 @@ import { applyTheme } from "@patchhivehq/ui";
 import {
   ProductAppFrame,
   ProductSessionGate,
+  ProductSetupWizard,
   useApiFetcher,
   useApiKeyAuth,
 } from "@patchhivehq/product-shell";
@@ -13,8 +14,24 @@ import ChecksPanel from "./panels/ChecksPanel.jsx";
 
 const TABS = [
   { id: "keeper", label: "🪢 Keeper" },
+  { id: "setup", label: "Setup" },
   { id: "history", label: "◎ History" },
   { id: "checks", label: "Checks" },
+];
+
+const SETUP_STEPS = [
+  {
+    title: "Connect GitHub for PR state and review pressure",
+    detail: "MergeKeeper depends on GitHub token access first, then optionally on webhook inputs if you want near-real-time merge readiness updates.",
+    tab: "checks",
+    actionLabel: "Review Checks",
+  },
+  {
+    title: "Start with one known pull request",
+    detail: "Run the readiness call on a PR you already understand so the output format and publish behavior feel trustworthy before wider use.",
+    tab: "keeper",
+    actionLabel: "Open Keeper",
+  },
 ];
 
 export default function App() {
@@ -163,6 +180,17 @@ export default function App() {
         onSignOut={logout}
         showSignOut={Boolean(apiKey)}
       >
+        {tab === "setup" && (
+          <ProductSetupWizard
+            apiBase={API}
+            fetch_={fetch_}
+            product="MergeKeeper"
+            icon="🪢"
+            description="MergeKeeper should earn trust by making a few clear readiness calls first. This shared wizard keeps the boot path consistent with the rest of the suite."
+            steps={SETUP_STEPS}
+            onOpenTab={setTab}
+          />
+        )}
         {tab === "keeper" && (
           <KeeperPanel
             apiKey={apiKey}

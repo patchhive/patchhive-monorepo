@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 export { ProductAppFrame, ProductSessionGate } from "./ProductAppFrame.jsx";
+export { default as ProductSetupWizard } from "./ProductSetupWizard.jsx";
 
 const apiFetcherCache = new Map();
 

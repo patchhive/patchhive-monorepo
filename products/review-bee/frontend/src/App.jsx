@@ -3,6 +3,7 @@ import { applyTheme } from "@patchhivehq/ui";
 import {
   ProductAppFrame,
   ProductSessionGate,
+  ProductSetupWizard,
   useApiFetcher,
   useApiKeyAuth,
 } from "@patchhivehq/product-shell";
@@ -13,8 +14,24 @@ import ChecksPanel from "./panels/ChecksPanel.jsx";
 
 const TABS = [
   { id: "review", label: "🐝 Review" },
+  { id: "setup", label: "Setup" },
   { id: "history", label: "◎ History" },
   { id: "checks", label: "Checks" },
+];
+
+const SETUP_STEPS = [
+  {
+    title: "Connect GitHub and webhook plumbing",
+    detail: "ReviewBee needs GitHub token access for PR reads, and a webhook secret only if you want automatic refresh from live PR events.",
+    tab: "checks",
+    actionLabel: "Review Checks",
+  },
+  {
+    title: "Start with one known pull request",
+    detail: "Run the checklist flow on a familiar PR before relying on comment publishing or wider review queue triage.",
+    tab: "review",
+    actionLabel: "Open Review",
+  },
 ];
 
 export default function App() {
@@ -135,6 +152,17 @@ export default function App() {
         onSignOut={logout}
         showSignOut={Boolean(apiKey)}
       >
+        {tab === "setup" && (
+          <ProductSetupWizard
+            apiBase={API}
+            fetch_={fetch_}
+            product="ReviewBee"
+            icon="🐝"
+            description="ReviewBee’s setup should stay lightweight: make GitHub access real, confirm startup checks, then validate the checklist experience on one pull request."
+            steps={SETUP_STEPS}
+            onOpenTab={setTab}
+          />
+        )}
         {tab === "review" && (
           <ReviewPanel
             apiKey={apiKey}

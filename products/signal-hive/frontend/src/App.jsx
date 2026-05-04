@@ -3,6 +3,7 @@ import { applyTheme } from "@patchhivehq/ui";
 import {
   ProductAppFrame,
   ProductSessionGate,
+  ProductSetupWizard,
   useApiFetcher,
   useApiKeyAuth,
 } from "@patchhivehq/product-shell";
@@ -14,9 +15,31 @@ import ControlsPanel from "./panels/ControlsPanel.jsx";
 
 const TABS = [
   { id: "scan", label: "📡 Scan" },
+  { id: "setup", label: "Setup" },
   { id: "history", label: "◎ History" },
   { id: "controls", label: "Controls" },
   { id: "checks", label: "Checks" },
+];
+
+const SETUP_STEPS = [
+  {
+    title: "Connect GitHub for issue and marker reads",
+    detail: "Set BOT_GITHUB_TOKEN so SignalHive can read repos, issues, and optional TODO/FIXME code-search markers without partial results.",
+    tab: "checks",
+    actionLabel: "Review Checks",
+  },
+  {
+    title: "Define a safe scan scope",
+    detail: "Use allowlists, denylists, schedules, and saved presets before widening discovery across more repositories.",
+    tab: "controls",
+    actionLabel: "Open Controls",
+  },
+  {
+    title: "Run a small first scan",
+    detail: "Start with a narrow topic or low repo count so you can judge signal quality before letting the queue get broader.",
+    tab: "scan",
+    actionLabel: "Open Scan",
+  },
 ];
 
 const DEFAULT_PARAMS = {
@@ -126,6 +149,17 @@ export default function App() {
         onSignOut={logout}
         showSignOut={Boolean(apiKey)}
       >
+        {tab === "setup" && (
+          <ProductSetupWizard
+            apiBase={API}
+            fetch_={fetch_}
+            product="SignalHive"
+            icon="📡"
+            description="Use the same setup flow everywhere outside HiveCore: confirm local operator access, clear startup checks, then tune a narrow first scan before widening the queue."
+            steps={SETUP_STEPS}
+            onOpenTab={setTab}
+          />
+        )}
         {tab === "scan" && (
           <ScanPanel
             apiKey={apiKey}

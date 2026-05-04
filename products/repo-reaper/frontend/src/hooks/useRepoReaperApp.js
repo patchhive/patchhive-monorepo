@@ -8,6 +8,7 @@ import { API } from "../config.js";
 
 export const REPO_REAPER_TABS = [
   { id: "team", label: "⚔ Team" },
+  { id: "setup", label: "Setup" },
   { id: "run", label: "🔱 Hunt" },
   { id: "dryrun", label: "◌ Dry Stalk" },
   { id: "history", label: "◎ History" },

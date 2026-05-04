@@ -3,6 +3,7 @@ import { applyTheme } from "@patchhivehq/ui";
 import {
   ProductAppFrame,
   ProductSessionGate,
+  ProductSetupWizard,
   useApiFetcher,
   useApiKeyAuth,
 } from "@patchhivehq/product-shell";
@@ -13,8 +14,24 @@ import ChecksPanel from "./panels/ChecksPanel.jsx";
 
 const TABS = [
   { id: "scout", label: "🧭 Scout" },
+  { id: "setup", label: "Setup" },
   { id: "history", label: "◎ History" },
   { id: "checks", label: "Checks" },
+];
+
+const SETUP_STEPS = [
+  {
+    title: "Keep the scan on local allowlisted repo paths",
+    detail: "RefactorScout should stay conservative. Confirm the backend can see only the repo paths you actually intend to inspect.",
+    tab: "checks",
+    actionLabel: "Review Checks",
+  },
+  {
+    title: "Start with one repo path and a modest file cap",
+    detail: "Use one local repository and a smaller max file count first so the refactor leads stay explainable before you widen the analysis.",
+    tab: "scout",
+    actionLabel: "Open Scout",
+  },
 ];
 
 export default function App() {
@@ -132,6 +149,17 @@ export default function App() {
         onSignOut={logout}
         showSignOut={Boolean(apiKey)}
       >
+        {tab === "setup" && (
+          <ProductSetupWizard
+            apiBase={API}
+            fetch_={fetch_}
+            product="RefactorScout"
+            icon="🧭"
+            description="RefactorScout should stay narrow and credible. This setup path keeps the local-scan rules obvious before you trust the refactor queue."
+            steps={SETUP_STEPS}
+            onOpenTab={setTab}
+          />
+        )}
         {tab === "scout" && (
           <ScoutPanel
             apiKey={apiKey}

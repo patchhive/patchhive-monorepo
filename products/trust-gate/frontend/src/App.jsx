@@ -3,6 +3,7 @@ import { applyTheme } from "@patchhivehq/ui";
 import {
   ProductAppFrame,
   ProductSessionGate,
+  ProductSetupWizard,
   useApiFetcher,
   useApiKeyAuth,
 } from "@patchhivehq/product-shell";
@@ -15,9 +16,31 @@ import DecisionViewPage from "./components/DecisionViewPage.jsx";
 
 const TABS = [
   { id: "review", label: "🛡 Review" },
+  { id: "setup", label: "Setup" },
   { id: "rules", label: "Rules" },
   { id: "history", label: "◎ History" },
   { id: "checks", label: "Checks" },
+];
+
+const SETUP_STEPS = [
+  {
+    title: "Connect GitHub and optional webhook inputs",
+    detail: "Enable GitHub token access first, then add webhook secret wiring if you want live PR-triggered review instead of pasted diffs only.",
+    tab: "checks",
+    actionLabel: "Review Checks",
+  },
+  {
+    title: "Tune repo rules before trusting live reviews",
+    detail: "Blocked paths, suspicious terms, test expectations, and scope budgets should match the repos you plan to review.",
+    tab: "rules",
+    actionLabel: "Open Rules",
+  },
+  {
+    title: "Start with a pasted diff",
+    detail: "Validate the recommendation style on a small manual diff first, then move up to GitHub PR review and report publishing.",
+    tab: "review",
+    actionLabel: "Open Review",
+  },
 ];
 
 const DEFAULT_FORM = {
@@ -206,6 +229,17 @@ export default function App() {
           onSignOut={logout}
           showSignOut={Boolean(apiKey)}
         >
+          {tab === "setup" && (
+            <ProductSetupWizard
+              apiBase={API}
+              fetch_={fetch_}
+              product="TrustGate"
+              icon="🛡"
+              description="TrustGate should feel predictable before it feels powerful. Use this wizard to clear backend readiness, shape repo rules, and validate one conservative review path."
+              steps={SETUP_STEPS}
+              onOpenTab={setTab}
+            />
+          )}
           {tab === "review" && (
             <ReviewPanel
               form={form}

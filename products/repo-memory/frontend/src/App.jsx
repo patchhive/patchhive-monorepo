@@ -3,6 +3,7 @@ import { applyTheme } from "@patchhivehq/ui";
 import {
   ProductAppFrame,
   ProductSessionGate,
+  ProductSetupWizard,
   useApiFetcher,
   useApiKeyAuth,
 } from "@patchhivehq/product-shell";
@@ -16,11 +17,33 @@ import ChecksPanel from "./panels/ChecksPanel.jsx";
 
 const TABS = [
   { id: "overview", label: "🧠 Overview" },
+  { id: "setup", label: "Setup" },
   { id: "ingest", label: "◎ Ingest" },
   { id: "failguard", label: "FailGuard" },
   { id: "memory", label: "Memory" },
   { id: "history", label: "History" },
   { id: "checks", label: "Checks" },
+];
+
+const SETUP_STEPS = [
+  {
+    title: "Connect GitHub for merged history reads",
+    detail: "RepoMemory becomes useful once it can read merged pull requests, issue history, and review context for the repositories you care about.",
+    tab: "checks",
+    actionLabel: "Review Checks",
+  },
+  {
+    title: "Ingest one repo before widening scope",
+    detail: "Start with a single repository so you can inspect the memories it creates before feeding more repos or FailGuard candidates into the system.",
+    tab: "ingest",
+    actionLabel: "Open Ingest",
+  },
+  {
+    title: "Review memory promotion intentionally",
+    detail: "Use FailGuard and the memory view to decide which lessons deserve durable policy weight and which ones should stay soft context.",
+    tab: "failguard",
+    actionLabel: "Open FailGuard",
+  },
 ];
 
 const DEFAULT_FORM = {
@@ -137,6 +160,17 @@ export default function App() {
         onSignOut={logout}
         showSignOut={Boolean(apiKey)}
       >
+        {tab === "setup" && (
+          <ProductSetupWizard
+            apiBase={API}
+            fetch_={fetch_}
+            product="RepoMemory"
+            icon="🧠"
+            description="RepoMemory should start from clean source history and a narrow ingest target. Clear the shared checks first, then build memory on one repo before broadening the loop."
+            steps={SETUP_STEPS}
+            onOpenTab={setTab}
+          />
+        )}
         {tab === "overview" && (
           <OverviewPanel
             apiKey={apiKey}

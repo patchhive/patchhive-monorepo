@@ -10,6 +10,7 @@ It holds the cross-product browser behavior that should feel identical everywher
 - `createApiFetcher` for authenticated requests to product backends
 - `ProductSessionGate` for the shared login and loading boundary
 - `ProductAppFrame` for the common PatchHive app frame
+- `ProductSetupWizard` for the shared post-login setup and readiness flow used by every product except HiveCore
 
 ## Example
 

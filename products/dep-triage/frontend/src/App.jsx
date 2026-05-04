@@ -3,6 +3,7 @@ import { applyTheme } from "@patchhivehq/ui";
 import {
   ProductAppFrame,
   ProductSessionGate,
+  ProductSetupWizard,
   useApiFetcher,
   useApiKeyAuth,
 } from "@patchhivehq/product-shell";
@@ -13,8 +14,24 @@ import ChecksPanel from "./panels/ChecksPanel.jsx";
 
 const TABS = [
   { id: "triage", label: "📦 Triage" },
+  { id: "setup", label: "Setup" },
   { id: "history", label: "◎ History" },
   { id: "checks", label: "Checks" },
+];
+
+const SETUP_STEPS = [
+  {
+    title: "Connect GitHub for dependency and alert reads",
+    detail: "DepTriage needs repository reads first, and it gets better once dependency alert access is available for urgency scoring.",
+    tab: "checks",
+    actionLabel: "Review Checks",
+  },
+  {
+    title: "Start with one repository",
+    detail: "Run the queue against a single repo first so you can judge what lands in update now, watch, and ignore before scaling out.",
+    tab: "triage",
+    actionLabel: "Open Triage",
+  },
 ];
 
 export default function App() {
@@ -121,6 +138,17 @@ export default function App() {
         onSignOut={logout}
         showSignOut={Boolean(apiKey)}
       >
+        {tab === "setup" && (
+          <ProductSetupWizard
+            apiBase={API}
+            fetch_={fetch_}
+            product="DepTriage"
+            icon="📦"
+            description="DepTriage should feel like a focused queue, not more dependency noise. Clear backend readiness, then validate the ranking flow on one repository first."
+            steps={SETUP_STEPS}
+            onOpenTab={setTab}
+          />
+        )}
         {tab === "triage" && (
           <TriagePanel
             apiKey={apiKey}

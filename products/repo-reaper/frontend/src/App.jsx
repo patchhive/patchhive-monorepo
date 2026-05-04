@@ -6,6 +6,8 @@ import {
 import {
   ProductAppFrame,
   ProductSessionGate,
+  ProductSetupWizard,
+  useApiFetcher,
 } from "@patchhivehq/product-shell";
 import { API } from "./config.js";
 import TeamPanel from "./panels/TeamPanel.jsx";
@@ -27,6 +29,27 @@ import {
   REPO_REAPER_TABS,
   useRepoReaperApp,
 } from "./hooks/useRepoReaperApp.js";
+
+const SETUP_STEPS = [
+  {
+    title: "Connect bot GitHub identity and AI access",
+    detail: "RepoReaper is only as trustworthy as its execution environment. Confirm bot GitHub credentials, AI access, and startup checks before you let it touch a repo.",
+    tab: "cfg",
+    actionLabel: "Open Config",
+  },
+  {
+    title: "Shape the team and safeguards first",
+    detail: "Set your agents, confidence thresholds, repo lists, and watch-mode boundaries before you launch real hunts.",
+    tab: "team",
+    actionLabel: "Open Team",
+  },
+  {
+    title: "Use dry run before real patching",
+    detail: "Start with Dry Stalk so you can inspect output quality and confidence without opening live pull requests yet.",
+    tab: "dryrun",
+    actionLabel: "Open Dry Stalk",
+  },
+];
 
 function renderHeaderBadges({ watchMode, hasCooldown, cooldowns, runCost, lifetimeCost }) {
   return (
@@ -82,6 +105,7 @@ export default function App() {
     startRun,
     hasCooldown,
   } = useRepoReaperApp();
+  const fetch_ = useApiFetcher(apiKey);
 
   return (
     <ProductSessionGate
@@ -114,6 +138,18 @@ export default function App() {
         onSignOut={logout}
         showSignOut={Boolean(apiKey)}
       >
+        {tab === "setup" && (
+          <ProductSetupWizard
+            apiBase={API}
+            fetch_={fetch_}
+            product="RepoReaper"
+            icon="🔱"
+            description="RepoReaper is the highest-autonomy tool in the suite, so its first-run path should stay disciplined: prove config, shape safeguards, then dry run before real hunts."
+            steps={SETUP_STEPS}
+            onOpenTab={setTab}
+            checksTabId="startup"
+          />
+        )}
         {tab === "team" && (
           <TeamPanel
             agents={agents}
