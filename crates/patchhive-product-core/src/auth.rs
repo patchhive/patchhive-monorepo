@@ -19,6 +19,7 @@ use std::{
 
 pub type JsonApiError = (StatusCode, Json<serde_json::Value>);
 pub const SERVICE_TOKEN_HEADER: &str = "X-PatchHive-Service-Token";
+pub const SUITE_BOOTSTRAP_HEADER: &str = "X-PatchHive-Suite-Secret";
 pub const SERVICE_SCOPE_RUNS_READ: &str = "runs:read";
 pub const SERVICE_SCOPE_ACTIONS_DISPATCH: &str = "actions:dispatch";
 const SERVICE_TOKEN_EXPIRY_WARN_DAYS: i64 = 7;
@@ -214,12 +215,10 @@ fn persist_env_value(env_path: &Path, env_var: &str, value: &str) -> Result<()> 
     };
 
     // Atomic write: write to a temp file then rename to avoid TOCTOU.
-    let tmp_path = env_path.with_file_name(
-        format!(
-            "{}.tmp",
-            env_path.file_name().unwrap_or_default().to_string_lossy()
-        )
-    );
+    let tmp_path = env_path.with_file_name(format!(
+        "{}.tmp",
+        env_path.file_name().unwrap_or_default().to_string_lossy()
+    ));
     fs::write(&tmp_path, content)
         .with_context(|| format!("failed to write temp env file {}", tmp_path.display()))?;
     fs::rename(&tmp_path, env_path)
@@ -349,6 +348,19 @@ fn verify_hash(token: &str, stored: String) -> bool {
         .iter()
         .zip(expected.iter())
         .fold(0u8, |acc, (left, right)| acc | (left ^ right))
+        == 0
+}
+
+fn constant_time_eq(left: &str, right: &str) -> bool {
+    let left = left.as_bytes();
+    let right = right.as_bytes();
+    if left.len() != right.len() {
+        return false;
+    }
+
+    left.iter()
+        .zip(right.iter())
+        .fold(0u8, |acc, (l, r)| acc | (l ^ r))
         == 0
 }
 
@@ -526,6 +538,33 @@ pub fn bootstrap_request_allowed(headers: &HeaderMap) -> bool {
         .unwrap_or(false)
 }
 
+fn configured_suite_bootstrap_secret() -> String {
+    std::env::var("PATCHHIVE_SUITE_BOOTSTRAP_SECRET")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .unwrap_or_default()
+}
+
+pub fn suite_bootstrap_enabled() -> bool {
+    !configured_suite_bootstrap_secret().is_empty()
+}
+
+pub fn suite_bootstrap_request_allowed(headers: &HeaderMap) -> bool {
+    let configured = configured_suite_bootstrap_secret();
+    if configured.is_empty() {
+        return false;
+    }
+
+    let provided = headers
+        .get(SUITE_BOOTSTRAP_HEADER)
+        .or_else(|| headers.get("X-PatchHive-Suite-Bootstrap"))
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .unwrap_or("");
+
+    !provided.is_empty() && constant_time_eq(provided, &configured)
+}
+
 pub fn auth_already_configured_error() -> JsonApiError {
     (
         StatusCode::FORBIDDEN,
@@ -566,7 +605,7 @@ pub fn service_token_generation_forbidden_error() -> JsonApiError {
     (
         StatusCode::FORBIDDEN,
         Json(json!({
-            "error": "Service-token generation requires a localhost bootstrap session before operator auth exists, or a valid operator X-API-Key after auth is configured."
+            "error": "Service-token generation requires a localhost bootstrap session before operator auth exists, a valid operator X-API-Key after auth is configured, or a valid PatchHive suite bootstrap secret."
         })),
     )
 }
@@ -575,7 +614,7 @@ pub fn service_token_rotation_forbidden_error() -> JsonApiError {
     (
         StatusCode::FORBIDDEN,
         Json(json!({
-            "error": "Service-token rotation requires a valid operator X-API-Key after auth is configured, or a localhost bootstrap session before operator auth exists."
+            "error": "Service-token rotation requires a valid operator X-API-Key after auth is configured, a localhost bootstrap session before operator auth exists, or a valid PatchHive suite bootstrap secret."
         })),
     )
 }
@@ -611,6 +650,10 @@ pub fn service_token_rotation_failed_error(err: &anyhow::Error) -> JsonApiError 
 }
 
 pub fn service_token_generation_allowed(config: &ApiKeyAuthConfig, headers: &HeaderMap) -> bool {
+    if suite_bootstrap_request_allowed(headers) {
+        return true;
+    }
+
     if auth_enabled(config) {
         let token = request_token(headers);
         !token.is_empty() && verify_token(config, token)
@@ -683,6 +726,7 @@ pub fn auth_status_payload(config: &ApiKeyAuthConfig) -> serde_json::Value {
         "service_auth_expired": service_expiry.expired,
         "service_auth_expires_soon": service_expiry.expires_soon,
         "service_auth_token": service_token,
+        "suite_bootstrap_enabled": suite_bootstrap_enabled(),
         "service_auth_known_scopes": [
             SERVICE_SCOPE_RUNS_READ,
             SERVICE_SCOPE_ACTIONS_DISPATCH,
@@ -1214,6 +1258,54 @@ mod tests {
         clear_runtime_env_value(&env_var);
         clear_runtime_env_value(&service_env_var);
         let _ = fs::remove_file(env_path);
+    }
+
+    #[test]
+    fn suite_bootstrap_secret_allows_service_token_generation_without_operator_key() {
+        let env_var = format!("PATCHHIVE_TEST_AUTH_{}", uuid::Uuid::new_v4().simple());
+        let service_env_var = format!(
+            "PATCHHIVE_TEST_SERVICE_AUTH_{}",
+            uuid::Uuid::new_v4().simple()
+        );
+        let secret = format!("ph-suite-test-{}", uuid::Uuid::new_v4().simple());
+        let env_path = std::env::temp_dir().join(format!("{env_var}.env"));
+        let config = test_config_with_service(&env_var, &service_env_var, env_path.clone());
+        generate_and_save_key(&config).expect("key generation should succeed");
+        std::env::set_var("PATCHHIVE_SUITE_BOOTSTRAP_SECRET", &secret);
+
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            SUITE_BOOTSTRAP_HEADER,
+            HeaderValue::from_str(&secret).expect("header should build"),
+        );
+
+        assert!(service_token_generation_allowed(&config, &headers));
+        assert!(service_token_rotation_allowed(&config, &headers));
+        assert_eq!(
+            auth_status_payload(&config)["suite_bootstrap_enabled"],
+            true
+        );
+
+        std::env::remove_var("PATCHHIVE_SUITE_BOOTSTRAP_SECRET");
+        clear_runtime_env_value(&env_var);
+        clear_runtime_env_value(&service_env_var);
+        let _ = fs::remove_file(env_path);
+    }
+
+    #[test]
+    fn suite_bootstrap_secret_rejects_wrong_secret() {
+        let secret = format!("ph-suite-test-{}", uuid::Uuid::new_v4().simple());
+        std::env::set_var("PATCHHIVE_SUITE_BOOTSTRAP_SECRET", &secret);
+
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            SUITE_BOOTSTRAP_HEADER,
+            HeaderValue::from_static("wrong-secret"),
+        );
+
+        assert!(!suite_bootstrap_request_allowed(&headers));
+
+        std::env::remove_var("PATCHHIVE_SUITE_BOOTSTRAP_SECRET");
     }
 
     #[test]

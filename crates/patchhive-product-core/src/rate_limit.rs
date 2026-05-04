@@ -174,10 +174,7 @@ fn client_ip(headers: &HeaderMap) -> Option<String> {
         std::env::var("PATCHHIVE_TRUST_PROXY").ok().as_deref(),
         Some("1" | "true" | "TRUE" | "yes" | "on")
     ) {
-        if let Some(value) = headers
-            .get("x-forwarded-for")
-            .and_then(|v| v.to_str().ok())
-        {
+        if let Some(value) = headers.get("x-forwarded-for").and_then(|v| v.to_str().ok()) {
             return Some(value.split(',').next()?.trim().to_string());
         }
     }

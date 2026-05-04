@@ -327,6 +327,31 @@ pub struct ProvisionServiceTokenResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SetupLauncherStatus {
+    pub available: bool,
+    pub message: String,
+    pub repo_root: String,
+    pub docker_compose_available: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SetupProductStatus {
+    pub runtime: ProductRuntimeItem,
+    pub auth_status: Option<crate::pipeline::ProductAuthStatusBody>,
+    pub auth_status_error: String,
+    pub pairing_ready: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FirstStackSetupResponse {
+    pub stack_id: String,
+    pub launcher: SetupLauncherStatus,
+    pub suite_bootstrap_configured: bool,
+    pub actions: Vec<String>,
+    pub products: Vec<SetupProductStatus>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProductActionEvent {
     pub id: String,
     pub product_slug: String,

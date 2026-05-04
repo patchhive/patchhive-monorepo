@@ -1,14 +1,11 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
-use axum::{
-    http::StatusCode,
-    Json,
-};
+use axum::{http::StatusCode, Json};
 use patchhive_product_core::auth::SERVICE_TOKEN_HEADER;
 use patchhive_product_core::contract;
 use reqwest::Url;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::models::{error, ProductContractCheck, ProductOverride};
@@ -82,7 +79,7 @@ impl ProductStoredAuth {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ProductAuthStatusBody {
     #[serde(default)]
     pub auth_enabled: bool,
@@ -98,6 +95,8 @@ pub struct ProductAuthStatusBody {
     pub service_auth_scopes: Vec<String>,
     #[serde(default)]
     pub service_auth_expired: bool,
+    #[serde(default)]
+    pub suite_bootstrap_enabled: bool,
 }
 
 pub struct ProductProbeSnapshot {
@@ -117,7 +116,10 @@ pub struct DispatchActionInput {
     pub query: HashMap<String, String>,
 }
 
-pub fn resolved_auth_mode(definition: &crate::state::ProductDefinition, auth: &ProductStoredAuth) -> String {
+pub fn resolved_auth_mode(
+    definition: &crate::state::ProductDefinition,
+    auth: &ProductStoredAuth,
+) -> String {
     if definition.slug == "hive-core" {
         "native".into()
     } else {

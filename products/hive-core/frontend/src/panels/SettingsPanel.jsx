@@ -115,7 +115,7 @@ function ProductEditor({ product, onChange, onProvision }) {
                 type="password"
                 value={operatorApiKey}
                 onChange={setOperatorApiKey}
-                placeholder="Used only to mint or rotate a service token. Not stored."
+                placeholder="Optional manual fallback when suite bootstrap is not available. Not stored."
               />
             </div>
             <div style={{ display: "grid", alignItems: "end" }}>
@@ -135,7 +135,7 @@ function ProductEditor({ product, onChange, onProvision }) {
             for first-time setup or
             <code> /auth/rotate-service-token </code>
             when the product already has service auth enabled.
-            If the product already requires operator login, the one-time operator API key is used only for that request and is not stored in HiveCore.
+            If suite bootstrap is configured, HiveCore can use that automatically. Otherwise, when the product already requires operator login, the one-time operator API key is used only for that request and is not stored in HiveCore.
           </div>
         </div>
       )}

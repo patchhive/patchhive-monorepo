@@ -212,6 +212,36 @@ pub async fn save_settings(
     super::settings::save_settings(Json(body)).await
 }
 
+pub async fn first_stack_status(
+    State(state): State<AppState>,
+) -> Json<crate::models::ApiEnvelope<crate::models::FirstStackSetupResponse>> {
+    super::setup::first_stack_status(State(state)).await
+}
+
+pub async fn start_first_stack(
+    State(state): State<AppState>,
+) -> Result<
+    Json<crate::models::ApiEnvelope<crate::models::FirstStackSetupResponse>>,
+    (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
+> {
+    super::setup::start_first_stack(State(state)).await
+}
+
+pub async fn pair_first_stack(
+    State(state): State<AppState>,
+) -> Json<crate::models::ApiEnvelope<crate::models::FirstStackSetupResponse>> {
+    super::setup::pair_first_stack(State(state)).await
+}
+
+pub async fn stop_first_stack(
+    State(state): State<AppState>,
+) -> Result<
+    Json<crate::models::ApiEnvelope<crate::models::FirstStackSetupResponse>>,
+    (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
+> {
+    super::setup::stop_first_stack(State(state)).await
+}
+
 pub async fn dispatch_product_action(
     State(state): State<AppState>,
     Path((slug, action_id)): Path<(String, String)>,
@@ -220,5 +250,6 @@ pub async fn dispatch_product_action(
     Json<crate::models::ApiEnvelope<DispatchActionResponse>>,
     (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
 > {
-    super::dispatch::dispatch_product_action(State(state), Path((slug, action_id)), Json(body)).await
+    super::dispatch::dispatch_product_action(State(state), Path((slug, action_id)), Json(body))
+        .await
 }

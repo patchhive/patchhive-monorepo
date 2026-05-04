@@ -28,6 +28,7 @@ what work has happened, and where product contracts have drifted.
 - Global defaults for topics, languages, repo guardrails, and operator notes.
 - Per-product frontend and API overrides.
 - Provisioning and rotation flow that exchanges an operator API key for a dedicated product service token.
+- A first-stack Setup flow that can detect already-running products, start missing ones through `patchhive-launcher`, and auto-pair HiveCore when suite bootstrap is configured.
 - Server-side storage for per-product service tokens, with optional at-rest encryption via `HIVECORE_ENCRYPTION_KEY` and legacy operator-key fallback during the transition.
 
 ## Product Registry Defaults
@@ -80,6 +81,8 @@ npm run dev
 | `HIVE_CORE_DB_PATH` | SQLite database path. |
 | `HIVE_CORE_PORT` | Backend port. |
 | `HIVECORE_ENCRYPTION_KEY` | Encrypts saved downstream product service tokens at rest in HiveCore SQLite. |
+| `PATCHHIVE_LAUNCHER_URL` | Base URL for the local `patchhive-launcher` service. |
+| `PATCHHIVE_SUITE_BOOTSTRAP_SECRET` | Shared suite bootstrap secret for automatic downstream service-token pairing. |
 | `BOT_GITHUB_TOKEN` | Optional GitHub token for future integrations. |
 
 ## Boundary

@@ -50,6 +50,19 @@ async fn main() {
         .route("/runs/:id", get(pipeline::run_detail))
         .route("/overview", get(pipeline::overview))
         .route("/products", get(pipeline::products))
+        .route("/setup/first-stack", get(pipeline::first_stack_status))
+        .route(
+            "/setup/first-stack/start",
+            axum::routing::post(pipeline::start_first_stack),
+        )
+        .route(
+            "/setup/first-stack/pair",
+            axum::routing::post(pipeline::pair_first_stack),
+        )
+        .route(
+            "/setup/first-stack/stop",
+            axum::routing::post(pipeline::stop_first_stack),
+        )
         .route("/products/:slug/runs", get(pipeline::product_runs))
         .route(
             "/products/:slug/runs/:id",

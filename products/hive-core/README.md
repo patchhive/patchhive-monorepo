@@ -22,6 +22,8 @@ This is intentionally narrower than full orchestration. HiveCore should earn tha
 - poll product-owned health, startup checks, capabilities, runs, and run details
 - store suite-wide defaults and per-product endpoint overrides
 - provision and store per-product service tokens server-side for protected reads and action dispatch
+- adapt to already-running first-stack products and pair with them automatically when suite bootstrap is configured
+- delegate local Docker start/stop control to `patchhive-launcher` instead of doing host control from the browser
 - dispatch only advertised product actions through the shared capability contract
 - report contract drift instead of hiding product API differences
 
@@ -36,6 +38,7 @@ This is intentionally narrower than full orchestration. HiveCore should earn tha
 - persistent global defaults for topics, languages, repo guardrails, and operator notes
 - per-product frontend/API overrides for subdomains or remote deployments
 - one-time per-product service-token provisioning from HiveCore Settings
+- Setup tab for the first stack that can detect already-running products, start missing ones through `patchhive-launcher`, and auto-pair HiveCore with them
 - per-product service tokens stored server-side for protected `/runs` reads and action dispatch, with optional at-rest encryption via `HIVECORE_ENCRYPTION_KEY`
 - shared PatchHive API-key bootstrap flow
 
@@ -70,12 +73,14 @@ cd ../frontend && npm install && npm run dev
 | `HIVE_CORE_DB_PATH` | SQLite path for suite settings, product overrides, and action events. |
 | `HIVE_CORE_PORT` | Backend port for split local runs. |
 | `HIVECORE_ENCRYPTION_KEY` | Encrypts saved downstream product service tokens at rest in HiveCore SQLite and auto-migrates existing plaintext rows on boot. |
+| `PATCHHIVE_LAUNCHER_URL` | Base URL for the local `patchhive-launcher` service that starts or stops the first stack. |
+| `PATCHHIVE_SUITE_BOOTSTRAP_SECRET` | Shared bootstrap secret HiveCore can use to rotate or provision downstream product service tokens automatically. |
 | `PATCHHIVE_ALLOW_REMOTE_BOOTSTRAP` | Allows first-time key bootstrap from non-localhost clients. Keep unset for local use. |
 | `RUST_LOG` | Rust logging level. |
 
 To reuse the same password across SignalHive, TrustGate, RepoReaper, and HiveCore, run `./scripts/set-suite-api-key.sh --stack first` from the monorepo root before starting the stack. For every PatchHive product, run `./scripts/set-suite-api-key.sh`. Once the hash is pre-seeded, HiveCore can be used through a subdomain without remote bootstrap.
 
-HiveCore Settings can now provision or rotate a dedicated service token for each product by using a one-time operator API key against that product's `POST /auth/generate-service-token` or `POST /auth/rotate-service-token` route. HiveCore stores only the returned service token, and encrypts it at rest when `HIVECORE_ENCRYPTION_KEY` is configured. Operator login credentials are not persisted. Legacy product API keys still work as an explicit fallback during the transition, but legacy service-token hashes are now limited to `runs:read` until they are rotated into scoped records.
+HiveCore Settings can now provision or rotate a dedicated service token for each product by using a one-time operator API key against that product's `POST /auth/generate-service-token` or `POST /auth/rotate-service-token` route. When `PATCHHIVE_SUITE_BOOTSTRAP_SECRET` is configured across the suite, HiveCore can also do that automatically from the Setup tab without asking for operator credentials again. HiveCore stores only the returned service token, and encrypts it at rest when `HIVECORE_ENCRYPTION_KEY` is configured. Operator login credentials are not persisted. Legacy product API keys still work as an explicit fallback during the transition, but legacy service-token hashes are now limited to `runs:read` until they are rotated into scoped records.
 
 ## Product Registry Defaults
 

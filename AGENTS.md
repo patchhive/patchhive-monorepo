@@ -69,6 +69,8 @@ patchhive/
     patchhive-github-security/ shared Rust GitHub security/advisory reads
   templates/
     product-starter/        shared starter for new PatchHive products
+  services/
+    patchhive-launcher/     localhost-only host-control daemon for HiveCore first-stack start/stop
   products/
     repo-reaper/            built first, current active product
     signal-hive/
@@ -434,6 +436,7 @@ Important env vars:
 - The control-plane v1 surface polls health, startup checks, capabilities, product-owned `/runs` history, and server-side `/runs/:id` detail; stored product service tokens unlock protected run reads and capability-driven action dispatch without exposing machine credentials to the browser. Service-token records are now scoped and rotatable, HiveCore can encrypt saved downstream service tokens at rest with `HIVECORE_ENCRYPTION_KEY`, and legacy operator API keys remain only a temporary fallback.
 - HiveCore should push the suite toward shared contracts instead of hiding differences forever. It should reveal where products drift and help standardize them.
 - HiveCore now reports per-product contract drift for health, startup checks, capabilities, run lists, and run detail support.
+- HiveCore's Setup tab should adapt to already-running products first, then use `patchhive-launcher` only for missing local stack pieces. Browser UX stays in HiveCore; Docker and `.env` mutation belong in the launcher service.
 - HiveCore-enabled mode means HiveCore owns suite lifecycle coordination, but each product must remain standalone and expose product-owned APIs for that coordination.
 - Early future integrations worth keeping in mind: shared run history, suite-wide schedules, global allowlist and denylist propagation, and cross-product handoffs like SignalHive -> TrustGate -> RepoReaper.
 

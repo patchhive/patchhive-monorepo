@@ -9,7 +9,7 @@ use serde_json::Value;
 
 use crate::{
     models::{
-        now_rfc3339, ok, ProductOverride, ProvisionServiceTokenRequest,
+        now_rfc3339, ok, ProductOverride, ProductSettingsItem, ProvisionServiceTokenRequest,
         ProvisionServiceTokenResponse,
     },
     state::{product_catalog, AppState},
@@ -21,6 +21,7 @@ use super::{
     remote_error_message,
 };
 use crate::db;
+use patchhive_product_core::auth::SUITE_BOOTSTRAP_HEADER;
 
 pub(super) async fn provision_service_token(
     State(state): State<AppState>,
@@ -46,13 +47,44 @@ pub(super) async fn provision_service_token(
     let overrides = db::product_overrides();
     let override_item = overrides.get(definition.slug);
     let api_url_override = body.api_url.unwrap_or_default().trim().to_string();
-    let effective_api_url = if api_url_override.is_empty() {
+    let operator_api_key = body.operator_api_key.unwrap_or_default().trim().to_string();
+    let suite_bootstrap_secret = configured_suite_bootstrap_secret();
+
+    let (product, message) = provision_service_token_for_product(
+        &state,
+        definition,
+        override_item,
+        &api_url_override,
+        &operator_api_key,
+        suite_bootstrap_secret.as_deref(),
+    )
+    .await?;
+
+    Ok(Json(ok(ProvisionServiceTokenResponse { product, message })))
+}
+
+fn configured_suite_bootstrap_secret() -> Option<String> {
+    std::env::var("PATCHHIVE_SUITE_BOOTSTRAP_SECRET")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+pub(super) async fn provision_service_token_for_product(
+    state: &AppState,
+    definition: &crate::state::ProductDefinition,
+    override_item: Option<&crate::models::ProductOverride>,
+    api_url_override: &str,
+    operator_api_key: &str,
+    suite_bootstrap_secret: Option<&str>,
+) -> Result<(ProductSettingsItem, String), (StatusCode, Json<crate::models::ApiEnvelope<Value>>)> {
+    let effective_api_url = if api_url_override.trim().is_empty() {
         pick_url(
             override_item.map(|item| item.api_url.as_str()),
             definition.default_api_url,
         )
     } else {
-        api_url_override.clone()
+        api_url_override.trim().to_string()
     };
 
     if effective_api_url.trim().is_empty() {
@@ -77,12 +109,16 @@ pub(super) async fn provision_service_token(
         ));
     }
 
-    let operator_api_key = body.operator_api_key.unwrap_or_default().trim().to_string();
-    if auth_status.auth_enabled && operator_api_key.is_empty() {
+    let operator_api_key = operator_api_key.trim();
+    let suite_bootstrap_secret = suite_bootstrap_secret
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+
+    if auth_status.auth_enabled && operator_api_key.is_empty() && suite_bootstrap_secret.is_none() {
         return Err(api_error(
             StatusCode::BAD_REQUEST,
             "operator_api_key_required",
-            "This product already requires operator login. Paste a one-time operator API key so HiveCore can mint or rotate a dedicated service token.",
+            "This product already requires operator login. Paste a one-time operator API key or configure PATCHHIVE_SUITE_BOOTSTRAP_SECRET so HiveCore can mint or rotate a dedicated service token.",
         ));
     }
 
@@ -94,8 +130,10 @@ pub(super) async fn provision_service_token(
     };
     let token_url = format!("{normalized}{token_path}");
     let mut request = state.client.post(token_url).timeout(Duration::from_secs(5));
-    if auth_status.auth_enabled {
+    if !operator_api_key.is_empty() {
         request = request.header("X-API-Key", operator_api_key);
+    } else if let Some(secret) = suite_bootstrap_secret {
+        request = request.header(SUITE_BOOTSTRAP_HEADER, secret);
     }
 
     let response = request.send().await.map_err(|_| {
@@ -142,12 +180,12 @@ pub(super) async fn provision_service_token(
         frontend_url: override_item
             .map(|item| item.frontend_url.clone())
             .unwrap_or_default(),
-        api_url: if api_url_override.is_empty() {
+        api_url: if api_url_override.trim().is_empty() {
             override_item
                 .map(|item| item.api_url.clone())
                 .unwrap_or_default()
         } else {
-            api_url_override
+            api_url_override.trim().to_string()
         },
         service_token: token.to_string(),
         legacy_api_key: String::new(),
@@ -167,9 +205,16 @@ pub(super) async fn provision_service_token(
     })?;
 
     let product = build_settings_product_item(definition, Some(&updated_override));
-    let message = if auth_status.service_auth_enabled && auth_status.auth_enabled {
+    let used_operator_key = !operator_api_key.is_empty();
+    let used_suite_bootstrap = suite_bootstrap_secret.is_some() && !used_operator_key;
+    let message = if auth_status.service_auth_enabled && used_operator_key {
         format!(
             "HiveCore rotated the existing service token for {} using a one-time operator API key and stored only the replacement service token.",
+            definition.title
+        )
+    } else if auth_status.service_auth_enabled && used_suite_bootstrap {
+        format!(
+            "HiveCore rotated the existing service token for {} using the shared PatchHive suite bootstrap secret and stored only the replacement service token.",
             definition.title
         )
     } else if auth_status.service_auth_enabled {
@@ -177,9 +222,14 @@ pub(super) async fn provision_service_token(
             "HiveCore rotated the existing service token for {} through the product bootstrap flow and stored only the replacement service token.",
             definition.title
         )
-    } else if auth_status.auth_enabled {
+    } else if used_operator_key {
         format!(
             "HiveCore provisioned a dedicated service token for {} using a one-time operator API key and stored only the service token.",
+            definition.title
+        )
+    } else if used_suite_bootstrap {
+        format!(
+            "HiveCore provisioned a dedicated service token for {} using the shared PatchHive suite bootstrap secret and stored only the service token.",
             definition.title
         )
     } else {
@@ -189,5 +239,5 @@ pub(super) async fn provision_service_token(
         )
     };
 
-    Ok(Json(ok(ProvisionServiceTokenResponse { product, message })))
+    Ok((product, message))
 }

@@ -30,6 +30,22 @@ Docker Compose maps every backend container to port `8000` internally and expose
 
 ## Bring-Up Order
 
+HiveCore can now work in two modes:
+
+- detect and pair with products that are already running
+- start missing first-stack products through the local `patchhive-launcher` service
+
+If you want the browser-driven path, run the launcher first:
+
+```bash
+cd services/patchhive-launcher
+cargo run
+```
+
+Then open HiveCore and use the `Setup` tab.
+
+If you want to bring products up manually, the older path still works:
+
 Run each product from its own directory:
 
 ```bash
@@ -97,7 +113,7 @@ If you want the same password across the first stack and plan to use subdomains 
 
 That writes the same SHA-256 hash into the first-stack `.env` files. After restart, use the same raw password in SignalHive, TrustGate, RepoReaper, and HiveCore.
 
-For product-to-product auth, prefer HiveCore Settings: paste a one-time operator API key there and let HiveCore provision or rotate a dedicated service token through each product's `POST /auth/generate-service-token` or `POST /auth/rotate-service-token` route. If you need to do it manually first, use:
+For product-to-product auth, prefer HiveCore first. With `patchhive-launcher` running, the Setup tab can start missing first-stack products, sync `PATCHHIVE_SUITE_BOOTSTRAP_SECRET`, and pair HiveCore with already-running products automatically. HiveCore Settings still supports the one-time operator-key path when you want to provision or rotate a dedicated service token manually. If you need to do it by hand first, use:
 
 ```bash
 curl -s -X POST http://localhost:8010/auth/generate-service-token -H "X-API-Key: <signal-operator-key>"
@@ -113,7 +129,8 @@ After generating or rotating product service tokens, save the SignalHive, TrustG
 2. Start TrustGate and review a pasted diff first. Move to GitHub PR diff review after token permissions are confirmed.
 3. Start RepoReaper in the safest mode available for the target: low budget, high confidence threshold, untrusted tests disabled unless Docker sandboxing is configured, and dry-run targeting before real PR delivery.
 4. Start HiveCore and confirm each product shows health, startup checks, capabilities, runs, and run detail support without contract errors.
-5. Save product service tokens in HiveCore Settings and confirm protected run history appears.
+5. Use HiveCore Setup to detect the already-running products or start any missing ones.
+6. Confirm HiveCore pairs automatically or provision service tokens from Settings when a manual fallback is still needed.
 
 ## FailGuard Readiness
 

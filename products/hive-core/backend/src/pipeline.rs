@@ -9,26 +9,27 @@ mod overview;
 mod provision;
 pub mod routes;
 pub mod settings;
+mod setup;
 pub mod types;
 
 pub use types::{
     api_error, authorized_get, authorized_request, build_target_url, contract_check,
     contract_checks_for_failed_health, contract_checks_for_unavailable_product,
-    contract_checks_with_health_error, contract_drift_count, DispatchActionInput,
-    fetch_product_auth_status, fetch_product_capabilities, fetch_product_runs,
-    parse_response_body, persist_product_override, pick_url, ProductAuthStatusBody,
-    ProductHealthBody, ProductProbeSnapshot, ProductStoredAuth, remote_error_message,
-    resolved_auth_mode, resolved_legacy_api_key_configured, resolved_machine_auth_configured,
-    resolved_service_token_configured, StartupChecksBody,
+    contract_checks_with_health_error, contract_drift_count, fetch_product_auth_status,
+    fetch_product_capabilities, fetch_product_runs, parse_response_body, persist_product_override,
+    pick_url, remote_error_message, resolved_auth_mode, resolved_legacy_api_key_configured,
+    resolved_machine_auth_configured, resolved_service_token_configured, DispatchActionInput,
+    ProductAuthStatusBody, ProductHealthBody, ProductProbeSnapshot, ProductStoredAuth,
+    StartupChecksBody,
 };
 
 pub(crate) use patchhive_product_core::auth::SERVICE_TOKEN_HEADER;
 
 pub use routes::{
-    auth_status, capabilities, dispatch_product_action, gen_key, gen_service_token, health,
-    login, overview, product_run_detail, product_runs, products, provision_service_token,
-    recent_actions, rotate_service_token, run_detail, runs, save_settings, settings,
-    startup_checks_route,
+    auth_status, capabilities, dispatch_product_action, first_stack_status, gen_key,
+    gen_service_token, health, login, overview, pair_first_stack, product_run_detail, product_runs,
+    products, provision_service_token, recent_actions, rotate_service_token, run_detail, runs,
+    save_settings, settings, start_first_stack, startup_checks_route, stop_first_stack,
 };
 
 fn hive_core_action_run_values(limit: u32) -> Vec<Value> {
@@ -88,7 +89,9 @@ fn build_run_detail_path(template: &str, id: &str) -> Result<String, String> {
     overview::build_run_detail_path(template, id)
 }
 
-fn summarize_products(products: &[crate::models::ProductRuntimeItem]) -> crate::models::OverviewSummary {
+fn summarize_products(
+    products: &[crate::models::ProductRuntimeItem],
+) -> crate::models::OverviewSummary {
     overview::summarize_products(products)
 }
 

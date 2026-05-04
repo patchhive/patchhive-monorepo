@@ -11,8 +11,10 @@ import OverviewPanel from "./panels/OverviewPanel.jsx";
 import ProductsPanel from "./panels/ProductsPanel.jsx";
 import SettingsPanel from "./panels/SettingsPanel.jsx";
 import ChecksPanel from "./panels/ChecksPanel.jsx";
+import SetupPanel from "./panels/SetupPanel.jsx";
 
 const TABS = [
+  { id: "setup", label: "Setup" },
   { id: "overview", label: "⬢ Overview" },
   { id: "products", label: "Products" },
   { id: "settings", label: "Settings" },
@@ -25,7 +27,7 @@ export default function App() {
       apiBase: API,
       storageKey: "hive-core_api_key",
     });
-  const [tab, setTab] = useState("overview");
+  const [tab, setTab] = useState("setup");
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
   const fetch_ = useApiFetcher(apiKey);
@@ -80,6 +82,13 @@ export default function App() {
         onSignOut={logout}
         showSignOut={Boolean(apiKey)}
       >
+        {tab === "setup" && (
+          <SetupPanel
+            fetchEnvelope={fetchEnvelope}
+            setRunning={setRunning}
+            setError={setError}
+          />
+        )}
         {tab === "overview" && (
           <OverviewPanel
             fetchEnvelope={fetchEnvelope}
