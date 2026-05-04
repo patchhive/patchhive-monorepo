@@ -1,6 +1,8 @@
 services:
   backend:
+    image: "${PATCHHIVE_REPO_REAPER_BACKEND_IMAGE:-ghcr.io/patchhive/reporeaper-backend}:${PATCHHIVE_IMAGE_TAG:-main}"
     build: ./backend
+    pull_policy: "${PATCHHIVE_IMAGE_PULL_POLICY:-missing}"
     user: "${PATCHHIVE_BACKEND_UID:-0}:${PATCHHIVE_BACKEND_GID:-0}"
     ports:
       - "8000:8000"
@@ -16,7 +18,9 @@ services:
     restart: unless-stopped
 
   frontend:
+    image: "${PATCHHIVE_REPO_REAPER_FRONTEND_IMAGE:-ghcr.io/patchhive/reporeaper-frontend}:${PATCHHIVE_IMAGE_TAG:-main}"
     build: ./frontend
+    pull_policy: "${PATCHHIVE_IMAGE_PULL_POLICY:-missing}"
     ports:
       - "5173:8080"
     depends_on:

@@ -1,6 +1,8 @@
 services:
   backend:
+    image: "${PATCHHIVE_SIGNAL_HIVE_BACKEND_IMAGE:-ghcr.io/patchhive/signalhive-backend}:${PATCHHIVE_IMAGE_TAG:-main}"
     build: ./backend
+    pull_policy: "${PATCHHIVE_IMAGE_PULL_POLICY:-missing}"
     user: "${PATCHHIVE_BACKEND_UID:-0}:${PATCHHIVE_BACKEND_GID:-0}"
     ports:
       - "8010:8000"
@@ -15,7 +17,9 @@ services:
     restart: unless-stopped
 
   frontend:
+    image: "${PATCHHIVE_SIGNAL_HIVE_FRONTEND_IMAGE:-ghcr.io/patchhive/signalhive-frontend}:${PATCHHIVE_IMAGE_TAG:-main}"
     build: ./frontend
+    pull_policy: "${PATCHHIVE_IMAGE_PULL_POLICY:-missing}"
     ports:
       - "5174:8080"
     depends_on:

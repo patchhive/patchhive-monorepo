@@ -591,17 +591,65 @@ async fn start_managed_products(
     products: &[ManagedProduct],
     secret: &str,
 ) -> Result<Vec<String>, (StatusCode, Json<ApiError>)> {
+    let image_mode = launcher_image_mode();
     let mut actions = Vec::new();
     for product in products {
         let product_dir = product_dir(repo_root, product.slug);
         ensure_env_file(&product_dir)?;
         upsert_env_value(&product_dir.join(".env"), SUITE_BOOTSTRAP_KEY, secret)?;
-        run_docker_compose(&product_dir, ["up", "-d", "--build"])
-            .await
-            .map_err(|message| error(StatusCode::BAD_GATEWAY, &message))?;
-        actions.push(format!("Started {} with docker compose.", product.title));
+
+        if image_mode == "build" {
+            run_docker_compose(&product_dir, ["up", "-d", "--build"])
+                .await
+                .map_err(|message| error(StatusCode::BAD_GATEWAY, &message))?;
+            actions.push(format!("Built and started {} locally.", product.title));
+            continue;
+        }
+
+        match start_with_prebuilt_images(&product_dir).await {
+            Ok(()) => actions.push(format!(
+                "Pulled and started {} from GHCR images.",
+                product.title
+            )),
+            Err(message) if image_mode == "pull-only" => {
+                return Err(error(StatusCode::BAD_GATEWAY, &message));
+            }
+            Err(message) => {
+                actions.push(format!(
+                    "Could not start {} from GHCR images ({}). Falling back to local build.",
+                    product.title,
+                    compact_error(&message)
+                ));
+                run_docker_compose(&product_dir, ["up", "-d", "--build"])
+                    .await
+                    .map_err(|message| error(StatusCode::BAD_GATEWAY, &message))?;
+                actions.push(format!("Built and started {} locally.", product.title));
+            }
+        }
     }
     Ok(actions)
+}
+
+fn launcher_image_mode() -> String {
+    env::var("PATCHHIVE_LAUNCHER_IMAGE_MODE")
+        .unwrap_or_else(|_| "pull".into())
+        .trim()
+        .to_ascii_lowercase()
+}
+
+async fn start_with_prebuilt_images(product_dir: &FsPath) -> Result<(), String> {
+    run_docker_compose(product_dir, ["pull"]).await?;
+    run_docker_compose(product_dir, ["up", "-d", "--no-build"]).await
+}
+
+fn compact_error(message: &str) -> String {
+    const MAX_LEN: usize = 180;
+    let compact = message.split_whitespace().collect::<Vec<_>>().join(" ");
+    if compact.chars().count() <= MAX_LEN {
+        compact
+    } else {
+        format!("{}...", compact.chars().take(MAX_LEN).collect::<String>())
+    }
 }
 
 async fn action_response(repo_root: &FsPath, actions: Vec<String>) -> LauncherActionResponse {
