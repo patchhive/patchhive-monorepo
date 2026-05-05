@@ -119,8 +119,10 @@ pub async fn publish_pull_request(
         {smith_note}\n\n\
         ### Tests\n{}\n\n\
         ---\n\
+        Generated autonomously by **RepoReaper by PatchHive**.\n\
+        Closes #{}.\n\n\
         ⚖ Judge: {} · ⚔ Reaper: {} · ⬢ Smith: {} · 🔒 Gatekeeper: {}\n\n\
-        *RepoReaper by PatchHive · Closes #{}*",
+        *RepoReaper by PatchHive*",
         scope.issue_num,
         issue["title"].as_str().unwrap_or(""),
         result["explanation"].as_str().unwrap_or(""),
@@ -131,6 +133,7 @@ pub async fn publish_pull_request(
         } else {
             "⚠️ Failed (draft PR)"
         },
+        scope.issue_num,
         agents
             .judge
             .as_ref()
@@ -143,7 +146,6 @@ pub async fn publish_pull_request(
             .map(|smith| smith.name.as_str())
             .unwrap_or("none"),
         agents.gatekeeper.name,
-        scope.issue_num,
     );
 
     let base_branch = gh_default_branch(http, &scope.repo, Some(bot_token))

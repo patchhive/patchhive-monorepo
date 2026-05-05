@@ -405,7 +405,7 @@ async fn webhook_pr_comment(state: AppState, repo: &str, issue: Value, comment: 
 
     let _ = gh_post(&state.http, &format!("/repos/{repo}/pulls"), &json!({
         "title": msg,
-        "body": format!("Follow-up fix based on maintainer feedback on #{}.\n\n**Maintainer:** {}\n\n**What changed:** {}\n\n*RepoReaper by PatchHive*",
+        "body": format!("Follow-up fix based on maintainer feedback on #{}.\n\nGenerated autonomously by **RepoReaper by PatchHive**.\n\n**Maintainer:** {}\n\n**What changed:** {}\n\n*RepoReaper by PatchHive*",
             pr_number, comment["body"].as_str().unwrap_or("").chars().take(500).collect::<String>(), result["explanation"].as_str().unwrap_or("")),
         "head": format!("{bot_user}:{branch}"), "base": base_branch, "draft": false,
     }), Some(&bot_token)).await;
