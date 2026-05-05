@@ -34,6 +34,7 @@ The product documentation set is in [products/](products/).
 
 - [Platform guardrails](platform-guardrails.md)
 - [HiveCore first-stack readiness audit](hivecore-first-stack-readiness.md)
+- [HiveCore suite bootstrap wizard](hivecore-suite-bootstrap-wizard.md)
 - [Product API contract v1](product-api-contract-v1.md)
 - [Product export workflow](product-export-workflow.md)
 - [Product starter workflow](product-starter-workflow.md)
