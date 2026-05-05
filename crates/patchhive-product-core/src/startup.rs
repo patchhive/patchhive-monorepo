@@ -3,6 +3,7 @@ use http::{
     HeaderName, HeaderValue, Method,
 };
 use serde::{Deserialize, Serialize};
+use std::net::IpAddr;
 use tower_http::cors::{AllowOrigin, CorsLayer};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -133,6 +134,7 @@ pub fn cors_layer() -> CorsLayer {
     } else {
         AllowOrigin::predicate(move |origin: &HeaderValue, _request_parts| {
             allowed_values.iter().any(|allowed| allowed == origin)
+                || is_patchhive_local_dev_origin(origin)
         })
     };
 
@@ -152,4 +154,72 @@ pub fn cors_layer() -> CorsLayer {
             CONTENT_TYPE,
             HeaderName::from_static("x-api-key"),
         ])
+}
+
+fn is_patchhive_local_dev_origin(origin: &HeaderValue) -> bool {
+    let Ok(origin) = origin.to_str() else {
+        return false;
+    };
+    let Some(rest) = origin
+        .strip_prefix("http://")
+        .or_else(|| origin.strip_prefix("https://"))
+    else {
+        return false;
+    };
+
+    let host_port = rest.split('/').next().unwrap_or(rest);
+    let Some((host, port)) = split_origin_host_port(host_port) else {
+        return false;
+    };
+    let Ok(port) = port.parse::<u16>() else {
+        return false;
+    };
+
+    (5173..=5183).contains(&port) && is_local_dev_host(host)
+}
+
+fn split_origin_host_port(host_port: &str) -> Option<(&str, &str)> {
+    if let Some(stripped) = host_port.strip_prefix('[') {
+        let (host, rest) = stripped.split_once(']')?;
+        let port = rest.strip_prefix(':')?;
+        return Some((host, port));
+    }
+
+    host_port.rsplit_once(':')
+}
+
+fn is_local_dev_host(host: &str) -> bool {
+    if host.eq_ignore_ascii_case("localhost") {
+        return true;
+    }
+
+    match host.parse::<IpAddr>() {
+        Ok(IpAddr::V4(addr)) => addr.is_loopback() || addr.is_private() || addr.is_link_local(),
+        Ok(IpAddr::V6(addr)) => addr.is_loopback(),
+        Err(_) => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_patchhive_local_dev_origin;
+    use http::HeaderValue;
+
+    #[test]
+    fn allows_patchhive_frontend_on_lan_host() {
+        let origin = HeaderValue::from_static("http://192.168.1.108:5183");
+        assert!(is_patchhive_local_dev_origin(&origin));
+    }
+
+    #[test]
+    fn rejects_non_patchhive_frontend_ports() {
+        let origin = HeaderValue::from_static("http://192.168.1.108:3000");
+        assert!(!is_patchhive_local_dev_origin(&origin));
+    }
+
+    #[test]
+    fn rejects_public_hosts() {
+        let origin = HeaderValue::from_static("https://example.com:5183");
+        assert!(!is_patchhive_local_dev_origin(&origin));
+    }
 }

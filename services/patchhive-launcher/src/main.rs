@@ -234,20 +234,13 @@ async fn restart_product(
     let product = find_product(&slug)?;
     let repo_root = require_repo_root(&state)?;
     require_docker_compose().await?;
-    let product_dir = product_dir(repo_root, product.slug);
     let requested_secret = body
         .map(|Json(body)| body.suite_bootstrap_secret)
         .unwrap_or_default();
-    if let Some(secret) = requested_or_configured_secret(requested_secret) {
-        ensure_env_file(&product_dir)?;
-        upsert_env_value(&product_dir.join(".env"), SUITE_BOOTSTRAP_KEY, &secret)?;
-    }
-    run_docker_compose(&product_dir, ["restart"])
-        .await
-        .map_err(|message| error(StatusCode::BAD_GATEWAY, &message))?;
-    Ok(Json(
-        action_response(repo_root, vec![format!("Restarted {}.", product.title)]).await,
-    ))
+    let secret = requested_or_configured_secret(requested_secret)
+        .unwrap_or_else(|| format!("ph-suite-{}", Uuid::new_v4().simple()));
+    let actions = start_managed_products(repo_root, &[product], &secret).await?;
+    Ok(Json(action_response(repo_root, actions).await))
 }
 
 async fn product_logs(
@@ -599,10 +592,16 @@ async fn start_managed_products(
         upsert_env_value(&product_dir.join(".env"), SUITE_BOOTSTRAP_KEY, secret)?;
 
         if image_mode == "build" {
-            run_docker_compose(&product_dir, ["up", "-d", "--build"])
-                .await
-                .map_err(|message| error(StatusCode::BAD_GATEWAY, &message))?;
-            actions.push(format!("Built and started {} locally.", product.title));
+            run_docker_compose(
+                &product_dir,
+                ["up", "-d", "--build", "--force-recreate", "--pull", "never"],
+            )
+            .await
+            .map_err(|message| error(StatusCode::BAD_GATEWAY, &message))?;
+            actions.push(format!(
+                "Built and recreated {} locally so env changes are loaded.",
+                product.title
+            ));
             continue;
         }
 
@@ -620,10 +619,16 @@ async fn start_managed_products(
                     product.title,
                     compact_error(&message)
                 ));
-                run_docker_compose(&product_dir, ["up", "-d", "--build"])
-                    .await
-                    .map_err(|message| error(StatusCode::BAD_GATEWAY, &message))?;
-                actions.push(format!("Built and started {} locally.", product.title));
+                run_docker_compose(
+                    &product_dir,
+                    ["up", "-d", "--build", "--force-recreate", "--pull", "never"],
+                )
+                .await
+                .map_err(|message| error(StatusCode::BAD_GATEWAY, &message))?;
+                actions.push(format!(
+                    "Built and recreated {} locally so env changes are loaded.",
+                    product.title
+                ));
             }
         }
     }
@@ -639,7 +644,7 @@ fn launcher_image_mode() -> String {
 
 async fn start_with_prebuilt_images(product_dir: &FsPath) -> Result<(), String> {
     run_docker_compose(product_dir, ["pull"]).await?;
-    run_docker_compose(product_dir, ["up", "-d", "--no-build"]).await
+    run_docker_compose(product_dir, ["up", "-d", "--no-build", "--force-recreate"]).await
 }
 
 fn compact_error(message: &str) -> String {
