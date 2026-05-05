@@ -7,7 +7,7 @@ use std::{
 use once_cell::sync::OnceCell;
 use rusqlite::{params, Connection, OptionalExtension};
 
-use crate::models::{ProductActionEvent, ProductOverride, SuiteSettings};
+use crate::models::{FirstStackSmokeRun, ProductActionEvent, ProductOverride, SuiteSettings};
 use crate::secrets::TokenProtector;
 
 static DB_CONN: OnceCell<Mutex<Connection>> = OnceCell::new();
@@ -138,6 +138,34 @@ pub fn action_event(id: &str) -> Option<ProductActionEvent> {
     load_action_event(&conn, id).ok().flatten()
 }
 
+pub fn record_first_stack_smoke_run(run: &FirstStackSmokeRun) -> rusqlite::Result<()> {
+    let conn = connect()?;
+    conn.execute(
+        r#"
+        INSERT INTO first_stack_smoke_runs (
+          id, status, started_at, finished_at, summary, steps_json
+        )
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+        "#,
+        params![
+            &run.id,
+            &run.status,
+            &run.started_at,
+            &run.finished_at,
+            &run.summary,
+            serde_json::to_string(&run.steps).unwrap_or_else(|_| "[]".into()),
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn latest_first_stack_smoke_run() -> Option<FirstStackSmokeRun> {
+    let Ok(conn) = connect() else {
+        return None;
+    };
+    load_latest_first_stack_smoke_run(&conn).ok().flatten()
+}
+
 fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute_batch(
         r#"
@@ -180,6 +208,15 @@ fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
           response_json TEXT NOT NULL,
           error TEXT NOT NULL,
           created_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS first_stack_smoke_runs (
+          id TEXT PRIMARY KEY,
+          status TEXT NOT NULL,
+          started_at TEXT NOT NULL,
+          finished_at TEXT NOT NULL,
+          summary TEXT NOT NULL,
+          steps_json TEXT NOT NULL
         );
         "#,
     )?;
@@ -485,14 +522,43 @@ fn load_action_event(conn: &Connection, id: &str) -> rusqlite::Result<Option<Pro
     .optional()
 }
 
+fn load_latest_first_stack_smoke_run(
+    conn: &Connection,
+) -> rusqlite::Result<Option<FirstStackSmokeRun>> {
+    conn.query_row(
+        r#"
+        SELECT id, status, started_at, finished_at, summary, steps_json
+        FROM first_stack_smoke_runs
+        ORDER BY finished_at DESC
+        LIMIT 1
+        "#,
+        [],
+        |row| {
+            let steps_json = row.get::<_, String>(5)?;
+            Ok(FirstStackSmokeRun {
+                id: row.get(0)?,
+                status: row.get(1)?,
+                started_at: row.get(2)?,
+                finished_at: row.get(3)?,
+                summary: row.get(4)?,
+                steps: serde_json::from_str(&steps_json).unwrap_or_default(),
+            })
+        },
+    )
+    .optional()
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        init_schema, load_action_event, load_action_events, load_product_overrides,
-        load_service_token_storage_stats, load_suite_settings, replace_overrides,
-        write_suite_settings, ServiceTokenStorageStats,
+        init_schema, load_action_event, load_action_events, load_latest_first_stack_smoke_run,
+        load_product_overrides, load_service_token_storage_stats, load_suite_settings,
+        replace_overrides, write_suite_settings, ServiceTokenStorageStats,
     };
-    use crate::models::{now_rfc3339, ProductActionEvent, ProductOverride, SuiteSettings};
+    use crate::models::{
+        now_rfc3339, FirstStackSmokeRun, FirstStackSmokeStep, ProductActionEvent, ProductOverride,
+        SuiteSettings,
+    };
     use crate::secrets::TokenProtector;
     use rusqlite::Connection;
     use serde_json::json;
@@ -607,6 +673,53 @@ mod tests {
             .expect("event lookup should work")
             .expect("event should exist");
         assert_eq!(loaded.action_id, "scan");
+    }
+
+    #[test]
+    fn first_stack_smoke_runs_round_trip_in_memory() {
+        let conn = Connection::open_in_memory().expect("in-memory db should open");
+        init_schema(&conn).expect("schema should initialize");
+
+        let run = FirstStackSmokeRun {
+            id: "smoke_1".into(),
+            status: "ready".into(),
+            started_at: now_rfc3339(),
+            finished_at: now_rfc3339(),
+            summary: "First stack is ready.".into(),
+            steps: vec![FirstStackSmokeStep {
+                slug: "signal-hive".into(),
+                title: "SignalHive".into(),
+                check: "health".into(),
+                status: "pass".into(),
+                message: "SignalHive responded.".into(),
+                remote_status: Some(200),
+                evidence: json!({"status": "ok"}),
+            }],
+        };
+
+        conn.execute(
+            r#"
+            INSERT INTO first_stack_smoke_runs (
+              id, status, started_at, finished_at, summary, steps_json
+            )
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+            "#,
+            rusqlite::params![
+                &run.id,
+                &run.status,
+                &run.started_at,
+                &run.finished_at,
+                &run.summary,
+                serde_json::to_string(&run.steps).expect("steps serialize"),
+            ],
+        )
+        .expect("smoke run should insert");
+
+        let loaded = load_latest_first_stack_smoke_run(&conn)
+            .expect("smoke run should load")
+            .expect("smoke run should exist");
+        assert_eq!(loaded.status, "ready");
+        assert_eq!(loaded.steps[0].slug, "signal-hive");
     }
 
     #[test]

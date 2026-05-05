@@ -29,6 +29,13 @@ function launcherTone(status) {
   return "var(--gold)";
 }
 
+function smokeTone(status) {
+  if (status === "ready" || status === "pass") return "var(--green)";
+  if (status === "attention" || status === "warn" || status === "skip") return "var(--gold)";
+  if (status === "blocked" || status === "fail") return "var(--accent)";
+  return "var(--blue)";
+}
+
 function LaunchGauge({ label, value, total, tone = "var(--accent)" }) {
   const pct = total > 0 ? Math.round((value / total) * 100) : 0;
   return (
@@ -50,6 +57,72 @@ function LaunchGauge({ label, value, total, tone = "var(--accent)" }) {
       </div>
       <div style={{ height: 7, borderRadius: 999, background: "rgba(255,255,255,0.06)", overflow: "hidden" }}>
         <div style={{ width: `${pct}%`, height: "100%", borderRadius: 999, background: tone }} />
+      </div>
+    </div>
+  );
+}
+
+function SmokeEvidence({ smoke }) {
+  if (!smoke) return null;
+  const grouped = smoke.steps.reduce((acc, step) => {
+    acc[step.slug] = acc[step.slug] || [];
+    acc[step.slug].push(step);
+    return acc;
+  }, {});
+
+  return (
+    <div style={{ ...S.panel, display: "grid", gap: 12, borderColor: `${smokeTone(smoke.status)}66` }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+        <div>
+          <div style={{ fontSize: 11, letterSpacing: "0.16em", textTransform: "uppercase", color: "var(--text-dim)" }}>
+            Latest suite smoke
+          </div>
+          <div style={{ fontSize: 18, fontWeight: 900 }}>{smoke.summary}</div>
+          <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
+            {smoke.finished_at} · {smoke.id}
+          </div>
+        </div>
+        <Tag color={smokeTone(smoke.status)}>{smoke.status}</Tag>
+      </div>
+
+      <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}>
+        {Object.entries(grouped).map(([slug, steps]) => (
+          <div
+            key={slug}
+            style={{
+              display: "grid",
+              gap: 7,
+              padding: 12,
+              border: "1px solid var(--border)",
+              borderRadius: 12,
+              background: "rgba(0,0,0,0.18)",
+            }}
+          >
+            <div style={{ fontSize: 13, fontWeight: 800 }}>{steps[0]?.title || slug}</div>
+            {steps.map((step) => (
+              <div
+                key={`${step.slug}-${step.check}`}
+                style={{
+                  display: "grid",
+                  gap: 4,
+                  padding: "8px 9px",
+                  borderRadius: 9,
+                  background: "color-mix(in srgb, var(--bg) 55%, transparent)",
+                  border: `1px solid ${smokeTone(step.status)}44`,
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+                  <span style={{ fontSize: 11, fontWeight: 800 }}>{step.check}</span>
+                  <Tag color={smokeTone(step.status)}>{step.status}</Tag>
+                </div>
+                <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.45 }}>
+                  {step.message}
+                  {step.remote_status ? ` Remote HTTP ${step.remote_status}.` : ""}
+                </div>
+              </div>
+            ))}
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -342,6 +415,13 @@ export default function SetupPanel({ fetchEnvelope, setRunning, setError }) {
               {busyAction === "Pair running products" ? "Pairing..." : "Pair running products"}
             </Btn>
             <Btn
+              onClick={() => runAction("Run smoke check", "/setup/first-stack/smoke")}
+              disabled={busyAction === "Run smoke check"}
+              color="var(--accent)"
+            >
+              {busyAction === "Run smoke check" ? "Checking..." : "Run smoke check"}
+            </Btn>
+            <Btn
               onClick={() => runAction("Stop first stack", "/setup/first-stack/stop")}
               disabled={busyAction === "Stop first stack"}
             >
@@ -365,6 +445,7 @@ export default function SetupPanel({ fetchEnvelope, setRunning, setError }) {
           </Tag>
           <Tag color="var(--blue)">{onlineCount}/3 downstream reachable</Tag>
           <Tag color={pairedCount === 3 ? "var(--green)" : "var(--gold)"}>{pairedCount}/3 paired</Tag>
+          {setup.latest_smoke && <Tag color={smokeTone(setup.latest_smoke.status)}>smoke {setup.latest_smoke.status}</Tag>}
         </div>
 
         <div style={{ position: "relative", display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
@@ -378,6 +459,8 @@ export default function SetupPanel({ fetchEnvelope, setRunning, setError }) {
           {setup.launcher.repo_root ? ` Repo root: ${setup.launcher.repo_root}` : ""}
         </div>
       </div>
+
+      <SmokeEvidence smoke={setup.latest_smoke} />
 
       {setup.actions?.length > 0 && (
         <div style={{ ...S.panel, display: "grid", gap: 8 }}>

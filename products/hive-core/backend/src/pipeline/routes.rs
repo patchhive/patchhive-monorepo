@@ -233,6 +233,12 @@ pub async fn pair_first_stack(
     super::setup::pair_first_stack(State(state)).await
 }
 
+pub async fn run_first_stack_smoke(
+    State(state): State<AppState>,
+) -> Json<crate::models::ApiEnvelope<crate::models::FirstStackSetupResponse>> {
+    super::smoke::run_first_stack_smoke(State(state)).await
+}
+
 pub async fn stop_first_stack(
     State(state): State<AppState>,
 ) -> Result<

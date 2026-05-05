@@ -22,7 +22,8 @@ use super::overview::build_runtime_products;
 use super::provision::provision_service_token_for_product;
 use super::{api_error, fetch_product_auth_status, pick_url};
 
-const DOWNSTREAM_FIRST_STACK_SLUGS: [&str; 3] = ["signal-hive", "trust-gate", "repo-reaper"];
+pub(super) const DOWNSTREAM_FIRST_STACK_SLUGS: [&str; 3] =
+    ["signal-hive", "trust-gate", "repo-reaper"];
 const FIRST_STACK_SLUGS: [&str; 4] = ["signal-hive", "trust-gate", "repo-reaper", "hive-core"];
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -231,7 +232,7 @@ pub(super) async fn setup_product_logs(
     Ok(Json(ok(body)))
 }
 
-async fn build_first_stack_response(
+pub(super) async fn build_first_stack_response(
     state: &AppState,
     actions: Vec<String>,
 ) -> FirstStackSetupResponse {
@@ -285,6 +286,7 @@ async fn build_first_stack_response(
         stack_id: "first-stack".into(),
         launcher: launcher.status,
         suite_bootstrap_configured: configured_suite_bootstrap_secret().is_some(),
+        latest_smoke: db::latest_first_stack_smoke_run(),
         actions,
         products,
     }

@@ -60,6 +60,10 @@ async fn main() {
             axum::routing::post(pipeline::pair_first_stack),
         )
         .route(
+            "/setup/first-stack/smoke",
+            axum::routing::post(pipeline::run_first_stack_smoke),
+        )
+        .route(
             "/setup/first-stack/stop",
             axum::routing::post(pipeline::stop_first_stack),
         )

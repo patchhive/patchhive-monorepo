@@ -369,8 +369,30 @@ pub struct FirstStackSetupResponse {
     pub stack_id: String,
     pub launcher: SetupLauncherStatus,
     pub suite_bootstrap_configured: bool,
+    pub latest_smoke: Option<FirstStackSmokeRun>,
     pub actions: Vec<String>,
     pub products: Vec<SetupProductStatus>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FirstStackSmokeStep {
+    pub slug: String,
+    pub title: String,
+    pub check: String,
+    pub status: String,
+    pub message: String,
+    pub remote_status: Option<u16>,
+    pub evidence: Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FirstStackSmokeRun {
+    pub id: String,
+    pub status: String,
+    pub started_at: String,
+    pub finished_at: String,
+    pub summary: String,
+    pub steps: Vec<FirstStackSmokeStep>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
