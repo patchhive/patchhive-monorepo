@@ -16,6 +16,32 @@ const LANE_ORDER = [
   "Control Plane",
 ];
 
+const commandWorkspaceStyle = {
+  display: "grid",
+  gap: 14,
+  gridTemplateColumns: "minmax(0, 1fr) clamp(320px, 32vw, 430px)",
+  alignItems: "start",
+};
+
+const focusRailStyle = {
+  position: "sticky",
+  top: 16,
+  alignSelf: "start",
+  display: "grid",
+  height: "clamp(520px, calc(100vh - 118px), 760px)",
+  overflow: "hidden",
+};
+
+const focusPanelStyle = {
+  ...S.panel,
+  display: "grid",
+  gridTemplateRows: "auto minmax(0, 1fr)",
+  gap: 10,
+  height: "100%",
+  minHeight: 0,
+  overflow: "hidden",
+};
+
 function statusColor(status) {
   if (status === "online") return "var(--green)";
   if (status === "degraded") return "var(--gold)";
@@ -998,32 +1024,34 @@ export default function SetupPanel({ fetchEnvelope, setRunning, setError }) {
         onAction={runAction}
       />
 
-      <div style={{ display: "grid", gap: 14, gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))" }}>
+      <div style={commandWorkspaceStyle}>
         <FleetLaneMap products={fleetProducts} selectedSlug={selectedProduct?.runtime.slug} onSelect={setSelectedSlug} />
-        <div style={{ display: "grid", gap: 12 }}>
-          <div style={{ ...S.panel, display: "grid", gap: 8 }}>
+        <div style={focusRailStyle}>
+          <div style={focusPanelStyle}>
             <div>
               <div style={{ fontSize: 15, fontWeight: 900 }}>Focused Product</div>
               <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.45 }}>
                 Select any product from the fleet map. HiveCore only shows launcher/env controls when that product is managed by this setup flow.
               </div>
             </div>
-            {selectedItem ? (
-              <ProductCard
-                item={selectedItem}
-                busyAction={busyAction}
-                credentialDraft={credentialDrafts[selectedItem.runtime.slug] || {}}
-                credentialResult={credentialResults[selectedItem.runtime.slug]}
-                onCredentialChange={setCredentialDraft}
-                onSaveCredentials={saveCredentials}
-                onGenerateCredential={generateCredential}
-                onValidateGithubToken={validateGithubToken}
-                onProductAction={runProductAction}
-                onLoadLogs={loadLogs}
-              />
-            ) : (
-              <EmptyState icon="⬢" text="Select a product to inspect." />
-            )}
+            <div style={{ minHeight: 0, overflow: "auto", paddingRight: 2 }}>
+              {selectedItem ? (
+                <ProductCard
+                  item={selectedItem}
+                  busyAction={busyAction}
+                  credentialDraft={credentialDrafts[selectedItem.runtime.slug] || {}}
+                  credentialResult={credentialResults[selectedItem.runtime.slug]}
+                  onCredentialChange={setCredentialDraft}
+                  onSaveCredentials={saveCredentials}
+                  onGenerateCredential={generateCredential}
+                  onValidateGithubToken={validateGithubToken}
+                  onProductAction={runProductAction}
+                  onLoadLogs={loadLogs}
+                />
+              ) : (
+                <EmptyState icon="⬢" text="Select a product to inspect." />
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -1062,23 +1090,6 @@ export default function SetupPanel({ fetchEnvelope, setRunning, setError }) {
         </div>
       )}
 
-      <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))" }}>
-        {setup.products.map((item) => (
-          <ProductCard
-            key={item.runtime.slug}
-            item={item}
-            busyAction={busyAction}
-            credentialDraft={credentialDrafts[item.runtime.slug] || {}}
-            credentialResult={credentialResults[item.runtime.slug]}
-            onCredentialChange={setCredentialDraft}
-            onSaveCredentials={saveCredentials}
-            onGenerateCredential={generateCredential}
-            onValidateGithubToken={validateGithubToken}
-            onProductAction={runProductAction}
-            onLoadLogs={loadLogs}
-          />
-        ))}
-      </div>
     </div>
   );
 }
