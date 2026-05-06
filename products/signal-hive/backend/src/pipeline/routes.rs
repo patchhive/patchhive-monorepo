@@ -20,6 +20,14 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
         "SignalHive",
         vec![
             contract::action(
+                "smoke_check",
+                "Run smoke check",
+                "POST",
+                "/smoke",
+                "Verify SignalHive is ready for HiveCore dispatch without running a live GitHub scan.",
+                false,
+            ),
+            contract::action(
                 "scan",
                 "Run signal scan",
                 "POST",
@@ -49,6 +57,19 @@ pub async fn runs() -> Json<contract::ProductRunsResponse> {
         "signal-hive",
         crate::db::list_scans().unwrap_or_default(),
     ))
+}
+
+pub async fn smoke_check() -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)>
+{
+    let scans = crate::db::list_scans().map_err(internal_error)?;
+    Ok(Json(json!({
+        "ok": true,
+        "service": "signal-hive",
+        "check": "smoke_check",
+        "scan_count": scans.len(),
+        "latest_scan_id": scans.first().map(|scan| scan.id.clone()),
+        "message": "SignalHive accepted HiveCore service-token dispatch without running a live GitHub scan."
+    })))
 }
 
 pub async fn scan(

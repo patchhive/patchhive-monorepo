@@ -18,7 +18,7 @@ static AUTH_CONFIG: Lazy<ApiKeyAuthConfig> = Lazy::new(|| {
     ApiKeyAuthConfig::new("SIGNAL_API_KEY_HASH", "sh-")
         .with_service_token("SIGNAL_SERVICE_TOKEN_HASH", "sh-svc-")
         .with_service_default_name("hivecore")
-        .with_service_dispatch_paths(["/scan", "/schedules/{name}/run"])
+        .with_service_dispatch_paths(["/scan", "/smoke", "/schedules/{name}/run"])
         .with_unauthorized_message("Unauthorized — provide X-API-Key or X-PatchHive-Service-Token.")
         .with_public_paths([
             "/health",

@@ -478,7 +478,7 @@ async fn post_smoke_action(
 
 fn expected_smoke_action(slug: &str) -> &'static str {
     match slug {
-        "signal-hive" => "scan",
+        "signal-hive" => "smoke_check",
         "trust-gate" => "review_diff",
         "repo-reaper" => "dry_run",
         _ => "unknown",
@@ -487,15 +487,7 @@ fn expected_smoke_action(slug: &str) -> &'static str {
 
 fn smoke_payload(slug: &str) -> Value {
     match slug {
-        "signal-hive" => json!({
-            "search_query": "",
-            "topics": ["maintenance"],
-            "languages": ["rust"],
-            "min_stars": 0,
-            "max_repos": 1,
-            "issues_per_repo": 1,
-            "stale_days": 1
-        }),
+        "signal-hive" => json!({}),
         "trust-gate" => json!({
             "repo": "patchhive/smoke-fixture",
             "ai_source": "hivecore-smoke",
