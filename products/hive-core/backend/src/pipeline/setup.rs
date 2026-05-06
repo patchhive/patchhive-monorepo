@@ -921,10 +921,9 @@ async fn auto_pair_products(
 
         if auth_status.auth_enabled && !auth_status.suite_bootstrap_enabled {
             actions.push(format!(
-                "Skipped {} pairing because it requires operator auth and does not advertise suite bootstrap yet.",
+                "{} does not advertise suite bootstrap in /auth/status, but HiveCore has the shared suite secret and will try the service-token endpoint directly.",
                 definition.title
             ));
-            continue;
         }
 
         match provision_service_token_for_product(
