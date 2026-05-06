@@ -1,6 +1,21 @@
 import { useEffect, useState } from "react";
 import { Btn, EmptyState, Input, S, Tag } from "@patchhivehq/ui";
 
+const FIRST_STACK_SLUGS = ["signal-hive", "trust-gate", "repo-reaper"];
+const LANE_ORDER = [
+  "Visibility",
+  "Trust",
+  "Memory",
+  "Action",
+  "Review",
+  "Merge",
+  "CI",
+  "Dependencies",
+  "Security",
+  "Quality",
+  "Control Plane",
+];
+
 function statusColor(status) {
   if (status === "online") return "var(--green)";
   if (status === "degraded") return "var(--gold)";
@@ -66,6 +81,80 @@ function generatedSecretPrefix(requirement) {
   return "ph-local";
 }
 
+function mergedFleetProducts(setup, fleet) {
+  const setupBySlug = new Map((setup?.products || []).map((item) => [item.runtime.slug, item]));
+  const source = fleet?.length ? fleet : (setup?.products || []).map((item) => item.runtime);
+  return source.map((runtime) => ({
+    runtime,
+    setupItem: setupBySlug.get(runtime.slug),
+    firstStack: FIRST_STACK_SLUGS.includes(runtime.slug),
+  }));
+}
+
+function selectedSetupItem(product) {
+  if (!product) return null;
+  return (
+    product.setupItem || {
+      runtime: product.runtime,
+      auth_status: null,
+      auth_status_error: "",
+      pairing_ready: false,
+      launcher: null,
+      credentials: [],
+    }
+  );
+}
+
+function setupMission(setup, onlineCount, pairedCount) {
+  const smoke = setup?.latest_smoke;
+  if (smoke?.status === "blocked") {
+    return {
+      label: "Blocked",
+      tone: "var(--accent)",
+      headline: "HiveCore found a blocker.",
+      detail: smoke.summary,
+    };
+  }
+  if (onlineCount < FIRST_STACK_SLUGS.length) {
+    return {
+      label: "Launch Needed",
+      tone: "var(--gold)",
+      headline: "Some first-stack products are not reachable.",
+      detail: "Start the missing products, then HiveCore can pair and smoke-check the suite.",
+    };
+  }
+  if (pairedCount < FIRST_STACK_SLUGS.length) {
+    return {
+      label: "Pairing Needed",
+      tone: "var(--blue)",
+      headline: "Products are running; machine pairing is next.",
+      detail: "HiveCore needs scoped service tokens before it can dispatch suite actions safely.",
+    };
+  }
+  if (smoke?.status === "ready") {
+    return {
+      label: "Suite Ready",
+      tone: "var(--green)",
+      headline: "First stack is under HiveCore control.",
+      detail: smoke.summary,
+    };
+  }
+  if (smoke?.status === "attention") {
+    return {
+      label: "Ready With Notes",
+      tone: "var(--gold)",
+      headline: "The stack is wired, with non-blocking notes.",
+      detail: smoke.summary,
+    };
+  }
+  return {
+    label: "Smoke Needed",
+    tone: "var(--accent)",
+    headline: "The first stack is ready for evidence.",
+    detail: "Run the HiveCore-controlled smoke check to prove health, auth, capabilities, and safe actions.",
+  };
+}
+
 function LaunchGauge({ label, value, total, tone = "var(--accent)" }) {
   const pct = total > 0 ? Math.round((value / total) * 100) : 0;
   return (
@@ -87,6 +176,142 @@ function LaunchGauge({ label, value, total, tone = "var(--accent)" }) {
       </div>
       <div style={{ height: 7, borderRadius: 999, background: "rgba(255,255,255,0.06)", overflow: "hidden" }}>
         <div style={{ width: `${pct}%`, height: "100%", borderRadius: 999, background: tone }} />
+      </div>
+    </div>
+  );
+}
+
+function CommandButton({ title, detail, color, disabled, active, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        display: "grid",
+        gap: 5,
+        textAlign: "left",
+        padding: "12px 13px",
+        borderRadius: 14,
+        border: `1px solid ${color}55`,
+        background: active
+          ? `color-mix(in srgb, ${color} 18%, var(--bg-panel))`
+          : "color-mix(in srgb, var(--bg) 58%, transparent)",
+        color: "var(--text)",
+        cursor: disabled ? "not-allowed" : "pointer",
+        opacity: disabled ? 0.62 : 1,
+      }}
+    >
+      <span style={{ fontSize: 12, fontWeight: 900, color }}>{title}</span>
+      <span style={{ fontSize: 10, color: "var(--text-dim)", lineHeight: 1.45 }}>{detail}</span>
+    </button>
+  );
+}
+
+function MissionControl({ setup, onlineCount, pairedCount, fleetCount, busyAction, onRefresh, onAction }) {
+  const mission = setupMission(setup, onlineCount, pairedCount);
+  const busy = Boolean(busyAction);
+  return (
+    <div
+      style={{
+        ...S.panel,
+        position: "relative",
+        overflow: "hidden",
+        display: "grid",
+        gap: 18,
+        borderColor: `${mission.tone}77`,
+        background:
+          "linear-gradient(135deg, color-mix(in srgb, var(--accent) 20%, var(--bg-panel)) 0%, var(--bg-panel) 44%, color-mix(in srgb, var(--blue) 19%, var(--bg-panel)) 100%)",
+      }}
+    >
+      <div
+        aria-hidden="true"
+        style={{
+          position: "absolute",
+          inset: 0,
+          background:
+            "radial-gradient(circle at 82% 18%, color-mix(in srgb, var(--blue) 22%, transparent) 0, transparent 34%), linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px), linear-gradient(0deg, rgba(255,255,255,0.018) 1px, transparent 1px)",
+          backgroundSize: "auto, 34px 34px, 34px 34px",
+          opacity: 0.9,
+          pointerEvents: "none",
+        }}
+      />
+      <div style={{ position: "relative", display: "grid", gap: 14, gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}>
+        <div style={{ display: "grid", gap: 10 }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <Tag color={mission.tone}>{mission.label}</Tag>
+            <Tag color={setup.launcher.available ? "var(--green)" : "var(--accent)"}>
+              launcher {setup.launcher.available ? "available" : "offline"}
+            </Tag>
+            <Tag color={setup.suite_bootstrap_configured ? "var(--green)" : "var(--gold)"}>
+              suite bootstrap {setup.suite_bootstrap_configured ? "configured" : "missing"}
+            </Tag>
+          </div>
+          <div style={{ fontSize: 34, lineHeight: 1.02, fontWeight: 950, letterSpacing: "-0.055em" }}>
+            {mission.headline}
+          </div>
+          <div style={{ fontSize: 13, color: "var(--text-dim)", lineHeight: 1.6, maxWidth: 780 }}>
+            {mission.detail}
+          </div>
+        </div>
+
+        <div style={{ display: "grid", gap: 10 }}>
+          <div style={{ display: "grid", gap: 8, gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}>
+            <LaunchGauge label="Reachable" value={onlineCount} total={FIRST_STACK_SLUGS.length} tone={onlineCount === FIRST_STACK_SLUGS.length ? "var(--green)" : "var(--gold)"} />
+            <LaunchGauge label="Paired" value={pairedCount} total={FIRST_STACK_SLUGS.length} tone={pairedCount === FIRST_STACK_SLUGS.length ? "var(--green)" : "var(--blue)"} />
+            <LaunchGauge label="Fleet" value={fleetCount} total={11} tone="var(--accent)" />
+          </div>
+          <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.55 }}>
+            {setup.launcher.message}
+            {setup.launcher.repo_root ? ` Repo root: ${setup.launcher.repo_root}` : ""}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ position: "relative", display: "grid", gap: 10 }}>
+        <div style={{ fontSize: 11, letterSpacing: "0.16em", textTransform: "uppercase", color: "var(--text-dim)" }}>
+          Next action rail
+        </div>
+        <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))" }}>
+          <CommandButton
+            title="Refresh telemetry"
+            detail="Reload launcher, product health, pairing, and fleet data."
+            color="var(--text-dim)"
+            disabled={busy}
+            onClick={onRefresh}
+          />
+          <CommandButton
+            title="Start first stack"
+            detail="Bring up missing SignalHive, TrustGate, and RepoReaper containers."
+            color="var(--green)"
+            active={onlineCount < FIRST_STACK_SLUGS.length}
+            disabled={busy || busyAction === "Start first stack"}
+            onClick={() => onAction("Start first stack", "/setup/first-stack/start")}
+          />
+          <CommandButton
+            title="Pair running products"
+            detail="Provision scoped service tokens for HiveCore machine control."
+            color="var(--blue)"
+            active={onlineCount === FIRST_STACK_SLUGS.length && pairedCount < FIRST_STACK_SLUGS.length}
+            disabled={busy || busyAction === "Pair running products"}
+            onClick={() => onAction("Pair running products", "/setup/first-stack/pair")}
+          />
+          <CommandButton
+            title="Run smoke"
+            detail="Verify reachability, auth, capabilities, and safe product actions."
+            color="var(--accent)"
+            active={pairedCount === FIRST_STACK_SLUGS.length && setup.latest_smoke?.status !== "ready"}
+            disabled={busy || busyAction === "Run smoke check"}
+            onClick={() => onAction("Run smoke check", "/setup/first-stack/smoke")}
+          />
+          <CommandButton
+            title="Stop first stack"
+            detail="Stop the first operational trio without removing local data."
+            color="var(--gold)"
+            disabled={busy || busyAction === "Stop first stack"}
+            onClick={() => onAction("Stop first stack", "/setup/first-stack/stop")}
+          />
+        </div>
       </div>
     </div>
   );
@@ -151,6 +376,177 @@ function SmokeEvidence({ smoke }) {
                 </div>
               </div>
             ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function EvidenceTimeline({ setup }) {
+  const smoke = setup.latest_smoke;
+  const actions = setup.actions || [];
+  const importantSteps = (smoke?.steps || [])
+    .filter((step) => step.status !== "pass" || ["preflight", "safe-action"].includes(step.check))
+    .slice(0, 8);
+  const timeline = [
+    ...(smoke
+      ? [
+          {
+            id: smoke.id,
+            title: "Latest smoke",
+            detail: smoke.summary,
+            tone: smokeTone(smoke.status),
+            status: smoke.status,
+          },
+        ]
+      : [
+          {
+            id: "smoke-missing",
+            title: "Smoke not recorded",
+            detail: "Run the HiveCore smoke check to create suite evidence.",
+            tone: "var(--gold)",
+            status: "needed",
+          },
+        ]),
+    ...importantSteps.map((step) => ({
+      id: `${step.slug}-${step.check}`,
+      title: `${step.title} / ${step.check}`,
+      detail: step.message,
+      tone: smokeTone(step.status),
+      status: step.status,
+    })),
+    ...actions.slice(0, 4).map((action, index) => ({
+      id: `action-${index}-${action}`,
+      title: "Setup action",
+      detail: action,
+      tone: "var(--blue)",
+      status: "logged",
+    })),
+  ].slice(0, 10);
+
+  return (
+    <div style={{ ...S.panel, display: "grid", gap: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+        <div>
+          <div style={{ fontSize: 15, fontWeight: 900 }}>Evidence Timeline</div>
+          <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.45 }}>
+            The short proof trail behind HiveCore's current suite-ready call.
+          </div>
+        </div>
+        {smoke && <Tag color={smokeTone(smoke.status)}>{smoke.status}</Tag>}
+      </div>
+      <div style={{ display: "grid", gap: 8 }}>
+        {timeline.map((item) => (
+          <div
+            key={item.id}
+            style={{
+              display: "grid",
+              gap: 5,
+              padding: "10px 11px",
+              borderRadius: 12,
+              border: `1px solid ${item.tone}44`,
+              background: "color-mix(in srgb, var(--bg) 50%, transparent)",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+              <span style={{ fontSize: 12, fontWeight: 900 }}>{item.title}</span>
+              <Tag color={item.tone}>{item.status}</Tag>
+            </div>
+            <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.45 }}>{item.detail}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function FleetLaneMap({ products, selectedSlug, onSelect }) {
+  const grouped = products.reduce((acc, product) => {
+    const lane = product.runtime.lane || "Other";
+    acc[lane] = acc[lane] || [];
+    acc[lane].push(product);
+    return acc;
+  }, {});
+  const lanes = [
+    ...LANE_ORDER.filter((lane) => grouped[lane]),
+    ...Object.keys(grouped).filter((lane) => !LANE_ORDER.includes(lane)).sort(),
+  ];
+
+  return (
+    <div style={{ ...S.panel, display: "grid", gap: 12 }}>
+      <div>
+        <div style={{ fontSize: 15, fontWeight: 900 }}>11-Product Fleet Map</div>
+        <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.45 }}>
+          Compact lanes first; details stay in the selected-product drawer.
+        </div>
+      </div>
+      <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))" }}>
+        {lanes.map((lane) => (
+          <div
+            key={lane}
+            style={{
+              display: "grid",
+              gap: 8,
+              padding: 11,
+              border: "1px solid var(--border)",
+              borderRadius: 14,
+              background: "rgba(0,0,0,0.17)",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+              <span style={{ fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--text-dim)" }}>{lane}</span>
+              <Tag color="var(--blue)">{grouped[lane].length}</Tag>
+            </div>
+            <div style={{ display: "grid", gap: 7 }}>
+              {grouped[lane].map((product) => {
+                const runtime = product.runtime;
+                const selected = runtime.slug === selectedSlug;
+                const managed = Boolean(product.setupItem?.launcher);
+                return (
+                  <button
+                    type="button"
+                    key={runtime.slug}
+                    onClick={() => onSelect(runtime.slug)}
+                    style={{
+                      display: "grid",
+                      gap: 4,
+                      textAlign: "left",
+                      padding: "9px 10px",
+                      borderRadius: 11,
+                      border: `1px solid ${selected ? statusColor(runtime.status) : "var(--border)"}`,
+                      background: selected
+                        ? `color-mix(in srgb, ${statusColor(runtime.status)} 16%, var(--bg-panel))`
+                        : "color-mix(in srgb, var(--bg) 48%, transparent)",
+                      color: "var(--text)",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+                      <span style={{ fontSize: 12, fontWeight: 900 }}>
+                        {runtime.icon} {runtime.title}
+                      </span>
+                      <span
+                        aria-label={runtime.status}
+                        style={{
+                          width: 9,
+                          height: 9,
+                          borderRadius: "50%",
+                          background: statusColor(runtime.status),
+                          boxShadow: `0 0 14px ${statusColor(runtime.status)}88`,
+                          flex: "0 0 auto",
+                        }}
+                      />
+                    </div>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      <Tag color={statusColor(runtime.status)}>{runtime.status}</Tag>
+                      {product.firstStack && <Tag color="var(--accent)">first stack</Tag>}
+                      {managed && <Tag color="var(--green)">launcher</Tag>}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         ))}
       </div>
@@ -376,7 +772,7 @@ function ProductCard({
         )}
       </div>
 
-      {item.runtime.slug !== "hive-core" && (
+      {item.runtime.slug !== "hive-core" && item.launcher && (
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <Btn onClick={() => onProductAction(item.runtime.slug, "start")} disabled={busy} color="var(--green)">
             {busyAction === `${actionPrefix}start` ? "Starting..." : "Start"}
@@ -398,10 +794,21 @@ function ProductCard({
 
 export default function SetupPanel({ fetchEnvelope, setRunning, setError }) {
   const [setup, setSetup] = useState(null);
+  const [fleet, setFleet] = useState([]);
+  const [selectedSlug, setSelectedSlug] = useState("hive-core");
   const [busyAction, setBusyAction] = useState("");
   const [logs, setLogs] = useState(null);
   const [credentialDrafts, setCredentialDrafts] = useState({});
   const [credentialResults, setCredentialResults] = useState({});
+
+  async function loadFleet(fallbackSetup) {
+    try {
+      const data = await fetchEnvelope("/products");
+      setFleet(Array.isArray(data) ? data : []);
+    } catch {
+      setFleet((fallbackSetup?.products || []).map((item) => item.runtime));
+    }
+  }
 
   async function refresh() {
     setRunning(true);
@@ -409,6 +816,7 @@ export default function SetupPanel({ fetchEnvelope, setRunning, setError }) {
     try {
       const data = await fetchEnvelope("/setup/first-stack");
       setSetup(data);
+      await loadFleet(data);
     } catch (err) {
       setSetup(null);
       setError(err.message || "HiveCore could not load the first-stack setup status.");
@@ -428,6 +836,7 @@ export default function SetupPanel({ fetchEnvelope, setRunning, setError }) {
         body: JSON.stringify({}),
       });
       setSetup(data);
+      await loadFleet(data);
     } catch (err) {
       setError(err.message || `HiveCore could not ${label.toLowerCase()}.`);
     } finally {
@@ -447,6 +856,7 @@ export default function SetupPanel({ fetchEnvelope, setRunning, setError }) {
         body: JSON.stringify({}),
       });
       setSetup(data);
+      await loadFleet(data);
     } catch (err) {
       setError(err.message || `HiveCore could not ${action} ${slug}.`);
     } finally {
@@ -531,6 +941,7 @@ export default function SetupPanel({ fetchEnvelope, setRunning, setError }) {
         body: JSON.stringify({ values, restart: true }),
       });
       setSetup(data);
+      await loadFleet(data);
       setCredentialDrafts((current) => ({ ...current, [slug]: {} }));
       setCredentialResults((current) => ({
         ...current,
@@ -568,129 +979,59 @@ export default function SetupPanel({ fetchEnvelope, setRunning, setError }) {
   const downstream = setup.products.filter((item) => item.runtime.slug !== "hive-core");
   const onlineCount = downstream.filter((item) => ["online", "degraded"].includes(item.runtime.status)).length;
   const pairedCount = downstream.filter((item) => item.runtime.service_token_configured).length;
+  const fleetProducts = mergedFleetProducts(setup, fleet);
+  const selectedProduct =
+    fleetProducts.find((product) => product.runtime.slug === selectedSlug) ||
+    fleetProducts.find((product) => product.runtime.slug === "hive-core") ||
+    fleetProducts[0];
+  const selectedItem = selectedSetupItem(selectedProduct);
 
   return (
     <div style={{ display: "grid", gap: 16 }}>
-      <div
-        style={{
-          ...S.panel,
-          position: "relative",
-          overflow: "hidden",
-          display: "grid",
-          gap: 16,
-          background:
-            "linear-gradient(135deg, color-mix(in srgb, var(--accent) 22%, var(--bg-panel)) 0%, var(--bg-panel) 45%, color-mix(in srgb, var(--blue) 20%, var(--bg-panel)) 100%)",
-        }}
-      >
-        <div
-          aria-hidden="true"
-          style={{
-            position: "absolute",
-            inset: 0,
-            background:
-              "linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px), linear-gradient(0deg, rgba(255,255,255,0.018) 1px, transparent 1px)",
-            backgroundSize: "34px 34px",
-            opacity: 0.8,
-            pointerEvents: "none",
-          }}
-        />
-        <div style={{ position: "relative", display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-          <div>
-            <div style={{ fontSize: 11, letterSpacing: "0.18em", color: "var(--accent)", textTransform: "uppercase" }}>
-              Launch preset / first stack
+      <MissionControl
+        setup={setup}
+        onlineCount={onlineCount}
+        pairedCount={pairedCount}
+        fleetCount={fleetProducts.length}
+        busyAction={busyAction}
+        onRefresh={refresh}
+        onAction={runAction}
+      />
+
+      <div style={{ display: "grid", gap: 14, gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))" }}>
+        <FleetLaneMap products={fleetProducts} selectedSlug={selectedProduct?.runtime.slug} onSelect={setSelectedSlug} />
+        <div style={{ display: "grid", gap: 12 }}>
+          <div style={{ ...S.panel, display: "grid", gap: 8 }}>
+            <div>
+              <div style={{ fontSize: 15, fontWeight: 900 }}>Focused Product</div>
+              <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.45 }}>
+                Select any product from the fleet map. HiveCore only shows launcher/env controls when that product is managed by this setup flow.
+              </div>
             </div>
-            <div style={{ fontSize: 30, fontWeight: 950, letterSpacing: "-0.05em" }}>Bring the first squad online.</div>
-            <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
-              HiveCore controls the full 11-product fleet; this preset starts the first operational trio and pairs them for orchestration.
-            </div>
+            {selectedItem ? (
+              <ProductCard
+                item={selectedItem}
+                busyAction={busyAction}
+                credentialDraft={credentialDrafts[selectedItem.runtime.slug] || {}}
+                credentialResult={credentialResults[selectedItem.runtime.slug]}
+                onCredentialChange={setCredentialDraft}
+                onSaveCredentials={saveCredentials}
+                onGenerateCredential={generateCredential}
+                onValidateGithubToken={validateGithubToken}
+                onProductAction={runProductAction}
+                onLoadLogs={loadLogs}
+              />
+            ) : (
+              <EmptyState icon="⬢" text="Select a product to inspect." />
+            )}
           </div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <Btn onClick={refresh} disabled={Boolean(busyAction)}>
-              Refresh
-            </Btn>
-            <Btn
-              onClick={() => runAction("Start first stack", "/setup/first-stack/start")}
-              disabled={busyAction === "Start first stack"}
-              color="var(--green)"
-            >
-              {busyAction === "Start first stack" ? "Starting..." : "Start first stack"}
-            </Btn>
-            <Btn
-              onClick={() => runAction("Pair running products", "/setup/first-stack/pair")}
-              disabled={busyAction === "Pair running products"}
-              color="var(--blue)"
-            >
-              {busyAction === "Pair running products" ? "Pairing..." : "Pair running products"}
-            </Btn>
-            <Btn
-              onClick={() => runAction("Run smoke check", "/setup/first-stack/smoke")}
-              disabled={busyAction === "Run smoke check"}
-              color="var(--accent)"
-            >
-              {busyAction === "Run smoke check" ? "Checking..." : "Run smoke check"}
-            </Btn>
-            <Btn
-              onClick={() => runAction("Stop first stack", "/setup/first-stack/stop")}
-              disabled={busyAction === "Stop first stack"}
-            >
-              {busyAction === "Stop first stack" ? "Stopping..." : "Stop first stack"}
-            </Btn>
-          </div>
-        </div>
-
-        <div style={{ position: "relative", display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <Tag color={setup.launcher.available ? "var(--green)" : "var(--accent)"}>
-            launcher {setup.launcher.available ? "available" : "unavailable"}
-          </Tag>
-          <Tag color={setup.launcher.docker_compose_available ? "var(--green)" : "var(--gold)"}>
-            docker compose {setup.launcher.docker_compose_available ? "ready" : "missing"}
-          </Tag>
-          <Tag color={setup.launcher.docker_available ? "var(--green)" : "var(--gold)"}>
-            docker {setup.launcher.docker_available ? "reachable" : "offline"}
-          </Tag>
-          <Tag color={setup.suite_bootstrap_configured ? "var(--green)" : "var(--gold)"}>
-            suite bootstrap {setup.suite_bootstrap_configured ? "configured" : "not configured"}
-          </Tag>
-          <Tag color="var(--blue)">{onlineCount}/3 downstream reachable</Tag>
-          <Tag color={pairedCount === 3 ? "var(--green)" : "var(--gold)"}>{pairedCount}/3 paired</Tag>
-          {setup.latest_smoke && <Tag color={smokeTone(setup.latest_smoke.status)}>smoke {setup.latest_smoke.status}</Tag>}
-        </div>
-
-        <div style={{ position: "relative", display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
-          <LaunchGauge label="Downstream reachable" value={onlineCount} total={3} tone={onlineCount === 3 ? "var(--green)" : "var(--gold)"} />
-          <LaunchGauge label="Machine pairing" value={pairedCount} total={3} tone={pairedCount === 3 ? "var(--green)" : "var(--blue)"} />
-          <LaunchGauge label="Fleet catalog" value={setup.products.length} total={11} tone="var(--accent)" />
-        </div>
-
-        <div style={{ position: "relative", fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6 }}>
-          {setup.launcher.message}
-          {setup.launcher.repo_root ? ` Repo root: ${setup.launcher.repo_root}` : ""}
         </div>
       </div>
 
-      <SmokeEvidence smoke={setup.latest_smoke} />
-
-      {setup.actions?.length > 0 && (
-        <div style={{ ...S.panel, display: "grid", gap: 8 }}>
-          <div style={{ fontSize: 15, fontWeight: 800 }}>Latest Setup Actions</div>
-          <div style={{ display: "grid", gap: 7 }}>
-            {setup.actions.map((action) => (
-              <div
-                key={action}
-                style={{
-                  padding: "9px 10px",
-                  border: "1px solid var(--border)",
-                  borderRadius: 8,
-                  fontSize: 11,
-                  lineHeight: 1.5,
-                }}
-              >
-                {action}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      <div style={{ display: "grid", gap: 14, gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))" }}>
+        <EvidenceTimeline setup={setup} />
+        <SmokeEvidence smoke={setup.latest_smoke} />
+      </div>
 
       {logs && (
         <div style={{ ...S.panel, display: "grid", gap: 10 }}>
