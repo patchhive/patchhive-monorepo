@@ -289,6 +289,27 @@ pub async fn setup_product_logs(
     super::setup::setup_product_logs(State(state), Path(slug), axum::extract::Query(query)).await
 }
 
+pub async fn save_setup_product_env(
+    State(state): State<AppState>,
+    Path(slug): Path<String>,
+    Json(body): Json<super::setup::SetupProductEnvRequest>,
+) -> Result<
+    Json<crate::models::ApiEnvelope<crate::models::FirstStackSetupResponse>>,
+    (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
+> {
+    super::setup::save_setup_product_env(State(state), Path(slug), Json(body)).await
+}
+
+pub async fn validate_github_token(
+    State(state): State<AppState>,
+    Json(body): Json<super::setup::GitHubTokenValidationRequest>,
+) -> Result<
+    Json<crate::models::ApiEnvelope<super::setup::GitHubTokenValidationResponse>>,
+    (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
+> {
+    super::setup::validate_github_token(State(state), Json(body)).await
+}
+
 pub async fn dispatch_product_action(
     State(state): State<AppState>,
     Path((slug, action_id)): Path<(String, String)>,

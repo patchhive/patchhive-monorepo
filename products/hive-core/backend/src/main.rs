@@ -83,6 +83,14 @@ async fn main() {
             "/setup/products/:slug/logs",
             get(pipeline::setup_product_logs),
         )
+        .route(
+            "/setup/products/:slug/env",
+            axum::routing::post(pipeline::save_setup_product_env),
+        )
+        .route(
+            "/setup/credentials/github/validate",
+            axum::routing::post(pipeline::validate_github_token),
+        )
         .route("/products/:slug/runs", get(pipeline::product_runs))
         .route(
             "/products/:slug/runs/:id",

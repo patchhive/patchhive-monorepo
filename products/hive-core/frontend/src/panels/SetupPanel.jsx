@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Btn, EmptyState, S, Tag } from "@patchhivehq/ui";
+import { Btn, EmptyState, Input, S, Tag } from "@patchhivehq/ui";
 
 function statusColor(status) {
   if (status === "online") return "var(--green)";
@@ -34,6 +34,19 @@ function smokeTone(status) {
   if (status === "attention" || status === "warn" || status === "skip") return "var(--gold)";
   if (status === "blocked" || status === "fail") return "var(--accent)";
   return "var(--blue)";
+}
+
+function credentialTone(status) {
+  if (status === "ready") return "var(--green)";
+  if (status === "optional") return "var(--blue)";
+  if (status === "placeholder") return "var(--gold)";
+  return "var(--accent)";
+}
+
+function inputTypeForCredential(requirement) {
+  if (requirement.redact || requirement.kind === "github_token") return "password";
+  if (requirement.kind === "email") return "email";
+  return "text";
 }
 
 function LaunchGauge({ label, value, total, tone = "var(--accent)" }) {
@@ -128,12 +141,25 @@ function SmokeEvidence({ smoke }) {
   );
 }
 
-function ProductCard({ item, busyAction, onProductAction, onLoadLogs }) {
+function ProductCard({
+  item,
+  busyAction,
+  credentialDraft = {},
+  credentialResult,
+  onCredentialChange,
+  onSaveCredentials,
+  onValidateGithubToken,
+  onProductAction,
+  onLoadLogs,
+}) {
   const authStatus = item.auth_status;
   const launcher = item.launcher;
+  const credentials = item.credentials || [];
   const actionPrefix = `${item.runtime.slug}:`;
   const busy = Boolean(busyAction);
   const busyForProduct = busyAction.startsWith(actionPrefix);
+  const hasCredentialDraft = Object.values(credentialDraft).some((value) => value?.trim?.());
+  const githubTokenDraft = credentialDraft.BOT_GITHUB_TOKEN || "";
   return (
     <div
       style={{
@@ -231,6 +257,83 @@ function ProductCard({ item, busyAction, onProductAction, onLoadLogs }) {
         </div>
       )}
 
+      {credentials.length > 0 && (
+        <div
+          style={{
+            display: "grid",
+            gap: 9,
+            padding: 10,
+            border: "1px solid var(--border)",
+            borderRadius: 10,
+            background: "color-mix(in srgb, var(--bg) 50%, transparent)",
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 900 }}>First-run credentials</div>
+              <div style={{ fontSize: 10, color: "var(--text-dim)", lineHeight: 1.45 }}>
+                Saved through HiveCore and written locally by patchhive-launcher.
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {credentials.map((requirement) => (
+                <Tag key={requirement.key} color={credentialTone(requirement.status)}>
+                  {requirement.key} {requirement.status}
+                </Tag>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gap: 8 }}>
+            {credentials.map((requirement) => (
+              <label key={requirement.key} style={{ ...S.field }}>
+                <span style={S.label}>
+                  {requirement.label} {requirement.required ? "" : "(optional)"}
+                </span>
+                <Input
+                  type={inputTypeForCredential(requirement)}
+                  value={credentialDraft[requirement.key] || ""}
+                  onChange={(value) => onCredentialChange(item.runtime.slug, requirement.key, value)}
+                  placeholder={requirement.configured ? "Configured - leave blank to keep current value" : requirement.key}
+                />
+                <span style={{ fontSize: 10, color: "var(--text-dim)", lineHeight: 1.45 }}>{requirement.description}</span>
+              </label>
+            ))}
+          </div>
+
+          {credentialResult && (
+            <div
+              style={{
+                fontSize: 11,
+                lineHeight: 1.5,
+                color: credentialResult.ok && credentialResult.user_matches ? "var(--green)" : "var(--gold)",
+              }}
+            >
+              {credentialResult.message}
+            </div>
+          )}
+
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {credentials.some((requirement) => requirement.kind === "github_token") && (
+              <Btn
+                onClick={() => onValidateGithubToken(item.runtime.slug)}
+                disabled={busy || !githubTokenDraft.trim()}
+                color="var(--blue)"
+              >
+                {busyAction === `${actionPrefix}validate-token` ? "Validating..." : "Validate GitHub token"}
+              </Btn>
+            )}
+            <Btn
+              onClick={() => onSaveCredentials(item.runtime.slug)}
+              disabled={busy || !hasCredentialDraft}
+              color="var(--green)"
+            >
+              {busyAction === `${actionPrefix}save-env` ? "Saving..." : "Save + recreate"}
+            </Btn>
+          </div>
+        </div>
+      )}
+
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         {item.runtime.frontend_url && (
           <a href={item.runtime.frontend_url} target="_blank" rel="noreferrer" style={{ color: "var(--accent)", fontSize: 11 }}>
@@ -268,6 +371,8 @@ export default function SetupPanel({ fetchEnvelope, setRunning, setError }) {
   const [setup, setSetup] = useState(null);
   const [busyAction, setBusyAction] = useState("");
   const [logs, setLogs] = useState(null);
+  const [credentialDrafts, setCredentialDrafts] = useState({});
+  const [credentialResults, setCredentialResults] = useState({});
 
   async function refresh() {
     setRunning(true);
@@ -330,6 +435,76 @@ export default function SetupPanel({ fetchEnvelope, setRunning, setError }) {
       setLogs(data);
     } catch (err) {
       setError(err.message || `HiveCore could not load logs for ${slug}.`);
+    } finally {
+      setBusyAction("");
+      setRunning(false);
+    }
+  }
+
+  function setCredentialDraft(slug, key, value) {
+    setCredentialDrafts((current) => ({
+      ...current,
+      [slug]: {
+        ...(current[slug] || {}),
+        [key]: value,
+      },
+    }));
+    setCredentialResults((current) => ({
+      ...current,
+      [slug]: null,
+    }));
+  }
+
+  function nonEmptyCredentialValues(slug) {
+    return Object.fromEntries(
+      Object.entries(credentialDrafts[slug] || {}).filter(([, value]) => value?.trim?.()),
+    );
+  }
+
+  async function validateGithubToken(slug) {
+    const values = credentialDrafts[slug] || {};
+    if (!values.BOT_GITHUB_TOKEN?.trim()) return;
+    setBusyAction(`${slug}:validate-token`);
+    setRunning(true);
+    setError("");
+    try {
+      const data = await fetchEnvelope("/setup/credentials/github/validate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          token: values.BOT_GITHUB_TOKEN,
+          expected_user: values.BOT_GITHUB_USER || "",
+        }),
+      });
+      setCredentialResults((current) => ({ ...current, [slug]: data }));
+    } catch (err) {
+      setError(err.message || "HiveCore could not validate the GitHub token.");
+    } finally {
+      setBusyAction("");
+      setRunning(false);
+    }
+  }
+
+  async function saveCredentials(slug) {
+    const values = nonEmptyCredentialValues(slug);
+    if (Object.keys(values).length === 0) return;
+    setBusyAction(`${slug}:save-env`);
+    setRunning(true);
+    setError("");
+    try {
+      const data = await fetchEnvelope(`/setup/products/${slug}/env`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ values, restart: true }),
+      });
+      setSetup(data);
+      setCredentialDrafts((current) => ({ ...current, [slug]: {} }));
+      setCredentialResults((current) => ({
+        ...current,
+        [slug]: { ok: true, user_matches: true, message: "Credentials saved and product recreated." },
+      }));
+    } catch (err) {
+      setError(err.message || `HiveCore could not save credentials for ${slug}.`);
     } finally {
       setBusyAction("");
       setRunning(false);
@@ -519,6 +694,11 @@ export default function SetupPanel({ fetchEnvelope, setRunning, setError }) {
             key={item.runtime.slug}
             item={item}
             busyAction={busyAction}
+            credentialDraft={credentialDrafts[item.runtime.slug] || {}}
+            credentialResult={credentialResults[item.runtime.slug]}
+            onCredentialChange={setCredentialDraft}
+            onSaveCredentials={saveCredentials}
+            onValidateGithubToken={validateGithubToken}
             onProductAction={runProductAction}
             onLoadLogs={loadLogs}
           />

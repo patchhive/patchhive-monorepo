@@ -169,6 +169,18 @@ Build this in layers:
 
 The first-stack path remains the proving ground. Once it reliably starts SignalHive, TrustGate, and RepoReaper from a clean checkout, expand the same pattern to the full fleet.
 
+## Current Implementation Slice
+
+The first practical slice is now centered on first-stack GitHub credential setup:
+
+- `patchhive-launcher` exposes `GET /setup/requirements` for SignalHive, TrustGate, and RepoReaper credential status.
+- `patchhive-launcher` exposes `POST /setup/env/:slug` for whitelisted product `.env` writes only.
+- HiveCore proxies those requirements into the Setup tab so each product card can show missing, placeholder, optional, and ready credentials.
+- HiveCore validates GitHub tokens through its backend before save, without echoing raw tokens back to the browser.
+- HiveCore can save product setup credentials through the launcher, restart/recreate that product, wait for health, then retry suite service-token pairing.
+
+The next slice should store setup evidence and wire the first-stack smoke run into this same flow.
+
 ## Open Questions
 
 - Should HiveCore store operator credential validation state, or should it revalidate on every setup screen load?

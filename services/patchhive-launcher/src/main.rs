@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     env, fs,
     net::{SocketAddr, TcpStream},
     path::{Path as FsPath, PathBuf},
@@ -134,6 +135,59 @@ struct ProductLogsResponse {
     logs: String,
 }
 
+#[derive(Clone, Copy, Serialize)]
+struct CredentialRequirementDefinition {
+    key: &'static str,
+    label: &'static str,
+    kind: &'static str,
+    profile: &'static str,
+    required: bool,
+    redact: bool,
+    description: &'static str,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+struct CredentialRequirementStatus {
+    key: String,
+    label: String,
+    kind: String,
+    profile: String,
+    required: bool,
+    redact: bool,
+    configured: bool,
+    placeholder: bool,
+    status: String,
+    message: String,
+    description: String,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+struct ProductCredentialRequirements {
+    slug: String,
+    title: String,
+    env_file: String,
+    env_exists: bool,
+    requirements: Vec<CredentialRequirementStatus>,
+}
+
+#[derive(Serialize)]
+struct SetupRequirementsResponse {
+    stack_id: &'static str,
+    products: Vec<ProductCredentialRequirements>,
+}
+
+#[derive(Deserialize)]
+struct EnvWriteRequest {
+    values: HashMap<String, String>,
+}
+
+#[derive(Serialize)]
+struct EnvWriteResponse {
+    ok: bool,
+    actions: Vec<String>,
+    product: ProductCredentialRequirements,
+}
+
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt()
@@ -149,6 +203,8 @@ async fn main() {
         .route("/products/:slug/stop", post(stop_product))
         .route("/products/:slug/restart", post(restart_product))
         .route("/products/:slug/logs", get(product_logs))
+        .route("/setup/requirements", get(setup_requirements))
+        .route("/setup/env/:slug", post(write_product_env))
         .route("/stacks/first", get(first_stack_status))
         .route("/stacks/first/start", post(start_first_stack))
         .route("/stacks/first/stop", post(stop_first_stack))
@@ -261,6 +317,89 @@ async fn product_logs(
         slug: product.slug.into(),
         title: product.title.into(),
         logs,
+    }))
+}
+
+async fn setup_requirements(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<SetupRequirementsResponse>, (StatusCode, Json<ApiError>)> {
+    let repo_root = require_repo_root(&state)?;
+    let products = FIRST_STACK_PRODUCTS
+        .iter()
+        .map(|product| credential_requirements_status(repo_root, product))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(Json(SetupRequirementsResponse {
+        stack_id: "first-stack",
+        products,
+    }))
+}
+
+async fn write_product_env(
+    State(state): State<Arc<AppState>>,
+    Path(slug): Path<String>,
+    Json(body): Json<EnvWriteRequest>,
+) -> Result<Json<EnvWriteResponse>, (StatusCode, Json<ApiError>)> {
+    let product = find_product(&slug)?;
+    let repo_root = require_repo_root(&state)?;
+    let product_dir = product_dir(repo_root, product.slug);
+    ensure_env_file(&product_dir)?;
+    let env_file = product_dir.join(".env");
+    let definitions = credential_requirements(product.slug);
+    let mut actions = Vec::new();
+
+    if definitions.is_empty() {
+        return Err(error(
+            StatusCode::BAD_REQUEST,
+            "This product does not expose setup credential requirements yet.",
+        ));
+    }
+
+    for key in body.values.keys() {
+        if !definitions.iter().any(|definition| definition.key == key) {
+            return Err(error(
+                StatusCode::BAD_REQUEST,
+                &format!(
+                    "Refusing to write unsupported env key {key} for {}.",
+                    product.title
+                ),
+            ));
+        }
+    }
+
+    let mut wrote_any = false;
+    for definition in definitions {
+        let Some(value) = body.values.get(definition.key) else {
+            continue;
+        };
+        let value = value.trim();
+        if value.is_empty() {
+            continue;
+        }
+        if value.contains('\n') || value.contains('\r') {
+            return Err(error(
+                StatusCode::BAD_REQUEST,
+                &format!("Refusing to write multi-line value for {}.", definition.key),
+            ));
+        }
+
+        upsert_env_value(&env_file, definition.key, value)?;
+        wrote_any = true;
+        actions.push(format!("Saved {} for {}.", definition.key, product.title));
+    }
+
+    if !wrote_any {
+        return Err(error(
+            StatusCode::BAD_REQUEST,
+            "No non-empty supported setup credential values were provided.",
+        ));
+    }
+
+    harden_env_permissions(&env_file)?;
+    Ok(Json(EnvWriteResponse {
+        ok: true,
+        actions,
+        product: credential_requirements_status(repo_root, &product)?,
     }))
 }
 
@@ -563,6 +702,160 @@ fn env_has_key(env_file: &FsPath, key: &str) -> bool {
         .unwrap_or(false)
 }
 
+fn credential_requirements(slug: &str) -> Vec<CredentialRequirementDefinition> {
+    match slug {
+        "signal-hive" => vec![CredentialRequirementDefinition {
+            key: "BOT_GITHUB_TOKEN",
+            label: "GitHub read token",
+            kind: "github_token",
+            profile: "public_read",
+            required: true,
+            redact: true,
+            description: "Used by SignalHive for read-only repository and issue discovery.",
+        }],
+        "trust-gate" => vec![CredentialRequirementDefinition {
+            key: "BOT_GITHUB_TOKEN",
+            label: "GitHub PR token",
+            kind: "github_token",
+            profile: "diff_status_writer",
+            required: false,
+            redact: true,
+            description: "Optional for PR diff reads and GitHub status/check reporting.",
+        }],
+        "repo-reaper" => vec![
+            CredentialRequirementDefinition {
+                key: "BOT_GITHUB_TOKEN",
+                label: "PatchHive GitHub token",
+                kind: "github_token",
+                profile: "repo_pr_writer",
+                required: true,
+                redact: true,
+                description: "Used by RepoReaper for discovery, forks, branches, commits, and pull requests.",
+            },
+            CredentialRequirementDefinition {
+                key: "BOT_GITHUB_USER",
+                label: "GitHub username",
+                kind: "text",
+                profile: "repo_pr_writer",
+                required: true,
+                redact: false,
+                description: "Must match the GitHub account that owns the token.",
+            },
+            CredentialRequirementDefinition {
+                key: "BOT_GITHUB_EMAIL",
+                label: "Git commit email",
+                kind: "email",
+                profile: "repo_pr_writer",
+                required: true,
+                redact: false,
+                description: "Git author email for RepoReaper commits, usually the bot account noreply email.",
+            },
+        ],
+        _ => Vec::new(),
+    }
+}
+
+fn credential_requirements_status(
+    repo_root: &FsPath,
+    product: &ManagedProduct,
+) -> Result<ProductCredentialRequirements, (StatusCode, Json<ApiError>)> {
+    let product_dir = product_dir(repo_root, product.slug);
+    let env_file = product_dir.join(".env");
+    let requirements = credential_requirements(product.slug)
+        .into_iter()
+        .map(|definition| credential_requirement_status(&env_file, definition))
+        .collect();
+
+    Ok(ProductCredentialRequirements {
+        slug: product.slug.into(),
+        title: product.title.into(),
+        env_file: env_file.display().to_string(),
+        env_exists: env_file.exists(),
+        requirements,
+    })
+}
+
+fn credential_requirement_status(
+    env_file: &FsPath,
+    definition: CredentialRequirementDefinition,
+) -> CredentialRequirementStatus {
+    let value = env_value(env_file, definition.key);
+    let has_value = value
+        .as_ref()
+        .map(|item| !item.trim().is_empty())
+        .unwrap_or(false);
+    let placeholder = value
+        .as_deref()
+        .map(|item| is_placeholder_env_value(definition.key, item))
+        .unwrap_or(false);
+    let configured = has_value && !placeholder;
+    let status = if configured {
+        "ready"
+    } else if placeholder {
+        "placeholder"
+    } else if definition.required {
+        "missing"
+    } else {
+        "optional"
+    };
+    let message = match status {
+        "ready" => "Configured.",
+        "placeholder" => "Still using a placeholder value.",
+        "missing" => "Required before this product is ready for suite bootstrap.",
+        _ => "Optional for first-stack bootstrap.",
+    };
+
+    CredentialRequirementStatus {
+        key: definition.key.into(),
+        label: definition.label.into(),
+        kind: definition.kind.into(),
+        profile: definition.profile.into(),
+        required: definition.required,
+        redact: definition.redact,
+        configured,
+        placeholder,
+        status: status.into(),
+        message: message.into(),
+        description: definition.description.into(),
+    }
+}
+
+fn env_value(env_file: &FsPath, key: &str) -> Option<String> {
+    let content = fs::read_to_string(env_file).ok()?;
+    content.lines().find_map(|line| {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            return None;
+        }
+        let (candidate, value) = trimmed.split_once('=')?;
+        if candidate.trim() == key {
+            Some(
+                value
+                    .trim()
+                    .trim_matches('"')
+                    .trim_matches('\'')
+                    .to_string(),
+            )
+        } else {
+            None
+        }
+    })
+}
+
+fn is_placeholder_env_value(key: &str, value: &str) -> bool {
+    let normalized = value.trim().to_ascii_lowercase();
+    if normalized.is_empty() {
+        return true;
+    }
+
+    normalized.contains("xxxxxxxx")
+        || normalized.contains("your-")
+        || normalized.contains("replace-me")
+        || normalized.contains("example")
+        || (key == "BOT_GITHUB_TOKEN" && normalized == "github_pat_xxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+        || (key == "BOT_GITHUB_EMAIL" && normalized == "bot@yourdomain.com")
+}
+
 fn configured_suite_bootstrap_secret() -> Option<String> {
     env::var(SUITE_BOOTSTRAP_KEY)
         .ok()
@@ -767,6 +1060,24 @@ fn ensure_env_file(product_dir: &FsPath) -> Result<(), (StatusCode, Json<ApiErro
             &format!("could not create {}: {err}", env_file.display()),
         )
     })?;
+    Ok(())
+}
+
+fn harden_env_permissions(env_file: &FsPath) -> Result<(), (StatusCode, Json<ApiError>)> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(env_file, fs::Permissions::from_mode(0o600)).map_err(|err| {
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                &format!(
+                    "could not restrict permissions on {}: {err}",
+                    env_file.display()
+                ),
+            )
+        })?;
+    }
+
     Ok(())
 }
 

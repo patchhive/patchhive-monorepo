@@ -13,7 +13,7 @@ use crate::{
     db,
     models::{
         ok, FirstStackSetupResponse, SetupLauncherProductStatus, SetupLauncherStatus,
-        SetupProductLogsResponse, SetupProductStatus,
+        SetupProductCredentialRequirements, SetupProductLogsResponse, SetupProductStatus,
     },
     state::{product_catalog, AppState},
 };
@@ -43,6 +43,19 @@ struct LauncherActionBody {
     products: Vec<SetupLauncherProductStatus>,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
+struct LauncherRequirementsBody {
+    stack_id: String,
+    products: Vec<SetupProductCredentialRequirements>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+struct LauncherEnvWriteBody {
+    ok: bool,
+    actions: Vec<String>,
+    product: SetupProductCredentialRequirements,
+}
+
 #[derive(Debug, Clone, Serialize)]
 struct LauncherStartRequest<'a> {
     suite_bootstrap_secret: &'a str,
@@ -59,6 +72,29 @@ struct LauncherProductActionRequest<'a> {
     suite_bootstrap_secret: &'a str,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct SetupProductEnvRequest {
+    #[serde(default)]
+    pub values: HashMap<String, String>,
+    #[serde(default)]
+    pub restart: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct GitHubTokenValidationRequest {
+    pub token: String,
+    #[serde(default)]
+    pub expected_user: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GitHubTokenValidationResponse {
+    pub ok: bool,
+    pub login: String,
+    pub user_matches: bool,
+    pub message: String,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct ProductLogsQuery {
     pub tail: Option<u16>,
@@ -68,6 +104,11 @@ pub struct ProductLogsQuery {
 struct LauncherSnapshot {
     status: SetupLauncherStatus,
     products: HashMap<String, SetupLauncherProductStatus>,
+}
+
+#[derive(Debug, Clone)]
+struct LauncherRequirementsSnapshot {
+    products: HashMap<String, SetupProductCredentialRequirements>,
 }
 
 pub(super) async fn first_stack_status(
@@ -232,6 +273,119 @@ pub(super) async fn setup_product_logs(
     Ok(Json(ok(body)))
 }
 
+pub(super) async fn save_setup_product_env(
+    State(state): State<AppState>,
+    Path(slug): Path<String>,
+    Json(body): Json<SetupProductEnvRequest>,
+) -> Result<
+    Json<crate::models::ApiEnvelope<FirstStackSetupResponse>>,
+    (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
+> {
+    ensure_launcher_product_slug(&slug)?;
+    if body.values.is_empty() {
+        return Err(api_error(
+            StatusCode::BAD_REQUEST,
+            "missing_setup_credentials",
+            "Provide at least one setup credential value to save.",
+        ));
+    }
+
+    let launcher = write_launcher_product_env(&state, &slug, &body.values).await?;
+    let mut actions = launcher.actions;
+    if body.restart {
+        let secret = ensure_suite_bootstrap_secret();
+        let restarted =
+            run_launcher_product_action(&state, &slug, "restart", Some(&secret)).await?;
+        actions.extend(restarted.actions);
+        wait_for_products(&state, &[slug.as_str()], &mut actions).await;
+        auto_pair_products(&state, &secret, &[slug.as_str()], &mut actions).await;
+    }
+
+    Ok(Json(ok(build_first_stack_response(&state, actions).await)))
+}
+
+pub(super) async fn validate_github_token(
+    State(state): State<AppState>,
+    Json(body): Json<GitHubTokenValidationRequest>,
+) -> Result<
+    Json<crate::models::ApiEnvelope<GitHubTokenValidationResponse>>,
+    (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
+> {
+    let token = body.token.trim();
+    if token.is_empty() {
+        return Err(api_error(
+            StatusCode::BAD_REQUEST,
+            "missing_github_token",
+            "Provide a GitHub token to validate.",
+        ));
+    }
+
+    let response = state
+        .client
+        .get("https://api.github.com/user")
+        .header("Authorization", format!("Bearer {token}"))
+        .header("Accept", "application/vnd.github+json")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .header("User-Agent", "hive-core/0.1")
+        .timeout(Duration::from_secs(12))
+        .send()
+        .await
+        .map_err(|_| {
+            api_error(
+                StatusCode::BAD_GATEWAY,
+                "github_unreachable",
+                "HiveCore could not reach GitHub to validate the token.",
+            )
+        })?;
+
+    if response.status() == StatusCode::UNAUTHORIZED {
+        return Ok(Json(ok(GitHubTokenValidationResponse {
+            ok: false,
+            login: String::new(),
+            user_matches: false,
+            message: "GitHub rejected this token as invalid or expired.".into(),
+        })));
+    }
+
+    if !response.status().is_success() {
+        return Ok(Json(ok(GitHubTokenValidationResponse {
+            ok: false,
+            login: String::new(),
+            user_matches: false,
+            message: format!(
+                "GitHub returned HTTP {} while validating the token.",
+                response.status()
+            ),
+        })));
+    }
+
+    let payload = response.json::<Value>().await.unwrap_or_default();
+    let login = payload
+        .get("login")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+    let expected = body
+        .expected_user
+        .unwrap_or_default()
+        .trim()
+        .trim_start_matches('@')
+        .to_string();
+    let user_matches = expected.is_empty() || expected.eq_ignore_ascii_case(&login);
+    let message = if user_matches {
+        format!("GitHub token is valid and authenticates as @{login}.")
+    } else {
+        format!("GitHub token is valid as @{login}, but the expected username was @{expected}.")
+    };
+
+    Ok(Json(ok(GitHubTokenValidationResponse {
+        ok: true,
+        login,
+        user_matches,
+        message,
+    })))
+}
+
 pub(super) async fn build_first_stack_response(
     state: &AppState,
     actions: Vec<String>,
@@ -247,6 +401,11 @@ pub(super) async fn build_first_stack_response(
                 docker_available: false,
                 docker_compose_available: false,
             },
+            products: HashMap::new(),
+        });
+    let requirements = fetch_launcher_requirements(state)
+        .await
+        .unwrap_or_else(|_| LauncherRequirementsSnapshot {
             products: HashMap::new(),
         });
 
@@ -274,6 +433,11 @@ pub(super) async fn build_first_stack_response(
                 .unwrap_or(false);
 
         products.push(SetupProductStatus {
+            credentials: requirements
+                .products
+                .get(&runtime.slug)
+                .map(|item| item.requirements.clone())
+                .unwrap_or_default(),
             launcher: launcher.products.get(&runtime.slug).cloned(),
             runtime,
             auth_status,
@@ -350,6 +514,85 @@ async fn fetch_launcher_snapshot(state: &AppState) -> Result<LauncherSnapshot, S
             docker_compose_available: body.docker_compose_available,
         },
         products,
+    })
+}
+
+async fn fetch_launcher_requirements(
+    state: &AppState,
+) -> Result<LauncherRequirementsSnapshot, String> {
+    let url = format!(
+        "{}/setup/requirements",
+        launcher_base_url().trim_end_matches('/')
+    );
+    let response = state
+        .client
+        .get(url)
+        .timeout(Duration::from_secs(3))
+        .send()
+        .await
+        .map_err(|err| {
+            format!("HiveCore could not reach patchhive-launcher requirements: {err}")
+        })?;
+
+    if !response.status().is_success() {
+        return Err(format!(
+            "patchhive-launcher returned HTTP {} for /setup/requirements.",
+            response.status()
+        ));
+    }
+
+    let body = response
+        .json::<LauncherRequirementsBody>()
+        .await
+        .map_err(|err| format!("HiveCore could not parse launcher requirements: {err}"))?;
+    let products = body
+        .products
+        .into_iter()
+        .map(|product| (product.slug.clone(), product))
+        .collect();
+
+    Ok(LauncherRequirementsSnapshot { products })
+}
+
+async fn write_launcher_product_env(
+    state: &AppState,
+    slug: &str,
+    values: &HashMap<String, String>,
+) -> Result<LauncherEnvWriteBody, (StatusCode, Json<crate::models::ApiEnvelope<Value>>)> {
+    let url = format!(
+        "{}/setup/env/{}",
+        launcher_base_url().trim_end_matches('/'),
+        slug
+    );
+    let response = state
+        .client
+        .post(url)
+        .json(&serde_json::json!({ "values": values }))
+        .timeout(Duration::from_secs(20))
+        .send()
+        .await
+        .map_err(|_| {
+            api_error(
+                StatusCode::BAD_GATEWAY,
+                "launcher_unavailable",
+                format!("HiveCore could not reach patchhive-launcher to save setup credentials for {slug}."),
+            )
+        })?;
+
+    if !response.status().is_success() {
+        return Err(launcher_rejected(
+            response,
+            "patchhive-launcher could not save setup credentials.",
+        )
+        .await);
+    }
+
+    response.json::<LauncherEnvWriteBody>().await.map_err(|_| {
+        api_error(
+            StatusCode::BAD_GATEWAY,
+            "launcher_invalid_response",
+            "HiveCore could not parse the launcher setup credential response.",
+        )
     })
 }
 

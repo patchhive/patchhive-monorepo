@@ -355,6 +355,30 @@ pub struct SetupLauncherProductStatus {
     pub blockers: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct SetupCredentialRequirement {
+    pub key: String,
+    pub label: String,
+    pub kind: String,
+    pub profile: String,
+    pub required: bool,
+    pub redact: bool,
+    pub configured: bool,
+    pub placeholder: bool,
+    pub status: String,
+    pub message: String,
+    pub description: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct SetupProductCredentialRequirements {
+    pub slug: String,
+    pub title: String,
+    pub env_file: String,
+    pub env_exists: bool,
+    pub requirements: Vec<SetupCredentialRequirement>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SetupProductStatus {
     pub runtime: ProductRuntimeItem,
@@ -362,6 +386,7 @@ pub struct SetupProductStatus {
     pub auth_status_error: String,
     pub pairing_ready: bool,
     pub launcher: Option<SetupLauncherProductStatus>,
+    pub credentials: Vec<SetupCredentialRequirement>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
