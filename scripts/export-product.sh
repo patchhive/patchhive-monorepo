@@ -47,9 +47,36 @@ if [[ ! -d "$PRODUCT_PREFIX" ]]; then
   exit 1
 fi
 
+TMP_PATHS=()
+cleanup() {
+  for path in "${TMP_PATHS[@]}"; do
+    rm -rf "$path"
+  done
+}
+trap cleanup EXIT
+
+STANDALONE_LOCKFILE=""
 if [[ -f "${PRODUCT_PREFIX}/backend/Cargo.toml" ]]; then
   echo "Refreshing standalone Cargo.lock for ${PRODUCT_NAME} before export..."
+  LOCKFILE_PATH="${PRODUCT_PREFIX}/backend/Cargo.lock"
+  ORIGINAL_LOCKFILE="$(mktemp "/tmp/patchhive-${PRODUCT_NAME}-Cargo.lock-original-XXXXXX")"
+  STANDALONE_LOCKFILE="$(mktemp "/tmp/patchhive-${PRODUCT_NAME}-Cargo.lock-standalone-XXXXXX")"
+  TMP_PATHS+=("$ORIGINAL_LOCKFILE" "$STANDALONE_LOCKFILE")
+
+  LOCKFILE_EXISTED=0
+  if [[ -f "$LOCKFILE_PATH" ]]; then
+    cp "$LOCKFILE_PATH" "$ORIGINAL_LOCKFILE"
+    LOCKFILE_EXISTED=1
+  fi
+
   "$ROOT_DIR/scripts/refresh-product-lockfile.sh" "$PRODUCT_NAME"
+  cp "$LOCKFILE_PATH" "$STANDALONE_LOCKFILE"
+
+  if [[ "$LOCKFILE_EXISTED" -eq 1 ]]; then
+    cp "$ORIGINAL_LOCKFILE" "$LOCKFILE_PATH"
+  else
+    rm -f "$LOCKFILE_PATH"
+  fi
 fi
 
 SANITIZED_NAME="${PRODUCT_NAME//\//-}"
@@ -61,6 +88,18 @@ fi
 
 echo "Creating export branch ${EXPORT_BRANCH} from ${PRODUCT_PREFIX}..."
 git subtree split --prefix="$PRODUCT_PREFIX" --branch "$EXPORT_BRANCH"
+
+if [[ -n "$STANDALONE_LOCKFILE" ]]; then
+  EXPORT_WORKTREE="$(mktemp -d "/tmp/patchhive-${SANITIZED_NAME}-export-XXXXXX")"
+  TMP_PATHS+=("$EXPORT_WORKTREE")
+  git worktree add "$EXPORT_WORKTREE" "$EXPORT_BRANCH" >/dev/null
+  cp "$STANDALONE_LOCKFILE" "$EXPORT_WORKTREE/backend/Cargo.lock"
+  if ! git -C "$EXPORT_WORKTREE" diff --quiet -- backend/Cargo.lock; then
+    git -C "$EXPORT_WORKTREE" add backend/Cargo.lock
+    git -C "$EXPORT_WORKTREE" commit -m "chore: refresh standalone lockfile"
+  fi
+  git worktree remove "$EXPORT_WORKTREE" >/dev/null
+fi
 
 echo
 echo "Created ${EXPORT_BRANCH}"
