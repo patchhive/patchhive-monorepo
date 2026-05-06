@@ -123,23 +123,8 @@ pub(super) async fn start_first_stack(
     Json<crate::models::ApiEnvelope<FirstStackSetupResponse>>,
     (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
 > {
-    let secret = ensure_suite_bootstrap_secret();
-    let launcher_base_url = launcher_base_url();
-    let products_to_start = downstream_products_to_start(&state).await;
     let mut actions = Vec::new();
-    if products_to_start.is_empty() {
-        actions.push(
-            "All first-stack downstream products already look reachable, so HiveCore skipped launcher start and moved straight to verification."
-                .into(),
-        );
-    } else {
-        let launcher =
-            start_launcher_stack(&state, &launcher_base_url, &secret, products_to_start).await?;
-        actions.extend(launcher.actions);
-    }
-
-    wait_for_first_stack(&state, &mut actions).await;
-    auto_pair_first_stack(&state, &secret, &mut actions).await;
+    prepare_first_stack_for_verification(&state, &mut actions).await?;
 
     Ok(Json(ok(build_first_stack_response(&state, actions).await)))
 }
@@ -454,6 +439,30 @@ pub(super) async fn build_first_stack_response(
         actions,
         products,
     }
+}
+
+pub(super) async fn prepare_first_stack_for_verification(
+    state: &AppState,
+    actions: &mut Vec<String>,
+) -> Result<(), (StatusCode, Json<crate::models::ApiEnvelope<Value>>)> {
+    let secret = ensure_suite_bootstrap_secret();
+    let launcher_base_url = launcher_base_url();
+    let products_to_start = downstream_products_to_start(state).await;
+    if products_to_start.is_empty() {
+        actions.push(
+            "All first-stack downstream products already look reachable, so HiveCore skipped launcher start and moved straight to verification."
+                .into(),
+        );
+    } else {
+        let launcher =
+            start_launcher_stack(state, &launcher_base_url, &secret, products_to_start).await?;
+        actions.extend(launcher.actions);
+    }
+
+    wait_for_first_stack(state, actions).await;
+    auto_pair_first_stack(state, &secret, actions).await;
+
+    Ok(())
 }
 
 fn launcher_base_url() -> String {

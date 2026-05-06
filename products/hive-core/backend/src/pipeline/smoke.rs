@@ -18,15 +18,54 @@ use crate::{
 use super::{
     authorized_request, build_target_url, fetch_product_auth_status, fetch_product_capabilities,
     fetch_product_runs, parse_response_body, pick_url,
-    setup::{build_first_stack_response, DOWNSTREAM_FIRST_STACK_SLUGS},
+    setup::{
+        build_first_stack_response, prepare_first_stack_for_verification,
+        DOWNSTREAM_FIRST_STACK_SLUGS,
+    },
     ProductStoredAuth,
 };
 
 pub(super) async fn run_first_stack_smoke(
     State(state): State<AppState>,
 ) -> Json<crate::models::ApiEnvelope<FirstStackSetupResponse>> {
-    let mut actions = Vec::new();
-    let smoke = execute_first_stack_smoke(&state).await;
+    let mut actions = vec![
+        "HiveCore started first-stack smoke preflight: launch, health wait, service-token pairing, then safe product actions."
+            .into(),
+    ];
+    let mut preflight_steps = Vec::new();
+    match prepare_first_stack_for_verification(&state, &mut actions).await {
+        Ok(()) => push_step(
+            &mut preflight_steps,
+            "first-stack",
+            "First Stack",
+            "preflight",
+            "pass",
+            "HiveCore completed launch, health wait, and pairing preflight before running smoke actions.",
+            None,
+            json!({ "actions": actions }),
+        ),
+        Err((_status, body)) => {
+            let message = body
+                .0
+                .error
+                .as_ref()
+                .map(|error| error.message.clone())
+                .unwrap_or_else(|| "HiveCore could not complete first-stack smoke preflight.".into());
+            actions.push(format!("First-stack smoke preflight failed: {message}"));
+            push_step(
+                &mut preflight_steps,
+                "first-stack",
+                "First Stack",
+                "preflight",
+                "fail",
+                message,
+                None,
+                json!({ "actions": actions }),
+            );
+        }
+    }
+
+    let smoke = execute_first_stack_smoke(&state, preflight_steps).await;
     let status = smoke.status.clone();
     let summary = smoke.summary.clone();
 
@@ -48,9 +87,11 @@ pub(super) async fn run_first_stack_smoke(
     ))
 }
 
-async fn execute_first_stack_smoke(state: &AppState) -> FirstStackSmokeRun {
+async fn execute_first_stack_smoke(
+    state: &AppState,
+    mut steps: Vec<FirstStackSmokeStep>,
+) -> FirstStackSmokeRun {
     let started_at = now_rfc3339();
-    let mut steps = Vec::new();
     let runtimes = super::overview::build_runtime_products(state).await;
     let overrides = db::product_overrides();
 
