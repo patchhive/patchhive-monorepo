@@ -1,7 +1,9 @@
+#[cfg(test)]
 use std::collections::HashMap;
 
 use serde_json::{json, Value};
 
+#[cfg(test)]
 use crate::models::{ProductOverride, ProductOverrideInput};
 
 pub mod dispatch;
@@ -24,6 +26,7 @@ pub use types::{
     StartupChecksBody,
 };
 
+#[cfg(test)]
 pub(crate) use patchhive_product_core::auth::SERVICE_TOKEN_HEADER;
 
 pub use routes::{
@@ -65,6 +68,7 @@ fn hive_core_action_run_values(limit: u32) -> Vec<Value> {
         .collect()
 }
 
+#[cfg(test)]
 fn sanitize_product_overrides(
     products: Vec<ProductOverrideInput>,
     existing: &HashMap<String, ProductOverride>,
@@ -72,6 +76,7 @@ fn sanitize_product_overrides(
     settings::sanitize_product_overrides(products, existing)
 }
 
+#[cfg(test)]
 fn dispatch_service_token_issue(
     product_title: &str,
     action: &patchhive_product_core::contract::ProductAction,
@@ -80,18 +85,22 @@ fn dispatch_service_token_issue(
     dispatch::dispatch_service_token_issue(product_title, action, auth_status)
 }
 
+#[cfg(test)]
 fn parse_dispatch_input(raw: Value) -> DispatchActionInput {
     dispatch::parse_dispatch_input(raw)
 }
 
+#[cfg(test)]
 fn fill_path_template(path: &str, path_params: &HashMap<String, String>) -> Result<String, String> {
     dispatch::fill_path_template(path, path_params)
 }
 
+#[cfg(test)]
 fn build_run_detail_path(template: &str, id: &str) -> Result<String, String> {
     overview::build_run_detail_path(template, id)
 }
 
+#[cfg(test)]
 fn summarize_products(
     products: &[crate::models::ProductRuntimeItem],
 ) -> crate::models::OverviewSummary {
