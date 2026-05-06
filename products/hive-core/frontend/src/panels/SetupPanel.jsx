@@ -49,6 +49,23 @@ function inputTypeForCredential(requirement) {
   return "text";
 }
 
+function generateSecretValue(prefix = "ph-local") {
+  const bytes = new Uint8Array(24);
+  if (globalThis.crypto?.getRandomValues) {
+    globalThis.crypto.getRandomValues(bytes);
+  } else {
+    for (let index = 0; index < bytes.length; index += 1) {
+      bytes[index] = Math.floor(Math.random() * 256);
+    }
+  }
+  return `${prefix}-${Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+}
+
+function generatedSecretPrefix(requirement) {
+  if (requirement.key?.includes("WEBHOOK_SECRET")) return "ph-webhook";
+  return "ph-local";
+}
+
 function LaunchGauge({ label, value, total, tone = "var(--accent)" }) {
   const pct = total > 0 ? Math.round((value / total) * 100) : 0;
   return (
@@ -148,6 +165,7 @@ function ProductCard({
   credentialResult,
   onCredentialChange,
   onSaveCredentials,
+  onGenerateCredential,
   onValidateGithubToken,
   onProductAction,
   onLoadLogs,
@@ -290,12 +308,23 @@ function ProductCard({
                 <span style={S.label}>
                   {requirement.label} {requirement.required ? "" : "(optional)"}
                 </span>
-                <Input
-                  type={inputTypeForCredential(requirement)}
-                  value={credentialDraft[requirement.key] || ""}
-                  onChange={(value) => onCredentialChange(item.runtime.slug, requirement.key, value)}
-                  placeholder={requirement.configured ? "Configured - leave blank to keep current value" : requirement.key}
-                />
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <Input
+                    type={inputTypeForCredential(requirement)}
+                    value={credentialDraft[requirement.key] || ""}
+                    onChange={(value) => onCredentialChange(item.runtime.slug, requirement.key, value)}
+                    placeholder={requirement.configured ? "Configured - leave blank to keep current value" : requirement.key}
+                  />
+                  {requirement.kind === "generated_secret" && (
+                    <Btn
+                      onClick={() => onGenerateCredential(item.runtime.slug, requirement)}
+                      disabled={busy}
+                      color="var(--blue)"
+                    >
+                      Generate
+                    </Btn>
+                  )}
+                </div>
                 <span style={{ fontSize: 10, color: "var(--text-dim)", lineHeight: 1.45 }}>{requirement.description}</span>
               </label>
             ))}
@@ -453,6 +482,10 @@ export default function SetupPanel({ fetchEnvelope, setRunning, setError }) {
       ...current,
       [slug]: null,
     }));
+  }
+
+  function generateCredential(slug, requirement) {
+    setCredentialDraft(slug, requirement.key, generateSecretValue(generatedSecretPrefix(requirement)));
   }
 
   function nonEmptyCredentialValues(slug) {
@@ -698,6 +731,7 @@ export default function SetupPanel({ fetchEnvelope, setRunning, setError }) {
             credentialResult={credentialResults[item.runtime.slug]}
             onCredentialChange={setCredentialDraft}
             onSaveCredentials={saveCredentials}
+            onGenerateCredential={generateCredential}
             onValidateGithubToken={validateGithubToken}
             onProductAction={runProductAction}
             onLoadLogs={loadLogs}

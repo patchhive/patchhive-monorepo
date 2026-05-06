@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use axum::{extract::State, Json};
 use patchhive_product_core::contract;
+use patchhive_product_core::startup::StartupCheckLevel;
 use reqwest::Method;
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -16,13 +17,13 @@ use crate::{
 };
 
 use super::{
-    authorized_request, build_target_url, fetch_product_auth_status, fetch_product_capabilities,
-    fetch_product_runs, parse_response_body, pick_url,
+    authorized_get, authorized_request, build_target_url, fetch_product_auth_status,
+    fetch_product_capabilities, fetch_product_runs, parse_response_body, pick_url,
     setup::{
         build_first_stack_response, prepare_first_stack_for_verification,
         DOWNSTREAM_FIRST_STACK_SLUGS,
     },
-    ProductStoredAuth,
+    ProductStoredAuth, StartupChecksBody,
 };
 
 pub(super) async fn run_first_stack_smoke(
@@ -110,8 +111,6 @@ async fn execute_first_stack_smoke(
             continue;
         };
 
-        smoke_runtime_checks(&mut steps, runtime);
-
         let Some(definition) = product_catalog()
             .iter()
             .find(|product| product.slug == slug)
@@ -125,6 +124,7 @@ async fn execute_first_stack_smoke(
         );
         let auth = ProductStoredAuth::from_override(override_item);
 
+        smoke_runtime_checks(state, &mut steps, runtime, &api_url, &auth).await;
         smoke_auth_checks(state, runtime, &api_url, &auth, &mut steps).await;
         smoke_capability_check(state, runtime, &api_url, &auth, &mut steps).await;
         smoke_safe_action(state, runtime, &api_url, &auth, &mut steps).await;
@@ -142,7 +142,13 @@ async fn execute_first_stack_smoke(
     }
 }
 
-fn smoke_runtime_checks(steps: &mut Vec<FirstStackSmokeStep>, runtime: &ProductRuntimeItem) {
+async fn smoke_runtime_checks(
+    state: &AppState,
+    steps: &mut Vec<FirstStackSmokeStep>,
+    runtime: &ProductRuntimeItem,
+    api_url: &str,
+    auth: &ProductStoredAuth,
+) {
     let reachable = matches!(runtime.status.as_str(), "online" | "degraded");
     push_step(
         steps,
@@ -163,33 +169,123 @@ fn smoke_runtime_checks(steps: &mut Vec<FirstStackSmokeStep>, runtime: &ProductR
         }),
     );
 
-    let startup_status = if runtime.health.startup_errors > 0 {
+    let mut startup_status = if runtime.health.startup_errors > 0 {
         "fail"
     } else if runtime.health.startup_warns > 0 {
         "warn"
     } else {
         "pass"
     };
+    let mut startup_message = if runtime.health.startup_errors > 0 {
+        "Startup checks have blocking errors."
+    } else if runtime.health.startup_warns > 0 {
+        "Startup checks have warnings, but no blocking errors."
+    } else {
+        "Startup checks have no blocking errors or warnings."
+    }
+    .to_string();
+    let mut evidence = json!({
+        "startup_errors": runtime.health.startup_errors,
+        "startup_warns": runtime.health.startup_warns,
+        "startup_infos": runtime.health.startup_infos,
+    });
+
+    if runtime.health.startup_errors == 0 && runtime.health.startup_warns > 0 {
+        match fetch_startup_warning_messages(state, api_url, auth).await {
+            Ok(warnings)
+                if !warnings.is_empty()
+                    && warnings
+                        .iter()
+                        .all(|warning| acknowledged_startup_warning(&runtime.slug, warning)) =>
+            {
+                startup_status = "pass";
+                startup_message = format!(
+                    "Startup checks include only acknowledged local-first-stack warnings: {}",
+                    startup_warning_summary(&warnings)
+                );
+                if let Some(map) = evidence.as_object_mut() {
+                    map.insert("warnings".into(), json!(warnings));
+                    map.insert("acknowledged_warnings".into(), json!(warnings));
+                    map.insert("warning_policy".into(), json!("local_first_stack"));
+                }
+            }
+            Ok(warnings) => {
+                if let Some(map) = evidence.as_object_mut() {
+                    map.insert("warnings".into(), json!(warnings));
+                }
+            }
+            Err(message) => {
+                if let Some(map) = evidence.as_object_mut() {
+                    map.insert("warning_details_error".into(), json!(message));
+                }
+            }
+        }
+    }
+
     push_step(
         steps,
         &runtime.slug,
         &runtime.title,
         "startup",
         startup_status,
-        if runtime.health.startup_errors > 0 {
-            "Startup checks have blocking errors."
-        } else if runtime.health.startup_warns > 0 {
-            "Startup checks have warnings, but no blocking errors."
-        } else {
-            "Startup checks have no blocking errors or warnings."
-        },
+        startup_message,
         None,
-        json!({
-            "startup_errors": runtime.health.startup_errors,
-            "startup_warns": runtime.health.startup_warns,
-            "startup_infos": runtime.health.startup_infos,
-        }),
+        evidence,
     );
+}
+
+async fn fetch_startup_warning_messages(
+    state: &AppState,
+    api_url: &str,
+    auth: &ProductStoredAuth,
+) -> Result<Vec<String>, String> {
+    let checks_url = format!("{}/startup/checks", api_url.trim_end_matches('/'));
+    let response = authorized_get(&state.client, &checks_url, auth)
+        .timeout(Duration::from_secs(3))
+        .send()
+        .await
+        .map_err(|_| "Could not reach /startup/checks for warning details.".to_string())?;
+
+    if !response.status().is_success() {
+        return Err(format!(
+            "/startup/checks returned HTTP {} while loading warning details.",
+            response.status()
+        ));
+    }
+
+    let body = response
+        .json::<StartupChecksBody>()
+        .await
+        .map_err(|err| format!("Could not parse /startup/checks warning details: {err}"))?;
+
+    Ok(body
+        .checks
+        .into_iter()
+        .filter(|check| check.level == StartupCheckLevel::Warn)
+        .map(|check| check.msg)
+        .collect())
+}
+
+fn acknowledged_startup_warning(slug: &str, warning: &str) -> bool {
+    let normalized = warning.to_ascii_lowercase();
+    normalized.contains("api-key auth is not enabled yet")
+        || matches!(
+            slug,
+            "trust-gate"
+                if normalized.contains("trust_github_webhook_secret is not configured")
+                    || normalized.contains("bot_github_token is missing")
+        )
+}
+
+fn startup_warning_summary(warnings: &[String]) -> String {
+    truncate(
+        &warnings
+            .iter()
+            .map(|warning| warning.trim().trim_end_matches('.'))
+            .collect::<Vec<_>>()
+            .join("; "),
+        320,
+    )
 }
 
 async fn smoke_auth_checks(
@@ -567,7 +663,17 @@ fn summarize_smoke(steps: &[FirstStackSmokeStep], status: &str) -> String {
     let warn = steps.iter().filter(|step| step.status == "warn").count();
     let fail = steps.iter().filter(|step| step.status == "fail").count();
     let skip = steps.iter().filter(|step| step.status == "skip").count();
+    let acknowledged_warns = steps
+        .iter()
+        .filter_map(|step| step.evidence.get("acknowledged_warnings"))
+        .filter_map(Value::as_array)
+        .map(Vec::len)
+        .sum::<usize>();
     match status {
+        "ready" if acknowledged_warns > 0 => format!(
+            "First stack is suite-ready: {pass} checks passed, {acknowledged_warns} local warning{} acknowledged.",
+            if acknowledged_warns == 1 { "" } else { "s" }
+        ),
         "ready" => format!("First stack is suite-ready: {pass} checks passed."),
         "attention" => {
             format!("First stack needs attention: {pass} passed, {warn} warned, {skip} skipped.")

@@ -713,15 +713,26 @@ fn credential_requirements(slug: &str) -> Vec<CredentialRequirementDefinition> {
             redact: true,
             description: "Used by SignalHive for read-only repository and issue discovery.",
         }],
-        "trust-gate" => vec![CredentialRequirementDefinition {
-            key: "BOT_GITHUB_TOKEN",
-            label: "GitHub PR token",
-            kind: "github_token",
-            profile: "diff_status_writer",
-            required: false,
-            redact: true,
-            description: "Optional for PR diff reads and GitHub status/check reporting.",
-        }],
+        "trust-gate" => vec![
+            CredentialRequirementDefinition {
+                key: "BOT_GITHUB_TOKEN",
+                label: "GitHub PR token",
+                kind: "github_token",
+                profile: "diff_status_writer",
+                required: false,
+                redact: true,
+                description: "Optional for PR diff reads and GitHub status/check reporting.",
+            },
+            CredentialRequirementDefinition {
+                key: "TRUST_GITHUB_WEBHOOK_SECRET",
+                label: "GitHub webhook secret",
+                kind: "generated_secret",
+                profile: "webhook_ingress",
+                required: false,
+                redact: true,
+                description: "Optional local secret used to verify GitHub webhook deliveries before TrustGate accepts them.",
+            },
+        ],
         "repo-reaper" => vec![
             CredentialRequirementDefinition {
                 key: "BOT_GITHUB_TOKEN",
