@@ -333,6 +333,12 @@ pub struct SetupLauncherStatus {
     pub repo_root: String,
     pub docker_available: bool,
     pub docker_compose_available: bool,
+    #[serde(default)]
+    pub image_mode: String,
+    #[serde(default)]
+    pub image_tag: String,
+    #[serde(default)]
+    pub image_pull_policy: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -348,6 +354,18 @@ pub struct SetupLauncherProductStatus {
     pub suite_bootstrap_configured: bool,
     pub frontend_port: u16,
     pub api_port: u16,
+    #[serde(default)]
+    pub image_mode: String,
+    #[serde(default)]
+    pub image_tag: String,
+    #[serde(default)]
+    pub image_pull_policy: String,
+    #[serde(default)]
+    pub image_source: String,
+    #[serde(default)]
+    pub backend_image_ref: String,
+    #[serde(default)]
+    pub frontend_image_ref: String,
     pub frontend_port_open: bool,
     pub api_port_open: bool,
     pub compose_running: bool,

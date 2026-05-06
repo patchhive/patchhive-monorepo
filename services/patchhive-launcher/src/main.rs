@@ -31,6 +31,10 @@ struct ManagedProduct {
     title: &'static str,
     frontend_port: u16,
     api_port: u16,
+    backend_image_env: &'static str,
+    frontend_image_env: &'static str,
+    backend_image: &'static str,
+    frontend_image: &'static str,
 }
 
 const FIRST_STACK_PRODUCTS: [ManagedProduct; 3] = [
@@ -39,20 +43,44 @@ const FIRST_STACK_PRODUCTS: [ManagedProduct; 3] = [
         title: "SignalHive",
         frontend_port: 5174,
         api_port: 8010,
+        backend_image_env: "PATCHHIVE_SIGNAL_HIVE_BACKEND_IMAGE",
+        frontend_image_env: "PATCHHIVE_SIGNAL_HIVE_FRONTEND_IMAGE",
+        backend_image: "ghcr.io/patchhive/signalhive-backend",
+        frontend_image: "ghcr.io/patchhive/signalhive-frontend",
     },
     ManagedProduct {
         slug: "trust-gate",
         title: "TrustGate",
         frontend_port: 5175,
         api_port: 8020,
+        backend_image_env: "PATCHHIVE_TRUST_GATE_BACKEND_IMAGE",
+        frontend_image_env: "PATCHHIVE_TRUST_GATE_FRONTEND_IMAGE",
+        backend_image: "ghcr.io/patchhive/trustgate-backend",
+        frontend_image: "ghcr.io/patchhive/trustgate-frontend",
     },
     ManagedProduct {
         slug: "repo-reaper",
         title: "RepoReaper",
         frontend_port: 5173,
         api_port: 8000,
+        backend_image_env: "PATCHHIVE_REPO_REAPER_BACKEND_IMAGE",
+        frontend_image_env: "PATCHHIVE_REPO_REAPER_FRONTEND_IMAGE",
+        backend_image: "ghcr.io/patchhive/reporeaper-backend",
+        frontend_image: "ghcr.io/patchhive/reporeaper-frontend",
     },
 ];
+
+#[derive(Clone)]
+struct ProductImagePlan {
+    mode: String,
+    tag: String,
+    pull_policy: String,
+    backend_image: String,
+    frontend_image: String,
+    backend_image_ref: String,
+    frontend_image_ref: String,
+    source: String,
+}
 
 #[derive(Serialize)]
 struct ApiError {
@@ -79,6 +107,12 @@ struct LauncherProductStatus {
     suite_bootstrap_configured: bool,
     frontend_port: u16,
     api_port: u16,
+    image_mode: String,
+    image_tag: String,
+    image_pull_policy: String,
+    image_source: String,
+    backend_image_ref: String,
+    frontend_image_ref: String,
     frontend_port_open: bool,
     api_port_open: bool,
     compose_running: bool,
@@ -93,6 +127,9 @@ struct FirstStackStatusResponse {
     repo_root: String,
     docker_available: bool,
     docker_compose_available: bool,
+    image_mode: String,
+    image_tag: String,
+    image_pull_policy: String,
     products: Vec<LauncherProductStatus>,
 }
 
@@ -511,6 +548,9 @@ async fn stack_status(
     docker_compose_available: bool,
 ) -> FirstStackStatusResponse {
     let docker_available = docker_available().await;
+    let image_mode = launcher_image_mode();
+    let image_tag = launcher_image_tag();
+    let image_pull_policy = launcher_image_pull_policy();
     FirstStackStatusResponse {
         launcher_available: true,
         message: if docker_compose_available {
@@ -523,6 +563,9 @@ async fn stack_status(
         repo_root: repo_root.display().to_string(),
         docker_available,
         docker_compose_available,
+        image_mode,
+        image_tag,
+        image_pull_policy,
         products: product_statuses(repo_root, docker_compose_available).await,
     }
 }
@@ -549,6 +592,7 @@ async fn product_status(
     let env_example = product_dir.join(".env.example");
     let env_exists = env_file.exists();
     let compose_exists = compose_file.exists();
+    let image_plan = product_image_plan(product);
     let compose_running = if docker_compose_available && compose_exists {
         compose_product_running(&product_dir).await
     } else {
@@ -585,6 +629,12 @@ async fn product_status(
         suite_bootstrap_configured: env_has_key(&env_file, SUITE_BOOTSTRAP_KEY),
         frontend_port: product.frontend_port,
         api_port: product.api_port,
+        image_mode: image_plan.mode,
+        image_tag: image_plan.tag,
+        image_pull_policy: image_plan.pull_policy,
+        image_source: image_plan.source,
+        backend_image_ref: image_plan.backend_image_ref,
+        frontend_image_ref: image_plan.frontend_image_ref,
         frontend_port_open,
         api_port_open,
         compose_running,
@@ -888,14 +938,14 @@ async fn start_managed_products(
     products: &[ManagedProduct],
     secret: &str,
 ) -> Result<Vec<String>, (StatusCode, Json<ApiError>)> {
-    let image_mode = launcher_image_mode();
     let mut actions = Vec::new();
     for product in products {
         let product_dir = product_dir(repo_root, product.slug);
         ensure_env_file(&product_dir)?;
         upsert_env_value(&product_dir.join(".env"), SUITE_BOOTSTRAP_KEY, secret)?;
+        let image_plan = product_image_plan(product);
 
-        if image_mode == "build" {
+        if image_plan.mode == "build" {
             run_docker_compose(
                 &product_dir,
                 ["up", "-d", "--build", "--force-recreate", "--pull", "never"],
@@ -909,12 +959,15 @@ async fn start_managed_products(
             continue;
         }
 
-        match start_with_prebuilt_images(&product_dir).await {
+        match start_with_prebuilt_images(&product_dir, product, &image_plan).await {
             Ok(()) => actions.push(format!(
-                "Pulled and started {} from GHCR images.",
-                product.title
+                "Pulled and started {} from {} images ({}, {}).",
+                product.title,
+                image_plan.source,
+                image_plan.backend_image_ref,
+                image_plan.frontend_image_ref
             )),
-            Err(message) if image_mode == "pull-only" => {
+            Err(message) if image_plan.mode == "pull-only" => {
                 return Err(error(StatusCode::BAD_GATEWAY, &message));
             }
             Err(message) => {
@@ -940,15 +993,92 @@ async fn start_managed_products(
 }
 
 fn launcher_image_mode() -> String {
-    env::var("PATCHHIVE_LAUNCHER_IMAGE_MODE")
+    let mode = env::var("PATCHHIVE_LAUNCHER_IMAGE_MODE")
         .unwrap_or_else(|_| "pull".into())
         .trim()
-        .to_ascii_lowercase()
+        .to_ascii_lowercase();
+    match mode.as_str() {
+        "build" | "pull-only" => mode,
+        _ => "pull".into(),
+    }
 }
 
-async fn start_with_prebuilt_images(product_dir: &FsPath) -> Result<(), String> {
-    run_docker_compose(product_dir, ["pull"]).await?;
-    run_docker_compose(product_dir, ["up", "-d", "--no-build", "--force-recreate"]).await
+fn launcher_image_tag() -> String {
+    env_or_default("PATCHHIVE_IMAGE_TAG", "main")
+}
+
+fn launcher_image_pull_policy() -> String {
+    env_or_default("PATCHHIVE_IMAGE_PULL_POLICY", "missing")
+}
+
+fn product_image_plan(product: &ManagedProduct) -> ProductImagePlan {
+    let mode = launcher_image_mode();
+    let tag = launcher_image_tag();
+    let pull_policy = launcher_image_pull_policy();
+    let backend_override = launcher_env_override(product.backend_image_env);
+    let frontend_override = launcher_env_override(product.frontend_image_env);
+    let source = if mode == "build" {
+        "local build"
+    } else if backend_override.is_some() || frontend_override.is_some() {
+        "override"
+    } else {
+        "ghcr"
+    };
+    let backend_image = backend_override.unwrap_or_else(|| product.backend_image.into());
+    let frontend_image = frontend_override.unwrap_or_else(|| product.frontend_image.into());
+
+    ProductImagePlan {
+        mode,
+        tag: tag.clone(),
+        pull_policy,
+        backend_image_ref: format!("{backend_image}:{tag}"),
+        frontend_image_ref: format!("{frontend_image}:{tag}"),
+        backend_image,
+        frontend_image,
+        source: source.into(),
+    }
+}
+
+fn launcher_env_override(key: &str) -> Option<String> {
+    env::var(key)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn env_or_default(key: &str, fallback: &str) -> String {
+    env::var(key)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| fallback.into())
+}
+
+fn product_image_env(
+    product: &ManagedProduct,
+    plan: &ProductImagePlan,
+) -> Vec<(&'static str, String)> {
+    vec![
+        ("PATCHHIVE_IMAGE_TAG", plan.tag.clone()),
+        ("PATCHHIVE_IMAGE_PULL_POLICY", plan.pull_policy.clone()),
+        (product.backend_image_env, plan.backend_image.clone()),
+        (product.frontend_image_env, plan.frontend_image.clone()),
+    ]
+}
+
+async fn start_with_prebuilt_images(
+    product_dir: &FsPath,
+    product: &ManagedProduct,
+    plan: &ProductImagePlan,
+) -> Result<(), String> {
+    let image_env = product_image_env(product, plan);
+    run_docker_compose_with_env(product_dir, ["pull"], &image_env).await?;
+    run_docker_compose_with_env(
+        product_dir,
+        ["up", "-d", "--no-build", "--force-recreate"],
+        &image_env,
+    )
+    .await
 }
 
 fn compact_error(message: &str) -> String {
@@ -975,22 +1105,36 @@ where
     I: IntoIterator<Item = S>,
     S: AsRef<str>,
 {
+    run_docker_compose_with_env(product_dir, args, &[]).await
+}
+
+async fn run_docker_compose_with_env<I, S>(
+    product_dir: &FsPath,
+    args: I,
+    env_overrides: &[(&str, String)],
+) -> Result<(), String>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
     let owned_args = args
         .into_iter()
         .map(|item| item.as_ref().to_string())
         .collect::<Vec<_>>();
-    let output = Command::new("docker")
+    let mut command = Command::new("docker");
+    command
         .arg("compose")
         .args(owned_args.iter().map(String::as_str))
-        .current_dir(product_dir)
-        .output()
-        .await
-        .map_err(|err| {
-            format!(
-                "failed to run docker compose in {}: {err}",
-                product_dir.display()
-            )
-        })?;
+        .current_dir(product_dir);
+    for (key, value) in env_overrides {
+        command.env(*key, value);
+    }
+    let output = command.output().await.map_err(|err| {
+        format!(
+            "failed to run docker compose in {}: {err}",
+            product_dir.display()
+        )
+    })?;
 
     if output.status.success() {
         Ok(())

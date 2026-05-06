@@ -33,6 +33,12 @@ struct LauncherStackStatusBody {
     repo_root: String,
     docker_available: bool,
     docker_compose_available: bool,
+    #[serde(default)]
+    image_mode: String,
+    #[serde(default)]
+    image_tag: String,
+    #[serde(default)]
+    image_pull_policy: String,
     products: Vec<SetupLauncherProductStatus>,
 }
 
@@ -385,6 +391,9 @@ pub(super) async fn build_first_stack_response(
                 repo_root: String::new(),
                 docker_available: false,
                 docker_compose_available: false,
+                image_mode: String::new(),
+                image_tag: String::new(),
+                image_pull_policy: String::new(),
             },
             products: HashMap::new(),
         });
@@ -521,6 +530,9 @@ async fn fetch_launcher_snapshot(state: &AppState) -> Result<LauncherSnapshot, S
             repo_root: body.repo_root,
             docker_available: body.docker_available,
             docker_compose_available: body.docker_compose_available,
+            image_mode: body.image_mode,
+            image_tag: body.image_tag,
+            image_pull_policy: body.image_pull_policy,
         },
         products,
     })

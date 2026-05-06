@@ -70,6 +70,13 @@ function launcherTone(status) {
   return "var(--gold)";
 }
 
+function imageTone(source, mode) {
+  if (mode === "build") return "var(--gold)";
+  if (source === "override") return "var(--blue)";
+  if (source === "ghcr") return "var(--green)";
+  return "var(--text-dim)";
+}
+
 function smokeTone(status) {
   if (status === "ready" || status === "pass") return "var(--green)";
   if (status === "attention" || status === "warn" || status === "skip") return "var(--gold)";
@@ -272,6 +279,12 @@ function MissionControl({ setup, onlineCount, pairedCount, fleetCount, busyActio
             <Tag color={setup.suite_bootstrap_configured ? "var(--green)" : "var(--gold)"}>
               suite bootstrap {setup.suite_bootstrap_configured ? "configured" : "missing"}
             </Tag>
+            {setup.launcher.image_mode && (
+              <Tag color={imageTone("ghcr", setup.launcher.image_mode)}>
+                images {setup.launcher.image_mode}
+                {setup.launcher.image_tag ? `:${setup.launcher.image_tag}` : ""}
+              </Tag>
+            )}
           </div>
           <div style={{ fontSize: 34, lineHeight: 1.02, fontWeight: 950, letterSpacing: "-0.055em" }}>
             {mission.headline}
@@ -672,6 +685,18 @@ function ProductCard({
             <Tag color={launcher.compose_running ? "var(--green)" : "var(--gold)"}>
               compose {launcher.compose_running ? "running" : "not running"}
             </Tag>
+            {launcher.image_mode && (
+              <Tag color={imageTone(launcher.image_source, launcher.image_mode)}>
+                images {launcher.image_mode}
+              </Tag>
+            )}
+            {launcher.image_source && (
+              <Tag color={imageTone(launcher.image_source, launcher.image_mode)}>{launcher.image_source}</Tag>
+            )}
+            {launcher.image_tag && <Tag color="var(--blue)">tag {launcher.image_tag}</Tag>}
+            {launcher.image_pull_policy && launcher.image_mode !== "build" && (
+              <Tag color="var(--text-dim)">pull {launcher.image_pull_policy}</Tag>
+            )}
           </div>
           <div style={{ display: "grid", gap: 4, color: "var(--text-dim)" }}>
             <div>
@@ -686,6 +711,22 @@ function ProductCard({
                 {launcher.frontend_port_open ? "open" : "closed"}
               </span>
             </div>
+            {(launcher.backend_image_ref || launcher.frontend_image_ref) && (
+              <>
+                <div>
+                  Backend image:{" "}
+                  <span style={{ color: "var(--text)", overflowWrap: "anywhere" }}>
+                    {launcher.backend_image_ref || "not reported"}
+                  </span>
+                </div>
+                <div>
+                  Frontend image:{" "}
+                  <span style={{ color: "var(--text)", overflowWrap: "anywhere" }}>
+                    {launcher.frontend_image_ref || "not reported"}
+                  </span>
+                </div>
+              </>
+            )}
           </div>
           {launcher.blockers?.length > 0 && (
             <div style={{ display: "grid", gap: 4, color: "var(--accent)" }}>

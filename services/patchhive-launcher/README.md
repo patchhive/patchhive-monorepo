@@ -44,6 +44,13 @@ Optional env:
 - `PATCHHIVE_LAUNCHER_IMAGE_MODE`
 - `PATCHHIVE_MONOREPO_ROOT`
 - `PATCHHIVE_IMAGE_TAG`
+- `PATCHHIVE_IMAGE_PULL_POLICY`
+- `PATCHHIVE_REPO_REAPER_BACKEND_IMAGE`
+- `PATCHHIVE_REPO_REAPER_FRONTEND_IMAGE`
+- `PATCHHIVE_SIGNAL_HIVE_BACKEND_IMAGE`
+- `PATCHHIVE_SIGNAL_HIVE_FRONTEND_IMAGE`
+- `PATCHHIVE_TRUST_GATE_BACKEND_IMAGE`
+- `PATCHHIVE_TRUST_GATE_FRONTEND_IMAGE`
 - `PATCHHIVE_SUITE_BOOTSTRAP_SECRET`
 - `RUST_LOG`
 
@@ -56,6 +63,12 @@ Image mode:
 The first-stack compose files default to GHCR images tagged by `PATCHHIVE_IMAGE_TAG`
 (`main` by default), while still keeping `build:` entries for fallback and local
 development.
+
+In pull modes, the launcher sets the first-stack image env vars when it runs
+`docker compose` so stale product `.env` overrides cannot accidentally resolve to
+Docker Hub names like `repo-reaper-frontend:latest`. Intentional image overrides
+should be configured on the launcher process with the product-specific image env
+vars listed above.
 
 ## Smoke Check
 
