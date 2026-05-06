@@ -333,7 +333,10 @@ pub(super) async fn fetch_product_health(
     let checked_at = now_rfc3339();
     let health_url = format!("{normalized}/health");
 
-    let health_response = authorized_get(client, &health_url, auth).send().await;
+    let health_response = authorized_get(client, &health_url, auth)
+        .timeout(Duration::from_secs(3))
+        .send()
+        .await;
     let Ok(health_response) = health_response else {
         return ProductProbeSnapshot {
             health: ProductHealthSnapshot {
