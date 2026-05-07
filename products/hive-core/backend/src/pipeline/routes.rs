@@ -239,6 +239,13 @@ pub async fn run_first_stack_smoke(
     super::smoke::run_first_stack_smoke(State(state)).await
 }
 
+pub async fn run_setup_smoke_tier(
+    State(state): State<AppState>,
+    Path(tier): Path<String>,
+) -> Json<crate::models::ApiEnvelope<crate::models::FirstStackSetupResponse>> {
+    super::smoke::run_setup_smoke_tier(State(state), tier).await
+}
+
 pub async fn stop_first_stack(
     State(state): State<AppState>,
 ) -> Result<

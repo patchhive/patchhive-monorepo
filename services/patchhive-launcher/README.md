@@ -45,12 +45,26 @@ Optional env:
 - `PATCHHIVE_MONOREPO_ROOT`
 - `PATCHHIVE_IMAGE_TAG`
 - `PATCHHIVE_IMAGE_PULL_POLICY`
+- `PATCHHIVE_DEP_TRIAGE_BACKEND_IMAGE`
+- `PATCHHIVE_DEP_TRIAGE_FRONTEND_IMAGE`
+- `PATCHHIVE_FLAKE_STING_BACKEND_IMAGE`
+- `PATCHHIVE_FLAKE_STING_FRONTEND_IMAGE`
+- `PATCHHIVE_MERGE_KEEPER_BACKEND_IMAGE`
+- `PATCHHIVE_MERGE_KEEPER_FRONTEND_IMAGE`
+- `PATCHHIVE_REFACTOR_SCOUT_BACKEND_IMAGE`
+- `PATCHHIVE_REFACTOR_SCOUT_FRONTEND_IMAGE`
+- `PATCHHIVE_REPO_MEMORY_BACKEND_IMAGE`
+- `PATCHHIVE_REPO_MEMORY_FRONTEND_IMAGE`
 - `PATCHHIVE_REPO_REAPER_BACKEND_IMAGE`
 - `PATCHHIVE_REPO_REAPER_FRONTEND_IMAGE`
+- `PATCHHIVE_REVIEW_BEE_BACKEND_IMAGE`
+- `PATCHHIVE_REVIEW_BEE_FRONTEND_IMAGE`
 - `PATCHHIVE_SIGNAL_HIVE_BACKEND_IMAGE`
 - `PATCHHIVE_SIGNAL_HIVE_FRONTEND_IMAGE`
 - `PATCHHIVE_TRUST_GATE_BACKEND_IMAGE`
 - `PATCHHIVE_TRUST_GATE_FRONTEND_IMAGE`
+- `PATCHHIVE_VULN_TRIAGE_BACKEND_IMAGE`
+- `PATCHHIVE_VULN_TRIAGE_FRONTEND_IMAGE`
 - `PATCHHIVE_SUITE_BOOTSTRAP_SECRET`
 - `RUST_LOG`
 
@@ -64,11 +78,17 @@ The first-stack compose files default to GHCR images tagged by `PATCHHIVE_IMAGE_
 (`main` by default), while still keeping `build:` entries for fallback and local
 development.
 
-In pull modes, the launcher sets the first-stack image env vars when it runs
-`docker compose` so stale product `.env` overrides cannot accidentally resolve to
-Docker Hub names like `repo-reaper-frontend:latest`. Intentional image overrides
-should be configured on the launcher process with the product-specific image env
-vars listed above.
+In pull modes, the launcher sets product image env vars when it runs
+`docker compose` so stale product `.env` overrides cannot accidentally resolve
+to Docker Hub names like `repo-reaper-frontend:latest`. Intentional image
+overrides should be configured on the launcher process with the product-specific
+image env vars listed above.
+
+The launcher now reports preflight for every non-HiveCore product. Execution is
+still gated: start/restart only proceeds when compose, env, Docker, and image
+preflight all pass. Products without published-image declarations show
+`fallback` image status in pull mode until their compose files grow image refs or
+the launcher is run with `PATCHHIVE_LAUNCHER_IMAGE_MODE=build`.
 
 ## Smoke Check
 

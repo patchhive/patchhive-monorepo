@@ -70,11 +70,19 @@ function launcherTone(status) {
   return "var(--gold)";
 }
 
-function imageTone(source, mode) {
+function imageTone(source, mode, status) {
+  if (status === "fallback") return "var(--gold)";
+  if (status === "pull") return "var(--green)";
   if (mode === "build") return "var(--gold)";
   if (source === "override") return "var(--blue)";
   if (source === "ghcr") return "var(--green)";
   return "var(--text-dim)";
+}
+
+function preflightTone(status) {
+  if (status === "ready") return "var(--green)";
+  if (status === "running") return "var(--blue)";
+  return "var(--gold)";
 }
 
 function smokeTone(status) {
@@ -241,6 +249,95 @@ function CommandButton({ title, detail, color, disabled, active, onClick }) {
   );
 }
 
+function startAllPlan(setup) {
+  const items = setup.products || [];
+  const native = items.filter((item) => item.runtime.slug === "hive-core").length;
+  const controlled = items.filter((item) => item.runtime.slug !== "hive-core");
+  const ready = controlled.filter((item) => item.launcher?.start_ready).length;
+  const running = controlled.filter((item) => item.launcher?.compose_running).length;
+  const blocked = controlled.length - ready;
+  return { items, controlled, native, ready, running, blocked, total: items.length || 11 };
+}
+
+function FleetStartPlan({ setup }) {
+  const plan = startAllPlan(setup);
+  return (
+    <div style={{ ...S.panel, display: "grid", gap: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+        <div>
+          <div style={{ fontSize: 15, fontWeight: 900 }}>Start All 11 Plan</div>
+          <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.45 }}>
+            Planning only for now: HiveCore shows compose, env, image, and start gates before any bulk execution exists.
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          <Tag color="var(--green)">{plan.ready} start-ready</Tag>
+          <Tag color="var(--blue)">{plan.running} running</Tag>
+          <Tag color={plan.blocked ? "var(--gold)" : "var(--green)"}>{plan.blocked} blocked</Tag>
+          <Tag color="var(--text-dim)">{plan.native} native</Tag>
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gap: 8, gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))" }}>
+        {plan.items.map((item) => {
+          const launcher = item.launcher;
+          const native = item.runtime.slug === "hive-core";
+          const imageStatus = launcher?.image_status || launcher?.image_mode || "native";
+          const blockers = launcher?.start_blockers || [];
+          return (
+            <div
+              key={item.runtime.slug}
+              style={{
+                display: "grid",
+                gap: 7,
+                padding: 11,
+                borderRadius: 12,
+                border: `1px solid ${native ? "var(--blue)" : preflightTone(launcher?.preflight_status)}44`,
+                background: "color-mix(in srgb, var(--bg) 52%, transparent)",
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+                <span style={{ fontSize: 12, fontWeight: 900 }}>
+                  {item.runtime.icon} {item.runtime.title}
+                </span>
+                <Tag color={native ? "var(--blue)" : preflightTone(launcher?.preflight_status)}>
+                  {native ? "native" : launcher?.preflight_status || "unplanned"}
+                </Tag>
+              </div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                <Tag color={launcher?.compose_exists || native ? "var(--green)" : "var(--gold)"}>
+                  compose {native ? "n/a" : launcher?.compose_exists ? "ready" : "missing"}
+                </Tag>
+                <Tag color={launcher?.env_exists || native ? "var(--green)" : "var(--gold)"}>
+                  env {native ? "active" : launcher?.env_exists ? "ready" : "from example"}
+                </Tag>
+                <Tag color={imageTone(launcher?.image_source, launcher?.image_mode, imageStatus)}>
+                  images {imageStatus}
+                </Tag>
+              </div>
+              {launcher?.backend_image_ref && (
+                <div style={{ fontSize: 10, color: "var(--text-dim)", lineHeight: 1.45, overflowWrap: "anywhere" }}>
+                  {launcher.backend_image_ref}
+                  <br />
+                  {launcher.frontend_image_ref}
+                </div>
+              )}
+              {blockers.length > 0 && (
+                <div style={{ display: "grid", gap: 3, fontSize: 10, color: "var(--gold)", lineHeight: 1.4 }}>
+                  {blockers.slice(0, 2).map((blocker) => (
+                    <div key={blocker}>{blocker}</div>
+                  ))}
+                  {blockers.length > 2 && <div>{blockers.length - 2} more blocker(s)</div>}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function MissionControl({ setup, onlineCount, pairedCount, fleetCount, busyAction, onRefresh, onAction }) {
   const mission = setupMission(setup, onlineCount, pairedCount);
   const busy = Boolean(busyAction);
@@ -280,7 +377,7 @@ function MissionControl({ setup, onlineCount, pairedCount, fleetCount, busyActio
               suite bootstrap {setup.suite_bootstrap_configured ? "configured" : "missing"}
             </Tag>
             {setup.launcher.image_mode && (
-              <Tag color={imageTone("ghcr", setup.launcher.image_mode)}>
+              <Tag color={imageTone("ghcr", setup.launcher.image_mode, setup.launcher.image_mode)}>
                 images {setup.launcher.image_mode}
                 {setup.launcher.image_tag ? `:${setup.launcher.image_tag}` : ""}
               </Tag>
@@ -336,12 +433,26 @@ function MissionControl({ setup, onlineCount, pairedCount, fleetCount, busyActio
             onClick={() => onAction("Pair running products", "/setup/first-stack/pair")}
           />
           <CommandButton
-            title="Run smoke"
+            title="First-stack smoke"
             detail="Verify reachability, auth, capabilities, and safe product actions."
             color="var(--accent)"
             active={pairedCount === FIRST_STACK_SLUGS.length && setup.latest_smoke?.status !== "ready"}
-            disabled={busy || busyAction === "Run smoke check"}
-            onClick={() => onAction("Run smoke check", "/setup/first-stack/smoke")}
+            disabled={busy || busyAction === "First-stack smoke"}
+            onClick={() => onAction("First-stack smoke", "/setup/smoke/first-stack")}
+          />
+          <CommandButton
+            title="Read-only smoke"
+            detail="Check visibility and triage products without dispatching product actions."
+            color="var(--blue)"
+            disabled={busy || busyAction === "Read-only smoke"}
+            onClick={() => onAction("Read-only smoke", "/setup/smoke/read-only-fleet")}
+          />
+          <CommandButton
+            title="Dry-run smoke"
+            detail="Exercise RepoReaper only through dry-run mode; no PRs are opened."
+            color="var(--gold)"
+            disabled={busy || busyAction === "Dry-run smoke"}
+            onClick={() => onAction("Dry-run smoke", "/setup/smoke/write-dry-run")}
           />
           <CommandButton
             title="Stop first stack"
@@ -376,7 +487,10 @@ function SmokeEvidence({ smoke }) {
             {smoke.finished_at} · {smoke.id}
           </div>
         </div>
-        <Tag color={smokeTone(smoke.status)}>{smoke.status}</Tag>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {smoke.tier && <Tag color="var(--blue)">{smoke.tier}</Tag>}
+          <Tag color={smokeTone(smoke.status)}>{smoke.status}</Tag>
+        </div>
       </div>
 
       <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}>
@@ -581,6 +695,11 @@ function FleetLaneMap({ products, selectedSlug, onSelect }) {
                       <Tag color={statusColor(runtime.status)}>{runtime.status}</Tag>
                       {product.firstStack && <Tag color="var(--accent)">first stack</Tag>}
                       {managed && <Tag color="var(--green)">launcher</Tag>}
+                      {product.setupItem?.launcher?.preflight_status && (
+                        <Tag color={preflightTone(product.setupItem.launcher.preflight_status)}>
+                          {product.setupItem.launcher.preflight_status}
+                        </Tag>
+                      )}
                     </div>
                   </button>
                 );
@@ -613,6 +732,7 @@ function ProductCard({
   const busyForProduct = busyAction.startsWith(actionPrefix);
   const hasCredentialDraft = Object.values(credentialDraft).some((value) => value?.trim?.());
   const githubTokenDraft = credentialDraft.BOT_GITHUB_TOKEN || "";
+  const canStart = Boolean(launcher?.start_ready);
   return (
     <div
       style={{
@@ -686,13 +806,16 @@ function ProductCard({
               compose {launcher.compose_running ? "running" : "not running"}
             </Tag>
             {launcher.image_mode && (
-              <Tag color={imageTone(launcher.image_source, launcher.image_mode)}>
-                images {launcher.image_mode}
+              <Tag color={imageTone(launcher.image_source, launcher.image_mode, launcher.image_status)}>
+                images {launcher.image_status || launcher.image_mode}
               </Tag>
             )}
             {launcher.image_source && (
-              <Tag color={imageTone(launcher.image_source, launcher.image_mode)}>{launcher.image_source}</Tag>
+              <Tag color={imageTone(launcher.image_source, launcher.image_mode, launcher.image_status)}>{launcher.image_source}</Tag>
             )}
+            <Tag color={launcher.start_ready ? "var(--green)" : "var(--gold)"}>
+              start {launcher.start_ready ? "ready" : "gated"}
+            </Tag>
             {launcher.image_tag && <Tag color="var(--blue)">tag {launcher.image_tag}</Tag>}
             {launcher.image_pull_policy && launcher.image_mode !== "build" && (
               <Tag color="var(--text-dim)">pull {launcher.image_pull_policy}</Tag>
@@ -731,6 +854,13 @@ function ProductCard({
           {launcher.blockers?.length > 0 && (
             <div style={{ display: "grid", gap: 4, color: "var(--accent)" }}>
               {launcher.blockers.map((blocker) => (
+                <div key={blocker}>{blocker}</div>
+              ))}
+            </div>
+          )}
+          {launcher.start_blockers?.length > 0 && (
+            <div style={{ display: "grid", gap: 4, color: "var(--gold)" }}>
+              {launcher.start_blockers.map((blocker) => (
                 <div key={blocker}>{blocker}</div>
               ))}
             </div>
@@ -841,10 +971,10 @@ function ProductCard({
 
       {item.runtime.slug !== "hive-core" && item.launcher && (
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <Btn onClick={() => onProductAction(item.runtime.slug, "start")} disabled={busy} color="var(--green)">
+          <Btn onClick={() => onProductAction(item.runtime.slug, "start")} disabled={busy || !canStart} color="var(--green)">
             {busyAction === `${actionPrefix}start` ? "Starting..." : "Start"}
           </Btn>
-          <Btn onClick={() => onProductAction(item.runtime.slug, "restart")} disabled={busy} color="var(--blue)">
+          <Btn onClick={() => onProductAction(item.runtime.slug, "restart")} disabled={busy || !canStart} color="var(--blue)">
             {busyAction === `${actionPrefix}restart` ? "Restarting..." : "Restart"}
           </Btn>
           <Btn onClick={() => onProductAction(item.runtime.slug, "stop")} disabled={busy}>
@@ -1064,6 +1194,8 @@ export default function SetupPanel({ fetchEnvelope, setRunning, setError }) {
         onRefresh={refresh}
         onAction={runAction}
       />
+
+      <FleetStartPlan setup={setup} />
 
       <div style={commandWorkspaceStyle}>
         <FleetLaneMap products={fleetProducts} selectedSlug={selectedProduct?.runtime.slug} onSelect={setSelectedSlug} />

@@ -357,11 +357,17 @@ pub struct SetupLauncherProductStatus {
     #[serde(default)]
     pub image_mode: String,
     #[serde(default)]
+    pub image_status: String,
+    #[serde(default)]
     pub image_tag: String,
     #[serde(default)]
     pub image_pull_policy: String,
     #[serde(default)]
     pub image_source: String,
+    #[serde(default)]
+    pub image_ready: bool,
+    #[serde(default)]
+    pub compose_declares_images: bool,
     #[serde(default)]
     pub backend_image_ref: String,
     #[serde(default)]
@@ -369,6 +375,14 @@ pub struct SetupLauncherProductStatus {
     pub frontend_port_open: bool,
     pub api_port_open: bool,
     pub compose_running: bool,
+    #[serde(default)]
+    pub first_stack: bool,
+    #[serde(default)]
+    pub start_ready: bool,
+    #[serde(default)]
+    pub start_blockers: Vec<String>,
+    #[serde(default)]
+    pub preflight_status: String,
     pub status: String,
     pub blockers: Vec<String>,
 }
@@ -431,6 +445,8 @@ pub struct FirstStackSmokeStep {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FirstStackSmokeRun {
     pub id: String,
+    #[serde(default)]
+    pub tier: String,
     pub status: String,
     pub started_at: String,
     pub finished_at: String,

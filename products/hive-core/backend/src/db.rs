@@ -143,12 +143,13 @@ pub fn record_first_stack_smoke_run(run: &FirstStackSmokeRun) -> rusqlite::Resul
     conn.execute(
         r#"
         INSERT INTO first_stack_smoke_runs (
-          id, status, started_at, finished_at, summary, steps_json
+          id, tier, status, started_at, finished_at, summary, steps_json
         )
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
         "#,
         params![
             &run.id,
+            &run.tier,
             &run.status,
             &run.started_at,
             &run.finished_at,
@@ -212,6 +213,7 @@ fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
 
         CREATE TABLE IF NOT EXISTS first_stack_smoke_runs (
           id TEXT PRIMARY KEY,
+          tier TEXT NOT NULL DEFAULT 'first-stack',
           status TEXT NOT NULL,
           started_at TEXT NOT NULL,
           finished_at TEXT NOT NULL,
@@ -225,6 +227,13 @@ fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
 }
 
 fn migrate_schema(conn: &Connection) -> rusqlite::Result<()> {
+    add_missing_column(
+        conn,
+        "first_stack_smoke_runs",
+        "tier",
+        "TEXT NOT NULL DEFAULT 'first-stack'",
+    )?;
+
     let columns = conn
         .prepare("PRAGMA table_info(product_overrides)")?
         .query_map([], |row| row.get::<_, String>(1))?
@@ -244,6 +253,28 @@ fn migrate_schema(conn: &Connection) -> rusqlite::Result<()> {
     if !has_service_token {
         conn.execute(
             "ALTER TABLE product_overrides ADD COLUMN service_token TEXT NOT NULL DEFAULT ''",
+            [],
+        )?;
+    }
+
+    Ok(())
+}
+
+fn add_missing_column(
+    conn: &Connection,
+    table: &str,
+    column: &str,
+    definition: &str,
+) -> rusqlite::Result<()> {
+    let columns = conn
+        .prepare(&format!("PRAGMA table_info({table})"))?
+        .query_map([], |row| row.get::<_, String>(1))?
+        .flatten()
+        .collect::<Vec<_>>();
+
+    if !columns.iter().any(|existing| existing == column) {
+        conn.execute(
+            &format!("ALTER TABLE {table} ADD COLUMN {column} {definition}"),
             [],
         )?;
     }
@@ -527,20 +558,21 @@ fn load_latest_first_stack_smoke_run(
 ) -> rusqlite::Result<Option<FirstStackSmokeRun>> {
     conn.query_row(
         r#"
-        SELECT id, status, started_at, finished_at, summary, steps_json
+        SELECT id, tier, status, started_at, finished_at, summary, steps_json
         FROM first_stack_smoke_runs
         ORDER BY finished_at DESC
         LIMIT 1
         "#,
         [],
         |row| {
-            let steps_json = row.get::<_, String>(5)?;
+            let steps_json = row.get::<_, String>(6)?;
             Ok(FirstStackSmokeRun {
                 id: row.get(0)?,
-                status: row.get(1)?,
-                started_at: row.get(2)?,
-                finished_at: row.get(3)?,
-                summary: row.get(4)?,
+                tier: row.get(1)?,
+                status: row.get(2)?,
+                started_at: row.get(3)?,
+                finished_at: row.get(4)?,
+                summary: row.get(5)?,
                 steps: serde_json::from_str(&steps_json).unwrap_or_default(),
             })
         },
@@ -682,6 +714,7 @@ mod tests {
 
         let run = FirstStackSmokeRun {
             id: "smoke_1".into(),
+            tier: "first-stack".into(),
             status: "ready".into(),
             started_at: now_rfc3339(),
             finished_at: now_rfc3339(),
@@ -700,12 +733,13 @@ mod tests {
         conn.execute(
             r#"
             INSERT INTO first_stack_smoke_runs (
-              id, status, started_at, finished_at, summary, steps_json
+              id, tier, status, started_at, finished_at, summary, steps_json
             )
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
             "#,
             rusqlite::params![
                 &run.id,
+                &run.tier,
                 &run.status,
                 &run.started_at,
                 &run.finished_at,

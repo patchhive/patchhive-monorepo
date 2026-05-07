@@ -26,77 +26,180 @@ use super::{
     ProductStoredAuth, StartupChecksBody,
 };
 
+const READ_ONLY_FLEET_SLUGS: [&str; 8] = [
+    "signal-hive",
+    "repo-memory",
+    "review-bee",
+    "merge-keeper",
+    "flake-sting",
+    "dep-triage",
+    "vuln-triage",
+    "refactor-scout",
+];
+const WRITE_DRY_RUN_SLUGS: [&str; 1] = ["repo-reaper"];
+
+#[derive(Clone, Copy)]
+enum SmokeTier {
+    FirstStack,
+    ReadOnlyFleet,
+    WriteDryRun,
+}
+
+impl SmokeTier {
+    fn from_slug(slug: &str) -> Option<Self> {
+        match slug {
+            "first-stack" => Some(Self::FirstStack),
+            "read-only-fleet" => Some(Self::ReadOnlyFleet),
+            "write-dry-run" => Some(Self::WriteDryRun),
+            _ => None,
+        }
+    }
+
+    fn slug(self) -> &'static str {
+        match self {
+            Self::FirstStack => "first-stack",
+            Self::ReadOnlyFleet => "read-only-fleet",
+            Self::WriteDryRun => "write-dry-run",
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::FirstStack => "First-stack smoke",
+            Self::ReadOnlyFleet => "Read-only fleet smoke",
+            Self::WriteDryRun => "RepoReaper dry-run smoke",
+        }
+    }
+}
+
 pub(super) async fn run_first_stack_smoke(
     State(state): State<AppState>,
 ) -> Json<crate::models::ApiEnvelope<FirstStackSetupResponse>> {
-    let mut actions = vec![
-        "HiveCore started first-stack smoke preflight: launch, health wait, service-token pairing, then safe product actions."
-            .into(),
-    ];
+    run_smoke_tier_response(&state, SmokeTier::FirstStack).await
+}
+
+pub(super) async fn run_setup_smoke_tier(
+    State(state): State<AppState>,
+    tier_slug: String,
+) -> Json<crate::models::ApiEnvelope<FirstStackSetupResponse>> {
+    let Some(tier) = SmokeTier::from_slug(&tier_slug) else {
+        return Json(crate::models::ok(
+            build_first_stack_response(
+                &state,
+                vec![format!(
+                    "Unknown smoke tier {tier_slug}; available tiers are first-stack, read-only-fleet, and write-dry-run."
+                )],
+            )
+            .await,
+        ));
+    };
+
+    run_smoke_tier_response(&state, tier).await
+}
+
+async fn run_smoke_tier_response(
+    state: &AppState,
+    tier: SmokeTier,
+) -> Json<crate::models::ApiEnvelope<FirstStackSetupResponse>> {
+    let mut actions = vec![format!(
+        "HiveCore started {}: {}.",
+        tier.label(),
+        smoke_tier_description(tier)
+    )
+    .into()];
     let mut preflight_steps = Vec::new();
-    match prepare_first_stack_for_verification(&state, &mut actions).await {
-        Ok(()) => push_step(
-            &mut preflight_steps,
-            "first-stack",
-            "First Stack",
-            "preflight",
-            "pass",
-            "HiveCore completed launch, health wait, and pairing preflight before running smoke actions.",
-            None,
-            json!({ "actions": actions }),
-        ),
-        Err((_status, body)) => {
-            let message = body
-                .0
-                .error
-                .as_ref()
-                .map(|error| error.message.clone())
-                .unwrap_or_else(|| "HiveCore could not complete first-stack smoke preflight.".into());
-            actions.push(format!("First-stack smoke preflight failed: {message}"));
-            push_step(
+
+    if matches!(tier, SmokeTier::FirstStack) {
+        match prepare_first_stack_for_verification(state, &mut actions).await {
+            Ok(()) => push_step(
                 &mut preflight_steps,
                 "first-stack",
                 "First Stack",
                 "preflight",
-                "fail",
-                message,
+                "pass",
+                "HiveCore completed launch, health wait, and pairing preflight before running smoke actions.",
                 None,
                 json!({ "actions": actions }),
-            );
+            ),
+            Err((_status, body)) => {
+                let message = body
+                    .0
+                    .error
+                    .as_ref()
+                    .map(|error| error.message.clone())
+                    .unwrap_or_else(|| {
+                        "HiveCore could not complete first-stack smoke preflight.".into()
+                    });
+                actions.push(format!("First-stack smoke preflight failed: {message}"));
+                push_step(
+                    &mut preflight_steps,
+                    "first-stack",
+                    "First Stack",
+                    "preflight",
+                    "fail",
+                    message,
+                    None,
+                    json!({ "actions": actions }),
+                );
+            }
         }
+    } else {
+        push_step(
+            &mut preflight_steps,
+            tier.slug(),
+            tier.label(),
+            "tier-policy",
+            "pass",
+            smoke_tier_description(tier),
+            None,
+            json!({ "tier": tier.slug() }),
+        );
     }
 
-    let smoke = execute_first_stack_smoke(&state, preflight_steps).await;
+    let smoke = execute_smoke_tier(state, tier, preflight_steps).await;
     let status = smoke.status.clone();
     let summary = smoke.summary.clone();
 
     match db::record_first_stack_smoke_run(&smoke) {
-        Ok(()) => actions.push(format!(
-            "Recorded first-stack smoke run {}: {summary}",
-            smoke.id
-        )),
+        Ok(()) => actions.push(format!("Recorded {} {}: {summary}", tier.label(), smoke.id)),
         Err(err) => {
-            tracing::warn!("failed to record first-stack smoke run: {err}");
+            tracing::warn!("failed to record smoke run: {err}");
             actions.push(format!(
-                "First-stack smoke run finished as {status}, but HiveCore could not persist it: {err}"
+                "{} finished as {status}, but HiveCore could not persist it: {err}",
+                tier.label()
             ));
         }
     }
 
     Json(crate::models::ok(
-        build_first_stack_response(&state, actions).await,
+        build_first_stack_response(state, actions).await,
     ))
 }
 
-async fn execute_first_stack_smoke(
+fn smoke_tier_description(tier: SmokeTier) -> &'static str {
+    match tier {
+        SmokeTier::FirstStack => {
+            "launch, health wait, service-token pairing, then safe product actions for SignalHive, TrustGate, and RepoReaper"
+        }
+        SmokeTier::ReadOnlyFleet => {
+            "reachability and capability checks for visibility and triage products only; no product actions are dispatched"
+        }
+        SmokeTier::WriteDryRun => {
+            "RepoReaper only, using the saved service token and dry-run action so no PRs are opened"
+        }
+    }
+}
+
+async fn execute_smoke_tier(
     state: &AppState,
+    tier: SmokeTier,
     mut steps: Vec<FirstStackSmokeStep>,
 ) -> FirstStackSmokeRun {
     let started_at = now_rfc3339();
     let runtimes = super::overview::build_runtime_products(state).await;
     let overrides = db::product_overrides();
 
-    for slug in DOWNSTREAM_FIRST_STACK_SLUGS {
+    for &slug in smoke_tier_slugs(tier) {
         let Some(runtime) = runtimes.iter().find(|item| item.slug == slug) else {
             push_step(
                 &mut steps,
@@ -104,7 +207,7 @@ async fn execute_first_stack_smoke(
                 slug,
                 "catalog",
                 "fail",
-                "HiveCore could not find runtime metadata for this first-stack product.",
+                "HiveCore could not find runtime metadata for this smoke tier product.",
                 None,
                 Value::Null,
             );
@@ -124,21 +227,45 @@ async fn execute_first_stack_smoke(
         );
         let auth = ProductStoredAuth::from_override(override_item);
 
-        smoke_runtime_checks(state, &mut steps, runtime, &api_url, &auth).await;
-        smoke_auth_checks(state, runtime, &api_url, &auth, &mut steps).await;
-        smoke_capability_check(state, runtime, &api_url, &auth, &mut steps).await;
-        smoke_safe_action(state, runtime, &api_url, &auth, &mut steps).await;
+        match tier {
+            SmokeTier::FirstStack => {
+                smoke_runtime_checks(state, &mut steps, runtime, &api_url, &auth).await;
+                smoke_auth_checks(state, runtime, &api_url, &auth, &mut steps).await;
+                smoke_capability_check(state, runtime, &api_url, &auth, &mut steps).await;
+                smoke_safe_action(state, runtime, &api_url, &auth, &mut steps).await;
+            }
+            SmokeTier::ReadOnlyFleet => {
+                smoke_runtime_checks(state, &mut steps, runtime, &api_url, &auth).await;
+                smoke_optional_auth_check(state, runtime, &api_url, &auth, &mut steps).await;
+                smoke_capability_inventory_check(state, runtime, &api_url, &auth, &mut steps).await;
+            }
+            SmokeTier::WriteDryRun => {
+                smoke_runtime_checks(state, &mut steps, runtime, &api_url, &auth).await;
+                smoke_auth_checks(state, runtime, &api_url, &auth, &mut steps).await;
+                smoke_capability_check(state, runtime, &api_url, &auth, &mut steps).await;
+                smoke_safe_action(state, runtime, &api_url, &auth, &mut steps).await;
+            }
+        }
     }
 
     let status = summarize_smoke_status(&steps);
-    let summary = summarize_smoke(&steps, &status);
+    let summary = summarize_smoke(tier, &steps, &status);
     FirstStackSmokeRun {
         id: format!("smoke_{}", Uuid::now_v7()),
+        tier: tier.slug().into(),
         status,
         started_at,
         finished_at: now_rfc3339(),
         summary,
         steps,
+    }
+}
+
+fn smoke_tier_slugs(tier: SmokeTier) -> &'static [&'static str] {
+    match tier {
+        SmokeTier::FirstStack => &DOWNSTREAM_FIRST_STACK_SLUGS,
+        SmokeTier::ReadOnlyFleet => &READ_ONLY_FLEET_SLUGS,
+        SmokeTier::WriteDryRun => &WRITE_DRY_RUN_SLUGS,
     }
 }
 
@@ -413,6 +540,65 @@ async fn smoke_capability_check(
     }
 }
 
+async fn smoke_optional_auth_check(
+    state: &AppState,
+    runtime: &ProductRuntimeItem,
+    api_url: &str,
+    auth: &ProductStoredAuth,
+    steps: &mut Vec<FirstStackSmokeStep>,
+) {
+    if !auth.service_token_configured() {
+        push_step(
+            steps,
+            &runtime.slug,
+            &runtime.title,
+            "service-token",
+            "warn",
+            "HiveCore does not have a saved service token yet; read-only smoke will continue with public control-plane checks.",
+            None,
+            json!({ "auth_mode": auth.auth_mode() }),
+        );
+        return;
+    }
+
+    smoke_auth_checks(state, runtime, api_url, auth, steps).await;
+}
+
+async fn smoke_capability_inventory_check(
+    state: &AppState,
+    runtime: &ProductRuntimeItem,
+    api_url: &str,
+    auth: &ProductStoredAuth,
+    steps: &mut Vec<FirstStackSmokeStep>,
+) {
+    match fetch_product_capabilities(&state.client, api_url, auth).await {
+        Ok(capabilities) => push_step(
+            steps,
+            &runtime.slug,
+            &runtime.title,
+            "capabilities",
+            "pass",
+            "Product capabilities are reachable for read-only fleet smoke.",
+            None,
+            json!({
+                "action_count": capabilities.actions.len(),
+                "actions": capabilities.actions.iter().map(|action| action.id.clone()).collect::<Vec<_>>(),
+                "hivecore": capabilities.hivecore,
+            }),
+        ),
+        Err(message) => push_step(
+            steps,
+            &runtime.slug,
+            &runtime.title,
+            "capabilities",
+            "fail",
+            format!("HiveCore could not read /capabilities: {message}"),
+            None,
+            Value::Null,
+        ),
+    }
+}
+
 async fn smoke_safe_action(
     state: &AppState,
     runtime: &ProductRuntimeItem,
@@ -658,7 +844,7 @@ fn summarize_smoke_status(steps: &[FirstStackSmokeStep]) -> String {
     }
 }
 
-fn summarize_smoke(steps: &[FirstStackSmokeStep], status: &str) -> String {
+fn summarize_smoke(tier: SmokeTier, steps: &[FirstStackSmokeStep], status: &str) -> String {
     let pass = steps.iter().filter(|step| step.status == "pass").count();
     let warn = steps.iter().filter(|step| step.status == "warn").count();
     let fail = steps.iter().filter(|step| step.status == "fail").count();
@@ -671,15 +857,20 @@ fn summarize_smoke(steps: &[FirstStackSmokeStep], status: &str) -> String {
         .sum::<usize>();
     match status {
         "ready" if acknowledged_warns > 0 => format!(
-            "First stack is suite-ready: {pass} checks passed, {acknowledged_warns} local warning{} acknowledged.",
+            "{} is suite-ready: {pass} checks passed, {acknowledged_warns} local warning{} acknowledged.",
+            tier.label(),
             if acknowledged_warns == 1 { "" } else { "s" }
         ),
-        "ready" => format!("First stack is suite-ready: {pass} checks passed."),
+        "ready" => format!("{} is suite-ready: {pass} checks passed.", tier.label()),
         "attention" => {
-            format!("First stack needs attention: {pass} passed, {warn} warned, {skip} skipped.")
+            format!(
+                "{} needs attention: {pass} passed, {warn} warned, {skip} skipped.",
+                tier.label()
+            )
         }
         _ => format!(
-            "First stack is blocked: {pass} passed, {warn} warned, {fail} failed, {skip} skipped."
+            "{} is blocked: {pass} passed, {warn} warned, {fail} failed, {skip} skipped.",
+            tier.label()
         ),
     }
 }

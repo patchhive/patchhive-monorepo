@@ -37,7 +37,9 @@ struct ManagedProduct {
     frontend_image: &'static str,
 }
 
-const FIRST_STACK_PRODUCTS: [ManagedProduct; 3] = [
+const FIRST_STACK_SLUGS: [&str; 3] = ["signal-hive", "trust-gate", "repo-reaper"];
+
+const MANAGED_PRODUCTS: [ManagedProduct; 10] = [
     ManagedProduct {
         slug: "signal-hive",
         title: "SignalHive",
@@ -47,6 +49,16 @@ const FIRST_STACK_PRODUCTS: [ManagedProduct; 3] = [
         frontend_image_env: "PATCHHIVE_SIGNAL_HIVE_FRONTEND_IMAGE",
         backend_image: "ghcr.io/patchhive/signalhive-backend",
         frontend_image: "ghcr.io/patchhive/signalhive-frontend",
+    },
+    ManagedProduct {
+        slug: "repo-memory",
+        title: "RepoMemory",
+        frontend_port: 5176,
+        api_port: 8030,
+        backend_image_env: "PATCHHIVE_REPO_MEMORY_BACKEND_IMAGE",
+        frontend_image_env: "PATCHHIVE_REPO_MEMORY_FRONTEND_IMAGE",
+        backend_image: "ghcr.io/patchhive/repomemory-backend",
+        frontend_image: "ghcr.io/patchhive/repomemory-frontend",
     },
     ManagedProduct {
         slug: "trust-gate",
@@ -67,6 +79,66 @@ const FIRST_STACK_PRODUCTS: [ManagedProduct; 3] = [
         frontend_image_env: "PATCHHIVE_REPO_REAPER_FRONTEND_IMAGE",
         backend_image: "ghcr.io/patchhive/reporeaper-backend",
         frontend_image: "ghcr.io/patchhive/reporeaper-frontend",
+    },
+    ManagedProduct {
+        slug: "review-bee",
+        title: "ReviewBee",
+        frontend_port: 5177,
+        api_port: 8040,
+        backend_image_env: "PATCHHIVE_REVIEW_BEE_BACKEND_IMAGE",
+        frontend_image_env: "PATCHHIVE_REVIEW_BEE_FRONTEND_IMAGE",
+        backend_image: "ghcr.io/patchhive/reviewbee-backend",
+        frontend_image: "ghcr.io/patchhive/reviewbee-frontend",
+    },
+    ManagedProduct {
+        slug: "merge-keeper",
+        title: "MergeKeeper",
+        frontend_port: 5178,
+        api_port: 8050,
+        backend_image_env: "PATCHHIVE_MERGE_KEEPER_BACKEND_IMAGE",
+        frontend_image_env: "PATCHHIVE_MERGE_KEEPER_FRONTEND_IMAGE",
+        backend_image: "ghcr.io/patchhive/mergekeeper-backend",
+        frontend_image: "ghcr.io/patchhive/mergekeeper-frontend",
+    },
+    ManagedProduct {
+        slug: "flake-sting",
+        title: "FlakeSting",
+        frontend_port: 5179,
+        api_port: 8060,
+        backend_image_env: "PATCHHIVE_FLAKE_STING_BACKEND_IMAGE",
+        frontend_image_env: "PATCHHIVE_FLAKE_STING_FRONTEND_IMAGE",
+        backend_image: "ghcr.io/patchhive/flakesting-backend",
+        frontend_image: "ghcr.io/patchhive/flakesting-frontend",
+    },
+    ManagedProduct {
+        slug: "dep-triage",
+        title: "DepTriage",
+        frontend_port: 5180,
+        api_port: 8070,
+        backend_image_env: "PATCHHIVE_DEP_TRIAGE_BACKEND_IMAGE",
+        frontend_image_env: "PATCHHIVE_DEP_TRIAGE_FRONTEND_IMAGE",
+        backend_image: "ghcr.io/patchhive/deptriage-backend",
+        frontend_image: "ghcr.io/patchhive/deptriage-frontend",
+    },
+    ManagedProduct {
+        slug: "vuln-triage",
+        title: "VulnTriage",
+        frontend_port: 5181,
+        api_port: 8080,
+        backend_image_env: "PATCHHIVE_VULN_TRIAGE_BACKEND_IMAGE",
+        frontend_image_env: "PATCHHIVE_VULN_TRIAGE_FRONTEND_IMAGE",
+        backend_image: "ghcr.io/patchhive/vulntriage-backend",
+        frontend_image: "ghcr.io/patchhive/vulntriage-frontend",
+    },
+    ManagedProduct {
+        slug: "refactor-scout",
+        title: "RefactorScout",
+        frontend_port: 5182,
+        api_port: 8090,
+        backend_image_env: "PATCHHIVE_REFACTOR_SCOUT_BACKEND_IMAGE",
+        frontend_image_env: "PATCHHIVE_REFACTOR_SCOUT_FRONTEND_IMAGE",
+        backend_image: "ghcr.io/patchhive/refactorscout-backend",
+        frontend_image: "ghcr.io/patchhive/refactorscout-frontend",
     },
 ];
 
@@ -108,14 +180,21 @@ struct LauncherProductStatus {
     frontend_port: u16,
     api_port: u16,
     image_mode: String,
+    image_status: String,
     image_tag: String,
     image_pull_policy: String,
     image_source: String,
+    image_ready: bool,
+    compose_declares_images: bool,
     backend_image_ref: String,
     frontend_image_ref: String,
     frontend_port_open: bool,
     api_port_open: bool,
     compose_running: bool,
+    first_stack: bool,
+    start_ready: bool,
+    start_blockers: Vec<String>,
+    preflight_status: String,
     status: String,
     blockers: Vec<String>,
 }
@@ -245,6 +324,7 @@ async fn main() {
         .route("/stacks/first", get(first_stack_status))
         .route("/stacks/first/start", post(start_first_stack))
         .route("/stacks/first/stop", post(stop_first_stack))
+        .route("/stacks/all", get(first_stack_status))
         .with_state(Arc::new(AppState { repo_root }));
 
     let addr = launcher_addr();
@@ -299,6 +379,7 @@ async fn start_product(
         .unwrap_or_default();
     let secret = requested_or_configured_secret(requested_secret)
         .unwrap_or_else(|| format!("ph-suite-{}", Uuid::new_v4().simple()));
+    ensure_product_start_ready(repo_root, &product).await?;
     let actions = start_managed_products(repo_root, &[product], &secret).await?;
     Ok(Json(action_response(repo_root, actions).await))
 }
@@ -332,6 +413,7 @@ async fn restart_product(
         .unwrap_or_default();
     let secret = requested_or_configured_secret(requested_secret)
         .unwrap_or_else(|| format!("ph-suite-{}", Uuid::new_v4().simple()));
+    ensure_product_start_ready(repo_root, &product).await?;
     let actions = start_managed_products(repo_root, &[product], &secret).await?;
     Ok(Json(action_response(repo_root, actions).await))
 }
@@ -361,7 +443,7 @@ async fn setup_requirements(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<SetupRequirementsResponse>, (StatusCode, Json<ApiError>)> {
     let repo_root = require_repo_root(&state)?;
-    let products = FIRST_STACK_PRODUCTS
+    let products = MANAGED_PRODUCTS
         .iter()
         .map(|product| credential_requirements_status(repo_root, product))
         .collect::<Result<Vec<_>, _>>()?;
@@ -463,6 +545,9 @@ async fn start_first_stack(
     if targets.is_empty() {
         actions.push("No first-stack products were selected for launch.".into());
     }
+    for product in &targets {
+        ensure_product_start_ready(repo_root, product).await?;
+    }
 
     actions.extend(start_managed_products(repo_root, &targets, &secret).await?);
 
@@ -477,7 +562,7 @@ async fn stop_first_stack(
     require_docker_compose().await?;
 
     let mut actions = Vec::new();
-    for product in FIRST_STACK_PRODUCTS {
+    for product in first_stack_products() {
         let product_dir = product_dir(repo_root, product.slug);
         let args = if body.remove {
             vec!["down"]
@@ -554,7 +639,7 @@ async fn stack_status(
     FirstStackStatusResponse {
         launcher_available: true,
         message: if docker_compose_available {
-            "Launcher is ready to control the first stack.".into()
+            "Launcher is ready to plan the full suite and control start-ready products.".into()
         } else if docker_available {
             "Launcher found Docker, but docker compose is not available yet.".into()
         } else {
@@ -575,7 +660,7 @@ async fn product_statuses(
     docker_compose_available: bool,
 ) -> Vec<LauncherProductStatus> {
     let mut products = Vec::new();
-    for product in FIRST_STACK_PRODUCTS {
+    for product in MANAGED_PRODUCTS {
         products.push(product_status(repo_root, &product, docker_compose_available).await);
     }
     products
@@ -593,6 +678,7 @@ async fn product_status(
     let env_exists = env_file.exists();
     let compose_exists = compose_file.exists();
     let image_plan = product_image_plan(product);
+    let compose_declares_images = compose_declares_images(&compose_file);
     let compose_running = if docker_compose_available && compose_exists {
         compose_product_running(&product_dir).await
     } else {
@@ -608,6 +694,18 @@ async fn product_status(
     if !env_exists && !env_example.exists() {
         blockers.push("Missing .env and .env.example.".into());
     }
+    let (image_status, image_ready) = image_preflight_status(&image_plan, compose_declares_images);
+    let mut start_blockers = blockers.clone();
+    if !docker_compose_available {
+        start_blockers.push("Docker Compose is not available.".into());
+    }
+    if !image_ready {
+        start_blockers.push(format!(
+            "Image preflight is {image_status}; add compose image refs or run the launcher in build mode."
+        ));
+    }
+    let start_ready = start_blockers.is_empty();
+    let preflight_status = if start_ready { "ready" } else { "blocked" };
 
     let status = if !blockers.is_empty() {
         "blocked"
@@ -630,14 +728,21 @@ async fn product_status(
         frontend_port: product.frontend_port,
         api_port: product.api_port,
         image_mode: image_plan.mode,
+        image_status: image_status.into(),
         image_tag: image_plan.tag,
         image_pull_policy: image_plan.pull_policy,
         image_source: image_plan.source,
+        image_ready,
+        compose_declares_images,
         backend_image_ref: image_plan.backend_image_ref,
         frontend_image_ref: image_plan.frontend_image_ref,
         frontend_port_open,
         api_port_open,
         compose_running,
+        first_stack: FIRST_STACK_SLUGS.contains(&product.slug),
+        start_ready,
+        start_blockers,
+        preflight_status: preflight_status.into(),
         status: status.into(),
         blockers,
     }
@@ -663,8 +768,27 @@ async fn require_docker_compose() -> Result<(), (StatusCode, Json<ApiError>)> {
     }
 }
 
+async fn ensure_product_start_ready(
+    repo_root: &FsPath,
+    product: &ManagedProduct,
+) -> Result<(), (StatusCode, Json<ApiError>)> {
+    let status = product_status(repo_root, product, docker_compose_available().await).await;
+    if status.start_ready {
+        Ok(())
+    } else {
+        Err(error(
+            StatusCode::CONFLICT,
+            &format!(
+                "{} did not pass launcher preflight: {}",
+                product.title,
+                status.start_blockers.join(" ")
+            ),
+        ))
+    }
+}
+
 fn find_product(slug: &str) -> Result<ManagedProduct, (StatusCode, Json<ApiError>)> {
-    FIRST_STACK_PRODUCTS
+    MANAGED_PRODUCTS
         .iter()
         .copied()
         .find(|product| product.slug == slug)
@@ -673,13 +797,24 @@ fn find_product(slug: &str) -> Result<ManagedProduct, (StatusCode, Json<ApiError
 
 fn selected_products(slugs: &[String]) -> Vec<ManagedProduct> {
     if slugs.is_empty() {
-        return FIRST_STACK_PRODUCTS.to_vec();
+        return first_stack_products();
     }
 
-    FIRST_STACK_PRODUCTS
+    MANAGED_PRODUCTS
         .iter()
         .copied()
-        .filter(|product| slugs.iter().any(|slug| slug == product.slug))
+        .filter(|product| {
+            FIRST_STACK_SLUGS.contains(&product.slug)
+                && slugs.iter().any(|slug| slug == product.slug)
+        })
+        .collect()
+}
+
+fn first_stack_products() -> Vec<ManagedProduct> {
+    MANAGED_PRODUCTS
+        .iter()
+        .copied()
+        .filter(|product| FIRST_STACK_SLUGS.contains(&product.slug))
         .collect()
 }
 
@@ -750,6 +885,30 @@ fn env_has_key(env_file: &FsPath, key: &str) -> bool {
                 .any(|line| line.trim_start().starts_with(&format!("{key}=")))
         })
         .unwrap_or(false)
+}
+
+fn compose_declares_images(compose_file: &FsPath) -> bool {
+    fs::read_to_string(compose_file)
+        .ok()
+        .map(|content| {
+            content
+                .lines()
+                .any(|line| line.trim_start().starts_with("image:"))
+        })
+        .unwrap_or(false)
+}
+
+fn image_preflight_status(
+    plan: &ProductImagePlan,
+    compose_declares_images: bool,
+) -> (&'static str, bool) {
+    if plan.mode == "build" {
+        ("build", true)
+    } else if compose_declares_images {
+        ("pull", true)
+    } else {
+        ("fallback", false)
+    }
 }
 
 fn credential_requirements(slug: &str) -> Vec<CredentialRequirementDefinition> {
