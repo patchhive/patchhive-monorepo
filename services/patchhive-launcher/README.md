@@ -74,7 +74,7 @@ Image mode:
 - `pull-only`: require published images and fail instead of building locally
 - `build`: skip image pulls and always build locally
 
-The first-stack compose files default to GHCR images tagged by `PATCHHIVE_IMAGE_TAG`
+Suite compose files default to GHCR images tagged by `PATCHHIVE_IMAGE_TAG`
 (`main` by default), while still keeping `build:` entries for fallback and local
 development.
 
@@ -86,9 +86,9 @@ image env vars listed above.
 
 The launcher now reports preflight for every non-HiveCore product. Execution is
 still gated: start/restart only proceeds when compose, env, Docker, and image
-preflight all pass. Products without published-image declarations show
-`fallback` image status in pull mode until their compose files grow image refs or
-the launcher is run with `PATCHHIVE_LAUNCHER_IMAGE_MODE=build`.
+preflight all pass. Future products without published-image declarations will
+show `fallback` image status in pull mode until their compose files grow image
+refs or the launcher is run with `PATCHHIVE_LAUNCHER_IMAGE_MODE=build`.
 
 ## Smoke Check
 

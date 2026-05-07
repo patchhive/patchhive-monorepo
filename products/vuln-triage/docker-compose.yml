@@ -1,6 +1,8 @@
 services:
   backend:
+    image: "${PATCHHIVE_VULN_TRIAGE_BACKEND_IMAGE:-ghcr.io/patchhive/vulntriage-backend}:${PATCHHIVE_IMAGE_TAG:-main}"
     build: ./backend
+    pull_policy: "${PATCHHIVE_IMAGE_PULL_POLICY:-missing}"
     user: "${PATCHHIVE_BACKEND_UID:-0}:${PATCHHIVE_BACKEND_GID:-0}"
     ports:
       - "8080:8000"
@@ -15,7 +17,9 @@ services:
     restart: unless-stopped
 
   frontend:
+    image: "${PATCHHIVE_VULN_TRIAGE_FRONTEND_IMAGE:-ghcr.io/patchhive/vulntriage-frontend}:${PATCHHIVE_IMAGE_TAG:-main}"
     build: ./frontend
+    pull_policy: "${PATCHHIVE_IMAGE_PULL_POLICY:-missing}"
     ports:
       - "5181:8080"
     depends_on:

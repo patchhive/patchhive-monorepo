@@ -1,6 +1,8 @@
 services:
   backend:
+    image: "${PATCHHIVE_REVIEW_BEE_BACKEND_IMAGE:-ghcr.io/patchhive/reviewbee-backend}:${PATCHHIVE_IMAGE_TAG:-main}"
     build: ./backend
+    pull_policy: "${PATCHHIVE_IMAGE_PULL_POLICY:-missing}"
     user: "${PATCHHIVE_BACKEND_UID:-0}:${PATCHHIVE_BACKEND_GID:-0}"
     ports:
       - "8040:8000"
@@ -15,7 +17,9 @@ services:
     restart: unless-stopped
 
   frontend:
+    image: "${PATCHHIVE_REVIEW_BEE_FRONTEND_IMAGE:-ghcr.io/patchhive/reviewbee-frontend}:${PATCHHIVE_IMAGE_TAG:-main}"
     build: ./frontend
+    pull_policy: "${PATCHHIVE_IMAGE_PULL_POLICY:-missing}"
     ports:
       - "5177:8080"
     depends_on:
