@@ -42,7 +42,7 @@ cd ../frontend && npm install && npm run dev
 
 | Variable | Purpose |
 | --- | --- |
-| `BOT_GITHUB_TOKEN` or `GITHUB_TOKEN` | Optional GitHub token for pull request, review, and check reads. |
+| `BOT_GITHUB_TOKEN` or `GITHUB_TOKEN` | Optional fine-grained PAT for pull request, review, and check reads. Analysis-only scopes: Metadata (read), Pull requests (read), Checks (read), Commit statuses (read). Add Checks (write), Commit statuses (write), and Issues (write) for GitHub publishing. |
 | `MERGE_KEEPER_GITHUB_WEBHOOK_SECRET` | Optional signed webhook secret for refreshes. |
 | `MERGE_KEEPER_PUBLIC_URL` | Optional public URL for links from GitHub artifacts back to saved runs. |
 | `PATCHHIVE_REVIEW_BEE_URL` / `PATCHHIVE_REVIEW_BEE_API_KEY` | Optional ReviewBee context. |

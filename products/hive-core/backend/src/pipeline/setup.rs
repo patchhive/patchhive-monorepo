@@ -7,13 +7,14 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tokio::time::sleep;
+use tokio::{spawn, time::sleep};
 
 use crate::{
     db,
     models::{
-        ok, FirstStackSetupResponse, SetupLauncherProductStatus, SetupLauncherStatus,
-        SetupProductCredentialRequirements, SetupProductLogsResponse, SetupProductStatus,
+        now_rfc3339, ok, FirstStackSetupResponse, SetupFleetLaunchJob, SetupFleetLaunchStep,
+        SetupLauncherProductStatus, SetupLauncherStatus, SetupProductCredentialRequirements,
+        SetupProductLogsResponse, SetupProductStatus,
     },
     state::{product_catalog, AppState},
 };
@@ -24,7 +25,6 @@ use super::{api_error, fetch_product_auth_status, pick_url};
 
 pub(super) const DOWNSTREAM_FIRST_STACK_SLUGS: [&str; 3] =
     ["signal-hive", "trust-gate", "repo-reaper"];
-const FIRST_STACK_SLUGS: [&str; 4] = ["signal-hive", "trust-gate", "repo-reaper", "hive-core"];
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 struct LauncherStackStatusBody {
@@ -46,6 +46,8 @@ struct LauncherStackStatusBody {
 struct LauncherActionBody {
     ok: bool,
     actions: Vec<String>,
+    #[serde(default)]
+    started_products: Vec<String>,
     products: Vec<SetupLauncherProductStatus>,
 }
 
@@ -117,6 +119,28 @@ struct LauncherRequirementsSnapshot {
     products: HashMap<String, SetupProductCredentialRequirements>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FleetLaunchMode {
+    StartReady,
+    StartAll,
+}
+
+impl FleetLaunchMode {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::StartReady => "start-ready",
+            Self::StartAll => "start-all",
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::StartReady => "ready fleet",
+            Self::StartAll => "full fleet",
+        }
+    }
+}
+
 pub(super) async fn first_stack_status(
     State(state): State<AppState>,
 ) -> Json<crate::models::ApiEnvelope<FirstStackSetupResponse>> {
@@ -166,6 +190,36 @@ pub(super) async fn stop_first_stack(
     .await)))
 }
 
+pub(super) async fn start_ready_fleet(
+    State(state): State<AppState>,
+) -> Result<
+    Json<crate::models::ApiEnvelope<FirstStackSetupResponse>>,
+    (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
+> {
+    let mut actions = Vec::new();
+    if fleet_launch_in_progress(&state).await {
+        actions.push("A fleet launch job is already running in HiveCore.".into());
+        return Ok(Json(ok(build_first_stack_response(&state, actions).await)));
+    }
+    queue_fleet_launch(&state, FleetLaunchMode::StartReady, &mut actions).await?;
+    Ok(Json(ok(build_first_stack_response(&state, actions).await)))
+}
+
+pub(super) async fn start_all_fleet(
+    State(state): State<AppState>,
+) -> Result<
+    Json<crate::models::ApiEnvelope<FirstStackSetupResponse>>,
+    (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
+> {
+    let mut actions = Vec::new();
+    if fleet_launch_in_progress(&state).await {
+        actions.push("A fleet launch job is already running in HiveCore.".into());
+        return Ok(Json(ok(build_first_stack_response(&state, actions).await)));
+    }
+    queue_fleet_launch(&state, FleetLaunchMode::StartAll, &mut actions).await?;
+    Ok(Json(ok(build_first_stack_response(&state, actions).await)))
+}
+
 pub(super) async fn start_setup_product(
     State(state): State<AppState>,
     Path(slug): Path<String>,
@@ -177,8 +231,15 @@ pub(super) async fn start_setup_product(
     let secret = ensure_suite_bootstrap_secret();
     let launcher = run_launcher_product_action(&state, &slug, "start", Some(&secret)).await?;
     let mut actions = launcher.actions;
-    wait_for_products(&state, &[slug.as_str()], &mut actions).await;
-    auto_pair_products(&state, &secret, &[slug.as_str()], &mut actions).await;
+    if !launcher.started_products.is_empty() {
+        let started = launcher
+            .started_products
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        wait_for_products(&state, &started, &mut actions).await;
+        auto_pair_products(&state, &secret, &started, &mut actions).await;
+    }
     Ok(Json(ok(build_first_stack_response(&state, actions).await)))
 }
 
@@ -209,8 +270,15 @@ pub(super) async fn restart_setup_product(
     let secret = ensure_suite_bootstrap_secret();
     let launcher = run_launcher_product_action(&state, &slug, "restart", Some(&secret)).await?;
     let mut actions = launcher.actions;
-    wait_for_products(&state, &[slug.as_str()], &mut actions).await;
-    auto_pair_products(&state, &secret, &[slug.as_str()], &mut actions).await;
+    if !launcher.started_products.is_empty() {
+        let started = launcher
+            .started_products
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        wait_for_products(&state, &started, &mut actions).await;
+        auto_pair_products(&state, &secret, &started, &mut actions).await;
+    }
     Ok(Json(ok(build_first_stack_response(&state, actions).await)))
 }
 
@@ -288,8 +356,15 @@ pub(super) async fn save_setup_product_env(
         let restarted =
             run_launcher_product_action(&state, &slug, "restart", Some(&secret)).await?;
         actions.extend(restarted.actions);
-        wait_for_products(&state, &[slug.as_str()], &mut actions).await;
-        auto_pair_products(&state, &secret, &[slug.as_str()], &mut actions).await;
+        if !restarted.started_products.is_empty() {
+            let started = restarted
+                .started_products
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>();
+            wait_for_products(&state, &started, &mut actions).await;
+            auto_pair_products(&state, &secret, &started, &mut actions).await;
+        }
     }
 
     Ok(Json(ok(build_first_stack_response(&state, actions).await)))
@@ -404,10 +479,7 @@ pub(super) async fn build_first_stack_response(
         });
 
     let mut products = Vec::new();
-    for runtime in runtimes
-        .into_iter()
-        .filter(|item| FIRST_STACK_SLUGS.contains(&item.slug.as_str()))
-    {
+    for runtime in runtimes {
         let (auth_status, auth_status_error) =
             match fetch_product_auth_status(&state.client, &runtime.api_url).await {
                 Ok(status) => (Some(status), String::new()),
@@ -445,8 +517,380 @@ pub(super) async fn build_first_stack_response(
         launcher: launcher.status,
         suite_bootstrap_configured: configured_suite_bootstrap_secret().is_some(),
         latest_smoke: db::latest_first_stack_smoke_run(),
+        latest_fleet_launch: latest_fleet_launch_job(state).await,
         actions,
         products,
+    }
+}
+
+async fn latest_fleet_launch_job(state: &AppState) -> Option<SetupFleetLaunchJob> {
+    state.latest_fleet_launch.read().await.clone()
+}
+
+async fn fleet_launch_in_progress(state: &AppState) -> bool {
+    matches!(
+        latest_fleet_launch_job(state)
+            .await
+            .as_ref()
+            .map(|job| job.status.as_str()),
+        Some("queued" | "running")
+    )
+}
+
+async fn replace_fleet_launch_job(state: &AppState, job: SetupFleetLaunchJob) {
+    *state.latest_fleet_launch.write().await = Some(job);
+}
+
+async fn update_fleet_launch_job<F>(state: &AppState, mutator: F)
+where
+    F: FnOnce(&mut SetupFleetLaunchJob),
+{
+    let mut guard = state.latest_fleet_launch.write().await;
+    if let Some(job) = guard.as_mut() {
+        mutator(job);
+        job.updated_at = now_rfc3339();
+    }
+}
+
+async fn queue_fleet_launch(
+    state: &AppState,
+    mode: FleetLaunchMode,
+    actions: &mut Vec<String>,
+) -> Result<(), (StatusCode, Json<crate::models::ApiEnvelope<Value>>)> {
+    let secret = ensure_suite_bootstrap_secret();
+    let launcher = fetch_launcher_snapshot(state)
+        .await
+        .map_err(|message| api_error(StatusCode::BAD_GATEWAY, "launcher_unavailable", message))?;
+    let runtimes = build_runtime_products(state).await;
+
+    let mut requested_products = Vec::new();
+    let mut products_to_start = Vec::new();
+    let mut skipped_products = Vec::new();
+    let mut steps = Vec::new();
+    let mut blocked_count = 0usize;
+    let mut running_count = 0usize;
+
+    for runtime in runtimes
+        .into_iter()
+        .filter(|runtime| runtime.slug != "hive-core" && runtime.enabled)
+    {
+        let Some(launcher_product) = launcher.products.get(&runtime.slug) else {
+            continue;
+        };
+        requested_products.push(runtime.slug.clone());
+
+        if launcher_product_running(&runtime, launcher_product) {
+            running_count += 1;
+            skipped_products.push(runtime.slug.clone());
+            steps.push(SetupFleetLaunchStep {
+                slug: runtime.slug,
+                title: runtime.title,
+                phase: "observe".into(),
+                status: "skipped".into(),
+                message: "Already running, so HiveCore left this product alone.".into(),
+                started_at: String::new(),
+                finished_at: now_rfc3339(),
+            });
+            continue;
+        }
+
+        if !launcher_product.start_ready {
+            let message = if launcher_product.start_blockers.is_empty() {
+                "Launcher preflight is still gated.".into()
+            } else {
+                launcher_product.start_blockers.join(" ")
+            };
+            if mode == FleetLaunchMode::StartAll {
+                blocked_count += 1;
+            } else {
+                skipped_products.push(runtime.slug.clone());
+            }
+            steps.push(SetupFleetLaunchStep {
+                slug: runtime.slug,
+                title: runtime.title,
+                phase: "preflight".into(),
+                status: if mode == FleetLaunchMode::StartAll {
+                    "blocked".into()
+                } else {
+                    "skipped".into()
+                },
+                message,
+                started_at: String::new(),
+                finished_at: now_rfc3339(),
+            });
+            continue;
+        }
+
+        products_to_start.push(runtime.slug.clone());
+        steps.push(SetupFleetLaunchStep {
+            slug: runtime.slug,
+            title: runtime.title,
+            phase: launch_phase_for_product(launcher_product).into(),
+            status: "queued".into(),
+            message: launch_queue_message(launcher_product),
+            started_at: String::new(),
+            finished_at: String::new(),
+        });
+    }
+
+    if requested_products.is_empty() {
+        actions
+            .push("HiveCore has no enabled managed products selected for fleet launch yet.".into());
+        return Ok(());
+    }
+
+    let started_at = now_rfc3339();
+    let finished_at = if blocked_count > 0 || products_to_start.is_empty() {
+        started_at.clone()
+    } else {
+        String::new()
+    };
+    let status = if blocked_count > 0 {
+        "blocked"
+    } else if products_to_start.is_empty() {
+        "ready"
+    } else {
+        "queued"
+    };
+    let summary = if blocked_count > 0 {
+        format!(
+            "Full fleet launch is gated: {blocked_count} stopped product(s) still need preflight fixes."
+        )
+    } else if products_to_start.is_empty() {
+        format!(
+            "All enabled managed products already look running. HiveCore did not need to launch anything."
+        )
+    } else {
+        format!(
+            "HiveCore queued {} product(s) for {} launch. {running_count} already looked running.",
+            products_to_start.len(),
+            mode.label(),
+        )
+    };
+
+    let job = SetupFleetLaunchJob {
+        id: format!("fleet_{}", uuid::Uuid::now_v7()),
+        mode: mode.as_str().into(),
+        status: status.into(),
+        summary,
+        started_at: started_at.clone(),
+        updated_at: started_at,
+        finished_at,
+        requested_products,
+        started_products: Vec::new(),
+        skipped_products,
+        actions: Vec::new(),
+        steps,
+    };
+    replace_fleet_launch_job(state, job.clone()).await;
+
+    if status == "blocked" {
+        actions.push(
+            "HiveCore recorded the blocked fleet plan so you can see the exact gated products."
+                .into(),
+        );
+        return Ok(());
+    }
+    if products_to_start.is_empty() {
+        actions.push("Everything already looked running, so HiveCore skipped fleet launch.".into());
+        return Ok(());
+    }
+
+    actions.push(format!(
+        "HiveCore queued a background {} launch for {} product(s).",
+        mode.label(),
+        products_to_start.len()
+    ));
+
+    let state_clone = state.clone();
+    let job_id = job.id;
+    spawn(async move {
+        run_fleet_launch_job(state_clone, job_id, secret, products_to_start).await;
+    });
+
+    Ok(())
+}
+
+async fn run_fleet_launch_job(
+    state: AppState,
+    job_id: String,
+    secret: String,
+    products: Vec<String>,
+) {
+    update_fleet_launch_job(&state, |job| {
+        if job.id == job_id {
+            job.status = "running".into();
+            job.summary = format!(
+                "HiveCore is launching {} product(s) in the background.",
+                products.len()
+            );
+        }
+    })
+    .await;
+
+    for slug in products {
+        let Some(definition) = product_catalog()
+            .iter()
+            .find(|product| product.slug == slug)
+        else {
+            continue;
+        };
+        let start_at = now_rfc3339();
+        update_fleet_launch_job(&state, |job| {
+            if job.id == job_id {
+                if let Some(step) = job.steps.iter_mut().find(|step| step.slug == slug) {
+                    step.status = "running".into();
+                    step.started_at = start_at.clone();
+                    step.message = format!(
+                        "HiveCore handed {} to patchhive-launcher.",
+                        definition.title
+                    );
+                }
+            }
+        })
+        .await;
+
+        let launcher_result =
+            run_launcher_product_action(&state, &slug, "start", Some(&secret)).await;
+        match launcher_result {
+            Ok(response) => {
+                let mut job_actions = response.actions.clone();
+                update_fleet_launch_job(&state, |job| {
+                    if job.id == job_id {
+                        job.actions.extend(response.actions.clone());
+                        if !job.started_products.iter().any(|item| item == &slug) {
+                            job.started_products.push(slug.clone());
+                        }
+                        if let Some(step) = job.steps.iter_mut().find(|step| step.slug == slug) {
+                            step.phase = "health".into();
+                            step.message =
+                                "Launcher start returned; HiveCore is waiting for /health.".into();
+                        }
+                    }
+                })
+                .await;
+
+                let (health_ok, health_message) = wait_for_product_slug(&state, &slug).await;
+                job_actions.push(health_message);
+
+                let mut pair_actions = Vec::new();
+                auto_pair_products(&state, &secret, &[slug.as_str()], &mut pair_actions).await;
+                let pair_note = pair_actions
+                    .last()
+                    .cloned()
+                    .unwrap_or_else(|| "No pairing note recorded.".into());
+
+                update_fleet_launch_job(&state, |job| {
+                    if job.id == job_id {
+                        job.actions.extend(job_actions.clone());
+                        job.actions.extend(pair_actions.clone());
+                        if let Some(step) = job.steps.iter_mut().find(|step| step.slug == slug) {
+                            step.phase = "pair".into();
+                            step.status = if health_ok {
+                                "ready".into()
+                            } else {
+                                "attention".into()
+                            };
+                            step.message = if health_ok {
+                                format!("Healthy and reviewed for pairing. {pair_note}")
+                            } else {
+                                format!("Launcher started the container, but health timed out. {pair_note}")
+                            };
+                            step.finished_at = now_rfc3339();
+                        }
+                    }
+                })
+                .await;
+            }
+            Err((_status, body)) => {
+                let error = body
+                    .0
+                    .error
+                    .as_ref()
+                    .map(|error| error.message.clone())
+                    .unwrap_or_else(|| format!("HiveCore could not start {}.", definition.title));
+                update_fleet_launch_job(&state, |job| {
+                    if job.id == job_id {
+                        job.actions.push(error.clone());
+                        if let Some(step) = job.steps.iter_mut().find(|step| step.slug == slug) {
+                            step.status = "failed".into();
+                            step.message = error.clone();
+                            step.finished_at = now_rfc3339();
+                        }
+                    }
+                })
+                .await;
+            }
+        }
+    }
+
+    update_fleet_launch_job(&state, |job| {
+        if job.id != job_id {
+            return;
+        }
+        let mut ready = 0usize;
+        let mut attention = 0usize;
+        let mut failed = 0usize;
+        for step in &job.steps {
+            match step.status.as_str() {
+                "ready" => ready += 1,
+                "attention" => attention += 1,
+                "failed" => failed += 1,
+                _ => {}
+            }
+        }
+        job.status = if failed == 0 && attention == 0 {
+            "ready".into()
+        } else if ready == 0 && failed > 0 {
+            "failed".into()
+        } else {
+            "attention".into()
+        };
+        job.summary = format!(
+            "Fleet launch finished: {ready} ready, {attention} with notes, {failed} failed, {} skipped.",
+            job.steps
+                .iter()
+                .filter(|step| matches!(step.status.as_str(), "skipped" | "blocked"))
+                .count()
+        );
+        job.finished_at = now_rfc3339();
+    })
+    .await;
+}
+
+fn launcher_product_running(
+    runtime: &crate::models::ProductRuntimeItem,
+    launcher: &SetupLauncherProductStatus,
+) -> bool {
+    matches!(runtime.status.as_str(), "online" | "degraded")
+        || launcher.compose_running
+        || launcher.api_port_open
+        || launcher.frontend_port_open
+}
+
+fn launch_phase_for_product(launcher: &SetupLauncherProductStatus) -> &'static str {
+    if launcher.image_mode == "build" {
+        "build"
+    } else if launcher.image_status == "pull" {
+        "pull"
+    } else {
+        "start"
+    }
+}
+
+fn launch_queue_message(launcher: &SetupLauncherProductStatus) -> String {
+    match launch_phase_for_product(launcher) {
+        "build" => "Queued for local build and recreate.".into(),
+        "pull" => format!(
+            "Queued to pull {} images and start with tag {}.",
+            launcher.image_source,
+            if launcher.image_tag.is_empty() {
+                "current"
+            } else {
+                launcher.image_tag.as_str()
+            }
+        ),
+        _ => "Queued for launcher start.".into(),
     }
 }
 
@@ -818,28 +1262,38 @@ async fn wait_for_first_stack(state: &AppState, actions: &mut Vec<String>) {
 }
 
 async fn wait_for_products(state: &AppState, slugs: &[&str], actions: &mut Vec<String>) {
-    let overrides = db::product_overrides();
     for slug in slugs {
-        let Some(definition) = product_catalog()
-            .iter()
-            .find(|product| product.slug == *slug)
-        else {
-            continue;
-        };
-        let api_url = pick_url(
-            overrides.get(*slug).map(|item| item.api_url.as_str()),
-            definition.default_api_url,
-        );
-        let ok = wait_for_health(state, &api_url).await;
-        actions.push(if ok {
-            format!("{} responded at /health.", definition.title)
-        } else {
-            format!(
-                "{} did not become healthy before HiveCore timed out waiting.",
-                definition.title
-            )
-        });
+        let (ok, message) = wait_for_product_slug(state, slug).await;
+        let _ = ok;
+        actions.push(message);
     }
+}
+
+async fn wait_for_product_slug(state: &AppState, slug: &str) -> (bool, String) {
+    let overrides = db::product_overrides();
+    let Some(definition) = product_catalog()
+        .iter()
+        .find(|product| product.slug == slug)
+    else {
+        return (
+            false,
+            format!("HiveCore could not find product metadata for {slug}."),
+        );
+    };
+    let api_url = pick_url(
+        overrides.get(slug).map(|item| item.api_url.as_str()),
+        definition.default_api_url,
+    );
+    let ok = wait_for_health(state, &api_url).await;
+    let message = if ok {
+        format!("{} responded at /health.", definition.title)
+    } else {
+        format!(
+            "{} did not become healthy before HiveCore timed out waiting.",
+            definition.title
+        )
+    };
+    (ok, message)
 }
 
 async fn wait_for_health(state: &AppState, api_url: &str) -> bool {

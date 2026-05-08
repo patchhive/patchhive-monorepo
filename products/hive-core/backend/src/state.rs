@@ -1,8 +1,14 @@
+use std::sync::Arc;
 use std::time::Duration;
+
+use tokio::sync::RwLock;
+
+use crate::models::SetupFleetLaunchJob;
 
 #[derive(Clone)]
 pub struct AppState {
     pub client: reqwest::Client,
+    pub latest_fleet_launch: Arc<RwLock<Option<SetupFleetLaunchJob>>>,
 }
 
 impl Default for AppState {
@@ -18,7 +24,10 @@ impl AppState {
             .timeout(Duration::from_secs(4))
             .build()
             .expect("HiveCore reqwest client should build");
-        Self { client }
+        Self {
+            client,
+            latest_fleet_launch: Arc::new(RwLock::new(None)),
+        }
     }
 }
 
@@ -123,7 +132,7 @@ const PRODUCT_CATALOG: [ProductDefinition; 11] = [
         role: "Turns security alerts into a practical engineering queue with clear next steps.",
         repo: "patchhive/vulntriage",
         default_frontend_url: "http://localhost:5181",
-        default_api_url: "http://localhost:8080",
+        default_api_url: "http://localhost:8110",
     },
     ProductDefinition {
         slug: "refactor-scout",

@@ -42,7 +42,7 @@ cd ../frontend && npm install && npm run dev
 
 | Variable | Purpose |
 | --- | --- |
-| `BOT_GITHUB_TOKEN` or `GITHUB_TOKEN` | Optional GitHub token for workflow run and job reads. |
+| `BOT_GITHUB_TOKEN` or `GITHUB_TOKEN` | Optional fine-grained PAT for workflow run and job reads. Recommended scopes: Metadata (read), Actions (read). |
 | `FLAKE_STING_API_KEY_HASH` | Optional pre-seeded app auth hash. Otherwise generate the first local key from the UI. |
 | `FLAKE_STING_SERVICE_TOKEN_HASH` | Optional pre-seeded service-token hash for HiveCore or other PatchHive product callers. |
 | `FLAKE_STING_DB_PATH` | SQLite path for flaky scan history. |

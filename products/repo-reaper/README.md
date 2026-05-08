@@ -54,7 +54,7 @@ cd ../frontend && npm install && npm run dev
 
 | Variable | Purpose |
 | --- | --- |
-| `BOT_GITHUB_TOKEN` | GitHub token used for repo discovery, clone, push, and pull request creation. |
+| `BOT_GITHUB_TOKEN` | Fine-grained PAT used for repo discovery, clone, push, and pull request creation. Recommended scopes: Metadata (read), Contents (read/write), Issues (read/write), Pull requests (read/write), plus Workflows (read/write) when patching `.github/workflows`. |
 | `BOT_GITHUB_USER` / `BOT_GITHUB_EMAIL` | Git identity for PatchHive commits and pull requests. |
 | `PROVIDER_API_KEY` | Direct AI provider API key when not using a local OpenAI-compatible gateway. |
 | `PATCHHIVE_AI_URL` | Optional OpenAI-compatible local gateway such as `@patchhive/ai-local`. |

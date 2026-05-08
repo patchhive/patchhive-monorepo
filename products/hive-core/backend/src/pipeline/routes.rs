@@ -255,6 +255,24 @@ pub async fn stop_first_stack(
     super::setup::stop_first_stack(State(state)).await
 }
 
+pub async fn start_ready_fleet(
+    State(state): State<AppState>,
+) -> Result<
+    Json<crate::models::ApiEnvelope<crate::models::FirstStackSetupResponse>>,
+    (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
+> {
+    super::setup::start_ready_fleet(State(state)).await
+}
+
+pub async fn start_all_fleet(
+    State(state): State<AppState>,
+) -> Result<
+    Json<crate::models::ApiEnvelope<crate::models::FirstStackSetupResponse>>,
+    (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
+> {
+    super::setup::start_all_fleet(State(state)).await
+}
+
 pub async fn start_setup_product(
     State(state): State<AppState>,
     Path(slug): Path<String>,

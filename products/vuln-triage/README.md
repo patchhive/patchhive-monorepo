@@ -27,7 +27,7 @@ docker compose up --build
 ```
 
 Frontend: `http://localhost:5181`
-Backend: `http://localhost:8080`
+Backend: `http://localhost:8110`
 
 ### Split Backend and Frontend
 
@@ -42,7 +42,7 @@ cd ../frontend && npm install && npm run dev
 
 | Variable | Purpose |
 | --- | --- |
-| `BOT_GITHUB_TOKEN` or `GITHUB_TOKEN` | Optional GitHub token for code scanning and Dependabot alert reads. |
+| `BOT_GITHUB_TOKEN` or `GITHUB_TOKEN` | Optional fine-grained PAT for code scanning and Dependabot alert reads. Recommended scopes: Metadata (read), Code scanning alerts (read), Dependabot alerts (read). |
 | `VULN_TRIAGE_API_KEY_HASH` | Optional pre-seeded app auth hash. Otherwise generate the first local key from the UI. |
 | `VULN_TRIAGE_SERVICE_TOKEN_HASH` | Optional pre-seeded service-token hash for HiveCore or other PatchHive product callers. |
 | `VULN_TRIAGE_DB_PATH` | SQLite path for vulnerability triage history. |

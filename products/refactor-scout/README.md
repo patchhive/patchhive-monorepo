@@ -42,7 +42,7 @@ cd ../frontend && npm install && npm run dev
 
 | Variable | Purpose |
 | --- | --- |
-| `BOT_GITHUB_TOKEN` | Optional GitHub token for future repo metadata reads. |
+| `BOT_GITHUB_TOKEN` | Optional fine-grained PAT reserved for future repo metadata reads. Metadata (read) is enough. |
 | `REFACTOR_SCOUT_API_KEY_HASH` | Optional pre-seeded app auth hash. Otherwise generate the first local key from the UI. |
 | `REFACTOR_SCOUT_SERVICE_TOKEN_HASH` | Optional pre-seeded service-token hash for HiveCore or other PatchHive product callers. |
 | `REFACTOR_SCOUT_DB_PATH` | SQLite path for scan history. |

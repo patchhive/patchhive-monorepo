@@ -34,8 +34,9 @@ pub use routes::{
     gen_service_token, health, login, overview, pair_first_stack, product_run_detail, product_runs,
     products, provision_service_token, recent_actions, restart_setup_product, rotate_service_token,
     run_detail, run_first_stack_smoke, run_setup_smoke_tier, runs, save_settings,
-    save_setup_product_env, settings, setup_product_logs, start_first_stack, start_setup_product,
-    startup_checks_route, stop_first_stack, stop_setup_product, validate_github_token,
+    save_setup_product_env, settings, setup_product_logs, start_all_fleet, start_first_stack,
+    start_ready_fleet, start_setup_product, startup_checks_route, stop_first_stack,
+    stop_setup_product, validate_github_token,
 };
 
 fn hive_core_action_run_values(limit: u32) -> Vec<Value> {

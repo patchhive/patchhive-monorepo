@@ -23,21 +23,46 @@ const commandWorkspaceStyle = {
   alignItems: "start",
 };
 
+const COMMAND_RAIL_TOP = 66;
+const COMMAND_RAIL_BOTTOM_CLEARANCE = 72;
+const COMMAND_RAIL_HEIGHT = `calc(100vh - ${COMMAND_RAIL_TOP + COMMAND_RAIL_BOTTOM_CLEARANCE}px)`;
+
+const commandMainColumnStyle = {
+  display: "grid",
+  gap: 14,
+  minWidth: 0,
+};
+
+const commandEvidenceGridStyle = {
+  display: "grid",
+  gap: 14,
+  gridTemplateColumns: "minmax(280px, 0.9fr) minmax(0, 1.1fr)",
+  alignItems: "stretch",
+};
+
+const commandEvidenceStackStyle = {
+  display: "grid",
+  gap: 14,
+  minWidth: 0,
+  alignContent: "start",
+  height: "100%",
+};
+
 const focusRailStyle = {
   position: "sticky",
-  top: 16,
+  top: COMMAND_RAIL_TOP,
   alignSelf: "start",
-  display: "grid",
-  height: "clamp(520px, calc(100vh - 118px), 760px)",
-  overflow: "hidden",
+  minWidth: 0,
 };
 
 const focusPanelStyle = {
   ...S.panel,
-  display: "grid",
-  gridTemplateRows: "auto minmax(0, 1fr)",
+  display: "flex",
+  flexDirection: "column",
   gap: 10,
-  height: "100%",
+  height: COMMAND_RAIL_HEIGHT,
+  maxHeight: COMMAND_RAIL_HEIGHT,
+  boxSizing: "border-box",
   minHeight: 0,
   overflow: "hidden",
 };
@@ -99,6 +124,17 @@ function credentialTone(status) {
   return "var(--accent)";
 }
 
+function fleetLaunchActive(job) {
+  return ["queued", "running"].includes(job?.status || "");
+}
+
+function fleetLaunchTone(status) {
+  if (status === "ready") return "var(--green)";
+  if (status === "running" || status === "queued") return "var(--blue)";
+  if (status === "attention" || status === "skipped") return "var(--gold)";
+  return "var(--accent)";
+}
+
 function inputTypeForCredential(requirement) {
   if (requirement.redact || requirement.kind === "github_token") return "password";
   if (requirement.kind === "email") return "email";
@@ -132,6 +168,10 @@ function mergedFleetProducts(setup, fleet) {
   }));
 }
 
+function productLooksRunning(product) {
+  return ["online", "degraded"].includes(product?.runtime?.status) || Boolean(product?.setupItem?.launcher?.compose_running);
+}
+
 function selectedSetupItem(product) {
   if (!product) return null;
   return (
@@ -147,7 +187,16 @@ function selectedSetupItem(product) {
 }
 
 function setupMission(setup, onlineCount, pairedCount) {
+  const fleetLaunch = setup?.latest_fleet_launch;
   const smoke = setup?.latest_smoke;
+  if (fleetLaunchActive(fleetLaunch)) {
+    return {
+      label: "Fleet Launching",
+      tone: "var(--blue)",
+      headline: "HiveCore is bringing more products online.",
+      detail: fleetLaunch.summary,
+    };
+  }
   if (smoke?.status === "blocked") {
     return {
       label: "Blocked",
@@ -249,38 +298,97 @@ function CommandButton({ title, detail, color, disabled, active, onClick }) {
   );
 }
 
-function startAllPlan(setup) {
-  const items = setup.products || [];
+function fleetLaunchPlan(products) {
+  const items = products || [];
   const native = items.filter((item) => item.runtime.slug === "hive-core").length;
-  const controlled = items.filter((item) => item.runtime.slug !== "hive-core");
-  const ready = controlled.filter((item) => item.launcher?.start_ready).length;
-  const running = controlled.filter((item) => item.launcher?.compose_running).length;
-  const blocked = controlled.length - ready;
-  return { items, controlled, native, ready, running, blocked, total: items.length || 11 };
+  const controlled = items.filter((item) => item.runtime.slug !== "hive-core" && item.setupItem?.launcher);
+  const ready = controlled.filter((item) => item.setupItem?.launcher?.start_ready).length;
+  const running = controlled.filter(productLooksRunning).length;
+  const launchable = controlled.filter((item) => !productLooksRunning(item) && item.setupItem?.launcher?.start_ready).length;
+  const gated = controlled.filter((item) => !productLooksRunning(item) && !item.setupItem?.launcher?.start_ready).length;
+  return {
+    items,
+    controlled,
+    native,
+    ready,
+    running,
+    launchable,
+    gated,
+    total: items.length || 11,
+    canStartAll: controlled.length > 0 && launchable > 0 && gated === 0,
+  };
 }
 
-function FleetStartPlan({ setup }) {
-  const plan = startAllPlan(setup);
+function FleetStartPlan({ products, busyAction, launchJob, onAction }) {
+  const plan = fleetLaunchPlan(products);
+  const busy = Boolean(busyAction) || fleetLaunchActive(launchJob);
   return (
-    <div style={{ ...S.panel, display: "grid", gap: 12 }}>
+    <div style={{ ...S.panel, display: "grid", gap: 12, height: "100%", boxSizing: "border-box" }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
         <div>
           <div style={{ fontSize: 15, fontWeight: 900 }}>Start All 11 Plan</div>
           <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.45 }}>
-            Planning only for now: HiveCore shows compose, env, image, and start gates before any bulk execution exists.
+            HiveCore can now start only the stopped products that pass launcher preflight. Full fleet launch stays gated until every stopped target is ready.
           </div>
         </div>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", justifyContent: "flex-end" }}>
           <Tag color="var(--green)">{plan.ready} start-ready</Tag>
+          <Tag color="var(--blue)">{plan.launchable} launchable now</Tag>
           <Tag color="var(--blue)">{plan.running} running</Tag>
-          <Tag color={plan.blocked ? "var(--gold)" : "var(--green)"}>{plan.blocked} blocked</Tag>
+          <Tag color={plan.gated ? "var(--gold)" : "var(--green)"}>{plan.gated} gated</Tag>
           <Tag color="var(--text-dim)">{plan.native} native</Tag>
+          <Btn
+            onClick={() => onAction("Start ready fleet", "/setup/fleet/start-ready")}
+            disabled={busy || busyAction === "Start ready fleet" || plan.launchable === 0}
+            color="var(--green)"
+          >
+            {fleetLaunchActive(launchJob)
+              ? "Fleet running..."
+              : busyAction === "Start ready fleet"
+                ? "Starting..."
+                : "Start ready fleet"}
+          </Btn>
+          <Btn
+            onClick={() => onAction("Start all 11", "/setup/fleet/start-all")}
+            disabled={busy || busyAction === "Start all 11" || !plan.canStartAll}
+            color="var(--blue)"
+          >
+            {fleetLaunchActive(launchJob)
+              ? "Fleet running..."
+              : busyAction === "Start all 11"
+                ? "Launching..."
+                : "Start all 11"}
+          </Btn>
         </div>
       </div>
 
+      {launchJob && (
+        <div
+          style={{
+            display: "grid",
+            gap: 6,
+            padding: "10px 11px",
+            borderRadius: 12,
+            border: `1px solid ${fleetLaunchTone(launchJob.status)}44`,
+            background: "color-mix(in srgb, var(--bg) 56%, transparent)",
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <div style={{ fontSize: 12, fontWeight: 900 }}>Latest fleet launch</div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <Tag color={fleetLaunchTone(launchJob.status)}>{launchJob.status}</Tag>
+              {launchJob.mode && <Tag color="var(--blue)">{launchJob.mode}</Tag>}
+            </div>
+          </div>
+          <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.5 }}>
+            {launchJob.summary}
+          </div>
+        </div>
+      )}
+
       <div style={{ display: "grid", gap: 8, gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))" }}>
         {plan.items.map((item) => {
-          const launcher = item.launcher;
+          const launcher = item.setupItem?.launcher;
           const native = item.runtime.slug === "hive-core";
           const imageStatus = launcher?.image_status || launcher?.image_mode || "native";
           const blockers = launcher?.start_blockers || [];
@@ -338,9 +446,9 @@ function FleetStartPlan({ setup }) {
   );
 }
 
-function MissionControl({ setup, onlineCount, pairedCount, fleetCount, busyAction, onRefresh, onAction }) {
+function MissionControl({ setup, onlineCount, pairedCount, fleetCount, fleetPlan, busyAction, onRefresh, onAction }) {
   const mission = setupMission(setup, onlineCount, pairedCount);
-  const busy = Boolean(busyAction);
+  const busy = Boolean(busyAction) || fleetLaunchActive(setup.latest_fleet_launch);
   return (
     <div
       style={{
@@ -423,6 +531,22 @@ function MissionControl({ setup, onlineCount, pairedCount, fleetCount, busyActio
             active={onlineCount < FIRST_STACK_SLUGS.length}
             disabled={busy || busyAction === "Start first stack"}
             onClick={() => onAction("Start first stack", "/setup/first-stack/start")}
+          />
+          <CommandButton
+            title="Start ready fleet"
+            detail="Launch stopped managed products whose compose, env, credentials, and images pass preflight."
+            color="var(--green)"
+            active={fleetPlan.launchable > 0}
+            disabled={busy || busyAction === "Start ready fleet" || fleetPlan.launchable === 0}
+            onClick={() => onAction("Start ready fleet", "/setup/fleet/start-ready")}
+          />
+          <CommandButton
+            title="Start all 11"
+            detail="Launch every stopped managed product, but only when nothing remaining is gated."
+            color="var(--blue)"
+            active={fleetPlan.canStartAll}
+            disabled={busy || busyAction === "Start all 11" || !fleetPlan.canStartAll}
+            onClick={() => onAction("Start all 11", "/setup/fleet/start-all")}
           />
           <CommandButton
             title="Pair running products"
@@ -536,13 +660,74 @@ function SmokeEvidence({ smoke }) {
   );
 }
 
+function FleetLaunchEvidence({ job }) {
+  if (!job) return null;
+  return (
+    <div style={{ ...S.panel, display: "grid", gap: 12, borderColor: `${fleetLaunchTone(job.status)}66` }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+        <div>
+          <div style={{ fontSize: 11, letterSpacing: "0.16em", textTransform: "uppercase", color: "var(--text-dim)" }}>
+            Fleet launch job
+          </div>
+          <div style={{ fontSize: 18, fontWeight: 900 }}>{job.summary}</div>
+          <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
+            {job.started_at}
+            {job.finished_at ? ` -> ${job.finished_at}` : " -> in progress"}
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {job.mode && <Tag color="var(--blue)">{job.mode}</Tag>}
+          <Tag color={fleetLaunchTone(job.status)}>{job.status}</Tag>
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}>
+        {(job.steps || []).map((step) => (
+          <div
+            key={`${job.id}-${step.slug}`}
+            style={{
+              display: "grid",
+              gap: 7,
+              padding: 12,
+              border: `1px solid ${fleetLaunchTone(step.status)}44`,
+              borderRadius: 12,
+              background: "rgba(0,0,0,0.18)",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+              <div style={{ fontSize: 13, fontWeight: 800 }}>{step.title}</div>
+              <Tag color={fleetLaunchTone(step.status)}>{step.status}</Tag>
+            </div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {step.phase && <Tag color="var(--text-dim)">{step.phase}</Tag>}
+            </div>
+            <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.45 }}>{step.message}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function EvidenceTimeline({ setup }) {
+  const fleetLaunch = setup.latest_fleet_launch;
   const smoke = setup.latest_smoke;
   const actions = setup.actions || [];
   const importantSteps = (smoke?.steps || [])
     .filter((step) => step.status !== "pass" || ["preflight", "safe-action"].includes(step.check))
     .slice(0, 8);
   const timeline = [
+    ...(fleetLaunch
+      ? [
+          {
+            id: fleetLaunch.id,
+            title: "Latest fleet launch",
+            detail: fleetLaunch.summary,
+            tone: fleetLaunchTone(fleetLaunch.status),
+            status: fleetLaunch.status,
+          },
+        ]
+      : []),
     ...(smoke
       ? [
           {
@@ -881,7 +1066,7 @@ function ProductCard({
         >
           <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
             <div>
-              <div style={{ fontSize: 12, fontWeight: 900 }}>First-run credentials</div>
+              <div style={{ fontSize: 12, fontWeight: 900 }}>First-run setup</div>
               <div style={{ fontSize: 10, color: "var(--text-dim)", lineHeight: 1.45 }}>
                 Saved through HiveCore and written locally by patchhive-launcher.
               </div>
@@ -896,6 +1081,11 @@ function ProductCard({
           </div>
 
           <div style={{ display: "grid", gap: 8 }}>
+            {credentials.some((requirement) => requirement.kind === "github_token") && (
+              <div style={{ fontSize: 10, color: "var(--text-dim)", lineHeight: 1.45 }}>
+                Use a fine-grained GitHub token. The recommended minimum scopes for each product are listed under its token field.
+              </div>
+            )}
             {credentials.map((requirement) => (
               <label key={requirement.key} style={{ ...S.field }}>
                 <span style={S.label}>
@@ -1156,6 +1346,14 @@ export default function SetupPanel({ fetchEnvelope, setRunning, setError }) {
     refresh();
   }, []);
 
+  useEffect(() => {
+    if (!fleetLaunchActive(setup?.latest_fleet_launch)) return undefined;
+    const timer = setInterval(() => {
+      refresh();
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [setup?.latest_fleet_launch?.id, setup?.latest_fleet_launch?.status]);
+
   if (!setup) {
     return (
       <div style={{ display: "grid", gap: 16 }}>
@@ -1173,10 +1371,11 @@ export default function SetupPanel({ fetchEnvelope, setRunning, setError }) {
     );
   }
 
-  const downstream = setup.products.filter((item) => item.runtime.slug !== "hive-core");
-  const onlineCount = downstream.filter((item) => ["online", "degraded"].includes(item.runtime.status)).length;
-  const pairedCount = downstream.filter((item) => item.runtime.service_token_configured).length;
   const fleetProducts = mergedFleetProducts(setup, fleet);
+  const fleetPlan = fleetLaunchPlan(fleetProducts);
+  const firstStackProducts = setup.products.filter((item) => FIRST_STACK_SLUGS.includes(item.runtime.slug));
+  const onlineCount = firstStackProducts.filter((item) => ["online", "degraded"].includes(item.runtime.status)).length;
+  const pairedCount = firstStackProducts.filter((item) => item.runtime.service_token_configured).length;
   const selectedProduct =
     fleetProducts.find((product) => product.runtime.slug === selectedSlug) ||
     fleetProducts.find((product) => product.runtime.slug === "hive-core") ||
@@ -1184,21 +1383,36 @@ export default function SetupPanel({ fetchEnvelope, setRunning, setError }) {
   const selectedItem = selectedSetupItem(selectedProduct);
 
   return (
-    <div style={{ display: "grid", gap: 16 }}>
+    <div style={{ display: "grid", gap: 16, paddingBottom: 16 }}>
       <MissionControl
         setup={setup}
         onlineCount={onlineCount}
         pairedCount={pairedCount}
         fleetCount={fleetProducts.length}
+        fleetPlan={fleetPlan}
         busyAction={busyAction}
         onRefresh={refresh}
         onAction={runAction}
       />
 
-      <FleetStartPlan setup={setup} />
+      <FleetStartPlan
+        products={fleetProducts}
+        busyAction={busyAction}
+        launchJob={setup.latest_fleet_launch}
+        onAction={runAction}
+      />
 
       <div style={commandWorkspaceStyle}>
-        <FleetLaneMap products={fleetProducts} selectedSlug={selectedProduct?.runtime.slug} onSelect={setSelectedSlug} />
+        <div style={commandMainColumnStyle}>
+          <FleetLaneMap products={fleetProducts} selectedSlug={selectedProduct?.runtime.slug} onSelect={setSelectedSlug} />
+          <div style={commandEvidenceGridStyle}>
+            <EvidenceTimeline setup={setup} />
+            <div style={commandEvidenceStackStyle}>
+              <FleetLaunchEvidence job={setup.latest_fleet_launch} />
+              <SmokeEvidence smoke={setup.latest_smoke} />
+            </div>
+          </div>
+        </div>
         <div style={focusRailStyle}>
           <div style={focusPanelStyle}>
             <div>
@@ -1207,7 +1421,17 @@ export default function SetupPanel({ fetchEnvelope, setRunning, setError }) {
                 Select any product from the fleet map. HiveCore only shows launcher/env controls when that product is managed by this setup flow.
               </div>
             </div>
-            <div style={{ minHeight: 0, overflow: "auto", paddingRight: 2 }}>
+            <div
+              style={{
+                flex: "1 1 auto",
+                minHeight: 0,
+                overflowY: "auto",
+                overflowX: "hidden",
+                overscrollBehavior: "contain",
+                paddingRight: 4,
+                paddingBottom: 4,
+              }}
+            >
               {selectedItem ? (
                 <ProductCard
                   item={selectedItem}
@@ -1227,11 +1451,6 @@ export default function SetupPanel({ fetchEnvelope, setRunning, setError }) {
             </div>
           </div>
         </div>
-      </div>
-
-      <div style={{ display: "grid", gap: 14, gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))" }}>
-        <EvidenceTimeline setup={setup} />
-        <SmokeEvidence smoke={setup.latest_smoke} />
       </div>
 
       {logs && (

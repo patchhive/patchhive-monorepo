@@ -72,6 +72,14 @@ async fn main() {
             axum::routing::post(pipeline::stop_first_stack),
         )
         .route(
+            "/setup/fleet/start-ready",
+            axum::routing::post(pipeline::start_ready_fleet),
+        )
+        .route(
+            "/setup/fleet/start-all",
+            axum::routing::post(pipeline::start_all_fleet),
+        )
+        .route(
             "/setup/products/:slug/start",
             axum::routing::post(pipeline::start_setup_product),
         )

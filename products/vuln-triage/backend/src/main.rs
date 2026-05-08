@@ -69,7 +69,7 @@ async fn main() {
         .layer(cors)
         .with_state(state);
 
-    let addr = listen_addr("VULN_TRIAGE_PORT", 8080);
+    let addr = listen_addr("VULN_TRIAGE_PORT", 8110);
     info!("🛡 VulnTriage by PatchHive — listening on {addr}");
     let listener = tokio::net::TcpListener::bind(&addr)
         .await

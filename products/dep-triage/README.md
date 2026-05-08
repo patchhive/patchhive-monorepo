@@ -42,7 +42,7 @@ cd ../frontend && npm install && npm run dev
 
 | Variable | Purpose |
 | --- | --- |
-| `BOT_GITHUB_TOKEN` or `GITHUB_TOKEN` | Optional GitHub token for dependency pull request and Dependabot reads. |
+| `BOT_GITHUB_TOKEN` or `GITHUB_TOKEN` | Optional fine-grained PAT for dependency pull request and Dependabot reads. Recommended scopes: Metadata (read), Pull requests (read), Dependabot alerts (read). |
 | `DEP_TRIAGE_API_KEY_HASH` | Optional pre-seeded app auth hash. Otherwise generate the first local key from the UI. |
 | `DEP_TRIAGE_SERVICE_TOKEN_HASH` | Optional pre-seeded service-token hash for HiveCore or other PatchHive product callers. |
 | `DEP_TRIAGE_DB_PATH` | SQLite path for scan history. |

@@ -47,7 +47,7 @@ docker compose up --build
 
 Defaults:
 - Frontend: `http://localhost:5181`
-- Backend: `http://localhost:8080`
+- Backend: `http://localhost:8110`
 - Database: `VULN_TRIAGE_DB_PATH`
 
 Split local workflow:
@@ -237,13 +237,13 @@ VulnTriage provides multi-stage Docker builds for both backend and frontend:
 services:
   backend:
     build: ./backend
-    ports: ["8080:8080"]
+    ports: ["8110:8000"]
     environment:
       - BOT_GITHUB_TOKEN=${BOT_GITHUB_TOKEN}
       - GITHUB_TOKEN=${GITHUB_TOKEN}
   frontend:
     build: ./frontend
-    ports: ["5181:5181"]
+    ports: ["5181:8080"]
 ```
 
 ### Kubernetes

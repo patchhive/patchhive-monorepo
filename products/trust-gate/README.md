@@ -52,7 +52,7 @@ For split local runs, the backend listens on `8000` by default and the frontend 
 
 | Variable | Purpose |
 | --- | --- |
-| `BOT_GITHUB_TOKEN` | Optional GitHub token for pull request diff reads and GitHub publishing. |
+| `BOT_GITHUB_TOKEN` | Optional fine-grained PAT for pull request diff reads and GitHub publishing. Analysis-only scopes: Metadata (read), Pull requests (read). Add Checks (write), Commit statuses (write), and Issues (write) for GitHub reporting. |
 | `TRUST_GITHUB_WEBHOOK_SECRET` | Optional signed webhook secret for pull request refreshes. |
 | `TRUSTGATE_PUBLIC_URL` | Optional public URL for links from GitHub artifacts back to saved decisions. |
 | `PATCHHIVE_REPO_MEMORY_URL` / `PATCHHIVE_REPO_MEMORY_API_KEY` | Optional RepoMemory context and FailGuard candidate destination. |

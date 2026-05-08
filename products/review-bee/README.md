@@ -43,7 +43,7 @@ cd ../frontend && npm install && npm run dev
 
 | Variable | Purpose |
 | --- | --- |
-| `BOT_GITHUB_TOKEN` or `GITHUB_TOKEN` | Optional GitHub token for pull request review reads. |
+| `BOT_GITHUB_TOKEN` or `GITHUB_TOKEN` | Optional fine-grained PAT for pull request review reads. Analysis-only scopes: Metadata (read), Pull requests (read). Add Issues (write) when ReviewBee should maintain its PR comment artifact. |
 | `REVIEW_BEE_GITHUB_WEBHOOK_SECRET` | Optional signed webhook secret for review refreshes. |
 | `REVIEW_BEE_PUBLIC_URL` | Optional public URL for links from maintained comments back to saved runs. |
 | `REVIEW_BEE_API_KEY_HASH` | Optional pre-seeded app auth hash. Otherwise generate the first local key from the UI. |

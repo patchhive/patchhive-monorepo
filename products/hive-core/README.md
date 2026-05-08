@@ -67,7 +67,7 @@ cd ../frontend && npm install && npm run dev
 
 | Variable | Purpose |
 | --- | --- |
-| `BOT_GITHUB_TOKEN` | Optional GitHub token reserved for future control-plane reads. |
+| `BOT_GITHUB_TOKEN` | Optional fine-grained PAT reserved for future control-plane reads. Metadata (read) is enough. |
 | `HIVE_CORE_API_KEY_HASH` | Optional pre-seeded app auth hash. Otherwise generate the first local key from the UI. |
 | `HIVE_CORE_SERVICE_TOKEN_HASH` | Optional service-token hash for HiveCore as a machine caller. |
 | `HIVE_CORE_DB_PATH` | SQLite path for suite settings, product overrides, and action events. |
@@ -94,7 +94,7 @@ HiveCore starts with built-in localhost defaults for the current PatchHive suite
 - MergeKeeper: frontend `http://localhost:5178`, API `http://localhost:8050`
 - FlakeSting: frontend `http://localhost:5179`, API `http://localhost:8060`
 - DepTriage: frontend `http://localhost:5180`, API `http://localhost:8070`
-- VulnTriage: frontend `http://localhost:5181`, API `http://localhost:8080`
+- VulnTriage: frontend `http://localhost:5181`, API `http://localhost:8110`
 - RefactorScout: frontend `http://localhost:5182`, API `http://localhost:8090`
 - HiveCore: frontend `http://localhost:5183`, API `http://localhost:8100`
 

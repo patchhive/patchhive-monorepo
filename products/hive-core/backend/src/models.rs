@@ -421,12 +421,50 @@ pub struct SetupProductStatus {
     pub credentials: Vec<SetupCredentialRequirement>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct SetupFleetLaunchStep {
+    pub slug: String,
+    pub title: String,
+    #[serde(default)]
+    pub phase: String,
+    pub status: String,
+    pub message: String,
+    #[serde(default)]
+    pub started_at: String,
+    #[serde(default)]
+    pub finished_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct SetupFleetLaunchJob {
+    pub id: String,
+    #[serde(default)]
+    pub mode: String,
+    pub status: String,
+    pub summary: String,
+    pub started_at: String,
+    pub updated_at: String,
+    #[serde(default)]
+    pub finished_at: String,
+    #[serde(default)]
+    pub requested_products: Vec<String>,
+    #[serde(default)]
+    pub started_products: Vec<String>,
+    #[serde(default)]
+    pub skipped_products: Vec<String>,
+    #[serde(default)]
+    pub actions: Vec<String>,
+    #[serde(default)]
+    pub steps: Vec<SetupFleetLaunchStep>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FirstStackSetupResponse {
     pub stack_id: String,
     pub launcher: SetupLauncherStatus,
     pub suite_bootstrap_configured: bool,
     pub latest_smoke: Option<FirstStackSmokeRun>,
+    pub latest_fleet_launch: Option<SetupFleetLaunchJob>,
     pub actions: Vec<String>,
     pub products: Vec<SetupProductStatus>,
 }

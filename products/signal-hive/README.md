@@ -42,7 +42,7 @@ cd ../frontend && npm install && npm run dev
 
 | Variable | Purpose |
 | --- | --- |
-| `BOT_GITHUB_TOKEN` | GitHub token for repo, issue, and optional code-search reads. |
+| `BOT_GITHUB_TOKEN` | Fine-grained PAT for SignalHive scans. Recommended scopes: Metadata (read), Issues (read), and Contents (read) when GitHub-backed code-search reads are needed. |
 | `SIGNAL_API_KEY_HASH` | Optional pre-seeded app auth hash. The monorepo helper can set it for a stable suite password. |
 | `SIGNAL_SERVICE_TOKEN_HASH` | Optional service-token hash for HiveCore or other PatchHive service callers. |
 | `PATCHHIVE_ALLOW_REMOTE_BOOTSTRAP` | Allows first-time key bootstrap from non-localhost clients. Keep unset for local use. |

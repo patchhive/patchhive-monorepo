@@ -45,7 +45,7 @@ cd ../frontend && npm install && npm run dev
 
 | Variable | Purpose |
 | --- | --- |
-| `BOT_GITHUB_TOKEN` | Optional GitHub token for merged PR, review, issue, and file hotspot reads. |
+| `BOT_GITHUB_TOKEN` | Optional fine-grained PAT for merged PR, review, issue, and file hotspot reads. Recommended scopes: Metadata (read), Pull requests (read), Issues (read). |
 | `REPO_MEMORY_API_KEY_HASH` | Optional pre-seeded app auth hash. Otherwise generate the first local key from the UI. |
 | `REPO_MEMORY_SERVICE_TOKEN_HASH` | Optional pre-seeded service-token hash for HiveCore or other PatchHive product callers. |
 | `REPO_MEMORY_DB_PATH` | SQLite path for runs and memory entries. |

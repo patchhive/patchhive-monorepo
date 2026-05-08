@@ -117,7 +117,7 @@ HiveCore starts with built-in localhost defaults for the current PatchHive suite
 | MergeKeeper | `http://localhost:5178` | `http://localhost:8050` |
 | FlakeSting | `http://localhost:5179` | `http://localhost:8060` |
 | DepTriage | `http://localhost:5180` | `http://localhost:8070` |
-| VulnTriage | `http://localhost:5181` | `http://localhost:8080` |
+| VulnTriage | `http://localhost:5181` | `http://localhost:8110` |
 | RefactorScout | `http://localhost:5182` | `http://localhost:8090` |
 | HiveCore | `http://localhost:5183` | `http://localhost:8100` |
 

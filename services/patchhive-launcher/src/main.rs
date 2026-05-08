@@ -124,7 +124,7 @@ const MANAGED_PRODUCTS: [ManagedProduct; 10] = [
         slug: "vuln-triage",
         title: "VulnTriage",
         frontend_port: 5181,
-        api_port: 8080,
+        api_port: 8110,
         backend_image_env: "PATCHHIVE_VULN_TRIAGE_BACKEND_IMAGE",
         frontend_image_env: "PATCHHIVE_VULN_TRIAGE_FRONTEND_IMAGE",
         backend_image: "ghcr.io/patchhive/vulntriage-backend",
@@ -241,6 +241,7 @@ struct LogsQuery {
 struct LauncherActionResponse {
     ok: bool,
     actions: Vec<String>,
+    started_products: Vec<String>,
     products: Vec<LauncherProductStatus>,
 }
 
@@ -304,6 +305,11 @@ struct EnvWriteResponse {
     product: ProductCredentialRequirements,
 }
 
+struct LaunchSelection {
+    products: Vec<ManagedProduct>,
+    actions: Vec<String>,
+}
+
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt()
@@ -325,6 +331,8 @@ async fn main() {
         .route("/stacks/first/start", post(start_first_stack))
         .route("/stacks/first/stop", post(stop_first_stack))
         .route("/stacks/all", get(first_stack_status))
+        .route("/stacks/all/start-ready", post(start_ready_products))
+        .route("/stacks/all/start", post(start_all_products))
         .with_state(Arc::new(AppState { repo_root }));
 
     let addr = launcher_addr();
@@ -381,7 +389,9 @@ async fn start_product(
         .unwrap_or_else(|| format!("ph-suite-{}", Uuid::new_v4().simple()));
     ensure_product_start_ready(repo_root, &product).await?;
     let actions = start_managed_products(repo_root, &[product], &secret).await?;
-    Ok(Json(action_response(repo_root, actions).await))
+    Ok(Json(
+        action_response(repo_root, actions, vec![product.slug.into()]).await,
+    ))
 }
 
 async fn stop_product(
@@ -396,7 +406,12 @@ async fn stop_product(
         .await
         .map_err(|message| error(StatusCode::BAD_GATEWAY, &message))?;
     Ok(Json(
-        action_response(repo_root, vec![format!("Stopped {}.", product.title)]).await,
+        action_response(
+            repo_root,
+            vec![format!("Stopped {}.", product.title)],
+            Vec::new(),
+        )
+        .await,
     ))
 }
 
@@ -415,7 +430,9 @@ async fn restart_product(
         .unwrap_or_else(|| format!("ph-suite-{}", Uuid::new_v4().simple()));
     ensure_product_start_ready(repo_root, &product).await?;
     let actions = start_managed_products(repo_root, &[product], &secret).await?;
-    Ok(Json(action_response(repo_root, actions).await))
+    Ok(Json(
+        action_response(repo_root, actions, vec![product.slug.into()]).await,
+    ))
 }
 
 async fn product_logs(
@@ -536,10 +553,7 @@ async fn start_first_stack(
     };
 
     let mut actions = Vec::new();
-    let hive_core_dir = product_dir(repo_root, "hive-core");
-    ensure_env_file(&hive_core_dir)?;
-    upsert_env_value(&hive_core_dir.join(".env"), SUITE_BOOTSTRAP_KEY, &secret)?;
-    actions.push("Synced HiveCore suite bootstrap secret.".into());
+    sync_hive_core_suite_bootstrap_secret(repo_root, &secret, &mut actions)?;
 
     let targets = selected_products(&body.products);
     if targets.is_empty() {
@@ -551,7 +565,17 @@ async fn start_first_stack(
 
     actions.extend(start_managed_products(repo_root, &targets, &secret).await?);
 
-    Ok(Json(action_response(repo_root, actions).await))
+    Ok(Json(
+        action_response(
+            repo_root,
+            actions,
+            targets
+                .iter()
+                .map(|product| product.slug.to_string())
+                .collect(),
+        )
+        .await,
+    ))
 }
 
 async fn stop_first_stack(
@@ -579,7 +603,78 @@ async fn stop_first_stack(
         ));
     }
 
-    Ok(Json(action_response(repo_root, actions).await))
+    Ok(Json(action_response(repo_root, actions, Vec::new()).await))
+}
+
+async fn start_ready_products(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<StartFirstStackRequest>,
+) -> Result<Json<LauncherActionResponse>, (StatusCode, Json<ApiError>)> {
+    let repo_root = require_repo_root(&state)?;
+    require_docker_compose().await?;
+
+    let secret = requested_or_configured_secret(body.suite_bootstrap_secret)
+        .unwrap_or_else(|| format!("ph-suite-{}", Uuid::new_v4().simple()));
+    let targets = selected_managed_products(&body.products);
+    let mut actions = Vec::new();
+    sync_hive_core_suite_bootstrap_secret(repo_root, &secret, &mut actions)?;
+
+    let selection = select_products_for_launch(repo_root, &targets, false).await?;
+    let started_products = selection
+        .products
+        .iter()
+        .map(|product| product.slug.to_string())
+        .collect::<Vec<_>>();
+    actions.extend(selection.actions);
+    if started_products.is_empty() {
+        actions.push(
+            "No stopped products passed launcher preflight, so HiveCore left the fleet unchanged."
+                .into(),
+        );
+        return Ok(Json(
+            action_response(repo_root, actions, started_products).await,
+        ));
+    }
+
+    actions.extend(start_managed_products(repo_root, &selection.products, &secret).await?);
+    Ok(Json(
+        action_response(repo_root, actions, started_products).await,
+    ))
+}
+
+async fn start_all_products(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<StartFirstStackRequest>,
+) -> Result<Json<LauncherActionResponse>, (StatusCode, Json<ApiError>)> {
+    let repo_root = require_repo_root(&state)?;
+    require_docker_compose().await?;
+
+    let secret = requested_or_configured_secret(body.suite_bootstrap_secret)
+        .unwrap_or_else(|| format!("ph-suite-{}", Uuid::new_v4().simple()));
+    let targets = selected_managed_products(&body.products);
+    let mut actions = Vec::new();
+    sync_hive_core_suite_bootstrap_secret(repo_root, &secret, &mut actions)?;
+
+    let selection = select_products_for_launch(repo_root, &targets, true).await?;
+    let started_products = selection
+        .products
+        .iter()
+        .map(|product| product.slug.to_string())
+        .collect::<Vec<_>>();
+    actions.extend(selection.actions);
+    if started_products.is_empty() {
+        actions.push(
+            "All selected products already look running, so no fleet start was needed.".into(),
+        );
+        return Ok(Json(
+            action_response(repo_root, actions, started_products).await,
+        ));
+    }
+
+    actions.extend(start_managed_products(repo_root, &selection.products, &secret).await?);
+    Ok(Json(
+        action_response(repo_root, actions, started_products).await,
+    ))
 }
 
 fn launcher_addr() -> SocketAddr {
@@ -686,6 +781,7 @@ async fn product_status(
     };
     let frontend_port_open = localhost_port_open(product.frontend_port);
     let api_port_open = localhost_port_open(product.api_port);
+    let external_port_occupancy = !compose_running && (frontend_port_open || api_port_open);
     let mut blockers = Vec::new();
 
     if !compose_exists {
@@ -699,6 +795,29 @@ async fn product_status(
     if !docker_compose_available {
         start_blockers.push("Docker Compose is not available.".into());
     }
+    if external_port_occupancy {
+        start_blockers.push(format!(
+            "Ports for {} are already occupied outside docker compose; stop the conflicting process or bring the compose stack up consistently.",
+            product.title
+        ));
+    }
+    let missing_required_credentials = credential_requirements_status(repo_root, product)
+        .ok()
+        .map(|requirements| {
+            requirements
+                .requirements
+                .into_iter()
+                .filter(|requirement| requirement.required && !requirement.configured)
+                .map(|requirement| requirement.key)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    if !missing_required_credentials.is_empty() {
+        start_blockers.push(format!(
+            "Required setup credentials missing: {}.",
+            missing_required_credentials.join(", ")
+        ));
+    }
     if !image_ready {
         start_blockers.push(format!(
             "Image preflight is {image_status}; add compose image refs or run the launcher in build mode."
@@ -709,8 +828,10 @@ async fn product_status(
 
     let status = if !blockers.is_empty() {
         "blocked"
-    } else if compose_running || api_port_open || frontend_port_open {
+    } else if compose_running {
         "running"
+    } else if external_port_occupancy {
+        "external"
     } else {
         "stopped"
     };
@@ -807,6 +928,18 @@ fn selected_products(slugs: &[String]) -> Vec<ManagedProduct> {
             FIRST_STACK_SLUGS.contains(&product.slug)
                 && slugs.iter().any(|slug| slug == product.slug)
         })
+        .collect()
+}
+
+fn selected_managed_products(slugs: &[String]) -> Vec<ManagedProduct> {
+    if slugs.is_empty() {
+        return MANAGED_PRODUCTS.to_vec();
+    }
+
+    MANAGED_PRODUCTS
+        .iter()
+        .copied()
+        .filter(|product| slugs.iter().any(|slug| slug == product.slug))
         .collect()
 }
 
@@ -920,7 +1053,7 @@ fn credential_requirements(slug: &str) -> Vec<CredentialRequirementDefinition> {
             profile: "public_read",
             required: true,
             redact: true,
-            description: "Used by SignalHive for read-only repository and issue discovery.",
+            description: "Used by SignalHive for read-only repository and issue discovery. Recommended fine-grained PAT scopes: Metadata (read), Issues (read), and Contents (read) when GitHub-backed code search is needed.",
         }],
         "trust-gate" => vec![
             CredentialRequirementDefinition {
@@ -930,7 +1063,7 @@ fn credential_requirements(slug: &str) -> Vec<CredentialRequirementDefinition> {
                 profile: "diff_status_writer",
                 required: false,
                 redact: true,
-                description: "Optional for PR diff reads and GitHub status/check reporting.",
+                description: "Optional for PR diff reads and GitHub status/check reporting. Analysis-only scope: Metadata (read), Pull requests (read). Add Checks (write), Commit statuses (write), and Issues (write) when TrustGate should publish results back to GitHub.",
             },
             CredentialRequirementDefinition {
                 key: "TRUST_GITHUB_WEBHOOK_SECRET",
@@ -941,6 +1074,33 @@ fn credential_requirements(slug: &str) -> Vec<CredentialRequirementDefinition> {
                 redact: true,
                 description: "Optional local secret used to verify GitHub webhook deliveries before TrustGate accepts them.",
             },
+            CredentialRequirementDefinition {
+                key: "TRUSTGATE_PUBLIC_URL",
+                label: "TrustGate public URL",
+                kind: "url",
+                profile: "report_deeplink",
+                required: false,
+                redact: false,
+                description: "Optional shareable URL used in GitHub report deep links.",
+            },
+            CredentialRequirementDefinition {
+                key: "PATCHHIVE_REPO_MEMORY_URL",
+                label: "RepoMemory URL",
+                kind: "url",
+                profile: "repo_memory_integration",
+                required: false,
+                redact: false,
+                description: "Optional RepoMemory endpoint so TrustGate can submit FailGuard candidates and pull repo context.",
+            },
+            CredentialRequirementDefinition {
+                key: "PATCHHIVE_REPO_MEMORY_API_KEY",
+                label: "RepoMemory API key",
+                kind: "text",
+                profile: "repo_memory_integration",
+                required: false,
+                redact: true,
+                description: "Optional API key for authenticated RepoMemory integration.",
+            },
         ],
         "repo-reaper" => vec![
             CredentialRequirementDefinition {
@@ -950,7 +1110,7 @@ fn credential_requirements(slug: &str) -> Vec<CredentialRequirementDefinition> {
                 profile: "repo_pr_writer",
                 required: true,
                 redact: true,
-                description: "Used by RepoReaper for discovery, forks, branches, commits, and pull requests.",
+                description: "Used by RepoReaper for discovery, forks, branches, commits, and pull requests. Recommended fine-grained PAT scopes: Metadata (read), Contents (read/write), Issues (read/write), Pull requests (read/write), plus Workflows (read/write) when RepoReaper should patch files under .github/workflows.",
             },
             CredentialRequirementDefinition {
                 key: "BOT_GITHUB_USER",
@@ -969,6 +1129,199 @@ fn credential_requirements(slug: &str) -> Vec<CredentialRequirementDefinition> {
                 required: true,
                 redact: false,
                 description: "Git author email for RepoReaper commits, usually the bot account noreply email.",
+            },
+            CredentialRequirementDefinition {
+                key: "WEBHOOK_SECRET",
+                label: "GitHub webhook secret",
+                kind: "generated_secret",
+                profile: "webhook_ingress",
+                required: false,
+                redact: true,
+                description: "Optional local secret used to verify GitHub webhook deliveries before RepoReaper accepts them.",
+            },
+            CredentialRequirementDefinition {
+                key: "PATCHHIVE_REPO_MEMORY_URL",
+                label: "RepoMemory URL",
+                kind: "url",
+                profile: "repo_memory_integration",
+                required: false,
+                redact: false,
+                description: "Optional RepoMemory endpoint so RepoReaper can enrich patch generation and submit FailGuard candidates.",
+            },
+            CredentialRequirementDefinition {
+                key: "PATCHHIVE_REPO_MEMORY_API_KEY",
+                label: "RepoMemory API key",
+                kind: "text",
+                profile: "repo_memory_integration",
+                required: false,
+                redact: true,
+                description: "Optional API key for authenticated RepoMemory integration.",
+            },
+        ],
+        "review-bee" => vec![CredentialRequirementDefinition {
+            key: "BOT_GITHUB_TOKEN",
+            label: "GitHub review token",
+            kind: "github_token",
+            profile: "pr_review_reader",
+            required: true,
+            redact: true,
+            description: "Used by ReviewBee for GitHub-backed pull request review analysis. Analysis-only scope: Metadata (read), Pull requests (read). Add Issues (write) when ReviewBee should maintain its PR comment artifact.",
+        },
+        CredentialRequirementDefinition {
+            key: "REVIEW_BEE_GITHUB_WEBHOOK_SECRET",
+            label: "GitHub webhook secret",
+            kind: "generated_secret",
+            profile: "webhook_ingress",
+            required: false,
+            redact: true,
+            description: "Optional local secret used to verify GitHub webhook deliveries before ReviewBee accepts them.",
+        },
+        CredentialRequirementDefinition {
+            key: "REVIEW_BEE_PUBLIC_URL",
+            label: "ReviewBee public URL",
+            kind: "url",
+            profile: "report_deeplink",
+            required: false,
+            redact: false,
+            description: "Optional shareable URL used in maintained PR comment deep links.",
+        }],
+        "merge-keeper" => vec![
+            CredentialRequirementDefinition {
+                key: "BOT_GITHUB_TOKEN",
+                label: "GitHub merge token",
+                kind: "github_token",
+                profile: "merge_readiness_reader",
+                required: true,
+                redact: true,
+                description: "Used by MergeKeeper for GitHub-backed merge readiness checks and GitHub report publishing. Analysis-only scope: Metadata (read), Pull requests (read), Checks (read), Commit statuses (read). Add Checks (write), Commit statuses (write), and Issues (write) for full GitHub publishing.",
+            },
+            CredentialRequirementDefinition {
+                key: "MERGE_KEEPER_GITHUB_WEBHOOK_SECRET",
+                label: "GitHub webhook secret",
+                kind: "generated_secret",
+                profile: "webhook_ingress",
+                required: false,
+                redact: true,
+                description: "Optional local secret used to verify GitHub webhook deliveries before MergeKeeper accepts them.",
+            },
+            CredentialRequirementDefinition {
+                key: "MERGE_KEEPER_PUBLIC_URL",
+                label: "MergeKeeper public URL",
+                kind: "url",
+                profile: "report_deeplink",
+                required: false,
+                redact: false,
+                description: "Optional shareable URL used in merge-readiness PR comment deep links.",
+            },
+            CredentialRequirementDefinition {
+                key: "PATCHHIVE_REVIEW_BEE_URL",
+                label: "ReviewBee URL",
+                kind: "url",
+                profile: "review_bee_integration",
+                required: false,
+                redact: false,
+                description: "Optional ReviewBee endpoint so MergeKeeper can layer active review churn into readiness.",
+            },
+            CredentialRequirementDefinition {
+                key: "PATCHHIVE_REVIEW_BEE_API_KEY",
+                label: "ReviewBee API key",
+                kind: "text",
+                profile: "review_bee_integration",
+                required: false,
+                redact: true,
+                description: "Optional API key for authenticated ReviewBee integration.",
+            },
+            CredentialRequirementDefinition {
+                key: "PATCHHIVE_TRUST_GATE_URL",
+                label: "TrustGate URL",
+                kind: "url",
+                profile: "trust_gate_integration",
+                required: false,
+                redact: false,
+                description: "Optional TrustGate endpoint so MergeKeeper can keep risky PRs on hold even when checks are green.",
+            },
+            CredentialRequirementDefinition {
+                key: "PATCHHIVE_TRUST_GATE_API_KEY",
+                label: "TrustGate API key",
+                kind: "text",
+                profile: "trust_gate_integration",
+                required: false,
+                redact: true,
+                description: "Optional API key for authenticated TrustGate integration.",
+            },
+            CredentialRequirementDefinition {
+                key: "PATCHHIVE_REPO_MEMORY_URL",
+                label: "RepoMemory URL",
+                kind: "url",
+                profile: "repo_memory_integration",
+                required: false,
+                redact: false,
+                description: "Optional RepoMemory endpoint so MergeKeeper can pull repo-specific expectations into readiness.",
+            },
+            CredentialRequirementDefinition {
+                key: "PATCHHIVE_REPO_MEMORY_API_KEY",
+                label: "RepoMemory API key",
+                kind: "text",
+                profile: "repo_memory_integration",
+                required: false,
+                redact: true,
+                description: "Optional API key for authenticated RepoMemory integration.",
+            },
+        ],
+        "repo-memory" => vec![CredentialRequirementDefinition {
+            key: "BOT_GITHUB_TOKEN",
+            label: "GitHub history token",
+            kind: "github_token",
+            profile: "repo_history_reader",
+            required: false,
+            redact: true,
+            description: "Optional token that unlocks GitHub-backed merged PR, review feedback, and closed issue ingestion. Recommended fine-grained PAT scopes: Metadata (read), Pull requests (read), Issues (read).",
+        }],
+        "flake-sting" => vec![CredentialRequirementDefinition {
+            key: "BOT_GITHUB_TOKEN",
+            label: "GitHub Actions token",
+            kind: "github_token",
+            profile: "actions_reader",
+            required: false,
+            redact: true,
+            description: "Optional token that improves GitHub Actions workflow and job reads with healthier rate limits. Recommended fine-grained PAT scopes: Metadata (read), Actions (read).",
+        }],
+        "dep-triage" => vec![CredentialRequirementDefinition {
+            key: "BOT_GITHUB_TOKEN",
+            label: "GitHub dependency token",
+            kind: "github_token",
+            profile: "dependency_reader",
+            required: false,
+            redact: true,
+            description: "Optional token that unlocks healthier dependency PR reads plus Dependabot alert access. Recommended fine-grained PAT scopes: Metadata (read), Pull requests (read), Dependabot alerts (read).",
+        }],
+        "vuln-triage" => vec![CredentialRequirementDefinition {
+            key: "BOT_GITHUB_TOKEN",
+            label: "GitHub security token",
+            kind: "github_token",
+            profile: "security_reader",
+            required: false,
+            redact: true,
+            description: "Optional token that improves code scanning and dependency alert reads with healthier permissions. Recommended fine-grained PAT scopes: Metadata (read), Code scanning alerts (read), Dependabot alerts (read).",
+        }],
+        "refactor-scout" => vec![
+            CredentialRequirementDefinition {
+                key: "REFACTOR_SCOUT_ALLOWED_ROOTS",
+                label: "Allowed repo roots",
+                kind: "text",
+                profile: "local_repo_roots",
+                required: false,
+                redact: false,
+                description: "Optional colon-separated filesystem roots such as /home/you/code:/srv/repos so RefactorScout knows where local scans are allowed.",
+            },
+            CredentialRequirementDefinition {
+                key: "BOT_GITHUB_TOKEN",
+                label: "GitHub metadata token",
+                kind: "github_token",
+                profile: "future_repo_metadata",
+                required: false,
+                redact: true,
+                description: "Optional token reserved for future GitHub-backed metadata reads. Metadata (read) is enough.",
             },
         ],
         _ => Vec::new(),
@@ -1151,6 +1504,78 @@ async fn start_managed_products(
     Ok(actions)
 }
 
+fn sync_hive_core_suite_bootstrap_secret(
+    repo_root: &FsPath,
+    secret: &str,
+    actions: &mut Vec<String>,
+) -> Result<(), (StatusCode, Json<ApiError>)> {
+    let hive_core_dir = product_dir(repo_root, "hive-core");
+    ensure_env_file(&hive_core_dir)?;
+    upsert_env_value(&hive_core_dir.join(".env"), SUITE_BOOTSTRAP_KEY, secret)?;
+    actions.push("Synced HiveCore suite bootstrap secret.".into());
+    Ok(())
+}
+
+async fn select_products_for_launch(
+    repo_root: &FsPath,
+    products: &[ManagedProduct],
+    require_all_ready: bool,
+) -> Result<LaunchSelection, (StatusCode, Json<ApiError>)> {
+    let docker_compose = docker_compose_available().await;
+    let mut selected = Vec::new();
+    let mut actions = Vec::new();
+    let mut blocked = Vec::new();
+
+    for product in products {
+        let status = product_status(repo_root, product, docker_compose).await;
+        if product_looks_running(&status) {
+            actions.push(format!(
+                "Skipped {} because it already looks running.",
+                product.title
+            ));
+            continue;
+        }
+
+        if !status.start_ready {
+            let reason = if status.start_blockers.is_empty() {
+                "launcher preflight is not ready.".to_string()
+            } else {
+                status.start_blockers.join(" ")
+            };
+            if require_all_ready {
+                blocked.push(format!("{}: {reason}", product.title));
+            } else {
+                actions.push(format!(
+                    "Skipped {} because launcher preflight is blocked: {reason}",
+                    product.title
+                ));
+            }
+            continue;
+        }
+
+        selected.push(*product);
+    }
+
+    if require_all_ready && !blocked.is_empty() {
+        return Err(error(
+            StatusCode::CONFLICT,
+            &format!(
+                "Full fleet launch is gated until every selected stopped product passes preflight. {}",
+                blocked.join(" | ")
+            ),
+        ));
+    }
+
+    Ok(LaunchSelection {
+        products: selected,
+        actions,
+    })
+}
+
+fn product_looks_running(status: &LauncherProductStatus) -> bool {
+    status.compose_running
+}
+
 fn launcher_image_mode() -> String {
     let mode = env::var("PATCHHIVE_LAUNCHER_IMAGE_MODE")
         .unwrap_or_else(|_| "pull".into())
@@ -1250,11 +1675,16 @@ fn compact_error(message: &str) -> String {
     }
 }
 
-async fn action_response(repo_root: &FsPath, actions: Vec<String>) -> LauncherActionResponse {
+async fn action_response(
+    repo_root: &FsPath,
+    actions: Vec<String>,
+    started_products: Vec<String>,
+) -> LauncherActionResponse {
     let docker_compose_available = docker_compose_available().await;
     LauncherActionResponse {
         ok: true,
         actions,
+        started_products,
         products: product_statuses(repo_root, docker_compose_available).await,
     }
 }
