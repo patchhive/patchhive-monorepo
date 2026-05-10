@@ -12,7 +12,8 @@ use crate::state::AgentConfig;
 
 use super::sse::sse_ev;
 
-pub type Tx = tokio::sync::mpsc::Sender<Result<axum::response::sse::Event, std::convert::Infallible>>;
+pub type Tx =
+    tokio::sync::mpsc::Sender<Result<axum::response::sse::Event, std::convert::Infallible>>;
 
 pub struct FixParams {
     pub retry_count: usize,
@@ -123,18 +124,18 @@ pub async fn finish_skipped_attempt(
     started_at: &std::time::Instant,
     work_path: &PathBuf,
 ) {
-    let _ = crate::db::finish_attempt(
+    let _ = crate::db::finish_attempt(crate::db::IssueAttemptFinish {
         attempt_id,
-        "skipped",
-        None,
-        None,
-        cost,
+        status: "skipped",
+        pr_url: None,
+        pr_number: None,
+        cost_usd: cost,
         patch_diff,
-        None,
-        Some(reason),
-        Some(started_at.elapsed().as_secs_f64()),
+        error_msg: None,
+        skip_reason: Some(reason),
+        duration_seconds: Some(started_at.elapsed().as_secs_f64()),
         confidence,
-    );
+    });
     let _ = tx
         .send(sse_ev(
             "issue_result",
@@ -154,18 +155,18 @@ pub async fn finish_error_attempt(
     started_at: &std::time::Instant,
     work_path: &PathBuf,
 ) {
-    let _ = crate::db::finish_attempt(
+    let _ = crate::db::finish_attempt(crate::db::IssueAttemptFinish {
         attempt_id,
-        "error",
-        None,
-        None,
-        cost,
-        None,
-        Some(error),
-        None,
-        Some(started_at.elapsed().as_secs_f64()),
+        status: "error",
+        pr_url: None,
+        pr_number: None,
+        cost_usd: cost,
+        patch_diff: None,
+        error_msg: Some(error),
+        skip_reason: None,
+        duration_seconds: Some(started_at.elapsed().as_secs_f64()),
         confidence,
-    );
+    });
     let _ = tx
         .send(sse_ev(
             "issue_result",

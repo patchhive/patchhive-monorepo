@@ -125,7 +125,10 @@ pub async fn gh_fork(
             }
         }
         delay = delay.saturating_mul(2); // 1s, 2s, 4s, 8s, 16s
-        tracing::debug!("gh_fork {repo}: attempt {}/5 not ready, retrying in {delay:?}", attempt + 1);
+        tracing::debug!(
+            "gh_fork {repo}: attempt {}/5 not ready, retrying in {delay:?}",
+            attempt + 1
+        );
     }
     Err(anyhow!("Fork timed out: {repo}"))
 }
@@ -347,7 +350,10 @@ pub async fn search_repos(http: &Client, query: &str, max_repos: usize) -> Resul
             all_items.extend(items.clone());
         }
         // Stop early if GitHub returned fewer items than requested (last page).
-        if data["items"].as_array().map_or(true, |a| a.len() < per_page) {
+        if data["items"]
+            .as_array()
+            .map_or(true, |a| a.len() < per_page)
+        {
             break;
         }
     }

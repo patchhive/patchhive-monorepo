@@ -9,16 +9,13 @@ use crate::db::*;
 use crate::github::*;
 use crate::state::AgentConfig;
 
-use super::context::{
-    clone_issue_repo, load_enriched_issue_context, select_code_context,
-};
+use super::context::{clone_issue_repo, load_enriched_issue_context, select_code_context};
 use super::memory::submit_smith_rejection_candidate;
 use super::patch::{apply_patch_with_self_heal, publish_pull_request};
 use super::sse::{alog, astatus, sse_ev};
 use super::types::{
-    build_issue_scope, cancelled, cleanup_work_path, cfg, finish_error_attempt,
-    finish_skipped_attempt, pick_fix_agents, FixParams, SmithReviewOutcome,
-    Tx,
+    build_issue_scope, cancelled, cfg, cleanup_work_path, finish_error_attempt,
+    finish_skipped_attempt, pick_fix_agents, FixParams, SmithReviewOutcome, Tx,
 };
 
 pub async fn fix_one(
@@ -106,14 +103,17 @@ pub async fn fix_one(
         ))
         .await;
 
-    let _ = start_attempt(
-        &attempt_id,
-        &params.run_id,
-        &issue,
-        &agents.reaper.name,
-        agents.smith.as_ref().map(|smith| smith.name.as_str()),
-        &agents.gatekeeper.name,
-    );
+    let _ = start_attempt(IssueAttemptStart {
+        attempt_id: &attempt_id,
+        run_id: &params.run_id,
+        repo: issue["repo"].as_str().unwrap_or(""),
+        issue_number: issue["number"].as_i64().unwrap_or(0),
+        issue_title: issue["title"].as_str().unwrap_or(""),
+        issue_url: issue["url"].as_str().unwrap_or(""),
+        reaper_agent: &agents.reaper.name,
+        smith_agent: agents.smith.as_ref().map(|smith| smith.name.as_str()),
+        gatekeeper_agent: &agents.gatekeeper.name,
+    });
 
     let issue_ctx = match clone_issue_repo(
         &http,
@@ -145,7 +145,15 @@ pub async fn fix_one(
 
     if cancelled(&params) {
         finish_skipped_attempt(
-            &tx, &issue, &attempt_id, "cancelled", cost, None, 0, &t_start, &scope.work_path,
+            &tx,
+            &issue,
+            &attempt_id,
+            "cancelled",
+            cost,
+            None,
+            0,
+            &t_start,
+            &scope.work_path,
         )
         .await;
         return;
@@ -166,7 +174,15 @@ pub async fn fix_one(
 
     if cancelled(&params) {
         finish_skipped_attempt(
-            &tx, &issue, &attempt_id, "cancelled", cost, None, 0, &t_start, &scope.work_path,
+            &tx,
+            &issue,
+            &attempt_id,
+            "cancelled",
+            cost,
+            None,
+            0,
+            &t_start,
+            &scope.work_path,
         )
         .await;
         return;
@@ -200,7 +216,15 @@ pub async fn fix_one(
                 ))
                 .await;
             finish_skipped_attempt(
-                &tx, &issue, &attempt_id, "patch_error", cost, None, 0, &t_start, &scope.work_path,
+                &tx,
+                &issue,
+                &attempt_id,
+                "patch_error",
+                cost,
+                None,
+                0,
+                &t_start,
+                &scope.work_path,
             )
             .await;
             return;
@@ -221,7 +245,15 @@ pub async fn fix_one(
             ))
             .await;
         finish_skipped_attempt(
-            &tx, &issue, &attempt_id, "no_patch", cost, None, 0, &t_start, &scope.work_path,
+            &tx,
+            &issue,
+            &attempt_id,
+            "no_patch",
+            cost,
+            None,
+            0,
+            &t_start,
+            &scope.work_path,
         )
         .await;
         return;
@@ -262,7 +294,15 @@ pub async fn fix_one(
         Ok(result) => result,
         Err(reason) => {
             finish_skipped_attempt(
-                &tx, &issue, &attempt_id, &reason, cost, None, 0, &t_start, &scope.work_path,
+                &tx,
+                &issue,
+                &attempt_id,
+                &reason,
+                cost,
+                None,
+                0,
+                &t_start,
+                &scope.work_path,
             )
             .await;
             return;
@@ -278,7 +318,15 @@ pub async fn fix_one(
     if let Some(ref smith) = agents.smith {
         if cancelled(&params) {
             finish_skipped_attempt(
-                &tx, &issue, &attempt_id, "cancelled", cost, Some(&smith_review.final_patch), confidence, &t_start, &scope.work_path,
+                &tx,
+                &issue,
+                &attempt_id,
+                "cancelled",
+                cost,
+                Some(&smith_review.final_patch),
+                confidence,
+                &t_start,
+                &scope.work_path,
             )
             .await;
             return;
@@ -386,18 +434,19 @@ pub async fn fix_one(
                             }),
                         ))
                         .await;
-                    let _ = finish_attempt(
-                        &attempt_id,
-                        "skipped",
-                        None,
-                        None,
-                        cost,
-                        Some(&smith_review.final_patch),
-                        None,
-                        Some(&format!("confidence_{sconf}")),
-                        Some(t_start.elapsed().as_secs_f64()),
-                        sconf,
-                    );
+                    let skip_reason = format!("confidence_{sconf}");
+                    let _ = finish_attempt(IssueAttemptFinish {
+                        attempt_id: &attempt_id,
+                        status: "skipped",
+                        pr_url: None,
+                        pr_number: None,
+                        cost_usd: cost,
+                        patch_diff: Some(&smith_review.final_patch),
+                        error_msg: None,
+                        skip_reason: Some(&skip_reason),
+                        duration_seconds: Some(t_start.elapsed().as_secs_f64()),
+                        confidence: sconf,
+                    });
                     let _ = tx.send(astatus(&smith.id, "idle", "")).await;
                     cleanup_work_path(&scope.work_path).await;
                     return;
@@ -418,7 +467,15 @@ pub async fn fix_one(
 
     if cancelled(&params) {
         finish_skipped_attempt(
-            &tx, &issue, &attempt_id, "cancelled", cost, Some(&smith_review.final_patch), confidence, &t_start, &scope.work_path,
+            &tx,
+            &issue,
+            &attempt_id,
+            "cancelled",
+            cost,
+            Some(&smith_review.final_patch),
+            confidence,
+            &t_start,
+            &scope.work_path,
         )
         .await;
         return;
@@ -478,7 +535,8 @@ pub async fn fix_one(
                 cost += retry_cost;
                 if !retry_result["patch"].is_null() {
                     let retry_patch = retry_result["patch"].as_str().unwrap_or("").to_string();
-                    let (applied, _) = crate::git_ops::apply_patch(&scope.work_path, &retry_patch).await;
+                    let (applied, _) =
+                        crate::git_ops::apply_patch(&scope.work_path, &retry_patch).await;
                     if applied {
                         smith_review.final_patch = retry_patch;
                         result = retry_result;
@@ -512,7 +570,15 @@ pub async fn fix_one(
 
     if cancelled(&params) {
         finish_skipped_attempt(
-            &tx, &issue, &attempt_id, "cancelled", cost, Some(&smith_review.final_patch), confidence, &t_start, &scope.work_path,
+            &tx,
+            &issue,
+            &attempt_id,
+            "cancelled",
+            cost,
+            Some(&smith_review.final_patch),
+            confidence,
+            &t_start,
+            &scope.work_path,
         )
         .await;
         return;
@@ -542,7 +608,14 @@ pub async fn fix_one(
         Ok(outcome) => outcome,
         Err(e) => {
             finish_error_attempt(
-                &tx, &issue, &attempt_id, &e.to_string(), cost, confidence, &t_start, &scope.work_path,
+                &tx,
+                &issue,
+                &attempt_id,
+                &e.to_string(),
+                cost,
+                confidence,
+                &t_start,
+                &scope.work_path,
             )
             .await;
             return;
@@ -551,18 +624,18 @@ pub async fn fix_one(
 
     let _ = track_pr(pr_number, &scope.repo, &params.run_id);
     let duration = t_start.elapsed().as_secs_f64();
-    let _ = finish_attempt(
-        &attempt_id,
-        "fixed",
-        pr["html_url"].as_str(),
-        Some(pr_number),
-        cost,
-        Some(&smith_review.final_patch),
-        None,
-        None,
-        Some(duration),
+    let _ = finish_attempt(IssueAttemptFinish {
+        attempt_id: &attempt_id,
+        status: "fixed",
+        pr_url: pr["html_url"].as_str(),
+        pr_number: Some(pr_number),
+        cost_usd: cost,
+        patch_diff: Some(&smith_review.final_patch),
+        error_msg: None,
+        skip_reason: None,
+        duration_seconds: Some(duration),
         confidence,
-    );
+    });
     let _ = update_perf(
         &agents.reaper.name,
         &agents.reaper.provider,
@@ -572,7 +645,10 @@ pub async fn fix_one(
         cost,
     );
 
-    run_cost.fetch_add((cost * 1_000_000.0) as i64, std::sync::atomic::Ordering::Relaxed);
+    run_cost.fetch_add(
+        (cost * 1_000_000.0) as i64,
+        std::sync::atomic::Ordering::Relaxed,
+    );
 
     let _ = tx
         .send(alog(

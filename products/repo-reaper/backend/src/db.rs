@@ -126,60 +126,70 @@ pub fn finish_run(run_id: &str, fixed: i64, attempted: i64, cost: f64, status: &
     Ok(())
 }
 
-pub fn start_attempt(
-    attempt_id: &str,
-    run_id: &str,
-    issue: &Value,
-    reaper: &str,
-    smith: Option<&str>,
-    gatekeeper: &str,
-) -> Result<()> {
+pub struct IssueAttemptStart<'a> {
+    pub attempt_id: &'a str,
+    pub run_id: &'a str,
+    pub repo: &'a str,
+    pub issue_number: i64,
+    pub issue_title: &'a str,
+    pub issue_url: &'a str,
+    pub reaper_agent: &'a str,
+    pub smith_agent: Option<&'a str>,
+    pub gatekeeper_agent: &'a str,
+}
+
+pub struct IssueAttemptFinish<'a> {
+    pub attempt_id: &'a str,
+    pub status: &'a str,
+    pub pr_url: Option<&'a str>,
+    pub pr_number: Option<i64>,
+    pub cost_usd: f64,
+    pub patch_diff: Option<&'a str>,
+    pub error_msg: Option<&'a str>,
+    pub skip_reason: Option<&'a str>,
+    pub duration_seconds: Option<f64>,
+    pub confidence: i32,
+}
+
+pub fn start_attempt(input: IssueAttemptStart<'_>) -> Result<()> {
     let conn = get_conn()?;
     conn.execute(
         "INSERT INTO issue_attempts(id,run_id,repo,issue_number,issue_title,issue_url,status,reaper_agent,smith_agent,gatekeeper_agent,started_at)
          VALUES(?1,?2,?3,?4,?5,?6,'running',?7,?8,?9,?10)",
         params![
-            attempt_id, run_id,
-            issue["repo"].as_str().unwrap_or(""),
-            issue["number"].as_i64().unwrap_or(0),
-            issue["title"].as_str().unwrap_or(""),
-            issue["url"].as_str().unwrap_or(""),
-            reaper, smith, gatekeeper,
+            input.attempt_id,
+            input.run_id,
+            input.repo,
+            input.issue_number,
+            input.issue_title,
+            input.issue_url,
+            input.reaper_agent,
+            input.smith_agent,
+            input.gatekeeper_agent,
             Utc::now().to_rfc3339(),
         ],
     )?;
     Ok(())
 }
 
-pub fn finish_attempt(
-    attempt_id: &str,
-    status: &str,
-    pr_url: Option<&str>,
-    pr_number: Option<i64>,
-    cost: f64,
-    patch_diff: Option<&str>,
-    error_msg: Option<&str>,
-    skip_reason: Option<&str>,
-    duration: Option<f64>,
-    confidence: i32,
-) -> Result<()> {
+pub fn finish_attempt(input: IssueAttemptFinish<'_>) -> Result<()> {
     let conn = get_conn()?;
     conn.execute(
         "UPDATE issue_attempts SET status=?1,pr_url=?2,pr_number=?3,finished_at=?4,
          duration_seconds=?5,cost_usd=?6,patch_diff=?7,error_msg=?8,skip_reason=?9,confidence=?10
          WHERE id=?11",
         params![
-            status,
-            pr_url,
-            pr_number,
+            input.status,
+            input.pr_url,
+            input.pr_number,
             Utc::now().to_rfc3339(),
-            duration,
-            cost,
-            patch_diff,
-            error_msg,
-            skip_reason,
-            confidence,
-            attempt_id,
+            input.duration_seconds,
+            input.cost_usd,
+            input.patch_diff,
+            input.error_msg,
+            input.skip_reason,
+            input.confidence,
+            input.attempt_id,
         ],
     )?;
     Ok(())
@@ -263,9 +273,7 @@ pub fn recover_orphaned_runs() -> Vec<String> {
     // that survived a brief restart shouldn't be killed.
     let cutoff = (Utc::now() - chrono::Duration::minutes(10)).to_rfc3339();
     let ids: Vec<String> = conn
-        .prepare(
-            "SELECT id FROM runs WHERE status='running' AND started_at < ?1"
-        )
+        .prepare("SELECT id FROM runs WHERE status='running' AND started_at < ?1")
         .and_then(|mut s| {
             s.query_map(params![cutoff], |r| r.get(0))
                 .map(|rows| rows.flatten().collect())
