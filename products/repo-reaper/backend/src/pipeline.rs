@@ -16,7 +16,7 @@ use uuid::Uuid;
 
 use crate::agents::*;
 use crate::db::*;
-use crate::fix_worker::{alog, astatus, fix_one, sse, FixParams};
+use crate::fix_worker::{alog, astatus, fix_one, sse, FixIssueJob, FixParams};
 use crate::github::*;
 use crate::state::{AgentConfig, AppState};
 
@@ -308,19 +308,19 @@ async fn run_fix_wave(
             run_id: run_id.to_string(),
             cancel_requested: cancel_requested.clone(),
         };
-        let handle = tokio::spawn(fix_one(
-            issue.clone(),
+        let handle = tokio::spawn(fix_one(FixIssueJob {
+            issue: issue.clone(),
             idx,
-            team.judges.clone(),
-            team.reapers.clone(),
-            team.smiths.clone(),
-            team.gatekeepers.clone(),
-            sem.clone(),
+            judges: team.judges.clone(),
+            reapers: team.reapers.clone(),
+            smiths: team.smiths.clone(),
+            gatekeepers: team.gatekeepers.clone(),
+            sem: sem.clone(),
             params,
-            run_cost.clone(),
-            tx.clone(),
-            http.clone(),
-        ));
+            run_cost: run_cost.clone(),
+            tx: tx.clone(),
+            http: http.clone(),
+        }));
         let done_tx = done_tx.clone();
         handles.push(tokio::spawn(async move {
             handle.await.ok();

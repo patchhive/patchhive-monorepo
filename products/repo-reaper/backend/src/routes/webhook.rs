@@ -271,26 +271,26 @@ async fn webhook_single_fix(state: AppState, repo: &str, issue: Value) {
     let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(1));
     let cancel_requested = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
 
-    use crate::fix_worker::{fix_one, FixParams};
+    use crate::fix_worker::{fix_one, FixIssueJob, FixParams};
     let params = FixParams {
         retry_count,
         min_conf,
         run_id: run_id.clone(),
         cancel_requested,
     };
-    fix_one(
-        iss,
-        0,
+    fix_one(FixIssueJob {
+        issue: iss,
+        idx: 0,
         judges,
-        reaper_list,
+        reapers: reaper_list,
         smiths,
-        gatekeeper_list,
+        gatekeepers: gatekeeper_list,
         sem,
         params,
-        run_cost.clone(),
+        run_cost: run_cost.clone(),
         tx,
-        state.http.clone(),
-    )
+        http: state.http.clone(),
+    })
     .await;
 
     let Ok(conn) = get_conn() else { return };

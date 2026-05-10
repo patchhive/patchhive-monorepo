@@ -4,7 +4,7 @@ use anyhow::Result as AnyhowResult;
 use serde_json::Value;
 use std::path::PathBuf;
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicI64, Ordering},
     Arc,
 };
 
@@ -20,6 +20,20 @@ pub struct FixParams {
     pub min_conf: i32,
     pub run_id: String,
     pub cancel_requested: Arc<AtomicBool>,
+}
+
+pub struct FixIssueJob {
+    pub issue: Value,
+    pub idx: usize,
+    pub judges: Vec<AgentConfig>,
+    pub reapers: Vec<AgentConfig>,
+    pub smiths: Vec<AgentConfig>,
+    pub gatekeepers: Vec<AgentConfig>,
+    pub sem: Arc<tokio::sync::Semaphore>,
+    pub params: FixParams,
+    pub run_cost: Arc<AtomicI64>,
+    pub tx: Tx,
+    pub http: reqwest::Client,
 }
 
 #[derive(Clone)]
