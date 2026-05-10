@@ -1054,8 +1054,8 @@ function CommandRail({ setup, mission, onlineCount, pairedCount, fleetCount, fle
           onClick={() => onAction("First-stack smoke", "/setup/smoke/first-stack")}
         />
         <CommandButton
-          title="Read-only smoke"
-          detail="Check visibility and triage products."
+          title="Read-only fleet smoke"
+          detail="Verify every non-write product without dispatching actions."
           color="var(--blue)"
           disabled={busy || busyAction === "Read-only smoke"}
           onClick={() => onAction("Read-only smoke", "/setup/smoke/read-only-fleet")}

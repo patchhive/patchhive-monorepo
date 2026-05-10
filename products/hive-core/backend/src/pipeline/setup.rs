@@ -918,6 +918,15 @@ pub(super) async fn prepare_first_stack_for_verification(
     Ok(())
 }
 
+pub(super) async fn prepare_products_for_service_token_verification(
+    state: &AppState,
+    slugs: &[&str],
+    actions: &mut Vec<String>,
+) {
+    let secret = ensure_suite_bootstrap_secret();
+    auto_pair_products(state, &secret, slugs, actions).await;
+}
+
 fn launcher_base_url() -> String {
     env::var("PATCHHIVE_LAUNCHER_URL").unwrap_or_else(|_| "http://localhost:8210".into())
 }

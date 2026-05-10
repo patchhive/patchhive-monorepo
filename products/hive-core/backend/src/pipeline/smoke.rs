@@ -21,14 +21,15 @@ use super::{
     fetch_product_capabilities, fetch_product_runs, parse_response_body, pick_url,
     setup::{
         build_first_stack_response, prepare_first_stack_for_verification,
-        DOWNSTREAM_FIRST_STACK_SLUGS,
+        prepare_products_for_service_token_verification, DOWNSTREAM_FIRST_STACK_SLUGS,
     },
     ProductStoredAuth, StartupChecksBody,
 };
 
-const READ_ONLY_FLEET_SLUGS: [&str; 8] = [
+const READ_ONLY_FLEET_SLUGS: [&str; 9] = [
     "signal-hive",
     "repo-memory",
+    "trust-gate",
     "review-bee",
     "merge-keeper",
     "flake-sting",
@@ -143,16 +144,25 @@ async fn run_smoke_tier_response(
                 );
             }
         }
-    } else {
+    } else if matches!(tier, SmokeTier::ReadOnlyFleet | SmokeTier::WriteDryRun) {
+        prepare_products_for_service_token_verification(
+            state,
+            smoke_tier_slugs(tier),
+            &mut actions,
+        )
+        .await;
         push_step(
             &mut preflight_steps,
             tier.slug(),
             tier.label(),
-            "tier-policy",
+            "pairing-preflight",
             "pass",
-            smoke_tier_description(tier),
+            format!(
+                "HiveCore checked running products for service-token pairing before {}.",
+                tier.label()
+            ),
             None,
-            json!({ "tier": tier.slug() }),
+            json!({ "tier": tier.slug(), "actions": actions }),
         );
     }
 
@@ -182,7 +192,7 @@ fn smoke_tier_description(tier: SmokeTier) -> &'static str {
             "launch, health wait, service-token pairing, then safe product actions for SignalHive, TrustGate, and RepoReaper"
         }
         SmokeTier::ReadOnlyFleet => {
-            "reachability and capability checks for visibility and triage products only; no product actions are dispatched"
+            "reachability, service-token, run-history, and capability inventory checks for every non-write product; no product actions are dispatched"
         }
         SmokeTier::WriteDryRun => {
             "RepoReaper only, using the saved service token and dry-run action so no PRs are opened"
@@ -198,6 +208,8 @@ async fn execute_smoke_tier(
     let started_at = now_rfc3339();
     let runtimes = super::overview::build_runtime_products(state).await;
     let overrides = db::product_overrides();
+
+    smoke_tier_coverage_check(tier, &runtimes, &mut steps);
 
     for &slug in smoke_tier_slugs(tier) {
         let Some(runtime) = runtimes.iter().find(|item| item.slug == slug) else {
@@ -267,6 +279,62 @@ fn smoke_tier_slugs(tier: SmokeTier) -> &'static [&'static str] {
         SmokeTier::ReadOnlyFleet => &READ_ONLY_FLEET_SLUGS,
         SmokeTier::WriteDryRun => &WRITE_DRY_RUN_SLUGS,
     }
+}
+
+fn smoke_tier_coverage_check(
+    tier: SmokeTier,
+    runtimes: &[ProductRuntimeItem],
+    steps: &mut Vec<FirstStackSmokeStep>,
+) {
+    if !matches!(tier, SmokeTier::ReadOnlyFleet) {
+        return;
+    }
+
+    let expected = smoke_tier_slugs(tier);
+    let missing = expected
+        .iter()
+        .filter(|slug| !runtimes.iter().any(|item| item.slug == **slug))
+        .copied()
+        .collect::<Vec<_>>();
+    let offline = expected
+        .iter()
+        .filter_map(|slug| {
+            let runtime = runtimes.iter().find(|item| item.slug == *slug)?;
+            if matches!(runtime.status.as_str(), "online" | "degraded") {
+                None
+            } else {
+                Some(runtime.slug.as_str())
+            }
+        })
+        .collect::<Vec<_>>();
+    let reachable = expected.len() - missing.len() - offline.len();
+    let ok = missing.is_empty() && offline.is_empty();
+
+    push_step(
+        steps,
+        tier.slug(),
+        tier.label(),
+        "fleet-coverage",
+        if ok { "pass" } else { "fail" },
+        if ok {
+            format!(
+                "HiveCore sees all {reachable}/{} non-write fleet products reachable before deeper checks.",
+                expected.len()
+            )
+        } else {
+            format!(
+                "HiveCore sees {reachable}/{} non-write fleet products reachable; missing or offline products block fleet smoke.",
+                expected.len()
+            )
+        },
+        None,
+        json!({
+            "expected_products": expected,
+            "reachable": reachable,
+            "missing": missing,
+            "offline": offline,
+        }),
+    );
 }
 
 async fn smoke_runtime_checks(
@@ -396,11 +464,25 @@ async fn fetch_startup_warning_messages(
 fn acknowledged_startup_warning(slug: &str, warning: &str) -> bool {
     let normalized = warning.to_ascii_lowercase();
     normalized.contains("api-key auth is not enabled yet")
+        || normalized.contains("public_url is not configured")
+        || normalized.contains("public url is not configured")
+        || normalized.contains("github webhook secret is not configured")
+        || normalized.contains("webhook delivery until it is set")
+        || normalized.contains("public-repo scans may still work")
+        || normalized.contains("public dependency pr scans may still work")
+        || normalized.contains("public reads may still work")
+        || normalized.contains("github-backed ingestion is disabled")
         || matches!(
             slug,
             "trust-gate"
                 if normalized.contains("trust_github_webhook_secret is not configured")
                     || normalized.contains("bot_github_token is missing")
+        )
+        || matches!(
+            slug,
+            "refactor-scout"
+                if normalized.contains("refactor_scout_allowed_roots is not set")
+                    || normalized.contains("defaults to the process working directory")
         )
 }
 
