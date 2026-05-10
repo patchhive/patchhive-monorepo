@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { applyTheme } from "@patchhivehq/ui";
+import { applyTheme, PanelErrorBoundary } from "@patchhivehq/ui";
 import {
   ProductAppFrame,
   ProductSessionGate,
@@ -50,6 +50,21 @@ const commandReadoutStyle = {
   borderRadius: 7,
   background: "color-mix(in srgb, var(--bg) 54%, transparent)",
 };
+
+function HiveCorePanelBoundary({ tab, children, setError }) {
+  const label = TABS.find((item) => item.id === tab)?.label || "HiveCore panel";
+  return (
+    <PanelErrorBoundary
+      key={tab}
+      label={label}
+      onError={(error) => {
+        setError(`${label} panel render fault: ${error?.message || error}`);
+      }}
+    >
+      {children}
+    </PanelErrorBoundary>
+  );
+}
 
 function CommandDeck({ activeTab, running }) {
   const activeLabel = TABS.find((tab) => tab.id === activeTab)?.label || "Command";
@@ -165,35 +180,37 @@ export default function App() {
         showSignOut={Boolean(apiKey)}
       >
         <CommandDeck activeTab={tab} running={running} />
-        {tab === "setup" && (
-          <SetupPanel
-            fetchEnvelope={fetchEnvelope}
-            setRunning={setRunning}
-            setError={setError}
-          />
-        )}
-        {tab === "overview" && (
-          <OverviewPanel
-            fetchEnvelope={fetchEnvelope}
-            setRunning={setRunning}
-            setError={setError}
-          />
-        )}
-        {tab === "products" && (
-          <ProductsPanel
-            fetchEnvelope={fetchEnvelope}
-            setRunning={setRunning}
-            setError={setError}
-          />
-        )}
-        {tab === "settings" && (
-          <SettingsPanel
-            fetchEnvelope={fetchEnvelope}
-            setRunning={setRunning}
-            setError={setError}
-          />
-        )}
-        {tab === "checks" && <ChecksPanel apiKey={apiKey} />}
+        <HiveCorePanelBoundary tab={tab} setError={setError}>
+          {tab === "setup" && (
+            <SetupPanel
+              fetchEnvelope={fetchEnvelope}
+              setRunning={setRunning}
+              setError={setError}
+            />
+          )}
+          {tab === "overview" && (
+            <OverviewPanel
+              fetchEnvelope={fetchEnvelope}
+              setRunning={setRunning}
+              setError={setError}
+            />
+          )}
+          {tab === "products" && (
+            <ProductsPanel
+              fetchEnvelope={fetchEnvelope}
+              setRunning={setRunning}
+              setError={setError}
+            />
+          )}
+          {tab === "settings" && (
+            <SettingsPanel
+              fetchEnvelope={fetchEnvelope}
+              setRunning={setRunning}
+              setError={setError}
+            />
+          )}
+          {tab === "checks" && <ChecksPanel apiKey={apiKey} />}
+        </HiveCorePanelBoundary>
       </ProductAppFrame>
     </ProductSessionGate>
   );
