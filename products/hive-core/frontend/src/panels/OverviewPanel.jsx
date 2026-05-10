@@ -1,5 +1,14 @@
 import { useEffect, useState } from "react";
 import { Btn, EmptyState, S, Tag } from "@patchhivehq/ui";
+import {
+  CommandHero,
+  CommandPanel,
+  MetricTile,
+  SectionHeader,
+  commandGridStyle,
+  commandPanelStyle,
+  tacticalGridStyle,
+} from "../components/CommandChrome.jsx";
 
 const heroGridStyle = {
   display: "grid",
@@ -44,23 +53,13 @@ function recentRuns(products) {
 }
 
 function MetricCard({ label, value, tone = "var(--text)" }) {
-  return (
-    <div style={{ ...S.panel, display: "grid", gap: 6 }}>
-      <div style={S.label}>{label}</div>
-      <div style={{ fontSize: 26, fontWeight: 800, color: tone }}>{value}</div>
-    </div>
-  );
+  return <MetricTile label={label} value={value} tone={tone} />;
 }
 
 function ProductStrip({ product }) {
   return (
     <div
-      style={{
-        ...S.panel,
-        display: "grid",
-        gap: 8,
-        borderColor: `${statusColor(product.status)}55`,
-      }}
+      style={commandPanelStyle(statusColor(product.status), { display: "grid", gap: 8 })}
     >
       <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
         <div>
@@ -156,7 +155,7 @@ export default function OverviewPanel({ fetchEnvelope, setRunning, setError }) {
   if (!overview) {
     return (
       <div style={{ display: "grid", gap: 16 }}>
-        <div style={{ ...S.panel, display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
+        <CommandPanel tone="var(--accent)" style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
           <div>
             <div style={{ fontSize: 18, fontWeight: 800 }}>Suite Overview</div>
             <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
@@ -164,7 +163,7 @@ export default function OverviewPanel({ fetchEnvelope, setRunning, setError }) {
             </div>
           </div>
           <Btn onClick={refresh}>Refresh</Btn>
-        </div>
+        </CommandPanel>
         <EmptyState icon="⬢" text="HiveCore has not loaded the suite snapshot yet." />
       </div>
     );
@@ -180,25 +179,15 @@ export default function OverviewPanel({ fetchEnvelope, setRunning, setError }) {
   const contractReady = overview.products.filter((product) => product.health?.capabilities_ok).length;
 
   return (
-    <div style={{ display: "grid", gap: 16 }}>
+    <div style={{ ...commandGridStyle, gap: 14 }}>
       <div style={{ ...heroGridStyle, alignItems: "stretch" }}>
-        <div
-          style={{
-            ...S.panel,
-            display: "grid",
-            gap: 12,
-            background:
-              "linear-gradient(135deg, color-mix(in srgb, var(--accent) 20%, var(--bg-panel)) 0%, var(--bg-panel) 55%, color-mix(in srgb, var(--blue) 14%, var(--bg-panel)) 100%)",
-          }}
+        <CommandHero
+          kicker="Command overview"
+          title={overview.suite_settings.operator_label}
+          body={overview.suite_settings.mission}
+          actions={<Btn onClick={refresh}>Refresh suite</Btn>}
         >
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
-            <div>
-              <div style={{ fontSize: 22, fontWeight: 900, letterSpacing: "-0.03em" }}>{overview.suite_settings.operator_label}</div>
-              <div style={{ fontSize: 12, color: "var(--accent)" }}>{overview.tagline}</div>
-            </div>
-            <Btn onClick={refresh}>Refresh suite</Btn>
-          </div>
-          <div style={{ fontSize: 13, lineHeight: 1.6, color: "var(--text-dim)" }}>{overview.suite_settings.mission}</div>
+          <div style={{ fontSize: 12, color: "var(--accent)", marginBottom: 10 }}>{overview.tagline}</div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             {overview.suite_settings.default_topics
               .split(",")
@@ -232,13 +221,15 @@ export default function OverviewPanel({ fetchEnvelope, setRunning, setError }) {
               )}
             </div>
           )}
-        </div>
+        </CommandHero>
 
-        <div style={{ ...S.panel, display: "grid", gap: 10 }}>
-          <div style={{ fontSize: 16, fontWeight: 800 }}>Guardrails</div>
-          <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6 }}>
-            HiveCore stores suite defaults here first. Product-by-product adoption comes next.
-          </div>
+        <CommandPanel tone="var(--blue)" style={{ display: "grid", gap: 10 }}>
+          <SectionHeader
+            kicker="Policy defaults"
+            title="Guardrails"
+            body="HiveCore stores suite defaults here first. Product-by-product adoption comes next."
+            tone="var(--blue)"
+          />
           <div style={{ display: "grid", gap: 8 }}>
             <div>
               <div style={S.label}>Languages</div>
@@ -257,7 +248,7 @@ export default function OverviewPanel({ fetchEnvelope, setRunning, setError }) {
               </div>
             </div>
           </div>
-        </div>
+        </CommandPanel>
       </div>
 
       <div style={metricGridStyle}>
@@ -268,18 +259,15 @@ export default function OverviewPanel({ fetchEnvelope, setRunning, setError }) {
         <MetricCard label="Recent Runs" value={totalRuns} tone="var(--accent)" />
       </div>
 
-      <div style={{ ...S.panel, display: "grid", gap: 12 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-          <div>
-            <div style={{ fontSize: 18, fontWeight: 800 }}>Suite Run Stream</div>
-            <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
-              Recent product-owned work across the suite.
-            </div>
-          </div>
-          <Tag color={runs.length > 0 ? "var(--green)" : "var(--gold)"}>
+      <CommandPanel tone="var(--accent)" style={{ display: "grid", gap: 12 }}>
+        <SectionHeader
+          kicker="Run telemetry"
+          title="Suite run stream"
+          body="Recent product-owned work across the suite."
+          badge={<Tag color={runs.length > 0 ? "var(--green)" : "var(--gold)"}>
             {runs.length > 0 ? `${runs.length} visible` : "Product keys needed"}
-          </Tag>
-        </div>
+          </Tag>}
+        />
         {runs.length === 0 ? (
           <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
             No run history is visible yet. Keyed products will appear here after their next run.
@@ -311,21 +299,18 @@ export default function OverviewPanel({ fetchEnvelope, setRunning, setError }) {
             ))}
           </div>
         )}
-      </div>
+      </CommandPanel>
 
       <div style={{ display: "grid", gap: 10 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-          <div>
-            <div style={{ fontSize: 18, fontWeight: 800 }}>Launch Surface</div>
-            <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
-              Quick links into the specialist products, ordered by suite flow.
-            </div>
-          </div>
-          <Tag color={unstable.length > 0 ? "var(--gold)" : "var(--green)"}>
+        <SectionHeader
+          kicker="Product surface"
+          title="Launch surface"
+          body="Quick links into the specialist products, ordered by suite flow."
+          badge={<Tag color={unstable.length > 0 ? "var(--gold)" : "var(--green)"}>
             {unstable.length > 0 ? `${unstable.length} product${unstable.length === 1 ? "" : "s"} need attention` : "Suite looks steady"}
-          </Tag>
-        </div>
-        <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}>
+          </Tag>}
+        />
+        <div style={tacticalGridStyle}>
           {overview.products.map((product) => (
             <ProductStrip key={product.slug} product={product} />
           ))}
@@ -333,12 +318,12 @@ export default function OverviewPanel({ fetchEnvelope, setRunning, setError }) {
       </div>
 
       {overview.suite_settings.notes && (
-        <div style={{ ...S.panel, display: "grid", gap: 8 }}>
+        <CommandPanel tone="var(--gold)" style={{ display: "grid", gap: 8 }}>
           <div style={S.label}>Operator Notes</div>
           <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6 }}>
             {overview.suite_settings.notes}
           </div>
-        </div>
+        </CommandPanel>
       )}
     </div>
   );

@@ -16,33 +16,59 @@ const LANE_ORDER = [
   "Control Plane",
 ];
 
-const commandWorkspaceStyle = {
-  display: "grid",
-  gap: 14,
-  gridTemplateColumns: "minmax(0, 1fr) clamp(320px, 32vw, 430px)",
-  alignItems: "start",
-};
+const FLEET_FILTERS = [
+  { id: "all", label: "All" },
+  { id: "attention", label: "Needs attention" },
+  { id: "running", label: "Running" },
+  { id: "launchable", label: "Launchable" },
+  { id: "gated", label: "Gated" },
+  { id: "first-stack", label: "First stack" },
+];
 
 const COMMAND_RAIL_TOP = 66;
 const COMMAND_RAIL_BOTTOM_CLEARANCE = 72;
 const COMMAND_RAIL_HEIGHT = `calc(100vh - ${COMMAND_RAIL_TOP + COMMAND_RAIL_BOTTOM_CLEARANCE}px)`;
 
+const commandConsoleStyle = {
+  display: "grid",
+  gap: 12,
+  gridTemplateColumns: "260px minmax(0, 1fr) clamp(340px, 30vw, 420px)",
+  alignItems: "start",
+};
+
+const commandRailStyle = {
+  position: "sticky",
+  top: COMMAND_RAIL_TOP,
+  display: "grid",
+  gap: 10,
+  maxHeight: COMMAND_RAIL_HEIGHT,
+  overflowY: "auto",
+  paddingRight: 2,
+};
+
+const commandTopGridStyle = {
+  display: "grid",
+  gap: 12,
+  gridTemplateColumns: "minmax(0, 1.4fr) minmax(320px, 0.9fr)",
+  alignItems: "stretch",
+};
+
 const commandMainColumnStyle = {
   display: "grid",
-  gap: 14,
+  gap: 12,
   minWidth: 0,
 };
 
 const commandEvidenceGridStyle = {
   display: "grid",
-  gap: 14,
+  gap: 12,
   gridTemplateColumns: "minmax(280px, 0.9fr) minmax(0, 1.1fr)",
   alignItems: "stretch",
 };
 
 const commandEvidenceStackStyle = {
   display: "grid",
-  gap: 14,
+  gap: 12,
   minWidth: 0,
   alignContent: "start",
   height: "100%",
@@ -56,7 +82,7 @@ const focusRailStyle = {
 };
 
 const focusPanelStyle = {
-  ...S.panel,
+  ...commandSurfaceStyle("var(--blue)"),
   display: "flex",
   flexDirection: "column",
   gap: 10,
@@ -66,6 +92,622 @@ const focusPanelStyle = {
   minHeight: 0,
   overflow: "hidden",
 };
+
+const commandKickerStyle = {
+  fontSize: 10,
+  letterSpacing: 0,
+  textTransform: "uppercase",
+  color: "var(--text-dim)",
+};
+
+const commandTitleStyle = {
+  fontSize: 18,
+  fontWeight: 900,
+  letterSpacing: 0,
+};
+
+const commandBodyStyle = {
+  fontSize: 11,
+  color: "var(--text-dim)",
+  lineHeight: 1.55,
+};
+
+const commandPanelScrollStyle = {
+  maxHeight: "min(520px, 62vh)",
+  overflow: "auto",
+};
+
+function CommandCenterStyles() {
+  return (
+    <style>{`
+      @keyframes ph-core-breathe {
+        0%, 100% { transform: scale(0.96); opacity: 0.54; }
+        50% { transform: scale(1.08); opacity: 0.94; }
+      }
+
+      @keyframes ph-signal-flow {
+        0% { transform: translateX(-105%); opacity: 0; }
+        16% { opacity: 1; }
+        84% { opacity: 1; }
+        100% { transform: translateX(315%); opacity: 0; }
+      }
+
+      @keyframes ph-node-pulse {
+        0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--node-tone) 28%, transparent); }
+        50% { box-shadow: 0 0 0 5px transparent; }
+      }
+
+      .ph-core-visual {
+        position: absolute;
+        right: 12px;
+        top: 12px;
+        width: 74px;
+        height: 74px;
+        pointer-events: none;
+        opacity: 0.9;
+      }
+
+      .ph-core-visual::before,
+      .ph-core-visual::after {
+        content: "";
+        position: absolute;
+        inset: 8px;
+        border: 1px solid color-mix(in srgb, var(--blue) 44%, transparent);
+        border-radius: 8px;
+        transform: rotate(45deg);
+        animation: ph-core-breathe 4.8s ease-in-out infinite;
+      }
+
+      .ph-core-visual::after {
+        inset: 22px;
+        border-color: color-mix(in srgb, var(--accent) 58%, transparent);
+        animation-delay: -1.9s;
+      }
+
+      .ph-core-mark {
+        position: absolute;
+        inset: 25px;
+        display: grid;
+        place-items: center;
+        border-radius: 6px;
+        color: var(--text);
+        background: color-mix(in srgb, var(--blue) 36%, var(--bg-panel));
+        box-shadow: 0 0 24px color-mix(in srgb, var(--blue) 32%, transparent);
+        z-index: 1;
+      }
+
+      .ph-command-console {
+        isolation: isolate;
+      }
+
+      .ph-topology-board {
+        position: relative;
+        display: grid;
+        gap: 12px;
+        padding: 12px;
+        border-radius: 8px;
+        border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border));
+        background:
+          linear-gradient(180deg, color-mix(in srgb, var(--bg-panel) 96%, #051318) 0%, color-mix(in srgb, var(--bg) 70%, #030608) 100%),
+          repeating-linear-gradient(90deg, rgba(255,255,255,0.026) 0 1px, transparent 1px 42px);
+        overflow: hidden;
+      }
+
+      .ph-topology-board::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background:
+          linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent) 10%, transparent), transparent),
+          linear-gradient(180deg, color-mix(in srgb, var(--blue) 9%, transparent), transparent 44%);
+        pointer-events: none;
+      }
+
+      .ph-topology-header,
+      .ph-lane-stack,
+      .ph-filter-row {
+        position: relative;
+        z-index: 1;
+      }
+
+      .ph-topology-header {
+        display: grid;
+        grid-template-columns: 170px minmax(0, 1fr) auto;
+        gap: 12px;
+        align-items: center;
+      }
+
+      .ph-core-chip {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 36px;
+        padding: 8px 10px;
+        border-radius: 8px;
+        border: 1px solid color-mix(in srgb, var(--blue) 36%, var(--border));
+        background: color-mix(in srgb, var(--blue) 10%, var(--bg));
+        color: var(--blue);
+        font-size: 11px;
+        font-weight: 900;
+      }
+
+      .ph-live-bus {
+        position: relative;
+        height: 4px;
+        border-radius: 999px;
+        background: linear-gradient(90deg, var(--blue), var(--accent), var(--green), var(--gold));
+        box-shadow: 0 0 20px color-mix(in srgb, var(--accent) 24%, transparent);
+        overflow: hidden;
+      }
+
+      .ph-live-bus::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        width: 34%;
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.82), transparent);
+        animation: ph-signal-flow 3.6s linear infinite;
+      }
+
+      .ph-filter-row {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+
+      .ph-lane-stack {
+        display: grid;
+        gap: 8px;
+      }
+
+      .ph-lane-row {
+        --lane-tone: var(--accent);
+        position: relative;
+        display: grid;
+        grid-template-columns: 118px minmax(0, 1fr);
+        gap: 10px;
+        align-items: stretch;
+      }
+
+      .ph-lane-label {
+        display: grid;
+        align-content: center;
+        gap: 5px;
+        min-height: 72px;
+        padding: 9px 10px;
+        border-radius: 8px;
+        border: 1px solid color-mix(in srgb, var(--lane-tone) 24%, var(--border));
+        background: color-mix(in srgb, var(--lane-tone) 7%, var(--bg));
+      }
+
+      .ph-lane-title {
+        color: var(--lane-tone);
+        font-size: 10px;
+        font-weight: 950;
+        text-transform: uppercase;
+      }
+
+      .ph-lane-count {
+        color: var(--text-dim);
+        font-size: 10px;
+      }
+
+      .ph-lane-track {
+        position: relative;
+        min-height: 72px;
+        padding: 9px 10px;
+        border-radius: 8px;
+        border: 1px solid color-mix(in srgb, var(--lane-tone) 16%, var(--border));
+        background: color-mix(in srgb, var(--bg) 56%, transparent);
+        overflow: hidden;
+      }
+
+      .ph-signal-rail {
+        position: absolute;
+        left: 11px;
+        right: 11px;
+        top: 50%;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--lane-tone) 38%, transparent), transparent);
+        opacity: 0.72;
+      }
+
+      .ph-signal-rail::after {
+        content: "";
+        position: absolute;
+        inset-block: -1px;
+        left: 0;
+        width: 26%;
+        border-radius: 999px;
+        background: linear-gradient(90deg, transparent, var(--lane-tone), transparent);
+        animation: ph-signal-flow 4.9s linear infinite;
+      }
+
+      .ph-node-grid {
+        position: relative;
+        z-index: 1;
+        display: grid;
+        gap: 8px;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      }
+
+      .ph-product-node {
+        --node-tone: var(--accent);
+        display: grid;
+        gap: 6px;
+        min-height: 76px;
+        padding: 9px 10px;
+        text-align: left;
+        border-radius: 8px;
+        border: 1px solid color-mix(in srgb, var(--node-tone) 18%, var(--border));
+        background:
+          linear-gradient(180deg, color-mix(in srgb, var(--node-tone) 8%, var(--bg-panel)) 0%, color-mix(in srgb, var(--bg) 70%, transparent) 100%);
+        color: var(--text);
+        cursor: pointer;
+        font-family: inherit;
+        transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+      }
+
+      .ph-product-node:hover {
+        transform: translateY(-2px);
+        border-color: color-mix(in srgb, var(--node-tone) 46%, var(--border));
+      }
+
+      .ph-product-node.is-selected {
+        border-color: var(--node-tone);
+        background:
+          linear-gradient(180deg, color-mix(in srgb, var(--node-tone) 16%, var(--bg-panel)) 0%, color-mix(in srgb, var(--bg) 58%, transparent) 100%);
+        animation: ph-node-pulse 2.8s ease-in-out infinite;
+      }
+
+      .ph-product-node.is-attention {
+        border-color: color-mix(in srgb, var(--gold) 42%, var(--border));
+      }
+
+      .ph-cortex-shell {
+        position: relative;
+        display: grid;
+        gap: 12px;
+        min-height: clamp(520px, 44vh, 580px);
+        padding: 14px;
+        border-radius: 8px;
+        border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--border));
+        background:
+          radial-gradient(circle at 50% 46%, color-mix(in srgb, var(--blue) 10%, transparent) 0 17%, transparent 18%),
+          linear-gradient(180deg, color-mix(in srgb, var(--bg-panel) 90%, #020509) 0%, color-mix(in srgb, var(--bg) 72%, #010406) 100%);
+        overflow: hidden;
+      }
+
+      .ph-cortex-shell::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background:
+          linear-gradient(90deg, rgba(255,255,255,0.022) 1px, transparent 1px),
+          linear-gradient(0deg, rgba(255,255,255,0.018) 1px, transparent 1px);
+        background-size: 38px 38px;
+        mask-image: radial-gradient(circle at 50% 46%, black 0%, transparent 74%);
+        pointer-events: none;
+      }
+
+      .ph-cortex-shell::after {
+        content: "";
+        position: absolute;
+        left: 8%;
+        right: 8%;
+        top: 49%;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent) 44%, transparent), transparent);
+        box-shadow:
+          0 -130px 0 color-mix(in srgb, var(--blue) 13%, transparent),
+          0 130px 0 color-mix(in srgb, var(--green) 12%, transparent);
+        pointer-events: none;
+      }
+
+      .ph-cortex-topbar {
+        position: relative;
+        z-index: 2;
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+        align-items: flex-start;
+      }
+
+      .ph-cortex-title {
+        display: grid;
+        gap: 4px;
+      }
+
+      .ph-cortex-stage {
+        position: relative;
+        z-index: 1;
+        min-height: clamp(390px, 34vh, 430px);
+      }
+
+      .ph-orbit-ring {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
+        border-radius: 50%;
+        transform: translate(-50%, -50%);
+        pointer-events: none;
+      }
+
+      .ph-orbit-ring.one {
+        width: 42%;
+        height: 42%;
+        border-color: color-mix(in srgb, var(--blue) 18%, transparent);
+      }
+
+      .ph-orbit-ring.two {
+        width: 68%;
+        height: 68%;
+      }
+
+      .ph-orbit-ring.three {
+        width: 88%;
+        height: 82%;
+        border-color: color-mix(in srgb, var(--green) 14%, transparent);
+      }
+
+      .ph-cortex-core {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        z-index: 3;
+        display: grid;
+        place-items: center;
+        gap: 9px;
+        width: 250px;
+        min-height: 198px;
+        padding: 18px;
+        text-align: center;
+        border-radius: 8px;
+        border: 1px solid color-mix(in srgb, var(--accent) 44%, var(--border));
+        background:
+          linear-gradient(180deg, color-mix(in srgb, var(--bg-panel) 78%, #08161c) 0%, color-mix(in srgb, var(--bg) 72%, #020509) 100%);
+        box-shadow:
+          0 0 0 1px rgba(255,255,255,0.03) inset,
+          0 0 48px color-mix(in srgb, var(--accent) 14%, transparent);
+        transform: translate(-50%, -50%);
+      }
+
+      .ph-cortex-core::before,
+      .ph-cortex-core::after {
+        content: "";
+        position: absolute;
+        inset: -14px;
+        border: 1px solid color-mix(in srgb, var(--blue) 24%, transparent);
+        border-radius: 12px;
+        animation: ph-core-breathe 5.4s ease-in-out infinite;
+        pointer-events: none;
+      }
+
+      .ph-cortex-core::after {
+        inset: -27px;
+        border-color: color-mix(in srgb, var(--accent) 18%, transparent);
+        animation-delay: -2s;
+      }
+
+      .ph-cortex-glyph {
+        display: grid;
+        place-items: center;
+        width: 48px;
+        height: 48px;
+        border-radius: 8px;
+        color: var(--text);
+        background: color-mix(in srgb, var(--accent) 22%, var(--bg));
+        border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--border));
+        font-size: 24px;
+      }
+
+      .ph-cortex-mission {
+        color: var(--text);
+        font-size: 22px;
+        line-height: 1.05;
+        font-weight: 950;
+      }
+
+      .ph-cortex-subcopy {
+        max-width: 210px;
+        color: var(--text-dim);
+        font-size: 11px;
+        line-height: 1.45;
+      }
+
+      .ph-cortex-counters {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 6px;
+        width: 100%;
+      }
+
+      .ph-cortex-counter {
+        display: grid;
+        gap: 2px;
+        padding: 7px 6px;
+        border-radius: 7px;
+        border: 1px solid color-mix(in srgb, var(--accent) 16%, var(--border));
+        background: color-mix(in srgb, var(--bg) 60%, transparent);
+      }
+
+      .ph-cortex-counter strong {
+        font-size: 15px;
+        line-height: 1;
+      }
+
+      .ph-cortex-counter span {
+        color: var(--text-dim);
+        font-size: 9px;
+        text-transform: uppercase;
+      }
+
+      .ph-orbit-node {
+        --node-tone: var(--accent);
+        position: absolute;
+        z-index: 4;
+        display: grid;
+        gap: 6px;
+        width: 148px;
+        min-height: 82px;
+        padding: 9px 10px;
+        text-align: left;
+        border-radius: 8px;
+        border: 1px solid color-mix(in srgb, var(--node-tone) 24%, var(--border));
+        background:
+          linear-gradient(180deg, color-mix(in srgb, var(--node-tone) 10%, var(--bg-panel)) 0%, color-mix(in srgb, var(--bg) 72%, #020408) 100%);
+        color: var(--text);
+        cursor: pointer;
+        font-family: inherit;
+        transform: translate(-50%, -50%);
+        transition: opacity 160ms ease, transform 160ms ease, border-color 160ms ease;
+      }
+
+      .ph-orbit-node:hover {
+        border-color: color-mix(in srgb, var(--node-tone) 52%, var(--border));
+        transform: translate(-50%, -52%);
+      }
+
+      .ph-orbit-node.is-selected {
+        border-color: var(--node-tone);
+        box-shadow:
+          0 0 0 1px color-mix(in srgb, var(--node-tone) 18%, transparent) inset,
+          0 0 26px color-mix(in srgb, var(--node-tone) 20%, transparent);
+        animation: ph-node-pulse 2.6s ease-in-out infinite;
+      }
+
+      .ph-orbit-node.is-muted {
+        opacity: 0.28;
+      }
+
+      .ph-orbit-node.is-attention {
+        border-color: color-mix(in srgb, var(--gold) 56%, var(--border));
+      }
+
+      .ph-orbit-link {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        z-index: 2;
+        height: 1px;
+        width: var(--link-length);
+        transform-origin: 0 50%;
+        transform: rotate(var(--link-angle));
+        background: linear-gradient(90deg, color-mix(in srgb, var(--node-tone) 52%, transparent), transparent);
+        opacity: var(--link-opacity);
+        pointer-events: none;
+      }
+
+      .ph-lane-strip {
+        position: relative;
+        z-index: 2;
+        display: grid;
+        gap: 7px;
+        grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+      }
+
+      .ph-lane-chip {
+        --lane-tone: var(--accent);
+        display: flex;
+        justify-content: space-between;
+        gap: 6px;
+        align-items: center;
+        padding: 8px 9px;
+        border-radius: 7px;
+        border: 1px solid color-mix(in srgb, var(--lane-tone) 20%, var(--border));
+        background: color-mix(in srgb, var(--lane-tone) 6%, var(--bg));
+        color: var(--text-dim);
+        font-size: 10px;
+      }
+
+      .ph-lane-chip strong {
+        color: var(--lane-tone);
+        font-size: 10px;
+      }
+
+      .ph-node-top {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .ph-node-title {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 12px;
+        font-weight: 950;
+      }
+
+      .ph-node-led {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: var(--node-tone);
+        box-shadow: 0 0 15px color-mix(in srgb, var(--node-tone) 70%, transparent);
+        flex: 0 0 auto;
+      }
+
+      .ph-node-tags {
+        display: flex;
+        gap: 5px;
+        flex-wrap: wrap;
+      }
+
+      .ph-node-meta {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        color: var(--text-dim);
+        font-size: 10px;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .ph-core-visual::before,
+        .ph-core-visual::after,
+        .ph-live-bus::after,
+        .ph-signal-rail::after,
+        .ph-product-node.is-selected,
+        .ph-orbit-node.is-selected,
+        .ph-cortex-core::before,
+        .ph-cortex-core::after {
+          animation: none;
+        }
+      }
+    `}</style>
+  );
+}
+
+function commandSurfaceStyle(tone = "var(--border)", extra = {}) {
+  return {
+    ...S.panel,
+    position: "relative",
+    overflow: "hidden",
+    borderRadius: 8,
+    border: `1px solid color-mix(in srgb, ${tone} 24%, var(--border))`,
+    background:
+      "linear-gradient(180deg, color-mix(in srgb, var(--bg-panel) 94%, #0a1215) 0%, color-mix(in srgb, var(--bg-panel) 99%, #03070a) 100%)",
+    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.03)",
+    ...extra,
+  };
+}
+
+function commandInsetStyle(tone = "var(--border)", extra = {}) {
+  return {
+    display: "grid",
+    gap: 8,
+    padding: 10,
+    borderRadius: 6,
+    border: `1px solid color-mix(in srgb, ${tone} 18%, var(--border))`,
+    background: "color-mix(in srgb, var(--bg) 58%, transparent)",
+    boxSizing: "border-box",
+    ...extra,
+  };
+}
 
 function statusColor(status) {
   if (status === "online") return "var(--green)";
@@ -108,6 +750,15 @@ function preflightTone(status) {
   if (status === "ready") return "var(--green)";
   if (status === "running") return "var(--blue)";
   return "var(--gold)";
+}
+
+function laneTone(lane) {
+  if (lane === "Control Plane") return "var(--blue)";
+  if (lane === "Action") return "var(--accent)";
+  if (lane === "Trust" || lane === "Quality") return "var(--green)";
+  if (lane === "Review" || lane === "Merge" || lane === "Security") return "var(--gold)";
+  if (lane === "Memory" || lane === "Dependencies" || lane === "CI") return "var(--blue)";
+  return "var(--accent)";
 }
 
 function smokeTone(status) {
@@ -170,6 +821,30 @@ function mergedFleetProducts(setup, fleet) {
 
 function productLooksRunning(product) {
   return ["online", "degraded"].includes(product?.runtime?.status) || Boolean(product?.setupItem?.launcher?.compose_running);
+}
+
+function productNeedsAttention(product) {
+  const runtime = product?.runtime;
+  const launcher = product?.setupItem?.launcher;
+  if (!runtime) return false;
+  if (runtime.status === "offline" || runtime.status === "degraded") return true;
+  if (runtime.slug !== "hive-core" && !runtime.service_token_configured) return true;
+  if ((launcher?.blockers || []).length > 0 || (launcher?.start_blockers || []).length > 0) return true;
+  return Boolean(launcher && !productLooksRunning(product) && !launcher.start_ready);
+}
+
+function productMatchesFleetFilter(product, filter) {
+  const launcher = product?.setupItem?.launcher;
+  if (filter === "attention") return productNeedsAttention(product);
+  if (filter === "running") return productLooksRunning(product);
+  if (filter === "launchable") return Boolean(launcher?.start_ready && !productLooksRunning(product));
+  if (filter === "gated") return Boolean(launcher && !productLooksRunning(product) && !launcher.start_ready);
+  if (filter === "first-stack") return FIRST_STACK_SLUGS.includes(product?.runtime?.slug);
+  return true;
+}
+
+function fleetFilterCount(products, filter) {
+  return (products || []).filter((product) => productMatchesFleetFilter(product, filter)).length;
 }
 
 function selectedSetupItem(product) {
@@ -248,23 +923,16 @@ function setupMission(setup, onlineCount, pairedCount) {
 function LaunchGauge({ label, value, total, tone = "var(--accent)" }) {
   const pct = total > 0 ? Math.round((value / total) * 100) : 0;
   return (
-    <div
-      style={{
-        display: "grid",
-        gap: 7,
-        padding: "11px 12px",
-        border: "1px solid var(--border)",
-        borderRadius: 12,
-        background: "rgba(0,0,0,0.2)",
-      }}
-    >
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-        <span style={{ fontSize: 10, color: "var(--text-dim)", letterSpacing: "0.14em", textTransform: "uppercase" }}>{label}</span>
-        <strong style={{ fontSize: 12, color: tone }}>
-          {value}/{total}
-        </strong>
+    <div style={commandInsetStyle(tone, { gap: 9, minHeight: 94 })}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline" }}>
+        <span style={commandKickerStyle}>{label}</span>
+        <strong style={{ fontSize: 11, color: "var(--text-dim)" }}>{total} total</strong>
       </div>
-      <div style={{ height: 7, borderRadius: 999, background: "rgba(255,255,255,0.06)", overflow: "hidden" }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+        <span style={{ fontSize: 26, lineHeight: 1, fontWeight: 950, letterSpacing: 0, color: tone }}>{value}</span>
+        <span style={{ fontSize: 11, color: "var(--text-dim)" }}>of {total}</span>
+      </div>
+      <div style={{ height: 8, borderRadius: 999, background: "rgba(255,255,255,0.06)", overflow: "hidden" }}>
         <div style={{ width: `${pct}%`, height: "100%", borderRadius: 999, background: tone }} />
       </div>
     </div>
@@ -279,22 +947,135 @@ function CommandButton({ title, detail, color, disabled, active, onClick }) {
       disabled={disabled}
       style={{
         display: "grid",
-        gap: 5,
+        gap: 7,
         textAlign: "left",
         padding: "12px 13px",
-        borderRadius: 14,
-        border: `1px solid ${color}55`,
+        borderRadius: 8,
+        border: `1px solid color-mix(in srgb, ${color} 32%, var(--border))`,
         background: active
-          ? `color-mix(in srgb, ${color} 18%, var(--bg-panel))`
-          : "color-mix(in srgb, var(--bg) 58%, transparent)",
+          ? `linear-gradient(180deg, color-mix(in srgb, ${color} 16%, var(--bg-panel)) 0%, color-mix(in srgb, var(--bg) 48%, transparent) 100%)`
+          : "linear-gradient(180deg, color-mix(in srgb, var(--bg) 18%, var(--bg-panel)) 0%, color-mix(in srgb, var(--bg) 58%, transparent) 100%)",
         color: "var(--text)",
         cursor: disabled ? "not-allowed" : "pointer",
         opacity: disabled ? 0.62 : 1,
+        boxShadow: active ? `0 0 0 1px color-mix(in srgb, ${color} 22%, transparent) inset` : "none",
       }}
     >
-      <span style={{ fontSize: 12, fontWeight: 900, color }}>{title}</span>
-      <span style={{ fontSize: 10, color: "var(--text-dim)", lineHeight: 1.45 }}>{detail}</span>
+      <span style={{ ...commandKickerStyle, color }}>Command</span>
+      <span style={{ fontSize: 13, fontWeight: 900, color }}>{title}</span>
+      <span style={{ fontSize: 10, color: "var(--text-dim)", lineHeight: 1.5 }}>{detail}</span>
     </button>
+  );
+}
+
+function CommandRail({ setup, mission, onlineCount, pairedCount, fleetCount, fleetPlan, busyAction, onRefresh, onAction }) {
+  const busy = Boolean(busyAction) || fleetLaunchActive(setup.latest_fleet_launch);
+  const smoke = setup.latest_smoke;
+  return (
+    <div style={commandRailStyle}>
+      <div style={commandSurfaceStyle(mission.tone, { display: "grid", gap: 12, paddingRight: 88, minHeight: 154 })}>
+        <div className="ph-core-visual" aria-hidden="true">
+          <div className="ph-core-mark">⬢</div>
+        </div>
+        <div style={{ display: "grid", gap: 7 }}>
+          <div style={commandKickerStyle}>HiveCore command</div>
+          <div style={{ fontSize: 24, lineHeight: 1.05, fontWeight: 950, letterSpacing: 0 }}>{mission.label}</div>
+          <div style={commandBodyStyle}>{mission.headline}</div>
+          {mission.detail && <div style={{ ...commandBodyStyle, color: mission.tone }}>{mission.detail}</div>}
+        </div>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          <Tag color={setup.launcher.available ? "var(--green)" : "var(--accent)"}>
+            launcher {setup.launcher.available ? "online" : "offline"}
+          </Tag>
+          <Tag color={setup.suite_bootstrap_configured ? "var(--blue)" : "var(--gold)"}>
+            bootstrap {setup.suite_bootstrap_configured ? "ready" : "missing"}
+          </Tag>
+          {smoke && <Tag color={smokeTone(smoke.status)}>smoke {smoke.status}</Tag>}
+        </div>
+      </div>
+
+      <div style={commandSurfaceStyle("var(--accent)", { display: "grid", gap: 10 })}>
+        <div style={commandKickerStyle}>Suite counters</div>
+        <div style={{ display: "grid", gap: 8 }}>
+          <LaunchGauge label="Reachable" value={onlineCount} total={FIRST_STACK_SLUGS.length} tone={onlineCount === FIRST_STACK_SLUGS.length ? "var(--green)" : "var(--gold)"} />
+          <LaunchGauge label="Paired" value={pairedCount} total={FIRST_STACK_SLUGS.length} tone={pairedCount === FIRST_STACK_SLUGS.length ? "var(--green)" : "var(--blue)"} />
+          <LaunchGauge label="Fleet" value={fleetCount} total={11} tone="var(--accent)" />
+        </div>
+        <div style={commandBodyStyle}>{setup.launcher.repo_root ? `Root: ${setup.launcher.repo_root}` : setup.launcher.message}</div>
+      </div>
+
+      <div style={commandSurfaceStyle("var(--blue)", { display: "grid", gap: 8 })}>
+        <div style={commandKickerStyle}>Commands</div>
+        <CommandButton
+          title="Refresh telemetry"
+          detail="Reload health, launcher, pairing, and fleet data."
+          color="var(--text-dim)"
+          disabled={busy}
+          onClick={onRefresh}
+        />
+        <CommandButton
+          title="Start first stack"
+          detail="Bring up SignalHive, TrustGate, and RepoReaper."
+          color="var(--green)"
+          active={onlineCount < FIRST_STACK_SLUGS.length}
+          disabled={busy || busyAction === "Start first stack"}
+          onClick={() => onAction("Start first stack", "/setup/first-stack/start")}
+        />
+        <CommandButton
+          title="Start ready fleet"
+          detail={`${fleetPlan.launchable} products can launch now.`}
+          color="var(--green)"
+          active={fleetPlan.launchable > 0}
+          disabled={busy || busyAction === "Start ready fleet" || fleetPlan.launchable === 0}
+          onClick={() => onAction("Start ready fleet", "/setup/fleet/start-ready")}
+        />
+        <CommandButton
+          title="Start all 11"
+          detail={fleetPlan.gated ? `${fleetPlan.gated} products are still gated.` : "Launch every stopped managed product."}
+          color="var(--blue)"
+          active={fleetPlan.canStartAll}
+          disabled={busy || busyAction === "Start all 11" || !fleetPlan.canStartAll}
+          onClick={() => onAction("Start all 11", "/setup/fleet/start-all")}
+        />
+        <CommandButton
+          title="Pair running products"
+          detail="Provision scoped service tokens for HiveCore machine control."
+          color="var(--blue)"
+          active={pairedCount < FIRST_STACK_SLUGS.length}
+          disabled={busy || busyAction === "Pair running products"}
+          onClick={() => onAction("Pair running products", "/setup/first-stack/pair")}
+        />
+        <CommandButton
+          title="Smoke first stack"
+          detail="Run auth, health, capability, and safe-action checks."
+          color="var(--accent)"
+          active={pairedCount === FIRST_STACK_SLUGS.length && smoke?.status !== "ready"}
+          disabled={busy || busyAction === "First-stack smoke"}
+          onClick={() => onAction("First-stack smoke", "/setup/smoke/first-stack")}
+        />
+        <CommandButton
+          title="Read-only smoke"
+          detail="Check visibility and triage products."
+          color="var(--blue)"
+          disabled={busy || busyAction === "Read-only smoke"}
+          onClick={() => onAction("Read-only smoke", "/setup/smoke/read-only-fleet")}
+        />
+        <CommandButton
+          title="Dry-run smoke"
+          detail="Exercise RepoReaper without opening PRs."
+          color="var(--gold)"
+          disabled={busy || busyAction === "Dry-run smoke"}
+          onClick={() => onAction("Dry-run smoke", "/setup/smoke/write-dry-run")}
+        />
+        <CommandButton
+          title="Stop first stack"
+          detail="Stop the starter trio without removing data."
+          color="var(--gold)"
+          disabled={busy || busyAction === "Stop first stack"}
+          onClick={() => onAction("Stop first stack", "/setup/first-stack/stop")}
+        />
+      </div>
+    </div>
   );
 }
 
@@ -323,20 +1104,20 @@ function FleetStartPlan({ products, busyAction, launchJob, onAction }) {
   const plan = fleetLaunchPlan(products);
   const busy = Boolean(busyAction) || fleetLaunchActive(launchJob);
   return (
-    <div style={{ ...S.panel, display: "grid", gap: 12, height: "100%", boxSizing: "border-box" }}>
+    <div style={commandSurfaceStyle(plan.gated ? "var(--gold)" : "var(--accent)", { display: "grid", gap: 14, ...commandPanelScrollStyle })}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
         <div>
-          <div style={{ fontSize: 15, fontWeight: 900 }}>Start All 11 Plan</div>
-          <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.45 }}>
-            HiveCore can now start only the stopped products that pass launcher preflight. Full fleet launch stays gated until every stopped target is ready.
+          <div style={commandKickerStyle}>Launch matrix</div>
+          <div style={commandTitleStyle}>Fleet launch posture</div>
+          <div style={commandBodyStyle}>
+            HiveCore stages launcher-managed products by preflight readiness. Start-ready products can move now; the rest stay visible with exact blockers.
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", justifyContent: "flex-end" }}>
-          <Tag color="var(--green)">{plan.ready} start-ready</Tag>
-          <Tag color="var(--blue)">{plan.launchable} launchable now</Tag>
-          <Tag color="var(--blue)">{plan.running} running</Tag>
+          <Tag color="var(--green)">{plan.ready} ready</Tag>
+          <Tag color="var(--blue)">{plan.launchable} launchable</Tag>
+          <Tag color="var(--accent)">{plan.running} running</Tag>
           <Tag color={plan.gated ? "var(--gold)" : "var(--green)"}>{plan.gated} gated</Tag>
-          <Tag color="var(--text-dim)">{plan.native} native</Tag>
           <Btn
             onClick={() => onAction("Start ready fleet", "/setup/fleet/start-ready")}
             disabled={busy || busyAction === "Start ready fleet" || plan.launchable === 0}
@@ -362,17 +1143,26 @@ function FleetStartPlan({ products, busyAction, launchJob, onAction }) {
         </div>
       </div>
 
+      <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))" }}>
+        <div style={commandInsetStyle("var(--green)")}>
+          <div style={commandKickerStyle}>Start-ready</div>
+          <div style={{ fontSize: 24, lineHeight: 1, fontWeight: 950, color: "var(--green)" }}>{plan.ready}</div>
+          <div style={commandBodyStyle}>Products that already satisfy compose, env, image, and credential preflight.</div>
+        </div>
+        <div style={commandInsetStyle("var(--accent)")}>
+          <div style={commandKickerStyle}>Running now</div>
+          <div style={{ fontSize: 24, lineHeight: 1, fontWeight: 950, color: "var(--accent)" }}>{plan.running}</div>
+          <div style={commandBodyStyle}>Launcher-managed products that HiveCore currently sees as online or compose-running.</div>
+        </div>
+        <div style={commandInsetStyle(plan.gated ? "var(--gold)" : "var(--blue)")}>
+          <div style={commandKickerStyle}>Blocked starts</div>
+          <div style={{ fontSize: 24, lineHeight: 1, fontWeight: 950, color: plan.gated ? "var(--gold)" : "var(--blue)" }}>{plan.gated}</div>
+          <div style={commandBodyStyle}>Stopped products that still need credentials, images, or local compose fixes before launch.</div>
+        </div>
+      </div>
+
       {launchJob && (
-        <div
-          style={{
-            display: "grid",
-            gap: 6,
-            padding: "10px 11px",
-            borderRadius: 12,
-            border: `1px solid ${fleetLaunchTone(launchJob.status)}44`,
-            background: "color-mix(in srgb, var(--bg) 56%, transparent)",
-          }}
-        >
+        <div style={commandInsetStyle(fleetLaunchTone(launchJob.status), { gap: 6 })}>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
             <div style={{ fontSize: 12, fontWeight: 900 }}>Latest fleet launch</div>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -386,7 +1176,7 @@ function FleetStartPlan({ products, busyAction, launchJob, onAction }) {
         </div>
       )}
 
-      <div style={{ display: "grid", gap: 8, gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))" }}>
+      <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))" }}>
         {plan.items.map((item) => {
           const launcher = item.setupItem?.launcher;
           const native = item.runtime.slug === "hive-core";
@@ -397,15 +1187,15 @@ function FleetStartPlan({ products, busyAction, launchJob, onAction }) {
               key={item.runtime.slug}
               style={{
                 display: "grid",
-                gap: 7,
-                padding: 11,
-                borderRadius: 12,
-                border: `1px solid ${native ? "var(--blue)" : preflightTone(launcher?.preflight_status)}44`,
-                background: "color-mix(in srgb, var(--bg) 52%, transparent)",
+                gap: 8,
+                padding: 12,
+                borderRadius: 8,
+                border: `1px solid color-mix(in srgb, ${native ? "var(--blue)" : preflightTone(launcher?.preflight_status)} 30%, var(--border))`,
+                background: "linear-gradient(180deg, color-mix(in srgb, var(--bg) 20%, var(--bg-panel)) 0%, color-mix(in srgb, var(--bg) 58%, transparent) 100%)",
               }}
             >
               <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
-                <span style={{ fontSize: 12, fontWeight: 900 }}>
+                <span style={{ fontSize: 12, fontWeight: 900, letterSpacing: 0 }}>
                   {item.runtime.icon} {item.runtime.title}
                 </span>
                 <Tag color={native ? "var(--blue)" : preflightTone(launcher?.preflight_status)}>
@@ -413,16 +1203,16 @@ function FleetStartPlan({ products, busyAction, launchJob, onAction }) {
                 </Tag>
               </div>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                <Tag color={launcher?.compose_exists || native ? "var(--green)" : "var(--gold)"}>
-                  compose {native ? "n/a" : launcher?.compose_exists ? "ready" : "missing"}
-                </Tag>
-                <Tag color={launcher?.env_exists || native ? "var(--green)" : "var(--gold)"}>
-                  env {native ? "active" : launcher?.env_exists ? "ready" : "from example"}
-                </Tag>
-                <Tag color={imageTone(launcher?.image_source, launcher?.image_mode, imageStatus)}>
-                  images {imageStatus}
-                </Tag>
-              </div>
+                  <Tag color={launcher?.compose_exists || native ? "var(--green)" : "var(--gold)"}>
+                    compose {native ? "n/a" : launcher?.compose_exists ? "ready" : "missing"}
+                  </Tag>
+                  <Tag color={launcher?.env_exists || native ? "var(--green)" : "var(--gold)"}>
+                    env {native ? "active" : launcher?.env_exists ? "ready" : "template"}
+                  </Tag>
+                  <Tag color={imageTone(launcher?.image_source, launcher?.image_mode, imageStatus)}>
+                    images {imageStatus}
+                  </Tag>
+                </div>
               {launcher?.backend_image_ref && (
                 <div style={{ fontSize: 10, color: "var(--text-dim)", lineHeight: 1.45, overflowWrap: "anywhere" }}>
                   {launcher.backend_image_ref}
@@ -446,153 +1236,18 @@ function FleetStartPlan({ products, busyAction, launchJob, onAction }) {
   );
 }
 
-function MissionControl({ setup, onlineCount, pairedCount, fleetCount, fleetPlan, busyAction, onRefresh, onAction }) {
-  const mission = setupMission(setup, onlineCount, pairedCount);
-  const busy = Boolean(busyAction) || fleetLaunchActive(setup.latest_fleet_launch);
-  return (
-    <div
-      style={{
-        ...S.panel,
-        position: "relative",
-        overflow: "hidden",
-        display: "grid",
-        gap: 18,
-        borderColor: `${mission.tone}77`,
-        background:
-          "linear-gradient(135deg, color-mix(in srgb, var(--accent) 20%, var(--bg-panel)) 0%, var(--bg-panel) 44%, color-mix(in srgb, var(--blue) 19%, var(--bg-panel)) 100%)",
-      }}
-    >
-      <div
-        aria-hidden="true"
-        style={{
-          position: "absolute",
-          inset: 0,
-          background:
-            "radial-gradient(circle at 82% 18%, color-mix(in srgb, var(--blue) 22%, transparent) 0, transparent 34%), linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px), linear-gradient(0deg, rgba(255,255,255,0.018) 1px, transparent 1px)",
-          backgroundSize: "auto, 34px 34px, 34px 34px",
-          opacity: 0.9,
-          pointerEvents: "none",
-        }}
-      />
-      <div style={{ position: "relative", display: "grid", gap: 14, gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}>
-        <div style={{ display: "grid", gap: 10 }}>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-            <Tag color={mission.tone}>{mission.label}</Tag>
-            <Tag color={setup.launcher.available ? "var(--green)" : "var(--accent)"}>
-              launcher {setup.launcher.available ? "available" : "offline"}
-            </Tag>
-            <Tag color={setup.suite_bootstrap_configured ? "var(--green)" : "var(--gold)"}>
-              suite bootstrap {setup.suite_bootstrap_configured ? "configured" : "missing"}
-            </Tag>
-            {setup.launcher.image_mode && (
-              <Tag color={imageTone("ghcr", setup.launcher.image_mode, setup.launcher.image_mode)}>
-                images {setup.launcher.image_mode}
-                {setup.launcher.image_tag ? `:${setup.launcher.image_tag}` : ""}
-              </Tag>
-            )}
-          </div>
-          <div style={{ fontSize: 34, lineHeight: 1.02, fontWeight: 950, letterSpacing: "-0.055em" }}>
-            {mission.headline}
-          </div>
-          <div style={{ fontSize: 13, color: "var(--text-dim)", lineHeight: 1.6, maxWidth: 780 }}>
-            {mission.detail}
-          </div>
-        </div>
-
-        <div style={{ display: "grid", gap: 10 }}>
-          <div style={{ display: "grid", gap: 8, gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}>
-            <LaunchGauge label="Reachable" value={onlineCount} total={FIRST_STACK_SLUGS.length} tone={onlineCount === FIRST_STACK_SLUGS.length ? "var(--green)" : "var(--gold)"} />
-            <LaunchGauge label="Paired" value={pairedCount} total={FIRST_STACK_SLUGS.length} tone={pairedCount === FIRST_STACK_SLUGS.length ? "var(--green)" : "var(--blue)"} />
-            <LaunchGauge label="Fleet" value={fleetCount} total={11} tone="var(--accent)" />
-          </div>
-          <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.55 }}>
-            {setup.launcher.message}
-            {setup.launcher.repo_root ? ` Repo root: ${setup.launcher.repo_root}` : ""}
-          </div>
-        </div>
-      </div>
-
-      <div style={{ position: "relative", display: "grid", gap: 10 }}>
-        <div style={{ fontSize: 11, letterSpacing: "0.16em", textTransform: "uppercase", color: "var(--text-dim)" }}>
-          Next action rail
-        </div>
-        <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))" }}>
-          <CommandButton
-            title="Refresh telemetry"
-            detail="Reload launcher, product health, pairing, and fleet data."
-            color="var(--text-dim)"
-            disabled={busy}
-            onClick={onRefresh}
-          />
-          <CommandButton
-            title="Start first stack"
-            detail="Bring up missing SignalHive, TrustGate, and RepoReaper containers."
-            color="var(--green)"
-            active={onlineCount < FIRST_STACK_SLUGS.length}
-            disabled={busy || busyAction === "Start first stack"}
-            onClick={() => onAction("Start first stack", "/setup/first-stack/start")}
-          />
-          <CommandButton
-            title="Start ready fleet"
-            detail="Launch stopped managed products whose compose, env, credentials, and images pass preflight."
-            color="var(--green)"
-            active={fleetPlan.launchable > 0}
-            disabled={busy || busyAction === "Start ready fleet" || fleetPlan.launchable === 0}
-            onClick={() => onAction("Start ready fleet", "/setup/fleet/start-ready")}
-          />
-          <CommandButton
-            title="Start all 11"
-            detail="Launch every stopped managed product, but only when nothing remaining is gated."
-            color="var(--blue)"
-            active={fleetPlan.canStartAll}
-            disabled={busy || busyAction === "Start all 11" || !fleetPlan.canStartAll}
-            onClick={() => onAction("Start all 11", "/setup/fleet/start-all")}
-          />
-          <CommandButton
-            title="Pair running products"
-            detail="Provision scoped service tokens for HiveCore machine control."
-            color="var(--blue)"
-            active={onlineCount === FIRST_STACK_SLUGS.length && pairedCount < FIRST_STACK_SLUGS.length}
-            disabled={busy || busyAction === "Pair running products"}
-            onClick={() => onAction("Pair running products", "/setup/first-stack/pair")}
-          />
-          <CommandButton
-            title="First-stack smoke"
-            detail="Verify reachability, auth, capabilities, and safe product actions."
-            color="var(--accent)"
-            active={pairedCount === FIRST_STACK_SLUGS.length && setup.latest_smoke?.status !== "ready"}
-            disabled={busy || busyAction === "First-stack smoke"}
-            onClick={() => onAction("First-stack smoke", "/setup/smoke/first-stack")}
-          />
-          <CommandButton
-            title="Read-only smoke"
-            detail="Check visibility and triage products without dispatching product actions."
-            color="var(--blue)"
-            disabled={busy || busyAction === "Read-only smoke"}
-            onClick={() => onAction("Read-only smoke", "/setup/smoke/read-only-fleet")}
-          />
-          <CommandButton
-            title="Dry-run smoke"
-            detail="Exercise RepoReaper only through dry-run mode; no PRs are opened."
-            color="var(--gold)"
-            disabled={busy || busyAction === "Dry-run smoke"}
-            onClick={() => onAction("Dry-run smoke", "/setup/smoke/write-dry-run")}
-          />
-          <CommandButton
-            title="Stop first stack"
-            detail="Stop the first operational trio without removing local data."
-            color="var(--gold)"
-            disabled={busy || busyAction === "Stop first stack"}
-            onClick={() => onAction("Stop first stack", "/setup/first-stack/stop")}
-          />
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function SmokeEvidence({ smoke }) {
-  if (!smoke) return null;
+  if (!smoke) {
+    return (
+      <div style={commandSurfaceStyle("var(--text-dim)", { display: "grid", gap: 12, ...commandPanelScrollStyle })}>
+        <div>
+          <div style={commandKickerStyle}>Latest suite smoke</div>
+          <div style={commandTitleStyle}>No smoke evidence yet</div>
+          <div style={commandBodyStyle}>Run a HiveCore smoke tier to capture reachability, auth, capability, and safe-action proof.</div>
+        </div>
+      </div>
+    );
+  }
   const grouped = smoke.steps.reduce((acc, step) => {
     acc[step.slug] = acc[step.slug] || [];
     acc[step.slug].push(step);
@@ -600,14 +1255,12 @@ function SmokeEvidence({ smoke }) {
   }, {});
 
   return (
-    <div style={{ ...S.panel, display: "grid", gap: 12, borderColor: `${smokeTone(smoke.status)}66` }}>
+    <div style={commandSurfaceStyle(smokeTone(smoke.status), { display: "grid", gap: 12, ...commandPanelScrollStyle })}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
         <div>
-          <div style={{ fontSize: 11, letterSpacing: "0.16em", textTransform: "uppercase", color: "var(--text-dim)" }}>
-            Latest suite smoke
-          </div>
-          <div style={{ fontSize: 18, fontWeight: 900 }}>{smoke.summary}</div>
-          <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
+          <div style={commandKickerStyle}>Latest suite smoke</div>
+          <div style={commandTitleStyle}>{smoke.summary}</div>
+          <div style={commandBodyStyle}>
             {smoke.finished_at} · {smoke.id}
           </div>
         </div>
@@ -625,9 +1278,9 @@ function SmokeEvidence({ smoke }) {
               display: "grid",
               gap: 7,
               padding: 12,
-              border: "1px solid var(--border)",
-              borderRadius: 12,
-              background: "rgba(0,0,0,0.18)",
+              border: `1px solid color-mix(in srgb, ${smokeTone(steps.some((step) => step.status === "fail") ? "fail" : steps.some((step) => step.status === "warn") ? "warn" : "pass")} 18%, var(--border))`,
+              borderRadius: 8,
+              background: "linear-gradient(180deg, color-mix(in srgb, var(--bg) 24%, var(--bg-panel)) 0%, color-mix(in srgb, var(--bg) 58%, transparent) 100%)",
             }}
           >
             <div style={{ fontSize: 13, fontWeight: 800 }}>{steps[0]?.title || slug}</div>
@@ -639,8 +1292,8 @@ function SmokeEvidence({ smoke }) {
                   gap: 4,
                   padding: "8px 9px",
                   borderRadius: 9,
-                  background: "color-mix(in srgb, var(--bg) 55%, transparent)",
-                  border: `1px solid ${smokeTone(step.status)}44`,
+                  background: "color-mix(in srgb, var(--bg) 60%, transparent)",
+                  border: `1px solid color-mix(in srgb, ${smokeTone(step.status)} 26%, var(--border))`,
                 }}
               >
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
@@ -661,16 +1314,24 @@ function SmokeEvidence({ smoke }) {
 }
 
 function FleetLaunchEvidence({ job }) {
-  if (!job) return null;
+  if (!job) {
+    return (
+      <div style={commandSurfaceStyle("var(--text-dim)", { display: "grid", gap: 12, ...commandPanelScrollStyle })}>
+        <div>
+          <div style={commandKickerStyle}>Fleet launch job</div>
+          <div style={commandTitleStyle}>No orchestration run yet</div>
+          <div style={commandBodyStyle}>HiveCore will record per-product launch progress here the first time it runs a managed fleet launch.</div>
+        </div>
+      </div>
+    );
+  }
   return (
-    <div style={{ ...S.panel, display: "grid", gap: 12, borderColor: `${fleetLaunchTone(job.status)}66` }}>
+    <div style={commandSurfaceStyle(fleetLaunchTone(job.status), { display: "grid", gap: 12, ...commandPanelScrollStyle })}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
         <div>
-          <div style={{ fontSize: 11, letterSpacing: "0.16em", textTransform: "uppercase", color: "var(--text-dim)" }}>
-            Fleet launch job
-          </div>
-          <div style={{ fontSize: 18, fontWeight: 900 }}>{job.summary}</div>
-          <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
+          <div style={commandKickerStyle}>Fleet launch job</div>
+          <div style={commandTitleStyle}>{job.summary}</div>
+          <div style={commandBodyStyle}>
             {job.started_at}
             {job.finished_at ? ` -> ${job.finished_at}` : " -> in progress"}
           </div>
@@ -689,9 +1350,9 @@ function FleetLaunchEvidence({ job }) {
               display: "grid",
               gap: 7,
               padding: 12,
-              border: `1px solid ${fleetLaunchTone(step.status)}44`,
-              borderRadius: 12,
-              background: "rgba(0,0,0,0.18)",
+              border: `1px solid color-mix(in srgb, ${fleetLaunchTone(step.status)} 26%, var(--border))`,
+              borderRadius: 8,
+              background: "linear-gradient(180deg, color-mix(in srgb, var(--bg) 24%, var(--bg-panel)) 0%, color-mix(in srgb, var(--bg) 58%, transparent) 100%)",
             }}
           >
             <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
@@ -764,13 +1425,12 @@ function EvidenceTimeline({ setup }) {
   ].slice(0, 10);
 
   return (
-    <div style={{ ...S.panel, display: "grid", gap: 12 }}>
+    <div style={commandSurfaceStyle(smoke ? smokeTone(smoke.status) : "var(--blue)", { display: "grid", gap: 12, ...commandPanelScrollStyle })}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
         <div>
-          <div style={{ fontSize: 15, fontWeight: 900 }}>Evidence Timeline</div>
-          <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.45 }}>
-            The short proof trail behind HiveCore's current suite-ready call.
-          </div>
+          <div style={commandKickerStyle}>Evidence timeline</div>
+          <div style={commandTitleStyle}>Operational proof trail</div>
+          <div style={commandBodyStyle}>The shortest path through HiveCore’s current launch, pairing, and smoke evidence.</div>
         </div>
         {smoke && <Tag color={smokeTone(smoke.status)}>{smoke.status}</Tag>}
       </div>
@@ -782,9 +1442,9 @@ function EvidenceTimeline({ setup }) {
               display: "grid",
               gap: 5,
               padding: "10px 11px",
-              borderRadius: 12,
-              border: `1px solid ${item.tone}44`,
-              background: "color-mix(in srgb, var(--bg) 50%, transparent)",
+              borderRadius: 8,
+              border: `1px solid color-mix(in srgb, ${item.tone} 24%, var(--border))`,
+              background: "color-mix(in srgb, var(--bg) 56%, transparent)",
             }}
           >
             <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
@@ -799,7 +1459,8 @@ function EvidenceTimeline({ setup }) {
   );
 }
 
-function FleetLaneMap({ products, selectedSlug, onSelect }) {
+function FleetLaneMap({ products, selectedSlug, filter, onFilterChange, onSelect, mission, onlineCount, pairedCount, fleetPlan }) {
+  const filteredProducts = products.filter((product) => productMatchesFleetFilter(product, filter));
   const grouped = products.reduce((acc, product) => {
     const lane = product.runtime.lane || "Other";
     acc[lane] = acc[lane] || [];
@@ -810,88 +1471,138 @@ function FleetLaneMap({ products, selectedSlug, onSelect }) {
     ...LANE_ORDER.filter((lane) => grouped[lane]),
     ...Object.keys(grouped).filter((lane) => !LANE_ORDER.includes(lane)).sort(),
   ];
+  const productCount = Math.max(products.length, 1);
 
   return (
-    <div style={{ ...S.panel, display: "grid", gap: 12 }}>
-      <div>
-        <div style={{ fontSize: 15, fontWeight: 900 }}>11-Product Fleet Map</div>
-        <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.45 }}>
-          Compact lanes first; details stay in the selected-product drawer.
+    <div className="ph-cortex-shell">
+      <div className="ph-cortex-topbar">
+        <div className="ph-cortex-title">
+          <div style={commandKickerStyle}>HiveCore cortex</div>
+          <div style={{ ...commandTitleStyle, fontSize: 22 }}>Suite control room</div>
+          <div style={commandBodyStyle}>This is the live nervous system: products orbit the HiveCore core, filtered nodes dim, and the selected node drives the inspector.</div>
+        </div>
+        <div style={{ display: "grid", gap: 8, justifyItems: "end" }}>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+            <Tag color="var(--green)">{products.filter(productLooksRunning).length} active</Tag>
+            <Tag color="var(--gold)">{products.filter(productNeedsAttention).length} attention</Tag>
+            <Tag color="var(--blue)">{filteredProducts.length} visible</Tag>
+          </div>
+          <div className="ph-filter-row" style={{ justifyContent: "flex-end" }}>
+            {FLEET_FILTERS.map((item) => {
+              const active = item.id === filter;
+              const count = fleetFilterCount(products, item.id);
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => onFilterChange(item.id)}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    minHeight: 28,
+                    padding: "5px 8px",
+                    borderRadius: 7,
+                    border: `1px solid ${active ? "var(--accent)" : "var(--border)"}`,
+                    background: active ? "color-mix(in srgb, var(--accent) 16%, var(--bg-panel))" : "color-mix(in srgb, var(--bg) 56%, transparent)",
+                    color: active ? "var(--accent)" : "var(--text-dim)",
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                    fontSize: 10,
+                    fontWeight: 850,
+                  }}
+                >
+                  <span>{item.label}</span>
+                  <span style={{ color: active ? "var(--text)" : "var(--text-dim)" }}>{count}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
-      <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))" }}>
-        {lanes.map((lane) => (
-          <div
-            key={lane}
-            style={{
-              display: "grid",
-              gap: 8,
-              padding: 11,
-              border: "1px solid var(--border)",
-              borderRadius: 14,
-              background: "rgba(0,0,0,0.17)",
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
-              <span style={{ fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--text-dim)" }}>{lane}</span>
-              <Tag color="var(--blue)">{grouped[lane].length}</Tag>
+
+      <div className="ph-cortex-stage">
+        <div className="ph-orbit-ring one" aria-hidden="true" />
+        <div className="ph-orbit-ring two" aria-hidden="true" />
+        <div className="ph-orbit-ring three" aria-hidden="true" />
+        <div className="ph-cortex-core">
+          <div className="ph-cortex-glyph">⬢</div>
+          <div className="ph-cortex-mission">{mission.label}</div>
+          <div className="ph-cortex-subcopy">{mission.headline}</div>
+          <div className="ph-cortex-counters">
+            <div className="ph-cortex-counter">
+              <strong style={{ color: onlineCount === FIRST_STACK_SLUGS.length ? "var(--green)" : "var(--gold)" }}>{onlineCount}/{FIRST_STACK_SLUGS.length}</strong>
+              <span>Reachable</span>
             </div>
-            <div style={{ display: "grid", gap: 7 }}>
-              {grouped[lane].map((product) => {
-                const runtime = product.runtime;
-                const selected = runtime.slug === selectedSlug;
-                const managed = Boolean(product.setupItem?.launcher);
-                return (
-                  <button
-                    type="button"
-                    key={runtime.slug}
-                    onClick={() => onSelect(runtime.slug)}
-                    style={{
-                      display: "grid",
-                      gap: 4,
-                      textAlign: "left",
-                      padding: "9px 10px",
-                      borderRadius: 11,
-                      border: `1px solid ${selected ? statusColor(runtime.status) : "var(--border)"}`,
-                      background: selected
-                        ? `color-mix(in srgb, ${statusColor(runtime.status)} 16%, var(--bg-panel))`
-                        : "color-mix(in srgb, var(--bg) 48%, transparent)",
-                      color: "var(--text)",
-                      cursor: "pointer",
-                    }}
-                  >
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
-                      <span style={{ fontSize: 12, fontWeight: 900 }}>
-                        {runtime.icon} {runtime.title}
-                      </span>
-                      <span
-                        aria-label={runtime.status}
-                        style={{
-                          width: 9,
-                          height: 9,
-                          borderRadius: "50%",
-                          background: statusColor(runtime.status),
-                          boxShadow: `0 0 14px ${statusColor(runtime.status)}88`,
-                          flex: "0 0 auto",
-                        }}
-                      />
-                    </div>
-                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                      <Tag color={statusColor(runtime.status)}>{runtime.status}</Tag>
-                      {product.firstStack && <Tag color="var(--accent)">first stack</Tag>}
-                      {managed && <Tag color="var(--green)">launcher</Tag>}
-                      {product.setupItem?.launcher?.preflight_status && (
-                        <Tag color={preflightTone(product.setupItem.launcher.preflight_status)}>
-                          {product.setupItem.launcher.preflight_status}
-                        </Tag>
-                      )}
-                    </div>
-                  </button>
-                );
-              })}
+            <div className="ph-cortex-counter">
+              <strong style={{ color: pairedCount === FIRST_STACK_SLUGS.length ? "var(--green)" : "var(--blue)" }}>{pairedCount}/{FIRST_STACK_SLUGS.length}</strong>
+              <span>Paired</span>
+            </div>
+            <div className="ph-cortex-counter">
+              <strong style={{ color: fleetPlan.gated ? "var(--gold)" : "var(--accent)" }}>{fleetPlan.running}/{fleetPlan.controlled.length}</strong>
+              <span>Running</span>
             </div>
           </div>
-        ))}
+        </div>
+        {products.map((product, index) => {
+          const runtime = product.runtime;
+          const angle = -90 + (index * 360) / productCount;
+          const visible = productMatchesFleetFilter(product, filter);
+          const nodeTone = statusColor(runtime.status);
+          const linkLength = product.firstStack ? "27%" : "38%";
+          return (
+            <div key={`${runtime.slug}-link`} className="ph-orbit-link" style={{ "--link-angle": `${angle}deg`, "--link-length": linkLength, "--node-tone": nodeTone, "--link-opacity": visible ? 0.58 : 0.1 }} />
+          );
+        })}
+        {products.map((product, index) => {
+          const runtime = product.runtime;
+          const angle = -90 + (index * 360) / productCount;
+          const radians = (angle * Math.PI) / 180;
+          const x = 50 + Math.cos(radians) * 41;
+          const y = 50 + Math.sin(radians) * 38;
+          const selected = runtime.slug === selectedSlug;
+          const managed = Boolean(product.setupItem?.launcher);
+          const visible = productMatchesFleetFilter(product, filter);
+          const attention = productNeedsAttention(product);
+          const nodeTone = statusColor(runtime.status);
+          return (
+            <button
+              type="button"
+              className={`ph-orbit-node${selected ? " is-selected" : ""}${visible ? "" : " is-muted"}${attention ? " is-attention" : ""}`}
+              key={runtime.slug}
+              onClick={() => onSelect(runtime.slug)}
+              style={{ "--node-tone": nodeTone, left: `${x}%`, top: `${y}%` }}
+            >
+              <div className="ph-node-top">
+                <span className="ph-node-title">
+                  {runtime.icon} {runtime.title}
+                </span>
+                <span className="ph-node-led" aria-label={runtime.status} />
+              </div>
+              <div className="ph-node-tags">
+                <Tag color={statusColor(runtime.status)}>{runtime.status}</Tag>
+                {product.firstStack && <Tag color="var(--accent)">core</Tag>}
+                {managed && <Tag color="var(--green)">launcher</Tag>}
+              </div>
+              <div className="ph-node-meta">
+                <span>{runtime.lane}</span>
+                <span>{runtime.service_token_configured ? "paired" : runtime.slug === "hive-core" ? "native" : "unpaired"}</span>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="ph-lane-strip">
+        {lanes.map((lane) => {
+          const tone = laneTone(lane);
+          return (
+            <div className="ph-lane-chip" key={lane} style={{ "--lane-tone": tone }}>
+              <strong>{lane}</strong>
+              <span>{grouped[lane].length}</span>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -920,32 +1631,28 @@ function ProductCard({
   const canStart = Boolean(launcher?.start_ready);
   return (
     <div
-      style={{
-        ...S.panel,
-        display: "grid",
-        gap: 10,
-        borderColor: `${statusColor(item.runtime.status)}55`,
-      }}
+      style={commandSurfaceStyle(statusColor(item.runtime.status), { display: "grid", gap: 12 })}
     >
       <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
         <div style={{ display: "grid", gap: 4 }}>
-          <div style={{ fontSize: 15, fontWeight: 800 }}>
+          <div style={commandKickerStyle}>{item.runtime.lane}</div>
+          <div style={{ fontSize: 18, fontWeight: 900, letterSpacing: 0 }}>
             {item.runtime.icon} {item.runtime.title}
           </div>
-          <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.5 }}>{item.runtime.role}</div>
+          <div style={commandBodyStyle}>{item.runtime.role}</div>
         </div>
         <Tag color={statusColor(item.runtime.status)}>{item.runtime.status}</Tag>
       </div>
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <Tag color="var(--accent)">{item.runtime.lane}</Tag>
         <Tag color={authTone(item)}>{authLabel(item)}</Tag>
         {authStatus?.suite_bootstrap_enabled && <Tag color="var(--blue)">suite bootstrap ready</Tag>}
         {item.pairing_ready && <Tag color="var(--green)">ready to pair</Tag>}
         {launcher && <Tag color={launcherTone(launcher.status)}>launcher {launcher.status}</Tag>}
       </div>
 
-      <div style={{ display: "grid", gap: 6, fontSize: 11 }}>
+      <div style={commandInsetStyle(statusColor(item.runtime.status), { fontSize: 11 })}>
+        <div style={commandKickerStyle}>Runtime telemetry</div>
         <div style={{ color: "var(--text-dim)" }}>
           API: <span style={{ color: "var(--text)" }}>{item.runtime.api_url}</span>
         </div>
@@ -966,23 +1673,14 @@ function ProductCard({
       </div>
 
       {launcher && (
-        <div
-          style={{
-            display: "grid",
-            gap: 7,
-            padding: "10px",
-            border: "1px solid var(--border)",
-            borderRadius: 10,
-            background: "color-mix(in srgb, var(--bg) 42%, transparent)",
-            fontSize: 11,
-          }}
-        >
+        <div style={commandInsetStyle(preflightTone(launcher.preflight_status), { fontSize: 11 })}>
+          <div style={commandKickerStyle}>Launcher telemetry</div>
           <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
             <Tag color={launcher.compose_exists ? "var(--green)" : "var(--accent)"}>
               compose {launcher.compose_exists ? "found" : "missing"}
             </Tag>
             <Tag color={launcher.env_exists ? "var(--green)" : "var(--gold)"}>
-              env {launcher.env_exists ? "ready" : "from example"}
+              env {launcher.env_exists ? "ready" : "template"}
             </Tag>
             <Tag color={launcher.suite_bootstrap_configured ? "var(--green)" : "var(--gold)"}>
               bootstrap {launcher.suite_bootstrap_configured ? "synced" : "missing"}
@@ -1054,22 +1752,11 @@ function ProductCard({
       )}
 
       {credentials.length > 0 && (
-        <div
-          style={{
-            display: "grid",
-            gap: 9,
-            padding: 10,
-            border: "1px solid var(--border)",
-            borderRadius: 10,
-            background: "color-mix(in srgb, var(--bg) 50%, transparent)",
-          }}
-        >
+        <div style={commandInsetStyle("var(--blue)", { gap: 9 })}>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
             <div>
-              <div style={{ fontSize: 12, fontWeight: 900 }}>First-run setup</div>
-              <div style={{ fontSize: 10, color: "var(--text-dim)", lineHeight: 1.45 }}>
-                Saved through HiveCore and written locally by patchhive-launcher.
-              </div>
+              <div style={commandKickerStyle}>First-run setup</div>
+              <div style={{ ...commandBodyStyle, fontSize: 10 }}>Saved through HiveCore and written locally by patchhive-launcher.</div>
             </div>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
               {credentials.map((requirement) => (
@@ -1082,7 +1769,7 @@ function ProductCard({
 
           <div style={{ display: "grid", gap: 8 }}>
             {credentials.some((requirement) => requirement.kind === "github_token") && (
-              <div style={{ fontSize: 10, color: "var(--text-dim)", lineHeight: 1.45 }}>
+              <div style={{ ...commandBodyStyle, fontSize: 10 }}>
                 Use a fine-grained GitHub token. The recommended minimum scopes for each product are listed under its token field.
               </div>
             )}
@@ -1146,21 +1833,26 @@ function ProductCard({
         </div>
       )}
 
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        {item.runtime.frontend_url && (
-          <a href={item.runtime.frontend_url} target="_blank" rel="noreferrer" style={{ color: "var(--accent)", fontSize: 11 }}>
-            Open app
-          </a>
-        )}
-        {item.runtime.api_url && (
-          <a href={item.runtime.api_url} target="_blank" rel="noreferrer" style={{ color: "var(--blue)", fontSize: 11 }}>
-            Open API
-          </a>
-        )}
+      <div style={commandInsetStyle("var(--text-dim)", { gap: 8 })}>
+        <div style={commandKickerStyle}>Quick links</div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {item.runtime.frontend_url && (
+            <a href={item.runtime.frontend_url} target="_blank" rel="noreferrer" style={{ color: "var(--accent)", fontSize: 11 }}>
+              Open app
+            </a>
+          )}
+          {item.runtime.api_url && (
+            <a href={item.runtime.api_url} target="_blank" rel="noreferrer" style={{ color: "var(--blue)", fontSize: 11 }}>
+              Open API
+            </a>
+          )}
+        </div>
       </div>
 
       {item.runtime.slug !== "hive-core" && item.launcher && (
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <div style={commandInsetStyle("var(--green)", { gap: 8 })}>
+          <div style={commandKickerStyle}>Product controls</div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <Btn onClick={() => onProductAction(item.runtime.slug, "start")} disabled={busy || !canStart} color="var(--green)">
             {busyAction === `${actionPrefix}start` ? "Starting..." : "Start"}
           </Btn>
@@ -1174,6 +1866,7 @@ function ProductCard({
             {busyAction === `${actionPrefix}logs` ? "Loading logs..." : "Logs"}
           </Btn>
         </div>
+        </div>
       )}
     </div>
   );
@@ -1183,6 +1876,7 @@ export default function SetupPanel({ fetchEnvelope, setRunning, setError }) {
   const [setup, setSetup] = useState(null);
   const [fleet, setFleet] = useState([]);
   const [selectedSlug, setSelectedSlug] = useState("hive-core");
+  const [fleetFilter, setFleetFilter] = useState("all");
   const [busyAction, setBusyAction] = useState("");
   const [logs, setLogs] = useState(null);
   const [credentialDrafts, setCredentialDrafts] = useState({});
@@ -1381,45 +2075,60 @@ export default function SetupPanel({ fetchEnvelope, setRunning, setError }) {
     fleetProducts.find((product) => product.runtime.slug === "hive-core") ||
     fleetProducts[0];
   const selectedItem = selectedSetupItem(selectedProduct);
+  const mission = setupMission(setup, onlineCount, pairedCount);
 
   return (
-    <div style={{ display: "grid", gap: 16, paddingBottom: 16 }}>
-      <MissionControl
-        setup={setup}
-        onlineCount={onlineCount}
-        pairedCount={pairedCount}
-        fleetCount={fleetProducts.length}
-        fleetPlan={fleetPlan}
-        busyAction={busyAction}
-        onRefresh={refresh}
-        onAction={runAction}
-      />
+    <>
+    <CommandCenterStyles />
+    <div style={{ display: "grid", gap: 12, paddingBottom: 22 }}>
+      <div className="ph-command-console" style={commandConsoleStyle}>
+        <CommandRail
+          setup={setup}
+          mission={mission}
+          onlineCount={onlineCount}
+          pairedCount={pairedCount}
+          fleetCount={fleetProducts.length}
+          fleetPlan={fleetPlan}
+          busyAction={busyAction}
+          onRefresh={refresh}
+          onAction={runAction}
+        />
 
-      <FleetStartPlan
-        products={fleetProducts}
-        busyAction={busyAction}
-        launchJob={setup.latest_fleet_launch}
-        onAction={runAction}
-      />
-
-      <div style={commandWorkspaceStyle}>
         <div style={commandMainColumnStyle}>
-          <FleetLaneMap products={fleetProducts} selectedSlug={selectedProduct?.runtime.slug} onSelect={setSelectedSlug} />
+          <FleetLaneMap
+            products={fleetProducts}
+            selectedSlug={selectedProduct?.runtime.slug}
+            filter={fleetFilter}
+            onFilterChange={setFleetFilter}
+            onSelect={setSelectedSlug}
+            mission={mission}
+            onlineCount={onlineCount}
+            pairedCount={pairedCount}
+            fleetPlan={fleetPlan}
+          />
+          <div style={commandTopGridStyle}>
+            <FleetStartPlan
+              products={fleetProducts}
+              busyAction={busyAction}
+              launchJob={setup.latest_fleet_launch}
+              onAction={runAction}
+            />
+            <FleetLaunchEvidence job={setup.latest_fleet_launch} />
+          </div>
           <div style={commandEvidenceGridStyle}>
             <EvidenceTimeline setup={setup} />
             <div style={commandEvidenceStackStyle}>
-              <FleetLaunchEvidence job={setup.latest_fleet_launch} />
               <SmokeEvidence smoke={setup.latest_smoke} />
             </div>
           </div>
         </div>
+
         <div style={focusRailStyle}>
           <div style={focusPanelStyle}>
             <div>
-              <div style={{ fontSize: 15, fontWeight: 900 }}>Focused Product</div>
-              <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.45 }}>
-                Select any product from the fleet map. HiveCore only shows launcher/env controls when that product is managed by this setup flow.
-              </div>
+              <div style={commandKickerStyle}>Selected inspector</div>
+              <div style={commandTitleStyle}>Focused product</div>
+              <div style={commandBodyStyle}>Select any product from the fleet map. HiveCore only shows launcher and env controls when that product is managed by this setup flow.</div>
             </div>
             <div
               style={{
@@ -1472,7 +2181,7 @@ export default function SetupPanel({ fetchEnvelope, setRunning, setError }) {
               fontSize: 11,
               lineHeight: 1.45,
               padding: 12,
-              borderRadius: 10,
+              borderRadius: 8,
               border: "1px solid var(--border)",
               background: "var(--bg)",
             }}
@@ -1483,5 +2192,6 @@ export default function SetupPanel({ fetchEnvelope, setRunning, setError }) {
       )}
 
     </div>
+    </>
   );
 }

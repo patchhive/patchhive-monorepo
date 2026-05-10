@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { Btn, EmptyState, S, Tag } from "@patchhivehq/ui";
+import {
+  CommandHero,
+  CommandPanel,
+  SectionHeader,
+  commandGridStyle,
+  commandPanelStyle,
+  tacticalGridStyle,
+} from "../components/CommandChrome.jsx";
 
 const payloadStyle = {
   ...S.input,
@@ -136,16 +144,14 @@ function parsePayload(text) {
 
 function RecentActivity({ events }) {
   return (
-    <div style={{ ...S.panel, display: "grid", gap: 10 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
-        <div>
-          <div style={{ fontSize: 15, fontWeight: 800 }}>Suite Activity</div>
-          <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
-            HiveCore dispatches are recorded here as the suite control loop warms up.
-          </div>
-        </div>
-        <Tag color="var(--blue)">{events.length} recent</Tag>
-      </div>
+    <CommandPanel tone="var(--blue)" style={{ display: "grid", gap: 10 }}>
+      <SectionHeader
+        kicker="Dispatch telemetry"
+        title="Suite activity"
+        body="HiveCore dispatches are recorded here as the suite control loop warms up."
+        tone="var(--blue)"
+        badge={<Tag color="var(--blue)">{events.length} recent</Tag>}
+      />
       {events.length === 0 ? (
         <div style={{ fontSize: 11, color: "var(--text-dim)" }}>No product actions have been dispatched yet.</div>
       ) : (
@@ -176,7 +182,7 @@ function RecentActivity({ events }) {
           ))}
         </div>
       )}
-    </div>
+    </CommandPanel>
   );
 }
 
@@ -332,7 +338,7 @@ function RunDetailPanel({ detail, loading, onClose }) {
   const payload = detail?.data;
 
   return (
-    <div style={{ ...S.panel, display: "grid", gap: 12, borderColor: "var(--blue)" }}>
+    <CommandPanel tone="var(--blue)" style={{ display: "grid", gap: 12 }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
         <div>
           <div style={{ fontSize: 16, fontWeight: 900 }}>
@@ -372,7 +378,7 @@ function RunDetailPanel({ detail, loading, onClose }) {
           </pre>
         </div>
       )}
-    </div>
+    </CommandPanel>
   );
 }
 
@@ -442,12 +448,7 @@ function ProductCard({ product, onDispatch, onOpenRun }) {
 
   return (
     <div
-      style={{
-        ...S.panel,
-        display: "grid",
-        gap: 12,
-        borderColor: `${statusColor(product.status)}55`,
-      }}
+      style={commandPanelStyle(statusColor(product.status), { display: "grid", gap: 12 })}
     >
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
         <div style={{ display: "grid", gap: 4 }}>
@@ -691,25 +692,13 @@ export default function ProductsPanel({ fetchEnvelope, setRunning, setError }) {
   }, []);
 
   return (
-    <div style={{ display: "grid", gap: 16 }}>
-      <div
-        style={{
-          ...S.panel,
-          display: "grid",
-          gap: 14,
-          background:
-            "radial-gradient(circle at 0% 0%, rgba(58,159,179,0.18), transparent 36%), linear-gradient(135deg, rgba(255,255,255,0.05), rgba(255,255,255,0.015))",
-        }}
+    <div style={{ ...commandGridStyle, gap: 14 }}>
+      <CommandHero
+        kicker="Fleet operations"
+        title="HiveCore command surface"
+        body="Live contract polling, saved product service tokens, and dispatch controls for every enabled PatchHive product."
+        actions={<Btn onClick={refresh}>Refresh suite</Btn>}
       >
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-          <div>
-            <div style={{ fontSize: 20, fontWeight: 900 }}>HiveCore Command Surface</div>
-            <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
-              Live contract polling, saved product service tokens, and dispatch controls for every enabled PatchHive product.
-            </div>
-          </div>
-          <Btn onClick={refresh}>Refresh suite</Btn>
-        </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <Tag color="var(--green)">{products.filter((product) => product.status === "online").length} online</Tag>
           <Tag color="var(--gold)">{products.filter((product) => product.status === "degraded").length} degraded</Tag>
@@ -718,7 +707,7 @@ export default function ProductsPanel({ fetchEnvelope, setRunning, setError }) {
           <Tag color="var(--green)">{products.filter((product) => product.service_token_configured).length} service tokens linked</Tag>
           <Tag color="var(--gold)">{products.filter((product) => product.legacy_api_key_configured && !product.service_token_configured).length} legacy fallbacks</Tag>
         </div>
-      </div>
+      </CommandHero>
 
       <RecentActivity events={recentActions} />
 
@@ -731,7 +720,7 @@ export default function ProductsPanel({ fetchEnvelope, setRunning, setError }) {
       {products.length === 0 ? (
         <EmptyState icon="⬢" text="HiveCore does not have any product status to show yet." />
       ) : (
-        <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))" }}>
+        <div style={{ ...tacticalGridStyle, gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))" }}>
           {products.map((product) => (
             <ProductCard
               key={product.slug}

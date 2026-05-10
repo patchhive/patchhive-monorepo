@@ -1479,8 +1479,22 @@ async fn start_managed_products(
                 image_plan.backend_image_ref,
                 image_plan.frontend_image_ref
             )),
-            Err(message) if image_plan.mode == "pull-only" => {
-                return Err(error(StatusCode::BAD_GATEWAY, &message));
+            Err(message) if image_plan.mode == "pull-only" || !launcher_allow_build_fallback() => {
+                let mode_hint = if image_plan.mode == "pull-only" {
+                    "Launcher image mode is pull-only."
+                } else {
+                    "Local build fallback is disabled by default."
+                };
+                return Err(error(
+                    StatusCode::BAD_GATEWAY,
+                    &format!(
+                        "Could not start {} from {} images ({}). {} Set PATCHHIVE_LAUNCHER_ALLOW_BUILD_FALLBACK=1 or PATCHHIVE_LAUNCHER_IMAGE_MODE=build to build locally.",
+                        product.title,
+                        image_plan.source,
+                        compact_error(&message),
+                        mode_hint
+                    ),
+                ));
             }
             Err(message) => {
                 actions.push(format!(
@@ -1587,6 +1601,18 @@ fn launcher_image_mode() -> String {
     }
 }
 
+fn launcher_allow_build_fallback() -> bool {
+    env::var("PATCHHIVE_LAUNCHER_ALLOW_BUILD_FALLBACK")
+        .ok()
+        .map(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
+        .unwrap_or(false)
+}
+
 fn launcher_image_tag() -> String {
     env_or_default("PATCHHIVE_IMAGE_TAG", "main")
 }
@@ -1666,7 +1692,7 @@ async fn start_with_prebuilt_images(
 }
 
 fn compact_error(message: &str) -> String {
-    const MAX_LEN: usize = 180;
+    const MAX_LEN: usize = 600;
     let compact = message.split_whitespace().collect::<Vec<_>>().join(" ");
     if compact.chars().count() <= MAX_LEN {
         compact

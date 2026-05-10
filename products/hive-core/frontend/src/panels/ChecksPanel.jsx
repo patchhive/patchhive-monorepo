@@ -1,7 +1,15 @@
 import { useEffect, useState } from "react";
 import { createApiFetcher } from "@patchhivehq/product-shell";
 import { API } from "../config.js";
-import { Btn, EmptyState, S, Tag } from "@patchhivehq/ui";
+import { Btn, EmptyState, Tag } from "@patchhivehq/ui";
+import {
+  CommandHero,
+  CommandPanel,
+  MetricTile,
+  SectionHeader,
+  commandGridStyle,
+  commandPanelStyle,
+} from "../components/CommandChrome.jsx";
 
 function levelColor(level) {
   if (level === "error") return "var(--accent)";
@@ -31,62 +39,49 @@ export default function ChecksPanel({ apiKey }) {
   }, [apiKey]);
 
   return (
-    <div style={{ display: "grid", gap: 16 }}>
-      <div style={{ ...S.panel, display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-        <div>
-          <div style={{ fontSize: 18, fontWeight: 800 }}>Checks</div>
-          <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
-            HiveCore startup validation plus control-plane health details.
-          </div>
-        </div>
-        <Btn onClick={refresh}>Refresh</Btn>
-      </div>
+    <div style={{ ...commandGridStyle, gap: 14 }}>
+      <CommandHero
+        kicker="Diagnostics station"
+        title="Control-plane checks"
+        body="HiveCore startup validation plus control-plane health details."
+        tone="var(--blue)"
+        actions={<Btn onClick={refresh}>Refresh</Btn>}
+      />
 
       {health && (
         <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))" }}>
-          <div style={{ ...S.panel, display: "grid", gap: 4 }}>
-            <div style={S.label}>Status</div>
-            <div style={{ fontSize: 22, fontWeight: 800, color: health.status === "ok" ? "var(--green)" : "var(--gold)" }}>
-              {health.status}
-            </div>
-          </div>
-          <div style={{ ...S.panel, display: "grid", gap: 4 }}>
-            <div style={S.label}>Overrides</div>
-            <div style={{ fontSize: 22, fontWeight: 800 }}>{health.product_override_count}</div>
-          </div>
-          <div style={{ ...S.panel, display: "grid", gap: 4 }}>
-            <div style={S.label}>Auth</div>
-            <div style={{ fontSize: 22, fontWeight: 800 }}>{health.auth_enabled ? "on" : "off"}</div>
-          </div>
-          <div style={{ ...S.panel, display: "grid", gap: 4 }}>
-            <div style={S.label}>Database</div>
-            <div style={{ fontSize: 22, fontWeight: 800, color: health.db_ok ? "var(--green)" : "var(--accent)" }}>
-              {health.db_ok ? "ok" : "degraded"}
-            </div>
-          </div>
+          <MetricTile label="Status" value={health.status} tone={health.status === "ok" ? "var(--green)" : "var(--gold)"} />
+          <MetricTile label="Overrides" value={health.product_override_count} tone="var(--blue)" />
+          <MetricTile label="Auth" value={health.auth_enabled ? "on" : "off"} tone={health.auth_enabled ? "var(--green)" : "var(--gold)"} />
+          <MetricTile label="Database" value={health.db_ok ? "ok" : "degraded"} tone={health.db_ok ? "var(--green)" : "var(--accent)"} />
         </div>
       )}
 
       {checks.length === 0 ? (
         <EmptyState icon="⬢" text="HiveCore did not return any startup checks yet." />
       ) : (
-        <div style={{ display: "grid", gap: 10 }}>
+        <CommandPanel tone="var(--accent)" style={{ display: "grid", gap: 10 }}>
+          <SectionHeader
+            kicker="Startup sequence"
+            title="Boot validation log"
+            body="Checks are emitted by HiveCore startup helpers and should stay boring before exposing the suite beyond local development."
+          />
           {checks.map((check, index) => (
             <div
               key={`${check.msg}-${index}`}
-              style={{
-                ...S.panel,
+              style={commandPanelStyle(levelColor(check.level), {
                 display: "flex",
                 justifyContent: "space-between",
                 gap: 12,
                 alignItems: "flex-start",
-              }}
+                padding: "10px 12px",
+              })}
             >
               <div style={{ fontSize: 13, lineHeight: 1.6, color: "var(--text)" }}>{check.msg}</div>
               <Tag color={levelColor(check.level)}>{check.level}</Tag>
             </div>
           ))}
-        </div>
+        </CommandPanel>
       )}
     </div>
   );

@@ -23,29 +23,32 @@ const TABS = [
 
 const shellBackdrop = {
   background:
-    "radial-gradient(circle at 12% 8%, color-mix(in srgb, var(--accent) 20%, transparent) 0, transparent 34%), radial-gradient(circle at 85% 18%, color-mix(in srgb, var(--blue) 18%, transparent) 0, transparent 30%), linear-gradient(135deg, color-mix(in srgb, var(--bg) 86%, #02080b) 0%, #061015 100%)",
+    "linear-gradient(135deg, #03080b 0%, color-mix(in srgb, var(--bg) 88%, #05181c) 48%, #061015 100%)",
 };
 
 const commandDeckStyle = {
   position: "relative",
   overflow: "hidden",
-  display: "grid",
-  gap: 16,
-  padding: 18,
-  border: "1px solid color-mix(in srgb, var(--accent) 32%, var(--border))",
-  borderRadius: 18,
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: 14,
+  padding: "10px 12px",
+  border: "1px solid color-mix(in srgb, var(--accent) 22%, var(--border))",
+  borderRadius: 8,
   background:
-    "linear-gradient(135deg, color-mix(in srgb, var(--bg-panel) 78%, #061317) 0%, color-mix(in srgb, var(--bg-panel) 86%, #0d1f25) 52%, color-mix(in srgb, var(--blue) 16%, var(--bg-panel)) 100%)",
-  boxShadow: "0 18px 50px rgba(0,0,0,0.24), inset 0 1px 0 rgba(255,255,255,0.04)",
+    "linear-gradient(90deg, color-mix(in srgb, var(--bg-panel) 72%, #020509) 0%, color-mix(in srgb, var(--bg-panel) 92%, #051117) 54%, color-mix(in srgb, var(--blue) 10%, var(--bg-panel)) 100%)",
+  boxShadow: "inset 0 1px 0 rgba(255,255,255,0.04)",
 };
 
 const commandReadoutStyle = {
-  display: "grid",
-  gap: 4,
-  padding: "10px 12px",
-  border: "1px solid var(--border)",
-  borderRadius: 12,
-  background: "rgba(0,0,0,0.18)",
+  display: "flex",
+  alignItems: "baseline",
+  gap: 6,
+  padding: "6px 8px",
+  border: "1px solid color-mix(in srgb, var(--accent) 14%, var(--border))",
+  borderRadius: 7,
+  background: "color-mix(in srgb, var(--bg) 54%, transparent)",
 };
 
 function CommandDeck({ activeTab, running }) {
@@ -63,56 +66,35 @@ function CommandDeck({ activeTab, running }) {
           pointerEvents: "none",
         }}
       />
-      <div style={{ position: "relative", display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
-        <div style={{ display: "grid", gap: 6, maxWidth: 720 }}>
-          <div style={{ fontSize: 11, letterSpacing: "0.18em", color: "var(--accent)", textTransform: "uppercase" }}>
-            PatchHive command center
+      <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+        <div style={{ color: "var(--accent)", fontSize: 18, lineHeight: 1 }}>⬢</div>
+        <div style={{ display: "grid", gap: 2, minWidth: 0 }}>
+          <div style={{ fontSize: 11, color: "var(--accent)", fontWeight: 900, textTransform: "uppercase" }}>
+            HiveCore command kernel
           </div>
-          <div style={{ fontSize: 34, lineHeight: 1, fontWeight: 950, letterSpacing: "-0.05em" }}>
-            HiveCore is online.
+          <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
+            Suite lifecycle, launch authority, and autonomous action telemetry.
           </div>
-          <div style={{ fontSize: 13, color: "var(--text-dim)", lineHeight: 1.55 }}>
-            Fleet lifecycle, product health, policy defaults, and autonomous action gates for the full 11-product PatchHive suite.
-          </div>
-        </div>
-        <div
-          style={{
-            width: 116,
-            height: 116,
-            borderRadius: "50%",
-            display: "grid",
-            placeItems: "center",
-            border: "1px solid color-mix(in srgb, var(--accent) 48%, var(--border))",
-            background:
-              "radial-gradient(circle, color-mix(in srgb, var(--accent) 16%, transparent) 0 28%, transparent 29% 42%, color-mix(in srgb, var(--blue) 18%, transparent) 43% 44%, transparent 45%), conic-gradient(from 160deg, color-mix(in srgb, var(--accent) 70%, transparent), transparent, color-mix(in srgb, var(--blue) 70%, transparent), transparent)",
-            boxShadow: "inset 0 0 30px rgba(0,0,0,0.35)",
-          }}
-        >
-          <div style={{ fontSize: 32, fontWeight: 900 }}>⬢</div>
         </div>
       </div>
-      <div style={{ position: "relative", display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))" }}>
+      <div style={{ position: "relative", display: "flex", gap: 7, flexWrap: "wrap", justifyContent: "flex-end" }}>
         <div style={commandReadoutStyle}>
-          <div style={{ fontSize: 10, color: "var(--text-dim)", letterSpacing: "0.14em", textTransform: "uppercase" }}>Active station</div>
-          <div style={{ fontSize: 17, fontWeight: 850 }}>{activeLabel}</div>
+          <div style={{ fontSize: 9, color: "var(--text-dim)", textTransform: "uppercase" }}>Station</div>
+          <div style={{ fontSize: 11, fontWeight: 850 }}>{activeLabel}</div>
         </div>
         <div style={commandReadoutStyle}>
-          <div style={{ fontSize: 10, color: "var(--text-dim)", letterSpacing: "0.14em", textTransform: "uppercase" }}>Control link</div>
-          <div style={{ fontSize: 17, fontWeight: 850, color: running ? "var(--gold)" : "var(--green)" }}>
+          <div style={{ fontSize: 9, color: "var(--text-dim)", textTransform: "uppercase" }}>Link</div>
+          <div style={{ fontSize: 11, fontWeight: 850, color: running ? "var(--gold)" : "var(--green)" }}>
             {running ? "Executing" : "Standing by"}
           </div>
         </div>
         <div style={commandReadoutStyle}>
-          <div style={{ fontSize: 10, color: "var(--text-dim)", letterSpacing: "0.14em", textTransform: "uppercase" }}>Backend</div>
-          <div style={{ fontSize: 17, fontWeight: 850 }}>8100 / API</div>
+          <div style={{ fontSize: 9, color: "var(--text-dim)", textTransform: "uppercase" }}>Fleet</div>
+          <div style={{ fontSize: 11, fontWeight: 850 }}>11 products</div>
         </div>
         <div style={commandReadoutStyle}>
-          <div style={{ fontSize: 10, color: "var(--text-dim)", letterSpacing: "0.14em", textTransform: "uppercase" }}>Fleet</div>
-          <div style={{ fontSize: 17, fontWeight: 850 }}>11 products</div>
-        </div>
-        <div style={commandReadoutStyle}>
-          <div style={{ fontSize: 10, color: "var(--text-dim)", letterSpacing: "0.14em", textTransform: "uppercase" }}>Launcher</div>
-          <div style={{ fontSize: 17, fontWeight: 850 }}>8210 / Host ops</div>
+          <div style={{ fontSize: 9, color: "var(--text-dim)", textTransform: "uppercase" }}>Launcher</div>
+          <div style={{ fontSize: 11, fontWeight: 850 }}>8210</div>
         </div>
       </div>
     </div>

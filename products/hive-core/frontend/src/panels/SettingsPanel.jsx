@@ -1,5 +1,12 @@
 import { useEffect, useState } from "react";
 import { Btn, Input, S, Tag } from "@patchhivehq/ui";
+import {
+  CommandHero,
+  CommandPanel,
+  SectionHeader,
+  commandGridStyle,
+  commandPanelStyle,
+} from "../components/CommandChrome.jsx";
 
 const textareaStyle = {
   ...S.input,
@@ -38,7 +45,7 @@ function ProductEditor({ product, onChange, onProvision }) {
   }
 
   return (
-    <div style={{ ...S.panel, display: "grid", gap: 10 }}>
+    <div style={commandPanelStyle(authTone(product), { display: "grid", gap: 10 })}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
         <div style={{ display: "grid", gap: 3 }}>
           <div style={{ fontSize: 15, fontWeight: 800 }}>
@@ -270,7 +277,7 @@ export default function SettingsPanel({ fetchEnvelope, setRunning, setError }) {
   if (!settings) {
     return (
       <div style={{ display: "grid", gap: 16 }}>
-        <div style={{ ...S.panel, display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
+        <CommandPanel tone="var(--blue)" style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
           <div>
             <div style={{ fontSize: 18, fontWeight: 800 }}>Settings</div>
             <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
@@ -278,35 +285,40 @@ export default function SettingsPanel({ fetchEnvelope, setRunning, setError }) {
             </div>
           </div>
           <Btn onClick={refresh}>Reload</Btn>
-        </div>
+        </CommandPanel>
       </div>
     );
   }
 
   return (
-    <div style={{ display: "grid", gap: 16 }}>
-      <div style={{ ...S.panel, display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-        <div>
-          <div style={{ fontSize: 18, fontWeight: 800 }}>Suite Settings</div>
-          <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
-            Save the defaults HiveCore should hold for the whole PatchHive suite.
-          </div>
-        </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+    <div style={{ ...commandGridStyle, gap: 14 }}>
+      <CommandHero
+        kicker="Policy control"
+        title="Suite settings"
+        body="Save the defaults HiveCore should hold for the whole PatchHive suite."
+        tone="var(--blue)"
+        actions={
+          <>
           <Btn onClick={refresh} disabled={saving}>
             Reload
           </Btn>
           <Btn onClick={save} disabled={saving} color="var(--green)">
             {saving ? "Saving..." : "Save settings"}
           </Btn>
-        </div>
-      </div>
+          </>
+        }
+      />
 
       {savedMessage && (
-        <div style={{ ...S.panel, color: "var(--green)", padding: "12px 14px" }}>{savedMessage}</div>
+        <CommandPanel tone="var(--green)" style={{ color: "var(--green)", padding: "12px 14px" }}>{savedMessage}</CommandPanel>
       )}
 
-      <div style={{ ...S.panel, display: "grid", gap: 12 }}>
+      <CommandPanel tone="var(--accent)" style={{ display: "grid", gap: 12 }}>
+        <SectionHeader
+          kicker="Global defaults"
+          title="Operator policy"
+          body="These values become the suite-wide baseline before individual products override them."
+        />
         <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
           <div style={S.field}>
             <div style={S.label}>Operator Label</div>
@@ -398,9 +410,15 @@ export default function SettingsPanel({ fetchEnvelope, setRunning, setError }) {
             style={{ ...textareaStyle, minHeight: 88 }}
           />
         </div>
-      </div>
+      </CommandPanel>
 
       <div style={{ display: "grid", gap: 12 }}>
+        <SectionHeader
+          kicker="Product endpoints"
+          title="Service-token control"
+          body="Each product stays standalone, but HiveCore stores the machine credentials needed for orchestration."
+          tone="var(--green)"
+        />
         {settings.products.map((product, index) => (
           <ProductEditor
             key={product.slug}

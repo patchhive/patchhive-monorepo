@@ -9,7 +9,7 @@ Its job is intentionally narrow:
 - prepare `.env` files for the first stack when needed
 - sync `PATCHHIVE_SUITE_BOOTSTRAP_SECRET` into HiveCore and the first-stack products
 - pull published GHCR images first, then start products without local builds when images are available
-- fall back to local `docker compose up -d --build` for development or missing images
+- fail loudly on GHCR pull/start problems unless local build fallback is explicitly enabled
 - start, stop, restart, or read recent logs for first-stack products with approved `docker compose` commands
 
 HiveCore remains the brain. The launcher is only the host-control layer that
@@ -42,6 +42,7 @@ Optional env:
 
 - `PATCHHIVE_LAUNCHER_BIND_ADDR`
 - `PATCHHIVE_LAUNCHER_IMAGE_MODE`
+- `PATCHHIVE_LAUNCHER_ALLOW_BUILD_FALLBACK`
 - `PATCHHIVE_MONOREPO_ROOT`
 - `PATCHHIVE_IMAGE_TAG`
 - `PATCHHIVE_IMAGE_PULL_POLICY`
@@ -70,13 +71,18 @@ Optional env:
 
 Image mode:
 
-- `pull` (default): `docker compose pull`, then `docker compose up -d --no-build`, with local build fallback
+- `pull` (default): `docker compose pull`, then `docker compose up -d --no-build`
 - `pull-only`: require published images and fail instead of building locally
 - `build`: skip image pulls and always build locally
 
+Local build fallback:
+
+- `PATCHHIVE_LAUNCHER_ALLOW_BUILD_FALLBACK=1`: in `pull` mode, fall back to `docker compose up -d --build` when published-image startup fails.
+- The default is disabled so clean-machine setup exposes missing GHCR images, auth problems, or bad image names immediately instead of hiding them behind a slow local build.
+
 Suite compose files default to GHCR images tagged by `PATCHHIVE_IMAGE_TAG`
-(`main` by default), while still keeping `build:` entries for fallback and local
-development.
+(`main` by default), while still keeping `build:` entries for explicit fallback
+and local development.
 
 In pull modes, the launcher sets product image env vars when it runs
 `docker compose` so stale product `.env` overrides cannot accidentally resolve
