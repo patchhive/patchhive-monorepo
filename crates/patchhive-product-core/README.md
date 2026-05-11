@@ -2,12 +2,14 @@
 
 `patchhive-product-core` is the shared Rust foundation for PatchHive backends.
 
-It holds the backend behavior that already repeats across products and should stay consistent everywhere: auth bootstrap, auth verification, startup checks, and cross-product service primitives that make the suite easier to run independently today and easier to orchestrate later.
+It holds the backend behavior that already repeats across products and should stay consistent everywhere: auth bootstrap, auth verification, SQLite pooling, startup checks, and cross-product service primitives that make the suite easier to run independently today and easier to orchestrate later.
 
 ## Current Scope
 
 - API-key hashing, verification, persistence, and middleware
 - shared auth bootstrap behavior and error shapes
+- auth module generation with `define_api_key_auth_module!`
+- shared SQLite connection pooling with `SqlitePool`
 - typed startup checks and shared startup logging helpers
 - shared cross-product client primitives such as RepoMemory context access
 

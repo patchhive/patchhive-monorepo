@@ -905,6 +905,64 @@ pub async fn auth_middleware(
         .into_response()
 }
 
+#[macro_export]
+macro_rules! define_api_key_auth_module {
+    ($vis:vis mod $module:ident { $config:expr $(,)? }) => {
+        $vis mod $module {
+            static AUTH_CONFIG: ::std::sync::LazyLock<$crate::auth::ApiKeyAuthConfig> =
+                ::std::sync::LazyLock::new(|| $config);
+
+            pub fn auth_enabled() -> bool {
+                $crate::auth::auth_enabled(&AUTH_CONFIG)
+            }
+
+            pub fn verify_token(token: &str) -> bool {
+                $crate::auth::verify_token(&AUTH_CONFIG, token)
+            }
+
+            pub fn generate_and_save_key() -> ::anyhow::Result<String> {
+                $crate::auth::generate_and_save_key(&AUTH_CONFIG)
+            }
+
+            pub fn service_auth_enabled() -> bool {
+                $crate::auth::service_auth_enabled(&AUTH_CONFIG)
+            }
+
+            pub fn generate_and_save_service_token() -> ::anyhow::Result<String> {
+                $crate::auth::generate_and_save_service_token(&AUTH_CONFIG)
+            }
+
+            pub fn rotate_and_save_service_token() -> ::anyhow::Result<String> {
+                $crate::auth::rotate_and_save_service_token(&AUTH_CONFIG)
+            }
+
+            pub fn auth_status_payload() -> ::serde_json::Value {
+                $crate::auth::auth_status_payload(&AUTH_CONFIG)
+            }
+
+            pub fn bootstrap_request_allowed(headers: &::axum::http::HeaderMap) -> bool {
+                $crate::auth::bootstrap_request_allowed(headers)
+            }
+
+            pub fn service_token_generation_allowed(headers: &::axum::http::HeaderMap) -> bool {
+                $crate::auth::service_token_generation_allowed(&AUTH_CONFIG, headers)
+            }
+
+            pub fn service_token_rotation_allowed(headers: &::axum::http::HeaderMap) -> bool {
+                $crate::auth::service_token_rotation_allowed(&AUTH_CONFIG, headers)
+            }
+
+            pub async fn auth_middleware(
+                headers: ::axum::http::HeaderMap,
+                request: ::axum::extract::Request,
+                next: ::axum::middleware::Next,
+            ) -> ::axum::response::Response {
+                $crate::auth::auth_middleware(&AUTH_CONFIG, headers, request, next).await
+            }
+        }
+    };
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
