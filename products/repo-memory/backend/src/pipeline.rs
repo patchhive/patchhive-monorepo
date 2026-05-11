@@ -51,9 +51,8 @@ mod routes;
 mod utils;
 
 // Re-export public functions from submodules for backward compatibility
-pub use context::{disposition_rank, rank_context_entries};
+pub use context::disposition_rank;
 pub use failguard::{
-    build_failguard_candidate, build_failguard_lesson_run, candidate_to_lesson_request,
     capture_failguard_lesson, create_failguard_candidate, dismiss_failguard_candidate,
     failguard_candidates, promote_failguard_candidate,
 };
@@ -67,6 +66,13 @@ pub use routes::{
 pub use utils::{
     bad_request, internal_error, normalize_disposition, not_found, path_bucket, valid_repo,
     STOPWORDS,
+};
+
+#[cfg(test)]
+use context::rank_context_entries;
+#[cfg(test)]
+use failguard::{
+    build_failguard_candidate, build_failguard_lesson_run, candidate_to_lesson_request,
 };
 
 // Tests
