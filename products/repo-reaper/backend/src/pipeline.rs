@@ -537,11 +537,12 @@ pub async fn execute_run(
     };
 
     let filters = load_filters();
-    let _ = start_run(
-        &run_id,
-        &serde_json::to_value(&req).unwrap_or_default(),
-        false,
-    );
+    let run_config_json = serde_json::to_string(&req).unwrap_or_else(|_| "{}".to_string());
+    let _ = start_run(RunStart {
+        run_id: &run_id,
+        config_json: &run_config_json,
+        dry_run: false,
+    });
     if budget <= 0.0 {
         let _ = tx.send(sse("log", json!({"msg":"No cost budget configured — run is currently uncapped","type":"warn"}))).await;
     }

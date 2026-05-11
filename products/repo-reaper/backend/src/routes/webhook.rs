@@ -1,4 +1,4 @@
-use crate::db::{finish_run, get_conn, start_run};
+use crate::db::{finish_run, get_conn, start_run, RunStart};
 use crate::state::AppState;
 use axum::{
     body::Body,
@@ -262,11 +262,13 @@ async fn webhook_single_fix(state: AppState, repo: &str, issue: Value) {
         "status": "queued", "fixability_score": 70, "fixability_reason": "webhook",
     });
 
-    let _ = start_run(
-        &run_id,
-        &json!({"source":"webhook","repo":repo,"issue":issue["number"]}),
-        false,
-    );
+    let run_config_json =
+        json!({"source":"webhook","repo":repo,"issue":issue["number"]}).to_string();
+    let _ = start_run(RunStart {
+        run_id: &run_id,
+        config_json: &run_config_json,
+        dry_run: false,
+    });
     let (tx, _rx) = tokio::sync::mpsc::channel(32); // fire-and-forget channel
     let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(1));
     let cancel_requested = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));

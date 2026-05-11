@@ -1,7 +1,6 @@
 use anyhow::Result;
 use chrono::Utc;
 use rusqlite::{params, Connection};
-use serde_json::Value;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -103,11 +102,22 @@ pub fn get_lifetime_cost() -> f64 {
     .unwrap_or(0.0)
 }
 
-pub fn start_run(run_id: &str, config: &Value, dry_run: bool) -> Result<()> {
+pub struct RunStart<'a> {
+    pub run_id: &'a str,
+    pub config_json: &'a str,
+    pub dry_run: bool,
+}
+
+pub fn start_run(input: RunStart<'_>) -> Result<()> {
     let conn = get_conn()?;
     conn.execute(
         "INSERT INTO runs(id, started_at, status, config_json, dry_run) VALUES(?1,?2,'running',?3,?4)",
-        params![run_id, Utc::now().to_rfc3339(), config.to_string(), dry_run as i32],
+        params![
+            input.run_id,
+            Utc::now().to_rfc3339(),
+            input.config_json,
+            input.dry_run as i32
+        ],
     )?;
     Ok(())
 }
