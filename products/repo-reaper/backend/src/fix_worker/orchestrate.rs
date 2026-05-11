@@ -4,9 +4,12 @@ use patchhive_github_pr::github_token_from_env;
 use serde_json::json;
 use uuid::Uuid;
 
-use crate::agents::*;
-use crate::db::*;
-use crate::github::*;
+use crate::agents::{agent_generate_patch, agent_patch_retry, agent_smith_patch};
+use crate::db::{
+    finish_attempt, save_rejected_patch, start_attempt, track_pr, update_perf, IssueAttemptFinish,
+    IssueAttemptStart,
+};
+use crate::github::gh_check_duplicate;
 
 use super::context::{clone_issue_repo, load_enriched_issue_context, select_code_context};
 use super::memory::submit_smith_rejection_candidate;
@@ -525,7 +528,7 @@ pub async fn fix_one(job: FixIssueJob) {
             ))
             .await;
         let _ = crate::git_ops::git_reset(&scope.work_path).await;
-        match crate::agents::agent_patch_retry(
+        match agent_patch_retry(
             &http,
             issue["title"].as_str().unwrap_or(""),
             issue["body"].as_str().unwrap_or(""),
