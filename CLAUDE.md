@@ -183,7 +183,6 @@ products/<name>/backend/
     agents.rs        ← multi-provider AI calls (if product uses AI)
     github.rs        ← GitHub API calls (if product uses GitHub)
     git_ops.rs       ← git clone/branch/push/patch (if product touches code)
-    auth.rs          ← API key auth middleware
     startup.rs       ← config validation, background loops
     pipeline.rs      ← main SSE endpoint(s)
     fix_worker.rs    ← per-item async worker (if applicable)
@@ -195,6 +194,12 @@ products/<name>/backend/
   Cargo.toml
   Dockerfile
 ```
+
+Product auth modules are generated in `main.rs` with
+`patchhive_product_core::define_api_key_auth_module!`; do not add
+one-file delegation `auth.rs` wrappers. Product DB modules should use
+`patchhive_product_core::sqlite::SqlitePool` and can tune pool size with
+`PATCHHIVE_DB_POOL_SIZE` or product-specific `<PRODUCT>_DB_POOL_SIZE` env vars.
 
 Standard `Cargo.toml` dependencies:
 ```toml

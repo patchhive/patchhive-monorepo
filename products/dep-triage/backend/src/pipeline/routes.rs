@@ -13,9 +13,7 @@ use crate::{
         service_token_rotation_allowed, verify_token,
     },
     db,
-    models::{
-        HistoryItem, OverviewPayload, ScanRequest, TriageScanResult,
-    },
+    models::{HistoryItem, OverviewPayload, ScanRequest, TriageScanResult},
     state::AppState,
     STARTUP_CHECKS,
 };
@@ -50,7 +48,10 @@ pub async fn capabilities() -> Json<patchhive_product_core::contract::ProductCap
 }
 
 pub async fn runs() -> Json<patchhive_product_core::contract::ProductRunsResponse> {
-    Json(patchhive_product_core::contract::runs_from_history("dep-triage", db::history(30)))
+    Json(patchhive_product_core::contract::runs_from_history(
+        "dep-triage",
+        db::history(30),
+    ))
 }
 
 pub async fn auth_status() -> Json<serde_json::Value> {

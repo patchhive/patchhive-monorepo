@@ -1,32 +1,24 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use chrono::Utc;
-use once_cell::sync::OnceCell;
-use rusqlite::{params, Connection, OptionalExtension};
-use std::sync::{Mutex, MutexGuard};
+use once_cell::sync::Lazy;
+use patchhive_product_core::sqlite::{PooledSqliteConnection, SqlitePool};
+use rusqlite::{params, OptionalExtension};
 
 use crate::models::{
     RepoRuleSet, ReportTemplateSet, ReviewHistoryItem, ReviewResult, SavedReportTemplateSet,
     SavedRuleSet,
 };
 
-static DB_CONN: OnceCell<Mutex<Connection>> = OnceCell::new();
+static DB_POOL: Lazy<SqlitePool> = Lazy::new(|| {
+    SqlitePool::new(db_path(), "TrustGate").with_pool_size_env("TRUSTGATE_DB_POOL_SIZE")
+});
 
 pub fn db_path() -> String {
     std::env::var("TRUST_DB_PATH").unwrap_or_else(|_| "trust-gate.db".into())
 }
 
-fn open_connection() -> Result<Connection> {
-    let conn = Connection::open(db_path()).context("failed to open TrustGate database")?;
-    conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")
-        .context("failed to initialize TrustGate database pragmas")?;
-    Ok(conn)
-}
-
-fn connect() -> Result<MutexGuard<'static, Connection>> {
-    let mutex = DB_CONN.get_or_try_init(|| open_connection().map(Mutex::new))?;
-    mutex
-        .lock()
-        .map_err(|_| anyhow!("TrustGate database mutex poisoned"))
+fn connect() -> Result<PooledSqliteConnection<'static>> {
+    DB_POOL.get().context("failed to open TrustGate database")
 }
 
 pub fn health_check() -> bool {

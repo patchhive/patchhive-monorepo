@@ -3,9 +3,9 @@
 use anyhow::Result as AnyhowResult;
 use serde_json::{json, Value};
 
-use crate::agents::*;
-use crate::git_ops::*;
-use crate::github::*;
+use crate::agents::agent_patch_retry;
+use crate::git_ops::{apply_patch, git_commit_push};
+use crate::github::{gh_default_branch, gh_post};
 use crate::state::AgentConfig;
 
 use super::sse::alog;

@@ -10,15 +10,15 @@ use crate::{
     github::{self, GitHubMergeContext},
     integrations,
     models::{
-        GitHubAssessmentContext, MergeAssessment, MergeMetrics, MergeSignal, RepoMemoryContextPreview,
-        ReviewBeeContext, ReviewerState, TrustGateContext,
+        GitHubAssessmentContext, MergeAssessment, MergeMetrics, MergeSignal,
+        RepoMemoryContextPreview, ReviewBeeContext, ReviewerState, TrustGateContext,
     },
     state::AppState,
 };
 
 use super::utils::{
-    actionable_text, api_error, diff_changed_paths, make_signal,
-    mergeable_value, normalize_mergeable_state, plural_suffix, truncate, ApiError,
+    actionable_text, api_error, diff_changed_paths, make_signal, mergeable_value,
+    normalize_mergeable_state, plural_suffix, truncate, ApiError,
 };
 
 pub async fn run_github_pr_assessment(

@@ -1,23 +1,16 @@
-use std::sync::{Mutex, MutexGuard};
+use once_cell::sync::Lazy;
+use patchhive_product_core::sqlite::{PooledSqliteConnection, SqlitePool};
 
-use once_cell::sync::OnceCell;
-use rusqlite::Connection;
-
-static DB_CONN: OnceCell<Mutex<Connection>> = OnceCell::new();
+static DB_POOL: Lazy<SqlitePool> = Lazy::new(|| {
+    SqlitePool::new(db_path(), "__PRODUCT_NAME__").with_pool_size_env("__ENV_PREFIX___DB_POOL_SIZE")
+});
 
 pub fn db_path() -> String {
     std::env::var("__ENV_PREFIX___DB_PATH").unwrap_or_else(|_| "__DB_FILE__".into())
 }
 
-fn open_connection() -> rusqlite::Result<Connection> {
-    Connection::open(db_path())
-}
-
-fn connect() -> rusqlite::Result<MutexGuard<'static, Connection>> {
-    let mutex = DB_CONN.get_or_try_init(|| open_connection().map(Mutex::new))?;
-    mutex
-        .lock()
-        .map_err(|_| rusqlite::Error::InvalidQuery)
+fn connect() -> rusqlite::Result<PooledSqliteConnection<'static>> {
+    DB_POOL.get()
 }
 
 pub fn health_check() -> bool {
@@ -51,8 +44,10 @@ pub fn meta_count() -> usize {
     connect()
         .ok()
         .and_then(|conn| {
-            conn.query_row("SELECT COUNT(*) FROM product_meta", [], |row| row.get::<_, i64>(0))
-                .ok()
+            conn.query_row("SELECT COUNT(*) FROM product_meta", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .ok()
         })
         .unwrap_or(0) as usize
 }

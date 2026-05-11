@@ -4,9 +4,11 @@ use anyhow::Result as AnyhowResult;
 use patchhive_product_core::repo_memory::RepoMemoryContextRequest;
 use serde_json::Value;
 
-use crate::agents::*;
-use crate::git_ops::*;
-use crate::github::*;
+use crate::agents::agent_select_files;
+use crate::git_ops::{
+    collect_files_all, collect_files_selective, collect_repo_structure, git_branch, git_clone,
+};
+use crate::github::{gh_comment_issue, gh_fork, gh_get_issue_context};
 
 use super::memory::build_repo_memory_block;
 use super::sse::{alog, astatus};

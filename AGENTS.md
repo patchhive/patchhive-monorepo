@@ -95,6 +95,7 @@ Backend:
 - Rust
 - `axum`, `rusqlite`, `reqwest`, `tokio`, `serde`, `serde_json`, `chrono`, `uuid`, `anyhow`, `tracing`
 - Shared API rate limiting defaults to 300 standard requests/minute and 30 auth or mutating requests/minute; tune with `PATCHHIVE_RATE_LIMIT_MAX`, `PATCHHIVE_RATE_LIMIT_SENSITIVE_MAX`, and `PATCHHIVE_RATE_LIMIT_WINDOW_SECS`.
+- Shared SQLite pools default to 4 connections; tune with `PATCHHIVE_DB_POOL_SIZE` or a product-specific `<PRODUCT>_DB_POOL_SIZE`.
 
 Frontend:
 - React + Vite
@@ -158,7 +159,9 @@ Rules:
 - If a Rust backend seam already exists in 2 or more products, extract it into `patchhive-product-core` before a third product repeats it.
 - Keep the crate focused on backend primitives, not product behavior.
 - Product backends should use `listen_addr()` so `PATCHHIVE_BIND_ADDR` can force loopback-only local runs when Docker-style `0.0.0.0` binding is not desired.
-- Good candidates: auth middleware, startup/health helpers, generic ID or envelope helpers, generic named preset storage interfaces.
+- Product backends should use `SqlitePool` from `patchhive-product-core` instead of a single global `Mutex<Connection>` or ad hoc connection opens. Tune globally with `PATCHHIVE_DB_POOL_SIZE` or with a product-specific `<PRODUCT>_DB_POOL_SIZE`.
+- Product backends should define their `crate::auth` module with `define_api_key_auth_module!` in `main.rs` instead of carrying one-file delegation wrappers.
+- Good candidates: auth middleware, SQLite pooling, startup/health helpers, generic ID or envelope helpers, generic named preset storage interfaces.
 - Bad candidates until proven generic: GitHub search logic, scoring heuristics, pipelines, route behavior, and product-specific SQLite schemas.
 
 ## Shared GitHub PR Crate
@@ -249,8 +252,7 @@ export const API = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 `App.jsx` convention:
 - Call `applyTheme("<product-key>")` in a `useEffect`
-- Use `LoginPage` from `@patchhivehq/ui` with product-specific props
-- Use `PatchHiveHeader`, `TabBar`, and `PatchHiveFooter`
+- Use `ProductSessionGate` and `ProductAppFrame` from `@patchhivehq/product-shell` for auth, layout, tab chrome, footer, and panel error isolation
 - Keep tab panels under `./panels/`
 
 ## Backend Convention
@@ -266,7 +268,6 @@ products/<name>/backend/
     agents.rs
     github.rs
     git_ops.rs
-    auth.rs
     startup.rs
     pipeline.rs
     fix_worker.rs
@@ -278,6 +279,8 @@ products/<name>/backend/
   Cargo.toml
   Dockerfile
 ```
+
+Auth modules are generated in `main.rs` with `patchhive_product_core::define_api_key_auth_module!`.
 
 For AI-enabled/GitHub-enabled products, keep multi-provider and GitHub helper modules separate rather than collapsing them into `main.rs`.
 

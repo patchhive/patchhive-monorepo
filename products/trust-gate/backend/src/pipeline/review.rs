@@ -11,8 +11,8 @@ use crate::models::{
 
 use super::types::{
     clamp_score, is_docs_only_path, is_generated_path, limit_examples, make_finding,
-    matching_patterns, parse_diff, path_policy_note,
-    summarize_diff_for_memory, summarize_review_task,
+    matching_patterns, parse_diff, path_policy_note, summarize_diff_for_memory,
+    summarize_review_task,
 };
 
 pub async fn review_diff(
@@ -187,14 +187,18 @@ pub async fn review_diff(
 
     if !blocked_path_hits.is_empty() {
         findings.push(make_finding(
-            "blocked_paths", "Blocked file paths", "block",
+            "blocked_paths",
+            "Blocked file paths",
+            "block",
             "The diff touches file areas that should not move forward without explicit review.",
             limit_examples(blocked_path_hits.clone(), 6),
         ));
     }
     if !warn_path_hits.is_empty() {
         findings.push(make_finding(
-            "warn_paths", "Sensitive file paths", "warn",
+            "warn_paths",
+            "Sensitive file paths",
+            "warn",
             "The diff touches file areas that deserve extra scrutiny.",
             limit_examples(warn_path_hits, 6),
         ));
@@ -209,72 +213,123 @@ pub async fn review_diff(
     }
     if !blocked_term_hits.is_empty() {
         findings.push(make_finding(
-            "blocked_terms", "Blocked added content", "block",
+            "blocked_terms",
+            "Blocked added content",
+            "block",
             "The diff appears to add secret-like or explicitly banned content.",
             limit_examples(blocked_term_hits, 6),
         ));
     }
     if !suspicious_term_hits.is_empty() {
         findings.push(make_finding(
-            "suspicious_terms", "Suspicious added content", "warn",
+            "suspicious_terms",
+            "Suspicious added content",
+            "warn",
             "The diff adds lines that often correlate with fragile or risky changes.",
             limit_examples(suspicious_term_hits, 6),
         ));
     }
 
     if files_changed > rules.max_files {
-        let severity = if files_changed > rules.max_files.saturating_mul(2) { "block" } else { "warn" };
+        let severity = if files_changed > rules.max_files.saturating_mul(2) {
+            "block"
+        } else {
+            "warn"
+        };
         findings.push(make_finding(
-            "scope_files", "Scope exceeds file budget", severity,
-            format!("This diff changes {files_changed} files, above the repo rule limit of {}.", rules.max_files),
+            "scope_files",
+            "Scope exceeds file budget",
+            severity,
+            format!(
+                "This diff changes {files_changed} files, above the repo rule limit of {}.",
+                rules.max_files
+            ),
             vec![format!("{files_changed} changed files")],
         ));
     }
     if additions > rules.max_additions {
-        let severity = if additions > rules.max_additions.saturating_mul(2) { "block" } else { "warn" };
+        let severity = if additions > rules.max_additions.saturating_mul(2) {
+            "block"
+        } else {
+            "warn"
+        };
         findings.push(make_finding(
-            "scope_additions", "Additions exceed budget", severity,
-            format!("This diff adds {additions} lines, above the repo rule limit of {}.", rules.max_additions),
+            "scope_additions",
+            "Additions exceed budget",
+            severity,
+            format!(
+                "This diff adds {additions} lines, above the repo rule limit of {}.",
+                rules.max_additions
+            ),
             vec![format!("{additions} added lines")],
         ));
     }
     if deletions > rules.max_deletions {
-        let severity = if deletions > rules.max_deletions.saturating_mul(2) { "block" } else { "warn" };
+        let severity = if deletions > rules.max_deletions.saturating_mul(2) {
+            "block"
+        } else {
+            "warn"
+        };
         findings.push(make_finding(
-            "scope_deletions", "Deletions exceed budget", severity,
-            format!("This diff deletes {deletions} lines, above the repo rule limit of {}.", rules.max_deletions),
+            "scope_deletions",
+            "Deletions exceed budget",
+            severity,
+            format!(
+                "This diff deletes {deletions} lines, above the repo rule limit of {}.",
+                rules.max_deletions
+            ),
             vec![format!("{deletions} deleted lines")],
         ));
     }
     if generated_files > 0 {
-        let severity = if generated_files >= 3 && source_files_changed == 0 { "block" } else { "warn" };
+        let severity = if generated_files >= 3 && source_files_changed == 0 {
+            "block"
+        } else {
+            "warn"
+        };
         let detail = if source_files_changed == 0 {
             "The diff changes generated artifacts or lockfiles without touching likely source files. Review the true source of change before moving forward."
         } else {
             "The diff includes generated artifacts or lockfiles. Review them alongside the code or configuration that produced them."
         };
         findings.push(make_finding(
-            "generated_files", "Generated files changed", severity, detail,
+            "generated_files",
+            "Generated files changed",
+            severity,
+            detail,
             limit_examples(generated_hits, 6),
         ));
     }
 
     let missing_tests = !test_required_paths.is_empty() && tests_changed == 0;
     if missing_tests {
-        let severity = if sensitive_code_changes > 0 || source_files_changed > 2 || additions > 140 || deletions > 80 {
+        let severity = if sensitive_code_changes > 0
+            || source_files_changed > 2
+            || additions > 140
+            || deletions > 80
+        {
             "block"
         } else {
             "warn"
         };
         findings.push(make_finding(
-            "missing_tests", "Code changes without tests", severity,
+            "missing_tests",
+            "Code changes without tests",
+            severity,
             "The diff touches code paths that normally deserve tests, but no test files changed.",
             limit_examples(test_required_paths.clone(), 6),
         ));
     }
 
-    let risky_files = files.iter().filter(|f| f.status == "warn" || f.status == "block").count() as u32;
-    if (files_changed > rules.max_files || additions > rules.max_additions || deletions > rules.max_deletions) && risky_files >= 3 {
+    let risky_files = files
+        .iter()
+        .filter(|f| f.status == "warn" || f.status == "block")
+        .count() as u32;
+    if (files_changed > rules.max_files
+        || additions > rules.max_additions
+        || deletions > rules.max_deletions)
+        && risky_files >= 3
+    {
         findings.push(make_finding(
             "large_risky_diff", "Large diff with concentrated risk", "block",
             "This patch is both large and concentrated in sensitive areas. TrustGate should not treat it like a normal bounded AI patch.",
@@ -288,11 +343,16 @@ pub async fn review_diff(
 
     if let Some(context) = repo_memory_context.as_ref() {
         if missing_tests {
-            let memory_testing_entries = context.entries.iter()
+            let memory_testing_entries = context
+                .entries
+                .iter()
                 .filter(|e| e.kind == "testing_expectation" || e.tags.iter().any(|t| t == "tests"))
-                .take(4).collect::<Vec<_>>();
-            let memory_testing = memory_testing_entries.iter()
-                .map(|e| format!("{} — {}", e.title, e.prompt_line)).collect::<Vec<_>>();
+                .take(4)
+                .collect::<Vec<_>>();
+            let memory_testing = memory_testing_entries
+                .iter()
+                .map(|e| format!("{} — {}", e.title, e.prompt_line))
+                .collect::<Vec<_>>();
             if !memory_testing.is_empty() {
                 findings.push(make_finding(
                     "repo_memory_tests", "RepoMemory test expectations",
@@ -303,10 +363,13 @@ pub async fn review_diff(
             }
         }
 
-        let hotspot_entries = context.entries.iter()
+        let hotspot_entries = context
+            .entries
+            .iter()
             .filter(|e| e.kind == "hotspot" && !e.matched_paths.is_empty())
             .map(|e| format!("{} -> {}", e.matched_paths.join(", "), e.prompt_line))
-            .take(4).collect::<Vec<_>>();
+            .take(4)
+            .collect::<Vec<_>>();
         if !hotspot_entries.is_empty() {
             findings.push(make_finding(
                 "repo_memory_hotspots", "RepoMemory hotspots", "warn",
@@ -315,17 +378,27 @@ pub async fn review_diff(
             ));
         }
 
-        let failure_entries = context.entries.iter()
+        let failure_entries = context
+            .entries
+            .iter()
             .filter(|e| e.kind == "failure_pattern")
             .map(|e| format!("{} — {}", e.title, e.prompt_line))
-            .take(3).collect::<Vec<_>>();
-        let failure_is_curated = context.entries.iter()
+            .take(3)
+            .collect::<Vec<_>>();
+        let failure_is_curated = context
+            .entries
+            .iter()
             .filter(|e| e.kind == "failure_pattern")
             .any(|e| e.pinned || e.disposition == "policy");
         if !failure_entries.is_empty() {
             findings.push(make_finding(
-                "repo_memory_failures", "RepoMemory failure patterns",
-                if failure_is_curated && sensitive_code_changes > 0 { "block" } else { "warn" },
+                "repo_memory_failures",
+                "RepoMemory failure patterns",
+                if failure_is_curated && sensitive_code_changes > 0 {
+                    "block"
+                } else {
+                    "warn"
+                },
                 "RepoMemory found recurring historical failures that look relevant to this review.",
                 failure_entries,
             ));
@@ -367,9 +440,15 @@ pub async fn review_diff(
         risk_score,
         summary,
         metrics: ReviewMetricSummary {
-            files_changed, additions, deletions,
-            tests_changed, risky_files, blocked_findings,
-            warning_findings, generated_files, source_files_changed,
+            files_changed,
+            additions,
+            deletions,
+            tests_changed,
+            risky_files,
+            blocked_findings,
+            warning_findings,
+            generated_files,
+            source_files_changed,
         },
         files,
         findings,

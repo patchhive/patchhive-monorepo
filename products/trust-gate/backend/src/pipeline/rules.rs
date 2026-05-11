@@ -9,18 +9,28 @@ use super::types::{api_error, ApiError};
 pub fn build_rule_packs() -> Vec<RulePack> {
     let mut app = RepoRuleSet::default();
     app.warn_paths.extend([
-        "routes/".into(), "db/".into(), "api/".into(), "config/".into(),
+        "routes/".into(),
+        "db/".into(),
+        "api/".into(),
+        "config/".into(),
     ]);
-    app.require_test_for_paths.extend(["ui/".into(), "components/".into()]);
+    app.require_test_for_paths
+        .extend(["ui/".into(), "components/".into()]);
     app.max_files = 14;
     app.max_additions = 550;
     app.max_deletions = 300;
     app.notes = "Balanced app policy pack: strict on auth, workflows, and data boundaries while allowing normal feature work.".into();
 
     let mut library = RepoRuleSet::default();
-    library.blocked_paths.extend(["examples/".into(), "benchmarks/".into()]);
-    library.warn_paths.extend(["public_api".into(), "include/".into()]);
-    library.require_test_for_paths.extend(["crates/".into(), "packages/".into()]);
+    library
+        .blocked_paths
+        .extend(["examples/".into(), "benchmarks/".into()]);
+    library
+        .warn_paths
+        .extend(["public_api".into(), "include/".into()]);
+    library
+        .require_test_for_paths
+        .extend(["crates/".into(), "packages/".into()]);
     library.max_files = 10;
     library.max_additions = 320;
     library.max_deletions = 220;
@@ -28,9 +38,13 @@ pub fn build_rule_packs() -> Vec<RulePack> {
 
     let mut infra = RepoRuleSet::default();
     infra.blocked_paths.extend([
-        "production/".into(), "modules/".into(), "environments/prod".into(),
+        "production/".into(),
+        "modules/".into(),
+        "environments/prod".into(),
     ]);
-    infra.warn_paths.extend(["helm/".into(), "k8s/".into(), "deploy/".into()]);
+    infra
+        .warn_paths
+        .extend(["helm/".into(), "k8s/".into(), "deploy/".into()]);
     infra.require_test_for_paths = vec!["modules/".into(), "terraform/".into(), "scripts/".into()];
     infra.test_paths = vec!["tests/".into(), "plan/".into(), ".golden".into()];
     infra.max_files = 8;
@@ -39,8 +53,15 @@ pub fn build_rule_packs() -> Vec<RulePack> {
     infra.notes = "Infra pack: assumes runtime and deploy changes are high-risk, with low scope budgets and stronger escalation.".into();
 
     let mut agent_patch = RepoRuleSet::default();
-    agent_patch.blocked_paths.extend(["prod/".into(), "release/".into(), "security/".into()]);
-    agent_patch.warn_paths.extend(["src/".into(), "app/".into(), "server/".into(), "backend/".into()]);
+    agent_patch
+        .blocked_paths
+        .extend(["prod/".into(), "release/".into(), "security/".into()]);
+    agent_patch.warn_paths.extend([
+        "src/".into(),
+        "app/".into(),
+        "server/".into(),
+        "backend/".into(),
+    ]);
     agent_patch.max_files = 6;
     agent_patch.max_additions = 220;
     agent_patch.max_deletions = 120;

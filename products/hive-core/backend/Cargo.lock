@@ -948,7 +948,7 @@ dependencies = [
 [[package]]
 name = "patchhive-product-core"
 version = "0.1.0"
-source = "git+https://github.com/patchhive/patchhive-product-core.git?rev=1b3f51d42e042f1d4f18adcaedffaf17d390b7f1#1b3f51d42e042f1d4f18adcaedffaf17d390b7f1"
+source = "git+https://github.com/patchhive/patchhive-product-core.git?rev=3a1864a628c0024fa912eebfda39487311fbdbcc#3a1864a628c0024fa912eebfda39487311fbdbcc"
 dependencies = [
  "anyhow",
  "axum",
@@ -956,6 +956,7 @@ dependencies = [
  "hex",
  "http",
  "reqwest",
+ "rusqlite",
  "serde",
  "serde_json",
  "sha2",

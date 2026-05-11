@@ -23,14 +23,14 @@ export const BASE_THEME = {
 export const PRODUCT_THEMES = {
   "repo-reaper":   { "--accent": "#c41e3a", "--accent-dim": "#8b1528" }, // crimson
   "signal-hive":   { "--accent": "#2a6aaa", "--accent-dim": "#1a4a7a" }, // blue
-  "review-bee":    { "--accent": "#c8922a", "--accent-dim": "#8b6018" }, // amber
-  "trust-gate":    { "--accent": "#7b2d8b", "--accent-dim": "#4a1a55" }, // purple
+  "review-bee":    { "--accent": "#d89f22", "--accent-dim": "#8f6415" }, // honey
+  "trust-gate":    { "--accent": "#8751b8", "--accent-dim": "#553174" }, // violet
   "repo-memory":   { "--accent": "#2a8a4a", "--accent-dim": "#1a5a30" }, // green
-  "merge-keeper":  { "--accent": "#2a6aaa", "--accent-dim": "#1a4a7a" }, // blue
-  "flake-sting":   { "--accent": "#c87020", "--accent-dim": "#8b4a10" }, // orange
-  "dep-triage":    { "--accent": "#c8922a", "--accent-dim": "#8b6018" }, // amber
-  "vuln-triage":   { "--accent": "#c41e3a", "--accent-dim": "#8b1528" }, // crimson
-  "refactor-scout":{ "--accent": "#2a8a4a", "--accent-dim": "#1a5a30" }, // green
+  "merge-keeper":  { "--accent": "#1f9f8f", "--accent-dim": "#17675e" }, // cyan
+  "flake-sting":   { "--accent": "#d96b27", "--accent-dim": "#8b4317" }, // orange
+  "dep-triage":    { "--accent": "#8aa62c", "--accent-dim": "#586d1b" }, // olive
+  "vuln-triage":   { "--accent": "#d6406a", "--accent-dim": "#8d2746" }, // rose
+  "refactor-scout":{ "--accent": "#30a783", "--accent-dim": "#1d6d55" }, // mint
   "hive-core":     { "--accent": "#3a9fb3", "--accent-dim": "#1d5d69" }, // teal
 };
 

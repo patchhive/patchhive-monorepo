@@ -1,26 +1,21 @@
-use std::{
-    collections::HashSet,
-    sync::{Mutex, MutexGuard},
-};
+use std::collections::HashSet;
 
-use once_cell::sync::OnceCell;
-use rusqlite::{params, types::Type, Connection};
+use once_cell::sync::Lazy;
+use patchhive_product_core::sqlite::{PooledSqliteConnection, SqlitePool};
+use rusqlite::{params, types::Type};
 
 use crate::models::{HistoryItem, OverviewCounts, RefactorScanResult, ScanMetrics};
 
-static DB_CONN: OnceCell<Mutex<Connection>> = OnceCell::new();
+static DB_POOL: Lazy<SqlitePool> = Lazy::new(|| {
+    SqlitePool::new(db_path(), "RefactorScout").with_pool_size_env("REFACTOR_SCOUT_DB_POOL_SIZE")
+});
 
 pub fn db_path() -> String {
     std::env::var("REFACTOR_SCOUT_DB_PATH").unwrap_or_else(|_| "refactor-scout.db".into())
 }
 
-fn open_connection() -> rusqlite::Result<Connection> {
-    Connection::open(db_path())
-}
-
-fn connect() -> rusqlite::Result<MutexGuard<'static, Connection>> {
-    let mutex = DB_CONN.get_or_try_init(|| open_connection().map(Mutex::new))?;
-    mutex.lock().map_err(|_| rusqlite::Error::InvalidQuery)
+fn connect() -> rusqlite::Result<PooledSqliteConnection<'static>> {
+    DB_POOL.get()
 }
 
 pub fn health_check() -> bool {

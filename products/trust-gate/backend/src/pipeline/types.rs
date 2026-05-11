@@ -7,7 +7,10 @@ use crate::models::ReviewFinding;
 pub type ApiError = (axum::http::StatusCode, axum::Json<serde_json::Value>);
 
 pub fn api_error(status: axum::http::StatusCode, message: impl Into<String>) -> ApiError {
-    (status, axum::Json(serde_json::json!({ "error": message.into() })))
+    (
+        status,
+        axum::Json(serde_json::json!({ "error": message.into() })),
+    )
 }
 
 #[derive(Debug, Default)]
@@ -229,7 +232,12 @@ pub fn summarize_review_task(
     if let Some(context) = github_context {
         format!(
             "Review {} diff for {} PR #{} {} from {} to {}.",
-            ai_source, repo, context.pr_number, context.pr_title, context.head_ref, context.base_ref,
+            ai_source,
+            repo,
+            context.pr_number,
+            context.pr_title,
+            context.head_ref,
+            context.base_ref,
         )
     } else {
         format!("Review {ai_source} diff for {repo} from {source_kind}.")

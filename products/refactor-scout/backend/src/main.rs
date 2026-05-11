@@ -1,4 +1,23 @@
-mod auth;
+patchhive_product_core::define_api_key_auth_module! {
+    pub mod auth {
+        patchhive_product_core::auth::ApiKeyAuthConfig::new("REFACTOR_SCOUT_API_KEY_HASH", "refactor-scout-")
+            .with_service_token("REFACTOR_SCOUT_SERVICE_TOKEN_HASH", "refactor-scout-svc-")
+            .with_service_default_name("hivecore")
+            .with_service_dispatch_paths(["/scan/local"])
+            .with_unauthorized_message("Unauthorized — provide X-API-Key or X-PatchHive-Service-Token.")
+            .with_public_paths([
+                "/health",
+                "/auth/login",
+                "/auth/status",
+                "/auth/generate-key",
+                "/auth/generate-service-token",
+                "/auth/rotate-service-token",
+                "/startup/checks",
+                "/capabilities",
+            ])
+    }
+}
+
 mod db;
 mod models;
 mod pipeline;

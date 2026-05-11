@@ -1,4 +1,16 @@
-mod auth;
+patchhive_product_core::define_api_key_auth_module! {
+    pub mod auth {
+        patchhive_product_core::auth::ApiKeyAuthConfig::new("__ENV_PREFIX___API_KEY_HASH", "__PRODUCT_SLUG__-")
+            .with_public_paths([
+                "/health",
+                "/auth/login",
+                "/auth/status",
+                "/auth/generate-key",
+                "/startup/checks",
+            ])
+    }
+}
+
 mod db;
 mod startup;
 mod state;

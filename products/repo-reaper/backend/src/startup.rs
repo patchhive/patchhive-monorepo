@@ -1,4 +1,4 @@
-use crate::db::*;
+use crate::db::get_conn;
 use patchhive_github_pr::github_token_from_env;
 use patchhive_product_core::{repo_memory::repo_memory_url, startup::StartupCheck};
 use reqwest::Client;

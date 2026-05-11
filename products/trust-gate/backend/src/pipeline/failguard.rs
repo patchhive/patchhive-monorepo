@@ -16,34 +16,65 @@ pub async fn publish_failguard_candidate(client: &reqwest::Client, review: &Revi
         Ok(Some(_)) => {
             tracing::info!(
                 "Submitted FailGuard candidate for TrustGate review {} ({})",
-                review.id, review.recommendation
+                review.id,
+                review.recommendation
             );
         }
         Ok(None) => {}
         Err(err) => {
-            warn!("FailGuard candidate submission failed for TrustGate review {}: {err}", review.id);
+            warn!(
+                "FailGuard candidate submission failed for TrustGate review {}: {err}",
+                review.id
+            );
         }
     }
 }
 
-fn build_failguard_candidate_from_review(review: &ReviewResult) -> Option<FailGuardCandidateRequest> {
+fn build_failguard_candidate_from_review(
+    review: &ReviewResult,
+) -> Option<FailGuardCandidateRequest> {
     if !matches!(review.recommendation.as_str(), "warn" | "block") {
         return None;
     }
 
-    let top_findings = review.findings.iter()
+    let top_findings = review
+        .findings
+        .iter()
         .filter(|f| f.severity == review.recommendation)
-        .chain(review.findings.iter().filter(|f| f.severity != review.recommendation))
-        .take(4).collect::<Vec<_>>();
-    let top_label = top_findings.first().map(|f| f.label.as_str()).unwrap_or("review risk");
-    let source_ref = review.github.as_ref()
-        .and_then(|gh| if gh.pr_url.trim().is_empty() { None } else { Some(gh.pr_url.clone()) })
+        .chain(
+            review
+                .findings
+                .iter()
+                .filter(|f| f.severity != review.recommendation),
+        )
+        .take(4)
+        .collect::<Vec<_>>();
+    let top_label = top_findings
+        .first()
+        .map(|f| f.label.as_str())
+        .unwrap_or("review risk");
+    let source_ref = review
+        .github
+        .as_ref()
+        .and_then(|gh| {
+            if gh.pr_url.trim().is_empty() {
+                None
+            } else {
+                Some(gh.pr_url.clone())
+            }
+        })
         .unwrap_or_else(|| review.id.clone());
 
     let mut evidence = vec![
         format!("TrustGate review {}", review.id),
-        format!("Recommendation: {} - risk score {}", review.recommendation, review.risk_score),
-        format!("Scope: {} files, +{}, -{}", review.metrics.files_changed, review.metrics.additions, review.metrics.deletions),
+        format!(
+            "Recommendation: {} - risk score {}",
+            review.recommendation, review.risk_score
+        ),
+        format!(
+            "Scope: {} files, +{}, -{}",
+            review.metrics.files_changed, review.metrics.additions, review.metrics.deletions
+        ),
     ];
     if let Some(gh) = review.github.as_ref() {
         if !gh.pr_url.trim().is_empty() {
@@ -53,7 +84,9 @@ fn build_failguard_candidate_from_review(review: &ReviewResult) -> Option<FailGu
     }
     if let Some(report) = review.github_report.as_ref() {
         for url in [&report.comment_url, &report.check_url, &report.status_url] {
-            if !url.trim().is_empty() { evidence.push(url.clone()); }
+            if !url.trim().is_empty() {
+                evidence.push(url.clone());
+            }
         }
     }
     for finding in &top_findings {
@@ -63,13 +96,21 @@ fn build_failguard_candidate_from_review(review: &ReviewResult) -> Option<FailGu
     evidence.sort();
     evidence.dedup();
 
-    let affected_paths = review.files.iter()
+    let affected_paths = review
+        .files
+        .iter()
         .filter(|f| f.status == "warn" || f.status == "block")
-        .map(|f| f.path.clone()).take(12).collect::<Vec<_>>();
+        .map(|f| f.path.clone())
+        .take(12)
+        .collect::<Vec<_>>();
     let finding_labels = if top_findings.is_empty() {
         "the recorded TrustGate findings".into()
     } else {
-        top_findings.iter().map(|f| f.label.as_str()).collect::<Vec<_>>().join(", ")
+        top_findings
+            .iter()
+            .map(|f| f.label.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
     };
 
     Some(FailGuardCandidateRequest {

@@ -1,28 +1,20 @@
-use anyhow::{anyhow, Context, Result};
-use once_cell::sync::OnceCell;
-use rusqlite::{params, Connection, OptionalExtension};
-use std::sync::{Mutex, MutexGuard};
+use anyhow::{Context, Result};
+use once_cell::sync::Lazy;
+use patchhive_product_core::sqlite::{PooledSqliteConnection, SqlitePool};
+use rusqlite::{params, OptionalExtension};
 
 use crate::models::{HistoryItem, OverviewCounts, OverviewPayload, TriageScanResult};
 
-static DB_CONN: OnceCell<Mutex<Connection>> = OnceCell::new();
+static DB_POOL: Lazy<SqlitePool> = Lazy::new(|| {
+    SqlitePool::new(db_path(), "DepTriage").with_pool_size_env("DEP_TRIAGE_DB_POOL_SIZE")
+});
 
 pub fn db_path() -> String {
     std::env::var("DEP_TRIAGE_DB_PATH").unwrap_or_else(|_| "dep-triage.db".into())
 }
 
-fn open_connection() -> Result<Connection> {
-    let conn = Connection::open(db_path()).context("Could not open DepTriage database")?;
-    conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")
-        .context("Could not initialize DepTriage database pragmas")?;
-    Ok(conn)
-}
-
-fn connect() -> Result<MutexGuard<'static, Connection>> {
-    let mutex = DB_CONN.get_or_try_init(|| open_connection().map(Mutex::new))?;
-    mutex
-        .lock()
-        .map_err(|_| anyhow!("DepTriage database mutex poisoned"))
+fn connect() -> Result<PooledSqliteConnection<'static>> {
+    DB_POOL.get().context("Could not open DepTriage database")
 }
 
 pub fn health_check() -> bool {

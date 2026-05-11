@@ -4,15 +4,15 @@ pub mod scoring;
 pub mod utils;
 
 pub use routes::{
-    auth_status, capabilities, gen_key, gen_service_token, health, history, history_detail,
-    login, overview, rotate_service_token, runs, scan_github_dependencies, startup_checks_route,
+    auth_status, capabilities, gen_key, gen_service_token, health, history, history_detail, login,
+    overview, rotate_service_token, runs, scan_github_dependencies, startup_checks_route,
 };
 
 #[cfg(test)]
 mod tests {
     use super::{
-        utils::{compare_versions, infer_runtime_impact, parse_package_name},
         analysis::looks_like_dependency_pr,
+        utils::{compare_versions, infer_runtime_impact, parse_package_name},
     };
     use crate::github::{GitHubPullFile, GitHubPullRequest};
 

@@ -1,6 +1,26 @@
 mod agents;
 mod ai_local;
-mod auth;
+patchhive_product_core::define_api_key_auth_module! {
+    pub mod auth {
+        patchhive_product_core::auth::ApiKeyAuthConfig::new("REAPER_API_KEY_HASH", "rr-")
+            .with_service_token("REAPER_SERVICE_TOKEN_HASH", "rr-svc-")
+            .with_service_default_name("hivecore")
+            .with_service_dispatch_paths(["/run", "/dry-run"])
+            .with_unauthorized_message("Unauthorized — provide X-API-Key or X-PatchHive-Service-Token.")
+            .with_public_paths([
+                "/health",
+                "/auth/login",
+                "/auth/status",
+                "/auth/generate-key",
+                "/auth/generate-service-token",
+                "/auth/rotate-service-token",
+                "/startup/checks",
+                "/capabilities",
+                "/webhook/github",
+            ])
+    }
+}
+
 mod db;
 mod fix_worker;
 mod git_ops;

@@ -1,4 +1,24 @@
-mod auth;
+patchhive_product_core::define_api_key_auth_module! {
+    pub mod auth {
+        patchhive_product_core::auth::ApiKeyAuthConfig::new("REVIEW_BEE_API_KEY_HASH", "review-bee-")
+            .with_service_token("REVIEW_BEE_SERVICE_TOKEN_HASH", "review-bee-svc-")
+            .with_service_default_name("hivecore")
+            .with_service_dispatch_paths(["/review/github/pr", "/webhooks/github"])
+            .with_unauthorized_message("Unauthorized — provide X-API-Key or X-PatchHive-Service-Token.")
+            .with_public_paths([
+                "/health",
+                "/auth/login",
+                "/auth/status",
+                "/auth/generate-key",
+                "/auth/generate-service-token",
+                "/auth/rotate-service-token",
+                "/startup/checks",
+                "/capabilities",
+                "/webhooks/github",
+            ])
+    }
+}
+
 mod db;
 mod github;
 mod models;

@@ -24,26 +24,41 @@ pub async fn run_github_pr_review(
     action: String,
 ) -> Result<ReviewResult, ApiError> {
     let Some(repo) = crate::db::normalize_repo_name(&repo) else {
-        return Err(api_error(StatusCode::BAD_REQUEST, "TrustGate expects repos in owner/repo format."));
+        return Err(api_error(
+            StatusCode::BAD_REQUEST,
+            "TrustGate expects repos in owner/repo format.",
+        ));
     };
 
     if pr_number <= 0 {
-        return Err(api_error(StatusCode::BAD_REQUEST, "TrustGate expects a positive pull request number."));
+        return Err(api_error(
+            StatusCode::BAD_REQUEST,
+            "TrustGate expects a positive pull request number.",
+        ));
     }
 
     let pr = github::fetch_pull_request(client, &repo, pr_number)
-        .await.map_err(|err| api_error(StatusCode::BAD_GATEWAY, err.to_string()))?;
+        .await
+        .map_err(|err| api_error(StatusCode::BAD_GATEWAY, err.to_string()))?;
     let diff = github::fetch_pull_request_diff(client, &repo, pr_number)
-        .await.map_err(|err| api_error(StatusCode::BAD_GATEWAY, err.to_string()))?;
+        .await
+        .map_err(|err| api_error(StatusCode::BAD_GATEWAY, err.to_string()))?;
 
     if diff.trim().is_empty() {
-        return Err(api_error(StatusCode::BAD_GATEWAY, "GitHub returned an empty pull request diff."));
+        return Err(api_error(
+            StatusCode::BAD_GATEWAY,
+            "GitHub returned an empty pull request diff.",
+        ));
     }
 
     let rules = resolve_rules(&repo, rules)?;
     let github_context = GitHubReviewContext {
         repo: repo.clone(),
-        head_repo: if pr.head_repo.trim().is_empty() { repo.clone() } else { pr.head_repo.clone() },
+        head_repo: if pr.head_repo.trim().is_empty() {
+            repo.clone()
+        } else {
+            pr.head_repo.clone()
+        },
         pr_number,
         pr_title: pr.title,
         pr_url: pr.html_url,
@@ -56,15 +71,23 @@ pub async fn run_github_pr_review(
     };
 
     let mut review = review_diff(
-        client, &repo, &diff,
+        client,
+        &repo,
+        &diff,
         &normalize_ai_source(&ai_source, "github-pr"),
-        rules, "github_pr", Some(github_context),
-    ).await;
+        rules,
+        "github_pr",
+        Some(github_context),
+    )
+    .await;
 
     review.github_report = Some(if publish_status {
         github::publish_review_outcome(client, &review).await
     } else {
-        github::preview_review_outcome(&review, "GitHub status/check publishing was skipped for this run.")
+        github::preview_review_outcome(
+            &review,
+            "GitHub status/check publishing was skipped for this run.",
+        )
     });
 
     crate::db::save_review(&review)
@@ -74,7 +97,10 @@ pub async fn run_github_pr_review(
     Ok(review)
 }
 
-pub fn verify_webhook_signature(headers: &axum::http::HeaderMap, body: &[u8]) -> Result<(), ApiError> {
+pub fn verify_webhook_signature(
+    headers: &axum::http::HeaderMap,
+    body: &[u8],
+) -> Result<(), ApiError> {
     let Some(secret) = github::webhook_secret() else {
         return Err(api_error(
             StatusCode::FORBIDDEN,

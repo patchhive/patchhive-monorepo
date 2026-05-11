@@ -1,16 +1,16 @@
 use anyhow::{Context, Result};
-use std::{
-    collections::HashMap,
-    sync::{Mutex, MutexGuard},
-};
+use std::collections::HashMap;
 
-use once_cell::sync::OnceCell;
+use once_cell::sync::Lazy;
+use patchhive_product_core::sqlite::{PooledSqliteConnection, SqlitePool};
 use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::models::{FirstStackSmokeRun, ProductActionEvent, ProductOverride, SuiteSettings};
 use crate::secrets::TokenProtector;
 
-static DB_CONN: OnceCell<Mutex<Connection>> = OnceCell::new();
+static DB_POOL: Lazy<SqlitePool> = Lazy::new(|| {
+    SqlitePool::new(db_path(), "HiveCore").with_pool_size_env("HIVE_CORE_DB_POOL_SIZE")
+});
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct ServiceTokenStorageStats {
@@ -23,13 +23,8 @@ pub fn db_path() -> String {
     std::env::var("HIVE_CORE_DB_PATH").unwrap_or_else(|_| "hive-core.db".into())
 }
 
-fn open_connection() -> rusqlite::Result<Connection> {
-    Connection::open(db_path())
-}
-
-fn connect() -> rusqlite::Result<MutexGuard<'static, Connection>> {
-    let mutex = DB_CONN.get_or_try_init(|| open_connection().map(Mutex::new))?;
-    mutex.lock().map_err(|_| rusqlite::Error::InvalidQuery)
+fn connect() -> rusqlite::Result<PooledSqliteConnection<'static>> {
+    DB_POOL.get()
 }
 
 pub fn health_check() -> bool {

@@ -1,8 +1,13 @@
 use anyhow::Result;
 use chrono::Utc;
-use rusqlite::{params, Connection};
+use once_cell::sync::Lazy;
+use patchhive_product_core::sqlite::{PooledSqliteConnection, SqlitePool};
+use rusqlite::params;
 use std::path::PathBuf;
-use std::time::Duration;
+
+static DB_POOL: Lazy<SqlitePool> = Lazy::new(|| {
+    SqlitePool::new(db_path(), "RepoReaper").with_pool_size_env("REAPER_DB_POOL_SIZE")
+});
 
 pub fn db_path() -> PathBuf {
     std::env::var("REAPER_DB_PATH")
@@ -10,15 +15,8 @@ pub fn db_path() -> PathBuf {
         .unwrap_or_else(|_| PathBuf::from("repo-reaper.db"))
 }
 
-fn open_conn() -> Result<Connection> {
-    let conn = Connection::open(db_path())?;
-    conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
-    conn.busy_timeout(Duration::from_secs(5))?;
-    Ok(conn)
-}
-
-pub fn get_conn() -> Result<Connection> {
-    open_conn()
+pub fn get_conn() -> Result<PooledSqliteConnection<'static>> {
+    Ok(DB_POOL.get()?)
 }
 
 pub fn init_db() -> Result<()> {
