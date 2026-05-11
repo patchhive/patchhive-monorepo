@@ -1,12 +1,9 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use chrono::Utc;
-use once_cell::sync::OnceCell;
 use rusqlite::{params, Connection};
 use serde_json::Value;
 use std::path::PathBuf;
-use std::sync::{Mutex, MutexGuard};
-
-static DB_CONN: OnceCell<Mutex<Connection>> = OnceCell::new();
+use std::time::Duration;
 
 pub fn db_path() -> PathBuf {
     std::env::var("REAPER_DB_PATH")
@@ -17,14 +14,12 @@ pub fn db_path() -> PathBuf {
 fn open_conn() -> Result<Connection> {
     let conn = Connection::open(db_path())?;
     conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
+    conn.busy_timeout(Duration::from_secs(5))?;
     Ok(conn)
 }
 
-pub fn get_conn() -> Result<MutexGuard<'static, Connection>> {
-    let mutex = DB_CONN.get_or_try_init(|| open_conn().map(Mutex::new))?;
-    mutex
-        .lock()
-        .map_err(|_| anyhow!("repo-reaper database mutex poisoned"))
+pub fn get_conn() -> Result<Connection> {
+    open_conn()
 }
 
 pub fn init_db() -> Result<()> {
