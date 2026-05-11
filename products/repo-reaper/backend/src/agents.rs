@@ -85,7 +85,6 @@ pub struct AgentCallParams<'a> {
     pub provider: &'a str,
     pub model: &'a str,
     pub api_key: Option<&'a str>,
-    pub bot_user: Option<&'a str>,
     pub system: &'a str,
     pub prompt: &'a str,
 }
@@ -272,7 +271,6 @@ fn call_params<'a>(
         provider: agent.provider.as_str(),
         model: agent.model.as_str(),
         api_key: agent.api_key.as_deref(),
-        bot_user: agent.bot_user.as_deref(),
         system,
         prompt,
     }

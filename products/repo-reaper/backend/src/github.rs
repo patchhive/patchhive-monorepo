@@ -10,9 +10,6 @@ const GH_API: &str = "https://api.github.com";
 fn bot_token() -> String {
     github_token_from_env().unwrap_or_default()
 }
-fn bot_user() -> String {
-    std::env::var("BOT_GITHUB_USER").unwrap_or_default()
-}
 
 fn pr_client(http: &Client, token: Option<&str>) -> GitHubPrClient {
     GitHubPrClient::new(

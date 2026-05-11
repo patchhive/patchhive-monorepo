@@ -493,7 +493,11 @@ pub async fn fix_one(job: FixIssueJob) {
     let _ = tx
         .send(alog(
             &agents.gatekeeper,
-            &format!("Tests {}", if test.passed { "passed ✓" } else { "failed" }),
+            &format!(
+                "Tests via {} {}",
+                test.runner,
+                if test.passed { "passed ✓" } else { "failed" }
+            ),
             if test.passed { "success" } else { "warn" },
         ))
         .await;

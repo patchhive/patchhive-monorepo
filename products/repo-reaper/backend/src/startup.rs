@@ -132,10 +132,6 @@ pub async fn validate_config(http: &Client) -> Vec<StartupCheck> {
     results
 }
 
-pub fn recover_orphaned() -> Vec<String> {
-    crate::db::recover_orphaned_runs()
-}
-
 pub async fn pr_poll_loop(http: Client) {
     loop {
         tokio::time::sleep(std::time::Duration::from_secs(4 * 3600)).await;

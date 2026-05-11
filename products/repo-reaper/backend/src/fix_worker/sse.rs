@@ -29,22 +29,6 @@ pub fn alog(agent: &AgentConfig, msg: &str, kind: &str) -> Result<Event, Infalli
     )
 }
 
-pub fn alog_raw(
-    agent_id: &str,
-    agent_name: &str,
-    role: &str,
-    msg: &str,
-    kind: &str,
-) -> Result<Event, Infallible> {
-    sse_ev(
-        "agent_log",
-        json!({
-            "agent_id": agent_id, "agent": agent_name, "role": role,
-            "msg": msg, "type": kind, "ts": ts()
-        }),
-    )
-}
-
 pub fn astatus(agent_id: &str, status: &str, task: &str) -> Result<Event, Infallible> {
     sse_ev(
         "agent_status",

@@ -31,12 +31,10 @@ pub struct AgentStats {
 }
 
 pub type AgentMap = Arc<RwLock<HashMap<String, AgentConfig>>>;
-pub type CooldownMap = Arc<RwLock<HashMap<String, std::time::Instant>>>;
 
 #[derive(Clone)]
 pub struct AppState {
     pub agents: AgentMap,
-    pub cooldowns: CooldownMap,
     pub run_active: Arc<AtomicBool>,
     pub watch_mode: Arc<AtomicBool>,
     pub http: Client,
@@ -46,7 +44,6 @@ impl AppState {
     pub fn new() -> Self {
         Self {
             agents: Arc::new(RwLock::new(HashMap::new())),
-            cooldowns: Arc::new(RwLock::new(HashMap::new())),
             run_active: Arc::new(AtomicBool::new(false)),
             watch_mode: Arc::new(AtomicBool::new(false)),
             http: Client::builder()
