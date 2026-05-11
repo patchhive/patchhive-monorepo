@@ -1,4 +1,11 @@
-import { Btn, LoginPage, PatchHiveFooter, PatchHiveHeader, TabBar } from "@patchhivehq/ui";
+import {
+  Btn,
+  LoginPage,
+  PanelErrorBoundary,
+  PatchHiveFooter,
+  PatchHiveHeader,
+  TabBar,
+} from "@patchhivehq/ui";
 
 const loadingShellStyle = {
   minHeight: "100vh",
@@ -97,6 +104,8 @@ export function ProductAppFrame({
     gap: 16,
     ...contentStyle,
   };
+  const activePanelLabel =
+    tabs.find(tab => tab.id === activeTab)?.label || product || "Product";
 
   return (
     <div style={{ ...appShellStyle, ...shellStyle }}>
@@ -123,7 +132,12 @@ export function ProductAppFrame({
 
       <div style={resolvedContentStyle}>
         {error && <div style={errorBannerStyle}>{error}</div>}
-        {children}
+        <PanelErrorBoundary
+          key={activeTab || "product-content"}
+          label={`${activePanelLabel} panel`}
+        >
+          {children}
+        </PanelErrorBoundary>
       </div>
 
       <PatchHiveFooter product={product} />
