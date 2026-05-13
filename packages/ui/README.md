@@ -9,7 +9,7 @@ It provides the common visual layer behind the PatchHive suite: themes, layout p
 - theme helpers such as `applyTheme` and product theme maps
 - layout primitives such as buttons, inputs, tabs, dividers, and empty states
 - shared product chrome such as headers, footers, and status badges
-- reusable product components such as `AgentCard`, `DiffViewer`, `IssueRow`, and `LoginPage`
+- reusable product components such as `AgentCard`, `DiffViewer`, `IssueRow`, `LoginPage`, and `PanelErrorBoundary`
 
 ## Example
 
@@ -20,6 +20,7 @@ import {
   Input,
   PatchHiveHeader,
   PatchHiveFooter,
+  PanelErrorBoundary,
   TabBar,
   LoginPage,
 } from "@patchhivehq/ui";
