@@ -91,6 +91,20 @@ The script is intentionally safe:
 - if `export/<product>` already exists, it creates a timestamped branch name instead
 - if the product has a Rust backend, it refreshes the standalone-safe `backend/Cargo.lock` before exporting
 
+For standalone product repositories that are treated as mirrors, you can opt into a guarded mirror update:
+
+```bash
+PATCHHIVE_EXPORT_FORCE_WITH_LEASE=1 ./scripts/export-product.sh hive-core hivecore main
+```
+
+That uses the remote branch's current SHA as a `--force-with-lease` expectation. It is meant for mirror repos that may contain generated-only standalone commits, not for repositories with independent source-of-truth work.
+
+The suite release runner uses this guarded mirror mode by default:
+
+```bash
+./scripts/release-suite.sh --products hive-core --skip-publish
+```
+
 ## Package Export Script
 
 Use:
@@ -271,15 +285,7 @@ If the template scaffold has a Rust backend, `export-template.sh` now refreshes 
 3. Run the template export script.
 4. Push the export branch to the template repo.
 5. Keep the canonical scaffold in the monorepo.
-6. After the initial export, prefer `sync-crate-mirror.sh` for future mirror updates.
-
-## Recommended Template Export
-
-1. Create an empty GitHub repository for the template.
-2. Add it as a remote in the monorepo.
-3. Run the template export script.
-4. Push the export branch to the template repo.
-5. Keep the canonical template history and docs rooted in the monorepo.
+6. Keep the canonical template history and docs rooted in the monorepo.
 
 ## Day-To-Day Workflow
 

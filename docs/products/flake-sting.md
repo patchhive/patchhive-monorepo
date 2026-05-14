@@ -276,3 +276,7 @@ See [CONTRIBUTING.md](../../CONTRIBUTING.md) for detailed guidelines.
 ## License
 
 See [LICENSE](../../LICENSE) for details.
+
+## Standalone Repository
+
+The PatchHive monorepo is the source of truth for FlakeSting development. The standalone [`patchhive/flakesting`](https://github.com/patchhive/flakesting) repository is an exported mirror of this directory.

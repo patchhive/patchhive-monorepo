@@ -335,3 +335,7 @@ See [CONTRIBUTING.md](../../CONTRIBUTING.md) for detailed guidelines.
 ## License
 
 See [LICENSE](../../LICENSE) for details.
+
+## Standalone Repository
+
+The PatchHive monorepo is the source of truth for TrustGate development. The standalone [`patchhive/trustgate`](https://github.com/patchhive/trustgate) repository is an exported mirror of this directory.

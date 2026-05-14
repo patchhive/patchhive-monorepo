@@ -287,3 +287,7 @@ See [CONTRIBUTING.md](../../CONTRIBUTING.md) for detailed guidelines.
 ## License
 
 See [LICENSE](../../LICENSE) for details.
+
+## Standalone Repository
+
+The PatchHive monorepo is the source of truth for RepoMemory development. The standalone [`patchhive/repomemory`](https://github.com/patchhive/repomemory) repository is an exported mirror of this directory.

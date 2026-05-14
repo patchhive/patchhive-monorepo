@@ -2,6 +2,39 @@
 
 PatchHive releases are driven from the monorepo first, then mirrored into standalone repositories where appropriate.
 
+## Suite Release Automation
+
+For normal suite releases, prefer the shared runner:
+
+```bash
+./scripts/release-suite.sh
+```
+
+Start with a dry run when package versions, product exports, or CI state changed:
+
+```bash
+./scripts/release-suite.sh --dry-run
+```
+
+Useful scoped runs:
+
+```bash
+./scripts/release-suite.sh --products hive-core --skip-publish
+./scripts/release-suite.sh --products hive-core --skip-publish --skip-product-exports
+./scripts/release-suite.sh --packages ui,product-shell --skip-products
+./scripts/release-suite.sh --products review-bee,merge-keeper --skip-publish --skip-package-mirrors
+```
+
+The runner packs shared frontend packages, runs exported-product dependency smokes, publishes missing npm versions through the GitHub workflows, syncs package mirrors, exports selected product mirrors, and watches standalone CI. Use `--skip-product-exports` when you only want the packaged frontend smoke path. It uses guarded `--force-with-lease` product mirror pushes by default because those repositories are exported mirrors of the monorepo.
+
+Before opening or merging release work, run:
+
+```bash
+./scripts/check-suite-drift.sh
+```
+
+The monorepo `Suite Drift` workflow runs the same guard in CI.
+
 ## RepoReaper Release
 
 1. Confirm the monorepo is clean and `products/repo-reaper` is in the state you want to ship.

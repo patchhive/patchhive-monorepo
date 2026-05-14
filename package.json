@@ -10,6 +10,8 @@
     "dev:ai-local-rust": "cargo run --manifest-path packages/ai-local/rust-gateway/Cargo.toml",
     "new:product": "./scripts/new-product.sh",
     "refresh:product-lockfile": "./scripts/refresh-product-lockfile.sh",
+    "check:suite-drift": "./scripts/check-suite-drift.sh",
+    "release:suite": "./scripts/release-suite.sh",
     "smoke:frontend-deps": "./scripts/smoke-frontend-package-deps.sh",
     "start:ai-local": "npm --workspace @patchhive/ai-local run start",
     "start:ai-local-rust": "cargo run --release --manifest-path packages/ai-local/rust-gateway/Cargo.toml",

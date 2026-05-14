@@ -101,6 +101,22 @@ PatchHive is intentionally monorepo-first.
 
 The export flow is documented in [docs/product-export-workflow.md](docs/product-export-workflow.md), and the starter workflow is documented in [docs/product-starter-workflow.md](docs/product-starter-workflow.md).
 
+For suite-wide release work, use the shared runner:
+
+```bash
+npm run release:suite -- --dry-run
+npm run release:suite -- --products hive-core,review-bee --skip-publish
+npm run release:suite -- --products hive-core --skip-publish --skip-product-exports
+```
+
+For a fast local consistency check before pushing product, package, or docs changes:
+
+```bash
+npm run check:suite-drift
+```
+
+That drift guard verifies the product inventory, product docs, standalone repo links, ports, frontend package versions, theme keys, and standalone CI workflow conventions.
+
 ## Authentication Model
 
 Every product ships with the same first-run API-key bootstrap pattern.

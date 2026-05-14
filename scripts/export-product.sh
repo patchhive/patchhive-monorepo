@@ -21,6 +21,8 @@ Notes:
     should depend on published @patchhive/* packages or shared service contracts.
   - Set PATCHHIVE_SMOKE_FRONTEND_DEPS=1 to build the frontend from packaged
     npm dependencies before creating the export branch.
+  - Set PATCHHIVE_EXPORT_FORCE_WITH_LEASE=1 when updating a standalone mirror
+    that may have generated-only mirror commits on its target branch.
   - If the default export branch already exists, a timestamped branch name is used
     instead of overwriting anything.
 EOF
@@ -112,7 +114,16 @@ echo "Created ${EXPORT_BRANCH}"
 
 if [[ -n "$REMOTE_NAME" ]]; then
   echo "Pushing ${EXPORT_BRANCH} to ${REMOTE_NAME}:${TARGET_BRANCH}..."
-  git push "$REMOTE_NAME" "${EXPORT_BRANCH}:${TARGET_BRANCH}"
+  if [[ "${PATCHHIVE_EXPORT_FORCE_WITH_LEASE:-0}" == "1" ]]; then
+    REMOTE_SHA="$(git ls-remote "$REMOTE_NAME" "refs/heads/${TARGET_BRANCH}" | awk '{print $1}')"
+    if [[ -n "$REMOTE_SHA" ]]; then
+      git push --force-with-lease="${TARGET_BRANCH}:${REMOTE_SHA}" "$REMOTE_NAME" "${EXPORT_BRANCH}:${TARGET_BRANCH}"
+    else
+      git push "$REMOTE_NAME" "${EXPORT_BRANCH}:${TARGET_BRANCH}"
+    fi
+  else
+    git push "$REMOTE_NAME" "${EXPORT_BRANCH}:${TARGET_BRANCH}"
+  fi
   echo "Push complete."
 fi
 

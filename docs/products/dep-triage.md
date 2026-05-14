@@ -258,3 +258,7 @@ See [CONTRIBUTING.md](../../CONTRIBUTING.md) for detailed guidelines.
 ## License
 
 See [LICENSE](../../LICENSE) for details.
+
+## Standalone Repository
+
+The PatchHive monorepo is the source of truth for DepTriage development. The standalone [`patchhive/deptriage`](https://github.com/patchhive/deptriage) repository is an exported mirror of this directory.

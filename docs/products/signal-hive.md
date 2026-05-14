@@ -260,3 +260,7 @@ See [CONTRIBUTING.md](../../CONTRIBUTING.md) for detailed guidelines.
 ## License
 
 See [LICENSE](../../LICENSE) for details.
+
+## Standalone Repository
+
+The PatchHive monorepo is the source of truth for SignalHive development. The standalone [`patchhive/signalhive`](https://github.com/patchhive/signalhive) repository is an exported mirror of this directory.

@@ -314,3 +314,7 @@ See [CONTRIBUTING.md](../../CONTRIBUTING.md) for detailed guidelines.
 ## License
 
 See [LICENSE](../../LICENSE) for details.
+
+## Standalone Repository
+
+The PatchHive monorepo is the source of truth for VulnTriage development. The standalone [`patchhive/vulntriage`](https://github.com/patchhive/vulntriage) repository is an exported mirror of this directory.

@@ -36,3 +36,7 @@ through product-owned APIs; it does not replace standalone product operation.
 - Discovery products should honor allowlist, denylist, and opt-out controls.
 - Write-capable products should prefer no action over weak output.
 - HiveCore should consume product-owned APIs rather than private databases.
+- Product pages should list the same local ports and standalone mirror links as
+  their product `README.md` files.
+- Run `npm run check:suite-drift` after changing product docs, package
+  versions, ports, theme keys, or standalone CI conventions.

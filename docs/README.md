@@ -42,3 +42,4 @@ The product documentation set is in [products/](products/).
 - [Release checklist](release-checklist.md)
 - [UI release workflow](ui-release-workflow.md)
 - [Product shell release workflow](product-shell-release-workflow.md)
+- Suite drift guard: `npm run check:suite-drift`
