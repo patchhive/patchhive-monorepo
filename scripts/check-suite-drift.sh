@@ -139,7 +139,11 @@ check_product() {
   require_contains "docs/products/README.md" "${product}.md" "product docs index entry for ${product}"
   require_contains "packages/ui/src/theme.js" "\"${product}\":" "theme key ${product}"
 
-  if ! rg -q "applyTheme\\([\"']${product}[\"']" "$product_dir/frontend/src"; then
+  if command -v rg >/dev/null 2>&1; then
+    if ! rg -q "applyTheme\\([\"']${product}[\"']" "$product_dir/frontend/src"; then
+      fail "$product frontend does not apply theme ${product}"
+    fi
+  elif ! grep -R -Eq "applyTheme\\([\"']${product}[\"']" "$product_dir/frontend/src"; then
     fail "$product frontend does not apply theme ${product}"
   fi
 
