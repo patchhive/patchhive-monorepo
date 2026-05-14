@@ -19,6 +19,8 @@ Notes:
   - The monorepo remains the source of truth.
   - Shared packages are not copied into the export. Standalone product repos
     should depend on published @patchhive/* packages or shared service contracts.
+  - Set PATCHHIVE_SMOKE_FRONTEND_DEPS=1 to build the frontend from packaged
+    npm dependencies before creating the export branch.
   - If the default export branch already exists, a timestamped branch name is used
     instead of overwriting anything.
 EOF
@@ -45,6 +47,10 @@ PRODUCT_PREFIX="products/${PRODUCT_NAME}"
 if [[ ! -d "$PRODUCT_PREFIX" ]]; then
   echo "PatchHive product not found: ${PRODUCT_PREFIX}" >&2
   exit 1
+fi
+
+if [[ "${PATCHHIVE_SMOKE_FRONTEND_DEPS:-0}" == "1" && -f "${PRODUCT_PREFIX}/frontend/package.json" ]]; then
+  "$ROOT_DIR/scripts/smoke-frontend-package-deps.sh" "$PRODUCT_NAME"
 fi
 
 TMP_PATHS=()

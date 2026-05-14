@@ -9,7 +9,7 @@ It holds the cross-product browser behavior that should feel identical everywher
 - `useApiKeyAuth` for shared API-key bootstrap and session handling
 - `createApiFetcher` for authenticated requests to product backends
 - `ProductSessionGate` for the shared login and loading boundary
-- `ProductAppFrame` for the common PatchHive app frame
+- `ProductAppFrame` for the common PatchHive app frame and per-panel error boundary
 - `ProductSetupWizard` for the shared post-login setup and readiness flow used by every product except HiveCore
 
 ## Example
