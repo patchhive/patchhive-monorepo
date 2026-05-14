@@ -106,6 +106,19 @@ pub struct RunStart<'a> {
     pub dry_run: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RunStatus {
+    Done,
+}
+
+impl RunStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Done => "done",
+        }
+    }
+}
+
 pub fn start_run(input: RunStart<'_>) -> Result<()> {
     let conn = get_conn()?;
     conn.execute(
@@ -120,30 +133,65 @@ pub fn start_run(input: RunStart<'_>) -> Result<()> {
     Ok(())
 }
 
-pub fn finish_run(run_id: &str, fixed: i64, attempted: i64, cost: f64, status: &str) -> Result<()> {
+pub fn finish_run(
+    run_id: &str,
+    fixed: i64,
+    attempted: i64,
+    cost: f64,
+    status: RunStatus,
+) -> Result<()> {
     let conn = get_conn()?;
     conn.execute(
         "UPDATE runs SET finished_at=?1, total_fixed=?2, total_attempted=?3, total_cost_usd=?4, status=?5 WHERE id=?6",
-        params![Utc::now().to_rfc3339(), fixed, attempted, cost, status, run_id],
+        params![
+            Utc::now().to_rfc3339(),
+            fixed,
+            attempted,
+            cost,
+            status.as_str(),
+            run_id
+        ],
     )?;
     Ok(())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IssueAttemptTarget {
+    pub repo: String,
+    pub issue_number: i64,
+    pub issue_title: String,
+    pub issue_url: String,
 }
 
 pub struct IssueAttemptStart<'a> {
     pub attempt_id: &'a str,
     pub run_id: &'a str,
-    pub repo: &'a str,
-    pub issue_number: i64,
-    pub issue_title: &'a str,
-    pub issue_url: &'a str,
+    pub target: &'a IssueAttemptTarget,
     pub reaper_agent: &'a str,
     pub smith_agent: Option<&'a str>,
     pub gatekeeper_agent: &'a str,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IssueAttemptStatus {
+    Fixed,
+    Skipped,
+    Error,
+}
+
+impl IssueAttemptStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Fixed => "fixed",
+            Self::Skipped => "skipped",
+            Self::Error => "error",
+        }
+    }
+}
+
 pub struct IssueAttemptFinish<'a> {
     pub attempt_id: &'a str,
-    pub status: &'a str,
+    pub status: IssueAttemptStatus,
     pub pr_url: Option<&'a str>,
     pub pr_number: Option<i64>,
     pub cost_usd: f64,
@@ -162,10 +210,10 @@ pub fn start_attempt(input: IssueAttemptStart<'_>) -> Result<()> {
         params![
             input.attempt_id,
             input.run_id,
-            input.repo,
-            input.issue_number,
-            input.issue_title,
-            input.issue_url,
+            &input.target.repo,
+            input.target.issue_number,
+            &input.target.issue_title,
+            &input.target.issue_url,
             input.reaper_agent,
             input.smith_agent,
             input.gatekeeper_agent,
@@ -182,7 +230,7 @@ pub fn finish_attempt(input: IssueAttemptFinish<'_>) -> Result<()> {
          duration_seconds=?5,cost_usd=?6,patch_diff=?7,error_msg=?8,skip_reason=?9,confidence=?10
          WHERE id=?11",
         params![
-            input.status,
+            input.status.as_str(),
             input.pr_url,
             input.pr_number,
             Utc::now().to_rfc3339(),

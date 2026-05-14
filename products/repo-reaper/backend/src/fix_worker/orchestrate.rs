@@ -7,7 +7,7 @@ use uuid::Uuid;
 use crate::agents::{agent_generate_patch, agent_patch_retry, agent_smith_patch};
 use crate::db::{
     finish_attempt, save_rejected_patch, start_attempt, track_pr, update_perf, IssueAttemptFinish,
-    IssueAttemptStart,
+    IssueAttemptStart, IssueAttemptStatus,
 };
 use crate::github::gh_check_duplicate;
 
@@ -16,7 +16,7 @@ use super::memory::submit_smith_rejection_candidate;
 use super::patch::{apply_patch_with_self_heal, publish_pull_request};
 use super::sse::{alog, astatus, sse_ev};
 use super::types::{
-    build_issue_scope, cancelled, cfg, cleanup_work_path, finish_error_attempt,
+    build_attempt_target, build_issue_scope, cancelled, cfg, cleanup_work_path, finish_error_attempt,
     finish_skipped_attempt, pick_fix_agents, FixIssueJob, SmithReviewOutcome,
 };
 
@@ -24,16 +24,14 @@ pub async fn fix_one(job: FixIssueJob) {
     let FixIssueJob {
         issue,
         idx,
-        judges,
-        reapers,
-        smiths,
-        gatekeepers,
-        sem,
-        params,
-        run_cost,
-        tx,
-        http,
+        context,
     } = job;
+    let agents_pool = context.agents;
+    let sem = context.sem;
+    let params = context.params;
+    let run_cost = context.run_cost;
+    let tx = context.tx;
+    let http = context.http;
 
     let Ok(_permit) = sem.acquire().await else {
         tracing::warn!("RepoReaper fix worker semaphore closed before issue execution");
@@ -43,7 +41,13 @@ pub async fn fix_one(job: FixIssueJob) {
         return;
     }
 
-    let agents = match pick_fix_agents(idx, &judges, &reapers, &smiths, &gatekeepers) {
+    let agents = match pick_fix_agents(
+        idx,
+        &agents_pool.judges,
+        &agents_pool.reapers,
+        &agents_pool.smiths,
+        &agents_pool.gatekeepers,
+    ) {
         Ok(a) => a,
         Err(e) => {
             tracing::error!("Cannot pick fix agents: {e:#}");
@@ -51,6 +55,7 @@ pub async fn fix_one(job: FixIssueJob) {
         }
     };
     let scope = build_issue_scope(&issue);
+    let attempt_target = build_attempt_target(&issue);
     let attempt_id = Uuid::new_v4().to_string()[..12].to_string();
     let t_start = std::time::Instant::now();
     let mut cost = 0.0f64;
@@ -110,10 +115,7 @@ pub async fn fix_one(job: FixIssueJob) {
     let _ = start_attempt(IssueAttemptStart {
         attempt_id: &attempt_id,
         run_id: &params.run_id,
-        repo: issue["repo"].as_str().unwrap_or(""),
-        issue_number: issue["number"].as_i64().unwrap_or(0),
-        issue_title: issue["title"].as_str().unwrap_or(""),
-        issue_url: issue["url"].as_str().unwrap_or(""),
+        target: &attempt_target,
         reaper_agent: &agents.reaper.name,
         smith_agent: agents.smith.as_ref().map(|smith| smith.name.as_str()),
         gatekeeper_agent: &agents.gatekeeper.name,
@@ -441,7 +443,7 @@ pub async fn fix_one(job: FixIssueJob) {
                     let skip_reason = format!("confidence_{sconf}");
                     let _ = finish_attempt(IssueAttemptFinish {
                         attempt_id: &attempt_id,
-                        status: "skipped",
+                        status: IssueAttemptStatus::Skipped,
                         pr_url: None,
                         pr_number: None,
                         cost_usd: cost,
@@ -634,7 +636,7 @@ pub async fn fix_one(job: FixIssueJob) {
     let duration = t_start.elapsed().as_secs_f64();
     let _ = finish_attempt(IssueAttemptFinish {
         attempt_id: &attempt_id,
-        status: "fixed",
+        status: IssueAttemptStatus::Fixed,
         pr_url: pr["html_url"].as_str(),
         pr_number: Some(pr_number),
         cost_usd: cost,

@@ -1,4 +1,4 @@
-use crate::db::{finish_run, get_conn, start_run, RunStart};
+use crate::db::{finish_run, get_conn, start_run, RunStart, RunStatus};
 use crate::state::AppState;
 use axum::{
     body::Body,
@@ -273,25 +273,29 @@ async fn webhook_single_fix(state: AppState, repo: &str, issue: Value) {
     let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(1));
     let cancel_requested = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
 
-    use crate::fix_worker::{fix_one, FixIssueJob, FixParams};
-    let params = FixParams {
-        retry_count,
-        min_conf,
-        run_id: run_id.clone(),
-        cancel_requested,
+    use crate::fix_worker::{fix_one, FixAgentPools, FixIssueJob, FixParams, FixRunContext};
+    let context = FixRunContext {
+        agents: std::sync::Arc::new(FixAgentPools {
+            judges,
+            reapers: reaper_list,
+            smiths,
+            gatekeepers: gatekeeper_list,
+        }),
+        sem,
+        params: FixParams {
+            retry_count,
+            min_conf,
+            run_id: run_id.clone(),
+            cancel_requested,
+        },
+        run_cost: run_cost.clone(),
+        tx,
+        http: state.http.clone(),
     };
     fix_one(FixIssueJob {
         issue: iss,
         idx: 0,
-        judges,
-        reapers: reaper_list,
-        smiths,
-        gatekeepers: gatekeeper_list,
-        sem,
-        params,
-        run_cost: run_cost.clone(),
-        tx,
-        http: state.http.clone(),
+        context,
     })
     .await;
 
@@ -311,7 +315,7 @@ async fn webhook_single_fix(state: AppState, repo: &str, issue: Value) {
         )
         .unwrap_or(0);
     let rc = run_cost.load(std::sync::atomic::Ordering::Relaxed) as f64 / 1_000_000.0;
-    let _ = finish_run(&run_id, total_fixed, total_attempted, rc, "done");
+    let _ = finish_run(&run_id, total_fixed, total_attempted, rc, RunStatus::Done);
 }
 
 async fn webhook_pr_comment(state: AppState, repo: &str, issue: Value, comment: Value) {

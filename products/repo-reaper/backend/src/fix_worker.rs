@@ -10,4 +10,4 @@ mod types;
 // Re-export public API used by routes/pipeline
 pub use orchestrate::fix_one;
 pub use sse::{alog, astatus, sse};
-pub use types::{FixIssueJob, FixParams};
+pub use types::{FixAgentPools, FixIssueJob, FixParams, FixRunContext};

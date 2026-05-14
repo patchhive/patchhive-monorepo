@@ -70,8 +70,98 @@ function renderHeaderBadges({ watchMode, hasCooldown, cooldowns, runCost, lifeti
   );
 }
 
+function RepoReaperActivePanel({ app, apiKey, fetch_ }) {
+  const { nav, team, run, config, watch, diff } = app;
+
+  switch (nav.tab) {
+    case "setup":
+      return (
+        <ProductSetupWizard
+          apiBase={API}
+          fetch_={fetch_}
+          product="RepoReaper"
+          icon="🔱"
+          description="RepoReaper is the highest-autonomy tool in the suite, so its first-run path should stay disciplined: prove config, shape safeguards, then dry run before real hunts."
+          steps={SETUP_STEPS}
+          onOpenTab={nav.setTab}
+          checksTabId="startup"
+        />
+      );
+    case "team":
+      return (
+        <TeamPanel
+          agents={team.agents}
+          logs={run.logs}
+          running={run.running}
+          cooldowns={team.cooldowns}
+          onAdd={team.addAgent}
+          onRemove={team.removeAgent}
+          apiKey={apiKey}
+          existingConfig={config.existingCfg}
+        />
+      );
+    case "run":
+      return (
+        <RunPanel
+          running={run.running}
+          onStart={run.startRun}
+          params={run.params}
+          setParams={run.setParams}
+          issues={run.issues}
+          logs={run.logs}
+          agents={team.agents}
+          runStats={run.runStats}
+          runCost={run.runCost}
+          onViewDiff={diff.setViewDiff}
+        />
+      );
+    case "dryrun":
+      return <DryRunPanel agents={team.agents} apiKey={apiKey} onViewDiff={diff.setViewDiff} />;
+    case "history":
+      return <HistoryPanel apiKey={apiKey} onViewDiff={diff.setViewDiff} />;
+    case "board":
+      return <LeaderboardPanel apiKey={apiKey} />;
+    case "rejected":
+      return <RejectedPanel apiKey={apiKey} onViewDiff={diff.setViewDiff} />;
+    case "prs":
+      return <PRTrackingPanel apiKey={apiKey} />;
+    case "presets":
+      return (
+        <PresetsPanel
+          apiKey={apiKey}
+          currentAgents={Object.values(team.agents)}
+          onLoadPreset={team.loadPreset}
+        />
+      );
+    case "repos":
+      return <RepoListsPanel apiKey={apiKey} />;
+    case "sched":
+      return <SchedulesPanel apiKey={apiKey} />;
+    case "webhook":
+      return (
+        <WebhookPanel
+          watchMode={watch.watchMode}
+          onToggleWatch={watch.toggleWatchMode}
+        />
+      );
+    case "startup":
+      return <StartupChecksPanel apiKey={apiKey} />;
+    case "cfg":
+      return (
+        <ConfigPanel
+          existingConfig={config.existingCfg}
+          apiKey={apiKey}
+          onSaved={config.refreshConfig}
+        />
+      );
+    default:
+      return null;
+  }
+}
+
 export default function App() {
-  const { auth, nav, team, run, config, watch, diff } = useRepoReaperApp();
+  const app = useRepoReaperApp();
+  const { auth, nav, run } = app;
   const {
     apiKey,
     checked,
@@ -107,9 +197,9 @@ export default function App() {
         phaseLabel={PHASE_LABEL}
         phaseIcon={PHASE_ICON}
         headerChildren={renderHeaderBadges({
-          watchMode: watch.watchMode,
-          hasCooldown: team.hasCooldown,
-          cooldowns: team.cooldowns,
+          watchMode: app.watch.watchMode,
+          hasCooldown: app.team.hasCooldown,
+          cooldowns: app.team.cooldowns,
           runCost: run.runCost,
           lifetimeCost: run.lifetimeCost,
         })}
@@ -121,64 +211,12 @@ export default function App() {
         onSignOut={logout}
         showSignOut={Boolean(apiKey)}
       >
-        {nav.tab === "setup" && (
-          <ProductSetupWizard
-            apiBase={API}
-            fetch_={fetch_}
-            product="RepoReaper"
-            icon="🔱"
-            description="RepoReaper is the highest-autonomy tool in the suite, so its first-run path should stay disciplined: prove config, shape safeguards, then dry run before real hunts."
-            steps={SETUP_STEPS}
-            onOpenTab={nav.setTab}
-            checksTabId="startup"
-          />
-        )}
-        {nav.tab === "team" && (
-          <TeamPanel
-            agents={team.agents}
-            logs={run.logs}
-            running={run.running}
-            cooldowns={team.cooldowns}
-            onAdd={team.addAgent}
-            onRemove={team.removeAgent}
-            apiKey={apiKey}
-            existingConfig={config.existingCfg}
-          />
-        )}
-        {nav.tab === "run" && (
-          <RunPanel
-            running={run.running}
-            onStart={run.startRun}
-            params={run.params}
-            setParams={run.setParams}
-            issues={run.issues}
-            logs={run.logs}
-            agents={team.agents}
-            runStats={run.runStats}
-            runCost={run.runCost}
-            onViewDiff={diff.setViewDiff}
-          />
-        )}
-        {nav.tab === "dryrun" && <DryRunPanel agents={team.agents} apiKey={apiKey} onViewDiff={diff.setViewDiff} />}
-        {nav.tab === "history" && <HistoryPanel apiKey={apiKey} onViewDiff={diff.setViewDiff} />}
-        {nav.tab === "board" && <LeaderboardPanel apiKey={apiKey} />}
-        {nav.tab === "rejected" && <RejectedPanel apiKey={apiKey} onViewDiff={diff.setViewDiff} />}
-        {nav.tab === "prs" && <PRTrackingPanel apiKey={apiKey} />}
-        {nav.tab === "presets" && (
-          <PresetsPanel
-            apiKey={apiKey}
-            currentAgents={Object.values(team.agents)}
-            onLoadPreset={team.loadPreset}
-          />
-        )}
-        {nav.tab === "repos" && <RepoListsPanel apiKey={apiKey} />}
-        {nav.tab === "sched" && <SchedulesPanel apiKey={apiKey} />}
-        {nav.tab === "webhook" && <WebhookPanel watchMode={watch.watchMode} onToggleWatch={watch.toggleWatchMode} />}
-        {nav.tab === "startup" && <StartupChecksPanel apiKey={apiKey} />}
-        {nav.tab === "cfg" && <ConfigPanel existingConfig={config.existingCfg} apiKey={apiKey} onSaved={config.refreshConfig} />}
+        <RepoReaperActivePanel app={app} apiKey={apiKey} fetch_={fetch_} />
       </ProductAppFrame>
 
-      {diff.viewDiff && <DiffViewer diff={diff.viewDiff} onClose={() => diff.setViewDiff(null)} />}
+      {app.diff.viewDiff && (
+        <DiffViewer diff={app.diff.viewDiff} onClose={() => app.diff.setViewDiff(null)} />
+      )}
     </ProductSessionGate>
   );
 }

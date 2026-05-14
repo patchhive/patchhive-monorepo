@@ -1,13 +1,10 @@
 import { useEffect, useState } from "react";
+import { applyTheme } from "@patchhivehq/ui";
 import {
-  applyTheme,
-  Btn,
-  LoginPage,
-  PatchHiveFooter,
-  PatchHiveHeader,
-  TabBar,
-} from "@patchhivehq/ui";
-import { useApiKeyAuth } from "@patchhivehq/product-shell";
+  ProductAppFrame,
+  ProductSessionGate,
+  useApiKeyAuth,
+} from "@patchhivehq/product-shell";
 import { API } from "./config.js";
 import OverviewPanel from "./panels/OverviewPanel.jsx";
 import ChecksPanel from "./panels/ChecksPanel.jsx";
@@ -28,49 +25,36 @@ export default function App() {
     applyTheme("__PRODUCT_THEME__");
   }, []);
 
-  if (!checked) {
-    return (
-      <div style={{ minHeight: "100vh", background: "#080810", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--accent)", fontSize: 26 }}>
-        __PRODUCT_ICON__
-      </div>
-    );
-  }
-
-  if (needsAuth) {
-    return (
-      <LoginPage
-        onLogin={login}
+  return (
+    <ProductSessionGate
+      checked={checked}
+      needsAuth={needsAuth}
+      onLogin={login}
+      icon="__PRODUCT_ICON__"
+      title="__PRODUCT_TITLE__"
+      storageKey="__PRODUCT_SLUG___api_key"
+      apiBase={API}
+      authError={authError}
+      bootstrapRequired={bootstrapRequired}
+      onGenerateKey={generateKey}
+    >
+      <ProductAppFrame
         icon="__PRODUCT_ICON__"
         title="__PRODUCT_TITLE__"
-        subtitle="by PatchHive"
-        storageKey="__PRODUCT_SLUG___api_key"
-        apiBase={API}
-        authError={authError}
-        bootstrapRequired={bootstrapRequired}
-        onGenerateKey={generateKey}
-      />
-    );
-  }
-
-  return (
-    <div style={{ minHeight: "100vh", background: "var(--bg)", color: "var(--text)", fontFamily: "'SF Mono','Fira Mono',monospace", fontSize: 12 }}>
-      <PatchHiveHeader icon="__PRODUCT_ICON__" title="__PRODUCT_TITLE__" version="v0.1.0">
-        <div style={{ fontSize: 10, color: "var(--text-dim)" }}>__PRODUCT_TAGLINE__</div>
-        {apiKey && (
-          <Btn onClick={logout} style={{ padding: "4px 10px" }}>
-            Sign out
-          </Btn>
-        )}
-      </PatchHiveHeader>
-
-      <TabBar tabs={TABS} active={tab} onChange={setTab} />
-
-      <div style={{ padding: 24, maxWidth: 1200, margin: "0 auto", display: "grid", gap: 16 }}>
+        product="__PRODUCT_TITLE__"
+        headerChildren={
+          <div style={{ fontSize: 10, color: "var(--text-dim)" }}>__PRODUCT_TAGLINE__</div>
+        }
+        tabs={TABS}
+        activeTab={tab}
+        onTabChange={setTab}
+        maxWidth={1200}
+        onSignOut={logout}
+        showSignOut={Boolean(apiKey)}
+      >
         {tab === "overview" && <OverviewPanel apiKey={apiKey} />}
         {tab === "checks" && <ChecksPanel apiKey={apiKey} />}
-      </div>
-
-      <PatchHiveFooter product="__PRODUCT_TITLE__" />
-    </div>
+      </ProductAppFrame>
+    </ProductSessionGate>
   );
 }

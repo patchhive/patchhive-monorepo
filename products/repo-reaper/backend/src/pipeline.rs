@@ -15,8 +15,10 @@ use tokio_stream::wrappers::ReceiverStream;
 use uuid::Uuid;
 
 use crate::agents::{agent_dry_run_analysis, agent_score_issues};
-use crate::db::{finish_run, get_conn, get_lifetime_cost, start_run, RunStart};
-use crate::fix_worker::{alog, astatus, fix_one, sse, FixIssueJob, FixParams};
+use crate::db::{finish_run, get_conn, get_lifetime_cost, start_run, RunStart, RunStatus};
+use crate::fix_worker::{
+    alog, astatus, fix_one, sse, FixAgentPools, FixIssueJob, FixParams, FixRunContext,
+};
 use crate::github::{gh_get, search_repos};
 use crate::state::{AgentConfig, AppState};
 
@@ -279,7 +281,7 @@ async fn finalize_run_with_summary(
     };
 
     let rc = run_cost.load(Ordering::Relaxed) as f64 / 1_000_000.0;
-    let _ = finish_run(run_id, total_fixed, attempted as i64, rc, "done");
+    let _ = finish_run(run_id, total_fixed, attempted as i64, rc, RunStatus::Done);
     let _ = tx.send(sse("phase", json!({"phase":"done"}))).await;
     let _ = tx.send(sse("log", json!({"msg":format!("Hunt complete — {total_fixed}/{attempted} kills | ${rc:.4}"),"type":"success"}))).await;
     let _ = tx.send(sse("done", json!({"total_fixed":total_fixed,"total_attempted":attempted,"run_id":run_id,"cost":rc}))).await;
@@ -300,26 +302,30 @@ async fn run_fix_wave(
     let sem = Arc::new(Semaphore::new(req.concurrency));
     let (done_tx, mut done_rx) = mpsc::channel::<()>(fixable.len());
     let mut handles = Vec::new();
-
-    for (idx, issue) in fixable.iter().enumerate() {
-        let params = FixParams {
-            retry_count: req.retry_count,
-            min_conf,
-            run_id: run_id.to_string(),
-            cancel_requested: cancel_requested.clone(),
-        };
-        let handle = tokio::spawn(fix_one(FixIssueJob {
-            issue: issue.clone(),
-            idx,
+    let context = FixRunContext {
+        agents: Arc::new(FixAgentPools {
             judges: team.judges.clone(),
             reapers: team.reapers.clone(),
             smiths: team.smiths.clone(),
             gatekeepers: team.gatekeepers.clone(),
-            sem: sem.clone(),
-            params,
-            run_cost: run_cost.clone(),
-            tx: tx.clone(),
-            http: http.clone(),
+        }),
+        sem,
+        params: FixParams {
+            retry_count: req.retry_count,
+            min_conf,
+            run_id: run_id.to_string(),
+            cancel_requested: cancel_requested.clone(),
+        },
+        run_cost: run_cost.clone(),
+        tx: tx.clone(),
+        http: http.clone(),
+    };
+
+    for (idx, issue) in fixable.iter().enumerate() {
+        let handle = tokio::spawn(fix_one(FixIssueJob {
+            issue: issue.clone(),
+            idx,
+            context: context.clone(),
         }));
         let done_tx = done_tx.clone();
         handles.push(tokio::spawn(async move {
@@ -562,7 +568,7 @@ pub async fn execute_run(
 
     if fixable.is_empty() {
         let rc = run_cost.load(Ordering::Relaxed) as f64 / 1_000_000.0;
-        let _ = finish_run(&run_id, 0, 0, rc, "done");
+        let _ = finish_run(&run_id, 0, 0, rc, RunStatus::Done);
         let _ = tx.send(sse("done", json!({"total_fixed":0}))).await;
         run_active.store(false, Ordering::SeqCst);
         return;

@@ -15,6 +15,7 @@ use super::sse::sse_ev;
 pub type Tx =
     tokio::sync::mpsc::Sender<Result<axum::response::sse::Event, std::convert::Infallible>>;
 
+#[derive(Clone)]
 pub struct FixParams {
     pub retry_count: usize,
     pub min_conf: i32,
@@ -22,18 +23,28 @@ pub struct FixParams {
     pub cancel_requested: Arc<AtomicBool>,
 }
 
-pub struct FixIssueJob {
-    pub issue: Value,
-    pub idx: usize,
+#[derive(Clone)]
+pub struct FixAgentPools {
     pub judges: Vec<AgentConfig>,
     pub reapers: Vec<AgentConfig>,
     pub smiths: Vec<AgentConfig>,
     pub gatekeepers: Vec<AgentConfig>,
+}
+
+#[derive(Clone)]
+pub struct FixRunContext {
+    pub agents: Arc<FixAgentPools>,
     pub sem: Arc<tokio::sync::Semaphore>,
     pub params: FixParams,
     pub run_cost: Arc<AtomicI64>,
     pub tx: Tx,
     pub http: reqwest::Client,
+}
+
+pub struct FixIssueJob {
+    pub issue: Value,
+    pub idx: usize,
+    pub context: FixRunContext,
 }
 
 #[derive(Clone)]
@@ -117,6 +128,15 @@ pub fn build_issue_scope(issue: &Value) -> IssueScope {
     }
 }
 
+pub fn build_attempt_target(issue: &Value) -> crate::db::IssueAttemptTarget {
+    crate::db::IssueAttemptTarget {
+        repo: issue["repo"].as_str().unwrap_or("").to_string(),
+        issue_number: issue["number"].as_i64().unwrap_or(0),
+        issue_title: issue["title"].as_str().unwrap_or("").to_string(),
+        issue_url: issue["url"].as_str().unwrap_or("").to_string(),
+    }
+}
+
 pub fn cfg(k: &str) -> String {
     std::env::var(k).unwrap_or_default()
 }
@@ -140,7 +160,7 @@ pub async fn finish_skipped_attempt(
 ) {
     let _ = crate::db::finish_attempt(crate::db::IssueAttemptFinish {
         attempt_id,
-        status: "skipped",
+        status: crate::db::IssueAttemptStatus::Skipped,
         pr_url: None,
         pr_number: None,
         cost_usd: cost,
@@ -171,7 +191,7 @@ pub async fn finish_error_attempt(
 ) {
     let _ = crate::db::finish_attempt(crate::db::IssueAttemptFinish {
         attempt_id,
-        status: "error",
+        status: crate::db::IssueAttemptStatus::Error,
         pr_url: None,
         pr_number: None,
         cost_usd: cost,

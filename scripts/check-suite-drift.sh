@@ -165,6 +165,8 @@ check_template() {
   require_file "$template/frontend/package.json"
   require_file "$template/.github/workflows/ci.yml"
   check_frontend_dependencies "$template/frontend/package.json" "product-starter scaffold"
+  require_contains "$template/frontend/src/App.jsx" "ProductSessionGate" "template shared session gate"
+  require_contains "$template/frontend/src/App.jsx" "ProductAppFrame" "template shared app frame"
   require_contains "$template/.github/workflows/ci.yml" "uses: actions/checkout@v5" "template checkout v5"
   require_contains "$template/.github/workflows/ci.yml" "uses: actions/setup-node@v5" "template setup-node v5"
   require_contains "$template/.github/workflows/ci.yml" "node-version: 24" "template Node 24"
