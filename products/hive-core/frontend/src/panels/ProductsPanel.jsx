@@ -128,10 +128,15 @@ function defaultActionRequest(product, action) {
   }
   if (["run", "dry_run"].includes(action.id)) {
     return {
-      query: "language:Rust label:bug",
-      languages: ["rust"],
+      language: "rust",
+      min_stars: 25,
       max_repos: 3,
       max_issues: 3,
+      labels: ["bug"],
+      concurrency: 1,
+      search_query: "topic:rust language:Rust stars:>25 is:public",
+      cost_budget_usd: 0,
+      retry_count: 0,
     };
   }
   return {};
