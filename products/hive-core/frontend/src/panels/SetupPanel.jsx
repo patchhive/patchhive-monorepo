@@ -137,6 +137,11 @@ function CommandCenterStyles() {
         50% { box-shadow: 0 0 0 5px transparent; }
       }
 
+      @keyframes ph-log-drawer-in {
+        from { opacity: 0; transform: translateY(10px) scale(0.985); }
+        to { opacity: 1; transform: translateY(0) scale(1); }
+      }
+
       .ph-core-visual {
         position: absolute;
         right: 12px;
@@ -666,6 +671,52 @@ function CommandCenterStyles() {
         font-size: 10px;
       }
 
+      .ph-log-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 80;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        background:
+          radial-gradient(circle at 50% 38%, color-mix(in srgb, var(--blue) 18%, transparent), transparent 38%),
+          rgba(1, 6, 9, 0.78);
+        backdrop-filter: blur(8px);
+      }
+
+      .ph-log-drawer {
+        width: min(1040px, calc(100vw - 48px));
+        max-height: min(760px, calc(100vh - 48px));
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        gap: 12px;
+        padding: 14px;
+        border-radius: 10px;
+        border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--border));
+        background:
+          linear-gradient(180deg, color-mix(in srgb, var(--bg-panel) 96%, #071217) 0%, color-mix(in srgb, var(--bg) 92%, #020509) 100%);
+        box-shadow:
+          0 28px 90px rgba(0,0,0,0.52),
+          inset 0 1px 0 rgba(255,255,255,0.04);
+        animation: ph-log-drawer-in 150ms ease-out;
+      }
+
+      .ph-log-output {
+        margin: 0;
+        min-height: 220px;
+        max-height: 100%;
+        overflow: auto;
+        white-space: pre-wrap;
+        word-break: break-word;
+        font-size: 11px;
+        line-height: 1.45;
+        padding: 12px;
+        border-radius: 8px;
+        border: 1px solid color-mix(in srgb, var(--blue) 18%, var(--border));
+        background:
+          linear-gradient(180deg, color-mix(in srgb, var(--bg) 86%, #02070a), color-mix(in srgb, var(--bg) 98%, #010304));
+      }
+
       @media (prefers-reduced-motion: reduce) {
         .ph-core-visual::before,
         .ph-core-visual::after,
@@ -674,7 +725,8 @@ function CommandCenterStyles() {
         .ph-product-node.is-selected,
         .ph-orbit-node.is-selected,
         .ph-cortex-core::before,
-        .ph-cortex-core::after {
+        .ph-cortex-core::after,
+        .ph-log-drawer {
           animation: none;
         }
       }
@@ -759,6 +811,17 @@ function laneTone(lane) {
   if (lane === "Review" || lane === "Merge" || lane === "Security") return "var(--gold)";
   if (lane === "Memory" || lane === "Dependencies" || lane === "CI") return "var(--blue)";
   return "var(--accent)";
+}
+
+function orbitOrderedProducts(products) {
+  return products
+    .map((product, index) => ({ product, index }))
+    .sort((a, b) => {
+      if (a.product.runtime.slug === "hive-core") return -1;
+      if (b.product.runtime.slug === "hive-core") return 1;
+      return a.index - b.index;
+    })
+    .map(({ product }) => product);
 }
 
 function smokeTone(status) {
@@ -1461,6 +1524,7 @@ function EvidenceTimeline({ setup }) {
 
 function FleetLaneMap({ products, selectedSlug, filter, onFilterChange, onSelect, mission, onlineCount, pairedCount, fleetPlan }) {
   const filteredProducts = products.filter((product) => productMatchesFleetFilter(product, filter));
+  const orbitProducts = orbitOrderedProducts(products);
   const grouped = products.reduce((acc, product) => {
     const lane = product.runtime.lane || "Other";
     acc[lane] = acc[lane] || [];
@@ -1471,7 +1535,7 @@ function FleetLaneMap({ products, selectedSlug, filter, onFilterChange, onSelect
     ...LANE_ORDER.filter((lane) => grouped[lane]),
     ...Object.keys(grouped).filter((lane) => !LANE_ORDER.includes(lane)).sort(),
   ];
-  const productCount = Math.max(products.length, 1);
+  const productCount = Math.max(orbitProducts.length, 1);
 
   return (
     <div className="ph-cortex-shell">
@@ -1544,7 +1608,7 @@ function FleetLaneMap({ products, selectedSlug, filter, onFilterChange, onSelect
             </div>
           </div>
         </div>
-        {products.map((product, index) => {
+        {orbitProducts.map((product, index) => {
           const runtime = product.runtime;
           const angle = -90 + (index * 360) / productCount;
           const visible = productMatchesFleetFilter(product, filter);
@@ -1554,7 +1618,7 @@ function FleetLaneMap({ products, selectedSlug, filter, onFilterChange, onSelect
             <div key={`${runtime.slug}-link`} className="ph-orbit-link" style={{ "--link-angle": `${angle}deg`, "--link-length": linkLength, "--node-tone": nodeTone, "--link-opacity": visible ? 0.58 : 0.1 }} />
           );
         })}
-        {products.map((product, index) => {
+        {orbitProducts.map((product, index) => {
           const runtime = product.runtime;
           const angle = -90 + (index * 360) / productCount;
           const radians = (angle * Math.PI) / 180;
@@ -1603,6 +1667,37 @@ function FleetLaneMap({ products, selectedSlug, filter, onFilterChange, onSelect
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+function LogsDrawer({ logs, onClose }) {
+  if (!logs) return null;
+  return (
+    <div className="ph-log-backdrop" role="presentation" onMouseDown={onClose}>
+      <div
+        className="ph-log-drawer"
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${logs.title || logs.slug} logs`}
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
+          <div style={{ display: "grid", gap: 3, minWidth: 0 }}>
+            <div style={commandKickerStyle}>Launcher log stream</div>
+            <div style={{ ...commandTitleStyle, overflowWrap: "anywhere" }}>
+              {logs.title || logs.slug} Recent Logs
+            </div>
+            <div style={commandBodyStyle}>
+              Read through HiveCore from patchhive-launcher. Click outside this panel to close.
+            </div>
+          </div>
+          <Btn onClick={onClose}>Close</Btn>
+        </div>
+        <pre className="ph-log-output">
+          {logs.loading ? "Loading recent docker compose logs..." : logs.logs || "No recent logs returned."}
+        </pre>
       </div>
     </div>
   );
@@ -1947,13 +2042,19 @@ export default function SetupPanel({ fetchEnvelope, setRunning, setError }) {
   }
 
   async function loadLogs(slug) {
+    const title =
+      setup?.products.find((item) => item.runtime.slug === slug)?.runtime.title ||
+      fleet.find((item) => item.slug === slug)?.title ||
+      slug;
     setBusyAction(`${slug}:logs`);
+    setLogs({ slug, title, logs: "", loading: true });
     setRunning(true);
     setError("");
     try {
       const data = await fetchEnvelope(`/setup/products/${slug}/logs?tail=160`);
-      setLogs(data);
+      setLogs({ ...data, loading: false });
     } catch (err) {
+      setLogs(null);
       setError(err.message || `HiveCore could not load logs for ${slug}.`);
     } finally {
       setBusyAction("");
@@ -2162,34 +2263,7 @@ export default function SetupPanel({ fetchEnvelope, setRunning, setError }) {
         </div>
       </div>
 
-      {logs && (
-        <div style={{ ...S.panel, display: "grid", gap: 10 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
-            <div>
-              <div style={{ fontSize: 15, fontWeight: 800 }}>{logs.title} Recent Logs</div>
-              <div style={{ fontSize: 11, color: "var(--text-dim)" }}>Read through HiveCore from patchhive-launcher.</div>
-            </div>
-            <Btn onClick={() => setLogs(null)}>Close</Btn>
-          </div>
-          <pre
-            style={{
-              margin: 0,
-              maxHeight: 360,
-              overflow: "auto",
-              whiteSpace: "pre-wrap",
-              wordBreak: "break-word",
-              fontSize: 11,
-              lineHeight: 1.45,
-              padding: 12,
-              borderRadius: 8,
-              border: "1px solid var(--border)",
-              background: "var(--bg)",
-            }}
-          >
-            {logs.logs || "No recent logs returned."}
-          </pre>
-        </div>
-      )}
+      <LogsDrawer logs={logs} onClose={() => setLogs(null)} />
 
     </div>
     </>

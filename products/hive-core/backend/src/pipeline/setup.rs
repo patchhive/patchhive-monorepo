@@ -1175,13 +1175,19 @@ async fn run_launcher_product_action(
 fn ensure_launcher_product_slug(
     slug: &str,
 ) -> Result<(), (StatusCode, Json<crate::models::ApiEnvelope<Value>>)> {
-    if DOWNSTREAM_FIRST_STACK_SLUGS.contains(&slug) {
+    if slug == "hive-core" {
+        Err(api_error(
+            StatusCode::BAD_REQUEST,
+            "unsupported_setup_product",
+            "HiveCore stays self-hosted. Launcher setup controls manage downstream PatchHive products.",
+        ))
+    } else if product_catalog().iter().any(|product| product.slug == slug) {
         Ok(())
     } else {
         Err(api_error(
             StatusCode::BAD_REQUEST,
             "unsupported_setup_product",
-            "HiveCore setup controls currently manage SignalHive, TrustGate, and RepoReaper. HiveCore itself stays self-hosted.",
+            "HiveCore setup controls only manage known launcher-backed PatchHive products.",
         ))
     }
 }

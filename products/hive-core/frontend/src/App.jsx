@@ -31,6 +31,7 @@ const commandDeckStyle = {
   overflow: "hidden",
   display: "flex",
   justifyContent: "space-between",
+  flexWrap: "wrap",
   alignItems: "center",
   gap: 14,
   padding: "10px 12px",
@@ -51,6 +52,111 @@ const commandReadoutStyle = {
   background: "color-mix(in srgb, var(--bg) 54%, transparent)",
 };
 
+const miniOrbitStyle = {
+  position: "relative",
+  flex: "1 1 320px",
+  height: 82,
+  minWidth: 280,
+  maxWidth: 430,
+  border: "1px solid color-mix(in srgb, var(--blue) 16%, var(--border))",
+  borderRadius: 8,
+  background:
+    "radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--blue) 18%, transparent) 0 16%, transparent 17%), color-mix(in srgb, var(--bg) 48%, transparent)",
+  overflow: "hidden",
+};
+
+function deckStatusColor(status) {
+  if (status === "online") return "var(--green)";
+  if (status === "degraded") return "var(--gold)";
+  if (status === "disabled") return "var(--text-dim)";
+  if (status === "unconfigured") return "var(--blue)";
+  return "var(--accent)";
+}
+
+function deckOrbitProducts(products) {
+  return [...products]
+    .map((product, index) => ({ product, index }))
+    .sort((left, right) => {
+      if (left.product.slug === "hive-core") return -1;
+      if (right.product.slug === "hive-core") return 1;
+      return left.index - right.index;
+    })
+    .map(({ product }) => product);
+}
+
+function MiniLauncherOrbit({ products }) {
+  const orbitProducts = deckOrbitProducts(products || []);
+  const count = Math.max(orbitProducts.length, 1);
+  return (
+    <div style={miniOrbitStyle} aria-label="PatchHive launcher orbit">
+      <div
+        aria-hidden="true"
+        style={{
+          position: "absolute",
+          left: "50%",
+          top: "50%",
+          width: "58%",
+          height: "66%",
+          border: "1px solid color-mix(in srgb, var(--accent) 20%, transparent)",
+          borderRadius: "50%",
+          transform: "translate(-50%, -50%)",
+        }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          left: "50%",
+          top: "50%",
+          transform: "translate(-50%, -50%)",
+          display: "grid",
+          placeItems: "center",
+          width: 34,
+          height: 34,
+          borderRadius: 8,
+          border: "1px solid color-mix(in srgb, var(--blue) 42%, var(--border))",
+          background: "color-mix(in srgb, var(--blue) 18%, var(--bg-panel))",
+          color: "var(--text)",
+          fontWeight: 900,
+        }}
+      >
+        ⬢
+      </div>
+      {orbitProducts.map((product, index) => {
+        const angle = -90 + (index * 360) / count;
+        const radians = (angle * Math.PI) / 180;
+        const tone = deckStatusColor(product.status);
+        const x = 50 + Math.cos(radians) * 38;
+        const y = 50 + Math.sin(radians) * 34;
+        return (
+          <div
+            key={product.slug}
+            title={`${product.title}: ${product.status}`}
+            style={{
+              position: "absolute",
+              left: `${x}%`,
+              top: `${y}%`,
+              transform: "translate(-50%, -50%)",
+              display: "grid",
+              placeItems: "center",
+              width: product.slug === "hive-core" ? 29 : 22,
+              height: product.slug === "hive-core" ? 29 : 22,
+              borderRadius: 7,
+              border: `1px solid color-mix(in srgb, ${tone} 56%, var(--border))`,
+              background: `color-mix(in srgb, ${tone} ${product.slug === "hive-core" ? 20 : 12}%, var(--bg-panel))`,
+              color: "var(--text)",
+              fontSize: product.slug === "hive-core" ? 13 : 11,
+              lineHeight: 1,
+              boxShadow: `0 0 18px color-mix(in srgb, ${tone} 22%, transparent)`,
+            }}
+          >
+            {product.icon || "•"}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function HiveCorePanelBoundary({ tab, children, setError }) {
   const label = TABS.find((item) => item.id === tab)?.label || "HiveCore panel";
   return (
@@ -66,8 +172,10 @@ function HiveCorePanelBoundary({ tab, children, setError }) {
   );
 }
 
-function CommandDeck({ activeTab, running }) {
+function CommandDeck({ activeTab, running, products }) {
   const activeLabel = TABS.find((tab) => tab.id === activeTab)?.label || "Command";
+  const productCount = products?.length || 11;
+  const runningCount = (products || []).filter((product) => ["online", "degraded"].includes(product.status)).length;
   return (
     <div style={commandDeckStyle}>
       <div
@@ -81,7 +189,7 @@ function CommandDeck({ activeTab, running }) {
           pointerEvents: "none",
         }}
       />
-      <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+      <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 10, minWidth: 0, flex: "1 1 260px" }}>
         <div style={{ color: "var(--accent)", fontSize: 18, lineHeight: 1 }}>⬢</div>
         <div style={{ display: "grid", gap: 2, minWidth: 0 }}>
           <div style={{ fontSize: 11, color: "var(--accent)", fontWeight: 900, textTransform: "uppercase" }}>
@@ -92,7 +200,8 @@ function CommandDeck({ activeTab, running }) {
           </div>
         </div>
       </div>
-      <div style={{ position: "relative", display: "flex", gap: 7, flexWrap: "wrap", justifyContent: "flex-end" }}>
+      <MiniLauncherOrbit products={products} />
+      <div style={{ position: "relative", display: "flex", gap: 7, flexWrap: "wrap", justifyContent: "flex-end", flex: "1 1 280px" }}>
         <div style={commandReadoutStyle}>
           <div style={{ fontSize: 9, color: "var(--text-dim)", textTransform: "uppercase" }}>Station</div>
           <div style={{ fontSize: 11, fontWeight: 850 }}>{activeLabel}</div>
@@ -105,7 +214,13 @@ function CommandDeck({ activeTab, running }) {
         </div>
         <div style={commandReadoutStyle}>
           <div style={{ fontSize: 9, color: "var(--text-dim)", textTransform: "uppercase" }}>Fleet</div>
-          <div style={{ fontSize: 11, fontWeight: 850 }}>11 products</div>
+          <div style={{ fontSize: 11, fontWeight: 850 }}>{productCount} products</div>
+        </div>
+        <div style={commandReadoutStyle}>
+          <div style={{ fontSize: 9, color: "var(--text-dim)", textTransform: "uppercase" }}>Online</div>
+          <div style={{ fontSize: 11, fontWeight: 850, color: runningCount > 0 ? "var(--green)" : "var(--gold)" }}>
+            {runningCount || "scan"}
+          </div>
         </div>
         <div style={commandReadoutStyle}>
           <div style={{ fontSize: 9, color: "var(--text-dim)", textTransform: "uppercase" }}>Launcher</div>
@@ -125,6 +240,7 @@ export default function App() {
   const [tab, setTab] = useState("setup");
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
+  const [suiteProducts, setSuiteProducts] = useState([]);
   const fetch_ = useApiFetcher(apiKey);
 
   useEffect(() => {
@@ -139,6 +255,27 @@ export default function App() {
     }
     return payload?.data ?? payload;
   }
+
+  useEffect(() => {
+    if (!checked || needsAuth) return undefined;
+    let cancelled = false;
+
+    async function loadSuiteProducts() {
+      try {
+        const data = await fetchEnvelope("/products");
+        if (!cancelled) setSuiteProducts(Array.isArray(data) ? data : []);
+      } catch {
+        if (!cancelled) setSuiteProducts([]);
+      }
+    }
+
+    loadSuiteProducts();
+    const timer = setInterval(loadSuiteProducts, 10000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [checked, needsAuth, apiKey]);
 
   return (
     <ProductSessionGate
@@ -179,7 +316,7 @@ export default function App() {
         onSignOut={logout}
         showSignOut={Boolean(apiKey)}
       >
-        <CommandDeck activeTab={tab} running={running} />
+        <CommandDeck activeTab={tab} running={running} products={suiteProducts} />
         <HiveCorePanelBoundary tab={tab} setError={setError}>
           {tab === "setup" && (
             <SetupPanel
