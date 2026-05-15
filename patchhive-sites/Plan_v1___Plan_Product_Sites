@@ -1,0 +1,309 @@
+I have created the following plan after thorough exploration and analysis of the codebase. Follow the below plan verbatim. Trust the files and references. Do not re-verify what's written in the plan. Explore only when absolutely necessary. First implement all the proposed file changes and then I'll review all the changes together at the end.
+
+## Observations
+
+The repository currently contains only `Patchive.md` — a product brief describing the full PatchHive ecosystem: an umbrella brand (`PatchHive`), a unified workspace (`HiveCore`), and 10 focused maintenance products. No code, framework, or tooling exists yet. The document includes hero copy, CTAs, positioning, and MVP scopes for each product, giving clear content direction for every site.
+
+## Approach
+
+Build a **monorepo of static marketing sites** — one per product plus the umbrella and HiveCore — using a shared design system. Each site follows the same page structure but with product-specific copy, color accent, and CTA. This keeps maintenance low and brand cohesion high.
+
+---
+
+## Site Inventory
+
+| # | Site | Slug | Primary CTA |
+|---|------|------|-------------|
+| 0 | PatchHive (umbrella) | `patchhive.dev` | Connect a repo |
+| 1 | SignalHive | `signalhive.patchhive.dev` | See your first maintenance report |
+| 2 | ReviewBee | `reviewbee.patchhive.dev` | Find the PRs slowing your team |
+| 3 | TrustGate | `trustgate.patchhive.dev` | Review your first AI diff |
+| 4 | RepoMemory | `repomemory.patchhive.dev` | Build your repo's memory |
+| 5 | MergeKeeper | `mergekeeper.patchhive.dev` | Catch your first stale PR |
+| 6 | FlakeSting | `flakesting.patchhive.dev` | Find your flaky tests |
+| 7 | DepTriage | `deptriage.patchhive.dev` | Triage your dependencies |
+| 8 | VulnTriage | `vulntriage.patchhive.dev` | Rank your security findings |
+| 9 | RefactorScout | `refactorscout.patchhive.dev` | Surface your first refactor |
+| 10 | RepoReaper | `reporeaper.patchhive.dev` | Automate your first fix |
+| 11 | HiveCore | `hivecore.patchhive.dev` | Open your command center |
+
+---
+
+## Shared Site Structure (every site)
+
+Each site is a single-page marketing site with the following sections in order:
+
+```
+Nav → Hero → Problem → How It Works → Who It's For → Why It's Different → CTA Banner → Footer
+```
+
+### Section Breakdown
+
+**Nav**
+- PatchHive logo (links to umbrella)
+- Product name badge
+- "All Products" dropdown listing all 10 products + HiveCore
+- Primary CTA button (product-specific)
+
+**Hero**
+- Headline (from doc or derived)
+- Subhead (one sentence, pain-focused)
+- Primary CTA button
+- Secondary link: "See how it works ↓"
+- Optional: a simple terminal/card mockup showing a sample output
+
+**Problem**
+- 2–3 sentence description of the pain this product solves
+- 3–5 bullet points of specific symptoms the target user feels
+
+**How It Works**
+- Numbered steps (3–5 steps, drawn from each product's "How it works" or "MVP scope")
+- Each step: icon + title + one-line description
+
+**Who It's For**
+- Target user description (from doc)
+- Optional: a short persona card (role, team size, pain)
+
+**Why It's Different**
+- 2–3 differentiator bullets (from "Why it's differentiated" in doc)
+- Brief contrast with what other tools do
+
+**CTA Banner**
+- Repeat primary CTA
+- Trust line: "No autonomous write access required" (or product-appropriate trust signal)
+
+**Footer**
+- PatchHive umbrella link
+- Links to all other products
+- "Powered by HiveCore" badge
+- GitHub / contact links
+
+---
+
+## Per-Product Content Plan
+
+### PatchHive Umbrella (`patchhive.dev`)
+
+- **Hero headline:** "See the maintenance work your team is missing." (Hero Option 2)
+- **Subhead:** "PatchHive helps engineering teams find, prioritize, and eventually automate the work that slows delivery."
+- **Body:** Full positioning copy from doc — visibility first, autonomy second, three principles
+- **Products section:** Grid of all 10 product cards, each linking to its own site, ordered by recommended launch order
+- **HiveCore section:** Unified workspace pitch — one command center for signals, reviews, policies, memory
+- **CTA:** "Connect a repo" → "Start with maintenance visibility"
+
+---
+
+### 1. SignalHive
+
+- **Hero headline:** "Find the work your team is missing before it turns into drag or downtime."
+- **Subhead:** "SignalHive analyzes your repo and issue history to surface stale risks, duplicate problems, and hidden maintenance debt."
+- **Problem bullets:** stale issues, duplicate reports, TODO/FIXME clusters, recurring bugs, neglected risk areas
+- **How it works:** 5 steps from the doc (connect repo → scan → HiveCore score → prioritized report → suggested next actions)
+- **Who it's for:** Engineering leads and CTOs, 3–15 engineers, growing GitHub backlogs
+- **Differentiator:** Backlog intelligence, not autonomous fixes; trust before automation
+- **CTA:** "See your first maintenance report"
+
+---
+
+### 2. ReviewBee
+
+- **Hero headline:** "Close PR review threads faster."
+- **Subhead:** "ReviewBee turns reviewer comments into a concrete checklist so authors know exactly what to fix before merge."
+- **Problem bullets:** long review threads, repeated back-and-forth, unclear what's blocking merge, review churn
+- **How it works:** Parse PR comments → identify actionable ones → cluster similar requests → generate checklist → mark resolved items
+- **Who it's for:** Teams with slow-moving PRs and recurring review churn
+- **Differentiator:** Focuses on getting existing PRs merged, not writing new code
+- **CTA:** "Find the PRs slowing your team"
+
+---
+
+### 3. TrustGate
+
+- **Hero headline:** "Decide whether AI-generated code changes should be blocked, warned on, or approved."
+- **Subhead:** "TrustGate reviews AI-generated diffs against your repo's risk rules before they move forward."
+- **Problem bullets:** risky file changes, missing tests, suspicious patterns, policy violations, no review layer for AI output
+- **How it works:** Ingest PR diff → apply risk scoring → check policy rules → return `safe / warn / block` → post GitHub status check
+- **Who it's for:** Teams using Copilot, Codex, Devin, or internal coding agents
+- **Differentiator:** Complements existing agents; solves trust, not code generation
+- **CTA:** "Review your first AI diff"
+- **Note:** Surface FailGuard as a capability callout — past failures become future policy checks
+
+---
+
+### 4. RepoMemory
+
+- **Hero headline:** "Give coding agents memory of how your repo actually works."
+- **Subhead:** "RepoMemory builds a durable knowledge layer from merged PRs, past bugs, and reviewer feedback so your team stops rediscovering the same rules."
+- **Problem bullets:** agents repeat the same mistakes, conventions undocumented, architectural rules lost, onboarding friction
+- **How it works:** Ingest merged PRs → extract conventions and past failures → build searchable memory store → generate prompt-packs for agents
+- **Who it's for:** Teams with strong conventions, legacy systems, or repeated AI/code-review mistakes
+- **Differentiator:** Repo-specific memory; most agents are shallow on project history
+- **CTA:** "Build your repo's memory"
+- **Note:** Surface FailGuard as a capability callout — captures lessons from bugs and incidents
+
+---
+
+### 5. MergeKeeper
+
+- **Hero headline:** "Keep pull requests mergeable."
+- **Subhead:** "MergeKeeper watches open PRs and tells your team which ones are drifting toward merge trouble before it's too late."
+- **Problem bullets:** stale branches, failing CI, pending rebases, merge conflicts, last-minute merge friction
+- **How it works:** Monitor open PRs → detect stale/conflict/failing states → suggest rerun or rebase → post GitHub comments or status summaries
+- **Who it's for:** Busy teams with long-lived PRs and noisy CI
+- **Differentiator:** PR maintenance operations — painful, measurable, less crowded than coding agents
+- **CTA:** "Catch your first stale PR"
+
+---
+
+### 6. FlakeSting
+
+- **Hero headline:** "Detect, isolate, and explain flaky tests before they destroy trust in CI."
+- **Subhead:** "FlakeSting analyzes test runs over time to separate real regressions from unreliable checks."
+- **Problem bullets:** tests that fail then pass on rerun, CI reruns wasting time, real failures hidden by noise, team distrust of CI
+- **How it works:** Parse CI results → identify inconsistent failures across runs → rank likely flaky tests → emit suspect/quarantine report
+- **Who it's for:** Teams with medium-to-large CI suites and frequent reruns
+- **Differentiator:** Flaky test pain is constant and expensive; poorly handled by general-purpose tools
+- **CTA:** "Find your flaky tests"
+
+---
+
+### 7. DepTriage
+
+- **Hero headline:** "Tell your team which dependency updates matter now and which ones can wait."
+- **Subhead:** "DepTriage sorts the flood of Dependabot and Renovate PRs into something your team can actually act on."
+- **Problem bullets:** Dependabot noise, unclear upgrade priority, compatibility risk unknown, advisories ignored
+- **How it works:** Ingest dependency PRs and advisories → score by risk and impact → collapse duplicates → produce weekly triage report
+- **Who it's for:** Teams overwhelmed by Dependabot or Renovate noise
+- **Differentiator:** Filters and prioritizes update bots rather than replacing them
+- **CTA:** "Triage your dependencies"
+
+---
+
+### 8. VulnTriage
+
+- **Hero headline:** "Turn security findings into ranked, actionable engineering work."
+- **Subhead:** "VulnTriage ingests security alerts and tells your team what matters most, where it lives, and what to do next."
+- **Problem bullets:** wall of raw vulnerability alerts, unclear exploitability, no routing to owners, security work deprioritized
+- **How it works:** Pull GitHub/code scanning alerts → map findings to owners and files → rank by exploitability + reachability proxy → create issues or reports
+- **Who it's for:** Small teams without a dedicated AppSec function
+- **Differentiator:** Explains what matters most in repo context and routes it into normal engineering work
+- **CTA:** "Rank your security findings"
+
+---
+
+### 9. RefactorScout
+
+- **Hero headline:** "Surface the safest high-value refactors your team can make this week."
+- **Subhead:** "RefactorScout finds bounded, low-risk cleanup opportunities so your team can improve the codebase without a migration plan."
+- **Problem bullets:** dead code accumulating, duplicated logic, complexity hotspots, no time for cleanup planning
+- **How it works:** Scan for complexity hotspots → detect dead code → find duplicate logic → recommend small safe refactors with candidate files
+- **Who it's for:** Teams with growing codebases and no time for cleanup planning
+- **Differentiator:** Bounded, low-risk opportunities — not broad autonomous rewrites
+- **CTA:** "Surface your first refactor"
+
+---
+
+### 10. RepoReaper
+
+- **Hero headline:** "Resolve selected repository issues automatically and open validated pull requests."
+- **Subhead:** "RepoReaper takes narrowly scoped issues, generates a proposed fix, validates it, and opens a PR with supporting evidence."
+- **Problem bullets:** repetitive issue types never get fixed, no bandwidth for bounded automation, AI PRs lack validation or rollback notes
+- **How it works:** Take one labeled issue type → generate bounded fix → run tests → open PR with evidence and rollback notes
+- **Who it's for:** Teams that already trust the rest of the PatchHive stack and want higher automation
+- **Differentiator:** Sits on top of signal, memory, policy, and validation — not just "AI writes code"
+- **CTA:** "Automate your first fix"
+- **Trust signal:** "Requires SignalHive + TrustGate + RepoMemory to be active"
+
+---
+
+### HiveCore
+
+- **Hero headline:** "One command center for every PatchHive signal."
+- **Subhead:** "HiveCore brings the full PatchHive product suite into one place — ranked signals, policy workflows, repo memory, and approvals without context switching."
+- **Feature list:** unified view across all products, ranked priorities in one place, policy and approval workflows, repo memory surfaced in context, one place to act not just observe
+- **CTA:** "Open your command center"
+
+---
+
+## Monorepo Structure
+
+```
+patchhive-sites/
+├── packages/
+│   └── ui/                  ← shared design system (nav, hero, section, footer components)
+├── apps/
+│   ├── patchhive/           ← umbrella site
+│   ├── signalhive/
+│   ├── reviewbee/
+│   ├── trustgate/
+│   ├── repomemory/
+│   ├── mergekeeper/
+│   ├── flakesting/
+│   ├── deptriage/
+│   ├── vulntriage/
+│   ├── refactorscout/
+│   ├── reporeaper/
+│   └── hivecore/
+└── Patchive.md
+```
+
+---
+
+## Implementation Steps
+
+### Step 1 — Scaffold the monorepo
+
+Set up a monorepo workspace (e.g., using `pnpm workspaces` or `turborepo`) at the root of `patchhive-sites/`. Create the `apps/` and `packages/` directories. Choose a static site framework (e.g., Next.js with static export, Astro, or similar) and initialize it consistently across all apps so they share the same build pipeline.
+
+### Step 2 — Build the shared `packages/ui` design system
+
+Create the following shared components in `packages/ui/`:
+
+- `Nav` — logo, product badge, all-products dropdown, CTA button
+- `Hero` — headline, subhead, CTA button, secondary link, optional mockup slot
+- `ProblemSection` — title + bullet list
+- `HowItWorksSection` — numbered steps with icon + title + description
+- `WhoItsForSection` — target user description + optional persona card
+- `WhyDifferentSection` — differentiator bullets
+- `CTABanner` — repeated CTA + trust line
+- `Footer` — umbrella link, product grid, HiveCore badge, external links
+- `ProductCard` — used on the umbrella site's product grid
+
+Establish a shared color token system where each product has one accent color while the base palette (background, text, border) is shared.
+
+### Step 3 — Build the PatchHive umbrella site (`apps/patchhive/`)
+
+Compose the umbrella homepage using shared components:
+- Hero with Option 2 headline and subhead from the doc
+- Three-principles section (visibility, constrained automation, earned trust)
+- Product grid using `ProductCard` for all 10 products in recommended launch order
+- HiveCore feature section
+- CTA banner: "Connect a repo" / "Start with maintenance visibility"
+- Footer
+
+### Step 4 — Build the HiveCore site (`apps/hivecore/`)
+
+Compose using shared components with the unified workspace pitch. Feature list maps directly to the five bullet points in the doc's HiveCore section.
+
+### Step 5 — Build each product site (Steps 5a–5j)
+
+For each of the 10 product apps, compose the page using shared components and populate with the per-product content defined above. Work in recommended launch order:
+
+- **5a** `apps/signalhive/` — highest priority, most complete content in doc
+- **5b** `apps/reviewbee/`
+- **5c** `apps/trustgate/` — include FailGuard capability callout
+- **5d** `apps/repomemory/` — include FailGuard capability callout
+- **5e** `apps/mergekeeper/`
+- **5f** `apps/flakesting/`
+- **5g** `apps/deptriage/`
+- **5h** `apps/vulntriage/`
+- **5i** `apps/refactorscout/`
+- **5j** `apps/reporeaper/` — include prerequisite trust signal (SignalHive + TrustGate + RepoMemory)
+
+### Step 6 — Wire up routing and cross-linking
+
+Ensure every site's `Nav` "All Products" dropdown links to all other product sites. Every `Footer` links back to `patchhive.dev` and includes the "Powered by HiveCore" badge. The umbrella site's product cards link to each product subdomain.
+
+### Step 7 — Configure deployment
+
+Set up one deployment target per app (e.g., Vercel projects or Netlify sites), mapping each app to its subdomain. Configure the monorepo build pipeline so a single CI run can build and deploy all sites, or deploy only changed apps on each push.
