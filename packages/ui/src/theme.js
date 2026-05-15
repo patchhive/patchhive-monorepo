@@ -31,6 +31,7 @@ export const PRODUCT_THEMES = {
   "dep-triage":    { "--accent": "#8aa62c", "--accent-dim": "#586d1b" }, // olive
   "vuln-triage":   { "--accent": "#d6406a", "--accent-dim": "#8d2746" }, // rose
   "refactor-scout":{ "--accent": "#30a783", "--accent-dim": "#1d6d55" }, // mint
+  "release-sentry":{ "--accent": "#e0c84d", "--accent-dim": "#8a7728" }, // signal yellow
   "hive-core":     { "--accent": "#3a9fb3", "--accent-dim": "#1d5d69" }, // teal
 };
 

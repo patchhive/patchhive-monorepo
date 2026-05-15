@@ -174,7 +174,7 @@ function HiveCorePanelBoundary({ tab, children, setError }) {
 
 function CommandDeck({ activeTab, running, products }) {
   const activeLabel = TABS.find((tab) => tab.id === activeTab)?.label || "Command";
-  const productCount = products?.length || 11;
+  const productCount = products?.length || 12;
   const runningCount = (products || []).filter((product) => ["online", "degraded"].includes(product.status)).length;
   return (
     <div style={commandDeckStyle}>

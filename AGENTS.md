@@ -83,6 +83,7 @@ patchhive/
     dep-triage/
     vuln-triage/
     refactor-scout/
+    release-sentry/
     hive-core/
   package.json              npm workspaces root
   README.md
@@ -237,6 +238,7 @@ Product accent keys live in `packages/ui/src/theme.js`:
 - `dep-triage`
 - `vuln-triage`
 - `refactor-scout`
+- `release-sentry`
 - `hive-core`
 
 ## Frontend Convention
@@ -369,6 +371,7 @@ Important env vars:
 - DepTriage: dependency update prioritization
 - VulnTriage: rank security findings into engineering work
 - RefactorScout: surface safe high-value refactors
+- ReleaseSentry: release readiness and ship/no-ship evidence
 - HiveCore: suite control plane for visibility, shared defaults, and launch control
 
 ## SignalHive Notes
@@ -445,6 +448,15 @@ Important env vars:
 - The MVP should work without live AI providers by scanning local repository paths and ranking explainable heuristics such as oversized files, oversized functions, and repeated string literals.
 - RefactorScout should prefer explicit filesystem allowlists and localhost-only scanning by default so repo analysis does not quietly become arbitrary server file access.
 - The early UX should stay narrow and credible: one local repo path in, one ranked refactor queue out, with clear evidence and a suggested first move for each lead.
+
+## ReleaseSentry Notes
+
+- ReleaseSentry should stay release-readiness-first and evidence-first.
+- Its job is to answer whether a repo, product, or release candidate is actually safe to ship.
+- The MVP should work without live AI providers by reading tags, changelog/version drift, branch health, CI status, unresolved blockers, dependency/security pressure, and recent release notes.
+- ReleaseSentry should produce a simple decision such as `ready`, `watch`, or `hold`, with the exact blockers and evidence that led to it.
+- It should complement MergeKeeper instead of overlapping it: MergeKeeper decides if a PR can merge, while ReleaseSentry decides if the resulting release should go out.
+- Early future integrations worth keeping in mind: generated release notes, release checklist presets, package publish guards, GHCR image alignment, and HiveCore suite release verification.
 
 ## HiveCore Notes
 

@@ -28,6 +28,7 @@ The product documentation set is in [products/](products/).
 | DepTriage | [products/dep-triage.md](products/dep-triage.md) |
 | VulnTriage | [products/vuln-triage.md](products/vuln-triage.md) |
 | RefactorScout | [products/refactor-scout.md](products/refactor-scout.md) |
+| ReleaseSentry | [products/release-sentry.md](products/release-sentry.md) |
 | HiveCore | [products/hive-core.md](products/hive-core.md) |
 
 ## Platform Docs

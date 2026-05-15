@@ -43,7 +43,7 @@ pub struct ProductDefinition {
     pub default_api_url: &'static str,
 }
 
-const PRODUCT_CATALOG: [ProductDefinition; 11] = [
+const PRODUCT_CATALOG: [ProductDefinition; 12] = [
     ProductDefinition {
         slug: "signal-hive",
         title: "SignalHive",
@@ -143,6 +143,16 @@ const PRODUCT_CATALOG: [ProductDefinition; 11] = [
         repo: "patchhive/refactorscout",
         default_frontend_url: "http://localhost:5182",
         default_api_url: "http://localhost:8090",
+    },
+    ProductDefinition {
+        slug: "release-sentry",
+        title: "ReleaseSentry",
+        icon: "🚦",
+        lane: "Release",
+        role: "Checks whether a repo or product is actually ready to ship.",
+        repo: "patchhive/release-sentry",
+        default_frontend_url: "http://localhost:5184",
+        default_api_url: "http://localhost:8120",
     },
     ProductDefinition {
         slug: "hive-core",

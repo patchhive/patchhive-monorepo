@@ -1,0 +1,31 @@
+name: Publish AI Models Package
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish-ai-models:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: Show package contents
+        working-directory: packages/ai-models
+        run: npm pack --dry-run
+
+      - name: Publish @patchhivehq/ai-models to npm
+        working-directory: packages/ai-models
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

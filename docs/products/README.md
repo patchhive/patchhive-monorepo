@@ -26,6 +26,7 @@ through product-owned APIs; it does not replace standalone product operation.
 | DepTriage | Dependency update prioritization | [dep-triage.md](dep-triage.md) |
 | VulnTriage | Security finding prioritization | [vuln-triage.md](vuln-triage.md) |
 | RefactorScout | Conservative refactor discovery | [refactor-scout.md](refactor-scout.md) |
+| ReleaseSentry | Release readiness evidence | [release-sentry.md](release-sentry.md) |
 | HiveCore | Suite control plane | [hive-core.md](hive-core.md) |
 
 ## Shared Expectations

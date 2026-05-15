@@ -39,7 +39,7 @@ struct ManagedProduct {
 
 const FIRST_STACK_SLUGS: [&str; 3] = ["signal-hive", "trust-gate", "repo-reaper"];
 
-const MANAGED_PRODUCTS: [ManagedProduct; 10] = [
+const MANAGED_PRODUCTS: [ManagedProduct; 11] = [
     ManagedProduct {
         slug: "signal-hive",
         title: "SignalHive",
@@ -139,6 +139,16 @@ const MANAGED_PRODUCTS: [ManagedProduct; 10] = [
         frontend_image_env: "PATCHHIVE_REFACTOR_SCOUT_FRONTEND_IMAGE",
         backend_image: "ghcr.io/patchhive/refactorscout-backend",
         frontend_image: "ghcr.io/patchhive/refactorscout-frontend",
+    },
+    ManagedProduct {
+        slug: "release-sentry",
+        title: "ReleaseSentry",
+        frontend_port: 5184,
+        api_port: 8120,
+        backend_image_env: "PATCHHIVE_RELEASE_SENTRY_BACKEND_IMAGE",
+        frontend_image_env: "PATCHHIVE_RELEASE_SENTRY_FRONTEND_IMAGE",
+        backend_image: "ghcr.io/patchhive/release-sentry-backend",
+        frontend_image: "ghcr.io/patchhive/release-sentry-frontend",
     },
 ];
 
@@ -1324,6 +1334,15 @@ fn credential_requirements(slug: &str) -> Vec<CredentialRequirementDefinition> {
                 description: "Optional token reserved for future GitHub-backed metadata reads. Metadata (read) is enough.",
             },
         ],
+        "release-sentry" => vec![CredentialRequirementDefinition {
+            key: "BOT_GITHUB_TOKEN",
+            label: "GitHub release-readiness token",
+            kind: "github_token",
+            profile: "release_readiness_reader",
+            required: false,
+            redact: true,
+            description: "Optional token for GitHub-backed release readiness checks. Recommended fine-grained PAT scopes: Metadata (read), Contents (read), Pull requests (read), Actions (read), Commit statuses (read), and Releases/Deployments read access where available.",
+        }],
         _ => Vec::new(),
     }
 }

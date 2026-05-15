@@ -120,6 +120,7 @@ HiveCore starts with built-in localhost defaults for the current PatchHive suite
 | VulnTriage | `http://localhost:5181` | `http://localhost:8110` |
 | RefactorScout | `http://localhost:5182` | `http://localhost:8090` |
 | HiveCore | `http://localhost:5183` | `http://localhost:8100` |
+| ReleaseSentry | `http://localhost:5184` | `http://localhost:8120` |
 
 If you run products on subdomains or remote hosts, save the new targets in HiveCore's Settings tab. Those overrides persist in the HiveCore SQLite database.
 

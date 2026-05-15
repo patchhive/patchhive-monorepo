@@ -1,0 +1,9 @@
+.env
+.env.local
+.DS_Store
+
+backend/target/
+backend/release-sentry.db
+
+frontend/node_modules/
+frontend/dist/

@@ -1062,7 +1062,7 @@ function CommandRail({ setup, mission, onlineCount, pairedCount, fleetCount, fle
         <div style={{ display: "grid", gap: 8 }}>
           <LaunchGauge label="Reachable" value={onlineCount} total={FIRST_STACK_SLUGS.length} tone={onlineCount === FIRST_STACK_SLUGS.length ? "var(--green)" : "var(--gold)"} />
           <LaunchGauge label="Paired" value={pairedCount} total={FIRST_STACK_SLUGS.length} tone={pairedCount === FIRST_STACK_SLUGS.length ? "var(--green)" : "var(--blue)"} />
-          <LaunchGauge label="Fleet" value={fleetCount} total={11} tone="var(--accent)" />
+          <LaunchGauge label="Fleet" value={fleetCount} total={setup.products?.length || 12} tone="var(--accent)" />
         </div>
         <div style={commandBodyStyle}>{setup.launcher.repo_root ? `Root: ${setup.launcher.repo_root}` : setup.launcher.message}</div>
       </div>
@@ -1093,12 +1093,12 @@ function CommandRail({ setup, mission, onlineCount, pairedCount, fleetCount, fle
           onClick={() => onAction("Start ready fleet", "/setup/fleet/start-ready")}
         />
         <CommandButton
-          title="Start all 11"
+          title="Start all 12"
           detail={fleetPlan.gated ? `${fleetPlan.gated} products are still gated.` : "Launch every stopped managed product."}
           color="var(--blue)"
           active={fleetPlan.canStartAll}
-          disabled={busy || busyAction === "Start all 11" || !fleetPlan.canStartAll}
-          onClick={() => onAction("Start all 11", "/setup/fleet/start-all")}
+          disabled={busy || busyAction === "Start all 12" || !fleetPlan.canStartAll}
+          onClick={() => onAction("Start all 12", "/setup/fleet/start-all")}
         />
         <CommandButton
           title="Pair running products"
@@ -1158,7 +1158,7 @@ function fleetLaunchPlan(products) {
     running,
     launchable,
     gated,
-    total: items.length || 11,
+    total: items.length || 12,
     canStartAll: controlled.length > 0 && launchable > 0 && gated === 0,
   };
 }
@@ -1193,15 +1193,15 @@ function FleetStartPlan({ products, busyAction, launchJob, onAction }) {
                 : "Start ready fleet"}
           </Btn>
           <Btn
-            onClick={() => onAction("Start all 11", "/setup/fleet/start-all")}
-            disabled={busy || busyAction === "Start all 11" || !plan.canStartAll}
+            onClick={() => onAction("Start all 12", "/setup/fleet/start-all")}
+            disabled={busy || busyAction === "Start all 12" || !plan.canStartAll}
             color="var(--blue)"
           >
             {fleetLaunchActive(launchJob)
               ? "Fleet running..."
-              : busyAction === "Start all 11"
+              : busyAction === "Start all 12"
                 ? "Launching..."
-                : "Start all 11"}
+                : "Start all 12"}
           </Btn>
         </div>
       </div>

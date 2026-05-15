@@ -96,6 +96,7 @@ declare -A PRODUCT_HASH_VARS=(
   ["dep-triage"]="DEP_TRIAGE_API_KEY_HASH"
   ["vuln-triage"]="VULN_TRIAGE_API_KEY_HASH"
   ["refactor-scout"]="REFACTOR_SCOUT_API_KEY_HASH"
+  ["release-sentry"]="RELEASE_SENTRY_API_KEY_HASH"
   ["hive-core"]="HIVE_CORE_API_KEY_HASH"
 )
 
@@ -110,6 +111,7 @@ ALL_PRODUCTS=(
   "dep-triage"
   "vuln-triage"
   "refactor-scout"
+  "release-sentry"
   "hive-core"
 )
 

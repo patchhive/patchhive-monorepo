@@ -14,12 +14,14 @@ PATCHHIVE_PRODUCTS=(
   dep-triage
   vuln-triage
   refactor-scout
+  release-sentry
   hive-core
 )
 
 PATCHHIVE_SHARED_PACKAGES=(
   ui
   product-shell
+  ai-models
 )
 
 PATCHHIVE_TEMPLATES=(
@@ -37,6 +39,7 @@ declare -gA PATCHHIVE_PRODUCT_TITLES=(
   [dep-triage]="DepTriage"
   [vuln-triage]="VulnTriage"
   [refactor-scout]="RefactorScout"
+  [release-sentry]="ReleaseSentry"
   [hive-core]="HiveCore"
 )
 
@@ -51,6 +54,7 @@ declare -gA PATCHHIVE_PRODUCT_REMOTES=(
   [dep-triage]="deptriage"
   [vuln-triage]="vulntriage"
   [refactor-scout]="refactorscout"
+  [release-sentry]="release-sentry"
   [hive-core]="hivecore"
 )
 
@@ -65,6 +69,7 @@ declare -gA PATCHHIVE_PRODUCT_REPOS=(
   [dep-triage]="patchhive/deptriage"
   [vuln-triage]="patchhive/vulntriage"
   [refactor-scout]="patchhive/refactorscout"
+  [release-sentry]="patchhive/release-sentry"
   [hive-core]="patchhive/hivecore"
 )
 
@@ -79,6 +84,7 @@ declare -gA PATCHHIVE_PRODUCT_FRONTEND_PORTS=(
   [dep-triage]="5180"
   [vuln-triage]="5181"
   [refactor-scout]="5182"
+  [release-sentry]="5184"
   [hive-core]="5183"
 )
 
@@ -94,26 +100,31 @@ declare -gA PATCHHIVE_PRODUCT_BACKEND_PORTS=(
   [refactor-scout]="8090"
   [hive-core]="8100"
   [vuln-triage]="8110"
+  [release-sentry]="8120"
 )
 
 declare -gA PATCHHIVE_PACKAGE_REMOTES=(
   [ui]="patchhive-ui"
   [product-shell]="product-shell"
+  [ai-models]="ai-models"
 )
 
 declare -gA PATCHHIVE_PACKAGE_REPOS=(
   [ui]="patchhive/patchhive-ui"
   [product-shell]="patchhive/product-shell"
+  [ai-models]="patchhive/ai-models"
 )
 
 declare -gA PATCHHIVE_PACKAGE_NPM_NAMES=(
   [ui]="@patchhivehq/ui"
   [product-shell]="@patchhivehq/product-shell"
+  [ai-models]="@patchhivehq/ai-models"
 )
 
 declare -gA PATCHHIVE_PACKAGE_PUBLISH_WORKFLOWS=(
   [ui]="publish-ui-package.yml"
   [product-shell]="publish-product-shell-package.yml"
+  [ai-models]="publish-ai-models-package.yml"
 )
 
 declare -gA PATCHHIVE_TEMPLATE_REMOTES=(

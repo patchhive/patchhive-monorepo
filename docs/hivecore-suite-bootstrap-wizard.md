@@ -145,7 +145,7 @@ POST /setup/stacks/all/stop
 Suggested wizard screens:
 
 1. Local control check: launcher reachable, Docker reachable, repo root found, image mode known.
-2. Stack choice: first stack, full 11-product fleet, or custom selection.
+2. Stack choice: first stack, full 12-product fleet, or custom selection.
 3. Credential plan: show which products need which secrets and why.
 4. GitHub identity: validate token, show authenticated user, collect bot username/email.
 5. AI/provider setup: configure `PATCHHIVE_AI_URL` or product/provider keys.
@@ -163,7 +163,7 @@ Build this in layers:
 3. HiveCore GitHub-token validation and mismatch warnings.
 4. First-stack env write plus force-recreate start path.
 5. First-stack service-token provisioning and smoke evidence.
-6. Full 11-product catalog.
+6. Full 12-product catalog.
 7. Full-stack start/stop/restart controls.
 8. GHCR prebuilt image authentication/public package fix.
 
@@ -188,4 +188,4 @@ The next slice should make the final setup-ready screen more explicit and extend
 - Should one GitHub token be shared across read-only products, or should the wizard encourage separate read and write tokens?
 - How should the wizard handle remote deployments where writing `.env` files from a localhost launcher is not available?
 - Should product credential requirements live in HiveCore, launcher, or each product's `/capabilities` response?
-- Should the full-stack wizard support optional products, or should it always configure all 11 once selected?
+- Should the full-stack wizard support optional products, or should it always configure all 12 once selected?
