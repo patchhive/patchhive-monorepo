@@ -4,7 +4,7 @@
   <img src="../patchhive3.png" width="120" alt="PatchHive logo" />
 </p>
 
-Updated: April 23, 2026
+Updated: May 15, 2026
 
 This audit covers the first local stack for testing HiveCore with the products that matter most right now: SignalHive, TrustGate, RepoReaper, and HiveCore itself.
 
@@ -16,6 +16,24 @@ The goal is not full orchestration yet. The goal is to make the first loop legib
 4. HiveCore shows health, startup checks, capabilities, run history, and contract drift from one place.
 
 Each product remains standalone. HiveCore consumes product-owned APIs and saved product service tokens.
+
+## May 15, 2026 Cold-Start Validation
+
+HiveCore has now passed the full local cold-start ladder from a rebooted session with deleted container images:
+
+- Started only `patchhive-launcher`, the HiveCore backend, and the HiveCore frontend from source.
+- Used HiveCore to start and reconcile the 11-product fleet, pulling GHCR images as needed.
+- Ran smoke tiers in order: first stack, read-only fleet, then RepoReaper write-capable dry-run.
+
+| Smoke tier | Result | Smoke ID |
+| --- | --- | --- |
+| First stack | Suite-ready: 19 checks passed, 2 local warnings acknowledged | `smoke_019e290f-bc50-72c1-9391-1f9d5aa8e069` |
+| Read-only fleet | Suite-ready: 47 checks passed, 16 local warnings acknowledged | `smoke_019e2910-7df6-7e92-af97-7fc8c9d1cb01` |
+| RepoReaper dry-run | Suite-ready: 7 checks passed | `smoke_019e2911-01fa-7070-b2eb-b39a6fbe184c` |
+
+Outcome: HiveCore can now prove local fleet startup, service-token pairing, read-only orchestration, and RepoReaper dry-run dispatch without opening live PRs. The remaining acknowledged warnings are local-dev auth/webhook warnings, not suite blockers.
+
+Next validation: run release/export verification so the monorepo, standalone product mirrors, and GHCR image expectations stay aligned. After that, the next operational milestone is a guarded RepoReaper real-world dry run against an allowlisted repo/topic before any live PR creation.
 
 ## Target Stack
 

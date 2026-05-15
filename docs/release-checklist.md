@@ -200,7 +200,7 @@ That creates:
 - Product repos can keep subtree-style history.
 - Shared package/service repos should prefer clean mirror syncs.
 - Shared crate repos should prefer clean mirror syncs too.
-- The monorepo's `.cargo/config.toml` intentionally patches `patchhive-product-core` back to a local path, so exported product repos are the place to enforce strict `cargo check --locked` for that shared dependency.
+- The monorepo's default `.cargo/config.toml` intentionally does not load local shared-crate patches. Use `cargo --config .cargo/local-patches.toml ...` only while actively testing local shared-crate edits against products; exported repos and normal product commands should enforce strict standalone lockfiles.
 - If you want to preview tags without pushing anything, use:
 
 ```bash
