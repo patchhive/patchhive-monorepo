@@ -36,6 +36,7 @@ The product documentation set is in [products/](products/).
 - [HiveCore first-stack readiness audit](hivecore-first-stack-readiness.md)
 - [HiveCore suite bootstrap wizard](hivecore-suite-bootstrap-wizard.md)
 - [Product API contract v1](product-api-contract-v1.md)
+- [MaintainerBot operating mode](maintainerbot-operating-mode.md)
 - [SQLite connection strategy](sqlite-connection-strategy.md)
 - [Product export workflow](product-export-workflow.md)
 - [Product starter workflow](product-starter-workflow.md)
