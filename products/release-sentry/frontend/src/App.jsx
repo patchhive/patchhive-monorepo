@@ -7,10 +7,12 @@ import {
 } from "@patchhivehq/product-shell";
 import { API } from "./config.js";
 import OverviewPanel from "./panels/OverviewPanel.jsx";
+import HistoryPanel from "./panels/HistoryPanel.jsx";
 import ChecksPanel from "./panels/ChecksPanel.jsx";
 
 const TABS = [
-  { id: "overview", label: "🚦 Overview" },
+  { id: "overview", label: "🚦 Release Gate" },
+  { id: "history", label: "History" },
   { id: "checks", label: "Checks" },
 ];
 
@@ -55,6 +57,7 @@ export default function App() {
         showSignOut={Boolean(apiKey)}
       >
         {tab === "overview" && <OverviewPanel apiKey={apiKey} />}
+        {tab === "history" && <HistoryPanel apiKey={apiKey} />}
         {tab === "checks" && <ChecksPanel apiKey={apiKey} />}
       </ProductAppFrame>
     </ProductSessionGate>

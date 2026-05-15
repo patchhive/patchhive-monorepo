@@ -15,7 +15,17 @@ ReleaseSentry sits between merge readiness and release execution.
 - ReleaseSentry combines those signals into release evidence.
 - HiveCore can later use ReleaseSentry before suite releases, exports, GHCR image updates, or customer-facing deployment steps.
 
-## What It Should Do
+## What It Does Now
+
+ReleaseSentry's first real loop is implemented as a read-only GitHub release gate:
+
+- `POST /check/github/release` accepts a repo, branch, optional target version/tag, changelog path, workflow run limit, and blocker labels.
+- It checks repository reachability, releases, tags, changelog target coverage, GitHub Actions health, open blocker issues, and common release surface files.
+- It stores every run in SQLite and exposes history through `/history`, `/history/:id`, `/runs`, and `/runs/:id`.
+- It advertises the release check through `/capabilities` so HiveCore can dispatch it with a service token.
+- It returns a `ready`, `watch`, or `hold` decision with per-check evidence.
+
+## What It Should Grow Into
 
 1. Inspect a release target such as a branch, tag, version, or repo.
 2. Compare version files, changelog entries, Git tags, package state, and image state.
@@ -30,6 +40,19 @@ ReleaseSentry sits between merge readiness and release execution.
 ReleaseSentry should stay read-only first.
 
 The first useful loop is one repo in, one release-readiness report out. It should not publish packages, push tags, deploy containers, or cut releases until the evidence layer is boring and trustworthy.
+
+Current action payload:
+
+```json
+{
+  "repo": "patchhive/patchhive2",
+  "branch": "main",
+  "target_version": "0.2.0",
+  "target_tag": "v0.2.0",
+  "changelog_path": "CHANGELOG.md",
+  "workflow_run_limit": 20
+}
+```
 
 ## Local Development
 

@@ -22,11 +22,26 @@ ReleaseSentry does not replace RepoReaper, MergeKeeper, or HiveCore. It sits aft
 
 ## MVP Shape
 
-- Read-only GitHub release readiness checks.
-- Changelog/version/tag drift detection.
-- CI and workflow health summary for the candidate branch or tag.
-- Dependency/security pressure imported from DepTriage and VulnTriage when available.
+- Read-only GitHub release readiness checks through `POST /check/github/release`.
+- Changelog/version/tag drift detection for a target branch, version, or tag.
+- CI and workflow health summary for the candidate branch.
+- Open release-blocker issue detection by configurable blocker labels.
+- Common release surface checks for manifests, Compose files, and CI/release workflows.
+- Saved run history through `/history`, `/runs`, and `/runs/:id` for HiveCore.
 - A release decision with evidence: `ready`, `watch`, or `hold`.
+
+Example request:
+
+```json
+{
+  "repo": "patchhive/patchhive2",
+  "branch": "main",
+  "target_version": "0.2.0",
+  "target_tag": "v0.2.0",
+  "changelog_path": "CHANGELOG.md",
+  "workflow_run_limit": 20
+}
+```
 
 ## Run Locally
 
@@ -52,8 +67,8 @@ cd ../frontend && npm install && npm run dev
 ## Local Notes
 
 - The frontend uses `@patchhivehq/ui` and `@patchhivehq/product-shell`.
-- The backend stores starter state in SQLite at `RELEASE_SENTRY_DB_PATH`.
-- GitHub-backed checks should use a fine-grained token with Metadata (read), Contents (read), Pull requests (read), Actions (read), Commit statuses (read), and Deployments/Releases read access where needed.
+- The backend stores release readiness history in SQLite at `RELEASE_SENTRY_DB_PATH`.
+- GitHub-backed checks should use a fine-grained token with Metadata (read), Contents (read), Actions (read), Issues (read), and Deployments/Releases read access where available.
 - Keep repository access public-only unless release readiness for private repos is explicitly enabled.
 - Generate the first local API key from `http://localhost:5184`.
 - If remote bootstrap is intentional, set `PATCHHIVE_ALLOW_REMOTE_BOOTSTRAP=true`.

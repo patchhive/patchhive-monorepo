@@ -23,7 +23,7 @@ export default function ChecksPanel({ apiKey }) {
         <div>
           <div style={{ fontSize: 18, fontWeight: 700 }}>Startup Checks</div>
           <div style={{ color: "var(--text-dim)", fontSize: 12 }}>
-            These checks come from the shared PatchHive starter and should evolve with the real product logic.
+            Startup and runtime checks for ReleaseSentry's read-only GitHub release gate.
           </div>
         </div>
         <Btn onClick={refresh}>Refresh</Btn>
@@ -48,6 +48,22 @@ export default function ChecksPanel({ apiKey }) {
           <div>
             <div style={S.label}>Mode</div>
             <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{health.mode}</div>
+          </div>
+          <div>
+            <div style={S.label}>GitHub Ready</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: health.github_ready ? "var(--green)" : "var(--gold)" }}>
+              {health.github_ready ? "yes" : "public only"}
+            </div>
+          </div>
+          <div>
+            <div style={S.label}>Runs</div>
+            <div style={{ fontSize: 18, fontWeight: 700 }}>{health.run_count}</div>
+          </div>
+          <div>
+            <div style={S.label}>Ready / Watch / Hold</div>
+            <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
+              {health.ready_count} / {health.watch_count} / {health.hold_count}
+            </div>
           </div>
           <div>
             <div style={S.label}>DB Path</div>

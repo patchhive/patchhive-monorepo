@@ -190,7 +190,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c673075a2e0e5f4a1dde27ce9dee1ea4558c7ffe648f576438a20ca1d2acc4b0"
 dependencies = [
  "iana-time-zone",
+ "js-sys",
  "num-traits",
+ "serde",
+ "wasm-bindgen",
  "windows-link",
 ]
 
@@ -839,6 +842,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "patchhive-github-data"
+version = "0.1.0"
+source = "git+https://github.com/patchhive/patchhive-github-data.git?rev=335ebec68a79098ed9eebdde90bff522146d493d#335ebec68a79098ed9eebdde90bff522146d493d"
+dependencies = [
+ "anyhow",
+ "reqwest",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "patchhive-product-core"
 version = "0.1.0"
 source = "git+https://github.com/patchhive/patchhive-product-core.git?rev=3a1864a628c0024fa912eebfda39487311fbdbcc#3a1864a628c0024fa912eebfda39487311fbdbcc"
@@ -1050,9 +1064,13 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
+ "base64",
+ "chrono",
  "dotenvy",
  "once_cell",
+ "patchhive-github-data",
  "patchhive-product-core",
+ "reqwest",
  "rusqlite",
  "serde",
  "serde_json",
@@ -1060,6 +1078,7 @@ dependencies = [
  "tower-http 0.5.2",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]
@@ -1632,6 +1651,7 @@ checksum = "ddd74a9687298c6858e9b88ec8935ec45d22e8fd5e6394fa1bd4e99a87789c76"
 dependencies = [
  "getrandom 0.4.2",
  "js-sys",
+ "serde_core",
  "wasm-bindgen",
 ]
 
