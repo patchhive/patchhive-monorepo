@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@patchhivehq/ai-models": "^0.1.0",
     "@patchhivehq/product-shell": "^0.1.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

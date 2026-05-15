@@ -1,0 +1,39 @@
+{
+  "name": "@patchhivehq/ai-models",
+  "version": "0.1.0",
+  "description": "Shared AI provider catalogs and model selector components for PatchHive products.",
+  "type": "module",
+  "main": "./src/index.js",
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/patchhive/ai-models.git"
+  },
+  "homepage": "https://github.com/patchhive/ai-models",
+  "bugs": {
+    "url": "https://github.com/patchhive/ai-models/issues"
+  },
+  "keywords": [
+    "patchhive",
+    "ai",
+    "models",
+    "providers",
+    "react"
+  ],
+  "dependencies": {
+    "@patchhivehq/ui": "^0.1.3"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  },
+  "peerDependencies": {
+    "react": ">=18"
+  }
+}

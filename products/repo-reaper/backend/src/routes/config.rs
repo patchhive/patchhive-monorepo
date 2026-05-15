@@ -6,7 +6,7 @@ use axum::{
 use chrono::Utc;
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::{collections::HashSet, fs, path::Path as StdPath};
+use std::{collections::HashSet, fs, path::Path as StdPath, time::Duration};
 use uuid::Uuid;
 
 use crate::agents::{clear_cooldown, get_cooldowns};
@@ -17,7 +17,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/config", get(get_config).post(save_config))
         .route("/ai-local/status", get(get_ai_local_status))
-        .route("/models/:provider", get(list_models))
+        .route("/models/:provider", get(list_models).post(refresh_models))
         .route("/agents", get(list_agents).post(set_team))
         .route("/agents/:id", delete(remove_agent))
         .route("/presets", get(list_presets).post(save_preset))
@@ -81,6 +81,7 @@ const PROVIDER_MODELS: &[(&str, &[&str])] = &[
             "mixtral-8x7b-32768",
         ],
     ),
+    ("custom", &["gpt-4.1-mini", "qwen2.5-coder", "llama3.2"]),
     (
         "ollama",
         &["llama3.2", "codellama", "deepseek-coder", "qwen2.5-coder"],
@@ -278,33 +279,337 @@ async fn save_config(Json(body): Json<ConfigSave>) -> Json<Value> {
     Json(json!({"saved": saved, "restart_required": saved}))
 }
 
-async fn list_models(State(state): State<AppState>, Path(provider): Path<String>) -> Json<Value> {
-    let fallback_models = PROVIDER_MODELS
-        .iter()
-        .find(|(p, _)| *p == provider.as_str())
-        .map(|(_, m)| m.to_vec())
-        .unwrap_or_default();
+#[derive(Deserialize)]
+struct ModelDiscoveryBody {
+    api_key: Option<String>,
+    base_url: Option<String>,
+}
 
-    if provider == "openai" && crate::ai_local::configured_url().is_some() {
-        return match crate::ai_local::fetch_models(&state.http).await {
-            Ok(models) if !models.is_empty() => Json(json!({
-                "models": models,
-                "source": "patchhive-ai-local",
-            })),
-            Ok(_) => Json(json!({
-                "models": fallback_models,
-                "source": "static_fallback",
-                "error": "PatchHive AI gateway returned no models",
-            })),
-            Err(error) => Json(json!({
-                "models": fallback_models,
-                "source": "static_fallback",
-                "error": error.to_string(),
-            })),
-        };
+async fn list_models(State(state): State<AppState>, Path(provider): Path<String>) -> Json<Value> {
+    model_discovery_response(&state.http, &provider, None).await
+}
+
+async fn refresh_models(
+    State(state): State<AppState>,
+    Path(provider): Path<String>,
+    Json(body): Json<ModelDiscoveryBody>,
+) -> Json<Value> {
+    model_discovery_response(&state.http, &provider, Some(body)).await
+}
+
+async fn model_discovery_response(
+    http: &reqwest::Client,
+    provider: &str,
+    body: Option<ModelDiscoveryBody>,
+) -> Json<Value> {
+    let fallback_models = static_provider_models(provider);
+    if fallback_models.is_empty() {
+        return Json(json!({
+            "models": [],
+            "source": "unsupported",
+            "error": format!("Unknown provider: {provider}"),
+        }));
     }
 
-    Json(json!({"models": fallback_models, "source": "static"}))
+    match discover_provider_models(http, provider, body).await {
+        Ok((models, source)) if !models.is_empty() => Json(json!({
+            "models": models,
+            "source": source,
+        })),
+        Ok((_, source)) => Json(json!({
+            "models": fallback_models,
+            "source": "static_fallback",
+            "error": format!("{source} returned no models"),
+        })),
+        Err(error) => Json(json!({
+            "models": fallback_models,
+            "source": "static_fallback",
+            "error": error.to_string(),
+        })),
+    }
+}
+
+async fn discover_provider_models(
+    http: &reqwest::Client,
+    provider: &str,
+    body: Option<ModelDiscoveryBody>,
+) -> anyhow::Result<(Vec<String>, &'static str)> {
+    match provider {
+        "openai" => discover_openai_models(http, body).await,
+        "anthropic" => discover_anthropic_models(http, body).await,
+        "gemini" => discover_gemini_models(http, body).await,
+        "groq" => discover_groq_models(http, body).await,
+        "custom" => discover_custom_models(http, body).await,
+        "ollama" => discover_ollama_models(http, body).await,
+        _ => anyhow::bail!("Unknown provider: {provider}"),
+    }
+}
+
+async fn discover_openai_models(
+    http: &reqwest::Client,
+    body: Option<ModelDiscoveryBody>,
+) -> anyhow::Result<(Vec<String>, &'static str)> {
+    let supplied_key = clean_optional(body.as_ref().and_then(|b| b.api_key.as_deref()));
+    let supplied_base = clean_optional(body.as_ref().and_then(|b| b.base_url.as_deref()));
+
+    if supplied_key.is_none()
+        && supplied_base.is_none()
+        && crate::ai_local::configured_url().is_some()
+    {
+        return Ok((
+            crate::ai_local::fetch_models(http).await?,
+            "patchhive-ai-local",
+        ));
+    }
+
+    let base = supplied_base
+        .or_else(|| clean_env("OPENAI_BASE_URL"))
+        .unwrap_or_else(|| "https://api.openai.com/v1".to_string());
+    let key = supplied_key.or_else(|| provider_api_key("openai"));
+    Ok((
+        fetch_openai_compatible_models(http, &base, key.as_deref()).await?,
+        "provider-api",
+    ))
+}
+
+async fn discover_groq_models(
+    http: &reqwest::Client,
+    body: Option<ModelDiscoveryBody>,
+) -> anyhow::Result<(Vec<String>, &'static str)> {
+    let base = clean_optional(body.as_ref().and_then(|b| b.base_url.as_deref()))
+        .or_else(|| clean_env("GROQ_BASE_URL"))
+        .unwrap_or_else(|| "https://api.groq.com/openai/v1".to_string());
+    let key = clean_optional(body.as_ref().and_then(|b| b.api_key.as_deref()))
+        .or_else(|| provider_api_key("groq"));
+    Ok((
+        fetch_openai_compatible_models(http, &base, key.as_deref()).await?,
+        "provider-api",
+    ))
+}
+
+async fn discover_custom_models(
+    http: &reqwest::Client,
+    body: Option<ModelDiscoveryBody>,
+) -> anyhow::Result<(Vec<String>, &'static str)> {
+    let base = clean_optional(body.as_ref().and_then(|b| b.base_url.as_deref()))
+        .or_else(|| clean_env("CUSTOM_AI_BASE_URL"))
+        .ok_or_else(|| {
+            anyhow::anyhow!("No custom OpenAI-compatible base URL available for model discovery")
+        })?;
+    let key = clean_optional(body.as_ref().and_then(|b| b.api_key.as_deref()))
+        .or_else(|| provider_api_key("custom"));
+    Ok((
+        fetch_openai_compatible_models(http, &base, key.as_deref()).await?,
+        "provider-api",
+    ))
+}
+
+async fn discover_anthropic_models(
+    http: &reqwest::Client,
+    body: Option<ModelDiscoveryBody>,
+) -> anyhow::Result<(Vec<String>, &'static str)> {
+    let key = clean_optional(body.as_ref().and_then(|b| b.api_key.as_deref()))
+        .or_else(|| provider_api_key("anthropic"))
+        .ok_or_else(|| anyhow::anyhow!("No Anthropic API key available for model discovery"))?;
+
+    #[derive(Deserialize)]
+    struct AnthropicModels {
+        data: Vec<ProviderModel>,
+    }
+
+    let resp = http
+        .get("https://api.anthropic.com/v1/models")
+        .timeout(Duration::from_secs(8))
+        .header("x-api-key", key)
+        .header("anthropic-version", "2023-06-01")
+        .send()
+        .await?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        anyhow::bail!("Anthropic model discovery returned {status}: {body}");
+    }
+
+    let models = resp
+        .json::<AnthropicModels>()
+        .await?
+        .data
+        .into_iter()
+        .map(|model| model.id)
+        .collect();
+    Ok((clean_model_ids(models), "provider-api"))
+}
+
+async fn discover_gemini_models(
+    http: &reqwest::Client,
+    body: Option<ModelDiscoveryBody>,
+) -> anyhow::Result<(Vec<String>, &'static str)> {
+    let key = clean_optional(body.as_ref().and_then(|b| b.api_key.as_deref()))
+        .or_else(|| provider_api_key("gemini"))
+        .ok_or_else(|| anyhow::anyhow!("No Gemini API key available for model discovery"))?;
+
+    #[derive(Deserialize)]
+    struct GeminiModels {
+        models: Vec<GeminiModel>,
+    }
+
+    #[derive(Deserialize)]
+    struct GeminiModel {
+        name: String,
+    }
+
+    let resp = http
+        .get("https://generativelanguage.googleapis.com/v1beta/models")
+        .timeout(Duration::from_secs(8))
+        .header("x-goog-api-key", key)
+        .send()
+        .await?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        anyhow::bail!("Gemini model discovery returned {status}: {body}");
+    }
+
+    let models = resp
+        .json::<GeminiModels>()
+        .await?
+        .models
+        .into_iter()
+        .map(|model| {
+            model
+                .name
+                .strip_prefix("models/")
+                .unwrap_or(&model.name)
+                .to_string()
+        })
+        .collect();
+    Ok((clean_model_ids(models), "provider-api"))
+}
+
+async fn discover_ollama_models(
+    http: &reqwest::Client,
+    body: Option<ModelDiscoveryBody>,
+) -> anyhow::Result<(Vec<String>, &'static str)> {
+    #[derive(Deserialize)]
+    struct OllamaTags {
+        models: Vec<OllamaModel>,
+    }
+
+    #[derive(Deserialize)]
+    struct OllamaModel {
+        name: String,
+    }
+
+    let base = clean_optional(body.as_ref().and_then(|b| b.base_url.as_deref()))
+        .or_else(|| clean_env("OLLAMA_BASE_URL"))
+        .unwrap_or_else(|| "http://localhost:11434".to_string());
+    let resp = http
+        .get(format!("{}/api/tags", base.trim_end_matches('/')))
+        .timeout(Duration::from_secs(8))
+        .send()
+        .await?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        anyhow::bail!("Ollama model discovery returned {status}: {body}");
+    }
+
+    let models = resp
+        .json::<OllamaTags>()
+        .await?
+        .models
+        .into_iter()
+        .map(|model| model.name)
+        .collect();
+    Ok((clean_model_ids(models), "ollama"))
+}
+
+#[derive(Deserialize)]
+struct ProviderModel {
+    id: String,
+}
+
+#[derive(Deserialize)]
+struct OpenAiModels {
+    data: Vec<ProviderModel>,
+}
+
+async fn fetch_openai_compatible_models(
+    http: &reqwest::Client,
+    base: &str,
+    api_key: Option<&str>,
+) -> anyhow::Result<Vec<String>> {
+    let mut request = http
+        .get(format!("{}/models", base.trim_end_matches('/')))
+        .timeout(Duration::from_secs(8));
+    request = match api_key {
+        Some(key) => request.bearer_auth(key),
+        None if crate::ai_local::is_local_openai_base(base) => {
+            request.bearer_auth("patchhive-local")
+        }
+        None => anyhow::bail!("No OpenAI-compatible API key available for model discovery"),
+    };
+
+    let resp = request.send().await?;
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        anyhow::bail!("OpenAI-compatible model discovery returned {status}: {body}");
+    }
+
+    let models = resp
+        .json::<OpenAiModels>()
+        .await?
+        .data
+        .into_iter()
+        .map(|model| model.id)
+        .collect();
+    Ok(clean_model_ids(models))
+}
+
+fn static_provider_models(provider: &str) -> Vec<String> {
+    PROVIDER_MODELS
+        .iter()
+        .find(|(p, _)| *p == provider)
+        .map(|(_, models)| models.iter().map(|model| model.to_string()).collect())
+        .unwrap_or_default()
+}
+
+fn clean_optional(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn clean_env(key: &str) -> Option<String> {
+    clean_optional(Some(env(key).as_str()))
+}
+
+fn provider_api_key(provider: &str) -> Option<String> {
+    let provider_specific = match provider {
+        "anthropic" => clean_env("ANTHROPIC_API_KEY"),
+        "openai" => clean_env("OPENAI_API_KEY"),
+        "gemini" => clean_env("GEMINI_API_KEY").or_else(|| clean_env("GOOGLE_API_KEY")),
+        "groq" => clean_env("GROQ_API_KEY"),
+        "custom" => clean_env("CUSTOM_AI_API_KEY").or_else(|| clean_env("OPENAI_API_KEY")),
+        _ => None,
+    };
+
+    provider_specific.or_else(|| clean_env("PROVIDER_API_KEY"))
+}
+
+fn clean_model_ids(models: Vec<String>) -> Vec<String> {
+    let mut seen = HashSet::new();
+    models
+        .into_iter()
+        .map(|model| model.trim().to_string())
+        .filter(|model| !model.is_empty())
+        .filter(|model| seen.insert(model.clone()))
+        .collect()
 }
 
 async fn list_agents(State(state): State<AppState>) -> Json<Value> {

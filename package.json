@@ -22,8 +22,11 @@
     "mirror:product-core:reset": "./scripts/sync-crate-mirror.sh patchhive-product-core product-core main --reset-history",
     "mirror:product-shell": "./scripts/sync-package-mirror.sh product-shell product-shell main",
     "mirror:product-shell:reset": "./scripts/sync-package-mirror.sh product-shell product-shell main --reset-history",
+    "mirror:ai-models": "./scripts/sync-package-mirror.sh ai-models ai-models main",
+    "mirror:ai-models:reset": "./scripts/sync-package-mirror.sh ai-models ai-models main --reset-history",
     "mirror:ui": "./scripts/sync-package-mirror.sh ui patchhive-ui main",
     "mirror:ui:reset": "./scripts/sync-package-mirror.sh ui patchhive-ui main --reset-history",
+    "version:ai-models": "./scripts/version-package.sh ai-models @patchhivehq/ai-models",
     "version:product-shell": "./scripts/version-product-shell.sh",
     "version:ui": "./scripts/version-ui.sh",
     "tag:release": "./scripts/tag-release.sh"

@@ -1,103 +1,45 @@
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 import { API } from "../config.js";
-import { S, Input, Sel, Btn, Divider, EmptyState, ROLE_META, PROVIDERS } from "@patchhivehq/ui";
+import { AIModelSelector, AI_PROVIDERS, DEFAULT_PROVIDER_MODELS, defaultModelForProvider } from "@patchhivehq/ai-models";
+import { S, Input, Sel, Btn, EmptyState, ROLE_META } from "@patchhivehq/ui";
 import { AgentCard } from "@patchhivehq/ui";
 
-const PROVIDER_MODELS = {
-  anthropic: ["claude-opus-4-6","claude-sonnet-4-6","claude-haiku-4-5"],
-  openai:    [
-    "gpt-5.4",
-    "gpt-5.4-mini",
-    "gpt-5.4-nano",
-    "gpt-5.3-codex",
-    "gpt-5.2-codex",
-    "gpt-5.1",
-    "gpt-5-mini",
-    "gpt-5-nano",
-    "gpt-5.1-codex",
-    "gpt-5.1-codex-mini",
-    "gpt-5.1-codex-max",
-    "gpt-5-codex",
-    "gpt-5",
-    "gpt-4.1",
-    "gpt-4.1-mini",
-    "gpt-4.1-nano",
-    "o3",
-    "o4-mini",
-    "o3-mini",
-  ],
-  gemini:    ["gemini-2.0-flash","gemini-2.5-pro","gemini-2.0-flash-lite"],
-  groq:      ["llama-3.3-70b-versatile","llama-3.1-8b-instant","mixtral-8x7b-32768"],
-  ollama:    ["llama3.2","codellama","deepseek-coder","qwen2.5-coder"],
+const BLANK = {
+  name:"",
+  role:"scout",
+  provider:"anthropic",
+  model:defaultModelForProvider("anthropic"),
+  api_key:"",
+  base_url:"",
+  bot_token:"",
+  bot_user:"",
 };
-
-const BLANK = { name:"", role:"reaper", provider:"anthropic", model:"claude-sonnet-4-6", api_key:"", bot_token:"", bot_user:"" };
 
 export default function TeamPanel({ agents, logs, running, cooldowns, onAdd, onRemove, apiKey = "", existingConfig = {} }) {
   const [form, setForm] = useState(BLANK);
   const [showForm, setShowForm] = useState(false);
-  const [providerModels, setProviderModels] = useState(PROVIDER_MODELS);
-  const [modelStatus, setModelStatus] = useState({});
-  const [loadingModels, setLoadingModels] = useState({});
   const set = k => v => setForm(f => ({ ...f, [k]: v }));
 
-  const models = providerModels[form.provider] || PROVIDER_MODELS[form.provider] || [];
   const hasCooldown = Object.keys(cooldowns||{}).length > 0;
   const agentList = Object.values(agents);
+  const fallbackModels = useMemo(
+    () => ({ ...DEFAULT_PROVIDER_MODELS, ...(existingConfig?.providers || {}) }),
+    [existingConfig?.providers],
+  );
 
-  useEffect(() => {
-    const provider = form.provider;
-    let cancelled = false;
-    setLoadingModels(s => ({ ...s, [provider]: true }));
-
-    fetch(`${API}/models/${provider}`, {
-      headers: apiKey ? { "X-API-Key": apiKey } : {},
-    })
-      .then(r => r.json())
-      .then(data => {
-        if (cancelled) return;
-        const nextModels = Array.isArray(data.models) && data.models.length
-          ? data.models
-          : (PROVIDER_MODELS[provider] || []);
-        setProviderModels(prev => ({ ...prev, [provider]: nextModels }));
-        setModelStatus(prev => ({
-          ...prev,
-          [provider]: {
-            source: data.source || "static",
-            error: data.error || "",
-          },
-        }));
-        setForm(current => {
-          if (current.provider !== provider) return current;
-          if (nextModels.includes(current.model)) return current;
-          return { ...current, model: nextModels[0] || "" };
-        });
-      })
-      .catch(error => {
-        if (cancelled) return;
-        setModelStatus(prev => ({
-          ...prev,
-          [provider]: {
-            source: "static_fallback",
-            error: `Could not load models: ${error}`,
-          },
-        }));
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setLoadingModels(s => ({ ...s, [provider]: false }));
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [form.provider, apiKey, existingConfig?.PATCHHIVE_AI_URL]);
+  const resetBlankAgent = () => {
+    const provider = existingConfig?.PATCHHIVE_AI_URL ? "openai" : "anthropic";
+    setForm({
+      ...BLANK,
+      provider,
+      model: defaultModelForProvider(provider, fallbackModels),
+    });
+  };
 
   const add = () => {
     if (!form.name || !form.role || !form.provider || !form.model) return;
     onAdd(form);
-    setForm(BLANK);
+    resetBlankAgent();
     setShowForm(false);
   };
 
@@ -113,7 +55,10 @@ export default function TeamPanel({ agents, logs, running, cooldowns, onAdd, onR
           <span style={{ fontSize:10, color:"#484868" }}>{agentList.length} agents</span>
           {hasCooldown && <span style={{ fontSize:9, color:"#7b2d8b", border:"1px solid #7b2d8b44", borderRadius:3, padding:"1px 5px" }}>⏸ cooling</span>}
           <div style={{ flex:1 }}/>
-          <Btn onClick={() => setShowForm(s => !s)} color="#c41e3a" style={{ fontSize:10 }}>
+          <Btn onClick={() => {
+            if (!showForm) resetBlankAgent();
+            setShowForm(s => !s);
+          }} color="#c41e3a" style={{ fontSize:10 }}>
             {showForm ? "Cancel" : "+ Add Agent"}
           </Btn>
         </div>
@@ -128,30 +73,44 @@ export default function TeamPanel({ agents, logs, running, cooldowns, onAdd, onR
               <label style={S.label}>Role</label>
               <Sel value={form.role} onChange={v => { set("role")(v); }} opts={Object.entries(ROLE_META).map(([v,m]) => ({ v, l: `${m.icon} ${m.label}` }))} />
             </div>
-            <div style={S.field}>
-              <label style={S.label}>Provider</label>
-              <Sel value={form.provider} onChange={v => { set("provider")(v); set("model")((providerModels[v] || PROVIDER_MODELS[v] || [])[0] || ""); }} opts={Object.entries(PROVIDERS).map(([v,p]) => ({ v, l:`${p.icon} ${p.label}` }))} />
-            </div>
-            <div style={{ gridColumn:"1/-1", ...S.field }}>
-              <label style={S.label}>Model</label>
-              <Sel value={form.model} onChange={set("model")} opts={models} />
-              <div style={{ fontSize:10, color:modelStatus[form.provider]?.error ? "#c8922a" : "#484868", marginTop:4 }}>
-                {loadingModels[form.provider]
-                  ? "Loading models…"
-                  : form.provider === "openai" && modelStatus[form.provider]?.source === "patchhive-ai-local"
-                    ? "Live models from PatchHive Local AI."
-                    : modelStatus[form.provider]?.error || "Using built-in provider model list."}
+            <AIModelSelector
+              apiBase={API}
+              authToken={apiKey}
+              provider={form.provider}
+              model={form.model}
+              providerKey={form.api_key}
+              baseUrl={form.base_url}
+              fallbackModels={fallbackModels}
+              localGatewayConfigured={!!existingConfig?.PATCHHIVE_AI_URL}
+              globalKeyConfigured={!!existingConfig?.PROVIDER_API_KEY_SET}
+              onProviderChange={set("provider")}
+              onModelChange={set("model")}
+            />
+            {form.provider === "custom" && (
+              <div style={{ gridColumn:"1/-1", ...S.field }}>
+                <label style={S.label}>Custom Base URL</label>
+                <Input
+                  value={form.base_url}
+                  onChange={set("base_url")}
+                  placeholder="http://localhost:8787/v1 or https://api.example.com/v1"
+                />
+                <div style={{ fontSize:10, color:"#484868", marginTop:4 }}>
+                  Must speak the OpenAI-compatible chat and models APIs.
+                </div>
               </div>
-            </div>
-            {!PROVIDERS[form.provider]?.noKey && (
+            )}
+            {!AI_PROVIDERS[form.provider]?.noKey && (
               <div style={{ gridColumn:"1/-1", ...S.field }}>
                 <label style={S.label}>API Key (leave blank to use global)</label>
                 <Input
                   value={form.api_key}
                   onChange={set("api_key")}
-                  placeholder={form.provider === "openai" && existingConfig?.PATCHHIVE_AI_URL ? "optional when using PatchHive Local AI" : (PROVIDERS[form.provider]?.keyHint || "sk-…")}
+                  placeholder={form.provider === "openai" && existingConfig?.PATCHHIVE_AI_URL ? "optional when using PatchHive Local AI" : (AI_PROVIDERS[form.provider]?.keyHint || "sk-...")}
                   type="password"
                 />
+                <div style={{ fontSize:10, color:"#484868", marginTop:4 }}>
+                  Enter a provider-specific key, then use Refresh live on the model selector to pull the model list before recruiting.
+                </div>
               </div>
             )}
             <div style={S.field}>

@@ -50,6 +50,7 @@ export const PROVIDERS = {
   openai:    { label:"OpenAI",    color:"#19a37f", icon:"◉", keyHint:"sk-…" },
   gemini:    { label:"Gemini",    color:"#4a8af0", icon:"◈", keyHint:"AIza…" },
   groq:      { label:"Groq",      color:"#9060e0", icon:"⬡", keyHint:"gsk_…" },
+  custom:    { label:"Custom",    color:"#3a9fb3", icon:"◇", keyHint:"provider key" },
   ollama:    { label:"Ollama",    color:"#40a080", icon:"◎", keyHint:"(no key needed)", noKey:true },
 };
 

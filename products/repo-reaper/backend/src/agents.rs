@@ -84,6 +84,7 @@ pub async fn clear_cooldown(provider: &str) {
 pub struct AgentCallParams<'a> {
     pub provider: &'a str,
     pub model: &'a str,
+    pub base_url: Option<&'a str>,
     pub api_key: Option<&'a str>,
     pub system: &'a str,
     pub prompt: &'a str,
@@ -104,6 +105,16 @@ pub async fn ai_call(http: &Client, p: &AgentCallParams<'_>) -> Result<(String, 
         "groq" => {
             let base = std::env::var("GROQ_BASE_URL")
                 .unwrap_or_else(|_| "https://api.groq.com/openai/v1".into());
+            openai_call(http, p, &base).await
+        }
+        "custom" => {
+            let base = p
+                .base_url
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
+                .or_else(|| std::env::var("CUSTOM_AI_BASE_URL").ok())
+                .ok_or_else(|| anyhow!("No custom OpenAI-compatible base URL configured"))?;
             openai_call(http, p, &base).await
         }
         "ollama" => ollama_call(http, p).await,
@@ -270,6 +281,7 @@ fn call_params<'a>(
     AgentCallParams {
         provider: agent.provider.as_str(),
         model: agent.model.as_str(),
+        base_url: agent.base_url.as_deref(),
         api_key: agent.api_key.as_deref(),
         system,
         prompt,

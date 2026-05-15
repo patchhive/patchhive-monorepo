@@ -17,12 +17,13 @@ export const S = {
 
 // ── Input ──────────────────────────────────────────────────────────────────────
 
-export function Input({ value, onChange, placeholder, type="text", style={} }) {
+export function Input({ value, onChange, placeholder, type="text", style={}, disabled=false }) {
   return (
     <input
       type={type} value={value}
       onChange={e => onChange(e.target.value)}
       placeholder={placeholder}
+      disabled={disabled}
       style={{ ...S.input, ...style }}
     />
   );
@@ -30,9 +31,9 @@ export function Input({ value, onChange, placeholder, type="text", style={} }) {
 
 // ── Select ─────────────────────────────────────────────────────────────────────
 
-export function Sel({ value, onChange, opts, style={} }) {
+export function Sel({ value, onChange, opts, style={}, disabled=false }) {
   return (
-    <select value={value} onChange={e => onChange(e.target.value)} style={{ ...S.select, ...style }}>
+    <select value={value} onChange={e => onChange(e.target.value)} disabled={disabled} style={{ ...S.select, ...style }}>
       {opts.map(o => <option key={o.v ?? o} value={o.v ?? o}>{o.l ?? o}</option>)}
     </select>
   );

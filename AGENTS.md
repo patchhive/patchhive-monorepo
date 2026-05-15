@@ -61,6 +61,7 @@ patchhive/
   packages/
     ui/                     @patchhivehq/ui shared React component library
     product-shell/          @patchhivehq/product-shell shared frontend shell/auth helpers
+    ai-models/              @patchhivehq/ai-models shared AI provider/model selector UX
     ai-local/               @patchhive/ai-local localhost AI gateway
   crates/
     patchhive-product-core/ shared Rust auth + startup helpers
@@ -105,7 +106,7 @@ Frontend:
 
 AI provider integration:
 - Direct HTTP via `reqwest`
-- Preserve support for Anthropic, OpenAI, Gemini, Groq, and Ollama
+- Preserve support for Anthropic, OpenAI, Gemini, Groq, Ollama, and custom OpenAI-compatible endpoints
 - No provider SDK dependencies unless there is a compelling repo-wide change
 - Prefer `PATCHHIVE_AI_URL` for PatchHive-wide OpenAI-compatible local gateways before falling back to raw provider endpoints
 
@@ -148,6 +149,19 @@ Rules:
 - If authenticated backend `fetch` behavior is repeated across 2 or more products, keep it in `product-shell`.
 - If setup, readiness, or first-run wizard UI is shared across 2 or more products, keep it in `product-shell` unless HiveCore-specific orchestration behavior is required.
 - Avoid direct `localStorage` reads across individual panels when the app shell can pass the resolved API key down instead.
+
+## Shared AI Models Package
+
+Location: `packages/ai-models/`
+
+AI-capable product frontends should import provider catalog and model selector behavior from `@patchhivehq/ai-models` instead of carrying one-off provider/model dropdowns.
+
+Rules:
+- Keep frontend provider labels, fallback model lists, live/static model status copy, and model refresh UX here.
+- Product backends should expose `GET /models/:provider` and `POST /models/:provider` when they use this package.
+- Browser code should not call third-party AI providers directly. It may pass a user-entered provider key to the local product backend for one-time model discovery.
+- Keep actual AI request execution in the product backend or a shared Rust crate once 2 or more products need the same backend model-discovery/runtime seam.
+- Custom providers should use OpenAI-compatible chat and model-list APIs and carry an explicit base URL in product config or agent config.
 
 ## Shared Rust Product Core
 

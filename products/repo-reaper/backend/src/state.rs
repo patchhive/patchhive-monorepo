@@ -11,6 +11,8 @@ pub struct AgentConfig {
     pub role: String, // scout | judge | reaper | smith | gatekeeper
     pub provider: String,
     pub model: String,
+    #[serde(default)]
+    pub base_url: Option<String>,
     pub api_key: Option<String>,
     pub bot_token: Option<String>,
     pub bot_user: Option<String>,
