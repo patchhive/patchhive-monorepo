@@ -42,4 +42,4 @@ tmp/
 .codex
 
 # Nested standalone site checkout
-# patchhive-sites/ — unignored for site redesign deployment
+patchhive-sites/
