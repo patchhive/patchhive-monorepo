@@ -33,6 +33,7 @@ HiveCore is not a replacement for standalone products. Its first job is to make 
 - Per-product frontend/API overrides for subdomains or remote deployments
 - One-time per-product service-token provisioning from HiveCore Settings
 - Setup tab for the first stack that can detect already-running products, start missing ones through `patchhive-launcher`, and auto-pair HiveCore with them
+- Smoke tiers for first-stack safe actions, read-only fleet contract checks, RepoReaper dry-run dispatch, and ReleaseSentry release-gate dispatch
 - Per-product service tokens stored server-side for protected `/runs` reads and action dispatch, with optional at-rest encryption via `HIVECORE_ENCRYPTION_KEY`
 - Shared PatchHive API-key bootstrap flow
 

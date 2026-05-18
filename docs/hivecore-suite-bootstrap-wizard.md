@@ -179,6 +179,7 @@ The first practical slice is now centered on first-stack GitHub credential setup
 - HiveCore validates GitHub tokens through its backend before save, without echoing raw tokens back to the browser.
 - HiveCore can save product setup credentials through the launcher, restart/recreate that product, wait for health, then retry suite service-token pairing.
 - HiveCore's first-stack smoke run now performs its own preflight: start missing products through the launcher, wait for health, retry service-token pairing, then run safe product actions and store the smoke evidence.
+- HiveCore also has a ReleaseSentry release-gate smoke tier so the suite can prove read-only release readiness dispatch separately from RepoReaper write-capable dry runs.
 
 The next slice should make the final setup-ready screen more explicit and extend the same flow beyond the first-stack trio.
 

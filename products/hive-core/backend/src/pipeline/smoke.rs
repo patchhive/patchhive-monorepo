@@ -26,7 +26,7 @@ use super::{
     ProductStoredAuth, StartupChecksBody,
 };
 
-const READ_ONLY_FLEET_SLUGS: [&str; 9] = [
+const READ_ONLY_FLEET_SLUGS: [&str; 10] = [
     "signal-hive",
     "repo-memory",
     "trust-gate",
@@ -36,14 +36,17 @@ const READ_ONLY_FLEET_SLUGS: [&str; 9] = [
     "dep-triage",
     "vuln-triage",
     "refactor-scout",
+    "release-sentry",
 ];
 const WRITE_DRY_RUN_SLUGS: [&str; 1] = ["repo-reaper"];
+const RELEASE_GATE_SLUGS: [&str; 1] = ["release-sentry"];
 
 #[derive(Clone, Copy)]
 enum SmokeTier {
     FirstStack,
     ReadOnlyFleet,
     WriteDryRun,
+    ReleaseGate,
 }
 
 impl SmokeTier {
@@ -52,6 +55,7 @@ impl SmokeTier {
             "first-stack" => Some(Self::FirstStack),
             "read-only-fleet" => Some(Self::ReadOnlyFleet),
             "write-dry-run" => Some(Self::WriteDryRun),
+            "release-gate" => Some(Self::ReleaseGate),
             _ => None,
         }
     }
@@ -61,6 +65,7 @@ impl SmokeTier {
             Self::FirstStack => "first-stack",
             Self::ReadOnlyFleet => "read-only-fleet",
             Self::WriteDryRun => "write-dry-run",
+            Self::ReleaseGate => "release-gate",
         }
     }
 
@@ -69,6 +74,7 @@ impl SmokeTier {
             Self::FirstStack => "First-stack smoke",
             Self::ReadOnlyFleet => "Read-only fleet smoke",
             Self::WriteDryRun => "RepoReaper dry-run smoke",
+            Self::ReleaseGate => "ReleaseSentry release-gate smoke",
         }
     }
 }
@@ -88,7 +94,7 @@ pub(super) async fn run_setup_smoke_tier(
             build_first_stack_response(
                 &state,
                 vec![format!(
-                    "Unknown smoke tier {tier_slug}; available tiers are first-stack, read-only-fleet, and write-dry-run."
+                    "Unknown smoke tier {tier_slug}; available tiers are first-stack, read-only-fleet, write-dry-run, and release-gate."
                 )],
             )
             .await,
@@ -144,7 +150,10 @@ async fn run_smoke_tier_response(
                 );
             }
         }
-    } else if matches!(tier, SmokeTier::ReadOnlyFleet | SmokeTier::WriteDryRun) {
+    } else if matches!(
+        tier,
+        SmokeTier::ReadOnlyFleet | SmokeTier::WriteDryRun | SmokeTier::ReleaseGate
+    ) {
         prepare_products_for_service_token_verification(
             state,
             smoke_tier_slugs(tier),
@@ -196,6 +205,9 @@ fn smoke_tier_description(tier: SmokeTier) -> &'static str {
         }
         SmokeTier::WriteDryRun => {
             "RepoReaper only, using the saved service token and dry-run action so no PRs are opened"
+        }
+        SmokeTier::ReleaseGate => {
+            "ReleaseSentry only, using the saved service token to dispatch a read-only release readiness check"
         }
     }
 }
@@ -257,6 +269,12 @@ async fn execute_smoke_tier(
                 smoke_capability_check(state, runtime, &api_url, &auth, &mut steps).await;
                 smoke_safe_action(state, runtime, &api_url, &auth, &mut steps).await;
             }
+            SmokeTier::ReleaseGate => {
+                smoke_runtime_checks(state, &mut steps, runtime, &api_url, &auth).await;
+                smoke_auth_checks(state, runtime, &api_url, &auth, &mut steps).await;
+                smoke_capability_check(state, runtime, &api_url, &auth, &mut steps).await;
+                smoke_safe_action(state, runtime, &api_url, &auth, &mut steps).await;
+            }
         }
     }
 
@@ -278,6 +296,7 @@ fn smoke_tier_slugs(tier: SmokeTier) -> &'static [&'static str] {
         SmokeTier::FirstStack => &DOWNSTREAM_FIRST_STACK_SLUGS,
         SmokeTier::ReadOnlyFleet => &READ_ONLY_FLEET_SLUGS,
         SmokeTier::WriteDryRun => &WRITE_DRY_RUN_SLUGS,
+        SmokeTier::ReleaseGate => &RELEASE_GATE_SLUGS,
     }
 }
 
@@ -471,6 +490,8 @@ fn acknowledged_startup_warning(slug: &str, warning: &str) -> bool {
         || normalized.contains("public-repo scans may still work")
         || normalized.contains("public dependency pr scans may still work")
         || normalized.contains("public reads may still work")
+        || normalized.contains("public github release checks may work")
+        || normalized.contains("rate limits and private repos will be limited")
         || normalized.contains("github-backed ingestion is disabled")
         || matches!(
             slug,
@@ -845,6 +866,7 @@ fn expected_smoke_action(slug: &str) -> &'static str {
         "signal-hive" => "smoke_check",
         "trust-gate" => "review_diff",
         "repo-reaper" => "dry_run",
+        "release-sentry" => "check_github_release",
         _ => "unknown",
     }
 }
@@ -868,13 +890,22 @@ fn smoke_payload(slug: &str) -> Value {
             "cost_budget_usd": 0.0,
             "retry_count": 0
         }),
+        "release-sentry" => json!({
+            "repo": "patchhive/patchhive2",
+            "branch": "main",
+            "target_version": "",
+            "target_tag": "",
+            "changelog_path": "README.md",
+            "workflow_run_limit": 10,
+            "blocker_labels": ["release-blocker", "blocker", "critical", "regression"]
+        }),
         _ => json!({}),
     }
 }
 
 fn smoke_timeout_secs(action_id: &str) -> u64 {
     match action_id {
-        "scan" | "dry_run" => 45,
+        "scan" | "dry_run" | "check_github_release" => 45,
         _ => 15,
     }
 }

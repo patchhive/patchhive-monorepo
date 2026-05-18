@@ -1131,6 +1131,13 @@ function CommandRail({ setup, mission, onlineCount, pairedCount, fleetCount, fle
           onClick={() => onAction("Dry-run smoke", "/setup/smoke/write-dry-run")}
         />
         <CommandButton
+          title="Release-gate smoke"
+          detail="Exercise ReleaseSentry with a read-only release readiness check."
+          color="var(--accent)"
+          disabled={busy || busyAction === "Release-gate smoke"}
+          onClick={() => onAction("Release-gate smoke", "/setup/smoke/release-gate")}
+        />
+        <CommandButton
           title="Stop first stack"
           detail="Stop the starter trio without removing data."
           color="var(--gold)"

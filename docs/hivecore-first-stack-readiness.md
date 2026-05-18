@@ -33,7 +33,7 @@ HiveCore has now passed the full local cold-start ladder from a rebooted session
 
 Outcome: HiveCore can now prove local fleet startup, service-token pairing, read-only orchestration, and RepoReaper dry-run dispatch without opening live PRs. The remaining acknowledged warnings are local-dev auth/webhook warnings, not suite blockers.
 
-Next validation: run release/export verification so the monorepo, standalone product mirrors, and GHCR image expectations stay aligned. After that, the next operational milestone is a guarded RepoReaper real-world dry run against an allowlisted repo/topic before any live PR creation.
+Next validation: rerun the cold-start ladder with the 12-product fleet and the new ReleaseSentry release-gate smoke tier. The expected order is first stack, read-only fleet, RepoReaper dry-run, then ReleaseSentry release-gate. After that, the next operational milestone is a guarded RepoReaper real-world dry run against an allowlisted repo/topic before any live PR creation.
 
 ## Target Stack
 
