@@ -48,7 +48,7 @@ its control-plane-specific panels.
 | SignalHive | `products/signal-hive/frontend-v2` | React prototype active |
 | RepoReaper | pending | Not started |
 | ReviewBee | pending | Not started |
-| TrustGate | pending | Not started |
+| TrustGate | `products/trust-gate/frontend-v2` | React prototype active |
 | RepoMemory | pending | Not started |
 | MergeKeeper | pending | Not started |
 | FlakeSting | pending | Not started |

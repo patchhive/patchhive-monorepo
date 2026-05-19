@@ -37,6 +37,25 @@ docker compose up --build
 Frontend: `http://localhost:5175`
 Backend: `http://localhost:8020`
 
+## UI v2 Prototype
+
+The suite-wide UI v2 prototype for TrustGate lives in `frontend-v2/`. It uses
+the shared `packages/ui-v2` shell primitives to validate that the new PatchHive
+visual language works for safety and review workflows, not just SignalHive's
+radar/atlas surface.
+
+When using Docker Compose, the v2 prototype is exposed as the `frontend-v2`
+service on `http://localhost:5193`.
+
+The current production frontend remains in `frontend/` until the full suite has
+moved to v2 and old UI code is intentionally legacy or removed.
+
+For local v2 development:
+
+```bash
+cd frontend-v2 && npm install && npm run dev
+```
+
 ### Split Backend and Frontend
 
 ```bash

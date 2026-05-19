@@ -25,3 +25,12 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
+
+  frontend-v2:
+    build: ./frontend-v2
+    pull_policy: never
+    ports:
+      - "5193:8080"
+    depends_on:
+      - backend
+    restart: unless-stopped

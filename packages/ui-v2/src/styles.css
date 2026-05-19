@@ -993,10 +993,13 @@ h1 {
 }
 
 .repo-name {
+  overflow: hidden;
   color: var(--text);
   font-family: var(--orb);
   font-size: 0.9rem;
   letter-spacing: 0.08em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .repo-meta {
@@ -1067,6 +1070,78 @@ h1 {
 .feed-item {
   min-height: 54px;
   padding: 10px;
+}
+
+.ledger-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  background: rgba(7, 16, 24, 0.72);
+}
+
+.rank {
+  min-width: 48px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line2);
+  color: var(--signal2);
+  font-size: 0.66rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.trust-map {
+  min-height: 430px;
+}
+
+.trust-gauge {
+  display: grid;
+  place-items: center;
+  min-height: 310px;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(230, 160, 29, 0.16), transparent 30%),
+    linear-gradient(rgba(103, 187, 231, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(103, 187, 231, 0.045) 1px, transparent 1px);
+  background-size: auto, 28px 28px, 28px 28px;
+}
+
+.trust-ring {
+  width: min(72%, 290px);
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  border: 1px solid rgba(230, 160, 29, 0.62);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at center, rgba(230, 160, 29, 0.12), rgba(7, 16, 24, 0.92) 58%),
+    conic-gradient(from -40deg, rgba(49, 196, 124, 0.18), rgba(230, 160, 29, 0.28), rgba(214, 75, 75, 0.2), rgba(49, 196, 124, 0.18));
+  box-shadow:
+    inset 0 0 42px rgba(230, 160, 29, 0.18),
+    0 0 22px rgba(230, 160, 29, 0.18);
+}
+
+.trust-decision,
+.trust-score {
+  font-family: var(--orb);
+  font-weight: 900;
+  line-height: 1;
+}
+
+.trust-decision {
+  color: var(--amber);
+  font-size: 2.5rem;
+  letter-spacing: 0.08em;
+}
+
+.trust-score {
+  color: var(--text);
+  font-size: 4rem;
 }
 
 .feed-title {
