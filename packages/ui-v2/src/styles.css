@@ -261,6 +261,10 @@ h1 {
   min-height: calc(100vh - 96px);
 }
 
+.main-grid.focus-grid {
+  grid-template-columns: 220px minmax(0, 1fr) 304px;
+}
+
 .rail,
 .side {
   min-width: 0;
@@ -549,6 +553,16 @@ h1 {
   display: grid;
   grid-template-columns: minmax(0, 1.08fr) minmax(320px, 0.92fr);
   gap: 18px;
+}
+
+.memory-focus-layout,
+.reaper-focus-layout {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.queue-grid,
+.candidate-grid {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
 .signal-map {
@@ -1168,7 +1182,7 @@ h1 {
 
 .memory-lattice {
   position: relative;
-  min-height: 390px;
+  min-height: 480px;
   overflow: hidden;
   border: 1px solid rgba(103, 187, 231, 0.32);
   background:
@@ -1198,7 +1212,7 @@ h1 {
   left: 50%;
   top: 50%;
   z-index: 4;
-  width: 148px;
+  width: 168px;
   aspect-ratio: 1;
   display: grid;
   place-items: center;
@@ -1231,7 +1245,7 @@ h1 {
 
 .memory-core-count {
   color: var(--text);
-  font-size: 3.1rem;
+  font-size: 3.45rem;
 }
 
 .memory-node {
@@ -1338,6 +1352,14 @@ h1 {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+.memory-map .radar-readout {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.memory-map .selected-scan {
+  grid-column: span 2;
+}
+
 .reaper-map {
   display: grid;
   gap: 14px;
@@ -1348,6 +1370,10 @@ h1 {
     linear-gradient(90deg, rgba(103, 187, 231, 0.045) 1px, transparent 1px),
     #071018;
   background-size: auto, 28px 28px, 28px 28px, auto;
+}
+
+.reaper-focus-layout .reaper-map {
+  min-height: 620px;
 }
 
 .agent-chain {
@@ -1415,14 +1441,14 @@ h1 {
 
 .phase-console {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(340px, 0.9fr) minmax(0, 1.1fr);
   gap: 14px;
   align-items: stretch;
 }
 
 .phase-orbit {
   position: relative;
-  min-height: 330px;
+  min-height: 410px;
   overflow: hidden;
   border: 1px solid rgba(103, 187, 231, 0.32);
   background:
@@ -1514,6 +1540,7 @@ h1 {
 
 .phase-readout {
   display: grid;
+  align-content: stretch;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
 }
@@ -1549,7 +1576,8 @@ h1 {
 
 @media (max-width: 1180px) {
   .topline,
-  .main-grid {
+  .main-grid,
+  .main-grid.focus-grid {
     grid-template-columns: 1fr;
   }
 

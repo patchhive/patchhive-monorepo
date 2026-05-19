@@ -245,7 +245,7 @@ function MemoryLattice() {
 function MemoryQueuePanel() {
   return (
     <Panel eyebrow="Curation" title="Review queue" action={<span className="chip amber">14 pending</span>}>
-      <div className="panelbody repo-list">
+      <div className="panelbody repo-list queue-grid">
         {MEMORY_QUEUE.map((item) => (
           <div className="ledger-row" key={item.rank}>
             <div className="rank">{item.rank}</div>
@@ -336,7 +336,7 @@ function MemoryCore() {
   return (
     <>
       <SuiteTopline cells={TOPLINE_CELLS} />
-      <div className="main-grid">
+      <div className="main-grid focus-grid">
         <ProductRail sections={RAIL_SECTIONS} stats={RAIL_STATS} />
         <main className="workspace">
           <div className="hero-row">
@@ -352,7 +352,7 @@ function MemoryCore() {
             </div>
           </div>
           <MetricBand metrics={METRICS} />
-          <div className="atlas-layout">
+          <div className="atlas-layout memory-focus-layout">
             <Panel eyebrow="Graph" title="Repo knowledge map" action={<span className="chip signal">react port</span>}>
               <MemoryLattice />
             </Panel>

@@ -199,7 +199,7 @@ function AgentPipeline() {
 function CandidatePanel() {
   return (
     <Panel eyebrow="Scout" title="Candidate queue" action={<span className="chip signal">8 viable</span>}>
-      <div className="panelbody repo-list">
+      <div className="panelbody repo-list candidate-grid">
         {CANDIDATES.map((item) => (
           <article className="repo-card" key={item.rank}>
             <div className="repo-head">
@@ -263,7 +263,7 @@ function SidePanels() {
 function PrOutcomePanel() {
   return (
     <Panel eyebrow="Output" title="PR delivery posture">
-      <div className="panelbody repo-list">
+      <div className="panelbody repo-list queue-grid">
         {PR_OUTCOMES.map((item) => (
           <div className="feed-item" key={item.title}>
             <div>
@@ -282,7 +282,7 @@ function MissionDeck() {
   return (
     <>
       <SuiteTopline cells={TOPLINE_CELLS} />
-      <div className="main-grid">
+      <div className="main-grid focus-grid">
         <ProductRail sections={RAIL_SECTIONS} stats={RAIL_STATS} />
         <main className="workspace">
           <div className="hero-row">
@@ -298,7 +298,7 @@ function MissionDeck() {
             </div>
           </div>
           <MetricBand metrics={METRICS} />
-          <div className="atlas-layout">
+          <div className="atlas-layout reaper-focus-layout">
             <Panel eyebrow="Pipeline" title="Agent execution chain" action={<span className="chip amber">operator review</span>}>
               <AgentPipeline />
             </Panel>
