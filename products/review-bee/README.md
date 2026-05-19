@@ -28,6 +28,7 @@ docker compose up --build
 ```
 
 Frontend: `http://localhost:5177`
+Frontend v2 prototype: `http://localhost:5196`
 Backend: `http://localhost:8040`
 
 ### Split Backend and Frontend
@@ -37,6 +38,7 @@ cp .env.example .env
 
 cd backend && cargo run
 cd ../frontend && npm install && npm run dev
+cd ../frontend-v2 && npm install && npm run dev
 ```
 
 ## Important Configuration
@@ -65,3 +67,7 @@ HiveCore can surface ReviewBee health, capabilities, run history, and unresolved
 ## Standalone Repository
 
 The PatchHive monorepo is the source of truth for ReviewBee development. The standalone [`patchhive/reviewbee`](https://github.com/patchhive/reviewbee) repository is an exported mirror of this directory.
+
+## Local Notes
+
+- The v2 prototype lives in `frontend-v2/` while the suite UI direction is being settled.

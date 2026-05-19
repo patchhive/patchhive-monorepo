@@ -47,7 +47,7 @@ suite shell and design language.
 | --- | --- | --- |
 | SignalHive | `products/signal-hive/frontend-v2` | React prototype active |
 | RepoReaper | `products/repo-reaper/frontend-v2` | React prototype active |
-| ReviewBee | pending | Not started |
+| ReviewBee | `products/review-bee/frontend-v2` | React prototype active |
 | TrustGate | `products/trust-gate/frontend-v2` | React prototype active |
 | RepoMemory | `products/repo-memory/frontend-v2` | React prototype active |
 | MergeKeeper | pending | Not started |
