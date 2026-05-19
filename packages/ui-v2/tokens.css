@@ -1,0 +1,28 @@
+:root {
+  --phv2-void: #03070b;
+  --phv2-deep: #071018;
+  --phv2-deck: #0b1721;
+  --phv2-panel: #0f1d29;
+  --phv2-plate: #142635;
+  --phv2-plate-2: #182d3f;
+  --phv2-line: #20394f;
+  --phv2-line-2: #2c4d68;
+  --phv2-signal: #2f7fbb;
+  --phv2-signal-2: #67bbe7;
+  --phv2-cyan: #38d6d0;
+  --phv2-green: #31c47c;
+  --phv2-amber: #e6a01d;
+  --phv2-red: #d64b4b;
+  --phv2-text: #d4e8f1;
+  --phv2-muted: #7fa0b4;
+  --phv2-dim: #486274;
+  --phv2-font-display: "Orbitron", system-ui, sans-serif;
+  --phv2-font-mono: "Share Tech Mono", ui-monospace, monospace;
+  --phv2-font-condensed: "Barlow Condensed", "Arial Narrow", sans-serif;
+}
+
+/*
+  Shared v2 tokens are staged here while the new suite UI is still being
+  designed. Do not import this file into production frontends until the v2 React
+  components exist and the migration is intentional.
+*/

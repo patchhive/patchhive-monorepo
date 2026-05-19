@@ -1,0 +1,15 @@
+{
+  "name": "@patchhivehq/ui-v2",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Staging package for the PatchHive v2 suite UI.",
+  "type": "module",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./styles.css": "./src/styles.css"
+  },
+  "peerDependencies": {
+    "react": ">=18"
+  }
+}

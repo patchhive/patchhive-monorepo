@@ -139,6 +139,21 @@ Rules:
 - If a component is product-specific, keep it inside that product.
 - Product apps should call `applyTheme("<product-key>")` from `App.jsx`.
 
+## UI v2 Track
+
+Location: `packages/ui-v2/`
+
+PatchHive is prototyping a suite-wide UI v2 direction separately from the current production frontends.
+
+Rules:
+- Keep v2 experiments in `products/<product>/frontend-v2/` until the new design system is ready to replace production UI code.
+- Keep current production frontends in `products/<product>/frontend/` during the transition.
+- Do not mix v2 work into old UI code while the direction is still being tested.
+- SignalHive's active v2 prototype lives in `products/signal-hive/frontend-v2/`.
+- HiveCore does not currently follow the v2 direction, but it should converge before old UI code is legacy or removed.
+- Once every product has moved to v2, old UI code should either move to a clearly named legacy path or be removed.
+- See [docs/ui-v2-migration.md](/home/coemedia/Documents/code/patchhive/docs/ui-v2-migration.md).
+
 ## Shared Product Shell Package
 
 Location: `packages/product-shell/`

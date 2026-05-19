@@ -26,8 +26,8 @@ services:
       - backend
     restart: unless-stopped
 
-  frontend-redesign:
-    build: ./frontend-redesign
+  frontend-v2:
+    build: ./frontend-v2
     pull_policy: never
     ports:
       - "5192:8080"
