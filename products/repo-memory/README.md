@@ -30,6 +30,7 @@ docker compose up --build
 ```
 
 Frontend: `http://localhost:5176`
+Frontend v2 prototype: `http://localhost:5194`
 Backend: `http://localhost:8030`
 
 ### Split Backend and Frontend
@@ -39,6 +40,7 @@ cp .env.example .env
 
 cd backend && cargo run
 cd ../frontend && npm install && npm run dev
+cd ../frontend-v2 && npm install && npm run dev
 ```
 
 ## Important Configuration
@@ -90,6 +92,7 @@ HiveCore should surface RepoMemory health, capabilities, run history, context av
 ## Local Notes
 
 - The frontend uses `@patchhivehq/ui` and `@patchhivehq/product-shell`.
+- The v2 prototype lives in `frontend-v2/` while the suite UI direction is being settled.
 - The generated prompt pack is meant to be reused as context, not treated as infallible policy.
 - Generate the first local API key from `http://localhost:5176`.
 

@@ -49,7 +49,7 @@ its control-plane-specific panels.
 | RepoReaper | pending | Not started |
 | ReviewBee | pending | Not started |
 | TrustGate | `products/trust-gate/frontend-v2` | React prototype active |
-| RepoMemory | pending | Not started |
+| RepoMemory | `products/repo-memory/frontend-v2` | React prototype active |
 | MergeKeeper | pending | Not started |
 | FlakeSting | pending | Not started |
 | DepTriage | pending | Not started |

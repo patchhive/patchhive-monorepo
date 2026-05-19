@@ -350,6 +350,12 @@ h1 {
   padding: 8px 16px;
 }
 
+.railstat {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
 .railstat-label {
   margin-top: 10px;
 }
@@ -1142,6 +1148,189 @@ h1 {
 .trust-score {
   color: var(--text);
   font-size: 4rem;
+}
+
+.memory-map {
+  min-height: 430px;
+  grid-template-columns: 1fr;
+  align-items: stretch;
+}
+
+.memory-map .range-panel {
+  grid-column: 1 / -1;
+  order: -1;
+}
+
+.memory-lattice {
+  position: relative;
+  min-height: 390px;
+  overflow: hidden;
+  border: 1px solid rgba(103, 187, 231, 0.32);
+  background:
+    radial-gradient(circle at 50% 50%, rgba(49, 196, 124, 0.1), transparent 31%),
+    linear-gradient(rgba(103, 187, 231, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(103, 187, 231, 0.045) 1px, transparent 1px),
+    rgba(7, 16, 24, 0.88);
+  background-size: auto, 26px 26px, 26px 26px, auto;
+}
+
+.memory-lattice::before,
+.memory-lattice::after {
+  content: "";
+  position: absolute;
+  inset: 10%;
+  border: 1px solid rgba(103, 187, 231, 0.12);
+  border-radius: 50%;
+}
+
+.memory-lattice::after {
+  inset: 22%;
+  border-color: rgba(49, 196, 124, 0.12);
+}
+
+.memory-core {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 4;
+  width: 148px;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 5px;
+  border: 1px solid rgba(103, 187, 231, 0.55);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at center, rgba(103, 187, 231, 0.18), rgba(7, 16, 24, 0.94) 62%),
+    conic-gradient(from 20deg, rgba(103, 187, 231, 0.2), rgba(49, 196, 124, 0.2), rgba(230, 160, 29, 0.12), rgba(103, 187, 231, 0.2));
+  box-shadow:
+    inset 0 0 35px rgba(103, 187, 231, 0.18),
+    0 0 20px rgba(103, 187, 231, 0.18);
+  transform: translate(-50%, -50%);
+}
+
+.memory-core-title,
+.memory-core-count {
+  font-family: var(--orb);
+  font-weight: 900;
+  line-height: 1;
+}
+
+.memory-core-title {
+  color: var(--signal2);
+  font-size: 0.74rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.memory-core-count {
+  color: var(--text);
+  font-size: 3.1rem;
+}
+
+.memory-node {
+  position: absolute;
+  z-index: 6;
+  width: 15px;
+  height: 15px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.74);
+  border-radius: 50%;
+  background: currentColor;
+  color: var(--signal2);
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 12px currentColor, 0 0 24px currentColor;
+}
+
+.memory-node::before {
+  content: "";
+  position: absolute;
+  inset: -14px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  opacity: 0.28;
+}
+
+.memory-node::after {
+  content: attr(data-label);
+  position: absolute;
+  left: 22px;
+  top: -5px;
+  min-width: 48px;
+  color: var(--muted);
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.memory-node.green {
+  color: var(--green);
+}
+
+.memory-node.amber {
+  color: var(--amber);
+}
+
+.memory-node.red {
+  color: var(--red);
+}
+
+.memory-node:hover,
+.memory-node:focus-visible,
+.memory-node.active {
+  outline: none;
+  box-shadow:
+    0 0 0 4px rgba(255, 255, 255, 0.12),
+    0 0 16px currentColor,
+    0 0 34px currentColor;
+}
+
+.memory-node.active::after {
+  color: var(--text);
+}
+
+.memory-link {
+  position: absolute;
+  z-index: 3;
+  height: 1px;
+  transform-origin: left center;
+  background: linear-gradient(90deg, rgba(103, 187, 231, 0.45), rgba(103, 187, 231, 0.08));
+  box-shadow: 0 0 9px rgba(103, 187, 231, 0.2);
+}
+
+.memory-strand {
+  position: absolute;
+  z-index: 2;
+  height: 1px;
+  transform-origin: left center;
+  background: linear-gradient(90deg, rgba(49, 196, 124, 0.22), transparent);
+}
+
+.strand-a {
+  left: 18%;
+  top: 28%;
+  width: 65%;
+  transform: rotate(16deg);
+}
+
+.strand-b {
+  left: 20%;
+  top: 72%;
+  width: 62%;
+  transform: rotate(-18deg);
+}
+
+.strand-c {
+  left: 50%;
+  top: 12%;
+  width: 1px;
+  height: 78%;
+  background: linear-gradient(180deg, rgba(103, 187, 231, 0.2), transparent);
+}
+
+.memory-selected-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .feed-title {
