@@ -26,3 +26,13 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
+
+  frontend-v2:
+    image: "${PATCHHIVE_REPO_REAPER_FRONTEND_V2_IMAGE:-ghcr.io/patchhive/reporeaper-frontend-v2}:${PATCHHIVE_IMAGE_TAG:-main}"
+    build: ./frontend-v2
+    pull_policy: "${PATCHHIVE_IMAGE_PULL_POLICY:-missing}"
+    ports:
+      - "5195:8080"
+    depends_on:
+      - backend
+    restart: unless-stopped

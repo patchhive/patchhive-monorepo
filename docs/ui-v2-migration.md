@@ -38,15 +38,15 @@ After every product has moved to v2, choose one cleanup path:
 
 HiveCore does not currently follow this UI direction. That is acceptable during
 the v2 design/prototype phase, but it is not the target end state. HiveCore
-should eventually use the same v2 suite shell and design language while keeping
-its control-plane-specific panels.
+should be ported last, after the other 11 product surfaces prove the shared v2
+suite shell and design language.
 
 ## Product Status
 
 | Product | v2 folder | Status |
 | --- | --- | --- |
 | SignalHive | `products/signal-hive/frontend-v2` | React prototype active |
-| RepoReaper | pending | Not started |
+| RepoReaper | `products/repo-reaper/frontend-v2` | React prototype active |
 | ReviewBee | pending | Not started |
 | TrustGate | `products/trust-gate/frontend-v2` | React prototype active |
 | RepoMemory | `products/repo-memory/frontend-v2` | React prototype active |

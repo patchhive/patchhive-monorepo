@@ -1038,6 +1038,11 @@ h1 {
   color: var(--green);
 }
 
+.score.signal {
+  color: var(--signal2);
+  box-shadow: inset 0 0 18px rgba(103, 187, 231, 0.12), 0 0 14px rgba(103, 187, 231, 0.22);
+}
+
 .bargrid {
   display: grid;
   gap: 7px;
@@ -1333,6 +1338,186 @@ h1 {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+.reaper-map {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  background:
+    radial-gradient(circle at 50% 42%, rgba(230, 160, 29, 0.1), transparent 28%),
+    linear-gradient(rgba(103, 187, 231, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(103, 187, 231, 0.045) 1px, transparent 1px),
+    #071018;
+  background-size: auto, 28px 28px, 28px 28px, auto;
+}
+
+.agent-chain {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1px;
+  border: 1px solid var(--line);
+  background: var(--line);
+}
+
+.agent-card {
+  flex: 1 1 126px;
+  min-width: 0;
+  min-height: 118px;
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  border: 0;
+  border-top: 2px solid transparent;
+  background: rgba(15, 29, 41, 0.92);
+  color: var(--muted);
+  padding: 13px;
+  text-align: left;
+}
+
+.agent-card:hover,
+.agent-card:focus-visible,
+.agent-card.active {
+  outline: none;
+  border-top-color: currentColor;
+  background: rgba(20, 38, 53, 0.98);
+}
+
+.agent-card.green {
+  color: var(--green);
+}
+
+.agent-card.signal {
+  color: var(--signal2);
+}
+
+.agent-card.amber {
+  color: var(--amber);
+}
+
+.agent-index,
+.agent-phase {
+  color: var(--dim);
+  font-size: 0.66rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.agent-label {
+  overflow: hidden;
+  color: var(--text);
+  font-family: var(--orb);
+  font-size: 0.9rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-transform: uppercase;
+}
+
+.phase-console {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+  align-items: stretch;
+}
+
+.phase-orbit {
+  position: relative;
+  min-height: 330px;
+  overflow: hidden;
+  border: 1px solid rgba(103, 187, 231, 0.32);
+  background:
+    radial-gradient(circle at center, rgba(103, 187, 231, 0.1), transparent 30%),
+    repeating-radial-gradient(circle at center, transparent 0 24%, rgba(103, 187, 231, 0.12) 24.4% 24.8%, transparent 25.2% 26%);
+}
+
+.phase-orbit::before,
+.phase-orbit::after {
+  content: "";
+  position: absolute;
+  inset: 50%;
+  width: 70%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(103, 187, 231, 0.28), transparent);
+  transform: translate(-50%, -50%) rotate(18deg);
+}
+
+.phase-orbit::after {
+  transform: translate(-50%, -50%) rotate(-32deg);
+}
+
+.phase-core {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 4;
+  width: 136px;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 4px;
+  border: 1px solid rgba(230, 160, 29, 0.54);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at center, rgba(230, 160, 29, 0.14), rgba(7, 16, 24, 0.94) 62%),
+    conic-gradient(from -30deg, rgba(49, 196, 124, 0.18), rgba(103, 187, 231, 0.2), rgba(230, 160, 29, 0.2), rgba(49, 196, 124, 0.18));
+  color: var(--muted);
+  transform: translate(-50%, -50%);
+}
+
+.phase-core strong {
+  color: var(--text);
+  font-family: var(--orb);
+  font-size: 3.2rem;
+  line-height: 1;
+}
+
+.phase-core span {
+  font-size: 0.66rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.phase-node {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 5;
+  width: 15px;
+  height: 15px;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  border-radius: 50%;
+  background: currentColor;
+  color: var(--signal2);
+  transform:
+    translate(-50%, -50%)
+    rotate(calc(var(--i) * 72deg - 90deg))
+    translateY(-128px)
+    rotate(calc(var(--i) * -72deg + 90deg));
+  box-shadow: 0 0 12px currentColor, 0 0 24px currentColor;
+}
+
+.phase-node.green {
+  color: var(--green);
+}
+
+.phase-node.amber {
+  color: var(--amber);
+}
+
+.phase-node.active {
+  box-shadow:
+    0 0 0 5px rgba(255, 255, 255, 0.12),
+    0 0 16px currentColor,
+    0 0 34px currentColor;
+}
+
+.phase-readout {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
 .feed-title {
   color: var(--text);
   font-size: 0.82rem;
@@ -1425,6 +1610,7 @@ h1 {
 
   .metrics,
   .radar-readout,
+  .phase-readout,
   .selected-grid {
     grid-template-columns: 1fr;
   }
