@@ -50,7 +50,7 @@ suite shell and design language.
 | ReviewBee | `products/review-bee/frontend-v2` | React prototype active |
 | TrustGate | `products/trust-gate/frontend-v2` | React prototype active |
 | RepoMemory | `products/repo-memory/frontend-v2` | React prototype active |
-| MergeKeeper | pending | Not started |
+| MergeKeeper | `products/merge-keeper/frontend-v2` | React prototype active |
 | FlakeSting | pending | Not started |
 | DepTriage | pending | Not started |
 | VulnTriage | pending | Not started |

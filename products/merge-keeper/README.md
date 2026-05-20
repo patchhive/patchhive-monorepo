@@ -27,6 +27,7 @@ docker compose up --build
 ```
 
 Frontend: `http://localhost:5178`
+Frontend v2 prototype: `http://localhost:5197`
 Backend: `http://localhost:8050`
 
 ### Split Backend and Frontend
@@ -36,6 +37,7 @@ cp .env.example .env
 
 cd backend && cargo run
 cd ../frontend && npm install && npm run dev
+cd ../frontend-v2 && npm install && npm run dev
 ```
 
 ## Important Configuration
@@ -77,3 +79,7 @@ HiveCore can use MergeKeeper as a suite-level readiness signal once product hand
 ## Standalone Repository
 
 The PatchHive monorepo is the source of truth for MergeKeeper development. The standalone [`patchhive/mergekeeper`](https://github.com/patchhive/mergekeeper) repository is an exported mirror of this directory.
+
+## Local Notes
+
+- The v2 prototype lives in `frontend-v2/` while the suite UI direction is being settled.
