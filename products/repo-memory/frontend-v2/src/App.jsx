@@ -336,7 +336,7 @@ function MemoryCore() {
   return (
     <>
       <SuiteTopline cells={TOPLINE_CELLS} />
-      <div className="main-grid focus-grid">
+      <div className="main-grid">
         <ProductRail sections={RAIL_SECTIONS} stats={RAIL_STATS} />
         <main className="workspace">
           <div className="hero-row">
@@ -352,7 +352,7 @@ function MemoryCore() {
             </div>
           </div>
           <MetricBand metrics={METRICS} />
-          <div className="atlas-layout memory-focus-layout">
+          <div className="atlas-layout suite-four-layout">
             <Panel eyebrow="Graph" title="Repo knowledge map" action={<span className="chip signal">react port</span>}>
               <MemoryLattice />
             </Panel>

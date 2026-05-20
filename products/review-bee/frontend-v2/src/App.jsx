@@ -272,7 +272,7 @@ function ThreadSurface() {
   return (
     <>
       <SuiteTopline cells={TOPLINE_CELLS} />
-      <div className="main-grid focus-grid">
+      <div className="main-grid">
         <ProductRail sections={RAIL_SECTIONS} stats={RAIL_STATS} />
         <main className="workspace">
           <div className="hero-row">
@@ -288,10 +288,12 @@ function ThreadSurface() {
             </div>
           </div>
           <MetricBand metrics={METRICS} />
-          <Panel eyebrow="Threads" title="Resolution map" action={<span className="chip signal">react port</span>}>
-            <ThreadMap />
-          </Panel>
-          <ChecklistPanel />
+          <div className="atlas-layout suite-four-layout">
+            <Panel eyebrow="Threads" title="Resolution map" action={<span className="chip signal">react port</span>}>
+              <ThreadMap />
+            </Panel>
+            <ChecklistPanel />
+          </div>
         </main>
         <SidePanels />
       </div>

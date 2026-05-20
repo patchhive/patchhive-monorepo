@@ -282,7 +282,7 @@ function MissionDeck() {
   return (
     <>
       <SuiteTopline cells={TOPLINE_CELLS} />
-      <div className="main-grid focus-grid">
+      <div className="main-grid">
         <ProductRail sections={RAIL_SECTIONS} stats={RAIL_STATS} />
         <main className="workspace">
           <div className="hero-row">
@@ -298,7 +298,7 @@ function MissionDeck() {
             </div>
           </div>
           <MetricBand metrics={METRICS} />
-          <div className="atlas-layout reaper-focus-layout">
+          <div className="atlas-layout suite-four-layout">
             <Panel eyebrow="Pipeline" title="Agent execution chain" action={<span className="chip amber">operator review</span>}>
               <AgentPipeline />
             </Panel>

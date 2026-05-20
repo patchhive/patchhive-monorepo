@@ -560,6 +560,10 @@ h1 {
   grid-template-columns: minmax(0, 1fr);
 }
 
+.suite-four-layout {
+  grid-template-columns: minmax(0, 1.22fr) minmax(280px, 0.78fr);
+}
+
 .queue-grid,
 .candidate-grid {
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -1372,8 +1376,12 @@ h1 {
   background-size: auto, 28px 28px, 28px 28px, auto;
 }
 
-.reaper-focus-layout .reaper-map {
+.suite-four-layout .reaper-map {
   min-height: 620px;
+}
+
+.suite-four-layout .phase-console {
+  grid-template-columns: 1fr;
 }
 
 .agent-chain {
