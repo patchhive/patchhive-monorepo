@@ -1759,6 +1759,110 @@ h1 {
   grid-column: span 1;
 }
 
+.flake-map {
+  min-height: 650px;
+  grid-template-columns: 1fr;
+}
+
+.flake-map .range-panel {
+  order: -1;
+}
+
+.flake-scope {
+  position: relative;
+  min-height: 440px;
+  overflow: hidden;
+  border: 1px solid rgba(103, 187, 231, 0.32);
+  background:
+    radial-gradient(circle at 50% 50%, rgba(214, 75, 75, 0.11), transparent 27%),
+    radial-gradient(circle at 71% 31%, rgba(230, 160, 29, 0.09), transparent 24%),
+    linear-gradient(rgba(103, 187, 231, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(103, 187, 231, 0.045) 1px, transparent 1px),
+    rgba(7, 16, 24, 0.88);
+  background-size: auto, auto, 28px 28px, 28px 28px, auto;
+}
+
+.flake-scope::before,
+.flake-scope::after {
+  content: "";
+  position: absolute;
+  inset: 15%;
+  border: 1px solid rgba(214, 75, 75, 0.14);
+  border-radius: 50%;
+}
+
+.flake-scope::after {
+  inset: 27%;
+  border-color: rgba(103, 187, 231, 0.14);
+}
+
+.flake-core {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 4;
+  width: 176px;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 5px;
+  border: 1px solid rgba(230, 160, 29, 0.58);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at center, rgba(230, 160, 29, 0.18), rgba(7, 16, 24, 0.94) 64%),
+    conic-gradient(from -30deg, rgba(214, 75, 75, 0.2), rgba(230, 160, 29, 0.26), rgba(103, 187, 231, 0.18), rgba(49, 196, 124, 0.16), rgba(214, 75, 75, 0.2));
+  box-shadow:
+    inset 0 0 36px rgba(230, 160, 29, 0.18),
+    0 0 22px rgba(230, 160, 29, 0.18);
+  transform: translate(-50%, -50%);
+}
+
+.flake-core .memory-core-count {
+  color: var(--amber);
+  font-size: 3.2rem;
+}
+
+.flake-node.signal {
+  color: var(--signal2);
+}
+
+.flake-link {
+  background: linear-gradient(90deg, rgba(214, 75, 75, 0.36), rgba(103, 187, 231, 0.08));
+}
+
+.flake-wave {
+  position: absolute;
+  z-index: 2;
+  left: 13%;
+  width: 74%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(230, 160, 29, 0.25), transparent);
+}
+
+.wave-a {
+  top: 35%;
+  transform: rotate(8deg);
+}
+
+.wave-b {
+  top: 52%;
+  transform: rotate(-5deg);
+}
+
+.wave-c {
+  top: 69%;
+  transform: rotate(12deg);
+}
+
+.flake-readout {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.flake-readout .selected-scan {
+  grid-column: span 1;
+}
+
 .feed-title {
   color: var(--text);
   font-size: 0.82rem;

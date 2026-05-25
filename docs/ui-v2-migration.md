@@ -51,7 +51,7 @@ suite shell and design language.
 | TrustGate | `products/trust-gate/frontend-v2` | React prototype active |
 | RepoMemory | `products/repo-memory/frontend-v2` | React prototype active |
 | MergeKeeper | `products/merge-keeper/frontend-v2` | React prototype active |
-| FlakeSting | pending | Not started |
+| FlakeSting | `products/flake-sting/frontend-v2` | React prototype active |
 | DepTriage | pending | Not started |
 | VulnTriage | pending | Not started |
 | RefactorScout | pending | Not started |

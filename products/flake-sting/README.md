@@ -27,6 +27,7 @@ docker compose up --build
 ```
 
 Frontend: `http://localhost:5179`
+Frontend v2 prototype: `http://localhost:5198`
 Backend: `http://localhost:8060`
 
 ### Split Backend and Frontend
@@ -36,6 +37,7 @@ cp .env.example .env
 
 cd backend && cargo run
 cd ../frontend && npm install && npm run dev
+cd ../frontend-v2 && npm install && npm run dev
 ```
 
 ## Important Configuration
@@ -62,3 +64,7 @@ HiveCore can surface FlakeSting health, capabilities, run history, and CI-trust 
 ## Standalone Repository
 
 The PatchHive monorepo is the source of truth for FlakeSting development. The standalone [`patchhive/flakesting`](https://github.com/patchhive/flakesting) repository is an exported mirror of this directory.
+
+## Local Notes
+
+- The v2 prototype lives in `frontend-v2/` while the suite UI direction is being settled.
