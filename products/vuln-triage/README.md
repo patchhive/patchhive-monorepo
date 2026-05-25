@@ -27,6 +27,7 @@ docker compose up --build
 ```
 
 Frontend: `http://localhost:5181`
+Frontend v2 prototype: `http://localhost:5200`
 Backend: `http://localhost:8110`
 
 ### Split Backend and Frontend
@@ -36,6 +37,13 @@ cp .env.example .env
 
 cd backend && cargo run
 cd ../frontend && npm install && npm run dev
+```
+
+The UI v2 prototype is isolated from the production frontend while the suite
+direction is still being tested:
+
+```bash
+cd frontend-v2 && npm install && npm run dev
 ```
 
 ## Important Configuration

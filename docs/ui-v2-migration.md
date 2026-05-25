@@ -53,7 +53,7 @@ suite shell and design language.
 | MergeKeeper | `products/merge-keeper/frontend-v2` | React prototype active |
 | FlakeSting | `products/flake-sting/frontend-v2` | React prototype active |
 | DepTriage | `products/dep-triage/frontend-v2` | React prototype active |
-| VulnTriage | pending | Not started |
+| VulnTriage | `products/vuln-triage/frontend-v2` | React prototype active |
 | RefactorScout | pending | Not started |
 | ReleaseSentry | pending | Not started |
 | HiveCore | pending | Must converge before final cleanup |

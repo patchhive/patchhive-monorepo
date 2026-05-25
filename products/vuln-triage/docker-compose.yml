@@ -25,3 +25,13 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
+
+  frontend-v2:
+    image: "${PATCHHIVE_VULN_TRIAGE_FRONTEND_V2_IMAGE:-patchhive/vulntriage-frontend-v2}:${PATCHHIVE_IMAGE_TAG:-local}"
+    build: ./frontend-v2
+    pull_policy: "${PATCHHIVE_IMAGE_PULL_POLICY:-missing}"
+    ports:
+      - "5200:8080"
+    depends_on:
+      - backend
+    restart: unless-stopped
