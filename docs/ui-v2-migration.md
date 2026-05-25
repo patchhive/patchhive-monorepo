@@ -55,7 +55,7 @@ suite shell and design language.
 | DepTriage | `products/dep-triage/frontend-v2` | React prototype active |
 | VulnTriage | `products/vuln-triage/frontend-v2` | React prototype active |
 | RefactorScout | `products/refactor-scout/frontend-v2` | React prototype active |
-| ReleaseSentry | pending | Not started |
+| ReleaseSentry | `products/release-sentry/frontend-v2` | React prototype active |
 | HiveCore | pending | Must converge before final cleanup |
 
 ## Promotion Checklist
