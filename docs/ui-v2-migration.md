@@ -52,7 +52,7 @@ suite shell and design language.
 | RepoMemory | `products/repo-memory/frontend-v2` | React prototype active |
 | MergeKeeper | `products/merge-keeper/frontend-v2` | React prototype active |
 | FlakeSting | `products/flake-sting/frontend-v2` | React prototype active |
-| DepTriage | pending | Not started |
+| DepTriage | `products/dep-triage/frontend-v2` | React prototype active |
 | VulnTriage | pending | Not started |
 | RefactorScout | pending | Not started |
 | ReleaseSentry | pending | Not started |
