@@ -54,7 +54,7 @@ suite shell and design language.
 | FlakeSting | `products/flake-sting/frontend-v2` | React prototype active |
 | DepTriage | `products/dep-triage/frontend-v2` | React prototype active |
 | VulnTriage | `products/vuln-triage/frontend-v2` | React prototype active |
-| RefactorScout | pending | Not started |
+| RefactorScout | `products/refactor-scout/frontend-v2` | React prototype active |
 | ReleaseSentry | pending | Not started |
 | HiveCore | pending | Must converge before final cleanup |
 

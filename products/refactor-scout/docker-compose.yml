@@ -25,3 +25,13 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
+
+  frontend-v2:
+    image: "${PATCHHIVE_REFACTOR_SCOUT_FRONTEND_V2_IMAGE:-patchhive/refactorscout-frontend-v2}:${PATCHHIVE_IMAGE_TAG:-local}"
+    build: ./frontend-v2
+    pull_policy: "${PATCHHIVE_IMAGE_PULL_POLICY:-missing}"
+    ports:
+      - "5201:8080"
+    depends_on:
+      - backend
+    restart: unless-stopped
