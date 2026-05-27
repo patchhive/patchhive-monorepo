@@ -5,5 +5,6 @@ export {
   PlaceholderSurface,
   ProductRail,
   SuiteTopline,
+  SuiteRadar,
   toneClass,
 } from "./primitives.jsx";

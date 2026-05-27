@@ -4,6 +4,7 @@ import {
   MetricBand,
   Panel,
   ProductRail,
+  SuiteRadar,
   SuiteTopline,
 } from "@patchhivehq/ui-v2";
 
@@ -74,34 +75,122 @@ const FILES = [
 
 function DecisionGauge() {
   return (
-    <div className="signal-map trust-map" data-window="14">
-      <div className="trust-gauge">
-        <div className="trust-ring">
-          <span className="trust-decision">WARN</span>
-          <span className="trust-score">68</span>
-          <span className="micro">policy confidence 0.74</span>
-        </div>
-      </div>
-      <div className="radar-readout">
-        <div className="readout-card">
-          <span className="label">Primary reason</span>
-          <span className="readout-value warn">scope</span>
-          <span className="micro">change size plus auth path</span>
-        </div>
-        <div className="readout-card">
-          <span className="label">FailGuard</span>
-          <span className="readout-value warn">queued</span>
-          <span className="micro">candidate lesson prepared</span>
-        </div>
-        <div className="readout-card selected-scan">
-          <span className="label">Review summary</span>
-          <span className="readout-value">patchhive/signalhive</span>
-          <span className="micro">
-            The diff is probably reviewable, but it crosses an auth boundary and exceeds the normal scope cap. Require maintainer review before any downstream automation.
-          </span>
-        </div>
-      </div>
-    </div>
+    <SuiteRadar
+      ariaLabel="TrustGate policy risk radar"
+      detailLabel="Review summary"
+      feed={[
+        { text: "Auth boundary touch is the strongest risk driver.", tone: "red" },
+        { text: "Scope cap warning remains active until the diff shrinks.", tone: "amber" },
+        { text: "Tests offset part of the policy risk but do not clear the warning." },
+      ]}
+      gainLabel="FailGuard"
+      items={[
+        {
+          id: "TG-01",
+          label: "auth 92",
+          title: "Sensitive auth path touched",
+          tone: "red",
+          position: { left: "68%", top: "32%" },
+          value: "queued",
+          gain: "queued",
+          gainMeta: "candidate lesson prepared",
+          vector: "scope",
+          vectorTone: "warn",
+          detail: "patchhive/signalhive",
+          summary: "The diff crosses an auth boundary and exceeds the normal scope cap. Require maintainer review before downstream automation.",
+          stats: [
+            { label: "Risk", value: "WARN" },
+            { label: "Score", value: "68" },
+            { label: "Files", value: "9" },
+            { label: "Rules", value: "14" },
+            { label: "Tests", value: "3" },
+          ],
+        },
+        {
+          id: "TG-02",
+          label: "scope 624",
+          title: "Scope cap exceeded",
+          tone: "amber",
+          position: { left: "43%", top: "56%" },
+          value: "warn",
+          gain: "warn",
+          gainMeta: "624 changed lines",
+          vector: "size",
+          vectorTone: "warn",
+          detail: "scope cap",
+          summary: "Generated diff exceeds the normal size budget and should be trimmed before automation consumes it.",
+          stats: [
+            { label: "Risk", value: "WARN" },
+            { label: "Score", value: "68" },
+            { label: "Cap", value: "500" },
+            { label: "Lines", value: "624" },
+            { label: "Action", value: "trim" },
+          ],
+        },
+        {
+          id: "TG-03",
+          label: "tests 3",
+          title: "Tests offset risk",
+          tone: "green",
+          position: { left: "27%", top: "39%" },
+          value: "offset",
+          gain: "offset",
+          gainMeta: "coverage present",
+          vector: "tests",
+          detail: "test evidence",
+          summary: "Unit and route tests are present, which lowers risk but does not clear the auth-path warning.",
+          stats: [
+            { label: "Unit", value: "yes" },
+            { label: "Route", value: "yes" },
+            { label: "Auth", value: "hit" },
+            { label: "Offset", value: "partial" },
+            { label: "State", value: "warn" },
+          ],
+        },
+        {
+          id: "TG-04",
+          label: "routes 211",
+          title: "Route review surface",
+          tone: "signal",
+          position: { left: "58%", top: "72%" },
+          value: "watch",
+          gain: "watch",
+          gainMeta: "review route",
+          vector: "route",
+          detail: "backend/src/routes/review.rs",
+          summary: "Route changes are reviewable but large enough to keep the diff in watch range.",
+          stats: [
+            { label: "Risk", value: "medium" },
+            { label: "Change", value: "+211" },
+            { label: "Tests", value: "yes" },
+            { label: "Owner", value: "backend" },
+            { label: "State", value: "watch" },
+          ],
+        },
+        {
+          id: "TG-05",
+          label: "ui low",
+          title: "Frontend diff low risk",
+          tone: "green",
+          position: { left: "69%", top: "63%" },
+          value: "clear",
+          gain: "clear",
+          gainMeta: "low risk surface",
+          vector: "ui",
+          detail: "frontend/src/App.jsx",
+          summary: "Frontend changes stay outside sensitive paths and do not drive the warning.",
+          stats: [
+            { label: "Risk", value: "low" },
+            { label: "Change", value: "+88" },
+            { label: "Sensitive", value: "no" },
+            { label: "Rules", value: "0" },
+            { label: "State", value: "clear" },
+          ],
+        },
+      ]}
+      signalLabel="rules"
+      vectorLabel="Primary reason"
+    />
   );
 }
 

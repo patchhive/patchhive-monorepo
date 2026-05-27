@@ -4,6 +4,7 @@ import {
   MetricBand,
   Panel,
   ProductRail,
+  SuiteRadar,
   SuiteTopline,
 } from "@patchhivehq/ui-v2";
 
@@ -147,78 +148,35 @@ const HISTORY = [
 ];
 
 function ReadinessMap() {
-  const [filter, setFilter] = useState("all");
-  const [activeSignal, setActiveSignal] = useState(SIGNALS[0]);
-  const visibleSignals = SIGNALS.filter((signal) => filter === "all" || signal.source === filter);
-  const visibleIds = new Set(visibleSignals.map((signal) => signal.id));
-  const visibleLinks = LINKS.filter((link) => visibleIds.has(link.from) && visibleIds.has(link.to));
-
-  const changeFilter = (nextFilter) => {
-    setFilter(nextFilter);
-    const nextSignal = SIGNALS.find((signal) => nextFilter === "all" || signal.source === nextFilter);
-    if (nextSignal) {
-      setActiveSignal(nextSignal);
-    }
-  };
-
   return (
-    <div className="signal-map merge-map" data-window="14">
-      <div className="range-panel">
-        <span className="chip signal">{visibleSignals.length} signals</span>
-        <div className="range-switch" aria-label="Readiness signal filter">
-          {FILTERS.map((item) => (
-            <button
-              className={`range-btn${filter === item.id ? " active" : ""}`}
-              key={item.id}
-              onClick={() => changeFilter(item.id)}
-              type="button"
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
-      </div>
-      <div className="merge-scope" aria-label="Merge readiness scope">
-        <span className="merge-core">
-          <span className="memory-core-title">MergeKeeper</span>
-          <span className="memory-core-count">HOLD</span>
-          <span className="micro">readiness call</span>
-        </span>
-        {visibleLinks.map((link) => (
-          <span className="memory-link merge-link" key={`${link.from}-${link.to}`} style={link.style} />
-        ))}
-        {visibleSignals.map((signal) => (
-          <button
-            aria-label={`Show signal ${signal.id}`}
-            className={`memory-node merge-node ${signal.tone}${activeSignal.id === signal.id ? " active" : ""}`}
-            data-label={signal.id}
-            key={signal.id}
-            onClick={() => setActiveSignal(signal)}
-            style={signal.position}
-            type="button"
-          />
-        ))}
-        <span className="merge-axis axis-a" />
-        <span className="merge-axis axis-b" />
-      </div>
-      <div className="radar-readout merge-readout">
-        <div className="readout-card">
-          <span className="label">Selected signal</span>
-          <span className={`readout-value ${activeSignal.tone === "amber" || activeSignal.tone === "red" ? "warn" : ""}`}>{activeSignal.id}</span>
-          <span className="micro">{activeSignal.source} source</span>
-        </div>
-        <div className="readout-card">
-          <span className="label">State</span>
-          <span className="readout-value">{activeSignal.state}</span>
-          <span className="micro">{activeSignal.value}</span>
-        </div>
-        <div className="readout-card selected-scan">
-          <span className="label">Readiness reason</span>
-          <span className="readout-value">{activeSignal.title}</span>
-          <span className="micro">{activeSignal.summary}</span>
-        </div>
-      </div>
-    </div>
+    <SuiteRadar
+      ariaLabel="MergeKeeper readiness radar"
+      detailLabel="Readiness reason"
+      feed={[
+        { text: "ReviewBee pressure is the current merge blocker.", tone: "amber" },
+        { text: "TrustGate and required checks are clear.", tone: "green" },
+        { text: "RepoMemory recommends a startup-check note before merge." },
+      ]}
+      gainLabel="State"
+      items={SIGNALS.map((signal) => ({
+        ...signal,
+        detail: signal.title,
+        gain: signal.state,
+        gainMeta: signal.value,
+        label: signal.id,
+        stats: [
+          { label: "Source", value: signal.source },
+          { label: "State", value: signal.state },
+          { label: "Value", value: signal.value },
+          { label: "Decision", value: signal.tone === "red" ? "block" : signal.tone === "amber" ? "hold" : "clear" },
+          { label: "Consumer", value: "merge" },
+        ],
+        vector: signal.id,
+        vectorTone: signal.tone === "amber" || signal.tone === "red" ? "warn" : "",
+      }))}
+      signalLabel="signals"
+      vectorLabel="Selected signal"
+    />
   );
 }
 

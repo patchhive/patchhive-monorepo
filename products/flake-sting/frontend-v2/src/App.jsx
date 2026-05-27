@@ -4,6 +4,7 @@ import {
   MetricBand,
   Panel,
   ProductRail,
+  SuiteRadar,
   SuiteTopline,
 } from "@patchhivehq/ui-v2";
 
@@ -147,79 +148,35 @@ const HISTORY = [
 ];
 
 function InstabilityMap() {
-  const [filter, setFilter] = useState("all");
-  const [activeSignal, setActiveSignal] = useState(SIGNALS[0]);
-  const visibleSignals = SIGNALS.filter((signal) => filter === "all" || signal.source === filter);
-  const visibleIds = new Set(visibleSignals.map((signal) => signal.id));
-  const visibleLinks = LINKS.filter((link) => visibleIds.has(link.from) && visibleIds.has(link.to));
-
-  const changeFilter = (nextFilter) => {
-    setFilter(nextFilter);
-    const nextSignal = SIGNALS.find((signal) => nextFilter === "all" || signal.source === nextFilter);
-    if (nextSignal) {
-      setActiveSignal(nextSignal);
-    }
-  };
-
   return (
-    <div className="signal-map flake-map" data-window="14">
-      <div className="range-panel">
-        <span className="chip signal">{visibleSignals.length} signals</span>
-        <div className="range-switch" aria-label="CI instability filter">
-          {FILTERS.map((item) => (
-            <button
-              className={`range-btn${filter === item.id ? " active" : ""}`}
-              key={item.id}
-              onClick={() => changeFilter(item.id)}
-              type="button"
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
-      </div>
-      <div className="flake-scope" aria-label="CI instability map">
-        <span className="flake-core">
-          <span className="memory-core-title">FlakeSting</span>
-          <span className="memory-core-count">72</span>
-          <span className="micro">flake score</span>
-        </span>
-        {visibleLinks.map((link) => (
-          <span className="memory-link flake-link" key={`${link.from}-${link.to}`} style={link.style} />
-        ))}
-        {visibleSignals.map((signal) => (
-          <button
-            aria-label={`Show signal ${signal.id}`}
-            className={`memory-node flake-node ${signal.tone}${activeSignal.id === signal.id ? " active" : ""}`}
-            data-label={signal.id}
-            key={signal.id}
-            onClick={() => setActiveSignal(signal)}
-            style={signal.position}
-            type="button"
-          />
-        ))}
-        <span className="flake-wave wave-a" />
-        <span className="flake-wave wave-b" />
-        <span className="flake-wave wave-c" />
-      </div>
-      <div className="radar-readout flake-readout">
-        <div className="readout-card">
-          <span className="label">Selected signal</span>
-          <span className={`readout-value ${activeSignal.tone === "amber" || activeSignal.tone === "red" ? "warn" : ""}`}>{activeSignal.id}</span>
-          <span className="micro">{activeSignal.source} source</span>
-        </div>
-        <div className="readout-card">
-          <span className="label">State</span>
-          <span className="readout-value">{activeSignal.state}</span>
-          <span className="micro">{activeSignal.value}</span>
-        </div>
-        <div className="readout-card selected-scan">
-          <span className="label">Instability reason</span>
-          <span className="readout-value">{activeSignal.title}</span>
-          <span className="micro">{activeSignal.summary}</span>
-        </div>
-      </div>
-    </div>
+    <SuiteRadar
+      ariaLabel="FlakeSting CI instability radar"
+      detailLabel="Instability reason"
+      feed={[
+        { text: "Manual reruns repeatedly turn failure into pass.", tone: "red" },
+        { text: "Fail/pass swings are clustered in route and integration jobs.", tone: "amber" },
+        { text: "Docs link checks are stable across the full lookback window." },
+      ]}
+      gainLabel="State"
+      items={SIGNALS.map((signal) => ({
+        ...signal,
+        detail: signal.title,
+        gain: signal.state,
+        gainMeta: signal.value,
+        label: signal.id,
+        stats: [
+          { label: "Source", value: signal.source },
+          { label: "State", value: signal.state },
+          { label: "Value", value: signal.value },
+          { label: "Trust", value: signal.tone === "green" ? "stable" : "noisy" },
+          { label: "Action", value: signal.tone === "red" ? "quarantine" : "watch" },
+        ],
+        vector: signal.id,
+        vectorTone: signal.tone === "amber" || signal.tone === "red" ? "warn" : "",
+      }))}
+      signalLabel="signals"
+      vectorLabel="Selected signal"
+    />
   );
 }
 

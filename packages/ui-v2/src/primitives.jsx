@@ -1,3 +1,11 @@
+import { useEffect, useMemo, useState } from "react";
+
+const DEFAULT_RADAR_WINDOWS = {
+  7: { label: "7 day live pass", outer: "7d", mid: "3d", inner: "24h" },
+  14: { label: "14 day history pass", outer: "14d", mid: "7d", inner: "3d" },
+  30: { label: "30 day deep sweep", outer: "30d", mid: "14d", inner: "7d" },
+};
+
 export function toneClass(tone) {
   return tone ? ` ${tone}` : "";
 }
@@ -106,6 +114,154 @@ export function Panel({ eyebrow, title, action, children }) {
       </div>
       {children}
     </section>
+  );
+}
+
+function defaultMinWindow(index) {
+  if (index < 3) {
+    return 7;
+  }
+  if (index === 3) {
+    return 14;
+  }
+  return 30;
+}
+
+export function SuiteRadar({
+  ariaLabel = "PatchHive signal radar",
+  detailLabel = "Selected signal",
+  echoes = [],
+  feed = [],
+  gainLabel = "Signal gain",
+  itemQueryParam = "radar",
+  items,
+  signalLabel = "signals",
+  vectorLabel = "Sweep vector",
+  windows = DEFAULT_RADAR_WINDOWS,
+}) {
+  const params = useMemo(
+    () => (typeof window === "undefined" ? new URLSearchParams() : new URLSearchParams(window.location.search)),
+    [],
+  );
+  const windowKeys = useMemo(() => Object.keys(windows).map(Number).sort((a, b) => a - b), [windows]);
+  const firstWindow = windowKeys[0] || 7;
+  const [windowDays, setWindowDays] = useState(() => {
+    const raw = Number(params.get("window") || firstWindow);
+    return windows[raw] ? raw : firstWindow;
+  });
+  const normalizedItems = useMemo(
+    () => items.map((item, index) => ({ ...item, minWindow: item.minWindow || defaultMinWindow(index) })),
+    [items],
+  );
+  const visibleItems = useMemo(
+    () => normalizedItems.filter((item) => item.minWindow <= windowDays),
+    [normalizedItems, windowDays],
+  );
+  const [selectedItem, setSelectedItem] = useState(() => {
+    const requested = params.get(itemQueryParam);
+    return normalizedItems.find((item) => item.id === requested) || normalizedItems[0];
+  });
+
+  useEffect(() => {
+    if (!selectedItem || selectedItem.minWindow > windowDays) {
+      setSelectedItem(visibleItems[0] || normalizedItems[0]);
+    }
+  }, [normalizedItems, selectedItem, visibleItems, windowDays]);
+
+  const activeWindow = windows[windowDays] || windows[firstWindow] || DEFAULT_RADAR_WINDOWS[7];
+  const visibleEchoes = echoes.filter((echo, index) => (echo.minWindow || defaultMinWindow(index + 3)) <= windowDays);
+  const stats = selectedItem?.stats || [];
+
+  if (!selectedItem) {
+    return null;
+  }
+
+  return (
+    <div className="signal-map" data-window={windowDays}>
+      <div className="radar-screen" aria-label={ariaLabel}>
+        <span className="radar-bearing n">000</span>
+        <span className="radar-bearing e">090</span>
+        <span className="radar-bearing s">180</span>
+        <span className="radar-bearing w">270</span>
+        <span className="range-label r1">{activeWindow.outer}</span>
+        <span className="range-label r2">{activeWindow.mid}</span>
+        <span className="range-label r3">{activeWindow.inner}</span>
+        <span className="radar-density" />
+        <span className="radar-sweep" />
+        <span className="radar-line" />
+        <span className="radar-trace trace-a" />
+        <span className="radar-trace trace-b" />
+        <span className="radar-trace trace-c" />
+        {visibleItems.map((item, index) => (
+          <button
+            aria-label={`Show ${item.title || item.id}`}
+            className={`node ${item.tone || ""}${selectedItem.id === item.id ? " active" : ""}`}
+            data-label={item.label || item.id}
+            key={item.id}
+            onClick={() => setSelectedItem(item)}
+            style={{ ...item.position, "--ping-delay": item.pingDelay || `${index * 0.28}s` }}
+            type="button"
+          />
+        ))}
+        {visibleEchoes.map((echo, index) => (
+          <span
+            className={`echo ${echo.tone || ""}`}
+            key={`${echo.position.left}-${echo.position.top}-${index}`}
+            style={echo.position}
+          />
+        ))}
+      </div>
+
+      <div className="radar-readout">
+        <div className="readout-card">
+          <span className="label">{vectorLabel}</span>
+          <span className={`readout-value${toneClass(selectedItem.vectorTone)}`}>{selectedItem.vector || selectedItem.id}</span>
+          <span className="micro">{activeWindow.label}</span>
+        </div>
+        <div className="readout-card">
+          <span className="label">{gainLabel}</span>
+          <span className={`readout-value${toneClass(selectedItem.gainTone)}`}>{selectedItem.gain || selectedItem.value}</span>
+          <span className="micro">{selectedItem.gainMeta || selectedItem.value}</span>
+        </div>
+        <div className="readout-card selected-scan">
+          <span className="label">{detailLabel}</span>
+          <span className="readout-value">{selectedItem.detail || selectedItem.title}</span>
+          {stats.length > 0 && (
+            <div className="selected-grid">
+              {stats.map((stat) => (
+                <div className="selected-stat" key={stat.label}>
+                  <span className="micro">{stat.label}</span>
+                  <strong>{stat.value}</strong>
+                </div>
+              ))}
+            </div>
+          )}
+          <span className="micro">{selectedItem.summary}</span>
+        </div>
+        {feed.length > 0 && (
+          <div className="readout-feed">
+            {feed.map((line) => (
+              <div className={`readout-line ${line.tone || ""}`} key={line.text}>{line.text}</div>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="range-panel">
+        <span className="chip signal">{activeWindow.count || `${visibleItems.length} ${signalLabel}`}</span>
+        <div className="range-switch" aria-label="Radar history window">
+          {windowKeys.map((days) => (
+            <button
+              className={`range-btn${windowDays === days ? " active" : ""}`}
+              key={days}
+              onClick={() => setWindowDays(days)}
+              type="button"
+            >
+              {days}d
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }
 

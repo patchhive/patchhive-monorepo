@@ -4,6 +4,7 @@ import {
   MetricBand,
   Panel,
   ProductRail,
+  SuiteRadar,
   SuiteTopline,
 } from "@patchhivehq/ui-v2";
 
@@ -153,92 +154,35 @@ const FAILGUARD = [
 ];
 
 function MemoryLattice() {
-  const [filter, setFilter] = useState("all");
-  const [activeNode, setActiveNode] = useState(MEMORY_NODES[0]);
-  const visibleNodes = MEMORY_NODES.filter((node) => filter === "all" || node.lane === filter);
-  const visibleIds = new Set(visibleNodes.map((node) => node.id));
-  const visibleLinks = MEMORY_LINKS.filter((link) => visibleIds.has(link.from) && visibleIds.has(link.to));
-
-  const changeFilter = (nextFilter) => {
-    setFilter(nextFilter);
-    const firstNode = MEMORY_NODES.find((node) => nextFilter === "all" || node.lane === nextFilter);
-    if (firstNode) {
-      setActiveNode(firstNode);
-    }
-  };
-
   return (
-    <div className="signal-map memory-map" data-window="14">
-      <div className="memory-lattice" aria-label="Repo memory lattice">
-        <span className="memory-core">
-          <span className="memory-core-title">RepoMemory</span>
-          <span className="memory-core-count">184</span>
-          <span className="micro">curated memories</span>
-        </span>
-        {visibleLinks.map((link) => (
-          <span className="memory-link" key={`${link.from}-${link.to}`} style={link.style} />
-        ))}
-        {visibleNodes.map((node) => (
-          <button
-            aria-label={`Show memory ${node.id}`}
-            className={`memory-node ${node.tone}${activeNode.id === node.id ? " active" : ""}`}
-            data-label={node.id}
-            key={node.id}
-            onClick={() => setActiveNode(node)}
-            style={node.position}
-            type="button"
-          />
-        ))}
-        <span className="memory-strand strand-a" />
-        <span className="memory-strand strand-b" />
-        <span className="memory-strand strand-c" />
-      </div>
-
-      <div className="radar-readout">
-        <div className="readout-card">
-          <span className="label">Selected memory</span>
-          <span className={`readout-value ${activeNode.tone === "amber" ? "warn" : ""}`}>{activeNode.id}</span>
-          <span className="micro">{activeNode.type} lane</span>
-        </div>
-        <div className="readout-card">
-          <span className="label">Confidence</span>
-          <span className="readout-value">{activeNode.confidence}</span>
-          <span className="micro">{activeNode.evidence}</span>
-        </div>
-        <div className="readout-card selected-scan">
-          <span className="label">Memory detail</span>
-          <span className="readout-value">{activeNode.title}</span>
-          <div className="selected-grid memory-selected-grid">
-            <div className="selected-stat"><span className="micro">Kind</span><strong>{activeNode.type}</strong></div>
-            <div className="selected-stat"><span className="micro">State</span><strong>curated</strong></div>
-            <div className="selected-stat"><span className="micro">Uses</span><strong>TrustGate</strong></div>
-            <div className="selected-stat"><span className="micro">Pack</span><strong>ready</strong></div>
-          </div>
-          <span className="micro">{activeNode.summary}</span>
-        </div>
-        <div className="readout-feed">
-          <div className="readout-line amber">FailGuard candidates are feeding pinned policy, not automatic action.</div>
-          <div className="readout-line">Prompt pack is fresh enough for TrustGate and RepoReaper context handoff.</div>
-          <div className="readout-line red">Config drift remains the highest-risk repeated failure pattern.</div>
-        </div>
-      </div>
-
-      <div className="range-panel">
-        <span className="chip signal">{visibleNodes.length} nodes</span>
-        <div className="range-switch" aria-label="Memory lane filter">
-          {FILTERS.map((item) => (
-            <button
-              className={`range-btn${filter === item.id ? " active" : ""}`}
-              key={item.id}
-              onClick={() => changeFilter(item.id)}
-              type="button"
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
-      </div>
-    </div>
+    <SuiteRadar
+      ariaLabel="RepoMemory curated memory radar"
+      detailLabel="Memory detail"
+      feed={[
+        { text: "FailGuard candidates are feeding pinned policy, not automatic action.", tone: "amber" },
+        { text: "Prompt pack is fresh enough for TrustGate and RepoReaper context handoff." },
+        { text: "Config drift remains the highest-risk repeated failure pattern.", tone: "red" },
+      ]}
+      gainLabel="Confidence"
+      items={MEMORY_NODES.map((node) => ({
+        ...node,
+        detail: node.title,
+        gain: node.confidence,
+        gainMeta: node.evidence,
+        label: node.id,
+        stats: [
+          { label: "Kind", value: node.type },
+          { label: "State", value: "curated" },
+          { label: "Uses", value: "TrustGate" },
+          { label: "Pack", value: "ready" },
+          { label: "Lane", value: node.lane },
+        ],
+        vector: node.id,
+        vectorTone: node.tone === "amber" ? "warn" : "",
+      }))}
+      signalLabel="memories"
+      vectorLabel="Selected memory"
+    />
   );
 }
 

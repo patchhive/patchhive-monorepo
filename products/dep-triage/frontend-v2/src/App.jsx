@@ -4,6 +4,7 @@ import {
   MetricBand,
   Panel,
   ProductRail,
+  SuiteRadar,
   SuiteTopline,
 } from "@patchhivehq/ui-v2";
 
@@ -148,79 +149,35 @@ const HISTORY = [
 ];
 
 function DependencyMap() {
-  const [filter, setFilter] = useState("all");
-  const [activePackage, setActivePackage] = useState(PACKAGES[1]);
-  const visiblePackages = PACKAGES.filter((pkg) => filter === "all" || pkg.bucket === filter);
-  const visibleIds = new Set(visiblePackages.map((pkg) => pkg.id));
-  const visibleLinks = LINKS.filter((link) => visibleIds.has(link.from) && visibleIds.has(link.to));
-
-  const changeFilter = (nextFilter) => {
-    setFilter(nextFilter);
-    const nextPackage = PACKAGES.find((pkg) => nextFilter === "all" || pkg.bucket === nextFilter);
-    if (nextPackage) {
-      setActivePackage(nextPackage);
-    }
-  };
-
   return (
-    <div className="signal-map dep-map" data-window="30">
-      <div className="range-panel">
-        <span className="chip signal">{visiblePackages.length} packages</span>
-        <div className="range-switch" aria-label="Dependency triage filter">
-          {FILTERS.map((item) => (
-            <button
-              className={`range-btn${filter === item.id ? " active" : ""}`}
-              key={item.id}
-              onClick={() => changeFilter(item.id)}
-              type="button"
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
-      </div>
-      <div className="dep-scope" aria-label="Dependency pressure map">
-        <span className="dep-core">
-          <span className="memory-core-title">DepTriage</span>
-          <span className="memory-core-count">6</span>
-          <span className="micro">update now</span>
-        </span>
-        {visibleLinks.map((link) => (
-          <span className="memory-link dep-link" key={`${link.from}-${link.to}`} style={link.style} />
-        ))}
-        {visiblePackages.map((pkg) => (
-          <button
-            aria-label={`Show package ${pkg.id}`}
-            className={`memory-node dep-node ${pkg.tone}${activePackage.id === pkg.id ? " active" : ""}`}
-            data-label={pkg.id}
-            key={pkg.id}
-            onClick={() => setActivePackage(pkg)}
-            style={pkg.position}
-            type="button"
-          />
-        ))}
-        <span className="dep-flow flow-a" />
-        <span className="dep-flow flow-b" />
-        <span className="dep-flow flow-c" />
-      </div>
-      <div className="radar-readout dep-readout">
-        <div className="readout-card">
-          <span className="label">Selected package</span>
-          <span className={`readout-value ${activePackage.tone === "amber" || activePackage.tone === "red" ? "warn" : ""}`}>{activePackage.id}</span>
-          <span className="micro">{activePackage.bucket} bucket</span>
-        </div>
-        <div className="readout-card">
-          <span className="label">Decision</span>
-          <span className="readout-value">{activePackage.state}</span>
-          <span className="micro">{activePackage.value}</span>
-        </div>
-        <div className="readout-card selected-scan">
-          <span className="label">Triage reason</span>
-          <span className="readout-value">{activePackage.title}</span>
-          <span className="micro">{activePackage.summary}</span>
-        </div>
-      </div>
-    </div>
+    <SuiteRadar
+      ariaLabel="DepTriage dependency pressure radar"
+      detailLabel="Triage reason"
+      feed={[
+        { text: "High advisory pressure concentrates around two packages.", tone: "red" },
+        { text: "Vite and React should move as one update train.", tone: "amber" },
+        { text: "Dev-only update churn stays safely deferred." },
+      ]}
+      gainLabel="Decision"
+      items={PACKAGES.map((pkg) => ({
+        ...pkg,
+        detail: pkg.title,
+        gain: pkg.state,
+        gainMeta: pkg.value,
+        label: pkg.id,
+        stats: [
+          { label: "Bucket", value: pkg.bucket },
+          { label: "State", value: pkg.state },
+          { label: "Value", value: pkg.value },
+          { label: "Action", value: pkg.tone === "red" ? "fix" : pkg.tone === "green" ? "defer" : "watch" },
+          { label: "Queue", value: "deps" },
+        ],
+        vector: pkg.id,
+        vectorTone: pkg.tone === "amber" || pkg.tone === "red" ? "warn" : "",
+      }))}
+      signalLabel="packages"
+      vectorLabel="Selected package"
+    />
   );
 }
 

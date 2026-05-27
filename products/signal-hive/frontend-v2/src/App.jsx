@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import {
   DeckBar,
   MetricBand,
   Panel,
   PlaceholderSurface,
   ProductRail,
+  SuiteRadar,
   SuiteTopline,
 } from "@patchhivehq/ui-v2";
 import {
@@ -61,110 +62,38 @@ const RAIL_STATS = {
 };
 
 function RadarScope() {
-  const params = useMemo(() => new URLSearchParams(window.location.search), []);
-  const [windowDays, setWindowDays] = useState(() => {
-    const raw = Number(params.get("window") || 7);
-    return RADAR_WINDOWS[raw] ? raw : 7;
-  });
-  const visibleRepos = useMemo(
-    () => RADAR_REPOS.filter((repo) => repo.minWindow <= windowDays),
-    [windowDays],
-  );
-  const [selectedRepo, setSelectedRepo] = useState(() => {
-    const requested = params.get("repo");
-    return RADAR_REPOS.find((repo) => repo.repo === requested) || RADAR_REPOS[0];
-  });
-
-  useEffect(() => {
-    if (selectedRepo.minWindow > windowDays) {
-      setSelectedRepo(visibleRepos[0] || RADAR_REPOS[0]);
-    }
-  }, [selectedRepo, visibleRepos, windowDays]);
-
-  const activeWindow = RADAR_WINDOWS[windowDays];
-  const visibleEchoes = RADAR_ECHOES.filter((echo) => echo.minWindow <= windowDays);
-
   return (
-    <div className="signal-map" data-window={windowDays}>
-      <div className="radar-screen" aria-label="Live maintenance signal radar">
-        <span className="radar-bearing n">000</span>
-        <span className="radar-bearing e">090</span>
-        <span className="radar-bearing s">180</span>
-        <span className="radar-bearing w">270</span>
-        <span className="range-label r1">{activeWindow.outer}</span>
-        <span className="range-label r2">{activeWindow.mid}</span>
-        <span className="range-label r3">{activeWindow.inner}</span>
-        <span className="radar-density" />
-        <span className="radar-sweep" />
-        <span className="radar-line" />
-        <span className="radar-trace trace-a" />
-        <span className="radar-trace trace-b" />
-        <span className="radar-trace trace-c" />
-        {visibleRepos.map((repo) => (
-          <button
-            aria-label={`Show ${repo.repo} scan`}
-            className={`node ${repo.tone}${selectedRepo.repo === repo.repo ? " active" : ""}`}
-            data-label={repo.label}
-            key={repo.repo}
-            onClick={() => setSelectedRepo(repo)}
-            style={{ ...repo.position, "--ping-delay": repo.pingDelay }}
-            type="button"
-          />
-        ))}
-        {visibleEchoes.map((echo, index) => (
-          <span
-            className={`echo ${echo.tone}`}
-            key={`${echo.position.left}-${index}`}
-            style={echo.position}
-          />
-        ))}
-      </div>
-
-      <div className="radar-readout">
-        <div className="readout-card">
-          <span className="label">Sweep vector</span>
-          <span className="readout-value">{selectedRepo.vector}</span>
-          <span className="micro">{activeWindow.label}</span>
-        </div>
-        <div className="readout-card">
-          <span className="label">Signal gain</span>
-          <span className="readout-value warn">{selectedRepo.gain}</span>
-          <span className="micro">selected repo fusion</span>
-        </div>
-        <div className="readout-card selected-scan">
-          <span className="label">Selected repo scan</span>
-          <span className="readout-value">{selectedRepo.repo}</span>
-          <div className="selected-grid">
-            <div className="selected-stat"><span className="micro">Score</span><strong>{selectedRepo.score}</strong></div>
-            <div className="selected-stat"><span className="micro">Stale</span><strong>{selectedRepo.stale}</strong></div>
-            <div className="selected-stat"><span className="micro">Dupes</span><strong>{selectedRepo.dupes}</strong></div>
-            <div className="selected-stat"><span className="micro">Markers</span><strong>{selectedRepo.markers}</strong></div>
-            <div className="selected-stat"><span className="micro">Trend</span><strong>{selectedRepo.trend}</strong></div>
-          </div>
-          <span className="micro">{selectedRepo.summary}</span>
-        </div>
-        <div className="readout-feed">
-          <div className="readout-line red">Tokio crossed high-pressure range with stale backlog and duplicate clusters.</div>
-          <div className="readout-line amber">Serde is holding in middle range; derive macro cluster remains visible.</div>
-          <div className="readout-line">Next.js is drifting outward as stale pressure falls after cleanup.</div>
-        </div>
-      </div>
-      <div className="range-panel">
-        <span className="chip signal">{activeWindow.count}</span>
-        <div className="range-switch" aria-label="Radar history window">
-          {Object.keys(RADAR_WINDOWS).map((days) => (
-            <button
-              className={`range-btn${windowDays === Number(days) ? " active" : ""}`}
-              key={days}
-              onClick={() => setWindowDays(Number(days))}
-              type="button"
-            >
-              {days}d
-            </button>
-          ))}
-        </div>
-      </div>
-    </div>
+    <SuiteRadar
+      ariaLabel="Live maintenance signal radar"
+      detailLabel="Selected repo scan"
+      echoes={RADAR_ECHOES}
+      feed={[
+        { text: "Tokio crossed high-pressure range with stale backlog and duplicate clusters.", tone: "red" },
+        { text: "Serde is holding in middle range; derive macro cluster remains visible.", tone: "amber" },
+        { text: "Next.js is drifting outward as stale pressure falls after cleanup." },
+      ]}
+      gainLabel="Signal gain"
+      itemQueryParam="repo"
+      items={RADAR_REPOS.map((repo) => ({
+        ...repo,
+        id: repo.repo,
+        detail: repo.repo,
+        gain: repo.gain,
+        gainMeta: "selected repo fusion",
+        stats: [
+          { label: "Score", value: repo.score },
+          { label: "Stale", value: repo.stale },
+          { label: "Dupes", value: repo.dupes },
+          { label: "Markers", value: repo.markers },
+          { label: "Trend", value: repo.trend },
+        ],
+        title: repo.repo,
+        vector: repo.vector,
+      }))}
+      signalLabel="signals"
+      vectorLabel="Sweep vector"
+      windows={RADAR_WINDOWS}
+    />
   );
 }
 

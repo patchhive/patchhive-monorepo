@@ -4,6 +4,7 @@ import {
   MetricBand,
   Panel,
   ProductRail,
+  SuiteRadar,
   SuiteTopline,
 } from "@patchhivehq/ui-v2";
 
@@ -148,79 +149,35 @@ const HISTORY = [
 ];
 
 function VulnerabilityMap() {
-  const [filter, setFilter] = useState("all");
-  const [activeFinding, setActiveFinding] = useState(FINDINGS[0]);
-  const visibleFindings = FINDINGS.filter((finding) => filter === "all" || finding.bucket === filter);
-  const visibleIds = new Set(visibleFindings.map((finding) => finding.id));
-  const visibleLinks = LINKS.filter((link) => visibleIds.has(link.from) && visibleIds.has(link.to));
-
-  const changeFilter = (nextFilter) => {
-    setFilter(nextFilter);
-    const nextFinding = FINDINGS.find((finding) => nextFilter === "all" || finding.bucket === nextFilter);
-    if (nextFinding) {
-      setActiveFinding(nextFinding);
-    }
-  };
-
   return (
-    <div className="signal-map vuln-map" data-window="30">
-      <div className="range-panel">
-        <span className="chip signal">{visibleFindings.length} findings</span>
-        <div className="range-switch" aria-label="Vulnerability triage filter">
-          {FILTERS.map((item) => (
-            <button
-              className={`range-btn${filter === item.id ? " active" : ""}`}
-              key={item.id}
-              onClick={() => changeFilter(item.id)}
-              type="button"
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
-      </div>
-      <div className="vuln-scope" aria-label="Vulnerability pressure map">
-        <span className="vuln-core">
-          <span className="memory-core-title">VulnTriage</span>
-          <span className="memory-core-count">5</span>
-          <span className="micro">fix now</span>
-        </span>
-        {visibleLinks.map((link) => (
-          <span className="memory-link vuln-link" key={`${link.from}-${link.to}`} style={link.style} />
-        ))}
-        {visibleFindings.map((finding) => (
-          <button
-            aria-label={`Show finding ${finding.id}`}
-            className={`memory-node vuln-node ${finding.tone}${activeFinding.id === finding.id ? " active" : ""}`}
-            data-label={finding.id}
-            key={finding.id}
-            onClick={() => setActiveFinding(finding)}
-            style={finding.position}
-            type="button"
-          />
-        ))}
-        <span className="vuln-axis vuln-axis-a" />
-        <span className="vuln-axis vuln-axis-b" />
-        <span className="vuln-axis vuln-axis-c" />
-      </div>
-      <div className="radar-readout vuln-readout">
-        <div className="readout-card">
-          <span className="label">Selected finding</span>
-          <span className={`readout-value ${activeFinding.tone === "amber" || activeFinding.tone === "red" ? "warn" : ""}`}>{activeFinding.id}</span>
-          <span className="micro">{activeFinding.bucket} bucket</span>
-        </div>
-        <div className="readout-card">
-          <span className="label">Decision</span>
-          <span className="readout-value">{activeFinding.state}</span>
-          <span className="micro">{activeFinding.value}</span>
-        </div>
-        <div className="readout-card selected-scan">
-          <span className="label">Triage reason</span>
-          <span className="readout-value">{activeFinding.title}</span>
-          <span className="micro">{activeFinding.summary}</span>
-        </div>
-      </div>
-    </div>
+    <SuiteRadar
+      ariaLabel="VulnTriage vulnerability pressure radar"
+      detailLabel="Triage reason"
+      feed={[
+        { text: "Reachability proxy keeps SQL injection at the top of the queue.", tone: "red" },
+        { text: "Path traversal warning should be reviewed before release.", tone: "amber" },
+        { text: "Dev dependency advisory remains defensible watch noise." },
+      ]}
+      gainLabel="Decision"
+      items={FINDINGS.map((finding) => ({
+        ...finding,
+        detail: finding.title,
+        gain: finding.state,
+        gainMeta: finding.value,
+        label: finding.id,
+        stats: [
+          { label: "Bucket", value: finding.bucket },
+          { label: "State", value: finding.state },
+          { label: "Value", value: finding.value },
+          { label: "Action", value: finding.tone === "red" ? "fix" : finding.tone === "green" ? "watch" : "plan" },
+          { label: "Owner", value: "routed" },
+        ],
+        vector: finding.id,
+        vectorTone: finding.tone === "amber" || finding.tone === "red" ? "warn" : "",
+      }))}
+      signalLabel="findings"
+      vectorLabel="Selected finding"
+    />
   );
 }
 

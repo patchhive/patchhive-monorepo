@@ -4,6 +4,7 @@ import {
   MetricBand,
   Panel,
   ProductRail,
+  SuiteRadar,
   SuiteTopline,
 } from "@patchhivehq/ui-v2";
 
@@ -139,60 +140,46 @@ const PR_OUTCOMES = [
 ];
 
 function AgentPipeline() {
-  const [activeAgent, setActiveAgent] = useState(AGENTS[3]);
+  const positions = [
+    { left: "31%", top: "35%" },
+    { left: "49%", top: "23%" },
+    { left: "72%", top: "48%" },
+    { left: "58%", top: "73%" },
+    { left: "27%", top: "65%" },
+  ];
 
   return (
-    <div className="reaper-map">
-      <div className="agent-chain" aria-label="RepoReaper agent pipeline">
-        {AGENTS.map((agent, index) => (
-          <button
-            className={`agent-card ${agent.tone}${activeAgent.id === agent.id ? " active" : ""}`}
-            key={agent.id}
-            onClick={() => setActiveAgent(agent)}
-            type="button"
-          >
-            <span className="agent-index">{String(index + 1).padStart(2, "0")}</span>
-            <span className="agent-label">{agent.label}</span>
-            <span className="agent-phase">{agent.phase}</span>
-            <span className={`chip ${agent.tone}`}>{agent.status}</span>
-          </button>
-        ))}
-      </div>
-
-      <div className="phase-console">
-        <div className="phase-orbit" aria-hidden="true">
-          {AGENTS.map((agent, index) => (
-            <span
-              className={`phase-node ${agent.tone}${activeAgent.id === agent.id ? " active" : ""}`}
-              key={agent.id}
-              style={{ "--i": index }}
-            />
-          ))}
-          <span className="phase-core">
-            <span>Run</span>
-            <strong>86</strong>
-            <span>confidence</span>
-          </span>
-        </div>
-        <div className="phase-readout">
-          <div className="readout-card">
-            <span className="label">Active agent</span>
-            <span className="readout-value">{activeAgent.label}</span>
-            <span className="micro">{activeAgent.phase} phase</span>
-          </div>
-          <div className="readout-card">
-            <span className="label">Confidence</span>
-            <span className={`readout-value ${activeAgent.tone === "amber" ? "warn" : ""}`}>{activeAgent.confidence}</span>
-            <span className="micro">cost {activeAgent.cost}</span>
-          </div>
-          <div className="readout-card selected-scan">
-            <span className="label">Agent report</span>
-            <span className="readout-value">{activeAgent.status}</span>
-            <span className="micro">{activeAgent.summary}</span>
-          </div>
-        </div>
-      </div>
-    </div>
+    <SuiteRadar
+      ariaLabel="RepoReaper agent pipeline radar"
+      detailLabel="Agent report"
+      feed={[
+        { text: "Smith trimmed broad helper drift before validation.", tone: "green" },
+        { text: "Gatekeeper passed sandbox validation and is waiting on operator review.", tone: "amber" },
+        { text: "Candidate queue remains under budget and above confidence threshold." },
+      ]}
+      gainLabel="Confidence"
+      items={AGENTS.map((agent, index) => ({
+        ...agent,
+        detail: agent.status,
+        gain: agent.confidence,
+        gainMeta: `cost ${agent.cost}`,
+        label: `${String(index + 1).padStart(2, "0")} ${agent.label}`,
+        position: positions[index],
+        stats: [
+          { label: "Agent", value: agent.label },
+          { label: "Phase", value: agent.phase },
+          { label: "Status", value: agent.status },
+          { label: "Cost", value: agent.cost },
+          { label: "Gate", value: agent.confidence },
+        ],
+        summary: agent.summary,
+        title: agent.label,
+        vector: agent.phase,
+        vectorTone: agent.tone === "amber" ? "warn" : "",
+      }))}
+      signalLabel="agents"
+      vectorLabel="Active phase"
+    />
   );
 }
 

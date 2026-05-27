@@ -4,6 +4,7 @@ import {
   MetricBand,
   Panel,
   ProductRail,
+  SuiteRadar,
   SuiteTopline,
 } from "@patchhivehq/ui-v2";
 
@@ -148,79 +149,35 @@ const HISTORY = [
 ];
 
 function ReleaseMap() {
-  const [filter, setFilter] = useState("all");
-  const [activeSignal, setActiveSignal] = useState(SIGNALS[1]);
-  const visibleSignals = SIGNALS.filter((signal) => filter === "all" || signal.bucket === filter);
-  const visibleIds = new Set(visibleSignals.map((signal) => signal.id));
-  const visibleLinks = LINKS.filter((link) => visibleIds.has(link.from) && visibleIds.has(link.to));
-
-  const changeFilter = (nextFilter) => {
-    setFilter(nextFilter);
-    const nextSignal = SIGNALS.find((signal) => nextFilter === "all" || signal.bucket === nextFilter);
-    if (nextSignal) {
-      setActiveSignal(nextSignal);
-    }
-  };
-
   return (
-    <div className="signal-map release-map" data-window="30">
-      <div className="range-panel">
-        <span className="chip signal">{visibleSignals.length} signals</span>
-        <div className="range-switch" aria-label="Release gate filter">
-          {FILTERS.map((item) => (
-            <button
-              className={`range-btn${filter === item.id ? " active" : ""}`}
-              key={item.id}
-              onClick={() => changeFilter(item.id)}
-              type="button"
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
-      </div>
-      <div className="release-scope" aria-label="Release readiness map">
-        <span className="release-core">
-          <span className="memory-core-title">ReleaseSentry</span>
-          <span className="memory-core-count">68</span>
-          <span className="micro">readiness</span>
-        </span>
-        {visibleLinks.map((link) => (
-          <span className="memory-link release-link" key={`${link.from}-${link.to}`} style={link.style} />
-        ))}
-        {visibleSignals.map((signal) => (
-          <button
-            aria-label={`Show release signal ${signal.id}`}
-            className={`memory-node release-node ${signal.tone}${activeSignal.id === signal.id ? " active" : ""}`}
-            data-label={signal.id}
-            key={signal.id}
-            onClick={() => setActiveSignal(signal)}
-            style={signal.position}
-            type="button"
-          />
-        ))}
-        <span className="release-gate gate-a" />
-        <span className="release-gate gate-b" />
-        <span className="release-gate gate-c" />
-      </div>
-      <div className="radar-readout release-readout">
-        <div className="readout-card">
-          <span className="label">Selected signal</span>
-          <span className={`readout-value ${activeSignal.tone === "amber" || activeSignal.tone === "red" ? "warn" : ""}`}>{activeSignal.id}</span>
-          <span className="micro">{activeSignal.bucket} bucket</span>
-        </div>
-        <div className="readout-card">
-          <span className="label">Decision</span>
-          <span className="readout-value">{activeSignal.state}</span>
-          <span className="micro">{activeSignal.value}</span>
-        </div>
-        <div className="readout-card selected-scan">
-          <span className="label">Evidence</span>
-          <span className="readout-value">{activeSignal.title}</span>
-          <span className="micro">{activeSignal.summary}</span>
-        </div>
-      </div>
-    </div>
+    <SuiteRadar
+      ariaLabel="ReleaseSentry readiness radar"
+      detailLabel="Evidence"
+      feed={[
+        { text: "Release blockers keep the decision at watch.", tone: "amber" },
+        { text: "CI branch health is mostly clear.", tone: "green" },
+        { text: "Changelog drift must be patched before ship." },
+      ]}
+      gainLabel="Decision"
+      items={SIGNALS.map((signal) => ({
+        ...signal,
+        detail: signal.title,
+        gain: signal.state,
+        gainMeta: signal.value,
+        label: signal.id,
+        stats: [
+          { label: "Bucket", value: signal.bucket },
+          { label: "State", value: signal.state },
+          { label: "Value", value: signal.value },
+          { label: "Gate", value: signal.tone === "red" ? "hold" : signal.tone === "green" ? "ready" : "watch" },
+          { label: "Release", value: "v0.2.0" },
+        ],
+        vector: signal.id,
+        vectorTone: signal.tone === "amber" || signal.tone === "red" ? "warn" : "",
+      }))}
+      signalLabel="signals"
+      vectorLabel="Selected signal"
+    />
   );
 }
 

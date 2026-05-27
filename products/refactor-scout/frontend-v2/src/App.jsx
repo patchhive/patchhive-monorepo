@@ -4,6 +4,7 @@ import {
   MetricBand,
   Panel,
   ProductRail,
+  SuiteRadar,
   SuiteTopline,
 } from "@patchhivehq/ui-v2";
 
@@ -148,79 +149,35 @@ const HISTORY = [
 ];
 
 function RefactorMap() {
-  const [filter, setFilter] = useState("all");
-  const [activeLead, setActiveLead] = useState(LEADS[0]);
-  const visibleLeads = LEADS.filter((lead) => filter === "all" || lead.bucket === filter);
-  const visibleIds = new Set(visibleLeads.map((lead) => lead.id));
-  const visibleLinks = LINKS.filter((link) => visibleIds.has(link.from) && visibleIds.has(link.to));
-
-  const changeFilter = (nextFilter) => {
-    setFilter(nextFilter);
-    const nextLead = LEADS.find((lead) => nextFilter === "all" || lead.bucket === nextFilter);
-    if (nextLead) {
-      setActiveLead(nextLead);
-    }
-  };
-
   return (
-    <div className="signal-map refactor-map" data-window="30">
-      <div className="range-panel">
-        <span className="chip signal">{visibleLeads.length} leads</span>
-        <div className="range-switch" aria-label="Refactor lead filter">
-          {FILTERS.map((item) => (
-            <button
-              className={`range-btn${filter === item.id ? " active" : ""}`}
-              key={item.id}
-              onClick={() => changeFilter(item.id)}
-              type="button"
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
-      </div>
-      <div className="refactor-scope" aria-label="Refactor opportunity map">
-        <span className="refactor-core">
-          <span className="memory-core-title">RefactorScout</span>
-          <span className="memory-core-count">8</span>
-          <span className="micro">high safety</span>
-        </span>
-        {visibleLinks.map((link) => (
-          <span className="memory-link refactor-link" key={`${link.from}-${link.to}`} style={link.style} />
-        ))}
-        {visibleLeads.map((lead) => (
-          <button
-            aria-label={`Show refactor lead ${lead.id}`}
-            className={`memory-node refactor-node ${lead.tone}${activeLead.id === lead.id ? " active" : ""}`}
-            data-label={lead.id}
-            key={lead.id}
-            onClick={() => setActiveLead(lead)}
-            style={lead.position}
-            type="button"
-          />
-        ))}
-        <span className="refactor-guide guide-a" />
-        <span className="refactor-guide guide-b" />
-        <span className="refactor-guide guide-c" />
-      </div>
-      <div className="radar-readout refactor-readout">
-        <div className="readout-card">
-          <span className="label">Selected lead</span>
-          <span className={`readout-value ${activeLead.tone === "amber" ? "warn" : ""}`}>{activeLead.id}</span>
-          <span className="micro">{activeLead.bucket} bucket</span>
-        </div>
-        <div className="readout-card">
-          <span className="label">Safety</span>
-          <span className="readout-value">{activeLead.state}</span>
-          <span className="micro">{activeLead.value}</span>
-        </div>
-        <div className="readout-card selected-scan">
-          <span className="label">Suggested first move</span>
-          <span className="readout-value">{activeLead.title}</span>
-          <span className="micro">{activeLead.summary}</span>
-        </div>
-      </div>
-    </div>
+    <SuiteRadar
+      ariaLabel="RefactorScout opportunity radar"
+      detailLabel="Suggested first move"
+      feed={[
+        { text: "High-safety leads avoid persistence and business logic boundaries.", tone: "green" },
+        { text: "Repeated API path strings are a safe constants extraction." },
+        { text: "Oversized scan function stays medium until owner reviews data flow.", tone: "amber" },
+      ]}
+      gainLabel="Safety"
+      items={LEADS.map((lead) => ({
+        ...lead,
+        detail: lead.title,
+        gain: lead.state,
+        gainMeta: lead.value,
+        label: lead.id,
+        stats: [
+          { label: "Bucket", value: lead.bucket },
+          { label: "Safety", value: lead.state },
+          { label: "Move", value: lead.value },
+          { label: "Blast", value: lead.tone === "amber" ? "medium" : "low" },
+          { label: "Action", value: lead.tone === "green" ? "schedule" : "review" },
+        ],
+        vector: lead.id,
+        vectorTone: lead.tone === "amber" ? "warn" : "",
+      }))}
+      signalLabel="leads"
+      vectorLabel="Selected lead"
+    />
   );
 }
 

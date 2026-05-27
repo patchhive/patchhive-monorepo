@@ -4,6 +4,7 @@ import {
   MetricBand,
   Panel,
   ProductRail,
+  SuiteRadar,
   SuiteTopline,
 } from "@patchhivehq/ui-v2";
 
@@ -147,78 +148,35 @@ const HISTORY = [
 ];
 
 function ThreadMap() {
-  const [filter, setFilter] = useState("all");
-  const [activeThread, setActiveThread] = useState(THREADS[0]);
-  const visibleThreads = THREADS.filter((thread) => filter === "all" || thread.cluster === filter);
-  const visibleIds = new Set(visibleThreads.map((thread) => thread.id));
-  const visibleLinks = THREAD_LINKS.filter((link) => visibleIds.has(link.from) && visibleIds.has(link.to));
-
-  const changeFilter = (nextFilter) => {
-    setFilter(nextFilter);
-    const firstThread = THREADS.find((thread) => nextFilter === "all" || thread.cluster === nextFilter);
-    if (firstThread) {
-      setActiveThread(firstThread);
-    }
-  };
-
   return (
-    <div className="signal-map review-map" data-window="14">
-      <div className="range-panel">
-        <span className="chip signal">{visibleThreads.length} threads</span>
-        <div className="range-switch" aria-label="Thread cluster filter">
-          {FILTERS.map((item) => (
-            <button
-              className={`range-btn${filter === item.id ? " active" : ""}`}
-              key={item.id}
-              onClick={() => changeFilter(item.id)}
-              type="button"
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
-      </div>
-      <div className="review-thread-map" aria-label="Review thread resolution map">
-        <span className="review-core">
-          <span className="memory-core-title">ReviewBee</span>
-          <span className="memory-core-count">28</span>
-          <span className="micro">threads read</span>
-        </span>
-        {visibleLinks.map((link) => (
-          <span className="memory-link review-link" key={`${link.from}-${link.to}`} style={link.style} />
-        ))}
-        {visibleThreads.map((thread) => (
-          <button
-            aria-label={`Show thread ${thread.id}`}
-            className={`memory-node review-node ${thread.tone}${activeThread.id === thread.id ? " active" : ""}`}
-            data-label={thread.id}
-            key={thread.id}
-            onClick={() => setActiveThread(thread)}
-            style={thread.position}
-            type="button"
-          />
-        ))}
-        <span className="review-band band-a" />
-        <span className="review-band band-b" />
-      </div>
-      <div className="radar-readout review-readout">
-        <div className="readout-card">
-          <span className="label">Selected thread</span>
-          <span className={`readout-value ${activeThread.tone === "amber" || activeThread.tone === "red" ? "warn" : ""}`}>{activeThread.id}</span>
-          <span className="micro">{activeThread.cluster} cluster</span>
-        </div>
-        <div className="readout-card">
-          <span className="label">State</span>
-          <span className="readout-value">{activeThread.state}</span>
-          <span className="micro">{activeThread.count}</span>
-        </div>
-        <div className="readout-card selected-scan">
-          <span className="label">Thread summary</span>
-          <span className="readout-value">{activeThread.title}</span>
-          <span className="micro">{activeThread.summary}</span>
-        </div>
-      </div>
-    </div>
+    <SuiteRadar
+      ariaLabel="ReviewBee thread radar"
+      detailLabel="Thread summary"
+      feed={[
+        { text: "Maintained comment is fresh and includes the latest review event." },
+        { text: "Two asks are still merge-blocking.", tone: "amber" },
+        { text: "Six low-action comments stay out of the checklist." },
+      ]}
+      gainLabel="State"
+      items={THREADS.map((thread) => ({
+        ...thread,
+        detail: thread.title,
+        gain: thread.state,
+        gainMeta: thread.count,
+        label: thread.id,
+        stats: [
+          { label: "Cluster", value: thread.cluster },
+          { label: "State", value: thread.state },
+          { label: "Count", value: thread.count },
+          { label: "Action", value: thread.tone === "green" ? "done" : "open" },
+          { label: "Queue", value: "checklist" },
+        ],
+        vector: thread.id,
+        vectorTone: thread.tone === "amber" || thread.tone === "red" ? "warn" : "",
+      }))}
+      signalLabel="threads"
+      vectorLabel="Selected thread"
+    />
   );
 }
 
