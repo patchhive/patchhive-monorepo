@@ -251,8 +251,8 @@ function ReviewSurface() {
             </div>
           </div>
           <MetricBand metrics={METRICS} />
-          <div className="atlas-layout">
-            <Panel eyebrow="Decision" title="Safety recommendation" action={<span className="chip amber">warn</span>}>
+          <div className="atlas-layout suite-four-layout">
+            <Panel eyebrow="Decision" title="Safety recommendation" action={<span className="chip amber">risk radar</span>}>
               <DecisionGauge />
             </Panel>
             <RuleHitPanel />

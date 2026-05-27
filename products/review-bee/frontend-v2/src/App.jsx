@@ -19,7 +19,7 @@ const TOPLINE_CELLS = [
   { label: "System", value: "Online", tone: "ok" },
   { label: "Mode", value: "Review only" },
   { label: "GitHub", value: "PR reads", tone: "sig" },
-  { label: "Comment", value: "Maintained", tone: "green" },
+  { label: "Status", value: "Fresh", tone: "green" },
   { label: "Last refresh", value: "T-06:00" },
 ];
 
@@ -247,7 +247,7 @@ function ThreadSurface() {
           </div>
           <MetricBand metrics={METRICS} />
           <div className="atlas-layout suite-four-layout">
-            <Panel eyebrow="Threads" title="Resolution map" action={<span className="chip signal">react port</span>}>
+            <Panel eyebrow="Threads" title="Resolution map" action={<span className="chip signal">thread radar</span>}>
               <ThreadMap />
             </Panel>
             <ChecklistPanel />

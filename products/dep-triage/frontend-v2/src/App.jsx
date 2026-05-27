@@ -248,7 +248,7 @@ function TriageSurface() {
           </div>
           <MetricBand metrics={METRICS} />
           <div className="atlas-layout suite-four-layout">
-            <Panel eyebrow="Triage" title="Dependency map" action={<span className="chip signal">react port</span>}>
+            <Panel eyebrow="Triage" title="Dependency map" action={<span className="chip signal">dependency radar</span>}>
               <DependencyMap />
             </Panel>
             <UpdateQueuePanel />

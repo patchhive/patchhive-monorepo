@@ -204,7 +204,7 @@ h1 {
 .topline {
   min-height: 42px;
   display: grid;
-  grid-template-columns: 260px repeat(4, minmax(120px, 1fr)) auto;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   border-bottom: 1px solid var(--line);
   background: rgba(7, 16, 24, 0.9);
 }
@@ -257,7 +257,7 @@ h1 {
 
 .main-grid {
   display: grid;
-  grid-template-columns: 236px minmax(0, 1fr) 330px;
+  grid-template-columns: 220px minmax(0, 1fr) 300px;
   min-height: calc(100vh - 96px);
 }
 
@@ -469,7 +469,8 @@ h1 {
 
 .metric {
   position: relative;
-  min-height: 102px;
+  min-height: 104px;
+  height: 104px;
   display: grid;
   align-content: center;
   gap: 7px;
@@ -561,7 +562,7 @@ h1 {
 }
 
 .suite-four-layout {
-  grid-template-columns: minmax(0, 1.22fr) minmax(280px, 0.78fr);
+  grid-template-columns: minmax(0, 1.34fr) minmax(260px, 0.66fr);
 }
 
 .queue-grid,

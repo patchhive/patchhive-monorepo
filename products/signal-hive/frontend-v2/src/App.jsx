@@ -184,11 +184,11 @@ function AtlasBoard() {
             </div>
           </div>
           <MetricBand metrics={METRICS} />
-          <div className="atlas-layout">
+          <div className="atlas-layout suite-four-layout">
             <Panel
               eyebrow="Cartography"
               title="Field intensity map"
-              action={<span className="chip signal">react port</span>}
+              action={<span className="chip signal">field radar</span>}
             >
               <RadarScope />
             </Panel>

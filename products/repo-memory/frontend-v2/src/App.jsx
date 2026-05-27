@@ -297,7 +297,7 @@ function MemoryCore() {
           </div>
           <MetricBand metrics={METRICS} />
           <div className="atlas-layout suite-four-layout">
-            <Panel eyebrow="Graph" title="Repo knowledge map" action={<span className="chip signal">react port</span>}>
+            <Panel eyebrow="Graph" title="Repo knowledge map" action={<span className="chip signal">memory radar</span>}>
               <MemoryLattice />
             </Panel>
             <MemoryQueuePanel />
