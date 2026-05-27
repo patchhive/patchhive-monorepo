@@ -1390,6 +1390,160 @@ h1 {
   grid-template-columns: 1fr;
 }
 
+.constellation-shell {
+  display: grid;
+  gap: 14px;
+  min-height: 620px;
+  padding: 16px;
+  background:
+    radial-gradient(circle at 50% 46%, rgb(var(--signal2-rgb) / 0.12), transparent 28%),
+    linear-gradient(rgb(var(--signal2-rgb) / 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(var(--signal2-rgb) / 0.045) 1px, transparent 1px),
+    #071018;
+  background-size: auto, 28px 28px, 28px 28px, auto;
+}
+
+.suite-orbit {
+  position: relative;
+  min-height: 455px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background:
+    radial-gradient(circle at center, rgb(var(--signal-rgb) / 0.1), transparent 18%),
+    radial-gradient(circle at center, transparent 0 58%, rgba(3, 7, 11, 0.72) 100%);
+}
+
+.suite-orbit::before,
+.suite-orbit::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.suite-orbit::before {
+  background:
+    linear-gradient(90deg, transparent calc(50% - 0.5px), rgb(var(--signal2-rgb) / 0.18) 50%, transparent calc(50% + 0.5px)),
+    linear-gradient(0deg, transparent calc(50% - 0.5px), rgb(var(--signal2-rgb) / 0.18) 50%, transparent calc(50% + 0.5px)),
+    linear-gradient(30deg, transparent calc(50% - 0.5px), rgb(var(--signal2-rgb) / 0.08) 50%, transparent calc(50% + 0.5px)),
+    linear-gradient(150deg, transparent calc(50% - 0.5px), rgb(var(--signal2-rgb) / 0.08) 50%, transparent calc(50% + 0.5px));
+}
+
+.suite-orbit::after {
+  background: repeating-linear-gradient(0deg, transparent 0 3px, rgba(255, 255, 255, 0.025) 3px 4px);
+  mix-blend-mode: screen;
+}
+
+.orbit-ring,
+.orbit-axis {
+  position: absolute;
+  pointer-events: none;
+}
+
+.orbit-ring {
+  left: 50%;
+  top: 50%;
+  border: 1px solid rgb(var(--signal2-rgb) / 0.22);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.ring-a {
+  width: min(88%, 560px);
+  aspect-ratio: 1;
+}
+
+.ring-b {
+  width: min(56%, 350px);
+  aspect-ratio: 1;
+  border-color: rgb(var(--signal2-rgb) / 0.32);
+  box-shadow: inset 0 0 24px rgb(var(--signal2-rgb) / 0.08);
+}
+
+.orbit-axis {
+  left: 50%;
+  top: 50%;
+  width: 42%;
+  height: 1px;
+  transform-origin: left center;
+  background: linear-gradient(90deg, rgb(var(--signal2-rgb) / 0.22), transparent);
+}
+
+.axis-a {
+  transform: rotate(42deg);
+}
+
+.axis-b {
+  transform: rotate(138deg);
+}
+
+.hive-node {
+  position: absolute;
+  z-index: 4;
+  left: 50%;
+  top: 50%;
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--node-color) 70%, var(--line2));
+  background:
+    radial-gradient(circle at center, color-mix(in srgb, var(--node-color) 28%, transparent), transparent 72%),
+    rgba(7, 16, 24, 0.9);
+  color: var(--node-color);
+  font-family: var(--orb);
+  font-size: 0.82rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  transform: translate(-50%, -50%);
+  box-shadow:
+    inset 0 0 16px color-mix(in srgb, var(--node-color) 14%, transparent),
+    0 0 16px color-mix(in srgb, var(--node-color) 24%, transparent);
+}
+
+.hive-node::before {
+  content: "";
+  position: absolute;
+  inset: -9px;
+  border: 1px solid var(--node-color);
+  opacity: 0.18;
+}
+
+.hive-node.core {
+  width: 74px;
+  height: 74px;
+  border-radius: 50%;
+  font-size: 1rem;
+  color: var(--signal2);
+}
+
+.hive-node[data-state="setup"],
+.hive-node[data-state="watch"],
+.hive-node[data-state="guarded"] {
+  border-style: dashed;
+}
+
+.hive-node:hover,
+.hive-node:focus-visible,
+.hive-node.active {
+  outline: none;
+  color: var(--text);
+  box-shadow:
+    0 0 0 4px rgba(255, 255, 255, 0.08),
+    inset 0 0 20px color-mix(in srgb, var(--node-color) 22%, transparent),
+    0 0 30px color-mix(in srgb, var(--node-color) 36%, transparent);
+}
+
+.constellation-readout {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.constellation-readout .selected-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .agent-chain {
   display: flex;
   flex-wrap: wrap;

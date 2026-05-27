@@ -36,10 +36,10 @@ After every product has moved to v2, choose one cleanup path:
 
 ## HiveCore
 
-HiveCore does not currently follow this UI direction. That is acceptable during
-the v2 design/prototype phase, but it is not the target end state. HiveCore
-should be ported last, after the other 11 product surfaces prove the shared v2
-suite shell and design language.
+HiveCore now has a v2 demo after the other 11 product surfaces proved the shared
+suite shell and design language. Its v2 surface should stay control-plane-first:
+product health, launcher state, contract drift, shared defaults, and
+cross-product handoffs rather than another single-product radar board.
 
 ## Product Status
 
@@ -56,7 +56,7 @@ suite shell and design language.
 | VulnTriage | `products/vuln-triage/frontend-v2` | React prototype active |
 | RefactorScout | `products/refactor-scout/frontend-v2` | React prototype active |
 | ReleaseSentry | `products/release-sentry/frontend-v2` | React prototype active |
-| HiveCore | pending | Must converge before final cleanup |
+| HiveCore | `products/hive-core/frontend-v2` | Control-plane demo active |
 
 ## Promotion Checklist
 
@@ -66,5 +66,6 @@ suite shell and design language.
 3. Extract reusable React components into the shared UI package path.
 4. Continue extracting SignalHive v2 pieces into reusable components.
 5. Port at least one non-SignalHive product to validate the system.
-6. Port HiveCore and the remaining products.
+6. Promote HiveCore's control-plane demo into the same production-port path as
+   the specialist products.
 7. Legacy or remove the old UI code.
