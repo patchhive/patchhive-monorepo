@@ -319,6 +319,7 @@ export default function App() {
         brandName="RepoReaper frontend v2"
         navLabel="RepoReaper v2 surfaces"
         onTabChange={setActiveTab}
+        productKey="repo-reaper"
         tabs={TABS}
       />
       {activeTab === "mission" && <MissionDeck />}

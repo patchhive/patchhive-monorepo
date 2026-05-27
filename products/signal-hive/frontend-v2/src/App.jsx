@@ -211,6 +211,7 @@ export default function App() {
         brandName="SignalHive frontend v2"
         navLabel="SignalHive v2 surfaces"
         onTabChange={setActiveTab}
+        productKey="signal-hive"
         tabs={TABS}
       />
       {activeTab === "atlas" && <AtlasBoard />}

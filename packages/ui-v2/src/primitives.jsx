@@ -6,6 +6,110 @@ const DEFAULT_RADAR_WINDOWS = {
   30: { label: "30 day deep sweep", outer: "30d", mid: "14d", inner: "7d" },
 };
 
+const PRODUCT_ACCENTS = {
+  "repo-reaper": {
+    accent: "#c41e3a",
+    accentDim: "#8b1528",
+    accentRgb: "196 30 58",
+    accentGlow: "#ff637c",
+    accentGlowRgb: "255 99 124",
+  },
+  "signal-hive": {
+    accent: "#2a6aaa",
+    accentDim: "#1a4a7a",
+    accentRgb: "42 106 170",
+    accentGlow: "#67bbe7",
+    accentGlowRgb: "103 187 231",
+  },
+  "review-bee": {
+    accent: "#d89f22",
+    accentDim: "#8f6415",
+    accentRgb: "216 159 34",
+    accentGlow: "#ffd36a",
+    accentGlowRgb: "255 211 106",
+  },
+  "trust-gate": {
+    accent: "#8751b8",
+    accentDim: "#553174",
+    accentRgb: "135 81 184",
+    accentGlow: "#c794ff",
+    accentGlowRgb: "199 148 255",
+  },
+  "repo-memory": {
+    accent: "#2a8a4a",
+    accentDim: "#1a5a30",
+    accentRgb: "42 138 74",
+    accentGlow: "#65d98e",
+    accentGlowRgb: "101 217 142",
+  },
+  "merge-keeper": {
+    accent: "#1f9f8f",
+    accentDim: "#17675e",
+    accentRgb: "31 159 143",
+    accentGlow: "#62e1d3",
+    accentGlowRgb: "98 225 211",
+  },
+  "flake-sting": {
+    accent: "#d96b27",
+    accentDim: "#8b4317",
+    accentRgb: "217 107 39",
+    accentGlow: "#ff9b52",
+    accentGlowRgb: "255 155 82",
+  },
+  "dep-triage": {
+    accent: "#8aa62c",
+    accentDim: "#586d1b",
+    accentRgb: "138 166 44",
+    accentGlow: "#c8db62",
+    accentGlowRgb: "200 219 98",
+  },
+  "vuln-triage": {
+    accent: "#d6406a",
+    accentDim: "#8d2746",
+    accentRgb: "214 64 106",
+    accentGlow: "#ff7aa1",
+    accentGlowRgb: "255 122 161",
+  },
+  "refactor-scout": {
+    accent: "#30a783",
+    accentDim: "#1d6d55",
+    accentRgb: "48 167 131",
+    accentGlow: "#70dfbd",
+    accentGlowRgb: "112 223 189",
+  },
+  "release-sentry": {
+    accent: "#e0c84d",
+    accentDim: "#8a7728",
+    accentRgb: "224 200 77",
+    accentGlow: "#fff08a",
+    accentGlowRgb: "255 240 138",
+  },
+  "hive-core": {
+    accent: "#3a9fb3",
+    accentDim: "#1d5d69",
+    accentRgb: "58 159 179",
+    accentGlow: "#7bd8e8",
+    accentGlowRgb: "123 216 232",
+  },
+};
+
+export function applySuiteAccent(productKey = "signal-hive") {
+  if (typeof document === "undefined") {
+    return;
+  }
+
+  const accent = PRODUCT_ACCENTS[productKey] || PRODUCT_ACCENTS["signal-hive"];
+  const root = document.documentElement;
+  root.dataset.patchhiveProduct = productKey;
+  root.style.setProperty("--accent", accent.accent);
+  root.style.setProperty("--accent-dim", accent.accentDim);
+  root.style.setProperty("--accent-rgb", accent.accentRgb);
+  root.style.setProperty("--signal", accent.accent);
+  root.style.setProperty("--signal-rgb", accent.accentRgb);
+  root.style.setProperty("--signal2", accent.accentGlow);
+  root.style.setProperty("--signal2-rgb", accent.accentGlowRgb);
+}
+
 export function toneClass(tone) {
   return tone ? ` ${tone}` : "";
 }
@@ -16,8 +120,13 @@ export function DeckBar({
   brandName,
   navLabel = "PatchHive v2 surfaces",
   onTabChange,
+  productKey = "signal-hive",
   tabs,
 }) {
+  useEffect(() => {
+    applySuiteAccent(productKey);
+  }, [productKey]);
+
   return (
     <div className="deckbar">
       <div className="deckbrand">

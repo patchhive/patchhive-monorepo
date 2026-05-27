@@ -305,6 +305,7 @@ export default function App() {
         brandName="RefactorScout frontend v2"
         navLabel="RefactorScout v2 surfaces"
         onTabChange={setActiveTab}
+        productKey="refactor-scout"
         tabs={TABS}
       />
       {activeTab === "scout" && <ScoutSurface />}

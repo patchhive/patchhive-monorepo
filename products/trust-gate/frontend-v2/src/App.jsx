@@ -293,6 +293,7 @@ export default function App() {
         brandName="TrustGate frontend v2"
         navLabel="TrustGate v2 surfaces"
         onTabChange={setActiveTab}
+        productKey="trust-gate"
         tabs={TABS}
       />
       {activeTab === "review" && <ReviewSurface />}

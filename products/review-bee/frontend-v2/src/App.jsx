@@ -304,6 +304,7 @@ export default function App() {
         brandName="ReviewBee frontend v2"
         navLabel="ReviewBee v2 surfaces"
         onTabChange={setActiveTab}
+        productKey="review-bee"
         tabs={TABS}
       />
       {activeTab === "threads" && <ThreadSurface />}

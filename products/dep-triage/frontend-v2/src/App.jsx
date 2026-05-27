@@ -305,6 +305,7 @@ export default function App() {
         brandName="DepTriage frontend v2"
         navLabel="DepTriage v2 surfaces"
         onTabChange={setActiveTab}
+        productKey="dep-triage"
         tabs={TABS}
       />
       {activeTab === "triage" && <TriageSurface />}

@@ -6,5 +6,6 @@ export {
   ProductRail,
   SuiteTopline,
   SuiteRadar,
+  applySuiteAccent,
   toneClass,
 } from "./primitives.jsx";

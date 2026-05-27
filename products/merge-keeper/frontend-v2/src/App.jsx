@@ -304,6 +304,7 @@ export default function App() {
         brandName="MergeKeeper frontend v2"
         navLabel="MergeKeeper v2 surfaces"
         onTabChange={setActiveTab}
+        productKey="merge-keeper"
         tabs={TABS}
       />
       {activeTab === "readiness" && <ReadinessSurface />}

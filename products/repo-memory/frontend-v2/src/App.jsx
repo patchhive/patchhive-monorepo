@@ -319,6 +319,7 @@ export default function App() {
         brandName="RepoMemory frontend v2"
         navLabel="RepoMemory v2 surfaces"
         onTabChange={setActiveTab}
+        productKey="repo-memory"
         tabs={TABS}
       />
       {activeTab === "core" && <MemoryCore />}

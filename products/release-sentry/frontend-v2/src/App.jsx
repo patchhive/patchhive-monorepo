@@ -305,6 +305,7 @@ export default function App() {
         brandName="ReleaseSentry frontend v2"
         navLabel="ReleaseSentry v2 surfaces"
         onTabChange={setActiveTab}
+        productKey="release-sentry"
         tabs={TABS}
       />
       {activeTab === "gate" && <GateSurface />}

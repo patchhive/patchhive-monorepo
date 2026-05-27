@@ -305,6 +305,7 @@ export default function App() {
         brandName="VulnTriage frontend v2"
         navLabel="VulnTriage v2 surfaces"
         onTabChange={setActiveTab}
+        productKey="vuln-triage"
         tabs={TABS}
       />
       {activeTab === "triage" && <TriageSurface />}

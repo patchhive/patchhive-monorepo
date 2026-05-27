@@ -304,6 +304,7 @@ export default function App() {
         brandName="FlakeSting frontend v2"
         navLabel="FlakeSting v2 surfaces"
         onTabChange={setActiveTab}
+        productKey="flake-sting"
         tabs={TABS}
       />
       {activeTab === "instability" && <InstabilitySurface />}
