@@ -1413,6 +1413,14 @@ h1 {
     radial-gradient(circle at center, transparent 0 58%, rgba(3, 7, 11, 0.72) 100%);
 }
 
+.hive-radar-screen {
+  background:
+    radial-gradient(circle at center, rgb(var(--signal2-rgb) / 0.14) 0 2px, transparent 3px),
+    repeating-radial-gradient(circle at center, transparent 0 22%, rgb(var(--signal2-rgb) / 0.14) 22.4% 22.8%, transparent 23.2% 24%),
+    radial-gradient(circle at center, rgb(var(--signal-rgb) / 0.12), rgba(3, 7, 11, 0.9) 72%),
+    #041018;
+}
+
 .suite-orbit::before,
 .suite-orbit::after {
   content: "";
@@ -1517,10 +1525,69 @@ h1 {
   color: var(--signal2);
 }
 
-.hive-node[data-state="setup"],
-.hive-node[data-state="watch"],
-.hive-node[data-state="guarded"] {
-  border-style: dashed;
+.hive-product-blip {
+  --node-color: var(--green);
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border-color: rgba(255, 255, 255, 0.7);
+  background: currentColor;
+  color: var(--node-color);
+  animation: status-breathe 3.4s ease-in-out infinite;
+}
+
+.hive-product-blip::before {
+  inset: -12px;
+  border-radius: 50%;
+  opacity: 0.35;
+  animation: radar-ping 2.8s ease-out infinite;
+}
+
+.hive-product-blip::after {
+  content: attr(data-code);
+  position: absolute;
+  top: -8px;
+  left: 20px;
+  min-width: 52px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-align: left;
+}
+
+.hive-product-blip span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.hive-product-blip.green {
+  --node-color: var(--green);
+}
+
+.hive-product-blip.amber {
+  --node-color: var(--amber);
+  animation: status-warning 1.45s ease-in-out infinite;
+}
+
+.hive-product-blip.red {
+  --node-color: var(--red);
+  animation: status-down 1.1s ease-in-out infinite;
+}
+
+.hive-product-blip.joining {
+  animation: product-sweep-in 4.2s ease-out 1, status-breathe 3.4s ease-in-out 4.2s infinite;
+}
+
+.hive-product-blip.amber.joining {
+  animation: product-sweep-in 4.2s ease-out 1, status-warning 1.45s ease-in-out 4.2s infinite;
+}
+
+.hive-product-blip.red.joining {
+  animation: product-sweep-in 4.2s ease-out 1, status-down 1.1s ease-in-out 4.2s infinite;
 }
 
 .hive-node:hover,
@@ -1532,6 +1599,106 @@ h1 {
     0 0 0 4px rgba(255, 255, 255, 0.08),
     inset 0 0 20px color-mix(in srgb, var(--node-color) 22%, transparent),
     0 0 30px color-mix(in srgb, var(--node-color) 36%, transparent);
+}
+
+.hive-product-blip.active::after {
+  color: var(--text);
+}
+
+.hive-product-blip.active {
+  color: var(--node-color);
+}
+
+@keyframes status-breathe {
+  50% {
+    box-shadow:
+      inset 0 0 16px color-mix(in srgb, var(--node-color) 18%, transparent),
+      0 0 22px color-mix(in srgb, var(--node-color) 38%, transparent);
+  }
+}
+
+@keyframes status-warning {
+  50% {
+    transform: translate(-50%, -50%) scale(1.22);
+    box-shadow:
+      0 0 0 5px color-mix(in srgb, var(--node-color) 16%, transparent),
+      0 0 30px color-mix(in srgb, var(--node-color) 48%, transparent);
+  }
+}
+
+@keyframes status-down {
+  50% {
+    transform: translate(-50%, -50%) scale(1.34);
+    box-shadow:
+      0 0 0 7px color-mix(in srgb, var(--node-color) 18%, transparent),
+      0 0 36px color-mix(in srgb, var(--node-color) 58%, transparent);
+  }
+}
+
+@keyframes product-sweep-in {
+  0% {
+    left: 96%;
+    top: 50%;
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.6);
+  }
+
+  18% {
+    opacity: 1;
+  }
+
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+.status-key {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  order: -1;
+}
+
+.status-key span {
+  min-height: 22px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line2);
+  background: rgba(7, 16, 24, 0.72);
+  color: var(--muted);
+  padding: 0 8px;
+  font-size: 0.7rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.status-key i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--dim);
+  box-shadow: 0 0 8px currentColor;
+}
+
+.status-key i.green {
+  background: var(--green);
+}
+
+.status-key i.amber {
+  background: var(--amber);
+}
+
+.status-key i.red {
+  background: var(--red);
+}
+
+.readout-headline {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .constellation-readout {

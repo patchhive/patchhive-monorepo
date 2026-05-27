@@ -17,9 +17,9 @@ const TABS = [
 const TOPLINE_CELLS = [
   { label: "HiveCore", value: "Control plane 01", tone: "sig" },
   { label: "System", value: "Online", tone: "ok" },
-  { label: "Products", value: "11 / 12", tone: "warn" },
+  { label: "Radar blips", value: "10 / 11", tone: "warn" },
   { label: "Launcher", value: "Ready", tone: "sig" },
-  { label: "Contract drift", value: "2 flags", tone: "warn" },
+  { label: "Issues", value: "2 yellow", tone: "warn" },
   { label: "Last poll", value: "T-00:42" },
 ];
 
@@ -29,7 +29,8 @@ const PRODUCTS = [
     code: "SH",
     title: "SignalHive",
     accent: "#67bbe7",
-    state: "online",
+    status: "good",
+    state: "good",
     stateTone: "green",
     position: { left: "50%", top: "10%" },
     health: "read-only scans healthy",
@@ -44,7 +45,8 @@ const PRODUCTS = [
     code: "TG",
     title: "TrustGate",
     accent: "#c794ff",
-    state: "online",
+    status: "good",
+    state: "good",
     stateTone: "green",
     position: { left: "72%", top: "18%" },
     health: "policy checks armed",
@@ -59,7 +61,8 @@ const PRODUCTS = [
     code: "RM",
     title: "RepoMemory",
     accent: "#65d98e",
-    state: "online",
+    status: "good",
+    state: "good",
     stateTone: "green",
     position: { left: "86%", top: "38%" },
     health: "memory spine warm",
@@ -74,7 +77,8 @@ const PRODUCTS = [
     code: "RR",
     title: "RepoReaper",
     accent: "#ff637c",
-    state: "guarded",
+    status: "issues",
+    state: "issues",
     stateTone: "amber",
     position: { left: "82%", top: "66%" },
     health: "write actions dry gated",
@@ -89,7 +93,8 @@ const PRODUCTS = [
     code: "RB",
     title: "ReviewBee",
     accent: "#ffd36a",
-    state: "online",
+    status: "good",
+    state: "good",
     stateTone: "green",
     position: { left: "62%", top: "86%" },
     health: "thread reads fresh",
@@ -104,8 +109,10 @@ const PRODUCTS = [
     code: "MK",
     title: "MergeKeeper",
     accent: "#62e1d3",
-    state: "online",
+    status: "good",
+    state: "good",
     stateTone: "green",
+    recentlyLive: true,
     position: { left: "38%", top: "86%" },
     health: "readiness checks clear",
     url: "localhost:5196",
@@ -119,8 +126,10 @@ const PRODUCTS = [
     code: "FS",
     title: "FlakeSting",
     accent: "#ff9b52",
-    state: "setup",
-    stateTone: "amber",
+    status: "not started",
+    state: "not started",
+    stateTone: "",
+    started: false,
     position: { left: "18%", top: "66%" },
     health: "Actions token needed",
     url: "localhost:5197",
@@ -134,7 +143,8 @@ const PRODUCTS = [
     code: "DT",
     title: "DepTriage",
     accent: "#c8db62",
-    state: "online",
+    status: "good",
+    state: "good",
     stateTone: "green",
     position: { left: "14%", top: "38%" },
     health: "dependency queue stable",
@@ -149,7 +159,8 @@ const PRODUCTS = [
     code: "VT",
     title: "VulnTriage",
     accent: "#ff7aa1",
-    state: "watch",
+    status: "issues",
+    state: "issues",
     stateTone: "amber",
     position: { left: "28%", top: "18%" },
     health: "security reads partial",
@@ -164,7 +175,8 @@ const PRODUCTS = [
     code: "RS",
     title: "RefactorScout",
     accent: "#70dfbd",
-    state: "online",
+    status: "good",
+    state: "good",
     stateTone: "green",
     position: { left: "32%", top: "50%" },
     health: "local scan ready",
@@ -179,24 +191,25 @@ const PRODUCTS = [
     code: "RSY",
     title: "ReleaseSentry",
     accent: "#fff08a",
-    state: "online",
-    stateTone: "green",
+    status: "down",
+    state: "down",
+    stateTone: "red",
     position: { left: "68%", top: "50%" },
-    health: "ship evidence ready",
+    health: "health endpoint unreachable",
     url: "localhost:5201",
-    run: "release gate watch",
-    drift: "none",
+    run: "release gate offline",
+    drift: "service down",
     contract: "health, capabilities, runs",
     handoff: "MergeKeeper evidence consumed",
   },
 ];
 
 const METRICS = [
-  { label: "Products online", value: "9", tone: "ok", sub: "2 watch, 1 setup" },
-  { label: "Launch state", value: "Ready", tone: "sig", sub: "launcher linked" },
-  { label: "Contract drift", value: "2", tone: "warn", sub: "run detail gaps" },
-  { label: "Active runs", value: "4", tone: "sig", sub: "all read-only" },
-  { label: "Token gaps", value: "1", tone: "warn", sub: "Actions history" },
+  { label: "Green blips", value: "7", tone: "ok", sub: "healthy products" },
+  { label: "Yellow blips", value: "2", tone: "warn", sub: "needs attention" },
+  { label: "Red blips", value: "1", tone: "hot", sub: "down product" },
+  { label: "Not started", value: "1", tone: "sig", sub: "hidden from radar" },
+  { label: "Launcher", value: "Ready", tone: "sig", sub: "can fill gaps" },
 ];
 
 const RAIL_SECTIONS = [
@@ -223,27 +236,28 @@ const RAIL_STATS = {
   title: "Control plane",
   items: [
     { label: "Primary link", value: "launcher:8210" },
-    { label: "Suite", value: "11/12", large: true, tone: "warn" },
+    { label: "Radar", value: "10/11", large: true, tone: "warn" },
     { label: "Mode", value: "operator gated" },
   ],
 };
 
 const ATTENTION = [
-  { title: "FlakeSting needs Actions history token", meta: "CI trust signal is partial until workflow reads are available", label: "setup", tone: "amber" },
+  { title: "ReleaseSentry is down", meta: "Red radar blip means health endpoint is currently unreachable", label: "down", tone: "red" },
+  { title: "FlakeSting has not started", meta: "Not-started products stay off the radar until launcher brings them online", label: "hidden", tone: "signal" },
   { title: "RepoReaper remains guarded", meta: "write actions require TrustGate and dry-run confirmation", label: "guarded", tone: "red" },
-  { title: "Two products lack run detail", meta: "HiveCore should expose this as contract drift, not hide it", label: "drift", tone: "amber" },
+  { title: "VulnTriage needs run detail", meta: "Yellow radar blip means the product is reachable but has contract drift", label: "issue", tone: "amber" },
 ];
 
 const LAUNCH_QUEUE = [
-  { rank: "01", title: "Start missing local stack pieces", meta: "launcher can fill gaps without touching product code", tone: "green", label: "ready" },
+  { rank: "01", title: "Start FlakeSting", meta: "not-started products do not appear on the radar until launched", tone: "signal", label: "start" },
   { rank: "02", title: "Open SignalHive reconnaissance", meta: "first handoff into TrustGate and RepoMemory", tone: "signal", label: "open" },
-  { rank: "03", title: "Hold RepoReaper write actions", meta: "guarded until policy and memory are current", tone: "amber", label: "hold" },
-  { rank: "04", title: "Refresh contract scan", meta: "poll health, startup, capabilities, runs, detail", tone: "", label: "poll" },
+  { rank: "03", title: "Restart ReleaseSentry", meta: "red radar blip should clear after health endpoint responds", tone: "red", label: "down" },
+  { rank: "04", title: "Hold RepoReaper write actions", meta: "yellow until policy and memory handoff clears", tone: "amber", label: "hold" },
 ];
 
 const CONTRACT_FLAGS = [
   { title: "Run detail", meta: "RepoReaper and VulnTriage need /runs/:id detail parity", label: "2 gaps", tone: "amber" },
-  { title: "Capabilities", meta: "FlakeSting should publish supported read scopes", label: "1 gap", tone: "amber" },
+  { title: "Service health", meta: "ReleaseSentry is visible as red until health recovers", label: "down", tone: "red" },
   { title: "Startup checks", meta: "All visible v2 products report expected setup state", label: "clear", tone: "green" },
 ];
 
@@ -257,11 +271,21 @@ function toneClass(tone) {
   return tone ? ` ${tone}` : "";
 }
 
-function SuiteConstellation({ selectedProduct, onSelect }) {
+function SuiteProductRadar({ selectedProduct, onSelect }) {
+  const visibleProducts = PRODUCTS.filter((product) => product.started !== false);
+  const activeProduct = selectedProduct?.started === false ? visibleProducts[0] : selectedProduct;
+
   return (
-    <Panel eyebrow="Control" title="Suite constellation" action={<span className="chip signal">12 nodes</span>}>
+    <Panel eyebrow="Control" title="Product status radar" action={<span className="chip signal">10 blips</span>}>
       <div className="constellation-shell">
-        <div className="suite-orbit" aria-label="PatchHive suite control constellation">
+        <div className="suite-orbit hive-radar-screen" aria-label="PatchHive product status radar">
+          <span className="radar-bearing n">000</span>
+          <span className="radar-bearing e">090</span>
+          <span className="radar-bearing s">180</span>
+          <span className="radar-bearing w">270</span>
+          <span className="radar-density" />
+          <span className="radar-sweep" />
+          <span className="radar-line" />
           <span className="orbit-ring ring-a" />
           <span className="orbit-ring ring-b" />
           <span className="orbit-axis axis-a" />
@@ -274,47 +298,63 @@ function SuiteConstellation({ selectedProduct, onSelect }) {
           >
             HC
           </button>
-          {PRODUCTS.map((product) => (
+          {visibleProducts.map((product) => (
             <button
-              className={`hive-node${selectedProduct?.slug === product.slug ? " active" : ""}`}
+              className={`hive-node hive-product-blip ${product.stateTone}${product.recentlyLive ? " joining" : ""}${activeProduct?.slug === product.slug ? " active" : ""}`}
+              data-code={product.code}
               data-state={product.state}
               key={product.slug}
               onClick={() => onSelect(product)}
-              style={{ ...product.position, "--node-color": product.accent }}
+              style={{ ...product.position }}
               type="button"
             >
-              <span>{product.code}</span>
+              <span>{product.title}</span>
             </button>
           ))}
+        </div>
+        <div className="status-key" aria-label="Radar status legend">
+          <span><i className="green" /> good</span>
+          <span><i className="amber" /> issues</span>
+          <span><i className="red" /> down</span>
+          <span><i /> not started: hidden</span>
         </div>
         <div className="constellation-readout">
           <div className="readout-card">
             <span className="label">Selected system</span>
-            <span className="readout-value">{selectedProduct?.title || "HiveCore"}</span>
-            <span className="micro">{selectedProduct?.health || "suite lifecycle and contract drift control"}</span>
+            <span className="readout-value">{activeProduct?.title || "HiveCore"}</span>
+            <span className="micro">{activeProduct?.health || "suite lifecycle and contract drift control"}</span>
           </div>
           <div className="readout-card">
             <span className="label">State</span>
-            <span className={`readout-value${toneClass(selectedProduct?.stateTone || "sig")}`}>
-              {selectedProduct?.state || "coordinating"}
+            <span className={`readout-value${toneClass(activeProduct?.stateTone || "sig")}`}>
+              {activeProduct?.state || "coordinating"}
             </span>
-            <span className="micro">{selectedProduct?.url || "localhost control plane"}</span>
+            <span className="micro">{activeProduct?.url || "localhost control plane"}</span>
           </div>
           <div className="readout-card selected-scan">
-            <span className="label">Control detail</span>
-            <span className="readout-value">{selectedProduct?.run || "suite board poll"}</span>
+            <div className="readout-headline">
+              <div>
+                <span className="label">Product detail</span>
+                <span className="readout-value">{activeProduct?.run || "suite board poll"}</span>
+              </div>
+              {activeProduct && (
+                <a className="btn" href={`http://${activeProduct.url}`} rel="noreferrer" target="_blank">
+                  Open UI
+                </a>
+              )}
+            </div>
             <div className="selected-grid">
               <div className="selected-stat">
                 <span className="micro">Contract</span>
-                <strong>{selectedProduct?.contract || "all products"}</strong>
+                <strong>{activeProduct?.contract || "all products"}</strong>
               </div>
               <div className="selected-stat">
                 <span className="micro">Drift</span>
-                <strong>{selectedProduct?.drift || "2 flags"}</strong>
+                <strong>{activeProduct?.drift || "2 flags"}</strong>
               </div>
               <div className="selected-stat">
                 <span className="micro">Handoff</span>
-                <strong>{selectedProduct?.handoff || "pipeline visible"}</strong>
+                <strong>{activeProduct?.handoff || "pipeline visible"}</strong>
               </div>
               <div className="selected-stat">
                 <span className="micro">Owner</span>
@@ -322,9 +362,9 @@ function SuiteConstellation({ selectedProduct, onSelect }) {
               </div>
             </div>
             <span className="micro">
-              {selectedProduct
-                ? `${selectedProduct.title} reports into HiveCore without losing its standalone product boundary.`
-                : "HiveCore shows where the suite is healthy, where it drifts, and which products are ready for handoff."}
+              {activeProduct
+                ? `${activeProduct.title} reports into HiveCore without losing its standalone product boundary.`
+                : "HiveCore shows only started products on radar; warning blips pulse until the issue clears."}
             </span>
           </div>
         </div>
@@ -386,7 +426,7 @@ function SidePanels() {
 }
 
 function SuiteBoard() {
-  const [selectedProduct, setSelectedProduct] = useState(PRODUCTS[0]);
+  const [selectedProduct, setSelectedProduct] = useState(() => PRODUCTS.find((product) => product.started !== false));
 
   return (
     <>
@@ -408,7 +448,7 @@ function SuiteBoard() {
           </div>
           <MetricBand metrics={METRICS} />
           <div className="atlas-layout suite-four-layout">
-            <SuiteConstellation selectedProduct={selectedProduct} onSelect={setSelectedProduct} />
+            <SuiteProductRadar selectedProduct={selectedProduct} onSelect={setSelectedProduct} />
             <LaunchQueuePanel />
           </div>
         </main>
