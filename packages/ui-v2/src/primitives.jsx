@@ -287,38 +287,55 @@ export function SuiteRadar({
 
   return (
     <div className="signal-map" data-window={windowDays}>
-      <div className="radar-screen" aria-label={ariaLabel}>
-        <span className="radar-bearing n">000</span>
-        <span className="radar-bearing e">090</span>
-        <span className="radar-bearing s">180</span>
-        <span className="radar-bearing w">270</span>
-        <span className="range-label r1">{activeWindow.outer}</span>
-        <span className="range-label r2">{activeWindow.mid}</span>
-        <span className="range-label r3">{activeWindow.inner}</span>
-        <span className="radar-density" />
-        <span className="radar-sweep" />
-        <span className="radar-line" />
-        <span className="radar-trace trace-a" />
-        <span className="radar-trace trace-b" />
-        <span className="radar-trace trace-c" />
-        {visibleItems.map((item, index) => (
-          <button
-            aria-label={`Show ${item.title || item.id}`}
-            className={`node ${item.tone || ""}${selectedItem.id === item.id ? " active" : ""}`}
-            data-label={item.label || item.id}
-            key={item.id}
-            onClick={() => setSelectedItem(item)}
-            style={{ ...item.position, "--ping-delay": item.pingDelay || `${index * 0.28}s` }}
-            type="button"
-          />
-        ))}
-        {visibleEchoes.map((echo, index) => (
-          <span
-            className={`echo ${echo.tone || ""}`}
-            key={`${echo.position.left}-${echo.position.top}-${index}`}
-            style={echo.position}
-          />
-        ))}
+      <div className="radar-frame">
+        <div className="range-panel">
+          <span className="chip signal">{activeWindow.count || `${visibleItems.length} ${signalLabel}`}</span>
+          <div className="range-switch" aria-label="Radar history window">
+            {windowKeys.map((days) => (
+              <button
+                className={`range-btn${windowDays === days ? " active" : ""}`}
+                key={days}
+                onClick={() => setWindowDays(days)}
+                type="button"
+              >
+                {days}d
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="radar-screen" aria-label={ariaLabel}>
+          <span className="radar-bearing n">000</span>
+          <span className="radar-bearing e">090</span>
+          <span className="radar-bearing s">180</span>
+          <span className="radar-bearing w">270</span>
+          <span className="range-label r1">{activeWindow.outer}</span>
+          <span className="range-label r2">{activeWindow.mid}</span>
+          <span className="range-label r3">{activeWindow.inner}</span>
+          <span className="radar-density" />
+          <span className="radar-sweep" />
+          <span className="radar-line" />
+          <span className="radar-trace trace-a" />
+          <span className="radar-trace trace-b" />
+          <span className="radar-trace trace-c" />
+          {visibleItems.map((item, index) => (
+            <button
+              aria-label={`Show ${item.title || item.id}`}
+              className={`node ${item.tone || ""}${selectedItem.id === item.id ? " active" : ""}`}
+              data-label={item.label || item.id}
+              key={item.id}
+              onClick={() => setSelectedItem(item)}
+              style={{ ...item.position, "--ping-delay": item.pingDelay || `${index * 0.28}s` }}
+              type="button"
+            />
+          ))}
+          {visibleEchoes.map((echo, index) => (
+            <span
+              className={`echo ${echo.tone || ""}`}
+              key={`${echo.position.left}-${echo.position.top}-${index}`}
+              style={echo.position}
+            />
+          ))}
+        </div>
       </div>
 
       <div className="radar-readout">
@@ -354,21 +371,6 @@ export function SuiteRadar({
             ))}
           </div>
         )}
-      </div>
-      <div className="range-panel">
-        <span className="chip signal">{activeWindow.count || `${visibleItems.length} ${signalLabel}`}</span>
-        <div className="range-switch" aria-label="Radar history window">
-          {windowKeys.map((days) => (
-            <button
-              className={`range-btn${windowDays === days ? " active" : ""}`}
-              key={days}
-              onClick={() => setWindowDays(days)}
-              type="button"
-            >
-              {days}d
-            </button>
-          ))}
-        </div>
       </div>
     </div>
   );
