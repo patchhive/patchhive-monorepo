@@ -287,22 +287,22 @@ export function SuiteRadar({
 
   return (
     <div className="signal-map" data-window={windowDays}>
-      <div className="radar-frame">
-        <div className="range-panel">
-          <span className="chip signal">{activeWindow.count || `${visibleItems.length} ${signalLabel}`}</span>
-          <div className="range-switch" aria-label="Radar history window">
-            {windowKeys.map((days) => (
-              <button
-                className={`range-btn${windowDays === days ? " active" : ""}`}
-                key={days}
-                onClick={() => setWindowDays(days)}
-                type="button"
-              >
-                {days}d
-              </button>
-            ))}
-          </div>
+      <div className="range-panel">
+        <span className="chip signal">{activeWindow.count || `${visibleItems.length} ${signalLabel}`}</span>
+        <div className="range-switch" aria-label="Radar history window">
+          {windowKeys.map((days) => (
+            <button
+              className={`range-btn${windowDays === days ? " active" : ""}`}
+              key={days}
+              onClick={() => setWindowDays(days)}
+              type="button"
+            >
+              {days}d
+            </button>
+          ))}
         </div>
+      </div>
+      <div className="radar-frame">
         <div className="radar-screen" aria-label={ariaLabel}>
           <span className="radar-bearing n">000</span>
           <span className="radar-bearing e">090</span>

@@ -339,13 +339,13 @@ function SuiteProductRadar({ selectedProduct, onSelect }) {
   return (
     <Panel eyebrow="Control" title="Product status radar" action={<span className="chip signal">10 blips</span>}>
       <div className="constellation-shell">
+        <div className="status-key" aria-label="Radar status legend">
+          <span><i className="green" /> good</span>
+          <span><i className="amber" /> issues</span>
+          <span><i className="red" /> down</span>
+          <span><i /> not started: hidden</span>
+        </div>
         <div className="suite-orbit hive-radar-frame">
-          <div className="status-key" aria-label="Radar status legend">
-            <span><i className="green" /> good</span>
-            <span><i className="amber" /> issues</span>
-            <span><i className="red" /> down</span>
-            <span><i /> not started: hidden</span>
-          </div>
           <div className="radar-screen hive-radar-disc" aria-label="PatchHive product status radar">
             <span className="radar-bearing n">000</span>
             <span className="radar-bearing e">090</span>

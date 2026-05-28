@@ -596,8 +596,7 @@ h1 {
   position: relative;
   min-height: clamp(380px, 38vw, 550px);
   display: grid;
-  align-content: start;
-  gap: 12px;
+  place-items: center;
   overflow: hidden;
   border: 1px solid var(--line);
   padding: 14px;
@@ -1005,7 +1004,9 @@ h1 {
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  justify-self: stretch;
   gap: 8px;
+  width: 100%;
   position: relative;
   z-index: 6;
 }
@@ -1455,15 +1456,14 @@ h1 {
 
 .hive-radar-frame {
   display: grid;
-  align-content: start;
-  justify-items: center;
-  gap: 14px;
+  place-items: center;
   height: auto;
   min-height: clamp(390px, 37vw, 520px);
   padding: 14px;
 }
 
 .hive-radar-disc {
+  justify-self: center;
   width: min(100%, 420px);
 }
 
@@ -1709,9 +1709,10 @@ h1 {
 .status-key {
   display: flex;
   justify-content: flex-end;
+  justify-self: stretch;
   flex-wrap: wrap;
   gap: 8px;
-  order: -1;
+  width: 100%;
 }
 
 .status-key span {
