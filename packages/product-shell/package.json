@@ -9,7 +9,8 @@
     "README.md"
   ],
   "exports": {
-    ".": "./src/index.js"
+    ".": "./src/index.js",
+    "./auth": "./src/auth.js"
   },
   "repository": {
     "type": "git",
