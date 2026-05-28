@@ -980,16 +980,23 @@ function WatchFloor({
   authConfigured,
   authStatus,
   checks,
+  generatedServiceToken,
   health,
   onAddRepoControl,
+  onCopyServiceToken,
+  onGenerateServiceToken,
   onRefresh,
   onRemoveRepoControl,
+  onRotateServiceToken,
   onSignOut,
   repoControl,
   repoLists,
+  serviceTokenBusy,
   setRepoControl,
 }) {
   const grouped = groupRepoLists(repoLists);
+  const serviceToken = authStatus?.service_auth_token;
+  const serviceScopes = authStatus?.service_auth_scopes || serviceToken?.scopes || [];
   return (
     <>
       <SuiteTopline cells={[
@@ -1081,6 +1088,59 @@ function WatchFloor({
                   <div><span className="label">Path</span><strong>{health?.db_path || "unknown"}</strong></div>
                   <div><span className="label">Service auth</span><strong>{authStatus?.service_auth_configured ? "paired" : "not paired"}</strong></div>
                 </div>
+                <div className="mini-panel">
+                  <div className="mini-head">
+                    <span className="label">HiveCore service token</span>
+                    <span className={`chip ${authStatus?.service_auth_configured ? "green" : "amber"}`}>
+                      {authStatus?.service_auth_configured ? "paired" : "needs pairing"}
+                    </span>
+                  </div>
+                  <div className="report-grid">
+                    <div><span className="label">Name</span><strong>{serviceToken?.name || "hivecore"}</strong></div>
+                    <div><span className="label">Fingerprint</span><strong>{serviceToken?.fingerprint || "none"}</strong></div>
+                    <div><span className="label">Scoped</span><strong>{authStatus?.service_auth_scoped ? "yes" : "no"}</strong></div>
+                    <div><span className="label">Expires</span><strong>{serviceToken?.expires_at ? formatDate(serviceToken.expires_at) : "none"}</strong></div>
+                  </div>
+                  <div className="chip-row">
+                    {(serviceScopes.length ? serviceScopes : ["runs:read", "actions:dispatch"]).map((scope) => (
+                      <span className="chip signal" key={scope}>{scope}</span>
+                    ))}
+                    {authStatus?.service_auth_legacy && <span className="chip amber">legacy token</span>}
+                    {authStatus?.service_auth_expired && <span className="chip red">expired</span>}
+                    {authStatus?.service_auth_expires_soon && <span className="chip amber">expires soon</span>}
+                  </div>
+                  {generatedServiceToken && (
+                    <StatusBanner tone="green">
+                      New service token: <span className="break-all">{generatedServiceToken}</span>
+                    </StatusBanner>
+                  )}
+                  <div className="actions">
+                    <button
+                      className="btn primary"
+                      disabled={serviceTokenBusy || authStatus?.service_auth_configured}
+                      onClick={onGenerateServiceToken}
+                      type="button"
+                    >
+                      {serviceTokenBusy ? "Working" : "Generate token"}
+                    </button>
+                    <button
+                      className="btn"
+                      disabled={serviceTokenBusy || !authStatus?.service_auth_configured}
+                      onClick={onRotateServiceToken}
+                      type="button"
+                    >
+                      {serviceTokenBusy ? "Working" : "Rotate token"}
+                    </button>
+                    <button
+                      className="btn"
+                      disabled={!generatedServiceToken}
+                      onClick={onCopyServiceToken}
+                      type="button"
+                    >
+                      Copy token
+                    </button>
+                  </div>
+                </div>
                 <div className="repo-list">
                   {checks.length === 0 ? (
                     <EmptyV2 title="No startup checks returned" />
@@ -1121,6 +1181,8 @@ export default function App() {
   const [loadingScan, setLoadingScan] = useState(false);
   const [error, setError] = useState("");
   const [actionMessage, setActionMessage] = useState(null);
+  const [generatedServiceToken, setGeneratedServiceToken] = useState("");
+  const [serviceTokenBusy, setServiceTokenBusy] = useState(false);
   const [presetName, setPresetName] = useState("");
   const [selectedPresetName, setSelectedPresetName] = useState("");
   const [scheduleName, setScheduleName] = useState("");
@@ -1372,6 +1434,41 @@ export default function App() {
     }
   };
 
+  const serviceTokenRequest = async (path, successText) => {
+    setServiceTokenBusy(true);
+    setError("");
+    setActionMessage(null);
+    try {
+      const data = await fetchJson(fetch_, `${API}${path}`, { method: "POST" });
+      const token = data.service_token || "";
+      setGeneratedServiceToken(token);
+      await refreshCollections();
+      setActionMessage({ tone: "green", text: successText });
+    } catch (err) {
+      setError(err.message || "Could not update HiveCore service token.");
+    } finally {
+      setServiceTokenBusy(false);
+    }
+  };
+
+  const generateServiceToken = () => (
+    serviceTokenRequest("/auth/generate-service-token", "HiveCore service token generated.")
+  );
+
+  const rotateServiceToken = () => (
+    serviceTokenRequest("/auth/rotate-service-token", "HiveCore service token rotated.")
+  );
+
+  const copyServiceToken = async () => {
+    if (!generatedServiceToken) return;
+    try {
+      await navigator.clipboard.writeText(generatedServiceToken);
+      setActionMessage({ tone: "green", text: "Service token copied." });
+    } catch {
+      setError("Could not copy service token.");
+    }
+  };
+
   if (!ready) {
     return (
       <AuthScreen
@@ -1453,13 +1550,18 @@ export default function App() {
           authConfigured={Boolean(authStatus?.auth_configured || health?.auth_enabled)}
           authStatus={authStatus}
           checks={checks}
+          generatedServiceToken={generatedServiceToken}
           health={health}
           onAddRepoControl={addRepoControl}
+          onCopyServiceToken={copyServiceToken}
+          onGenerateServiceToken={generateServiceToken}
           onRefresh={() => refreshCollections()}
           onRemoveRepoControl={removeRepoControl}
+          onRotateServiceToken={rotateServiceToken}
           onSignOut={auth.logout}
           repoControl={repoControl}
           repoLists={repoLists}
+          serviceTokenBusy={serviceTokenBusy}
           setRepoControl={setRepoControl}
         />
       )}
