@@ -321,6 +321,7 @@ function AuthScreen({
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [generatedKey, setGeneratedKey] = useState("");
+  const [copiedKey, setCopiedKey] = useState(false);
 
   const submit = async (event) => {
     event.preventDefault();
@@ -348,13 +349,24 @@ function AuthScreen({
     setBusy(true);
     setError("");
     try {
-      const nextKey = await generateKey();
+      const nextKey = await generateKey({ autoLogin: false });
       setGeneratedKey(nextKey);
       setKey(nextKey);
+      setCopiedKey(false);
     } catch (err) {
       setError(err.message || "Could not generate an API key.");
     } finally {
       setBusy(false);
+    }
+  };
+
+  const copyGeneratedKey = async () => {
+    if (!generatedKey) return;
+    try {
+      await navigator.clipboard.writeText(generatedKey);
+      setCopiedKey(true);
+    } catch {
+      setError("Could not copy generated API key.");
     }
   };
 
@@ -387,12 +399,18 @@ function AuthScreen({
         {(authError || error) && <StatusBanner tone="red">{error || authError}</StatusBanner>}
         {generatedKey && (
           <StatusBanner tone="green">
-            Generated key for this browser session: <span className="break-all">{generatedKey}</span>
+            Generated key for this browser session. Copy it now, then press Enter: <span className="break-all">{generatedKey}</span>
           </StatusBanner>
         )}
+        {copiedKey && <StatusBanner tone="signal">API key copied.</StatusBanner>}
         <button className="btn primary" disabled={busy || !key.trim()} type="submit">
           {busy ? "Authenticating" : "Enter"}
         </button>
+        {generatedKey && (
+          <button className="btn" disabled={busy} onClick={copyGeneratedKey} type="button">
+            Copy generated key
+          </button>
+        )}
         {bootstrapRequired && (
           <button className="btn" disabled={busy} onClick={generate} type="button">
             {busy ? "Generating" : "Generate local API key"}
@@ -977,9 +995,11 @@ function LedgerBoard({
 }
 
 function WatchFloor({
+  actionMessage,
   authConfigured,
   authStatus,
   checks,
+  error,
   generatedServiceToken,
   health,
   onAddRepoControl,
@@ -1034,6 +1054,8 @@ function WatchFloor({
               {authConfigured && <button className="btn" onClick={onSignOut} type="button">Sign out</button>}
             </div>
           </div>
+          {error && <StatusBanner tone="red">{error}</StatusBanner>}
+          {actionMessage && <StatusBanner tone={actionMessage.tone}>{actionMessage.text}</StatusBanner>}
           <div className="atlas-layout">
             <Panel eyebrow="Discovery" title="Repo controls">
               <div className="panelbody control-stack">
@@ -1547,9 +1569,11 @@ export default function App() {
       )}
       {activeTab === "floor" && (
         <WatchFloor
+          actionMessage={actionMessage}
           authConfigured={Boolean(authStatus?.auth_configured || health?.auth_enabled)}
           authStatus={authStatus}
           checks={checks}
+          error={error}
           generatedServiceToken={generatedServiceToken}
           health={health}
           onAddRepoControl={addRepoControl}

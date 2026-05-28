@@ -131,13 +131,15 @@ export function useApiKeyAuth({ apiBase, storageKey }) {
     setAuthError("");
   };
 
-  const generateKey = async () => {
+  const generateKey = async ({ autoLogin = true } = {}) => {
     const res = await fetch(`${apiBase}/auth/generate-key`, { method: "POST" });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.api_key) {
       throw new Error(data.error || "Could not generate an API key.");
     }
-    login(data.api_key);
+    if (autoLogin) {
+      login(data.api_key);
+    }
     return data.api_key;
   };
 
