@@ -4,6 +4,15 @@ import { fileURLToPath, URL } from "node:url";
 
 export default defineConfig({
   plugins: [react()],
+  server: {
+    proxy: {
+      "/api": {
+        target: "http://127.0.0.1:8040",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, ""),
+      },
+    },
+  },
   resolve: {
     alias: [
       {
@@ -13,6 +22,10 @@ export default defineConfig({
       {
         find: "@patchhivehq/ui-v2",
         replacement: fileURLToPath(new URL("../../../packages/ui-v2/src/index.js", import.meta.url)),
+      },
+      {
+        find: "@patchhivehq/product-shell/auth",
+        replacement: fileURLToPath(new URL("../../../packages/product-shell/src/auth.js", import.meta.url)),
       },
     ],
   },
