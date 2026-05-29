@@ -27,7 +27,7 @@ docker compose up --build
 ```
 
 Frontend: `http://localhost:5180`
-Frontend v2 prototype: `http://localhost:5199`
+Frontend v2 prototype: `http://localhost:5203`
 Backend: `http://localhost:8070`
 
 ### Split Backend and Frontend
