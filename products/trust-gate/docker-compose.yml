@@ -27,7 +27,9 @@ services:
     restart: unless-stopped
 
   frontend-v2:
-    build: ./frontend-v2
+    build:
+      context: ../..
+      dockerfile: products/trust-gate/frontend-v2/Dockerfile
     pull_policy: never
     ports:
       - "5193:8080"
