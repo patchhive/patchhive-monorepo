@@ -1,12 +1,16 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { createApiFetcher, useApiKeyAuth, useProductRuntime } from "@patchhivehq/product-shell/auth";
 import {
   DeckBar,
   MetricBand,
   Panel,
+  ProductV2AuthGate,
+  ProductV2Shell,
   ProductRail,
   SuiteRadar,
   SuiteTopline,
 } from "@patchhivehq/ui-v2";
+import { API } from "./config.js";
 
 const TABS = [
   { id: "gate", label: "Release gate" },
@@ -297,9 +301,26 @@ function Placeholder({ title, body }) {
 
 export default function App() {
   const [activeTab, setActiveTab] = useState("gate");
+  const auth = useApiKeyAuth({ apiBase: API, storageKey: "release-sentry_api_key" });
+  const fetch_ = useMemo(() => createApiFetcher(auth.apiKey), [auth.apiKey]);
+  const ready = auth.checked && !auth.needsAuth;
+  const runtime = useProductRuntime({ apiBase: API, fetcher: fetch_, ready });
+  const authConfigured = Boolean(runtime.authStatus?.auth_configured || runtime.health?.auth_enabled);
+
+  if (!ready) {
+    return (
+      <ProductV2AuthGate
+        apiBase={API}
+        auth={auth}
+        keyPrefix="release-sentry-"
+        productKey="release-sentry"
+        productName="ReleaseSentry"
+      />
+    );
+  }
 
   return (
-    <>
+    <ProductV2Shell authConfigured={authConfigured} runtime={runtime}>
       <DeckBar
         activeTab={activeTab}
         brandName="ReleaseSentry frontend v2"
@@ -316,6 +337,6 @@ export default function App() {
           body="This becomes the shared v2 GitHub release, Actions, issue-label, changelog, and backend readiness surface."
         />
       )}
-    </>
+    </ProductV2Shell>
   );
 }
