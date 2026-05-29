@@ -28,7 +28,9 @@ services:
 
   frontend-v2:
     image: "${PATCHHIVE_FLAKE_STING_FRONTEND_V2_IMAGE:-ghcr.io/patchhive/flakesting-frontend-v2}:${PATCHHIVE_IMAGE_TAG:-main}"
-    build: ./frontend-v2
+    build:
+      context: ../..
+      dockerfile: products/flake-sting/frontend-v2/Dockerfile
     pull_policy: "${PATCHHIVE_IMAGE_PULL_POLICY:-missing}"
     ports:
       - "5198:8080"
