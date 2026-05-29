@@ -820,7 +820,8 @@ function LaunchStack({
           {setupProducts.map((item) => {
             const runtime = item.runtime;
             const canProvision = runtime.slug !== "hive-core" && runtime.enabled !== false;
-            const needsToken = !runtime.service_token_configured || runtime.legacy_api_key_configured || item.auth_status?.service_auth_legacy || item.auth_status?.service_auth_expired;
+            const staleToken = runtime.service_token_configured && runtime.health?.runs_ok === false && Boolean(runtime.health?.runs_error);
+            const needsToken = !runtime.service_token_configured || runtime.legacy_api_key_configured || item.auth_status?.service_auth_legacy || item.auth_status?.service_auth_expired || staleToken;
             return (
             <div className="ledger-row" key={runtime.slug}>
               <div className="rank">{runtime.slug === "hive-core" ? "HC" : runtime.icon || runtime.slug.slice(0, 2).toUpperCase()}</div>
@@ -829,6 +830,7 @@ function LaunchStack({
                 <div className="feed-meta">
                   {runtime.api_url} - {runtime.service_token_configured ? "service token saved" : "service token missing"}
                 </div>
+                {staleToken && <div className="feed-meta hot">saved token cannot read runs; rotate to repair</div>}
                 {item.auth_status_error && <div className="feed-meta hot">{item.auth_status_error}</div>}
               </div>
               <span className={`chip ${productTone(runtime.status)}`}>{runtime.status}</span>

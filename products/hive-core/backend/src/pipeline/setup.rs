@@ -14,7 +14,7 @@ use crate::{
     models::{
         now_rfc3339, ok, FirstStackSetupResponse, SetupFleetLaunchJob, SetupFleetLaunchStep,
         SetupLauncherProductStatus, SetupLauncherStatus, SetupProductCredentialRequirements,
-        SetupProductLogsResponse, SetupProductStatus,
+        SetupProductLogsResponse, SetupProductStatus, ProductRuntimeItem,
     },
     state::{product_catalog, AppState},
 };
@@ -485,7 +485,9 @@ pub(super) async fn build_first_stack_response(
                 Ok(status) => (Some(status), String::new()),
                 Err(message) => (None, message),
             };
-        let needs_pair = !runtime.service_token_configured || runtime.legacy_api_key_configured;
+        let needs_pair = !runtime.service_token_configured
+            || runtime.legacy_api_key_configured
+            || stored_service_token_cannot_read_runs(&runtime);
         let pairing_ready = needs_pair
             && runtime.slug != "hive-core"
             && runtime.enabled
@@ -859,13 +861,25 @@ async fn run_fleet_launch_job(
 }
 
 fn launcher_product_running(
-    runtime: &crate::models::ProductRuntimeItem,
+    runtime: &ProductRuntimeItem,
     launcher: &SetupLauncherProductStatus,
 ) -> bool {
     matches!(runtime.status.as_str(), "online" | "degraded")
         || launcher.compose_running
         || launcher.api_port_open
         || launcher.frontend_port_open
+}
+
+fn stored_service_token_cannot_read_runs(runtime: &ProductRuntimeItem) -> bool {
+    if !runtime.service_token_configured || runtime.legacy_api_key_configured || runtime.health.runs_ok {
+        return false;
+    }
+
+    let error = runtime.health.runs_error.to_ascii_lowercase();
+    error.contains("401")
+        || error.contains("403")
+        || error.contains("unauthorized")
+        || error.contains("forbidden")
 }
 
 fn launch_phase_for_product(launcher: &SetupLauncherProductStatus) -> &'static str {
@@ -1386,11 +1400,13 @@ async fn auto_pair_products(
             }
         };
 
+        let stale_stored_token = stored_service_token_cannot_read_runs(runtime);
         let needs_pair = !runtime.service_token_configured
             || runtime.legacy_api_key_configured
             || !auth_status.service_auth_enabled
             || auth_status.service_auth_legacy
-            || auth_status.service_auth_expired;
+            || auth_status.service_auth_expired
+            || stale_stored_token;
 
         if !needs_pair {
             actions.push(format!(
@@ -1398,6 +1414,13 @@ async fn auto_pair_products(
                 definition.title
             ));
             continue;
+        }
+
+        if stale_stored_token {
+            actions.push(format!(
+                "HiveCore will rotate {} because the saved service token cannot read /runs.",
+                definition.title
+            ));
         }
 
         if auth_status.auth_enabled && !auth_status.suite_bootstrap_enabled {
