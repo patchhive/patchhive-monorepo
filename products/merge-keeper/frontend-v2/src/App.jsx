@@ -1,12 +1,16 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { createApiFetcher, useApiKeyAuth, useProductRuntime } from "@patchhivehq/product-shell/auth";
 import {
   DeckBar,
   MetricBand,
   Panel,
+  ProductV2AuthGate,
+  ProductV2Shell,
   ProductRail,
   SuiteRadar,
   SuiteTopline,
 } from "@patchhivehq/ui-v2";
+import { API } from "./config.js";
 
 const TABS = [
   { id: "readiness", label: "Readiness" },
@@ -296,9 +300,26 @@ function Placeholder({ title, body }) {
 
 export default function App() {
   const [activeTab, setActiveTab] = useState("readiness");
+  const auth = useApiKeyAuth({ apiBase: API, storageKey: "merge-keeper_api_key" });
+  const fetch_ = useMemo(() => createApiFetcher(auth.apiKey), [auth.apiKey]);
+  const ready = auth.checked && !auth.needsAuth;
+  const runtime = useProductRuntime({ apiBase: API, fetcher: fetch_, ready });
+  const authConfigured = Boolean(runtime.authStatus?.auth_configured || runtime.health?.auth_enabled);
+
+  if (!ready) {
+    return (
+      <ProductV2AuthGate
+        apiBase={API}
+        auth={auth}
+        keyPrefix="merge-keeper-"
+        productKey="merge-keeper"
+        productName="MergeKeeper"
+      />
+    );
+  }
 
   return (
-    <>
+    <ProductV2Shell authConfigured={authConfigured} runtime={runtime}>
       <DeckBar
         activeTab={activeTab}
         brandName="MergeKeeper frontend v2"
@@ -315,6 +336,6 @@ export default function App() {
           body="This becomes the shared v2 GitHub, webhook, and integration readiness surface."
         />
       )}
-    </>
+    </ProductV2Shell>
   );
 }
