@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
 
 const DEFAULT_RADAR_WINDOWS = {
   7: { label: "7 day live pass", outer: "7d", mid: "3d", inner: "24h" },
@@ -93,6 +93,11 @@ const PRODUCT_ACCENTS = {
   },
 };
 
+const ProductV2RuntimeContext = createContext({
+  authConfigured: false,
+  runtime: null,
+});
+
 export function applySuiteAccent(productKey = "signal-hive") {
   if (typeof document === "undefined") {
     return;
@@ -112,6 +117,199 @@ export function applySuiteAccent(productKey = "signal-hive") {
 
 export function toneClass(tone) {
   return tone ? ` ${tone}` : "";
+}
+
+function runtimeTone(status) {
+  if (status === "ok" || status === "online" || status === "ready") {
+    return "ok";
+  }
+  if (status === "error" || status === "down" || status === "blocked") {
+    return "hot";
+  }
+  return "warn";
+}
+
+function formatRuntimeTime(value) {
+  if (!value) {
+    return "";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return String(value);
+  }
+  const seconds = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000));
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 48) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
+function runtimeCells(cells, runtime, authConfigured) {
+  if (!runtime) {
+    return cells;
+  }
+
+  const status = runtime.health?.status;
+  const checkWarnings = (runtime.checks || []).filter((check) => (
+    check.level === "warn" || check.level === "error"
+  )).length;
+  const latestRunAt = runtime.latestRun?.created_at || runtime.latestRun?.updated_at || runtime.latestRun?.completed_at;
+  const latestRunLabel = formatRuntimeTime(latestRunAt);
+
+  return cells.map((cell) => {
+    const label = String(cell.label || "").toLowerCase();
+    if (label === "system" && status) {
+      return { ...cell, tone: runtimeTone(status), value: status };
+    }
+    if (label === "auth") {
+      return { ...cell, tone: authConfigured ? "sig" : "warn", value: authConfigured ? "configured" : "open" };
+    }
+    if (label === "checks" && runtime.checks) {
+      return { ...cell, tone: checkWarnings ? "warn" : "ok", value: checkWarnings ? `${checkWarnings} warnings` : "clear" };
+    }
+    if (label.startsWith("last") && latestRunLabel) {
+      return { ...cell, value: latestRunLabel };
+    }
+    return cell;
+  });
+}
+
+export function ProductV2Shell({ authConfigured = false, children, runtime = null }) {
+  const contextValue = useMemo(() => ({ authConfigured, runtime }), [authConfigured, runtime]);
+  return (
+    <ProductV2RuntimeContext.Provider value={contextValue}>
+      {children}
+    </ProductV2RuntimeContext.Provider>
+  );
+}
+
+export function ProductV2AuthGate({
+  apiBase,
+  auth,
+  keyPrefix = "",
+  productKey = "signal-hive",
+  productName,
+}) {
+  const [key, setKey] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [generatedKey, setGeneratedKey] = useState("");
+  const [copiedKey, setCopiedKey] = useState(false);
+
+  useEffect(() => {
+    applySuiteAccent(productKey);
+  }, [productKey]);
+
+  const submit = async (event) => {
+    event.preventDefault();
+    if (!key.trim()) {
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch(`${apiBase}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ api_key: key.trim() }),
+      });
+      if (!response.ok) {
+        throw new Error("Invalid API key.");
+      }
+      auth.login(key.trim());
+    } catch (err) {
+      setError(err.message || `Cannot reach ${productName}.`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const generate = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const nextKey = await auth.generateKey({ autoLogin: false });
+      setGeneratedKey(nextKey);
+      setKey(nextKey);
+      setCopiedKey(false);
+    } catch (err) {
+      setError(err.message || "Could not generate an API key.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const copyGeneratedKey = async () => {
+    if (!generatedKey) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(generatedKey);
+      setCopiedKey(true);
+    } catch {
+      setError("Could not copy generated API key.");
+    }
+  };
+
+  if (!auth.checked) {
+    return (
+      <div className="auth-shell">
+        <div className="auth-card">
+          <span className="micro">// {productName}</span>
+          <div className="auth-title">Checking session</div>
+          <div className="auth-meter" />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="auth-shell">
+      <form className="auth-card" onSubmit={submit}>
+        <span className="micro">// Operator access</span>
+        <div className="auth-title">{productName} frontend v2</div>
+        <p className="auth-copy">
+          {auth.bootstrapRequired ? "Generate the first local API key or enter an existing one." : `Enter the local ${productName} API key.`}
+        </p>
+        <label className="v2-field">
+          <span>API endpoint</span>
+          <input className="v2-input" readOnly value={apiBase} />
+        </label>
+        <label className="v2-field">
+          <span>API key</span>
+          <input
+            className="v2-input"
+            onChange={(event) => setKey(event.target.value)}
+            placeholder={`${keyPrefix}...`}
+            type="password"
+            value={key}
+          />
+        </label>
+        {(auth.authError || error) && <div className="status-banner red">{error || auth.authError}</div>}
+        {generatedKey && (
+          <div className="status-banner green">
+            Generated key for this browser session. Copy it now, then press Enter: <span className="break-all">{generatedKey}</span>
+          </div>
+        )}
+        {copiedKey && <div className="status-banner signal">API key copied.</div>}
+        <button className="btn primary" disabled={busy || !key.trim()} type="submit">
+          {busy ? "Authenticating" : "Enter"}
+        </button>
+        {generatedKey && (
+          <button className="btn" disabled={busy} onClick={copyGeneratedKey} type="button">
+            Copy generated key
+          </button>
+        )}
+        {auth.bootstrapRequired && (
+          <button className="btn" disabled={busy} onClick={generate} type="button">
+            {busy ? "Generating" : "Generate local API key"}
+          </button>
+        )}
+      </form>
+    </div>
+  );
 }
 
 export function DeckBar({
@@ -154,9 +352,11 @@ export function DeckBar({
 }
 
 export function SuiteTopline({ cells }) {
+  const { authConfigured, runtime } = useContext(ProductV2RuntimeContext);
+  const renderedCells = runtimeCells(cells, runtime, authConfigured);
   return (
     <div className="topline">
-      {cells.map(({ label, value, tone = "" }) => (
+      {renderedCells.map(({ label, value, tone = "" }) => (
         <div className="topcell" key={label}>
           <span className="label">{label}</span>
           <span className={`value${toneClass(tone)}`}>{value}</span>

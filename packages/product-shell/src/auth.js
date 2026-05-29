@@ -154,3 +154,61 @@ export function useApiKeyAuth({ apiBase, storageKey }) {
     generateKey,
   };
 }
+
+async function fetchRuntimeJson(fetcher, url) {
+  const res = await fetcher(url);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.error || data.message || `Request failed: ${res.status}`);
+  }
+  return data;
+}
+
+export function useProductRuntime({ apiBase, fetcher, ready }) {
+  const [runtime, setRuntime] = useState({
+    authStatus: null,
+    capabilities: null,
+    checks: [],
+    error: "",
+    health: null,
+    latestRun: null,
+    loading: false,
+    runs: [],
+  });
+
+  const refresh = useMemo(() => async () => {
+    if (!ready || !fetcher) {
+      return;
+    }
+
+    setRuntime((current) => ({ ...current, error: "", loading: true }));
+    const [health, checks, authStatus, capabilities, runs] = await Promise.allSettled([
+      fetchRuntimeJson(fetcher, `${apiBase}/health`),
+      fetchRuntimeJson(fetcher, `${apiBase}/startup/checks`),
+      fetchRuntimeJson(fetcher, `${apiBase}/auth/status`),
+      fetchRuntimeJson(fetcher, `${apiBase}/capabilities`),
+      fetchRuntimeJson(fetcher, `${apiBase}/runs`),
+    ]);
+
+    const nextRuns = runs.status === "fulfilled" ? runs.value.runs || [] : [];
+    setRuntime({
+      authStatus: authStatus.status === "fulfilled" ? authStatus.value : null,
+      capabilities: capabilities.status === "fulfilled" ? capabilities.value : null,
+      checks: checks.status === "fulfilled" ? checks.value.checks || [] : [],
+      error: health.status === "rejected" ? health.reason?.message || "Could not reach product backend." : "",
+      health: health.status === "fulfilled" ? health.value : null,
+      latestRun: nextRuns[0] || null,
+      loading: false,
+      runs: nextRuns,
+    });
+  }, [apiBase, fetcher, ready]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  return {
+    ...runtime,
+    refresh,
+  };
+}

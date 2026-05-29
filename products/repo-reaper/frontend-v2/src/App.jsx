@@ -1,12 +1,16 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { createApiFetcher, useApiKeyAuth, useProductRuntime } from "@patchhivehq/product-shell/auth";
 import {
   DeckBar,
   MetricBand,
   Panel,
+  ProductV2AuthGate,
+  ProductV2Shell,
   ProductRail,
   SuiteRadar,
   SuiteTopline,
 } from "@patchhivehq/ui-v2";
+import { API } from "./config.js";
 
 const TABS = [
   { id: "mission", label: "Mission deck" },
@@ -311,30 +315,49 @@ function Placeholder({ title, body }) {
 
 export default function App() {
   const [activeTab, setActiveTab] = useState("mission");
+  const auth = useApiKeyAuth({ apiBase: API, storageKey: "repo-reaper_api_key" });
+  const fetch_ = useMemo(() => createApiFetcher(auth.apiKey), [auth.apiKey]);
+  const ready = auth.checked && !auth.needsAuth;
+  const runtime = useProductRuntime({ apiBase: API, fetcher: fetch_, ready });
+  const authConfigured = Boolean(runtime.authStatus?.auth_configured || runtime.health?.auth_enabled);
+
+  if (!ready) {
+    return (
+      <ProductV2AuthGate
+        apiBase={API}
+        auth={auth}
+        keyPrefix="rr-"
+        productKey="repo-reaper"
+        productName="RepoReaper"
+      />
+    );
+  }
 
   return (
     <>
-      <DeckBar
-        activeTab={activeTab}
-        brandName="RepoReaper frontend v2"
-        navLabel="RepoReaper v2 surfaces"
-        onTabChange={setActiveTab}
-        productKey="repo-reaper"
-        tabs={TABS}
-      />
-      {activeTab === "mission" && <MissionDeck />}
-      {activeTab === "dryrun" && (
-        <Placeholder
-          title="Dry Stalk"
-          body="This becomes the shared v2 safe-run surface for inspecting hunt quality before live pull request creation."
+      <ProductV2Shell authConfigured={authConfigured} runtime={runtime}>
+        <DeckBar
+          activeTab={activeTab}
+          brandName="RepoReaper frontend v2"
+          navLabel="RepoReaper v2 surfaces"
+          onTabChange={setActiveTab}
+          productKey="repo-reaper"
+          tabs={TABS}
         />
-      )}
-      {activeTab === "prs" && (
-        <Placeholder
-          title="PR Monitor"
-          body="This becomes the shared v2 outbound contribution history, confidence, and maintainer response surface."
-        />
-      )}
+        {activeTab === "mission" && <MissionDeck />}
+        {activeTab === "dryrun" && (
+          <Placeholder
+            title="Dry Stalk"
+            body="This becomes the shared v2 safe-run surface for inspecting hunt quality before live pull request creation."
+          />
+        )}
+        {activeTab === "prs" && (
+          <Placeholder
+            title="PR Monitor"
+            body="This becomes the shared v2 outbound contribution history, confidence, and maintainer response surface."
+          />
+        )}
+      </ProductV2Shell>
     </>
   );
 }
