@@ -271,9 +271,32 @@ export function SuiteRadar({
     return normalizedItems.find((item) => item.id === requested) || normalizedItems[0];
   });
 
+  const updateRadarUrl = (item, days) => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const nextParams = new URLSearchParams(window.location.search);
+    if (item?.id) {
+      nextParams.set(itemQueryParam, item.id);
+    } else {
+      nextParams.delete(itemQueryParam);
+    }
+    if (days) {
+      nextParams.set("window", String(days));
+    }
+    const query = nextParams.toString();
+    window.history.replaceState(
+      null,
+      "",
+      `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash || ""}`,
+    );
+  };
+
   useEffect(() => {
     if (!selectedItem || selectedItem.minWindow > windowDays) {
-      setSelectedItem(visibleItems[0] || normalizedItems[0]);
+      const nextItem = visibleItems[0] || normalizedItems[0];
+      setSelectedItem(nextItem);
+      updateRadarUrl(nextItem, windowDays);
     }
   }, [normalizedItems, selectedItem, visibleItems, windowDays]);
 
@@ -294,7 +317,14 @@ export function SuiteRadar({
             <button
               className={`range-btn${windowDays === days ? " active" : ""}`}
               key={days}
-              onClick={() => setWindowDays(days)}
+              onClick={() => {
+                const nextItem = selectedItem?.minWindow <= days
+                  ? selectedItem
+                  : normalizedItems.find((item) => item.minWindow <= days) || normalizedItems[0];
+                setWindowDays(days);
+                setSelectedItem(nextItem);
+                updateRadarUrl(nextItem, days);
+              }}
               type="button"
             >
               {days}d
@@ -323,7 +353,10 @@ export function SuiteRadar({
               className={`node ${item.tone || ""}${selectedItem.id === item.id ? " active" : ""}`}
               data-label={item.label || item.id}
               key={item.id}
-              onClick={() => setSelectedItem(item)}
+              onClick={() => {
+                setSelectedItem(item);
+                updateRadarUrl(item, windowDays);
+              }}
               style={{ ...item.position, "--ping-delay": item.pingDelay || `${index * 0.28}s` }}
               type="button"
             />

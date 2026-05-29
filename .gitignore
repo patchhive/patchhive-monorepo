@@ -43,3 +43,4 @@ tmp/
 
 # Nested standalone site checkout
 patchhive-sites/
+.codegraph/
