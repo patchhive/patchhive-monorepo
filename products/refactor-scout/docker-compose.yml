@@ -28,7 +28,9 @@ services:
 
   frontend-v2:
     image: "${PATCHHIVE_REFACTOR_SCOUT_FRONTEND_V2_IMAGE:-patchhive/refactorscout-frontend-v2}:${PATCHHIVE_IMAGE_TAG:-local}"
-    build: ./frontend-v2
+    build:
+      context: ../..
+      dockerfile: products/refactor-scout/frontend-v2/Dockerfile
     pull_policy: "${PATCHHIVE_IMAGE_PULL_POLICY:-missing}"
     ports:
       - "5201:8080"

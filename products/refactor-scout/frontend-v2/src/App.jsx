@@ -1,12 +1,16 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { createApiFetcher, useApiKeyAuth, useProductRuntime } from "@patchhivehq/product-shell/auth";
 import {
   DeckBar,
   MetricBand,
   Panel,
+  ProductV2AuthGate,
+  ProductV2Shell,
   ProductRail,
   SuiteRadar,
   SuiteTopline,
 } from "@patchhivehq/ui-v2";
+import { API } from "./config.js";
 
 const TABS = [
   { id: "scout", label: "Scout" },
@@ -297,9 +301,26 @@ function Placeholder({ title, body }) {
 
 export default function App() {
   const [activeTab, setActiveTab] = useState("scout");
+  const auth = useApiKeyAuth({ apiBase: API, storageKey: "refactor-scout_api_key" });
+  const fetch_ = useMemo(() => createApiFetcher(auth.apiKey), [auth.apiKey]);
+  const ready = auth.checked && !auth.needsAuth;
+  const runtime = useProductRuntime({ apiBase: API, fetcher: fetch_, ready });
+  const authConfigured = Boolean(runtime.authStatus?.auth_configured || runtime.health?.auth_enabled);
+
+  if (!ready) {
+    return (
+      <ProductV2AuthGate
+        apiBase={API}
+        auth={auth}
+        keyPrefix="refactor-scout-"
+        productKey="refactor-scout"
+        productName="RefactorScout"
+      />
+    );
+  }
 
   return (
-    <>
+    <ProductV2Shell authConfigured={authConfigured} runtime={runtime}>
       <DeckBar
         activeTab={activeTab}
         brandName="RefactorScout frontend v2"
@@ -316,6 +337,6 @@ export default function App() {
           body="This becomes the shared v2 local filesystem allowlist, remote scan guardrail, and backend readiness surface."
         />
       )}
-    </>
+    </ProductV2Shell>
   );
 }

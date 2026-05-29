@@ -9,6 +9,7 @@
     "preview": "vite preview --port 4201"
   },
   "dependencies": {
+    "@patchhivehq/product-shell": "file:../../../packages/product-shell",
     "@patchhivehq/ui-v2": "file:../../../packages/ui-v2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
