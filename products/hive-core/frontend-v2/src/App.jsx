@@ -18,7 +18,7 @@ const TABS = [
 ];
 
 const TOPLINE_CELLS = [
-  { label: "HiveCore", value: "Control plane 01", tone: "sig" },
+  { label: "HiveCore", value: "Control plane", tone: "sig" },
   { label: "System", value: "Online", tone: "ok" },
   { label: "Radar blips", value: "10 / 11", tone: "warn" },
   { label: "Launcher", value: "Ready", tone: "sig" },
@@ -284,7 +284,7 @@ const RAIL_SECTIONS = [
     title: "Profiles",
     items: [
       { label: "solo-local", active: true, badge: "on", badgeTone: "green" },
-      { label: "suite-demo", badge: "v2", badgeTone: "signal" },
+      { label: "suite-local", badge: "on", badgeTone: "signal" },
       { label: "autonomy-safe", badge: "dry", badgeTone: "amber" },
     ],
   },
@@ -484,7 +484,7 @@ function AuthScreen({
     <div className="auth-shell">
       <form className="auth-card" onSubmit={submit}>
         <span className="micro">// Control plane access</span>
-        <div className="auth-title">HiveCore frontend v2</div>
+        <div className="auth-title">HiveCore</div>
         <p className="auth-copy">
           {bootstrapRequired ? "Generate the first local API key or enter an existing one." : "Enter the local HiveCore API key."}
         </p>
@@ -798,7 +798,7 @@ function LaunchStack({
   return (
     <HiveTabFrame health={health} products={products} setup={setup}>
       <div>
-        <div className="eyebrow">// HiveCore v2 launch stack</div>
+        <div className="eyebrow">// HiveCore launch stack</div>
         <h1>Launch Stack</h1>
         <p className="subline">Local stack pieces, launcher authority, and guarded action posture.</p>
       </div>
@@ -904,7 +904,7 @@ function DefaultsSurface({ health, products, setup }) {
   return (
     <HiveTabFrame health={health} products={products} setup={setup}>
       <div>
-        <div className="eyebrow">// HiveCore v2 shared defaults</div>
+        <div className="eyebrow">// HiveCore shared defaults</div>
         <h1>Defaults</h1>
         <p className="subline">Suite-wide settings that should eventually propagate into every specialist product.</p>
       </div>
@@ -929,7 +929,7 @@ function ContractsSurface({ health, products, setup }) {
   return (
     <HiveTabFrame health={health} products={products} setup={setup}>
       <div>
-        <div className="eyebrow">// HiveCore v2 contract monitor</div>
+        <div className="eyebrow">// HiveCore contract monitor</div>
         <h1>Contracts</h1>
         <p className="subline">Health, startup, capabilities, run lists, and run detail parity across the suite.</p>
       </div>
@@ -1058,8 +1058,9 @@ export default function App() {
     <>
       <DeckBar
         activeTab={activeTab}
-        brandName="HiveCore frontend v2"
-        navLabel="HiveCore v2 surfaces"
+        brandEyebrow="PatchHive"
+        brandName="HiveCore"
+        navLabel="HiveCore navigation"
         onTabChange={setActiveTab}
         productKey="hive-core"
         tabs={TABS}
