@@ -386,7 +386,7 @@ function AuthScreen({
     <div className="auth-shell">
       <form className="auth-card" onSubmit={submit}>
         <span className="micro">// Operator access</span>
-        <div className="auth-title">SignalHive frontend v2</div>
+        <div className="auth-title">SignalHive</div>
         <p className="auth-copy">
           {bootstrapRequired ? "Generate the first local API key or enter an existing one." : "Enter the local product API key."}
         </p>
@@ -1507,7 +1507,8 @@ export default function App() {
     <>
       <DeckBar
         activeTab={activeTab}
-        brandName="SignalHive frontend v2"
+        brandEyebrow="PatchHive"
+        brandName="SignalHive"
         navLabel="SignalHive v2 surfaces"
         onTabChange={setActiveTab}
         productKey="signal-hive"
