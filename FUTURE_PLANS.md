@@ -159,3 +159,94 @@ back here instead of living in parallel long-term.
 - Keep TrustGate / memory / safety layers ahead of broader autonomous write behavior.
 - Keep HiveCore control-plane-first: product APIs remain the source of truth, and deeper orchestration should arrive through shared contracts instead of private database reads.
 - Build public PatchHive identity and transparency layers later so reputation is earned through visible output, outcomes, contribution quality, and maintainer trust.
+
+## Later Feature Ideas
+
+Use this section for bigger, later-stage ideas. Favor evidence-weighted forecasts over absolute prediction, keep sensitive human signals framed as repo or collaboration health, and let each specialist own the signal it is best suited to measure.
+
+### SignalHive
+
+- Add evidence-weighted maintenance pressure forecasting for stale backlog growth, recurring bug patterns, TODO/FIXME hotspots, and repo response trends.
+- Surface dependency, license, and vulnerability pressure from DepTriage and VulnTriage instead of making SignalHive own dependency triage directly.
+- Add cross-repo maintenance debt heatmaps that show where technical debt accumulates across a repo portfolio or ecosystem.
+- Add open source sustainability signals based on public repo health: maintainer activity, response time, bus-factor hints, CI health, backlog movement, and dependency freshness.
+
+### ReviewBee
+
+- Add review-depth indicators that show which files or subsystems received surface comments versus deeper reviewer attention.
+- Add path-aware compliance checklist suggestions for detected languages, frameworks, regulated paths, or repo-defined review requirements.
+- Let RepoMemory and MergeKeeper contribute reviewer expertise and availability context so ReviewBee can suggest review coverage without turning reviewer behavior into personal scoring.
+
+### TrustGate
+
+- Add trust freshness measurement that shows when repo safety confidence is aging because rules, tests, memories, or positive validation signals are stale.
+- Add dependency trust context from DepTriage and VulnTriage so risky dependency changes can raise TrustGate scrutiny for related PRs.
+- Add release-window and freeze-window risk context so TrustGate can be stricter near release cutoffs or during historically fragile periods.
+
+### RepoMemory
+
+- Add convention confidence intervals that show how strongly PatchHive believes a pattern is a real repo convention instead of noise.
+- Add convention freshness and obsolescence detection so learned memories age out when upstream behavior, frameworks, or maintainer preferences change.
+- Add cautious cross-repo convention borrowing that suggests patterns from similar repos, always labeled as borrowed suggestions until validated locally.
+
+### MergeKeeper
+
+- Add merge-readiness probability scoring with visible evidence from checks, reviews, branch protection, unresolved threads, TrustGate, and ReviewBee.
+- Add reviewer load and timing suggestions using public PR activity and explicit team settings, not hidden personal productivity judgments.
+- Add post-merge impact estimates when there is concrete evidence such as changed package size, migrations, release scope, performance-sensitive files, or dependency churn.
+
+### FlakeSting
+
+- Add flaky-test risk forecasting from historical fail/pass swings, runner patterns, timing sensitivity, external dependencies, and recent code churn.
+- Add opt-in quarantine proposals that generate a reviewable issue, PR, or CI config suggestion instead of silently isolating tests.
+- Add root-cause analysis hints for suspected flaky tests: timing, shared state, external service dependency, order dependence, resource pressure, or runner-specific behavior.
+
+### DepTriage
+
+- Add security urgency scoring for dependency updates that combines advisory severity, exploit availability, dependency reach, package exposure, and available fix versions.
+- Add breaking-change risk estimates from semver distance, release notes, ecosystem norms, test coverage, lockfile churn, and previous update outcomes.
+- Add license-change detection for direct and transitive dependencies, with explicit evidence about the old license, new license, affected packages, and downstream usage.
+- Add update-window recommendations based on repo activity patterns, release freezes, CI stability, and team-defined safe windows.
+
+### VulnTriage
+
+- Add exploit-likelihood scoring that clearly separates known exploited vulnerabilities, public proof-of-concept availability, EPSS-style probability, and local reachability evidence.
+- Add transitive vulnerability propagation mapping that shows how alerts flow through dependency trees and which top-level packages carry the practical fix path.
+- Add vulnerability trend correlation that finds recurring weakness classes, affected subsystems, and repeated dependency families over time.
+- Add fix-complexity estimates based on affected paths, dependency depth, available patched versions, migration scope, and required validation evidence.
+
+### RepoReaper
+
+- Add automated regression-test generation for fix PRs when the issue has enough reproduction evidence to create meaningful tests.
+- Add fix-confidence scoring that explains why a proposed patch is likely to solve the issue: failing signal, touched code, tests run, TrustGate result, and RepoMemory fit.
+- Add rollback-risk assessment that evaluates how hard the fix would be to revert if it causes problems later.
+
+### HiveCore
+
+- Add cross-product signal correlation so HiveCore can connect SignalHive pressure, RepoMemory lessons, TrustGate risk, ReviewBee feedback, MergeKeeper readiness, and RepoReaper outcomes.
+- Add evidence-weighted maintenance scheduling that recommends which products to run based on repo activity, stale signals, release windows, CI stability, and recent outcomes.
+- Add contribution impact measurement that tracks merged PRs, accepted suggestions, avoided bad patches, maintainer feedback, downstream fixes, and follow-up incidents over time.
+
+### Shared Platform
+
+- Add adaptive rate limiting that learns safe API call patterns per service while preserving hard caps and explicit operator controls.
+- Add context-aware retry logic that varies retries by error class, endpoint sensitivity, idempotency, and product run posture.
+- Add smart caching for expensive reads, with clear freshness, invalidation, and privacy rules.
+
+### PatchHive Identity & Reputation
+
+- Add maintainer response and acceptance signals that summarize public outcomes without pretending to read private sentiment.
+- Add contribution diversity measurement across repos, ecosystems, fix types, risk levels, and product sources.
+- Add long-term contribution impact tracking that shows how PatchHive's work affects repos across weeks or months.
+
+### Community, Cloud, and Enterprise
+
+- Add role-based signal filtering so different operators can focus on security, release readiness, review flow, maintenance debt, or executive portfolio health.
+- Add compliance evidence generation that creates audit-friendly trails from signal discovery through review, approval, action, and outcome.
+- Add team contribution analytics that show product usage, queue health, approval flow, and impact at the team or org level.
+
+### Product Direction
+
+- Add feedback-loop measurement that tracks how well PatchHive learns from failed patches, rejected suggestions, maintainer edits, overrides, and follow-up incidents.
+- Add contribution quality trends that show whether automated fixes are getting safer, more accepted, and more useful over time.
+- Add ecosystem health contribution metrics that estimate PatchHive's broader effect on open source sustainability without overstating causality.
