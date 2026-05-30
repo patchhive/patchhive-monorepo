@@ -388,7 +388,7 @@ function AuthScreen({
         <span className="micro">// Operator access</span>
         <div className="auth-title">SignalHive</div>
         <p className="auth-copy">
-          {bootstrapRequired ? "Generate the first local API key or enter an existing one." : "Enter the local product API key."}
+          {bootstrapRequired ? "Generate the first local API key or enter an existing one." : "Enter the local SignalHive API key."}
         </p>
         <Field label="API endpoint">
           <input className="v2-input" readOnly value={API} />
@@ -1509,7 +1509,7 @@ export default function App() {
         activeTab={activeTab}
         brandEyebrow="PatchHive"
         brandName="SignalHive"
-        navLabel="SignalHive v2 surfaces"
+        navLabel="SignalHive navigation"
         onTabChange={setActiveTab}
         productKey="signal-hive"
         tabs={TABS}
