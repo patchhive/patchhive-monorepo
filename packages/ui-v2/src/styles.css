@@ -1835,6 +1835,112 @@ h1 {
   padding-top: 0;
 }
 
+.hive-stack-grid {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.hive-stack-grid strong {
+  font-size: 0.98rem;
+  letter-spacing: 0.04em;
+}
+
+.hive-launch-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.launch-card {
+  min-width: 0;
+  min-height: 194px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 13px;
+  border: 1px solid var(--line);
+  border-top: 2px solid rgb(var(--signal2-rgb) / 0.44);
+  background:
+    linear-gradient(180deg, rgb(var(--signal-rgb) / 0.08), transparent 42%),
+    rgba(7, 16, 24, 0.76);
+  padding: 13px;
+}
+
+.launch-card.green,
+.launch-card.ok {
+  border-top-color: var(--green);
+}
+
+.launch-card.amber,
+.launch-card.warn {
+  border-top-color: var(--amber);
+}
+
+.launch-card.red,
+.launch-card.hot {
+  border-top-color: var(--red);
+}
+
+.launch-card-head,
+.launch-card-footer {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.launch-rank {
+  min-width: 42px;
+  height: 32px;
+  font-size: 0.78rem;
+}
+
+.launch-card-body {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 7px;
+}
+
+.launch-title {
+  overflow: hidden;
+  color: var(--text);
+  font-family: var(--orb);
+  font-size: 1rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.launch-url,
+.launch-token-state,
+.launch-warning {
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.launch-token-state {
+  color: var(--signal2);
+}
+
+.launch-warning {
+  color: var(--red);
+}
+
+.launch-card .chip {
+  min-width: 0;
+  justify-content: center;
+  font-size: 0.72rem;
+}
+
+.launch-card .btn {
+  min-height: 34px;
+  padding-inline: 11px;
+}
+
 .agent-chain {
   display: flex;
   flex-wrap: wrap;
@@ -3134,6 +3240,11 @@ h1 {
     grid-template-columns: 1fr;
   }
 
+  .hive-stack-grid,
+  .hive-launch-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .ledger-layout > .panel {
     border: 1px solid var(--line2);
     border-top: 0;
@@ -3168,6 +3279,8 @@ h1 {
   .metrics,
   .radar-readout,
   .phase-readout,
+  .hive-stack-grid,
+  .hive-launch-grid,
   .selected-grid,
   .ops-grid,
   .report-grid {

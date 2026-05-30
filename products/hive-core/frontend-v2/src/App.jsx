@@ -799,7 +799,7 @@ function LaunchStack({
       {error && <StatusBanner tone="red">{error}</StatusBanner>}
       {actionMessage && <StatusBanner tone={actionMessage.tone}>{actionMessage.text}</StatusBanner>}
       <Panel eyebrow="Stack" title="Local services">
-        <div className="panelbody report-grid">
+        <div className="panelbody report-grid hive-stack-grid">
           <div><span className="label">HiveCore</span><strong>{health?.status || "unknown"}</strong></div>
           <div><span className="label">DB</span><strong>{health?.db_ok ? "ok" : "check"}</strong></div>
           <div><span className="label">Overrides</span><strong>{health?.product_override_count ?? "none"}</strong></div>
@@ -809,7 +809,7 @@ function LaunchStack({
         </div>
       </Panel>
       <Panel eyebrow="Pairing" title="Service-token control">
-        <div className="panelbody repo-list queue-grid">
+        <div className="panelbody hive-launch-grid">
           {setupProducts.length === 0 && (
             <div className="empty-v2">
               <span className="micro">// Empty</span>
@@ -823,29 +823,36 @@ function LaunchStack({
             const staleToken = runtime.service_token_configured && runtime.health?.runs_ok === false && Boolean(runtime.health?.runs_error);
             const needsToken = !runtime.service_token_configured || runtime.legacy_api_key_configured || item.auth_status?.service_auth_legacy || item.auth_status?.service_auth_expired || staleToken;
             return (
-            <div className="ledger-row" key={runtime.slug}>
-              <div className="rank">{runtime.slug === "hive-core" ? "HC" : runtime.icon || runtime.slug.slice(0, 2).toUpperCase()}</div>
-              <div>
-                <div className="repo-name">{runtime.title}</div>
-                <div className="feed-meta">
-                  {runtime.api_url} - {runtime.service_token_configured ? "service token saved" : "service token missing"}
+              <article className={`launch-card ${productTone(runtime.status)}`} key={runtime.slug}>
+                <div className="launch-card-head">
+                  <div className="rank launch-rank">
+                    {runtime.slug === "hive-core" ? "HC" : runtime.icon || runtime.slug.slice(0, 2).toUpperCase()}
+                  </div>
+                  <span className={`chip ${productTone(runtime.status)}`}>{runtime.status}</span>
                 </div>
-                {staleToken && <div className="feed-meta hot">saved token cannot read runs; rotate to repair</div>}
-                {item.auth_status_error && <div className="feed-meta hot">{item.auth_status_error}</div>}
-              </div>
-              <span className={`chip ${productTone(runtime.status)}`}>{runtime.status}</span>
-              <span className={`chip ${runtime.service_token_configured ? "green" : "amber"}`}>
-                {runtime.service_token_configured ? "paired" : "unpaired"}
-              </span>
-              <button
-                className="btn"
-                disabled={running || !canProvision || (!item.pairing_ready && !needsToken)}
-                onClick={() => onProvisionProduct(runtime.slug)}
-                type="button"
-              >
-                {runtime.service_token_configured ? "Rotate" : "Provision"}
-              </button>
-            </div>
+                <div className="launch-card-body">
+                  <div className="launch-title">{runtime.title}</div>
+                  <div className="launch-url">{runtime.api_url}</div>
+                  <div className="launch-token-state">
+                    {runtime.service_token_configured ? "service token saved" : "service token missing"}
+                  </div>
+                  {staleToken && <div className="launch-warning">saved token cannot read runs; rotate to repair</div>}
+                  {item.auth_status_error && <div className="launch-warning">{item.auth_status_error}</div>}
+                </div>
+                <div className="launch-card-footer">
+                  <span className={`chip ${runtime.service_token_configured ? "green" : "amber"}`}>
+                    {runtime.service_token_configured ? "paired" : "unpaired"}
+                  </span>
+                  <button
+                    className="btn"
+                    disabled={running || !canProvision || (!item.pairing_ready && !needsToken)}
+                    onClick={() => onProvisionProduct(runtime.slug)}
+                    type="button"
+                  >
+                    {runtime.service_token_configured ? "Rotate" : "Provision"}
+                  </button>
+                </div>
+              </article>
             );
           })}
         </div>
