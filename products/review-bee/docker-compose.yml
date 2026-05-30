@@ -21,7 +21,7 @@ services:
     build: ./frontend
     pull_policy: "${PATCHHIVE_IMAGE_PULL_POLICY:-missing}"
     ports:
-      - "5196:8080"
+      - "5177:8080"
     depends_on:
       - backend
     restart: unless-stopped
