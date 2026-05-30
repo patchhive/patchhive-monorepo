@@ -763,6 +763,20 @@ function SuiteBoard({
   );
 }
 
+function HiveTabFrame({ children, health, products, setup }) {
+  return (
+    <>
+      <SuiteTopline cells={setup || health ? buildLiveTopline(health, setup, products) : TOPLINE_CELLS} />
+      <div className="main-grid hive-workspace-grid">
+        <ProductRail sections={RAIL_SECTIONS} stats={RAIL_STATS} />
+        <main className="workspace hive-tab-workspace">
+          {children}
+        </main>
+      </div>
+    </>
+  );
+}
+
 function LaunchStack({
   actionMessage,
   error,
@@ -782,7 +796,7 @@ function LaunchStack({
   const downstreamCount = runtimeProducts.filter((product) => product.slug !== "hive-core").length;
 
   return (
-    <div className="placeholder-shell">
+    <HiveTabFrame health={health} products={products} setup={setup}>
       <div>
         <div className="eyebrow">// HiveCore v2 launch stack</div>
         <h1>Launch Stack</h1>
@@ -882,13 +896,13 @@ function LaunchStack({
           ))}
         </div>
       </Panel>
-    </div>
+    </HiveTabFrame>
   );
 }
 
-function DefaultsSurface() {
+function DefaultsSurface({ health, products, setup }) {
   return (
-    <div className="placeholder-shell">
+    <HiveTabFrame health={health} products={products} setup={setup}>
       <div>
         <div className="eyebrow">// HiveCore v2 shared defaults</div>
         <h1>Defaults</h1>
@@ -907,13 +921,13 @@ function DefaultsSurface() {
           ))}
         </div>
       </Panel>
-    </div>
+    </HiveTabFrame>
   );
 }
 
-function ContractsSurface() {
+function ContractsSurface({ health, products, setup }) {
   return (
-    <div className="placeholder-shell">
+    <HiveTabFrame health={health} products={products} setup={setup}>
       <div>
         <div className="eyebrow">// HiveCore v2 contract monitor</div>
         <h1>Contracts</h1>
@@ -932,7 +946,7 @@ function ContractsSurface() {
           ))}
         </div>
       </Panel>
-    </div>
+    </HiveTabFrame>
   );
 }
 
@@ -1076,8 +1090,8 @@ export default function App() {
           setup={setup}
         />
       )}
-      {activeTab === "defaults" && <DefaultsSurface />}
-      {activeTab === "contracts" && <ContractsSurface />}
+      {activeTab === "defaults" && <DefaultsSurface health={health} products={products} setup={setup} />}
+      {activeTab === "contracts" && <ContractsSurface health={health} products={products} setup={setup} />}
     </>
   );
 }

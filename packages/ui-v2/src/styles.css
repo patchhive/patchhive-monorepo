@@ -270,6 +270,10 @@ h1 {
   grid-template-columns: 220px minmax(0, 1fr) 304px;
 }
 
+.main-grid.hive-workspace-grid {
+  grid-template-columns: 220px minmax(0, 1fr);
+}
+
 .rail,
 .side {
   min-width: 0;
@@ -1833,6 +1837,12 @@ h1 {
 .cockpit-queue {
   border-top: 1px solid var(--line);
   padding-top: 0;
+}
+
+.hive-tab-workspace {
+  display: grid;
+  align-content: start;
+  gap: 18px;
 }
 
 .hive-stack-grid {
