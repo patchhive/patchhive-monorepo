@@ -305,8 +305,8 @@ function MissionDeck() {
 
 function Placeholder({ title, body }) {
   return (
-    <div className="placeholder-shell">
-      <div className="eyebrow">// RepoReaper v2 extraction queue</div>
+    <div className="product-page-shell">
+      <div className="eyebrow">// RepoReaper extraction queue</div>
       <h1>{title}</h1>
       <p className="subline">{body}</p>
     </div>
@@ -338,8 +338,9 @@ export default function App() {
       <ProductV2Shell authConfigured={authConfigured} runtime={runtime}>
         <DeckBar
           activeTab={activeTab}
-          brandName="RepoReaper frontend v2"
-          navLabel="RepoReaper v2 surfaces"
+          brandEyebrow="PatchHive"
+          brandName="RepoReaper"
+          navLabel="RepoReaper navigation"
           onTabChange={setActiveTab}
           productKey="repo-reaper"
           tabs={TABS}
@@ -348,13 +349,13 @@ export default function App() {
         {activeTab === "dryrun" && (
           <Placeholder
             title="Dry Stalk"
-            body="This becomes the shared v2 safe-run surface for inspecting hunt quality before live pull request creation."
+            body="Safe-run surface for inspecting hunt quality before live pull request creation."
           />
         )}
         {activeTab === "prs" && (
           <Placeholder
             title="PR Monitor"
-            body="This becomes the shared v2 outbound contribution history, confidence, and maintainer response surface."
+            body="Outbound contribution history, confidence, and maintainer response surface."
           />
         )}
       </ProductV2Shell>
