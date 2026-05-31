@@ -19,7 +19,7 @@ const TABS = [
 ];
 
 const TOPLINE_CELLS = [
-  { label: "ReleaseSentry", value: "Gate 12", tone: "sig" },
+  { label: "ReleaseSentry", value: "Release gate", tone: "sig" },
   { label: "System", value: "Online", tone: "ok" },
   { label: "Mode", value: "Read only" },
   { label: "GitHub", value: "Release read", tone: "sig" },
@@ -266,9 +266,9 @@ function GateSurface() {
 
 function HistorySurface() {
   return (
-    <div className="placeholder-shell">
+    <div className="product-page-shell">
       <div>
-        <div className="eyebrow">// ReleaseSentry v2 extraction queue</div>
+        <div className="eyebrow">// ReleaseSentry release gate</div>
         <h1>Run History</h1>
         <p className="subline">Saved release checks with readiness changes, blockers, and final ship/no-ship evidence.</p>
       </div>
@@ -291,8 +291,8 @@ function HistorySurface() {
 
 function Placeholder({ title, body }) {
   return (
-    <div className="placeholder-shell">
-      <div className="eyebrow">// ReleaseSentry v2 extraction queue</div>
+    <div className="product-page-shell">
+      <div className="eyebrow">// ReleaseSentry release gate</div>
       <h1>{title}</h1>
       <p className="subline">{body}</p>
     </div>
@@ -323,8 +323,9 @@ export default function App() {
     <ProductV2Shell authConfigured={authConfigured} runtime={runtime}>
       <DeckBar
         activeTab={activeTab}
-        brandName="ReleaseSentry frontend v2"
-        navLabel="ReleaseSentry v2 surfaces"
+        brandEyebrow="PatchHive"
+        brandName="ReleaseSentry"
+        navLabel="ReleaseSentry navigation"
         onTabChange={setActiveTab}
         productKey="release-sentry"
         tabs={TABS}
@@ -334,7 +335,7 @@ export default function App() {
       {activeTab === "checks" && (
         <Placeholder
           title="Checks"
-          body="This becomes the shared v2 GitHub release, Actions, issue-label, changelog, and backend readiness surface."
+          body="GitHub release, Actions, issue-label, changelog, and backend readiness checks for ReleaseSentry."
         />
       )}
     </ProductV2Shell>
