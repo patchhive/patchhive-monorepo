@@ -265,9 +265,9 @@ function ReadinessSurface() {
 
 function HistorySurface() {
   return (
-    <div className="placeholder-shell">
+    <div className="product-page-shell">
       <div>
-        <div className="eyebrow">// MergeKeeper v2 extraction queue</div>
+        <div className="eyebrow">// MergeKeeper extraction queue</div>
         <h1>Decision Log</h1>
         <p className="subline">Saved readiness calls and the evidence that changed them.</p>
       </div>
@@ -290,8 +290,8 @@ function HistorySurface() {
 
 function Placeholder({ title, body }) {
   return (
-    <div className="placeholder-shell">
-      <div className="eyebrow">// MergeKeeper v2 extraction queue</div>
+    <div className="product-page-shell">
+      <div className="eyebrow">// MergeKeeper extraction queue</div>
       <h1>{title}</h1>
       <p className="subline">{body}</p>
     </div>
@@ -322,8 +322,9 @@ export default function App() {
     <ProductV2Shell authConfigured={authConfigured} runtime={runtime}>
       <DeckBar
         activeTab={activeTab}
-        brandName="MergeKeeper frontend v2"
-        navLabel="MergeKeeper v2 surfaces"
+        brandEyebrow="PatchHive"
+        brandName="MergeKeeper"
+        navLabel="MergeKeeper navigation"
         onTabChange={setActiveTab}
         productKey="merge-keeper"
         tabs={TABS}
@@ -333,7 +334,7 @@ export default function App() {
       {activeTab === "checks" && (
         <Placeholder
           title="Checks"
-          body="This becomes the shared v2 GitHub, webhook, and integration readiness surface."
+          body="GitHub, webhook, and integration readiness surface for MergeKeeper."
         />
       )}
     </ProductV2Shell>
