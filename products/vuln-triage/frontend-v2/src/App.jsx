@@ -19,7 +19,7 @@ const TABS = [
 ];
 
 const TOPLINE_CELLS = [
-  { label: "VulnTriage", value: "Queue 09", tone: "sig" },
+  { label: "VulnTriage", value: "Security queue", tone: "sig" },
   { label: "System", value: "Online", tone: "ok" },
   { label: "Mode", value: "Read only" },
   { label: "GitHub", value: "Security read", tone: "sig" },
@@ -266,9 +266,9 @@ function TriageSurface() {
 
 function HistorySurface() {
   return (
-    <div className="placeholder-shell">
+    <div className="product-page-shell">
       <div>
-        <div className="eyebrow">// VulnTriage v2 extraction queue</div>
+        <div className="eyebrow">// VulnTriage security queue</div>
         <h1>Scan History</h1>
         <p className="subline">Saved security snapshots with bucket movement, owner routing, and release pressure.</p>
       </div>
@@ -291,8 +291,8 @@ function HistorySurface() {
 
 function Placeholder({ title, body }) {
   return (
-    <div className="placeholder-shell">
-      <div className="eyebrow">// VulnTriage v2 extraction queue</div>
+    <div className="product-page-shell">
+      <div className="eyebrow">// VulnTriage security queue</div>
       <h1>{title}</h1>
       <p className="subline">{body}</p>
     </div>
@@ -323,8 +323,9 @@ export default function App() {
     <ProductV2Shell authConfigured={authConfigured} runtime={runtime}>
       <DeckBar
         activeTab={activeTab}
-        brandName="VulnTriage frontend v2"
-        navLabel="VulnTriage v2 surfaces"
+        brandEyebrow="PatchHive"
+        brandName="VulnTriage"
+        navLabel="VulnTriage navigation"
         onTabChange={setActiveTab}
         productKey="vuln-triage"
         tabs={TABS}
@@ -334,7 +335,7 @@ export default function App() {
       {activeTab === "checks" && (
         <Placeholder
           title="Checks"
-          body="This becomes the shared v2 GitHub security permissions, code scanning, Dependabot alert, and backend readiness surface."
+          body="GitHub security permissions, code scanning, Dependabot alert, and backend readiness checks for VulnTriage."
         />
       )}
     </ProductV2Shell>
