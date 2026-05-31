@@ -9,7 +9,7 @@ pub struct ReviewRequest {
 }
 
 fn default_publish_comment() -> bool {
-    true
+    false
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

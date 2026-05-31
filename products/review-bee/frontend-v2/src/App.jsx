@@ -81,6 +81,12 @@ function checkTone(level) {
   return "green";
 }
 
+function reportTone(report) {
+  if (!report) return "signal";
+  if (report.delivered) return "green";
+  return report.attempted ? "amber" : "signal";
+}
+
 function healthReady(health) {
   return Boolean(health?.github_ready || health?.github?.token_configured);
 }
@@ -244,7 +250,7 @@ function buildRadarFeed(review, overview, health) {
     return [
       { text: review.summary || "ReviewBee completed the PR review pass.", tone: statusTone(review.status) },
       { text: `${asCount(review.metrics?.open_items)} open asks and ${asCount(review.metrics?.resolved_items)} resolved items are visible in the checklist.`, tone: asCount(review.metrics?.open_items) ? "amber" : "green" },
-      { text: report?.message || "GitHub comment output is local until publishing is enabled.", tone: report?.delivered ? "green" : "signal" },
+      { text: report?.message || "GitHub comment output is local until publishing is enabled.", tone: reportTone(report) },
     ];
   }
 
@@ -301,7 +307,7 @@ function ReviewForm({ error, form, onChange, onRun, running }) {
           />
           <span>
             <span className="repo-name" style={{ display: "block", fontSize: "0.8rem" }}>Maintain PR comment</span>
-            <span className="feed-meta">Keep one ReviewBee checklist comment updated when GitHub publishing is configured.</span>
+            <span className="feed-meta">Optional write-back. Requires comment permission on this repository.</span>
           </span>
         </label>
         {error && <div className="status-banner red">{error}</div>}
@@ -419,7 +425,7 @@ function SidePanels({ health, onCopyReport, onCopyPrompts, review }) {
       </Panel>
       <Panel eyebrow="Output" title="Comment posture">
         <div className="panelbody repo-list">
-          <div className="rowline"><span className="muted">Maintained comment</span><span className={`chip ${report?.delivered ? "green" : "amber"}`}>{report?.state || "local"}</span></div>
+          <div className="rowline"><span className="muted">Maintained comment</span><span className={`chip ${reportTone(report)}`}>{report?.state || "local"}</span></div>
           <div className="rowline"><span className="muted">Webhook refresh</span><span className={`chip ${health?.github?.webhook_ready ? "green" : "amber"}`}>{health?.github?.webhook_ready ? "ready" : "optional"}</span></div>
           <div className="rowline"><span className="muted">GitHub token</span><span className={`chip ${healthReady(health) ? "green" : "red"}`}>{healthReady(health) ? "ready" : "missing"}</span></div>
           {review?.pr_url && <button className="btn" onClick={() => window.open(review.pr_url, "_blank", "noreferrer")} type="button">Open PR</button>}
@@ -605,7 +611,7 @@ function ChecksSurface({ runtime }) {
 export default function App() {
   const [activeTab, setActiveTab] = useState("threads");
   const [error, setError] = useState("");
-  const [form, setForm] = useState({ repo: "", pr_number: "", publish_comment: true });
+  const [form, setForm] = useState({ repo: "", pr_number: "", publish_comment: false });
   const [history, setHistory] = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [overview, setOverview] = useState(null);
@@ -685,7 +691,7 @@ export default function App() {
       setForm({
         repo: result.repo || "",
         pr_number: result.pr_number ? String(result.pr_number) : "",
-        publish_comment: true,
+        publish_comment: false,
       });
       setActiveTab("threads");
     } catch (err) {
