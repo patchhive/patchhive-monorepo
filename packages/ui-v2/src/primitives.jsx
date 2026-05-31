@@ -269,7 +269,7 @@ export function ProductV2AuthGate({
     <div className="auth-shell">
       <form className="auth-card" onSubmit={submit}>
         <span className="micro">// Operator access</span>
-        <div className="auth-title">{productName} frontend v2</div>
+        <div className="auth-title">{productName}</div>
         <p className="auth-copy">
           {auth.bootstrapRequired ? "Generate the first local API key or enter an existing one." : `Enter the local ${productName} API key.`}
         </p>
