@@ -19,7 +19,7 @@ const TABS = [
 ];
 
 const TOPLINE_CELLS = [
-  { label: "RefactorScout", value: "Map 04", tone: "sig" },
+  { label: "RefactorScout", value: "Refactor map", tone: "sig" },
   { label: "System", value: "Online", tone: "ok" },
   { label: "Mode", value: "Local read" },
   { label: "Scope", value: "Allowed root", tone: "sig" },
@@ -266,9 +266,9 @@ function ScoutSurface() {
 
 function HistorySurface() {
   return (
-    <div className="placeholder-shell">
+    <div className="product-page-shell">
       <div>
-        <div className="eyebrow">// RefactorScout v2 extraction queue</div>
+        <div className="eyebrow">// RefactorScout cleanup queue</div>
         <h1>Scan History</h1>
         <p className="subline">Saved local scans with high-safety lead movement and ignored-path evidence.</p>
       </div>
@@ -291,8 +291,8 @@ function HistorySurface() {
 
 function Placeholder({ title, body }) {
   return (
-    <div className="placeholder-shell">
-      <div className="eyebrow">// RefactorScout v2 extraction queue</div>
+    <div className="product-page-shell">
+      <div className="eyebrow">// RefactorScout cleanup queue</div>
       <h1>{title}</h1>
       <p className="subline">{body}</p>
     </div>
@@ -323,8 +323,9 @@ export default function App() {
     <ProductV2Shell authConfigured={authConfigured} runtime={runtime}>
       <DeckBar
         activeTab={activeTab}
-        brandName="RefactorScout frontend v2"
-        navLabel="RefactorScout v2 surfaces"
+        brandEyebrow="PatchHive"
+        brandName="RefactorScout"
+        navLabel="RefactorScout navigation"
         onTabChange={setActiveTab}
         productKey="refactor-scout"
         tabs={TABS}
@@ -334,7 +335,7 @@ export default function App() {
       {activeTab === "checks" && (
         <Placeholder
           title="Checks"
-          body="This becomes the shared v2 local filesystem allowlist, remote scan guardrail, and backend readiness surface."
+          body="Local filesystem allowlist, remote scan guardrail, and backend readiness checks for RefactorScout."
         />
       )}
     </ProductV2Shell>
