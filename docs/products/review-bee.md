@@ -104,6 +104,10 @@ ReviewBee works best with a fine-grained GitHub token. Reading pull requests, re
 
 HiveCore can surface ReviewBee health, run history, and capability support. Later, ReviewBee output can feed MergeKeeper readiness calls and RepoMemory reviewer-preference memories.
 
+## Future Depth
+
+ReviewBee can get stronger without becoming a general merge gate. Good next layers are top-level PR conversation comments, diff-aware context, CI/check status context, and explicit handoffs to TrustGate and MergeKeeper. The intent is to make the final PatchHive call stronger while keeping ReviewBee focused on review-feedback pressure.
+
 ## Technical Architecture
 
 ### Current Backend Structure

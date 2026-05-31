@@ -83,6 +83,10 @@ Current non-goals:
 
 HiveCore can surface ReviewBee health, capabilities, run history, and unresolved review pressure. MergeKeeper can eventually use ReviewBee output as one input to merge readiness, while ReviewBee keeps owning PR review analysis.
 
+## Future Depth
+
+ReviewBee can get stronger without becoming a general merge gate. Good next layers are top-level PR conversation comments, diff-aware context, CI/check status context, and explicit handoffs to TrustGate and MergeKeeper. The intent is to make the final PatchHive call stronger while keeping ReviewBee focused on review-feedback pressure.
+
 ## Standalone Repository
 
 The PatchHive monorepo is the source of truth for ReviewBee development. The standalone [`patchhive/reviewbee`](https://github.com/patchhive/reviewbee) repository is an exported mirror of this directory.
