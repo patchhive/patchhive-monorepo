@@ -154,7 +154,7 @@ const PROMPT_PACK = [
 const FAILGUARD = [
   { title: "Rejected patch became policy candidate", meta: "RepoReaper Smith - confidence below threshold", label: "high", tone: "red" },
   { title: "TrustGate warn submitted lesson", meta: "Sensitive path without explicit route test", label: "review", tone: "amber" },
-  { title: "Operator captured local launch failure", meta: "Port mismatch after frontend v2 test", label: "queued", tone: "signal" },
+  { title: "Operator captured local launch failure", meta: "Port mismatch after frontend smoke test", label: "queued", tone: "signal" },
 ];
 
 function MemoryLattice() {
@@ -229,8 +229,8 @@ function PromptPackPanel() {
 
 function Placeholder({ title, body }) {
   return (
-    <div className="placeholder-shell">
-      <div className="eyebrow">// RepoMemory v2 extraction queue</div>
+    <div className="product-page-shell">
+      <div className="eyebrow">// RepoMemory extraction queue</div>
       <h1>{title}</h1>
       <p className="subline">{body}</p>
     </div>
@@ -239,9 +239,9 @@ function Placeholder({ title, body }) {
 
 function PromptPackSurface() {
   return (
-    <div className="placeholder-shell">
+    <div className="product-page-shell">
       <div>
-        <div className="eyebrow">// RepoMemory v2 extraction queue</div>
+        <div className="eyebrow">// RepoMemory extraction queue</div>
         <h1>Prompt Packs</h1>
         <p className="subline">Reusable repo context bundles for TrustGate, RepoReaper, and future HiveCore handoffs.</p>
       </div>
@@ -337,8 +337,9 @@ export default function App() {
     <ProductV2Shell authConfigured={authConfigured} runtime={runtime}>
       <DeckBar
         activeTab={activeTab}
-        brandName="RepoMemory frontend v2"
-        navLabel="RepoMemory v2 surfaces"
+        brandEyebrow="PatchHive"
+        brandName="RepoMemory"
+        navLabel="RepoMemory navigation"
         onTabChange={setActiveTab}
         productKey="repo-memory"
         tabs={TABS}
@@ -347,7 +348,7 @@ export default function App() {
       {activeTab === "failguard" && (
         <Placeholder
           title="FailGuard Review"
-          body="This becomes the shared v2 bad-outcome review and promotion surface."
+          body="Bad-outcome review and promotion surface for RepoMemory."
         />
       )}
       {activeTab === "packs" && <PromptPackSurface />}
