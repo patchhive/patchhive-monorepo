@@ -33,13 +33,17 @@ Backend: `http://localhost:8040`
 
 ### Split Backend and Frontend
 
+Run these in separate terminals:
+
 ```bash
 cp .env.example .env
 
-cd backend && cargo run
-cd ../frontend && npm install && npm run dev
-cd ../frontend-v2 && npm install && npm run dev
+cargo run --manifest-path backend/Cargo.toml
+npm --prefix frontend install && npm --prefix frontend run dev
+npm --prefix frontend-v2 install && npm --prefix frontend-v2 run dev
 ```
+
+Run the backend command from `products/review-bee` so it loads the product-root `.env`.
 
 ## Important Configuration
 
@@ -59,6 +63,21 @@ ReviewBee works best with a fine-grained GitHub token. Reading pull requests, re
 ## Safety Boundary
 
 ReviewBee is intentionally review-first. It does not edit code, approve pull requests, resolve review threads, or merge anything. Its job is to make review work easier to understand and easier to clear.
+
+## Current Analysis Scope
+
+ReviewBee currently checks pull request review state, not the pull request diff itself. It fetches PR metadata, formal reviews, and review threads, then uses deterministic heuristics to turn actionable reviewer comments into checklist items.
+
+When ReviewBee reports `clear`, it means it did not find actionable unresolved review feedback in the available PR review threads. It does not mean the PR is technically safe to merge, CI-clean, risk-free, or code-reviewed deeply. Merge readiness belongs in MergeKeeper, and code/diff risk belongs in TrustGate.
+
+Current non-goals:
+
+- inspect PR diffs for code quality
+- validate CI/check status
+- decide mergeability
+- resolve GitHub review threads
+- read top-level PR conversation comments
+- prove that requested changes were implemented in code
 
 ## HiveCore Fit
 

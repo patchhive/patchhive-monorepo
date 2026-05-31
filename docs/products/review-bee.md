@@ -38,6 +38,23 @@ ReviewBee is review-first and merge-speed-first. Its job is to help authors and 
 
 ReviewBee does not edit code and does not decide whether a pull request should merge. It reduces review noise and makes remaining work easier to clear.
 
+## Current Analysis Scope
+
+ReviewBee currently checks pull request review state, not the pull request diff itself.
+
+It fetches PR metadata, formal reviews, and review threads. From there, it uses deterministic text heuristics to identify actionable reviewer feedback, groups those comments by category and file path bucket, and reports whether the grouped feedback appears open, resolved, mixed, or clear based on GitHub review-thread state and review states.
+
+`clear` means ReviewBee did not find actionable unresolved review feedback in the available review threads. It does not mean the PR is technically safe to merge, CI-clean, risk-free, or deeply code-reviewed. Merge readiness belongs in MergeKeeper, and code/diff risk belongs in TrustGate.
+
+Current non-goals:
+
+- inspect PR diffs for code quality
+- validate CI/check status
+- decide mergeability
+- resolve GitHub review threads
+- read top-level PR conversation comments
+- prove that requested changes were implemented in code
+
 ## Local Development
 
 ```bash
@@ -52,14 +69,21 @@ Defaults:
 - Database: `REVIEW_BEE_DB_PATH`
 
 Split local workflow:
-```bash
-cd products/review-bee/backend
-cargo run
 
-cd ../frontend
-npm install
-npm run dev
+Run these in separate terminals:
+
+```bash
+cd products/review-bee
+cargo run --manifest-path backend/Cargo.toml
+
+npm --prefix frontend install
+npm --prefix frontend run dev
+
+npm --prefix frontend-v2 install
+npm --prefix frontend-v2 run dev
 ```
+
+Run the backend command from `products/review-bee` so it loads the product-root `.env`.
 
 ## Important Configuration
 
@@ -82,33 +106,43 @@ HiveCore can surface ReviewBee health, run history, and capability support. Late
 
 ## Technical Architecture
 
-### Backend Structure
+### Current Backend Structure
 
 ReviewBee's backend is organized around a review analysis pipeline:
 
-- **PR Fetcher**: Retrieves pull request metadata and GitHub context
-- **Review Collector**: Gathers all review comments and review threads for the PR
-- **Comment Normalizer**: Standardizes review data across different formats and states
-- **Actionability Filter**: Separates actionable feedback from noise, pleasantries, and outdated comments
-- **Similarity Grouper**: Clusters related or repeated feedback into consolidated checklist items:
+- **PR Fetcher**: Retrieves pull request metadata from GitHub.
+- **Review Collector**: Gathers formal pull request reviews and review threads.
+- **Actionability Filter**: Uses keyword and question-pattern heuristics to separate actionable feedback from praise/noise.
+- **Category Classifier**: Buckets feedback into tests, validation, naming, docs, cleanup, errors, API behavior, performance, style, or general follow-up.
+- **Path Bucketer**: Groups inline thread feedback by coarse file path area.
+- **Checklist Builder**: Consolidates grouped feedback into checklist items with evidence excerpts and reviewer names.
+- **State Estimator**: Uses GitHub review-thread state, outdated flags, and review states to report open, resolved, mixed, attention, follow-up, or clear.
+- **History Tracker**: Stores review runs in SQLite.
+- **Comment Publisher**: Optionally maintains a single GitHub issue comment with the current checklist when explicitly requested and token permissions allow it.
+- **Webhook Listener**: Verifies signed GitHub review webhooks and refreshes analysis for supported PR review events.
+
+Future architecture may add diff-aware review, richer semantic grouping, top-level conversation comments, CI status, and MergeKeeper/TrustGate handoffs. Those are not part of the current ReviewBee decision.
+
+### Future Extension Ideas
+
+- **Comment Normalizer**: Standardize more GitHub event types, top-level PR conversation comments, and external tool comments.
+- **Semantic Actionability Filter**: Improve detection beyond keyword and question-pattern heuristics.
+- **Similarity Grouper**: Cluster related or repeated feedback into consolidated checklist items:
   - **Text Similarity**: Groups comments with similar wording or phrasing
   - **File Proximity**: Groups comments touching the same files or functions
   - **Temporal Clustering**: Groups comments from the same review cycle
   - **Reviewer Consensus**: Identifies feedback repeated by multiple reviewers
-- **Resolution Estimator**: Determines what appears resolved versus still active:
+- **Diff-Aware Resolution Estimator**: Determine what appears resolved versus still active:
   - **Code Change Tracking**: Matches comments to subsequent commits
   - **Reply Analysis**: Checks for reviewer follow-ups or resolutions
   - **Thread Examination**: Reviews entire comment threads for closure signals
-- **History Tracker**: Stores review states for trend analysis and audit trails
-- **Comment Publisher**: Optionally maintains a single GitHub comment with the current checklist
-- **Webhook Listener**: Refreshes analysis when review activity changes via signed webhooks
 
 ### Data Flow
 
 1. PR discovery → Metadata extraction → Review collection
-2. Comment normalization → Actionability filtering → Noise reduction
-3. Similarity grouping → Checklist consolidation → Item creation
-4. Resolution estimation → Status determination → Checklist updating
+2. Actionability filtering → Noise reduction
+3. Category and path bucketing → Checklist consolidation → Item creation
+4. Thread-state estimation → Status determination → Checklist updating
 5. History storage → Webhook setup → Continuous monitoring
 6. Optional publishing → GitHub comment maintenance → Team visibility
 7. Throughout the process, safety controls ensure read-only repository operation
@@ -117,21 +151,13 @@ ReviewBee's backend is organized around a review analysis pipeline:
 ### Key Components
 
 - **GitHub Client**: Handles API calls for PRs, reviews, review threads, and comments
-- **Comment Parser**: Normalizes review data across different GitHub event types
-- **Actionability Detector**: Uses heuristics to identify truly actionable feedback:
+- **Actionability Detector**: Uses heuristics to identify actionable feedback:
   - **Imperative Language**: Commands, requests, and required changes
   - **Question Patterns**: Open questions requiring responses
   - **Issue Indicators**: Bug reports, errors, and problems needing fixes
-  - **Exclusion Rules**: Filters out "LGTM", "nice work", and outdated comments
-- **Similarity Engine**: Implements multiple similarity algorithms:
-  - **Cosine Similarity**: Text-based comparison of comment content
-  - **Jaccard Index**: File and keyword overlap analysis
-  - **Levenshtein Distance**: Edit distance for near-duplicate detection
-  - **Temporal Windows**: Time-based grouping for review cycles
-- **Resolution Tracker**: Monitors PR state for resolution signals:
-  - **Commit Correlation**: Links comments to subsequent code changes
-  - **Reply Tracking**: Follows comment threads for reviewer responses
-  - **State Analysis**: Examines PR review state and approvals
+  - **Exclusion Rules**: Filters out "LGTM", "nice work", and similar praise
+- **Grouping Engine**: Groups by deterministic category and coarse file path bucket
+- **Resolution Tracker**: Uses GitHub review-thread state, outdated flags, and review states
 - **Publisher**: Maintains GitHub comments with proper formatting and updates
 - **Webhook Manager**: Handles signed webhook verification and refresh triggering
 - **History Tracker**: Stores checklist evolution for analytics and improvement
@@ -139,7 +165,7 @@ ReviewBee's backend is organized around a review analysis pipeline:
 
 ### Extensibility Points
 
-- Additional feedback sources can be integrated (inline review comments, automated tool outputs)
+- Additional feedback sources can be integrated (top-level PR conversation comments, automated tool outputs)
 - Alternative actionability algorithms can be plugged in (ML models, rule engines, etc.)
 - Additional grouping strategies can be supported (semantic clustering, topic modeling)
 - Additional output formats can be supported (Slack/Teams notifications, email summaries, issue creation)
@@ -148,61 +174,48 @@ ReviewBee's backend is organized around a review analysis pipeline:
 
 ## API Endpoints
 
-ReviewBee exposes a RESTful API for integration and control:
+ReviewBee currently exposes these API endpoints:
 
 ### Health & Status
 - `GET /health` - Basic health check
 - `GET /startup/checks` - Detailed startup verification
 - `GET /capabilities` - Advertised product capabilities
-- `GET /version` - Version information
+- `GET /auth/status` - Authentication/bootstrap status
 
 ### Review Analysis
-- `GET /checklist/:owner/:repo/:pull_number` - Get current checklist for a PR
-- `GET /analysis/:owner/:repo/:pull_number` - Get detailed review analysis
-- `GET /comments/:owner/:repo/:pull_number` - Get raw review comments and threads
-- `GET /activity/:owner/:repo/:pull_number` - Get review activity timeline
+- `POST /review/github/pr` - Review one GitHub pull request and return a checklist
 
-### Checklist Management
-- `POST /checklist/:owner/:repo/:pull_number` - Generate or refresh checklist
-- `PUT /checklist/:owner/:repo/:pull_number/item/:item_id` - Update specific checklist item
-- `DELETE /checklist/:owner/:repo/:pull_number/item/:item_id` - Remove checklist item
-- `POST /checklist/:owner/:repo/:pull_number/resolve` - Mark checklist items as resolved
-
-### History & Analytics
-- `GET /history/:owner/:repo/:pull_number` - Get review history for a PR
-- `GET /statistics/:owner/:repo` - Get review statistics across PRs
-- `GET /trends/:owner/:repo` - Get review trends over time
-- `GET /resolution-rate` - Get checklist resolution rates
-
-### Configuration
-- `GET /config` - Get current configuration (sanitized)
-- `POST /config` - Update runtime configuration
+### History
+- `GET /overview` - Product overview counts and recent runs
+- `GET /history` - Recent ReviewBee runs
+- `GET /history/:id` - Saved ReviewBee run detail
+- `GET /runs` - Product-contract run list for HiveCore
+- `GET /runs/:id` - Product-contract run detail
 
 ### Authentication
+- `POST /auth/login` - Verify an operator API key
+- `POST /auth/generate-key` - Generate the first local operator API key
 - `POST /auth/generate-service-token` - Create a service token for machine-to-machine calls
 - `POST /auth/rotate-service-token` - Rotate an existing service token
 
-### Output Management
-- `POST /output/comment` - Publish or update a maintained GitHub comment
-- `GET /output/:id` - Get details for a published output
-- `DELETE /output/:id` - Remove a published output
+### Webhooks
+- `POST /webhooks/github` - Process signed GitHub review webhook events
 
 ## Monitoring & Observability
 
 ReviewBee provides several mechanisms for monitoring and debugging:
 
 ### Metrics
-- Prometheus-compatible metrics endpoint at `/metrics`
-- Key metrics include PR processing rates, comment analysis volumes, grouping efficiency, and checklist generation rates
+- `GET /health` reports database health, GitHub token readiness, auth state, and run counts.
+- `GET /startup/checks` reports local configuration warnings and errors.
 
 ### Logging
 - Structured logging with configurable log levels via `RUST_LOG`
-- Correlation IDs for tracing individual PR analyses through the pipeline
 - Audit trails for all GitHub operations and published outputs
 
 ### Health Checks
-- Liveness and readiness probes for Kubernetes deployment
-- Dependency health checks for database and GitHub connectivity
+- Docker health and orchestration checks should use `/health`.
+- Dependency health checks currently cover SQLite and GitHub token configuration.
 
 ## Deployment
 
@@ -214,17 +227,14 @@ ReviewBee provides multi-stage Docker builds for both backend and frontend:
 services:
   backend:
     build: ./backend
-    ports: ["8040:8040"]
+    ports: ["8040:8000"]
     environment:
       - BOT_GITHUB_TOKEN=${BOT_GITHUB_TOKEN}
       - GITHUB_TOKEN=${GITHUB_TOKEN}
   frontend:
     build: ./frontend
-    ports: ["5177:5177"]
+    ports: ["5177:8080"]
 ```
-
-### Kubernetes
-Helm charts are available in the `deploy/` directory for production deployments.
 
 ### Resource Requirements
 - Backend: Minimum 256MB RAM, 1 CPU core (scales with PR size and review volume)
@@ -247,8 +257,8 @@ Helm charts are available in the `deploy/` directory for production deployments.
 
 3. **Checklist Quality Issues**
    - Verify that actionability filtering is working for your review style
-   - Check that similarity grouping aligns with your expectations
-   - Review resolution estimation if checklists seem inaccurate
+   - Check that category and path grouping aligns with your expectations
+   - Review thread state in GitHub if checklists seem inaccurate
 
 4. **Performance Issues**
    - Monitor database size and consider pruning old review history
