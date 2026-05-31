@@ -279,8 +279,8 @@ function ReviewSurface() {
 
 function Placeholder({ title, body }) {
   return (
-    <div className="placeholder-shell">
-      <div className="eyebrow">// TrustGate v2 extraction queue</div>
+    <div className="product-page-shell">
+      <div className="eyebrow">// TrustGate extraction queue</div>
       <h1>{title}</h1>
       <p className="subline">{body}</p>
     </div>
@@ -311,15 +311,16 @@ export default function App() {
     <ProductV2Shell authConfigured={authConfigured} runtime={runtime}>
       <DeckBar
         activeTab={activeTab}
-        brandName="TrustGate frontend v2"
-        navLabel="TrustGate v2 surfaces"
+        brandEyebrow="PatchHive"
+        brandName="TrustGate"
+        navLabel="TrustGate navigation"
         onTabChange={setActiveTab}
         productKey="trust-gate"
         tabs={TABS}
       />
       {activeTab === "review" && <ReviewSurface />}
-      {activeTab === "rules" && <Placeholder title="Rule Packs" body="This will become the shared v2 rule and policy editor surface." />}
-      {activeTab === "history" && <Placeholder title="Decision Log" body="This will become the shared v2 history and evidence timeline pattern." />}
+      {activeTab === "rules" && <Placeholder title="Rule Packs" body="Rule and policy editor surface for TrustGate." />}
+      {activeTab === "history" && <Placeholder title="Decision Log" body="History and evidence timeline for TrustGate decisions." />}
     </ProductV2Shell>
   );
 }
