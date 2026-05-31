@@ -3189,7 +3189,8 @@ h1 {
   gap: 8px;
 }
 
-.placeholder-shell {
+.placeholder-shell,
+.product-page-shell {
   min-height: calc(100vh - 54px);
   display: grid;
   align-content: start;
@@ -3282,7 +3283,8 @@ h1 {
 
   .workspace,
   .side,
-  .placeholder-shell {
+  .placeholder-shell,
+  .product-page-shell {
     padding: 14px;
   }
 

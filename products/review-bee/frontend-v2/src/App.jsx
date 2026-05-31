@@ -19,7 +19,7 @@ const TABS = [
 ];
 
 const TOPLINE_CELLS = [
-  { label: "ReviewBee", value: "Review array 04", tone: "sig" },
+  { label: "ReviewBee", value: "Review queue", tone: "sig" },
   { label: "System", value: "Online", tone: "ok" },
   { label: "Mode", value: "Review only" },
   { label: "GitHub", value: "PR reads", tone: "sig" },
@@ -265,9 +265,9 @@ function ThreadSurface() {
 
 function HistorySurface() {
   return (
-    <div className="placeholder-shell">
+    <div className="product-page-shell">
       <div>
-        <div className="eyebrow">// ReviewBee v2 extraction queue</div>
+        <div className="eyebrow">// ReviewBee extraction queue</div>
         <h1>Review History</h1>
         <p className="subline">Saved review runs and unresolved pressure over time.</p>
       </div>
@@ -290,8 +290,8 @@ function HistorySurface() {
 
 function Placeholder({ title, body }) {
   return (
-    <div className="placeholder-shell">
-      <div className="eyebrow">// ReviewBee v2 extraction queue</div>
+    <div className="product-page-shell">
+      <div className="eyebrow">// ReviewBee extraction queue</div>
       <h1>{title}</h1>
       <p className="subline">{body}</p>
     </div>
@@ -322,8 +322,9 @@ export default function App() {
     <ProductV2Shell authConfigured={authConfigured} runtime={runtime}>
       <DeckBar
         activeTab={activeTab}
-        brandName="ReviewBee frontend v2"
-        navLabel="ReviewBee v2 surfaces"
+        brandEyebrow="PatchHive"
+        brandName="ReviewBee"
+        navLabel="ReviewBee navigation"
         onTabChange={setActiveTab}
         productKey="review-bee"
         tabs={TABS}
@@ -333,7 +334,7 @@ export default function App() {
       {activeTab === "checks" && (
         <Placeholder
           title="Checks"
-          body="This becomes the shared v2 startup and GitHub readiness check surface."
+          body="Startup and GitHub readiness checks for ReviewBee."
         />
       )}
     </ProductV2Shell>
