@@ -19,7 +19,7 @@ const TABS = [
 ];
 
 const TOPLINE_CELLS = [
-  { label: "DepTriage", value: "Queue 08", tone: "sig" },
+  { label: "DepTriage", value: "Dependency queue", tone: "sig" },
   { label: "System", value: "Online", tone: "ok" },
   { label: "Mode", value: "Read only" },
   { label: "GitHub", value: "PR + alert read", tone: "sig" },
@@ -266,9 +266,9 @@ function TriageSurface() {
 
 function HistorySurface() {
   return (
-    <div className="placeholder-shell">
+    <div className="product-page-shell">
       <div>
-        <div className="eyebrow">// DepTriage v2 extraction queue</div>
+        <div className="eyebrow">// DepTriage dependency queue</div>
         <h1>Scan History</h1>
         <p className="subline">Saved dependency queues with bucket movement and alert pressure over time.</p>
       </div>
@@ -291,8 +291,8 @@ function HistorySurface() {
 
 function Placeholder({ title, body }) {
   return (
-    <div className="placeholder-shell">
-      <div className="eyebrow">// DepTriage v2 extraction queue</div>
+    <div className="product-page-shell">
+      <div className="eyebrow">// DepTriage dependency queue</div>
       <h1>{title}</h1>
       <p className="subline">{body}</p>
     </div>
@@ -323,8 +323,9 @@ export default function App() {
     <ProductV2Shell authConfigured={authConfigured} runtime={runtime}>
       <DeckBar
         activeTab={activeTab}
-        brandName="DepTriage frontend v2"
-        navLabel="DepTriage v2 surfaces"
+        brandEyebrow="PatchHive"
+        brandName="DepTriage"
+        navLabel="DepTriage navigation"
         onTabChange={setActiveTab}
         productKey="dep-triage"
         tabs={TABS}
@@ -334,7 +335,7 @@ export default function App() {
       {activeTab === "checks" && (
         <Placeholder
           title="Checks"
-          body="This becomes the shared v2 GitHub token, Dependabot alert access, and backend readiness surface."
+          body="GitHub token, Dependabot alert access, and backend readiness checks for DepTriage."
         />
       )}
     </ProductV2Shell>
