@@ -267,7 +267,7 @@ function HistorySurface() {
   return (
     <div className="product-page-shell">
       <div>
-        <div className="eyebrow">// ReviewBee extraction queue</div>
+        <div className="eyebrow">// ReviewBee review queue</div>
         <h1>Review History</h1>
         <p className="subline">Saved review runs and unresolved pressure over time.</p>
       </div>
@@ -291,7 +291,7 @@ function HistorySurface() {
 function Placeholder({ title, body }) {
   return (
     <div className="product-page-shell">
-      <div className="eyebrow">// ReviewBee extraction queue</div>
+      <div className="eyebrow">// ReviewBee review queue</div>
       <h1>{title}</h1>
       <p className="subline">{body}</p>
     </div>

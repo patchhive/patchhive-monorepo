@@ -267,7 +267,7 @@ function HistorySurface() {
   return (
     <div className="product-page-shell">
       <div>
-        <div className="eyebrow">// MergeKeeper extraction queue</div>
+        <div className="eyebrow">// MergeKeeper readiness queue</div>
         <h1>Decision Log</h1>
         <p className="subline">Saved readiness calls and the evidence that changed them.</p>
       </div>
@@ -291,7 +291,7 @@ function HistorySurface() {
 function Placeholder({ title, body }) {
   return (
     <div className="product-page-shell">
-      <div className="eyebrow">// MergeKeeper extraction queue</div>
+      <div className="eyebrow">// MergeKeeper readiness queue</div>
       <h1>{title}</h1>
       <p className="subline">{body}</p>
     </div>

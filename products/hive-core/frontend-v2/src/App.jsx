@@ -316,7 +316,7 @@ const LAUNCH_QUEUE = [
 const CONTRACT_FLAGS = [
   { title: "Run detail", meta: "RepoReaper and VulnTriage need /runs/:id detail parity", label: "2 gaps", tone: "amber" },
   { title: "Service health", meta: "ReleaseSentry is visible as red until health recovers", label: "down", tone: "red" },
-  { title: "Startup checks", meta: "All visible v2 products report expected setup state", label: "clear", tone: "green" },
+  { title: "Startup checks", meta: "All visible products report expected setup state", label: "clear", tone: "green" },
 ];
 
 const DEFAULTS = [

@@ -306,7 +306,7 @@ function MissionDeck() {
 function Placeholder({ title, body }) {
   return (
     <div className="product-page-shell">
-      <div className="eyebrow">// RepoReaper extraction queue</div>
+      <div className="eyebrow">// RepoReaper patch queue</div>
       <h1>{title}</h1>
       <p className="subline">{body}</p>
     </div>

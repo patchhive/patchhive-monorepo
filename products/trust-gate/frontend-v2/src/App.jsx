@@ -280,7 +280,7 @@ function ReviewSurface() {
 function Placeholder({ title, body }) {
   return (
     <div className="product-page-shell">
-      <div className="eyebrow">// TrustGate extraction queue</div>
+      <div className="eyebrow">// TrustGate safety review queue</div>
       <h1>{title}</h1>
       <p className="subline">{body}</p>
     </div>

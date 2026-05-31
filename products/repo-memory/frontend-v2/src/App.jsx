@@ -230,7 +230,7 @@ function PromptPackPanel() {
 function Placeholder({ title, body }) {
   return (
     <div className="product-page-shell">
-      <div className="eyebrow">// RepoMemory extraction queue</div>
+      <div className="eyebrow">// RepoMemory memory queue</div>
       <h1>{title}</h1>
       <p className="subline">{body}</p>
     </div>
@@ -241,7 +241,7 @@ function PromptPackSurface() {
   return (
     <div className="product-page-shell">
       <div>
-        <div className="eyebrow">// RepoMemory extraction queue</div>
+        <div className="eyebrow">// RepoMemory memory queue</div>
         <h1>Prompt Packs</h1>
         <p className="subline">Reusable repo context bundles for TrustGate, RepoReaper, and future HiveCore handoffs.</p>
       </div>
