@@ -19,7 +19,7 @@ const TABS = [
 ];
 
 const TOPLINE_CELLS = [
-  { label: "FlakeSting", value: "CI array 06", tone: "sig" },
+  { label: "FlakeSting", value: "CI trust", tone: "sig" },
   { label: "System", value: "Online", tone: "ok" },
   { label: "Mode", value: "Read only" },
   { label: "GitHub", value: "Actions read", tone: "sig" },
@@ -265,9 +265,9 @@ function InstabilitySurface() {
 
 function HistorySurface() {
   return (
-    <div className="placeholder-shell">
+    <div className="product-page-shell">
       <div>
-        <div className="eyebrow">// FlakeSting v2 extraction queue</div>
+        <div className="eyebrow">// FlakeSting instability queue</div>
         <h1>Scan History</h1>
         <p className="subline">Comparable CI scans and whether trust pressure is rising or improving.</p>
       </div>
@@ -290,8 +290,8 @@ function HistorySurface() {
 
 function Placeholder({ title, body }) {
   return (
-    <div className="placeholder-shell">
-      <div className="eyebrow">// FlakeSting v2 extraction queue</div>
+    <div className="product-page-shell">
+      <div className="eyebrow">// FlakeSting instability queue</div>
       <h1>{title}</h1>
       <p className="subline">{body}</p>
     </div>
@@ -322,8 +322,9 @@ export default function App() {
     <ProductV2Shell authConfigured={authConfigured} runtime={runtime}>
       <DeckBar
         activeTab={activeTab}
-        brandName="FlakeSting frontend v2"
-        navLabel="FlakeSting v2 surfaces"
+        brandEyebrow="PatchHive"
+        brandName="FlakeSting"
+        navLabel="FlakeSting navigation"
         onTabChange={setActiveTab}
         productKey="flake-sting"
         tabs={TABS}
@@ -333,7 +334,7 @@ export default function App() {
       {activeTab === "checks" && (
         <Placeholder
           title="Checks"
-          body="This becomes the shared v2 GitHub Actions and token readiness surface."
+          body="GitHub Actions and token readiness checks for FlakeSting."
         />
       )}
     </ProductV2Shell>
