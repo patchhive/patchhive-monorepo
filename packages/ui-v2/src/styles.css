@@ -851,13 +851,19 @@ h1 {
 .node::after {
   content: attr(data-label);
   position: absolute;
-  top: -8px;
-  left: 18px;
-  min-width: 118px;
+  top: 17px;
+  left: 50%;
+  width: max-content;
+  max-width: 96px;
+  transform: translateX(-50%);
   color: var(--muted);
-  font-size: 0.74rem;
+  font-size: 0.68rem;
+  line-height: 1.05;
   letter-spacing: 0.08em;
+  overflow-wrap: anywhere;
+  text-align: center;
   text-transform: uppercase;
+  pointer-events: none;
 }
 
 .node.red {
