@@ -10,6 +10,8 @@ HiveCore is the PatchHive control plane. It brings standalone PatchHive products
 
 HiveCore is not a replacement for standalone products. Its first job is to make the suite legible: what is running, what is healthy, what capabilities exist, what work has happened, and where product contracts have drifted.
 
+Longer term, HiveCore should become the browser-facing suite backend for PatchHive: one operator auth flow, one shared product registry, one shared credential/config surface, and namespaced product APIs for all product frontends. The products remain distinct, but their v2 frontends should eventually talk to HiveCore instead of separate product backends. See [Suite backend direction](../suite-backend-direction.md).
+
 ## Core Workflow
 
 1. Keep the PatchHive product catalog visible in one place
@@ -60,7 +62,9 @@ HiveCore is not a replacement for standalone products. Its first job is to make 
 
 ## Safety Boundary
 
-HiveCore is a control plane, not a replacement runtime for products. It does not read private product databases, bypass product auth, or dispatch destructive actions without explicit product capability support and approval flow. Each product remains standalone and independently runnable.
+HiveCore is a control plane today, not a replacement runtime for products. It does not read private product databases, bypass product auth, or dispatch destructive actions without explicit product capability support and approval flow. Each product remains standalone and independently runnable during the transition.
+
+The suite-backend direction changes the browser-facing shape over time, not the product boundaries: HiveCore can become the single backend entry point while SignalHive, ReviewBee, TrustGate, and the rest keep product-owned logic and safety decisions.
 
 ## Local Development
 

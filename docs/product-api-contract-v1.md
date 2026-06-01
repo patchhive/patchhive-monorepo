@@ -136,6 +136,8 @@ SSE and other event streams should expose a consistent payload shape:
 
 Every product must remain independently runnable from its standalone repository. HiveCore is not a required runtime dependency.
 
+The long-term suite direction is still one browser-facing backend: product v2 frontends should eventually call HiveCore/suite backend routes, while HiveCore either proxies to existing product services or mounts product modules in-process. Standalone product contracts remain important because they let HiveCore route work cleanly during the gateway phase and keep product ownership visible. See [Suite backend direction](suite-backend-direction.md).
+
 When HiveCore is enabled, products should expose enough lifecycle metadata for HiveCore to become the suite front door and operator:
 
 - discover what the product can do
