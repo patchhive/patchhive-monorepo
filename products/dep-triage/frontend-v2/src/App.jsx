@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createApiFetcher, useApiKeyAuth, useProductRuntime } from "@patchhivehq/product-shell/auth";
 import {
   DeckBar,
@@ -18,225 +18,391 @@ const TABS = [
   { id: "checks", label: "Checks" },
 ];
 
-const TOPLINE_CELLS = [
-  { label: "DepTriage", value: "Dependency queue", tone: "sig" },
-  { label: "System", value: "Online", tone: "ok" },
-  { label: "Mode", value: "Read only" },
-  { label: "GitHub", value: "PR + alert read", tone: "sig" },
-  { label: "Alerts", value: "11 open", tone: "warn" },
-  { label: "Last scan", value: "T-01:20" },
+const POSITIONS = [
+  { left: "57%", top: "25%" },
+  { left: "73%", top: "46%" },
+  { left: "38%", top: "34%" },
+  { left: "31%", top: "69%" },
+  { left: "63%", top: "73%" },
+  { left: "46%", top: "55%" },
+  { left: "68%", top: "61%" },
+  { left: "28%", top: "42%" },
 ];
 
-const RAIL_SECTIONS = [
-  {
-    title: "Sources",
-    items: [
-      { label: "Dependency PRs", active: true, pin: true },
-      { label: "Dependabot alerts", value: "11" },
-      { label: "Update trains", value: "5" },
-      { label: "Ignored packages", value: "22" },
-    ],
-  },
-  {
-    title: "Buckets",
-    items: [
-      { label: "update now", active: true, badge: "6", badgeTone: "red" },
-      { label: "watch", badge: "14", badgeTone: "amber" },
-      { label: "ignore for now", badge: "22", badgeTone: "green" },
-      { label: "access limited", badge: "3", badgeTone: "signal" },
-    ],
-  },
-];
-
-const RAIL_STATS = {
-  title: "Active repo",
-  items: [
-    { label: "Repository", value: "patchhive/hive-core" },
-    { label: "Decision", value: "WATCH", large: true, tone: "warn" },
-    { label: "Focus", value: "transitive risk" },
-  ],
+const DEFAULT_FORM = {
+  repo: "",
+  pr_limit: "25",
+  include_alerts: true,
 };
 
-const METRICS = [
-  { label: "Update now", value: "6", tone: "hot", sub: "security + breakage" },
-  { label: "Watch", value: "14", tone: "warn", sub: "non-blocking drift" },
-  { label: "Alerts", value: "11", tone: "hot", sub: "4 high severity" },
-  { label: "Safe defers", value: "22", tone: "ok", sub: "low-value churn" },
-  { label: "Noise cut", value: "73%", tone: "sig", sub: "queue compression" },
-];
+function asCount(value) {
+  const number = Number(value || 0);
+  return Number.isFinite(number) ? number : 0;
+}
 
-const PACKAGES = [
-  {
-    id: "DT-01",
-    title: "vite",
-    bucket: "now",
-    tone: "amber",
-    state: "update now",
-    value: "major +2",
-    position: { left: "57%", top: "25%" },
-    summary: "Multiple update PRs touch the same frontend build path and one is pinned behind a failing plugin range.",
-  },
-  {
-    id: "DT-02",
-    title: "openssl",
-    bucket: "alert",
-    tone: "red",
-    state: "fix now",
-    value: "high alert",
-    position: { left: "73%", top: "46%" },
-    summary: "A high-severity advisory overlaps runtime paths, making this the clearest dependency action.",
-  },
-  {
-    id: "DT-03",
-    title: "react",
-    bucket: "watch",
+function timeAgo(value) {
+  if (!value) return "never";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  const seconds = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000));
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 48) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
+function githubReady(health) {
+  return Boolean(health?.github_ready || health?.github?.token_configured);
+}
+
+function recommendationTone(recommendation) {
+  const value = String(recommendation || "").toLowerCase();
+  if (value.includes("now") || value.includes("fix")) return "red";
+  if (value.includes("watch") || value.includes("batch")) return "amber";
+  if (value.includes("ignore") || value.includes("defer")) return "green";
+  return "signal";
+}
+
+function metricTone(recommendation) {
+  const tone = recommendationTone(recommendation);
+  if (tone === "red") return "hot";
+  if (tone === "amber") return "warn";
+  if (tone === "green") return "ok";
+  return "sig";
+}
+
+async function parseJsonResponse(response, fallbackError) {
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.error || data.message || fallbackError);
+  }
+  return data;
+}
+
+function buildTopline(health, overview, scan, history) {
+  const counts = overview?.counts || {};
+  const latest = scan || history[0] || {};
+  return [
+    { label: "DepTriage", value: "Dependency queue", tone: "sig" },
+    { label: "System", value: health?.status || "checking", tone: health?.status === "ok" ? "ok" : "warn" },
+    { label: "Mode", value: "Read only" },
+    { label: "GitHub", value: githubReady(health) ? "PR + alert read" : "token missing", tone: githubReady(health) ? "sig" : "warn" },
+    { label: "Alerts", value: `${asCount(scan?.metrics?.open_alerts || counts.open_alerts || health?.open_alerts)} open`, tone: "warn" },
+    { label: "Last scan", value: latest.created_at ? timeAgo(latest.created_at) : counts.scans ? "loaded" : "none" },
+  ];
+}
+
+function buildMetrics(scan, overview, health) {
+  if (scan) {
+    const metrics = scan.metrics || {};
+    return [
+      { label: "Update now", value: String(asCount(metrics.update_now)), tone: asCount(metrics.update_now) ? "hot" : "ok", sub: "highest urgency" },
+      { label: "Watch", value: String(asCount(metrics.watch)), tone: asCount(metrics.watch) ? "warn" : "ok", sub: "monitor or batch" },
+      { label: "Alerts", value: String(asCount(metrics.open_alerts)), tone: asCount(metrics.open_alerts) ? "hot" : "ok", sub: "Dependabot" },
+      { label: "Safe defers", value: String(asCount(metrics.ignore_for_now)), tone: "ok", sub: "low-value churn" },
+      { label: "Tracked", value: String(asCount(metrics.tracked_items)), tone: "sig", sub: `${asCount(metrics.dependency_pull_requests)} dep PRs` },
+    ];
+  }
+  const counts = overview?.counts || {};
+  return [
+    { label: "Scans", value: String(asCount(counts.scans || health?.scan_count)), tone: "sig", sub: `${asCount(counts.repos || health?.repo_count)} repos` },
+    { label: "Update now", value: String(asCount(counts.update_now || health?.update_now_count)), tone: "hot", sub: "saved scans" },
+    { label: "Watch", value: String(asCount(counts.watch || health?.watch_count)), tone: "warn", sub: "saved scans" },
+    { label: "Ignore", value: String(asCount(counts.ignore_for_now || health?.ignore_count)), tone: "ok", sub: "saved scans" },
+    { label: "Tracked", value: String(asCount(counts.tracked_items || health?.tracked_item_count)), tone: "sig", sub: "items" },
+  ];
+}
+
+function buildRail(scan, history, overview, health) {
+  const latest = history[0] || {};
+  return {
+    sections: [
+      {
+        title: "Sources",
+        items: [
+          { label: "dependency PRs", active: true, badge: String(asCount(scan?.metrics?.dependency_pull_requests)), badgeTone: "signal" },
+          { label: "Dependabot alerts", badge: String(asCount(scan?.metrics?.open_alerts || health?.open_alerts)), badgeTone: asCount(scan?.metrics?.open_alerts || health?.open_alerts) ? "red" : "green" },
+          { label: "runtime updates", badge: String(asCount(scan?.metrics?.runtime_updates)), badgeTone: "amber" },
+          { label: "major updates", badge: String(asCount(scan?.metrics?.major_updates)), badgeTone: "amber" },
+        ],
+      },
+      {
+        title: "Buckets",
+        items: [
+          { label: "update now", active: true, badge: String(asCount(scan?.metrics?.update_now || overview?.counts?.update_now)), badgeTone: "red" },
+          { label: "watch", badge: String(asCount(scan?.metrics?.watch || overview?.counts?.watch)), badgeTone: "amber" },
+          { label: "ignore for now", badge: String(asCount(scan?.metrics?.ignore_for_now || overview?.counts?.ignore_for_now)), badgeTone: "green" },
+          { label: "saved scans", badge: String(history.length), badgeTone: "signal" },
+        ],
+      },
+    ],
+    stats: {
+      title: "Active repo",
+      items: [
+        { label: "Repository", value: scan?.repo || latest.repo || "none" },
+        { label: "Decision", value: scan?.metrics?.update_now ? "UPDATE" : scan?.metrics?.watch ? "WATCH" : "READY", large: true, tone: scan?.metrics?.update_now ? "hot" : scan?.metrics?.watch ? "warn" : "ok" },
+        { label: "Items", value: String(asCount(scan?.metrics?.tracked_items || latest.tracked_items)) },
+      ],
+    },
+  };
+}
+
+function buildRadarItems(scan, history) {
+  if (scan?.items?.length) {
+    return scan.items.slice(0, 8).map((item, index) => ({
+      detail: item.package_name || item.key,
+      gain: item.recommendation || "watch",
+      gainMeta: `${asCount(item.score)} score`,
+      id: item.key || `dep-${index + 1}`,
+      label: item.package_name || `D${index + 1}`,
+      minWindow: index < 3 ? 7 : index < 6 ? 14 : 30,
+      position: POSITIONS[index % POSITIONS.length],
+      stats: [
+        { label: "Package", value: item.package_name || "package" },
+        { label: "Decision", value: item.recommendation || "watch" },
+        { label: "Score", value: String(asCount(item.score)) },
+        { label: "Source", value: item.source || "github" },
+        { label: "Alerts", value: String(item.alerts?.length || 0) },
+      ],
+      summary: item.summary || item.reasons?.[0] || "Dependency triage item.",
+      title: item.package_name || item.key || `Dependency ${index + 1}`,
+      tone: recommendationTone(item.recommendation),
+      vector: item.update_kind || item.ecosystem || item.source || "dependency",
+      vectorTone: recommendationTone(item.recommendation) === "red" || recommendationTone(item.recommendation) === "amber" ? "warn" : "",
+    }));
+  }
+  if (history.length) {
+    return history.slice(0, 8).map((item, index) => ({
+      detail: item.repo,
+      gain: item.update_now ? "update now" : item.watch ? "watch" : "saved",
+      gainMeta: `${asCount(item.tracked_items)} items`,
+      id: item.id || `history-${index + 1}`,
+      label: item.repo?.split("/").pop() || `S${index + 1}`,
+      minWindow: index < 3 ? 7 : index < 6 ? 14 : 30,
+      position: POSITIONS[index % POSITIONS.length],
+      stats: [
+        { label: "Repo", value: item.repo },
+        { label: "Tracked", value: String(asCount(item.tracked_items)) },
+        { label: "Now", value: String(asCount(item.update_now)) },
+        { label: "Watch", value: String(asCount(item.watch)) },
+        { label: "Age", value: timeAgo(item.created_at) },
+      ],
+      summary: item.summary || "Saved dependency triage scan.",
+      title: item.repo,
+      tone: item.update_now ? "red" : item.watch ? "amber" : "green",
+      vector: "saved",
+      vectorTone: item.update_now || item.watch ? "warn" : "",
+    }));
+  }
+  return [{
+    detail: "No dependency scan yet",
+    gain: "standby",
+    gainMeta: "GitHub repo",
+    id: "dep-triage-ready",
+    label: "DT",
+    position: { left: "50%", top: "44%" },
+    stats: [
+      { label: "Mode", value: "read only" },
+      { label: "PRs", value: "ready" },
+      { label: "Alerts", value: "optional" },
+      { label: "History", value: "empty" },
+      { label: "Action", value: "scan" },
+    ],
+    summary: "Scan a repository to populate DepTriage with live dependency PR and alert data.",
+    title: "DepTriage ready",
     tone: "signal",
-    state: "watch",
-    value: "minor train",
-    position: { left: "38%", top: "34%" },
-    summary: "The open PR is compatible, but it should ride with the Vite train instead of landing alone.",
-  },
-  {
-    id: "DT-04",
-    title: "eslint",
-    bucket: "ignore",
-    tone: "green",
-    state: "ignore for now",
-    value: "dev only",
-    position: { left: "31%", top: "69%" },
-    summary: "Low impact dev-tool churn with no alert pressure and no release-blocking effect.",
-  },
-  {
-    id: "DT-05",
-    title: "tokio",
-    bucket: "now",
-    tone: "amber",
-    state: "batch",
-    value: "runtime drift",
-    position: { left: "63%", top: "73%" },
-    summary: "Runtime dependency drift is not urgent alone, but it should be batched with adjacent async stack updates.",
-  },
-];
+    vector: "READY",
+  }];
+}
 
-const LINKS = [
-  { from: "DT-01", to: "DT-03", style: { left: "41%", top: "30%", width: "122px", transform: "rotate(-13deg)" } },
-  { from: "DT-01", to: "DT-02", style: { left: "58%", top: "34%", width: "112px", transform: "rotate(35deg)" } },
-  { from: "DT-02", to: "DT-05", style: { left: "64%", top: "57%", width: "118px", transform: "rotate(104deg)" } },
-  { from: "DT-04", to: "DT-05", style: { left: "35%", top: "71%", width: "156px", transform: "rotate(4deg)" } },
-];
+function buildRadarFeed(scan, history, health) {
+  if (scan) {
+    return [
+      { text: scan.summary || "DepTriage completed the dependency scan.", tone: scan.metrics?.update_now ? "red" : scan.metrics?.watch ? "amber" : "green" },
+      { text: `${asCount(scan.metrics?.update_now)} update-now items and ${asCount(scan.metrics?.watch)} watch items are active.`, tone: scan.metrics?.update_now ? "red" : scan.metrics?.watch ? "amber" : "green" },
+      { text: scan.warnings?.[0] || "Dependency PRs and alerts are ranked into actionable buckets.", tone: scan.warnings?.length ? "amber" : "signal" },
+    ];
+  }
+  return [
+    { text: history.length ? `${history.length} saved dependency scans are available.` : "DepTriage is waiting for a repository scan.", tone: "signal" },
+    { text: githubReady(health) ? "GitHub token is ready for dependency PR and alert reads." : "Configure GitHub token access before live scans.", tone: githubReady(health) ? "green" : "amber" },
+    { text: "The radar fills with package-level decisions once a scan completes.", tone: "signal" },
+  ];
+}
 
-const FILTERS = [
-  { id: "all", label: "all" },
-  { id: "now", label: "now" },
-  { id: "watch", label: "watch" },
-  { id: "ignore", label: "ignore" },
-  { id: "alert", label: "alert" },
-];
+function StatusBanner({ tone = "signal", children }) {
+  if (!children) return null;
+  return <div className={`status-banner ${tone}`}>{children}</div>;
+}
 
-const UPDATE_QUEUE = [
-  { rank: "01", title: "openssl", meta: "high advisory overlaps runtime path", tone: "red", label: "fix now" },
-  { rank: "02", title: "vite + react train", meta: "batch frontend toolchain PRs together", tone: "amber", label: "batch" },
-  { rank: "03", title: "tokio", meta: "runtime drift; schedule with async stack updates", tone: "amber", label: "watch" },
-  { rank: "04", title: "eslint", meta: "dev-only churn with no alert pressure", tone: "green", label: "defer" },
-];
-
-const EVIDENCE = [
-  { title: "Alert pressure is concentrated", meta: "4 high alerts map to 2 packages", label: "high", tone: "red" },
-  { title: "Batchable train found", meta: "Vite, React, and plugin ranges should land together", label: "batch", tone: "amber" },
-  { title: "Noise safely suppressed", meta: "22 updates are dev-only, patch-only, or duplicate PRs", label: "clear", tone: "green" },
-];
-
-const HISTORY = [
-  { title: "hive-core / dependency queue", meta: "update-now bucket dropped from 9 to 6", label: "better", tone: "green" },
-  { title: "repo-reaper / Dependabot alerts", meta: "two high advisories still open", label: "watch", tone: "amber" },
-  { title: "signal-hive / frontend train", meta: "safe to batch after Vite plugin range clears", label: "batch", tone: "signal" },
-];
-
-function DependencyMap() {
+function DependencyMap({ health, history, scan }) {
+  const items = useMemo(() => buildRadarItems(scan, history), [scan, history]);
+  const feed = useMemo(() => buildRadarFeed(scan, history, health), [scan, history, health]);
   return (
     <SuiteRadar
       ariaLabel="DepTriage dependency pressure radar"
       detailLabel="Triage reason"
-      feed={[
-        { text: "High advisory pressure concentrates around two packages.", tone: "red" },
-        { text: "Vite and React should move as one update train.", tone: "amber" },
-        { text: "Dev-only update churn stays safely deferred." },
-      ]}
+      feed={feed}
       gainLabel="Decision"
-      items={PACKAGES.map((pkg) => ({
-        ...pkg,
-        detail: pkg.title,
-        gain: pkg.state,
-        gainMeta: pkg.value,
-        label: pkg.id,
-        stats: [
-          { label: "Bucket", value: pkg.bucket },
-          { label: "State", value: pkg.state },
-          { label: "Value", value: pkg.value },
-          { label: "Action", value: pkg.tone === "red" ? "fix" : pkg.tone === "green" ? "defer" : "watch" },
-          { label: "Queue", value: "deps" },
-        ],
-        vector: pkg.id,
-        vectorTone: pkg.tone === "amber" || pkg.tone === "red" ? "warn" : "",
-      }))}
-      signalLabel="packages"
-      vectorLabel="Selected package"
+      itemQueryParam="dependency"
+      items={items}
+      signalLabel={scan ? "packages" : "scans"}
+      vectorLabel={scan ? "Selected package" : "Selected scan"}
     />
   );
 }
 
-function UpdateQueuePanel() {
+function ScanForm({ error, form, onChange, onRun, running }) {
   return (
-    <Panel eyebrow="Queue" title="Dependency decisions" action={<span className="chip red">6 now</span>}>
-      <div className="panelbody repo-list queue-grid">
-        {UPDATE_QUEUE.map((item) => (
-          <div className="ledger-row" key={item.rank}>
-            <div className="rank">{item.rank}</div>
-            <div>
-              <div className="repo-name">{item.title}</div>
-              <div className="feed-meta">{item.meta}</div>
-            </div>
-            <span className={`chip ${item.tone}`}>{item.label}</span>
+    <Panel eyebrow="Scan" title="GitHub dependency intake" action={<span className="chip signal">read only</span>}>
+      <form
+        className="panelbody control-stack"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onRun();
+        }}
+      >
+        <div className="form-grid">
+          <label className="v2-field">
+            Repository
+            <input className="v2-input" onChange={(event) => onChange((current) => ({ ...current, repo: event.target.value }))} placeholder="owner/repo" value={form.repo} />
+          </label>
+          <label className="v2-field">
+            PR limit
+            <input className="v2-input" min="5" max="60" onChange={(event) => onChange((current) => ({ ...current, pr_limit: event.target.value }))} type="number" value={form.pr_limit} />
+          </label>
+          <label className="rowline" style={{ alignItems: "flex-start", justifyContent: "flex-start" }}>
+            <input
+              checked={Boolean(form.include_alerts)}
+              onChange={(event) => onChange((current) => ({ ...current, include_alerts: event.target.checked }))}
+              style={{ marginTop: 3 }}
+              type="checkbox"
+            />
+            <span>
+              <span className="repo-name" style={{ display: "block", fontSize: "0.8rem" }}>Include Dependabot alerts</span>
+              <span className="feed-meta">Adds security urgency when alert access is available.</span>
+            </span>
+          </label>
+          <div className="v2-field">
+            Action
+            <button className="btn primary" disabled={running || !form.repo.trim()} type="submit">
+              {running ? "Scanning..." : "Scan dependencies"}
+            </button>
           </div>
-        ))}
+        </div>
+        {error && <StatusBanner tone="red">{error}</StatusBanner>}
+      </form>
+    </Panel>
+  );
+}
+
+function UpdateQueuePanel({ history, onLoadScan, scan }) {
+  const items = scan?.items || [];
+  if (scan) {
+    return (
+      <Panel eyebrow="Queue" title="Dependency decisions" action={<span className={`chip ${scan.metrics?.update_now ? "red" : "signal"}`}>{asCount(scan.metrics?.update_now)} now</span>}>
+        <div className="panelbody repo-list queue-grid">
+          {items.length ? items.slice(0, 8).map((item, index) => (
+            <div className="ledger-row" key={item.key || `${item.package_name}-${index}`}>
+              <div className="rank">{String(index + 1).padStart(2, "0")}</div>
+              <div>
+                <div className="repo-name">{item.package_name || item.key}</div>
+                <div className="feed-meta">{item.summary || item.reasons?.[0]}</div>
+                <div className="repo-meta">
+                  <span className={`chip ${recommendationTone(item.recommendation)}`}>{item.recommendation}</span>
+                  <span className="chip signal">{item.ecosystem || item.source}</span>
+                  <span className="chip">{asCount(item.score)} score</span>
+                </div>
+              </div>
+              <span className={`chip ${recommendationTone(item.recommendation)}`}>{item.update_kind || "dep"}</span>
+            </div>
+          )) : (
+            <div className="empty-v2">
+              <strong>No dependency items</strong>
+              <span>This scan did not find dependency work to triage.</span>
+            </div>
+          )}
+        </div>
+      </Panel>
+    );
+  }
+  return (
+    <Panel eyebrow="Queue" title="Recent scans" action={<span className="chip signal">{history.length} saved</span>}>
+      <div className="panelbody repo-list queue-grid">
+        {history.length ? history.slice(0, 5).map((item) => (
+          <div className="ledger-row" key={item.id}>
+            <div className="rank">{asCount(item.update_now)}</div>
+            <div>
+              <div className="repo-name">{item.repo}</div>
+              <div className="feed-meta">{item.summary || "Saved dependency triage scan."}</div>
+            </div>
+            <button className="btn" onClick={() => onLoadScan(item.id)} type="button">Load</button>
+          </div>
+        )) : (
+          <div className="empty-v2">
+            <strong>No scans yet</strong>
+            <span>Scan a repo to populate the dependency queue.</span>
+          </div>
+        )}
       </div>
     </Panel>
   );
 }
 
-function SidePanels() {
+function SidePanels({ health, scan }) {
+  const warnings = scan?.warnings || [];
   return (
     <aside className="side">
       <Panel eyebrow="Evidence" title="Why it matters">
         <div className="panelbody repo-list">
-          {EVIDENCE.map((item) => (
-            <div className="feed-item" key={item.title}>
+          {warnings.length ? warnings.slice(0, 3).map((warning) => (
+            <div className="feed-item" key={warning}>
               <div>
-                <div className="feed-title">{item.title}</div>
-                <div className="feed-meta">{item.meta}</div>
+                <div className="feed-title">Scan warning</div>
+                <div className="feed-meta">{warning}</div>
               </div>
-              <span className={`chip ${item.tone}`}>{item.label}</span>
+              <span className="chip amber">warn</span>
             </div>
-          ))}
+          )) : (
+            <div className="rowline"><span className="muted">Warnings</span><span className="chip green">clear</span></div>
+          )}
+          <div className="rowline"><span className="muted">GitHub token</span><span className={`chip ${githubReady(health) ? "green" : "amber"}`}>{githubReady(health) ? "ready" : "missing"}</span></div>
+          <div className="rowline"><span className="muted">Database</span><span className={`chip ${health?.db_ok ? "green" : "red"}`}>{health?.db_ok ? "ok" : "check"}</span></div>
         </div>
       </Panel>
       <Panel eyebrow="Consumers" title="Signal handoff">
         <div className="panelbody repo-list">
-          <div className="rowline"><span className="muted">ReleaseSentry</span><span className="chip amber">watch</span></div>
+          <div className="rowline"><span className="muted">ReleaseSentry</span><span className={`chip ${scan?.metrics?.update_now ? "amber" : "green"}`}>{scan?.metrics?.update_now ? "watch" : "clear"}</span></div>
           <div className="rowline"><span className="muted">MergeKeeper</span><span className="chip signal">context</span></div>
-          <div className="rowline"><span className="muted">Human action</span><span className="chip red">fix now</span></div>
+          <div className="rowline"><span className="muted">Human action</span><span className={`chip ${scan?.metrics?.update_now ? "red" : "green"}`}>{scan?.metrics?.update_now ? "fix now" : "none"}</span></div>
         </div>
       </Panel>
     </aside>
   );
 }
 
-function TriageSurface() {
+function TriageSurface({
+  error,
+  form,
+  health,
+  history,
+  onChangeForm,
+  onLoadScan,
+  onRefresh,
+  onRunScan,
+  overview,
+  running,
+  scan,
+}) {
+  const rail = useMemo(() => buildRail(scan, history, overview, health), [scan, history, overview, health]);
+  const metrics = useMemo(() => buildMetrics(scan, overview, health), [scan, overview, health]);
   return (
     <>
-      <SuiteTopline cells={TOPLINE_CELLS} />
+      <SuiteTopline cells={buildTopline(health, overview, scan, history)} />
       <div className="main-grid">
-        <ProductRail sections={RAIL_SECTIONS} stats={RAIL_STATS} />
+        <ProductRail sections={rail.sections} stats={rail.stats} />
         <main className="workspace">
           <div className="hero-row">
             <div>
@@ -245,79 +411,228 @@ function TriageSurface() {
               <p className="subline">Open dependency PRs, Dependabot alerts, and batchable update trains compressed into a practical action queue.</p>
             </div>
             <div className="actions">
-              <span className="chip red">update now</span>
-              <span className="chip signal">read-only</span>
-              <button className="btn primary" type="button">Scan repo</button>
+              <span className={`chip ${githubReady(health) ? "green" : "amber"}`}>{githubReady(health) ? "github ready" : "github missing"}</span>
+              <button className="btn" onClick={onRefresh} type="button">Refresh</button>
             </div>
           </div>
-          <MetricBand metrics={METRICS} />
+          <ScanForm error={error} form={form} onChange={onChangeForm} onRun={onRunScan} running={running} />
+          <MetricBand metrics={metrics} />
           <div className="atlas-layout suite-four-layout">
             <Panel eyebrow="Triage" title="Dependency map" action={<span className="chip signal">dependency radar</span>}>
-              <DependencyMap />
+              <DependencyMap health={health} history={history} scan={scan} />
             </Panel>
-            <UpdateQueuePanel />
+            <UpdateQueuePanel history={history} onLoadScan={onLoadScan} scan={scan} />
           </div>
         </main>
-        <SidePanels />
+        <SidePanels health={health} scan={scan} />
       </div>
     </>
   );
 }
 
-function SecondaryFrame({ children }) {
+function SecondaryFrame({ children, health, history, overview, scan }) {
+  const rail = useMemo(() => buildRail(scan, history, overview, health), [scan, history, overview, health]);
   return (
     <>
-      <SuiteTopline cells={TOPLINE_CELLS} />
+      <SuiteTopline cells={buildTopline(health, overview, scan, history)} />
       <div className="main-grid hive-workspace-grid">
-        <ProductRail sections={RAIL_SECTIONS} stats={RAIL_STATS} />
+        <ProductRail sections={rail.sections} stats={rail.stats} />
         <main className="workspace">{children}</main>
       </div>
     </>
   );
 }
 
-function HistorySurface() {
+function HistorySurface({ activeScanId, health, history, loading, onLoadScan, onRefresh, overview, scan }) {
   return (
-    <SecondaryFrame>
-      <div>
-        <div className="eyebrow">// DepTriage dependency queue</div>
-        <h1>Scan History</h1>
-        <p className="subline">Saved dependency queues with bucket movement and alert pressure over time.</p>
+    <SecondaryFrame health={health} history={history} overview={overview} scan={scan}>
+      <div className="hero-row">
+        <div>
+          <div className="eyebrow">// DepTriage dependency queue</div>
+          <h1>Scan History</h1>
+          <p className="subline">Saved dependency queues with bucket movement and alert pressure over time.</p>
+        </div>
+        <button className="btn" onClick={onRefresh} type="button">{loading ? "Refreshing..." : "Refresh"}</button>
       </div>
-      <Panel eyebrow="Recent" title="Dependency scans">
+      <Panel eyebrow="Recent" title="Dependency scans" action={<span className="chip signal">{history.length} saved</span>}>
         <div className="panelbody repo-list queue-grid">
-          {HISTORY.map((item) => (
-            <div className="feed-item" key={item.title}>
+          {history.length ? history.map((item) => (
+            <div className="ledger-row" key={item.id}>
+              <div className="rank">{item.id === activeScanId ? "SEL" : asCount(item.update_now)}</div>
               <div>
-                <div className="feed-title">{item.title}</div>
-                <div className="feed-meta">{item.meta}</div>
+                <div className="repo-name">{item.repo}</div>
+                <div className="feed-meta">{item.summary || "Saved dependency triage scan."}</div>
+                <div className="repo-meta">
+                  <span className="chip red">{asCount(item.update_now)} now</span>
+                  <span className="chip amber">{asCount(item.watch)} watch</span>
+                  <span className="chip green">{asCount(item.ignore_for_now)} ignore</span>
+                  <span className="chip">{timeAgo(item.created_at)}</span>
+                </div>
               </div>
-              <span className={`chip ${item.tone}`}>{item.label}</span>
+              <button className="btn" onClick={() => onLoadScan(item.id)} type="button">Load</button>
             </div>
-          ))}
+          )) : (
+            <div className="empty-v2">
+              <strong>No scans saved</strong>
+              <span>Scan a repository to create dependency history.</span>
+            </div>
+          )}
         </div>
       </Panel>
     </SecondaryFrame>
   );
 }
 
-function Placeholder({ title, body }) {
+function checkTone(level) {
+  if (level === "error") return "red";
+  if (level === "warn") return "amber";
+  return "green";
+}
+
+function ChecksSurface({ history, overview, runtime, scan }) {
+  const health = runtime.health || {};
+  const checks = runtime.checks || [];
+  const warnings = checks.filter((check) => check.level === "warn" || check.level === "error").length;
+  const metrics = [
+    { label: "Status", value: health.status || "unknown", tone: health.status === "ok" ? "ok" : "warn", sub: health.version || "backend" },
+    { label: "GitHub", value: githubReady(health) ? "ready" : "missing", tone: githubReady(health) ? "ok" : "hot", sub: "dependency reads" },
+    { label: "Scans", value: String(asCount(health.scan_count || overview?.counts?.scans)), tone: "sig", sub: `${asCount(health.repo_count || overview?.counts?.repos)} repos` },
+    { label: "Tracked", value: String(asCount(health.tracked_item_count || overview?.counts?.tracked_items)), tone: "sig", sub: "items" },
+    { label: "Checks", value: warnings ? String(warnings) : "clear", tone: warnings ? "warn" : "ok", sub: "startup" },
+  ];
   return (
-    <SecondaryFrame>
-      <div className="eyebrow">// DepTriage dependency queue</div>
-      <h1>{title}</h1>
-      <p className="subline">{body}</p>
+    <SecondaryFrame health={health} history={history} overview={overview} scan={scan}>
+      <div className="hero-row">
+        <div>
+          <div className="eyebrow">// DepTriage readiness</div>
+          <h1>Checks</h1>
+          <p className="subline">Backend health, GitHub dependency-read access, database state, and startup checks.</p>
+        </div>
+        <button className="btn" onClick={runtime.refresh} type="button">{runtime.loading ? "Refreshing..." : "Refresh"}</button>
+      </div>
+      {runtime.error && <StatusBanner tone="red">{runtime.error}</StatusBanner>}
+      <MetricBand metrics={metrics} />
+      <div className="atlas-layout suite-four-layout">
+        <Panel eyebrow="Health" title="Backend status" action={<span className={`chip ${health.status === "ok" ? "green" : "amber"}`}>{health.status || "unknown"}</span>}>
+          <div className="panelbody repo-list">
+            <div className="rowline"><span className="muted">Auth enabled</span><span className={`chip ${health.auth_enabled ? "green" : "amber"}`}>{health.auth_enabled ? "yes" : "no"}</span></div>
+            <div className="rowline"><span className="muted">GitHub token</span><span className={`chip ${githubReady(health) ? "green" : "red"}`}>{githubReady(health) ? "ready" : "missing"}</span></div>
+            <div className="feed-item">
+              <div>
+                <div className="feed-title">Database</div>
+                <div className="feed-meta break-all">{health.db_path || "unknown"}</div>
+              </div>
+              <span className={`chip ${health.db_ok ? "green" : "red"}`}>{health.db_ok ? "ok" : "check"}</span>
+            </div>
+          </div>
+        </Panel>
+        <Panel eyebrow="Startup" title="Startup checks" action={<span className={`chip ${warnings ? "amber" : "green"}`}>{warnings ? `${warnings} warnings` : "clear"}</span>}>
+          <div className="panelbody repo-list">
+            {checks.length ? checks.map((check, index) => (
+              <div className="feed-item" key={`${check.msg}-${index}`}>
+                <div>
+                  <div className="feed-title">{check.level || "info"}</div>
+                  <div className="feed-meta">{check.msg}</div>
+                </div>
+                <span className={`chip ${checkTone(check.level)}`}>{check.level || "info"}</span>
+              </div>
+            )) : (
+              <div className="empty-v2">
+                <strong>No checks</strong>
+                <span>No startup checks were returned by the backend.</span>
+              </div>
+            )}
+          </div>
+        </Panel>
+      </div>
     </SecondaryFrame>
   );
 }
 
 export default function App() {
   const [activeTab, setActiveTab] = useState("triage");
+  const [error, setError] = useState("");
+  const [form, setForm] = useState(DEFAULT_FORM);
+  const [history, setHistory] = useState([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [overview, setOverview] = useState(null);
+  const [running, setRunning] = useState(false);
+  const [scan, setScan] = useState(null);
   const auth = useApiKeyAuth({ apiBase: API, storageKey: "dep-triage_api_key" });
   const fetch_ = useMemo(() => createApiFetcher(auth.apiKey), [auth.apiKey]);
   const ready = auth.checked && !auth.needsAuth;
   const runtime = useProductRuntime({ apiBase: API, fetcher: fetch_, ready });
   const authConfigured = Boolean(runtime.authStatus?.auth_configured || runtime.health?.auth_enabled);
+
+  async function fetchJson(path, options, fallbackError) {
+    const response = await fetch_(`${API}${path}`, options);
+    return parseJsonResponse(response, fallbackError);
+  }
+
+  async function refreshTriageData() {
+    if (!ready) return;
+    setLoadingHistory(true);
+    const [overviewResult, historyResult] = await Promise.allSettled([
+      fetchJson("/overview", undefined, "DepTriage could not load overview."),
+      fetchJson("/history", undefined, "DepTriage could not load history."),
+    ]);
+    setOverview(overviewResult.status === "fulfilled" ? overviewResult.value : null);
+    setHistory(historyResult.status === "fulfilled" ? historyResult.value || [] : []);
+    setLoadingHistory(false);
+    const failed = [overviewResult, historyResult].find((result) => result.status === "rejected");
+    if (failed) {
+      setError(failed.reason?.message || "DepTriage could not load one or more backend resources.");
+    }
+  }
+
+  useEffect(() => {
+    refreshTriageData();
+  }, [ready, fetch_]);
+
+  async function runScan() {
+    setRunning(true);
+    setError("");
+    try {
+      const result = await fetchJson(
+        "/scan/github/dependencies",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            repo: form.repo,
+            pr_limit: Number(form.pr_limit) || 25,
+            include_alerts: Boolean(form.include_alerts),
+          }),
+        },
+        "DepTriage could not scan that repository.",
+      );
+      setScan(result);
+      setForm((current) => ({ ...current, repo: result.repo || current.repo }));
+      setActiveTab("triage");
+      await refreshTriageData();
+      await runtime.refresh();
+    } catch (err) {
+      setError(err.message || "DepTriage could not scan that repository.");
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  async function loadScan(id) {
+    if (!id) return;
+    setRunning(true);
+    setError("");
+    try {
+      const result = await fetchJson(`/history/${id}`, undefined, "DepTriage could not load that scan.");
+      setScan(result);
+      setForm((current) => ({ ...current, repo: result.repo || current.repo }));
+      setActiveTab("triage");
+    } catch (err) {
+      setError(err.message || "DepTriage could not load that scan.");
+    } finally {
+      setRunning(false);
+    }
+  }
 
   if (!ready) {
     return (
@@ -342,14 +657,37 @@ export default function App() {
         productKey="dep-triage"
         tabs={TABS}
       />
-      {activeTab === "triage" && <TriageSurface />}
-      {activeTab === "history" && <HistorySurface />}
-      {activeTab === "checks" && (
-        <Placeholder
-          title="Checks"
-          body="GitHub token, Dependabot alert access, and backend readiness checks for DepTriage."
+      {activeTab === "triage" && (
+        <TriageSurface
+          error={error}
+          form={form}
+          health={runtime.health}
+          history={history}
+          onChangeForm={setForm}
+          onLoadScan={loadScan}
+          onRefresh={() => {
+            refreshTriageData();
+            runtime.refresh();
+          }}
+          onRunScan={runScan}
+          overview={overview}
+          running={running}
+          scan={scan}
         />
       )}
+      {activeTab === "history" && (
+        <HistorySurface
+          activeScanId={scan?.id || ""}
+          health={runtime.health}
+          history={history}
+          loading={loadingHistory}
+          onLoadScan={loadScan}
+          onRefresh={refreshTriageData}
+          overview={overview}
+          scan={scan}
+        />
+      )}
+      {activeTab === "checks" && <ChecksSurface history={history} overview={overview} runtime={runtime} scan={scan} />}
     </ProductV2Shell>
   );
 }
