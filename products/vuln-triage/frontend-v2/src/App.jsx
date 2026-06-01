@@ -9,6 +9,7 @@ import {
   ProductRail,
   SuiteRadar,
   SuiteTopline,
+  usePersistentProductTab,
 } from "@patchhivehq/ui-v2";
 import { API } from "./config.js";
 
@@ -559,7 +560,7 @@ function ChecksSurface({ history, overview, runtime, scan }) {
 }
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState("triage");
+  const [activeTab, setActiveTab] = usePersistentProductTab("vuln-triage", TABS, "triage");
   const [error, setError] = useState("");
   const [form, setForm] = useState(DEFAULT_FORM);
   const [history, setHistory] = useState([]);

@@ -9,6 +9,7 @@ import {
   ProductRail,
   SuiteRadar,
   SuiteTopline,
+  usePersistentProductTab,
 } from "@patchhivehq/ui-v2";
 import { API } from "./config.js";
 
@@ -786,7 +787,7 @@ function createInitialStream() {
 }
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState("mission");
+  const [activeTab, setActiveTab] = usePersistentProductTab("repo-reaper", TABS, "mission");
   const [agents, setAgents] = useState([]);
   const [config, setConfig] = useState(null);
   const [dryParams, setDryParams] = useState(DEFAULT_DRY_PARAMS);

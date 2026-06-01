@@ -119,6 +119,58 @@ export function toneClass(tone) {
   return tone ? ` ${tone}` : "";
 }
 
+function productTabStorageKey(productKey) {
+  return `${productKey || "patchhive"}_active_tab`;
+}
+
+function validProductTab(tabs, id) {
+  return tabs.some((tab) => tab.id === id);
+}
+
+function fallbackProductTab(tabs, defaultTab) {
+  if (validProductTab(tabs, defaultTab)) {
+    return defaultTab;
+  }
+  return tabs[0]?.id || "";
+}
+
+function readProductTab(productKey, tabs, defaultTab) {
+  const fallback = fallbackProductTab(tabs, defaultTab);
+  if (typeof window === "undefined") {
+    return fallback;
+  }
+
+  try {
+    const saved = window.localStorage.getItem(productTabStorageKey(productKey));
+    return validProductTab(tabs, saved) ? saved : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+export function usePersistentProductTab(productKey, tabs, defaultTab) {
+  const [activeTab, setActiveTab] = useState(() => readProductTab(productKey, tabs, defaultTab));
+
+  useEffect(() => {
+    if (!validProductTab(tabs, activeTab)) {
+      setActiveTab(fallbackProductTab(tabs, defaultTab));
+      return;
+    }
+
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    try {
+      window.localStorage.setItem(productTabStorageKey(productKey), activeTab);
+    } catch {
+      // Browsers can block storage; tab persistence is helpful but not required.
+    }
+  }, [productKey, tabs, defaultTab, activeTab]);
+
+  return [activeTab, setActiveTab];
+}
+
 function runtimeTone(status) {
   if (status === "ok" || status === "online" || status === "ready") {
     return "ok";

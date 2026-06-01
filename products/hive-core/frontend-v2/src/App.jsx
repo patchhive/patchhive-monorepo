@@ -7,6 +7,7 @@ import {
   ProductRail,
   SuiteTopline,
   applySuiteAccent,
+  usePersistentProductTab,
 } from "@patchhivehq/ui-v2";
 import { API } from "./config.js";
 
@@ -953,7 +954,7 @@ function ContractsSurface({ health, products, setup }) {
 export default function App() {
   const auth = useApiKeyAuth({ apiBase: API, storageKey: "hive-core_api_key" });
   const fetch_ = useMemo(() => createApiFetcher(auth.apiKey), [auth.apiKey]);
-  const [activeTab, setActiveTab] = useState("suite");
+  const [activeTab, setActiveTab] = usePersistentProductTab("hive-core", TABS, "suite");
   const [health, setHealth] = useState(null);
   const [setup, setSetup] = useState(null);
   const [products, setProducts] = useState([]);

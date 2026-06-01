@@ -10,4 +10,5 @@ export {
   SuiteRadar,
   applySuiteAccent,
   toneClass,
+  usePersistentProductTab,
 } from "./primitives.jsx";

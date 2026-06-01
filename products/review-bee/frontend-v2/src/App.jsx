@@ -9,6 +9,7 @@ import {
   ProductRail,
   SuiteRadar,
   SuiteTopline,
+  usePersistentProductTab,
 } from "@patchhivehq/ui-v2";
 import { API } from "./config.js";
 
@@ -721,7 +722,7 @@ function ChecksSurface({ history, overview, review, runtime }) {
 }
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState("threads");
+  const [activeTab, setActiveTab] = usePersistentProductTab("review-bee", TABS, "threads");
   const [error, setError] = useState("");
   const [form, setForm] = useState({ repo: "", pr_number: "", publish_comment: false });
   const [history, setHistory] = useState([]);

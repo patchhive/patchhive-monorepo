@@ -7,6 +7,7 @@ import {
   ProductRail,
   SuiteRadar,
   SuiteTopline,
+  usePersistentProductTab,
 } from "@patchhivehq/ui-v2";
 import { API } from "./config.js";
 
@@ -1221,7 +1222,7 @@ function WatchFloor({
 export default function App() {
   const auth = useApiKeyAuth({ apiBase: API, storageKey: "signal_api_key" });
   const fetch_ = useMemo(() => createApiFetcher(auth.apiKey), [auth.apiKey]);
-  const [activeTab, setActiveTab] = useState("atlas");
+  const [activeTab, setActiveTab] = usePersistentProductTab("signal-hive", TABS, "atlas");
   const [params, setParams] = useState(DEFAULT_PARAMS);
   const [scan, setScan] = useState(null);
   const [timeline, setTimeline] = useState(null);

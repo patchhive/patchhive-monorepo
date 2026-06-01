@@ -9,6 +9,7 @@ import {
   ProductRail,
   SuiteRadar,
   SuiteTopline,
+  usePersistentProductTab,
 } from "@patchhivehq/ui-v2";
 import { API } from "./config.js";
 
@@ -692,7 +693,7 @@ function ChecksSurface({ assessment, history, overview, runtime }) {
 }
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState("readiness");
+  const [activeTab, setActiveTab] = usePersistentProductTab("merge-keeper", TABS, "readiness");
   const [assessment, setAssessment] = useState(null);
   const [error, setError] = useState("");
   const [form, setForm] = useState(DEFAULT_FORM);
