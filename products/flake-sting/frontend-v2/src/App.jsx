@@ -263,9 +263,21 @@ function InstabilitySurface() {
   );
 }
 
+function SecondaryFrame({ children }) {
+  return (
+    <>
+      <SuiteTopline cells={TOPLINE_CELLS} />
+      <div className="main-grid hive-workspace-grid">
+        <ProductRail sections={RAIL_SECTIONS} stats={RAIL_STATS} />
+        <main className="workspace">{children}</main>
+      </div>
+    </>
+  );
+}
+
 function HistorySurface() {
   return (
-    <div className="product-page-shell">
+    <SecondaryFrame>
       <div>
         <div className="eyebrow">// FlakeSting instability queue</div>
         <h1>Scan History</h1>
@@ -284,17 +296,17 @@ function HistorySurface() {
           ))}
         </div>
       </Panel>
-    </div>
+    </SecondaryFrame>
   );
 }
 
 function Placeholder({ title, body }) {
   return (
-    <div className="product-page-shell">
+    <SecondaryFrame>
       <div className="eyebrow">// FlakeSting instability queue</div>
       <h1>{title}</h1>
       <p className="subline">{body}</p>
-    </div>
+    </SecondaryFrame>
   );
 }
 
