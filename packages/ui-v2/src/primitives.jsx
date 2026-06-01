@@ -403,8 +403,11 @@ export function MetricBand({ metrics }) {
       {metrics.map((metric) => (
         <div className="metric" key={metric.label}>
           <span className="label">{metric.label}</span>
-          <span className={`big${toneClass(metric.tone)}`}>{metric.value}</span>
-          <span className="micro">{metric.sub}</span>
+          <span className="metric-main">
+            <span className={`big${toneClass(metric.tone)}`}>{metric.value}</span>
+            {metric.unit && <span className="metric-unit">{metric.unit}</span>}
+          </span>
+          {metric.sub && <span className="micro">{metric.sub}</span>}
         </div>
       ))}
     </div>

@@ -117,6 +117,10 @@ function githubReady(health) {
   return Boolean(health?.github?.token_configured);
 }
 
+function plural(value, singular, pluralValue = `${singular}s`) {
+  return asCount(value) === 1 ? singular : pluralValue;
+}
+
 function toRulePayload(form) {
   return {
     blocked_paths: splitList(form.blocked_paths),
@@ -171,12 +175,20 @@ function buildTopline(review, health) {
 
 function buildMetrics(review, history, health) {
   if (review) {
+    const riskScore = asCount(review.risk_score);
+    const filesChanged = asCount(review.metrics?.files_changed);
+    const riskyFiles = asCount(review.metrics?.risky_files);
+    const blockedFindings = asCount(review.metrics?.blocked_findings);
+    const warningFindings = asCount(review.metrics?.warning_findings);
+    const testsChanged = asCount(review.metrics?.tests_changed);
+    const ruleHits = blockedFindings + warningFindings;
+
     return [
       { label: "Decision", value: String(review.recommendation || "ready").toUpperCase(), tone: metricTone(review.recommendation), sub: review.summary || "review complete" },
-      { label: "Risk score", value: String(asCount(review.risk_score)), tone: asCount(review.risk_score) >= 70 ? "hot" : asCount(review.risk_score) >= 40 ? "warn" : "ok", sub: "0-100" },
-      { label: "Files touched", value: String(asCount(review.metrics?.files_changed)), tone: "sig", sub: `${asCount(review.metrics?.risky_files)} risky` },
-      { label: "Rule hits", value: String(asCount(review.metrics?.blocked_findings) + asCount(review.metrics?.warning_findings)), tone: asCount(review.metrics?.blocked_findings) ? "hot" : "warn", sub: `${asCount(review.metrics?.blocked_findings)} block` },
-      { label: "Tests found", value: String(asCount(review.metrics?.tests_changed)), tone: asCount(review.metrics?.tests_changed) ? "ok" : "warn", sub: "test files" },
+      { label: "Risk score", value: String(riskScore), tone: riskScore >= 70 ? "hot" : riskScore >= 40 ? "warn" : "ok", unit: "/ 100", sub: "policy risk" },
+      { label: "Files touched", value: String(filesChanged), tone: "sig", unit: plural(filesChanged, "file"), sub: `${riskyFiles} risky ${plural(riskyFiles, "file")}` },
+      { label: "Rule hits", value: String(ruleHits), tone: blockedFindings ? "hot" : ruleHits ? "warn" : "ok", unit: plural(ruleHits, "hit"), sub: `${blockedFindings} blocking` },
+      { label: "Tests found", value: String(testsChanged), tone: testsChanged ? "ok" : "warn", unit: plural(testsChanged, "test file"), sub: "matched test paths" },
     ];
   }
 

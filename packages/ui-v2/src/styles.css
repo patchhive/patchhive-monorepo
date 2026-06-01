@@ -497,6 +497,24 @@ h1 {
   border-left: 12px solid transparent;
 }
 
+.metric-main {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+  gap: 8px;
+}
+
+.metric-unit {
+  overflow: hidden;
+  color: var(--dim);
+  font-family: var(--orb);
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
 .big {
   color: var(--text);
   font-family: var(--orb);
