@@ -244,16 +244,150 @@ function buildRailStats(review, history) {
   };
 }
 
+function countDecisions(history, recommendation) {
+  return history.filter((item) => item.recommendation === recommendation).length;
+}
+
+function tabRailSections({ checks = [], health = {}, history = [], packs = [], review = null, rules = [], ruleForm = DEFAULT_RULE_FORM }) {
+  return {
+    checks: [
+      {
+        title: "Runtime",
+        items: [
+          { label: "backend", active: true, badge: health.status || "unknown", badgeTone: health.status === "ok" ? "green" : "amber" },
+          { label: "github", badge: githubReady(health) ? "ready" : "optional", badgeTone: githubReady(health) ? "green" : "amber" },
+          { label: "webhook", badge: health.github?.webhook_secret_configured ? "ready" : "missing", badgeTone: health.github?.webhook_secret_configured ? "green" : "amber" },
+          { label: "auth", badge: health.auth_enabled ? "on" : "open", badgeTone: health.auth_enabled ? "green" : "amber" },
+        ],
+      },
+      {
+        title: "Contracts",
+        items: [
+          { label: "startup checks", badge: String(checks.length), badgeTone: checks.length ? "signal" : "green" },
+          { label: "rules", badge: String(asCount(health.rules_count)), badgeTone: "signal" },
+          { label: "reviews", badge: String(asCount(health.review_count)), badgeTone: "signal" },
+        ],
+      },
+    ],
+    history: [
+      {
+        title: "Decisions",
+        items: [
+          { label: "safe", active: review?.recommendation === "safe", badge: String(countDecisions(history, "safe")), badgeTone: "green" },
+          { label: "warn", active: review?.recommendation === "warn", badge: String(countDecisions(history, "warn")), badgeTone: "amber" },
+          { label: "block", active: review?.recommendation === "block", badge: String(countDecisions(history, "block")), badgeTone: "red" },
+        ],
+      },
+      {
+        title: "Sources",
+        items: [
+          { label: "manual", badge: String(history.filter((item) => (item.source_kind || "manual") === "manual").length), badgeTone: "signal" },
+          { label: "github pr", badge: String(history.filter((item) => item.source_kind === "github_pr").length), badgeTone: "signal" },
+        ],
+      },
+    ],
+    rules: [
+      {
+        title: "Rule Memory",
+        items: [
+          { label: "saved repos", active: true, badge: String(rules.length), badgeTone: "signal" },
+          { label: "starter packs", badge: String(packs.length), badgeTone: "signal" },
+          { label: "current repo", value: ruleForm.repo || "none" },
+        ],
+      },
+      {
+        title: "Default Caps",
+        items: [
+          { label: "max files", badge: ruleForm.max_files || "12", badgeTone: "signal" },
+          { label: "max additions", badge: ruleForm.max_additions || "400", badgeTone: "signal" },
+          { label: "max deletions", badge: ruleForm.max_deletions || "250", badgeTone: "signal" },
+        ],
+      },
+    ],
+  };
+}
+
+function tabRailStats({ health = {}, history = [], review = null, ruleForm = DEFAULT_RULE_FORM }, tab) {
+  const latest = history[0] || {};
+  if (tab === "rules") {
+    return {
+      title: "Policy target",
+      items: [
+        { label: "Repository", value: ruleForm.repo || "none" },
+        { label: "Mode", value: "RULES", large: true, tone: "sig" },
+        { label: "Publish", value: "review only" },
+      ],
+    };
+  }
+  if (tab === "checks") {
+    return {
+      title: "Backend",
+      items: [
+        { label: "Status", value: health.status || "unknown", large: true, tone: health.status === "ok" ? "ok" : "warn" },
+        { label: "Database", value: health.db_ok ? "ok" : "check" },
+        { label: "GitHub", value: githubReady(health) ? "ready" : "optional" },
+      ],
+    };
+  }
+  return {
+    title: "Selected decision",
+    items: [
+      { label: "Repository", value: review?.repo || latest.repo || "none" },
+      { label: "Decision", value: String(review?.recommendation || latest.recommendation || "ready").toUpperCase(), large: true, tone: metricTone(review?.recommendation || latest.recommendation) },
+      { label: "Age", value: review?.created_at ? timeAgo(review.created_at) : latest.created_at ? timeAgo(latest.created_at) : "none" },
+    ],
+  };
+}
+
+function TabFrame({ children, health, railSections, railStats, review }) {
+  const topline = buildTopline(review, health);
+  return (
+    <>
+      <SuiteTopline cells={topline} />
+      <div className="main-grid hive-workspace-grid">
+        <ProductRail sections={railSections} stats={railStats} />
+        <main className="workspace">{children}</main>
+      </div>
+    </>
+  );
+}
+
+function decisionRadarItem(review) {
+  const recommendation = review?.recommendation || "ready";
+  return {
+    detail: review?.repo || "Current review",
+    gain: recommendation,
+    gainMeta: `${asCount(review?.metrics?.files_changed)} files`,
+    id: review?.id || "current-decision",
+    label: recommendation,
+    minWindow: 7,
+    position: { left: "50%", top: "44%" },
+    stats: [
+      { label: "Decision", value: recommendation },
+      { label: "Risk", value: String(asCount(review?.risk_score)) },
+      { label: "Block", value: String(asCount(review?.metrics?.blocked_findings)) },
+      { label: "Warn", value: String(asCount(review?.metrics?.warning_findings)) },
+      { label: "Tests", value: String(asCount(review?.metrics?.tests_changed)) },
+    ],
+    summary: review?.summary || "TrustGate decision for the current diff.",
+    title: `${String(recommendation).toUpperCase()} decision`,
+    tone: recommendationTone(recommendation),
+    vector: recommendation,
+    vectorTone: recommendation === "warn" || recommendation === "block" ? "warn" : "",
+  };
+}
+
 function buildRadarItems(review, history) {
-  if (review?.findings?.length) {
-    return review.findings.map((finding, index) => ({
+  if (review) {
+    const items = [decisionRadarItem(review)];
+    const findingItems = (review.findings || []).map((finding, index) => ({
       detail: finding.label || "Finding",
       gain: finding.severity || "info",
       gainMeta: finding.evidence?.[0] || finding.key,
       id: finding.key || `finding-${index + 1}`,
       label: finding.severity || `F${index + 1}`,
       minWindow: index < 3 ? 7 : index < 6 ? 14 : 30,
-      position: POSITIONS[index % POSITIONS.length],
+      position: POSITIONS[(index + 1) % POSITIONS.length],
       stats: [
         { label: "Severity", value: finding.severity || "info" },
         { label: "Key", value: finding.key || "policy" },
@@ -267,30 +401,31 @@ function buildRadarItems(review, history) {
       vector: finding.severity || finding.key,
       vectorTone: finding.severity === "block" || finding.severity === "warn" ? "warn" : "",
     }));
-  }
-
-  if (review?.files?.length) {
-    return review.files.slice(0, 8).map((file, index) => ({
-      detail: file.path,
-      gain: file.status || "file",
-      gainMeta: `+${asCount(file.additions)} -${asCount(file.deletions)}`,
-      id: file.path || `file-${index + 1}`,
-      label: file.status || `F${index + 1}`,
-      minWindow: index < 3 ? 7 : index < 6 ? 14 : 30,
-      position: POSITIONS[index % POSITIONS.length],
-      stats: [
-        { label: "Status", value: file.status || "review" },
-        { label: "Add", value: String(asCount(file.additions)) },
-        { label: "Del", value: String(asCount(file.deletions)) },
-        { label: "Generated", value: file.generated ? "yes" : "no" },
-        { label: "Rules", value: String(file.matched_rules?.length || 0) },
-      ],
-      summary: file.summary || file.path,
-      title: file.path || `File ${index + 1}`,
-      tone: file.status === "blocked" ? "red" : file.status === "warn" ? "amber" : "green",
-      vector: file.path_policy || file.status,
-      vectorTone: file.status === "blocked" || file.status === "warn" ? "warn" : "",
-    }));
+    const riskyFileItems = (review.files || [])
+      .filter((file) => file.status === "blocked" || file.status === "warn")
+      .slice(0, 5)
+      .map((file, index) => ({
+        detail: file.path,
+        gain: file.status || "file",
+        gainMeta: `+${asCount(file.additions)} -${asCount(file.deletions)}`,
+        id: file.path || `file-${index + 1}`,
+        label: file.status || `F${index + 1}`,
+        minWindow: index < 3 ? 7 : index < 6 ? 14 : 30,
+        position: POSITIONS[(index + findingItems.length + 1) % POSITIONS.length],
+        stats: [
+          { label: "Status", value: file.status || "review" },
+          { label: "Add", value: String(asCount(file.additions)) },
+          { label: "Del", value: String(asCount(file.deletions)) },
+          { label: "Generated", value: file.generated ? "yes" : "no" },
+          { label: "Rules", value: String(file.matched_rules?.length || 0) },
+        ],
+        summary: file.summary || file.path,
+        title: file.path || `File ${index + 1}`,
+        tone: file.status === "blocked" ? "red" : file.status === "warn" ? "amber" : "green",
+        vector: file.path_policy || file.status,
+        vectorTone: file.status === "blocked" || file.status === "warn" ? "warn" : "",
+      }));
+    return [...items, ...findingItems, ...riskyFileItems];
   }
 
   if (history.length) {
@@ -559,9 +694,12 @@ function ReviewSurface({
   );
 }
 
-function HistorySurface({ activeReviewId, history, loading, onLoadReview, onRefresh }) {
+function HistorySurface({ activeReviewId, health, history, loading, onLoadReview, onRefresh, review }) {
+  const railSections = useMemo(() => tabRailSections({ health, history, review }).history, [health, history, review]);
+  const railStats = useMemo(() => tabRailStats({ health, history, review }, "history"), [health, history, review]);
+
   return (
-    <div className="product-page-shell">
+    <TabFrame health={health} railSections={railSections} railStats={railStats} review={review}>
       <div className="hero-row">
         <div>
           <div className="eyebrow">// TrustGate decision log</div>
@@ -595,26 +733,34 @@ function HistorySurface({ activeReviewId, history, loading, onLoadReview, onRefr
           )}
         </div>
       </Panel>
-    </div>
+    </TabFrame>
   );
 }
 
 function RulesSurface({
   busy,
   error,
+  health,
+  history,
   onApplyPack,
   onDeleteRules,
   onRefresh,
   onSaveRules,
   onSetRuleForm,
   packs,
+  review,
   ruleForm,
   rules,
 }) {
   const setField = (key, value) => onSetRuleForm((current) => ({ ...current, [key]: value }));
+  const railSections = useMemo(
+    () => tabRailSections({ health, history, packs, review, rules, ruleForm }).rules,
+    [health, history, packs, review, rules, ruleForm],
+  );
+  const railStats = useMemo(() => tabRailStats({ health, history, review, ruleForm }, "rules"), [health, history, review, ruleForm]);
 
   return (
-    <div className="product-page-shell">
+    <TabFrame health={health} railSections={railSections} railStats={railStats} review={review}>
       <div className="hero-row">
         <div>
           <div className="eyebrow">// TrustGate rule memory</div>
@@ -712,14 +858,16 @@ function RulesSurface({
           )}
         </div>
       </Panel>
-    </div>
+    </TabFrame>
   );
 }
 
-function ChecksSurface({ runtime }) {
+function ChecksSurface({ history, review, runtime }) {
   const health = runtime.health || {};
   const checks = runtime.checks || [];
   const checkWarnings = checks.filter((check) => check.level === "warn" || check.level === "error").length;
+  const railSections = useMemo(() => tabRailSections({ checks, health, history, review }).checks, [checks, health, history, review]);
+  const railStats = useMemo(() => tabRailStats({ health, history, review }, "checks"), [health, history, review]);
   const metrics = [
     { label: "Status", value: health.status || "unknown", tone: health.status === "ok" ? "ok" : "warn", sub: health.version || "backend" },
     { label: "GitHub", value: githubReady(health) ? "ready" : "optional", tone: githubReady(health) ? "ok" : "warn", sub: "PR review" },
@@ -729,7 +877,7 @@ function ChecksSurface({ runtime }) {
   ];
 
   return (
-    <div className="product-page-shell">
+    <TabFrame health={health} railSections={railSections} railStats={railStats} review={review}>
       <div className="hero-row">
         <div>
           <div className="eyebrow">// TrustGate readiness</div>
@@ -775,7 +923,7 @@ function ChecksSurface({ runtime }) {
           </div>
         </Panel>
       </div>
-    </div>
+    </TabFrame>
   );
 }
 
@@ -1022,12 +1170,15 @@ export default function App() {
         <RulesSurface
           busy={rulesBusy}
           error={ruleError}
+          health={runtime.health}
+          history={history}
           onApplyPack={applyPack}
           onDeleteRules={deleteRules}
           onRefresh={refreshTrustData}
           onSaveRules={saveRules}
           onSetRuleForm={setRuleForm}
           packs={packs}
+          review={review}
           ruleForm={ruleForm}
           rules={rules}
         />
@@ -1035,13 +1186,15 @@ export default function App() {
       {activeTab === "history" && (
         <HistorySurface
           activeReviewId={review?.id || ""}
+          health={runtime.health}
           history={history}
           loading={loadingHistory}
           onLoadReview={loadHistoryReview}
           onRefresh={refreshTrustData}
+          review={review}
         />
       )}
-      {activeTab === "checks" && <ChecksSurface runtime={runtime} />}
+      {activeTab === "checks" && <ChecksSurface history={history} review={review} runtime={runtime} />}
     </ProductV2Shell>
   );
 }
