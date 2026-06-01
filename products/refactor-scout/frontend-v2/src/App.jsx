@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createApiFetcher, useApiKeyAuth, useProductRuntime } from "@patchhivehq/product-shell/auth";
 import {
   DeckBar,
@@ -18,212 +18,345 @@ const TABS = [
   { id: "checks", label: "Checks" },
 ];
 
-const TOPLINE_CELLS = [
-  { label: "RefactorScout", value: "Refactor map", tone: "sig" },
-  { label: "System", value: "Online", tone: "ok" },
-  { label: "Mode", value: "Local read" },
-  { label: "Scope", value: "Allowed root", tone: "sig" },
-  { label: "Safety", value: "8 high", tone: "ok" },
-  { label: "Last scan", value: "T-03:10" },
+const POSITIONS = [
+  { left: "60%", top: "28%" },
+  { left: "37%", top: "38%" },
+  { left: "72%", top: "62%" },
+  { left: "29%", top: "70%" },
+  { left: "55%", top: "76%" },
+  { left: "46%", top: "54%" },
+  { left: "31%", top: "31%" },
+  { left: "69%", top: "44%" },
 ];
 
-const RAIL_SECTIONS = [
-  {
-    title: "Roots",
-    items: [
-      { label: "/workspaces/patchhive", active: true, pin: true },
-      { label: "max files", value: "250" },
-      { label: "remote fs", value: "blocked" },
-      { label: "ignored dirs", value: "9" },
-    ],
-  },
-  {
-    title: "Heuristics",
-    items: [
-      { label: "high safety", active: true, badge: "8", badgeTone: "green" },
-      { label: "medium safety", badge: "17", badgeTone: "amber" },
-      { label: "oversized files", badge: "6", badgeTone: "signal" },
-      { label: "literal repeats", badge: "24", badgeTone: "signal" },
-    ],
-  },
-];
-
-const RAIL_STATS = {
-  title: "Active repo",
-  items: [
-    { label: "Repository", value: "patchhive/patchhive" },
-    { label: "Decision", value: "SCOUT", large: true, tone: "ok" },
-    { label: "Focus", value: "safe first move" },
-  ],
+const DEFAULT_FORM = {
+  repo_path: "",
+  max_files: "250",
 };
 
-const METRICS = [
-  { label: "High safety", value: "8", tone: "ok", sub: "low blast radius" },
-  { label: "Medium", value: "17", tone: "warn", sub: "needs owner eye" },
-  { label: "Large files", value: "6", tone: "sig", sub: "clear split points" },
-  { label: "Repeat strings", value: "24", tone: "sig", sub: "constant candidates" },
-  { label: "Files scanned", value: "250", tone: "ok", sub: "cap respected" },
-];
+function asCount(value) {
+  const number = Number(value || 0);
+  return Number.isFinite(number) ? number : 0;
+}
 
-const LEADS = [
-  {
-    id: "RS-01",
-    title: "frontend panel split",
-    bucket: "high",
-    tone: "green",
-    state: "high safety",
-    value: "component split",
-    position: { left: "60%", top: "28%" },
-    summary: "One panel carries repeated row rendering and can be extracted without changing product behavior.",
-  },
-  {
-    id: "RS-02",
-    title: "repeated API path strings",
-    bucket: "string",
+function timeAgo(value) {
+  if (!value) return "never";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  const seconds = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000));
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 48) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
+function safetyTone(safety) {
+  const value = String(safety || "").toLowerCase();
+  if (value === "high") return "green";
+  if (value === "medium") return "amber";
+  if (value === "low") return "red";
+  return "signal";
+}
+
+function scoreTone(score) {
+  const value = asCount(score);
+  if (value >= 75) return "green";
+  if (value >= 50) return "amber";
+  return "signal";
+}
+
+async function parseJsonResponse(response, fallbackError) {
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.error || data.message || fallbackError);
+  }
+  return data;
+}
+
+function buildTopline(health, overview, scan, history) {
+  const latest = scan || history[0] || {};
+  return [
+    { label: "RefactorScout", value: "Refactor map", tone: "sig" },
+    { label: "System", value: health?.status || "checking", tone: health?.status === "ok" ? "ok" : "warn" },
+    { label: "Mode", value: "Local read" },
+    { label: "Scope", value: (overview?.allowed_roots || health?.allowed_roots || []).length ? "Allowed root" : "local only", tone: "sig" },
+    { label: "Safety", value: `${asCount(scan?.metrics?.high_safety || overview?.high_safety_count || health?.high_safety_count)} high`, tone: "ok" },
+    { label: "Last scan", value: latest.created_at ? timeAgo(latest.created_at) : overview?.scan_count ? "loaded" : "none" },
+  ];
+}
+
+function buildMetrics(scan, overview, health) {
+  if (scan) {
+    const metrics = scan.metrics || {};
+    return [
+      { label: "High safety", value: String(asCount(metrics.high_safety)), tone: "ok", sub: "low blast radius" },
+      { label: "Medium", value: String(asCount(metrics.medium_safety)), tone: asCount(metrics.medium_safety) ? "warn" : "ok", sub: "needs owner eye" },
+      { label: "Large files", value: String(asCount(metrics.large_file_count)), tone: "sig", sub: "split candidates" },
+      { label: "Repeat strings", value: String(asCount(metrics.repeated_literal_count)), tone: "sig", sub: "constant candidates" },
+      { label: "Files scanned", value: String(asCount(metrics.files_scanned)), tone: "ok", sub: `${asCount(metrics.files_skipped)} skipped` },
+    ];
+  }
+  return [
+    { label: "Scans", value: String(asCount(overview?.scan_count || health?.scan_count)), tone: "sig", sub: `${asCount(overview?.repo_count || health?.repo_count)} repos` },
+    { label: "Opportunities", value: String(asCount(overview?.opportunity_count || health?.opportunity_count)), tone: "sig", sub: "saved scans" },
+    { label: "High safety", value: String(asCount(overview?.high_safety_count || health?.high_safety_count)), tone: "ok", sub: "safe first moves" },
+    { label: "Large files", value: String(asCount(overview?.large_file_count)), tone: "sig", sub: "file splits" },
+    { label: "Repeat strings", value: String(asCount(overview?.repeated_literal_count)), tone: "sig", sub: "constants" },
+  ];
+}
+
+function buildRail(scan, history, overview, health) {
+  const latest = history[0] || {};
+  const roots = overview?.allowed_roots || health?.allowed_roots || [];
+  return {
+    sections: [
+      {
+        title: "Roots",
+        items: [
+          { label: roots[0] || "localhost", active: true, pin: true },
+          { label: "max files", value: String(scan?.metrics?.files_scanned || "250") },
+          { label: "remote fs", value: overview?.remote_fs_enabled || health?.remote_fs_enabled ? "enabled" : "blocked" },
+          { label: "last repo", value: scan?.repo_name || overview?.last_repo || latest.repo_name || "none" },
+        ],
+      },
+      {
+        title: "Heuristics",
+        items: [
+          { label: "high safety", active: true, badge: String(asCount(scan?.metrics?.high_safety || overview?.high_safety_count)), badgeTone: "green" },
+          { label: "medium safety", badge: String(asCount(scan?.metrics?.medium_safety)), badgeTone: "amber" },
+          { label: "oversized files", badge: String(asCount(scan?.metrics?.large_file_count || overview?.large_file_count)), badgeTone: "signal" },
+          { label: "literal repeats", badge: String(asCount(scan?.metrics?.repeated_literal_count || overview?.repeated_literal_count)), badgeTone: "signal" },
+        ],
+      },
+    ],
+    stats: {
+      title: "Active repo",
+      items: [
+        { label: "Repository", value: scan?.repo_name || latest.repo_name || overview?.last_repo || "none" },
+        { label: "Decision", value: scan?.metrics?.high_safety ? "SCOUT" : "READY", large: true, tone: scan?.metrics?.high_safety ? "ok" : "sig" },
+        { label: "Opportunities", value: String(asCount(scan?.metrics?.opportunities || latest.opportunities)) },
+      ],
+    },
+  };
+}
+
+function buildRadarItems(scan, history) {
+  if (scan?.opportunities?.length) {
+    return scan.opportunities.slice(0, 8).map((lead, index) => ({
+      detail: lead.path || lead.title,
+      gain: lead.safety || "lead",
+      gainMeta: `${asCount(lead.score)} score`,
+      id: lead.id || `lead-${index + 1}`,
+      label: lead.kind || `R${index + 1}`,
+      minWindow: index < 3 ? 7 : index < 6 ? 14 : 30,
+      position: POSITIONS[index % POSITIONS.length],
+      stats: [
+        { label: "Kind", value: lead.kind || "refactor" },
+        { label: "Safety", value: lead.safety || "unknown" },
+        { label: "Score", value: String(asCount(lead.score)) },
+        { label: "Effort", value: lead.effort || "unknown" },
+        { label: "Lang", value: lead.language || "n/a" },
+      ],
+      summary: lead.summary || lead.suggestion || lead.evidence?.[0] || "RefactorScout opportunity.",
+      title: lead.title || lead.path || `Lead ${index + 1}`,
+      tone: safetyTone(lead.safety) === "signal" ? scoreTone(lead.score) : safetyTone(lead.safety),
+      vector: lead.kind || lead.path || "refactor",
+      vectorTone: safetyTone(lead.safety) === "amber" || safetyTone(lead.safety) === "red" ? "warn" : "",
+    }));
+  }
+  if (history.length) {
+    return history.slice(0, 8).map((item, index) => ({
+      detail: item.repo_path,
+      gain: item.high_safety ? "high safety" : "saved",
+      gainMeta: `${asCount(item.opportunities)} leads`,
+      id: item.id || `history-${index + 1}`,
+      label: item.repo_name || `S${index + 1}`,
+      minWindow: index < 3 ? 7 : index < 6 ? 14 : 30,
+      position: POSITIONS[index % POSITIONS.length],
+      stats: [
+        { label: "Repo", value: item.repo_name || "repo" },
+        { label: "Leads", value: String(asCount(item.opportunities)) },
+        { label: "High", value: String(asCount(item.high_safety)) },
+        { label: "Medium", value: String(asCount(item.medium_safety)) },
+        { label: "Age", value: timeAgo(item.created_at) },
+      ],
+      summary: item.summary || "Saved RefactorScout scan.",
+      title: item.repo_name || item.repo_path,
+      tone: item.high_safety ? "green" : item.medium_safety ? "amber" : "signal",
+      vector: "saved",
+      vectorTone: item.medium_safety ? "warn" : "",
+    }));
+  }
+  return [{
+    detail: "No local scan yet",
+    gain: "standby",
+    gainMeta: "allowed path",
+    id: "refactor-scout-ready",
+    label: "RS",
+    position: { left: "50%", top: "44%" },
+    stats: [
+      { label: "Mode", value: "local" },
+      { label: "Root", value: "required" },
+      { label: "History", value: "empty" },
+      { label: "Safety", value: "first" },
+      { label: "Action", value: "scan" },
+    ],
+    summary: "Scan an allowed local repo path to populate RefactorScout's live opportunity radar.",
+    title: "RefactorScout ready",
     tone: "signal",
-    state: "high safety",
-    value: "24 repeats",
-    position: { left: "37%", top: "38%" },
-    summary: "Repeated endpoint literals can move into local constants and reduce accidental drift.",
-  },
-  {
-    id: "RS-03",
-    title: "oversized scan function",
-    bucket: "medium",
-    tone: "amber",
-    state: "medium safety",
-    value: "186 lines",
-    position: { left: "72%", top: "62%" },
-    summary: "The function is large and cohesive enough to split, but the data-flow needs a human pass.",
-  },
-  {
-    id: "RS-04",
-    title: "generated folder ignored",
-    bucket: "ignore",
-    tone: "green",
-    state: "ignore",
-    value: "safe skip",
-    position: { left: "29%", top: "70%" },
-    summary: "Generated output is noisy and correctly excluded from the cleanup queue.",
-  },
-  {
-    id: "RS-05",
-    title: "route helper extraction",
-    bucket: "high",
-    tone: "signal",
-    state: "high safety",
-    value: "shared helper",
-    position: { left: "55%", top: "76%" },
-    summary: "Two route modules repeat request parsing that can become a small local helper.",
-  },
-];
+    vector: "READY",
+  }];
+}
 
-const LINKS = [
-  { from: "RS-01", to: "RS-02", style: { left: "39%", top: "33%", width: "118px", transform: "rotate(-13deg)" } },
-  { from: "RS-01", to: "RS-03", style: { left: "60%", top: "42%", width: "132px", transform: "rotate(69deg)" } },
-  { from: "RS-02", to: "RS-04", style: { left: "31%", top: "51%", width: "122px", transform: "rotate(82deg)" } },
-  { from: "RS-04", to: "RS-05", style: { left: "32%", top: "74%", width: "142px", transform: "rotate(8deg)" } },
-];
+function buildRadarFeed(scan, history, health) {
+  if (scan) {
+    return [
+      { text: scan.summary || "RefactorScout completed the local scan.", tone: scan.metrics?.high_safety ? "green" : scan.metrics?.medium_safety ? "amber" : "signal" },
+      { text: `${asCount(scan.metrics?.high_safety)} high-safety and ${asCount(scan.metrics?.medium_safety)} medium-safety leads are active.`, tone: scan.metrics?.high_safety ? "green" : "amber" },
+      { text: scan.warnings?.[0] || "Scan stayed inside configured filesystem guardrails.", tone: scan.warnings?.length ? "amber" : "signal" },
+    ];
+  }
+  return [
+    { text: history.length ? `${history.length} saved local scans are available.` : "RefactorScout is waiting for a local repo scan.", tone: "signal" },
+    { text: (health?.allowed_roots || []).length ? "Allowed roots are configured for local scanning." : "Configure allowed roots before scanning arbitrary paths.", tone: (health?.allowed_roots || []).length ? "green" : "amber" },
+    { text: "The radar fills with file-level cleanup leads after a scan completes.", tone: "signal" },
+  ];
+}
 
-const FILTERS = [
-  { id: "all", label: "all" },
-  { id: "high", label: "high" },
-  { id: "medium", label: "medium" },
-  { id: "string", label: "strings" },
-  { id: "ignore", label: "ignore" },
-];
+function StatusBanner({ tone = "signal", children }) {
+  if (!children) return null;
+  return <div className={`status-banner ${tone}`}>{children}</div>;
+}
 
-const LEAD_QUEUE = [
-  { rank: "01", title: "frontend panel split", meta: "extract repeated row rendering from one panel", tone: "green", label: "high" },
-  { rank: "02", title: "repeated API path strings", meta: "move 24 endpoint literals into constants", tone: "signal", label: "safe" },
-  { rank: "03", title: "route helper extraction", meta: "two modules repeat request parsing", tone: "signal", label: "high" },
-  { rank: "04", title: "oversized scan function", meta: "split after owner checks data-flow", tone: "amber", label: "medium" },
-];
-
-const EVIDENCE = [
-  { title: "Low blast radius", meta: "8 leads avoid business logic and persistence boundaries", label: "safe", tone: "green" },
-  { title: "Explicit root respected", meta: "scan stayed inside configured local allowlist", label: "local", tone: "signal" },
-  { title: "Medium leads held back", meta: "17 items need owner review before scheduling", label: "watch", tone: "amber" },
-];
-
-const HISTORY = [
-  { title: "patchhive / local scan", meta: "high-safety leads rose from 6 to 8", label: "better", tone: "green" },
-  { title: "repo-memory / panels", meta: "large component split still pending", label: "queue", tone: "signal" },
-  { title: "trust-gate / routes", meta: "request parsing helper remains medium-safety", label: "watch", tone: "amber" },
-];
-
-function RefactorMap() {
+function RefactorMap({ health, history, scan }) {
+  const items = useMemo(() => buildRadarItems(scan, history), [scan, history]);
+  const feed = useMemo(() => buildRadarFeed(scan, history, health), [scan, history, health]);
   return (
     <SuiteRadar
       ariaLabel="RefactorScout opportunity radar"
       detailLabel="Suggested first move"
-      feed={[
-        { text: "High-safety leads avoid persistence and business logic boundaries.", tone: "green" },
-        { text: "Repeated API path strings are a safe constants extraction." },
-        { text: "Oversized scan function stays medium until owner reviews data flow.", tone: "amber" },
-      ]}
+      feed={feed}
       gainLabel="Safety"
-      items={LEADS.map((lead) => ({
-        ...lead,
-        detail: lead.title,
-        gain: lead.state,
-        gainMeta: lead.value,
-        label: lead.id,
-        stats: [
-          { label: "Bucket", value: lead.bucket },
-          { label: "Safety", value: lead.state },
-          { label: "Move", value: lead.value },
-          { label: "Blast", value: lead.tone === "amber" ? "medium" : "low" },
-          { label: "Action", value: lead.tone === "green" ? "schedule" : "review" },
-        ],
-        vector: lead.id,
-        vectorTone: lead.tone === "amber" ? "warn" : "",
-      }))}
-      signalLabel="leads"
-      vectorLabel="Selected lead"
+      itemQueryParam="refactor"
+      items={items}
+      signalLabel={scan ? "leads" : "scans"}
+      vectorLabel={scan ? "Selected lead" : "Selected scan"}
     />
   );
 }
 
-function LeadQueuePanel() {
+function ScanForm({ error, form, onChange, onRun, running }) {
+  const set = (key, value) => onChange((current) => ({ ...current, [key]: value }));
   return (
-    <Panel eyebrow="Queue" title="Refactor leads" action={<span className="chip green">8 high</span>}>
-      <div className="panelbody repo-list queue-grid">
-        {LEAD_QUEUE.map((item) => (
-          <div className="ledger-row" key={item.rank}>
-            <div className="rank">{item.rank}</div>
-            <div>
-              <div className="repo-name">{item.title}</div>
-              <div className="feed-meta">{item.meta}</div>
-            </div>
-            <span className={`chip ${item.tone}`}>{item.label}</span>
+    <Panel eyebrow="Scan" title="Local repo intake" action={<span className="chip signal">local read</span>}>
+      <form
+        className="panelbody control-stack"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onRun();
+        }}
+      >
+        <div className="form-grid">
+          <label className="v2-field">
+            Repo path
+            <input className="v2-input" onChange={(event) => set("repo_path", event.target.value)} placeholder="/mnt/docker/code/patchhive" value={form.repo_path} />
+          </label>
+          <label className="v2-field">
+            Max files
+            <input className="v2-input" min="25" max="1000" onChange={(event) => set("max_files", event.target.value)} type="number" value={form.max_files} />
+          </label>
+          <div className="v2-field">
+            Action
+            <button className="btn primary" disabled={running || !form.repo_path.trim()} type="submit">
+              {running ? "Scanning..." : "Scan path"}
+            </button>
           </div>
-        ))}
+        </div>
+        {error && <StatusBanner tone="red">{error}</StatusBanner>}
+      </form>
+    </Panel>
+  );
+}
+
+function LeadQueuePanel({ history, onLoadScan, scan }) {
+  if (scan) {
+    return (
+      <Panel eyebrow="Queue" title="Refactor leads" action={<span className="chip green">{asCount(scan.metrics?.high_safety)} high</span>}>
+        <div className="panelbody repo-list queue-grid">
+          {scan.opportunities?.length ? scan.opportunities.slice(0, 8).map((lead, index) => (
+            <div className="ledger-row" key={lead.id || index}>
+              <div className="rank">{String(index + 1).padStart(2, "0")}</div>
+              <div>
+                <div className="repo-name">{lead.title || lead.path}</div>
+                <div className="feed-meta">{lead.summary || lead.suggestion}</div>
+                <div className="repo-meta">
+                  <span className={`chip ${safetyTone(lead.safety)}`}>{lead.safety || "lead"}</span>
+                  <span className="chip signal">{lead.kind}</span>
+                  <span className="chip">{lead.path}</span>
+                </div>
+              </div>
+              <span className={`chip ${scoreTone(lead.score)}`}>{asCount(lead.score)}</span>
+            </div>
+          )) : (
+            <div className="empty-v2">
+              <strong>No refactor leads</strong>
+              <span>This scan did not find clear cleanup opportunities.</span>
+            </div>
+          )}
+        </div>
+      </Panel>
+    );
+  }
+  return (
+    <Panel eyebrow="Queue" title="Recent scans" action={<span className="chip signal">{history.length} saved</span>}>
+      <div className="panelbody repo-list queue-grid">
+        {history.length ? history.slice(0, 5).map((item) => (
+          <div className="ledger-row" key={item.id}>
+            <div className="rank">{asCount(item.high_safety)}</div>
+            <div>
+              <div className="repo-name">{item.repo_name || item.repo_path}</div>
+              <div className="feed-meta">{item.summary || "Saved RefactorScout scan."}</div>
+            </div>
+            <button className="btn" onClick={() => onLoadScan(item.id)} type="button">Load</button>
+          </div>
+        )) : (
+          <div className="empty-v2">
+            <strong>No scans yet</strong>
+            <span>Scan an allowed local repo path to populate the queue.</span>
+          </div>
+        )}
       </div>
     </Panel>
   );
 }
 
-function SidePanels() {
+function SidePanels({ health, scan }) {
+  const warnings = scan?.warnings || [];
   return (
     <aside className="side">
       <Panel eyebrow="Evidence" title="Why it is safe">
         <div className="panelbody repo-list">
-          {EVIDENCE.map((item) => (
-            <div className="feed-item" key={item.title}>
+          {warnings.length ? warnings.slice(0, 3).map((warning) => (
+            <div className="feed-item" key={warning}>
               <div>
-                <div className="feed-title">{item.title}</div>
-                <div className="feed-meta">{item.meta}</div>
+                <div className="feed-title">Scan warning</div>
+                <div className="feed-meta">{warning}</div>
               </div>
-              <span className={`chip ${item.tone}`}>{item.label}</span>
+              <span className="chip amber">warn</span>
             </div>
-          ))}
+          )) : (
+            <div className="rowline"><span className="muted">Warnings</span><span className="chip green">clear</span></div>
+          )}
+          <div className="rowline"><span className="muted">Allowed roots</span><span className="chip signal">{(health?.allowed_roots || []).length}</span></div>
+          <div className="rowline"><span className="muted">Remote FS</span><span className={`chip ${health?.remote_fs_enabled ? "amber" : "green"}`}>{health?.remote_fs_enabled ? "enabled" : "blocked"}</span></div>
         </div>
       </Panel>
       <Panel eyebrow="Consumers" title="Signal handoff">
         <div className="panelbody repo-list">
           <div className="rowline"><span className="muted">RepoMemory</span><span className="chip signal">context</span></div>
-          <div className="rowline"><span className="muted">TrustGate</span><span className="chip green">safe</span></div>
+          <div className="rowline"><span className="muted">TrustGate</span><span className={`chip ${scan?.metrics?.high_safety ? "green" : "signal"}`}>{scan?.metrics?.high_safety ? "safe" : "ready"}</span></div>
           <div className="rowline"><span className="muted">RepoReaper</span><span className="chip amber">later</span></div>
         </div>
       </Panel>
@@ -231,12 +364,26 @@ function SidePanels() {
   );
 }
 
-function ScoutSurface() {
+function ScoutSurface({
+  error,
+  form,
+  health,
+  history,
+  onChangeForm,
+  onLoadScan,
+  onRefresh,
+  onRunScan,
+  overview,
+  running,
+  scan,
+}) {
+  const rail = useMemo(() => buildRail(scan, history, overview, health), [scan, history, overview, health]);
+  const metrics = useMemo(() => buildMetrics(scan, overview, health), [scan, overview, health]);
   return (
     <>
-      <SuiteTopline cells={TOPLINE_CELLS} />
+      <SuiteTopline cells={buildTopline(health, overview, scan, history)} />
       <div className="main-grid">
-        <ProductRail sections={RAIL_SECTIONS} stats={RAIL_STATS} />
+        <ProductRail sections={rail.sections} stats={rail.stats} />
         <main className="workspace">
           <div className="hero-row">
             <div>
@@ -245,79 +392,227 @@ function ScoutSurface() {
               <p className="subline">Local repo paths, explicit scan caps, and explainable heuristics turned into safe cleanup leads.</p>
             </div>
             <div className="actions">
-              <span className="chip green">high safety</span>
-              <span className="chip signal">local read</span>
-              <button className="btn primary" type="button">Scan path</button>
+              <span className={`chip ${(health?.allowed_roots || []).length ? "green" : "amber"}`}>{(health?.allowed_roots || []).length ? "root ready" : "root missing"}</span>
+              <button className="btn" onClick={onRefresh} type="button">Refresh</button>
             </div>
           </div>
-          <MetricBand metrics={METRICS} />
+          <ScanForm error={error} form={form} onChange={onChangeForm} onRun={onRunScan} running={running} />
+          <MetricBand metrics={metrics} />
           <div className="atlas-layout suite-four-layout">
             <Panel eyebrow="Scout" title="Opportunity map" action={<span className="chip signal">scout radar</span>}>
-              <RefactorMap />
+              <RefactorMap health={health} history={history} scan={scan} />
             </Panel>
-            <LeadQueuePanel />
+            <LeadQueuePanel history={history} onLoadScan={onLoadScan} scan={scan} />
           </div>
         </main>
-        <SidePanels />
+        <SidePanels health={health} scan={scan} />
       </div>
     </>
   );
 }
 
-function SecondaryFrame({ children }) {
+function SecondaryFrame({ children, health, history, overview, scan }) {
+  const rail = useMemo(() => buildRail(scan, history, overview, health), [scan, history, overview, health]);
   return (
     <>
-      <SuiteTopline cells={TOPLINE_CELLS} />
+      <SuiteTopline cells={buildTopline(health, overview, scan, history)} />
       <div className="main-grid hive-workspace-grid">
-        <ProductRail sections={RAIL_SECTIONS} stats={RAIL_STATS} />
+        <ProductRail sections={rail.sections} stats={rail.stats} />
         <main className="workspace">{children}</main>
       </div>
     </>
   );
 }
 
-function HistorySurface() {
+function HistorySurface({ activeScanId, health, history, loading, onLoadScan, onRefresh, overview, scan }) {
   return (
-    <SecondaryFrame>
-      <div>
-        <div className="eyebrow">// RefactorScout cleanup queue</div>
-        <h1>Scan History</h1>
-        <p className="subline">Saved local scans with high-safety lead movement and ignored-path evidence.</p>
+    <SecondaryFrame health={health} history={history} overview={overview} scan={scan}>
+      <div className="hero-row">
+        <div>
+          <div className="eyebrow">// RefactorScout cleanup queue</div>
+          <h1>Scan History</h1>
+          <p className="subline">Saved local scans with high-safety lead movement and ignored-path evidence.</p>
+        </div>
+        <button className="btn" onClick={onRefresh} type="button">{loading ? "Refreshing..." : "Refresh"}</button>
       </div>
-      <Panel eyebrow="Recent" title="Local scans">
+      <Panel eyebrow="Recent" title="Local scans" action={<span className="chip signal">{history.length} saved</span>}>
         <div className="panelbody repo-list queue-grid">
-          {HISTORY.map((item) => (
-            <div className="feed-item" key={item.title}>
+          {history.length ? history.map((item) => (
+            <div className="ledger-row" key={item.id}>
+              <div className="rank">{item.id === activeScanId ? "SEL" : asCount(item.high_safety)}</div>
               <div>
-                <div className="feed-title">{item.title}</div>
-                <div className="feed-meta">{item.meta}</div>
+                <div className="repo-name">{item.repo_name || item.repo_path}</div>
+                <div className="feed-meta">{item.summary || "Saved RefactorScout scan."}</div>
+                <div className="repo-meta">
+                  <span className="chip green">{asCount(item.high_safety)} high</span>
+                  <span className="chip amber">{asCount(item.medium_safety)} medium</span>
+                  <span className="chip signal">{asCount(item.opportunities)} leads</span>
+                  <span className="chip">{timeAgo(item.created_at)}</span>
+                </div>
               </div>
-              <span className={`chip ${item.tone}`}>{item.label}</span>
+              <button className="btn" onClick={() => onLoadScan(item.id)} type="button">Load</button>
             </div>
-          ))}
+          )) : (
+            <div className="empty-v2">
+              <strong>No scans saved</strong>
+              <span>Scan an allowed local repo path to create history.</span>
+            </div>
+          )}
         </div>
       </Panel>
     </SecondaryFrame>
   );
 }
 
-function Placeholder({ title, body }) {
+function checkTone(level) {
+  if (level === "error") return "red";
+  if (level === "warn") return "amber";
+  return "green";
+}
+
+function ChecksSurface({ history, overview, runtime, scan }) {
+  const health = runtime.health || {};
+  const checks = runtime.checks || [];
+  const warnings = checks.filter((check) => check.level === "warn" || check.level === "error").length;
+  const metrics = [
+    { label: "Status", value: health.status || "unknown", tone: health.status === "ok" ? "ok" : "warn", sub: health.version || "backend" },
+    { label: "Allowed roots", value: String((health.allowed_roots || overview?.allowed_roots || []).length), tone: (health.allowed_roots || overview?.allowed_roots || []).length ? "ok" : "warn", sub: "local scope" },
+    { label: "Scans", value: String(asCount(health.scan_count || overview?.scan_count)), tone: "sig", sub: `${asCount(health.repo_count || overview?.repo_count)} repos` },
+    { label: "Opportunities", value: String(asCount(health.opportunity_count || overview?.opportunity_count)), tone: "sig", sub: "saved leads" },
+    { label: "Checks", value: warnings ? String(warnings) : "clear", tone: warnings ? "warn" : "ok", sub: "startup" },
+  ];
   return (
-    <SecondaryFrame>
-      <div className="eyebrow">// RefactorScout cleanup queue</div>
-      <h1>{title}</h1>
-      <p className="subline">{body}</p>
+    <SecondaryFrame health={health} history={history} overview={overview} scan={scan}>
+      <div className="hero-row">
+        <div>
+          <div className="eyebrow">// RefactorScout readiness</div>
+          <h1>Checks</h1>
+          <p className="subline">Backend health, filesystem guardrails, local scan scope, and startup checks.</p>
+        </div>
+        <button className="btn" onClick={runtime.refresh} type="button">{runtime.loading ? "Refreshing..." : "Refresh"}</button>
+      </div>
+      {runtime.error && <StatusBanner tone="red">{runtime.error}</StatusBanner>}
+      <MetricBand metrics={metrics} />
+      <div className="atlas-layout suite-four-layout">
+        <Panel eyebrow="Health" title="Backend status" action={<span className={`chip ${health.status === "ok" ? "green" : "amber"}`}>{health.status || "unknown"}</span>}>
+          <div className="panelbody repo-list">
+            <div className="rowline"><span className="muted">Auth enabled</span><span className={`chip ${health.auth_enabled ? "green" : "amber"}`}>{health.auth_enabled ? "yes" : "no"}</span></div>
+            <div className="rowline"><span className="muted">Remote filesystem</span><span className={`chip ${health.remote_fs_enabled ? "amber" : "green"}`}>{health.remote_fs_enabled ? "enabled" : "blocked"}</span></div>
+            <div className="feed-item">
+              <div>
+                <div className="feed-title">Database</div>
+                <div className="feed-meta break-all">{health.db_path || "unknown"}</div>
+              </div>
+              <span className={`chip ${health.db_ok ? "green" : "red"}`}>{health.db_ok ? "ok" : "check"}</span>
+            </div>
+          </div>
+        </Panel>
+        <Panel eyebrow="Startup" title="Startup checks" action={<span className={`chip ${warnings ? "amber" : "green"}`}>{warnings ? `${warnings} warnings` : "clear"}</span>}>
+          <div className="panelbody repo-list">
+            {checks.length ? checks.map((check, index) => (
+              <div className="feed-item" key={`${check.msg}-${index}`}>
+                <div>
+                  <div className="feed-title">{check.level || "info"}</div>
+                  <div className="feed-meta">{check.msg}</div>
+                </div>
+                <span className={`chip ${checkTone(check.level)}`}>{check.level || "info"}</span>
+              </div>
+            )) : (
+              <div className="empty-v2">
+                <strong>No checks</strong>
+                <span>No startup checks were returned by the backend.</span>
+              </div>
+            )}
+          </div>
+        </Panel>
+      </div>
     </SecondaryFrame>
   );
 }
 
 export default function App() {
   const [activeTab, setActiveTab] = useState("scout");
+  const [error, setError] = useState("");
+  const [form, setForm] = useState(DEFAULT_FORM);
+  const [history, setHistory] = useState([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [overview, setOverview] = useState(null);
+  const [running, setRunning] = useState(false);
+  const [scan, setScan] = useState(null);
   const auth = useApiKeyAuth({ apiBase: API, storageKey: "refactor-scout_api_key" });
   const fetch_ = useMemo(() => createApiFetcher(auth.apiKey), [auth.apiKey]);
   const ready = auth.checked && !auth.needsAuth;
   const runtime = useProductRuntime({ apiBase: API, fetcher: fetch_, ready });
   const authConfigured = Boolean(runtime.authStatus?.auth_configured || runtime.health?.auth_enabled);
+
+  async function fetchJson(path, options, fallbackError) {
+    const response = await fetch_(`${API}${path}`, options);
+    return parseJsonResponse(response, fallbackError);
+  }
+
+  async function refreshScoutData() {
+    if (!ready) return;
+    setLoadingHistory(true);
+    const [overviewResult, historyResult] = await Promise.allSettled([
+      fetchJson("/overview", undefined, "RefactorScout could not load overview."),
+      fetchJson("/history", undefined, "RefactorScout could not load history."),
+    ]);
+    setOverview(overviewResult.status === "fulfilled" ? overviewResult.value : null);
+    setHistory(historyResult.status === "fulfilled" ? historyResult.value || [] : []);
+    setLoadingHistory(false);
+    const failed = [overviewResult, historyResult].find((result) => result.status === "rejected");
+    if (failed) {
+      setError(failed.reason?.message || "RefactorScout could not load one or more backend resources.");
+    }
+  }
+
+  useEffect(() => {
+    refreshScoutData();
+  }, [ready, fetch_]);
+
+  async function runScan() {
+    setRunning(true);
+    setError("");
+    try {
+      const result = await fetchJson(
+        "/scan/local",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            repo_path: form.repo_path,
+            max_files: Number(form.max_files) || 250,
+          }),
+        },
+        "RefactorScout could not scan that path.",
+      );
+      setScan(result);
+      setForm((current) => ({ ...current, repo_path: result.repo_path || current.repo_path }));
+      setActiveTab("scout");
+      await refreshScoutData();
+      await runtime.refresh();
+    } catch (err) {
+      setError(err.message || "RefactorScout could not scan that path.");
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  async function loadScan(id) {
+    if (!id) return;
+    setRunning(true);
+    setError("");
+    try {
+      const result = await fetchJson(`/history/${id}`, undefined, "RefactorScout could not load that scan.");
+      setScan(result);
+      setForm((current) => ({ ...current, repo_path: result.repo_path || current.repo_path }));
+      setActiveTab("scout");
+    } catch (err) {
+      setError(err.message || "RefactorScout could not load that scan.");
+    } finally {
+      setRunning(false);
+    }
+  }
 
   if (!ready) {
     return (
@@ -342,14 +637,37 @@ export default function App() {
         productKey="refactor-scout"
         tabs={TABS}
       />
-      {activeTab === "scout" && <ScoutSurface />}
-      {activeTab === "history" && <HistorySurface />}
-      {activeTab === "checks" && (
-        <Placeholder
-          title="Checks"
-          body="Local filesystem allowlist, remote scan guardrail, and backend readiness checks for RefactorScout."
+      {activeTab === "scout" && (
+        <ScoutSurface
+          error={error}
+          form={form}
+          health={runtime.health}
+          history={history}
+          onChangeForm={setForm}
+          onLoadScan={loadScan}
+          onRefresh={() => {
+            refreshScoutData();
+            runtime.refresh();
+          }}
+          onRunScan={runScan}
+          overview={overview}
+          running={running}
+          scan={scan}
         />
       )}
+      {activeTab === "history" && (
+        <HistorySurface
+          activeScanId={scan?.id || ""}
+          health={runtime.health}
+          history={history}
+          loading={loadingHistory}
+          onLoadScan={loadScan}
+          onRefresh={refreshScoutData}
+          overview={overview}
+          scan={scan}
+        />
+      )}
+      {activeTab === "checks" && <ChecksSurface history={history} overview={overview} runtime={runtime} scan={scan} />}
     </ProductV2Shell>
   );
 }
