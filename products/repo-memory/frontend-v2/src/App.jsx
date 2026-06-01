@@ -44,6 +44,7 @@ const DEFAULT_CANDIDATE_FORM = {
   prevention: "",
 };
 
+const ACTIVE_TAB_STORAGE_KEY = "repo-memory_active_tab";
 const PROMPT_PACK_RUN_STORAGE_KEY = "repo-memory_prompt_pack_run";
 
 function asCount(value) {
@@ -104,6 +105,25 @@ function formatConfidence(value) {
   const number = Number(value || 0);
   if (!Number.isFinite(number)) return "0";
   return String(Math.round(number));
+}
+
+function validTab(id) {
+  return TABS.some((tab) => tab.id === id);
+}
+
+function rememberedActiveTab() {
+  if (typeof window === "undefined") {
+    return "core";
+  }
+  const tab = window.localStorage.getItem(ACTIVE_TAB_STORAGE_KEY);
+  return validTab(tab) ? tab : "core";
+}
+
+function rememberActiveTab(tab) {
+  if (!validTab(tab) || typeof window === "undefined") {
+    return;
+  }
+  window.localStorage.setItem(ACTIVE_TAB_STORAGE_KEY, tab);
 }
 
 function rememberPromptPackRun(id) {
@@ -612,7 +632,7 @@ function PromptPackSurface({
 }
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState("core");
+  const [activeTab, setActiveTab] = useState(rememberedActiveTab);
   const [busyCandidate, setBusyCandidate] = useState("");
   const [candidateForm, setCandidateForm] = useState(DEFAULT_CANDIDATE_FORM);
   const [candidates, setCandidates] = useState([]);
@@ -636,6 +656,10 @@ export default function App() {
     const response = await fetch_(`${API}${path}`, options);
     return parseJsonResponse(response, fallbackError);
   }
+
+  useEffect(() => {
+    rememberActiveTab(activeTab);
+  }, [activeTab]);
 
   async function refreshMemoryData() {
     if (!ready) {
