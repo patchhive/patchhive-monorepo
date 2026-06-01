@@ -227,19 +227,31 @@ function PromptPackPanel() {
   );
 }
 
+function SecondaryFrame({ children }) {
+  return (
+    <>
+      <SuiteTopline cells={TOPLINE_CELLS} />
+      <div className="main-grid hive-workspace-grid">
+        <ProductRail sections={RAIL_SECTIONS} stats={RAIL_STATS} />
+        <main className="workspace">{children}</main>
+      </div>
+    </>
+  );
+}
+
 function Placeholder({ title, body }) {
   return (
-    <div className="product-page-shell">
+    <SecondaryFrame>
       <div className="eyebrow">// RepoMemory memory queue</div>
       <h1>{title}</h1>
       <p className="subline">{body}</p>
-    </div>
+    </SecondaryFrame>
   );
 }
 
 function PromptPackSurface() {
   return (
-    <div className="product-page-shell">
+    <SecondaryFrame>
       <div>
         <div className="eyebrow">// RepoMemory memory queue</div>
         <h1>Prompt Packs</h1>
@@ -248,7 +260,7 @@ function PromptPackSurface() {
       <div className="placeholder-panel">
         <PromptPackPanel />
       </div>
-    </div>
+    </SecondaryFrame>
   );
 }
 
