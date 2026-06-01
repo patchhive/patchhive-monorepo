@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createApiFetcher, useApiKeyAuth, useProductRuntime } from "@patchhivehq/product-shell/auth";
 import {
   DeckBar,
@@ -43,6 +43,8 @@ const DEFAULT_CANDIDATE_FORM = {
   lesson: "",
   prevention: "",
 };
+
+const PROMPT_PACK_RUN_STORAGE_KEY = "repo-memory_prompt_pack_run";
 
 function asCount(value) {
   const number = Number(value || 0);
@@ -102,6 +104,20 @@ function formatConfidence(value) {
   const number = Number(value || 0);
   if (!Number.isFinite(number)) return "0";
   return String(Math.round(number));
+}
+
+function rememberPromptPackRun(id) {
+  if (!id || typeof window === "undefined") {
+    return;
+  }
+  window.localStorage.setItem(PROMPT_PACK_RUN_STORAGE_KEY, id);
+}
+
+function rememberedPromptPackRun() {
+  if (typeof window === "undefined") {
+    return "";
+  }
+  return window.localStorage.getItem(PROMPT_PACK_RUN_STORAGE_KEY) || "";
 }
 
 async function parseJsonResponse(response, fallbackError) {
@@ -609,6 +625,7 @@ export default function App() {
   const [promptPack, setPromptPack] = useState("");
   const [promptPackRun, setPromptPackRun] = useState(null);
   const [running, setRunning] = useState(false);
+  const autoLoadedPromptPackRef = useRef("");
   const auth = useApiKeyAuth({ apiBase: API, storageKey: "repo-memory_api_key" });
   const fetch_ = useMemo(() => createApiFetcher(auth.apiKey), [auth.apiKey]);
   const ready = auth.checked && !auth.needsAuth;
@@ -665,6 +682,7 @@ export default function App() {
       );
       setPromptPack(result.prompt_pack || "");
       setPromptPackRun({ id: result.id, repo: result.repo });
+      rememberPromptPackRun(result.id);
       await refreshMemoryData();
       await runtime.refresh();
     } catch (err) {
@@ -682,12 +700,29 @@ export default function App() {
       const result = await fetchJson(`/history/${id}/prompt-pack`, undefined, "RepoMemory could not load that prompt pack.");
       setPromptPack(result.prompt_pack || "");
       setPromptPackRun({ id: result.id, repo: result.repo });
+      rememberPromptPackRun(result.id);
     } catch (err) {
       setError(err.message || "RepoMemory could not load that prompt pack.");
     } finally {
       setLoadingPromptPack(false);
     }
   }
+
+  useEffect(() => {
+    if (!ready || promptPack || loadingPromptPack || !history.length) {
+      return;
+    }
+
+    const savedId = rememberedPromptPackRun();
+    const savedRun = history.find((item) => item.id === savedId);
+    const nextRun = savedRun || history[0];
+    if (!nextRun?.id || autoLoadedPromptPackRef.current === nextRun.id) {
+      return;
+    }
+
+    autoLoadedPromptPackRef.current = nextRun.id;
+    loadPromptPack(nextRun.id);
+  }, [ready, promptPack, loadingPromptPack, history]);
 
   async function createCandidate() {
     setError("");
