@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createApiFetcher, useApiKeyAuth, useProductRuntime } from "@patchhivehq/product-shell/auth";
 import {
   DeckBar,
@@ -18,286 +18,406 @@ const TABS = [
   { id: "packs", label: "Prompt packs" },
 ];
 
-const TOPLINE_CELLS = [
-  { label: "RepoMemory", value: "Memory spine 03", tone: "sig" },
-  { label: "System", value: "Online", tone: "ok" },
-  { label: "Mode", value: "Context first" },
-  { label: "GitHub", value: "Connected", tone: "sig" },
-  { label: "FailGuard", value: "7 queued", tone: "warn" },
-  { label: "Last ingest", value: "T-19:00" },
+const POSITIONS = [
+  { left: "51%", top: "25%" },
+  { left: "73%", top: "43%" },
+  { left: "43%", top: "67%" },
+  { left: "25%", top: "47%" },
+  { left: "62%", top: "78%" },
+  { left: "33%", top: "32%" },
+  { left: "69%", top: "62%" },
+  { left: "48%", top: "52%" },
 ];
 
-const RAIL_SECTIONS = [
-  {
-    title: "Repositories",
-    items: [
-      { label: "patchhive/reporeaper", active: true, pin: true },
-      { label: "patchhive/signalhive", value: "42" },
-      { label: "patchhive/trustgate", value: "31" },
-      { label: "patchhive/hivecore", value: "18" },
-    ],
-  },
-  {
-    title: "Curation",
-    items: [
-      { label: "pinned policy", active: true, badge: "27", badgeTone: "green" },
-      { label: "soft context", badge: "112", badgeTone: "signal" },
-      { label: "needs review", badge: "14", badgeTone: "amber" },
-      { label: "suppressed", badge: "9" },
-    ],
-  },
-];
-
-const RAIL_STATS = {
-  title: "Active repo",
-  items: [
-    { label: "Repository", value: "patchhive/reporeaper" },
-    { label: "Context coverage", value: "92%", large: true, tone: "green" },
-    { label: "Prompt pack", value: "fresh" },
-  ],
+const DEFAULT_INGEST_FORM = {
+  repo: "",
+  merged_pr_limit: "18",
+  issue_limit: "24",
+  since_days: "180",
 };
 
-const METRICS = [
-  { label: "Memories", value: "184", tone: "sig", sub: "+23 from ingest" },
-  { label: "Pinned policies", value: "27", tone: "ok", sub: "guardrail ready" },
-  { label: "FailGuard queue", value: "7", tone: "warn", sub: "3 high priority" },
-  { label: "Prompt packs", value: "4", tone: "sig", sub: "2 refreshed" },
-  { label: "Drift", value: "+12", tone: "warn", sub: "review themes changed" },
-];
+const DEFAULT_CANDIDATE_FORM = {
+  repo: "",
+  title: "",
+  outcome: "",
+  lesson: "",
+  prevention: "",
+};
 
-const FILTERS = [
-  { id: "all", label: "all" },
-  { id: "policy", label: "policy" },
-  { id: "failure", label: "failure" },
-  { id: "review", label: "review" },
-];
+function asCount(value) {
+  const number = Number(value || 0);
+  return Number.isFinite(number) ? number : 0;
+}
 
-const MEMORY_NODES = [
-  {
-    id: "M-143",
-    title: "Auth boundary expectations",
-    lane: "policy",
-    type: "policy",
-    confidence: "0.91",
-    evidence: "18 merged PRs",
-    tone: "green",
-    position: { left: "51%", top: "25%" },
-    summary: "Keep auth middleware small, explicit, and backed by route-level tests before other products consume the service.",
-  },
-  {
-    id: "M-118",
-    title: "Retry semantics are product-owned",
-    lane: "review",
-    type: "review",
-    confidence: "0.82",
-    evidence: "9 review threads",
-    tone: "signal",
-    position: { left: "73%", top: "43%" },
-    summary: "Reviewers repeatedly reject hidden retries unless the UI surfaces retry count, last failure, and operator control.",
-  },
-  {
-    id: "M-097",
-    title: "Scope creep in broad refactors",
-    lane: "failure",
-    type: "failure",
-    confidence: "0.88",
-    evidence: "5 rejected patches",
-    tone: "amber",
-    position: { left: "43%", top: "67%" },
-    summary: "Large cleanup patches drift into behavior changes. Split mechanical cleanup from product behavior before RepoReaper acts.",
-  },
-  {
-    id: "M-071",
-    title: "Config drift breaks local launch",
-    lane: "failure",
-    type: "failure",
-    confidence: "0.79",
-    evidence: "3 FailGuard lessons",
-    tone: "red",
-    position: { left: "25%", top: "47%" },
-    summary: "Docker ports, frontend URLs, and API defaults need matching updates or HiveCore reports false product failures.",
-  },
-  {
-    id: "M-052",
-    title: "Reviewer wants evidence first",
-    lane: "review",
-    type: "review",
-    confidence: "0.86",
-    evidence: "14 comments",
-    tone: "signal",
-    position: { left: "62%", top: "78%" },
-    summary: "Patch explanations land better when risk evidence and test output appear before implementation narrative.",
-  },
-];
+function timeAgo(value) {
+  if (!value) {
+    return "never";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return String(value);
+  }
+  const seconds = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000));
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 48) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
 
-const MEMORY_LINKS = [
-  { from: "M-143", to: "M-118", style: { left: "52%", top: "31%", width: "128px", transform: "rotate(28deg)" } },
-  { from: "M-118", to: "M-097", style: { left: "54%", top: "54%", width: "145px", transform: "rotate(142deg)" } },
-  { from: "M-097", to: "M-071", style: { left: "30%", top: "57%", width: "102px", transform: "rotate(210deg)" } },
-  { from: "M-097", to: "M-052", style: { left: "46%", top: "72%", width: "82px", transform: "rotate(20deg)" } },
-  { from: "M-071", to: "M-143", style: { left: "31%", top: "36%", width: "122px", transform: "rotate(-22deg)" } },
-];
+function githubReady(health) {
+  return Boolean(health?.github_ready || health?.github?.token_configured);
+}
 
-const MEMORY_QUEUE = [
-  { rank: "01", title: "Promote config drift lesson", meta: "FailGuard candidate - affects launcher and HiveCore", tone: "amber", label: "review" },
-  { rank: "02", title: "Pin auth boundary policy", meta: "High confidence - TrustGate should consume this", tone: "green", label: "pin" },
-  { rank: "03", title: "Refresh retry prompt pack", meta: "Review pressure changed after 9 threads", tone: "signal", label: "pack" },
-  { rank: "04", title: "Suppress stale fixture style note", meta: "No longer appears in recent PR history", tone: "", label: "soft" },
-];
+function confidenceTone(confidence) {
+  const value = Number(confidence || 0);
+  if (value >= 82) return "green";
+  if (value >= 65) return "signal";
+  if (value >= 45) return "amber";
+  return "red";
+}
 
-const PROMPT_PACK = [
-  { title: "Repo contract", meta: "Auth, startup checks, service tokens", label: "fresh", tone: "green" },
-  { title: "Review posture", meta: "Evidence first, small patches, test output", label: "ready", tone: "signal" },
-  { title: "Known failure modes", meta: "Config drift, hidden retries, broad refactors", label: "warn", tone: "amber" },
-];
+function metricTone(confidence) {
+  const tone = confidenceTone(confidence);
+  if (tone === "green") return "ok";
+  if (tone === "amber") return "warn";
+  if (tone === "red") return "hot";
+  return "sig";
+}
 
-const FAILGUARD = [
-  { title: "Rejected patch became policy candidate", meta: "RepoReaper Smith - confidence below threshold", label: "high", tone: "red" },
-  { title: "TrustGate warn submitted lesson", meta: "Sensitive path without explicit route test", label: "review", tone: "amber" },
-  { title: "Operator captured local launch failure", meta: "Port mismatch after frontend smoke test", label: "queued", tone: "signal" },
-];
+function kindTone(kind, disposition) {
+  if (disposition === "policy") return "green";
+  if (disposition === "suppressed") return "red";
+  if (kind === "failure_pattern") return "amber";
+  if (kind === "testing_expectation" || kind === "review_rule") return "green";
+  return "signal";
+}
 
-function MemoryLattice() {
+function shortKind(kind = "") {
+  return kind.replaceAll("_", " ") || "memory";
+}
+
+function formatConfidence(value) {
+  const number = Number(value || 0);
+  if (!Number.isFinite(number)) return "0";
+  return String(Math.round(number));
+}
+
+async function parseJsonResponse(response, fallbackError) {
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.error || data.message || fallbackError);
+  }
+  return data;
+}
+
+function memoryList(overview, memories) {
+  const featured = overview?.featured_memories || [];
+  return featured.length ? featured : memories;
+}
+
+function openCandidates(candidates) {
+  return candidates.filter((candidate) => candidate.status === "open" || !candidate.status);
+}
+
+function buildTopline(health, overview, candidates, history) {
+  const counts = overview?.counts || health?.counts || {};
+  const latest = history[0];
+  return [
+    { label: "RepoMemory", value: "Memory spine", tone: "sig" },
+    { label: "System", value: health?.status || "checking", tone: health?.status === "ok" ? "ok" : "warn" },
+    { label: "Mode", value: "Context first" },
+    { label: "GitHub", value: githubReady(health) ? "connected" : "token missing", tone: githubReady(health) ? "sig" : "warn" },
+    { label: "FailGuard", value: `${openCandidates(candidates).length} queued`, tone: openCandidates(candidates).length ? "warn" : "ok" },
+    { label: "Last ingest", value: latest?.created_at ? timeAgo(latest.created_at) : counts.runs ? "loaded" : "none" },
+  ];
+}
+
+function buildRail(overview, memories, candidates, history, selectedRepo) {
+  const repos = overview?.repos || [];
+  const pinned = memories.filter((memory) => memory.pinned).length;
+  const policy = memories.filter((memory) => memory.disposition === "policy").length;
+  const suppressed = memories.filter((memory) => memory.disposition === "suppressed").length;
+  return {
+    sections: [
+      {
+        title: "Repositories",
+        items: repos.length
+          ? repos.slice(0, 4).map((repo) => ({
+            active: repo.repo === selectedRepo,
+            label: repo.repo,
+            value: String(repo.memory_count || 0),
+          }))
+          : [{ label: "no ingests yet", active: true, value: "0" }],
+      },
+      {
+        title: "Curation",
+        items: [
+          { label: "pinned policy", active: true, badge: String(policy || pinned), badgeTone: "green" },
+          { label: "soft context", badge: String(Math.max(0, memories.length - policy - suppressed)), badgeTone: "signal" },
+          { label: "needs review", badge: String(openCandidates(candidates).length), badgeTone: openCandidates(candidates).length ? "amber" : "green" },
+          { label: "suppressed", badge: String(suppressed), badgeTone: suppressed ? "red" : "signal" },
+        ],
+      },
+    ],
+    stats: {
+      title: "Active repo",
+      items: [
+        { label: "Repository", value: selectedRepo || repos[0]?.repo || "none" },
+        { label: "Memories", value: String(memories.filter((memory) => !selectedRepo || memory.repo === selectedRepo).length), large: true, tone: "sig" },
+        { label: "Runs", value: String(history.filter((item) => !selectedRepo || item.repo === selectedRepo).length) },
+      ],
+    },
+  };
+}
+
+function buildMetrics(health, overview, memories, candidates) {
+  const counts = overview?.counts || health?.counts || {};
+  const policy = memories.filter((memory) => memory.disposition === "policy").length;
+  const pinned = memories.filter((memory) => memory.pinned).length;
+  const failures = memories.filter((memory) => memory.kind === "failure_pattern").length;
+  return [
+    { label: "Memories", value: String(asCount(counts.memories || memories.length)), tone: "sig", sub: `${asCount(counts.runs)} ingests` },
+    { label: "Pinned policies", value: String(policy || pinned), tone: "ok", sub: "guardrail ready" },
+    { label: "FailGuard queue", value: String(openCandidates(candidates).length), tone: openCandidates(candidates).length ? "warn" : "ok", sub: `${candidates.length} total` },
+    { label: "Repos", value: String(asCount(counts.repos)), tone: "sig", sub: "known history" },
+    { label: "Failure patterns", value: String(failures), tone: failures ? "warn" : "ok", sub: "learned lessons" },
+  ];
+}
+
+function buildRadarItems(overview, memories) {
+  const entries = memoryList(overview, memories);
+  if (!entries.length) {
+    return [{
+      detail: "No memory ingests yet",
+      gain: "standby",
+      gainMeta: "run ingest",
+      id: "repo-memory-ready",
+      label: "RM",
+      position: { left: "50%", top: "44%" },
+      stats: [
+        { label: "Mode", value: "context" },
+        { label: "Ingest", value: "ready" },
+        { label: "GitHub", value: "required" },
+        { label: "Prompt", value: "empty" },
+        { label: "Action", value: "run" },
+      ],
+      summary: "Run an ingest against an owner/repo to populate RepoMemory's live memory radar.",
+      title: "RepoMemory ready",
+      tone: "signal",
+      vector: "READY",
+    }];
+  }
+
+  return entries.slice(0, 8).map((memory, index) => {
+    const confidence = Number(memory.confidence || 0);
+    const tone = kindTone(memory.kind, memory.disposition);
+    return {
+      detail: memory.repo,
+      gain: formatConfidence(confidence),
+      gainMeta: `${asCount(memory.frequency)} hits`,
+      id: memory.id || memory.memory_ref || `memory-${index + 1}`,
+      label: memory.kind === "failure_pattern" ? "FG" : `M${index + 1}`,
+      minWindow: index < 3 ? 7 : index < 6 ? 14 : 30,
+      position: POSITIONS[index % POSITIONS.length],
+      stats: [
+        { label: "Kind", value: shortKind(memory.kind) },
+        { label: "Confidence", value: formatConfidence(confidence) },
+        { label: "Frequency", value: String(asCount(memory.frequency)) },
+        { label: "Pinned", value: memory.pinned ? "yes" : "no" },
+        { label: "State", value: memory.disposition || "signal" },
+      ],
+      summary: memory.detail || memory.prompt_line || "RepoMemory entry.",
+      title: memory.title || memory.memory_ref || `Memory ${index + 1}`,
+      tone,
+      vector: memory.kind || "memory",
+      vectorTone: tone === "amber" || tone === "red" ? "warn" : "",
+    };
+  });
+}
+
+function buildRadarFeed(overview, memories, candidates) {
+  const entries = memoryList(overview, memories);
+  if (!entries.length) {
+    return [
+      { text: "RepoMemory is waiting for a repo ingest before it can build durable context.", tone: "signal" },
+      { text: "FailGuard candidates can still queue lessons for later promotion.", tone: openCandidates(candidates).length ? "amber" : "green" },
+      { text: "Prompt packs appear after the first saved ingest.", tone: "signal" },
+    ];
+  }
+  const top = entries[0];
+  return [
+    { text: top?.prompt_line || top?.detail || "RepoMemory loaded live memory entries.", tone: kindTone(top?.kind, top?.disposition) },
+    { text: `${openCandidates(candidates).length} FailGuard candidates are waiting for operator review.`, tone: openCandidates(candidates).length ? "amber" : "green" },
+    { text: `${entries.length} featured memories are available for TrustGate, RepoReaper, and HiveCore handoff.`, tone: "signal" },
+  ];
+}
+
+function StatusBanner({ tone = "signal", children }) {
+  if (!children) return null;
+  return <div className={`status-banner ${tone}`}>{children}</div>;
+}
+
+function Field({ label, children }) {
+  return (
+    <label className="v2-field">
+      <span>{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function MemoryLattice({ candidates, memories, overview }) {
+  const items = useMemo(() => buildRadarItems(overview, memories), [overview, memories]);
+  const feed = useMemo(() => buildRadarFeed(overview, memories, candidates), [overview, memories, candidates]);
   return (
     <SuiteRadar
-      ariaLabel="RepoMemory curated memory radar"
+      ariaLabel="RepoMemory live memory radar"
       detailLabel="Memory detail"
-      feed={[
-        { text: "FailGuard candidates are feeding pinned policy, not automatic action.", tone: "amber" },
-        { text: "Prompt pack is fresh enough for TrustGate and RepoReaper context handoff." },
-        { text: "Config drift remains the highest-risk repeated failure pattern.", tone: "red" },
-      ]}
+      feed={feed}
       gainLabel="Confidence"
-      items={MEMORY_NODES.map((node) => ({
-        ...node,
-        detail: node.title,
-        gain: node.confidence,
-        gainMeta: node.evidence,
-        label: node.id,
-        stats: [
-          { label: "Kind", value: node.type },
-          { label: "State", value: "curated" },
-          { label: "Uses", value: "TrustGate" },
-          { label: "Pack", value: "ready" },
-          { label: "Lane", value: node.lane },
-        ],
-        vector: node.id,
-        vectorTone: node.tone === "amber" ? "warn" : "",
-      }))}
+      itemQueryParam="memory"
+      items={items}
       signalLabel="memories"
       vectorLabel="Selected memory"
     />
   );
 }
 
-function MemoryQueuePanel() {
+function IngestPanel({ error, form, onChange, onRun, running }) {
+  const set = (key, value) => onChange((current) => ({ ...current, [key]: value }));
   return (
-    <Panel eyebrow="Curation" title="Review queue" action={<span className="chip amber">14 pending</span>}>
+    <Panel eyebrow="Ingest" title="Repo history intake" action={<span className="chip signal">GitHub read</span>}>
+      <form
+        className="panelbody control-stack"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onRun();
+        }}
+      >
+        <div className="form-grid">
+          <Field label="Repository">
+            <input className="v2-input" onChange={(event) => set("repo", event.target.value)} placeholder="owner/repo" value={form.repo} />
+          </Field>
+          <Field label="Merged PR limit">
+            <input className="v2-input" min="5" max="40" onChange={(event) => set("merged_pr_limit", event.target.value)} type="number" value={form.merged_pr_limit} />
+          </Field>
+          <Field label="Issue limit">
+            <input className="v2-input" min="5" max="40" onChange={(event) => set("issue_limit", event.target.value)} type="number" value={form.issue_limit} />
+          </Field>
+          <Field label="Since days">
+            <input className="v2-input" min="30" max="730" onChange={(event) => set("since_days", event.target.value)} type="number" value={form.since_days} />
+          </Field>
+        </div>
+        <div className="actions split-actions">
+          <span className="micro">Merged PRs, review feedback, and closed issues become durable memory.</span>
+          <button className="btn primary" disabled={running || !form.repo.trim()} type="submit">
+            {running ? "Ingesting" : "Run ingest"}
+          </button>
+        </div>
+        {error && <StatusBanner tone="red">{error}</StatusBanner>}
+      </form>
+    </Panel>
+  );
+}
+
+function MemoryQueuePanel({ busyCandidate, candidates, memories, onDismissCandidate, onPromoteCandidate }) {
+  const open = openCandidates(candidates);
+  const queue = open.length ? open : memories.slice(0, 5);
+  return (
+    <Panel eyebrow="Curation" title={open.length ? "FailGuard review queue" : "Memory queue"} action={<span className={`chip ${open.length ? "amber" : "signal"}`}>{queue.length} items</span>}>
       <div className="panelbody repo-list queue-grid">
-        {MEMORY_QUEUE.map((item) => (
-          <div className="ledger-row" key={item.rank}>
-            <div className="rank">{item.rank}</div>
-            <div>
-              <div className="repo-name">{item.title}</div>
-              <div className="feed-meta">{item.meta}</div>
+        {queue.length ? queue.map((item, index) => {
+          const isCandidate = Boolean(item.outcome);
+          return (
+            <div className="ledger-row" key={item.id || item.memory_ref || index}>
+              <div className="rank">{String(index + 1).padStart(2, "0")}</div>
+              <div>
+                <div className="repo-name">{item.title || item.memory_ref}</div>
+                <div className="feed-meta">{isCandidate ? item.outcome : item.prompt_line || item.detail}</div>
+                <div className="repo-meta">
+                  <span className={`chip ${isCandidate ? "amber" : kindTone(item.kind, item.disposition)}`}>{isCandidate ? item.source_type || "candidate" : shortKind(item.kind)}</span>
+                  <span className="chip signal">{item.repo}</span>
+                </div>
+              </div>
+              {isCandidate ? (
+                <div className="actions">
+                  <button className="btn" disabled={busyCandidate === item.id} onClick={() => onDismissCandidate(item.id)} type="button">Dismiss</button>
+                  <button className="btn primary" disabled={busyCandidate === item.id} onClick={() => onPromoteCandidate(item.id)} type="button">Promote</button>
+                </div>
+              ) : (
+                <span className={`chip ${confidenceTone(item.confidence)}`}>{formatConfidence(item.confidence)}</span>
+              )}
             </div>
-            <span className={`chip ${item.tone}`}>{item.label}</span>
+          );
+        }) : (
+          <div className="empty-v2">
+            <strong>No memory queue yet</strong>
+            <span>Run an ingest or queue a FailGuard candidate to populate RepoMemory.</span>
           </div>
-        ))}
+        )}
       </div>
     </Panel>
   );
 }
 
-function PromptPackPanel() {
-  return (
-    <Panel eyebrow="Context" title="Prompt pack" action={<button className="btn" type="button">Export</button>}>
-      <div className="panelbody repo-list">
-        {PROMPT_PACK.map((item) => (
-          <div className="feed-item" key={item.title}>
-            <div>
-              <div className="feed-title">{item.title}</div>
-              <div className="feed-meta">{item.meta}</div>
-            </div>
-            <span className={`chip ${item.tone}`}>{item.label}</span>
-          </div>
-        ))}
-      </div>
-    </Panel>
-  );
-}
-
-function SecondaryFrame({ children }) {
-  return (
-    <>
-      <SuiteTopline cells={TOPLINE_CELLS} />
-      <div className="main-grid hive-workspace-grid">
-        <ProductRail sections={RAIL_SECTIONS} stats={RAIL_STATS} />
-        <main className="workspace">{children}</main>
-      </div>
-    </>
-  );
-}
-
-function Placeholder({ title, body }) {
-  return (
-    <SecondaryFrame>
-      <div className="eyebrow">// RepoMemory memory queue</div>
-      <h1>{title}</h1>
-      <p className="subline">{body}</p>
-    </SecondaryFrame>
-  );
-}
-
-function PromptPackSurface() {
-  return (
-    <SecondaryFrame>
-      <div>
-        <div className="eyebrow">// RepoMemory memory queue</div>
-        <h1>Prompt Packs</h1>
-        <p className="subline">Reusable repo context bundles for TrustGate, RepoReaper, and future HiveCore handoffs.</p>
-      </div>
-      <div className="placeholder-panel">
-        <PromptPackPanel />
-      </div>
-    </SecondaryFrame>
-  );
-}
-
-function SidePanels() {
+function SidePanels({ candidates, health, memories, overview }) {
+  const open = openCandidates(candidates);
+  const featured = memoryList(overview, memories).slice(0, 3);
   return (
     <aside className="side">
       <Panel eyebrow="FailGuard" title="Lesson pressure">
         <div className="panelbody repo-list">
-          {FAILGUARD.map((item) => (
-            <div className="feed-item" key={item.title}>
+          {open.length ? open.slice(0, 3).map((item) => (
+            <div className="feed-item" key={item.id}>
               <div>
                 <div className="feed-title">{item.title}</div>
-                <div className="feed-meta">{item.meta}</div>
+                <div className="feed-meta">{item.outcome}</div>
               </div>
-              <span className={`chip ${item.tone}`}>{item.label}</span>
+              <span className={`chip ${Number(item.confidence || 0) >= 0.75 ? "red" : "amber"}`}>{Math.round(Number(item.confidence || 0) * 100)}%</span>
             </div>
-          ))}
+          )) : (
+            <div className="rowline"><span className="muted">Open candidates</span><span className="chip green">clear</span></div>
+          )}
         </div>
       </Panel>
 
       <Panel eyebrow="Consumers" title="Context handoff">
         <div className="panelbody repo-list">
-          <div className="rowline"><span className="muted">TrustGate</span><span className="chip green">armed</span></div>
-          <div className="rowline"><span className="muted">RepoReaper</span><span className="chip signal">ready</span></div>
-          <div className="rowline"><span className="muted">HiveCore</span><span className="chip amber">partial</span></div>
+          <div className="rowline"><span className="muted">GitHub token</span><span className={`chip ${githubReady(health) ? "green" : "amber"}`}>{githubReady(health) ? "ready" : "missing"}</span></div>
+          <div className="rowline"><span className="muted">Featured memories</span><span className="chip signal">{featured.length}</span></div>
+          <div className="rowline"><span className="muted">Known repos</span><span className="chip signal">{overview?.counts?.repos || 0}</span></div>
         </div>
       </Panel>
     </aside>
   );
 }
 
-function MemoryCore() {
+function MemoryCore({
+  busyCandidate,
+  candidates,
+  error,
+  form,
+  health,
+  history,
+  memories,
+  onChangeForm,
+  onDismissCandidate,
+  onPromoteCandidate,
+  onRefresh,
+  onRunIngest,
+  overview,
+  running,
+}) {
+  const selectedRepo = form.repo || history[0]?.repo || overview?.repos?.[0]?.repo || "";
+  const rail = useMemo(() => buildRail(overview, memories, candidates, history, selectedRepo), [overview, memories, candidates, history, selectedRepo]);
+  const metrics = useMemo(() => buildMetrics(health, overview, memories, candidates), [health, overview, memories, candidates]);
   return (
     <>
-      <SuiteTopline cells={TOPLINE_CELLS} />
+      <SuiteTopline cells={buildTopline(health, overview, candidates, history)} />
       <div className="main-grid">
-        <ProductRail sections={RAIL_SECTIONS} stats={RAIL_STATS} />
+        <ProductRail sections={rail.sections} stats={rail.stats} />
         <main className="workspace">
           <div className="hero-row">
             <div>
@@ -306,32 +426,332 @@ function MemoryCore() {
               <p className="subline">Merged history, review pain, and FailGuard lessons distilled into reusable repo context.</p>
             </div>
             <div className="actions">
-              <span className="chip signal">context-first</span>
-              <span className="chip">read only</span>
-              <button className="btn primary" type="button">Run ingest</button>
+              <span className={`chip ${githubReady(health) ? "green" : "amber"}`}>{githubReady(health) ? "github ready" : "github missing"}</span>
+              <button className="btn" onClick={onRefresh} type="button">Refresh</button>
             </div>
           </div>
-          <MetricBand metrics={METRICS} />
+          <MetricBand metrics={metrics} />
+          <IngestPanel error={error} form={form} onChange={onChangeForm} onRun={onRunIngest} running={running} />
           <div className="atlas-layout suite-four-layout">
             <Panel eyebrow="Graph" title="Repo knowledge map" action={<span className="chip signal">memory radar</span>}>
-              <MemoryLattice />
+              <MemoryLattice candidates={candidates} memories={memories} overview={overview} />
             </Panel>
-            <MemoryQueuePanel />
+            <MemoryQueuePanel
+              busyCandidate={busyCandidate}
+              candidates={candidates}
+              memories={memoryList(overview, memories)}
+              onDismissCandidate={onDismissCandidate}
+              onPromoteCandidate={onPromoteCandidate}
+            />
           </div>
         </main>
-        <SidePanels />
+        <SidePanels candidates={candidates} health={health} memories={memories} overview={overview} />
       </div>
     </>
   );
 }
 
+function SecondaryFrame({ children, candidates, health, history, memories, overview, selectedRepo }) {
+  const rail = useMemo(() => buildRail(overview, memories, candidates, history, selectedRepo), [overview, memories, candidates, history, selectedRepo]);
+  return (
+    <>
+      <SuiteTopline cells={buildTopline(health, overview, candidates, history)} />
+      <div className="main-grid hive-workspace-grid">
+        <ProductRail sections={rail.sections} stats={rail.stats} />
+        <main className="workspace">{children}</main>
+      </div>
+    </>
+  );
+}
+
+function FailGuardSurface({
+  busyCandidate,
+  candidateForm,
+  candidates,
+  error,
+  health,
+  history,
+  memories,
+  onChangeCandidateForm,
+  onCreateCandidate,
+  onDismissCandidate,
+  onPromoteCandidate,
+  onRefresh,
+  overview,
+}) {
+  const set = (key, value) => onChangeCandidateForm((current) => ({ ...current, [key]: value }));
+  return (
+    <SecondaryFrame candidates={candidates} health={health} history={history} memories={memories} overview={overview} selectedRepo={candidateForm.repo || history[0]?.repo}>
+      <div className="hero-row">
+        <div>
+          <div className="eyebrow">// RepoMemory bad-outcome queue</div>
+          <h1>FailGuard Review</h1>
+          <p className="subline">Queue painful outcomes, then promote the useful ones into durable failure-pattern memory.</p>
+        </div>
+        <button className="btn" onClick={onRefresh} type="button">Refresh</button>
+      </div>
+      {error && <StatusBanner tone="red">{error}</StatusBanner>}
+      <div className="atlas-layout suite-four-layout">
+        <Panel eyebrow="Candidate" title="Queue a lesson">
+          <form
+            className="panelbody control-stack"
+            onSubmit={(event) => {
+              event.preventDefault();
+              onCreateCandidate();
+            }}
+          >
+            <div className="form-grid">
+              <Field label="Repository">
+                <input className="v2-input" onChange={(event) => set("repo", event.target.value)} placeholder="owner/repo" value={candidateForm.repo} />
+              </Field>
+              <Field label="Title">
+                <input className="v2-input" onChange={(event) => set("title", event.target.value)} placeholder="What went wrong" value={candidateForm.title} />
+              </Field>
+            </div>
+            <Field label="Outcome">
+              <textarea className="v2-input" onChange={(event) => set("outcome", event.target.value)} style={{ minHeight: 88, paddingTop: 10, resize: "vertical" }} value={candidateForm.outcome} />
+            </Field>
+            <Field label="Lesson">
+              <textarea className="v2-input" onChange={(event) => set("lesson", event.target.value)} style={{ minHeight: 88, paddingTop: 10, resize: "vertical" }} value={candidateForm.lesson} />
+            </Field>
+            <Field label="Prevention">
+              <textarea className="v2-input" onChange={(event) => set("prevention", event.target.value)} style={{ minHeight: 88, paddingTop: 10, resize: "vertical" }} value={candidateForm.prevention} />
+            </Field>
+            <button className="btn primary" disabled={!candidateForm.repo.trim() || !candidateForm.title.trim() || !candidateForm.outcome.trim()} type="submit">
+              Queue candidate
+            </button>
+          </form>
+        </Panel>
+        <MemoryQueuePanel
+          busyCandidate={busyCandidate}
+          candidates={candidates}
+          memories={memories}
+          onDismissCandidate={onDismissCandidate}
+          onPromoteCandidate={onPromoteCandidate}
+        />
+      </div>
+    </SecondaryFrame>
+  );
+}
+
+function PromptPackSurface({
+  health,
+  history,
+  loadingPromptPack,
+  memories,
+  onLoadPromptPack,
+  overview,
+  promptPack,
+  promptPackRun,
+  candidates,
+}) {
+  return (
+    <SecondaryFrame candidates={candidates} health={health} history={history} memories={memories} overview={overview} selectedRepo={promptPackRun?.repo || history[0]?.repo}>
+      <div className="hero-row">
+        <div>
+          <div className="eyebrow">// RepoMemory prompt packs</div>
+          <h1>Prompt Packs</h1>
+          <p className="subline">Reusable repo context bundles for TrustGate, RepoReaper, and future HiveCore handoffs.</p>
+        </div>
+        <span className="chip signal">{history.length} runs</span>
+      </div>
+      <div className="atlas-layout suite-four-layout">
+        <Panel eyebrow="Runs" title="Saved ingests" action={<span className="chip signal">{history.length} saved</span>}>
+          <div className="panelbody repo-list queue-grid">
+            {history.length ? history.map((item) => (
+              <div className="ledger-row" key={item.id}>
+                <div className="rank">{String(asCount(item.memories_created)).padStart(2, "0")}</div>
+                <div>
+                  <div className="repo-name">{item.repo}</div>
+                  <div className="feed-meta">{item.top_memory || "Saved RepoMemory ingest."}</div>
+                  <div className="repo-meta">
+                    <span className="chip signal">{timeAgo(item.created_at)}</span>
+                    <span className="chip green">{asCount(item.conventions)} conventions</span>
+                    <span className="chip amber">{asCount(item.failures)} failures</span>
+                  </div>
+                </div>
+                <button className="btn" disabled={loadingPromptPack} onClick={() => onLoadPromptPack(item.id)} type="button">Load pack</button>
+              </div>
+            )) : (
+              <div className="empty-v2">
+                <strong>No prompt packs yet</strong>
+                <span>Run an ingest to generate the first prompt pack.</span>
+              </div>
+            )}
+          </div>
+        </Panel>
+        <Panel eyebrow="Context" title={promptPackRun?.repo || "Prompt pack"} action={<span className="chip signal">{promptPack ? "loaded" : "empty"}</span>}>
+          <div className="panelbody control-stack">
+            <textarea
+              className="v2-input"
+              readOnly
+              style={{ fontFamily: "var(--mono)", lineHeight: 1.45, minHeight: 300, paddingTop: 10, resize: "vertical", whiteSpace: "pre-wrap" }}
+              value={promptPack || "Load a saved ingest to view its generated prompt pack."}
+            />
+          </div>
+        </Panel>
+      </div>
+    </SecondaryFrame>
+  );
+}
+
 export default function App() {
   const [activeTab, setActiveTab] = useState("core");
+  const [busyCandidate, setBusyCandidate] = useState("");
+  const [candidateForm, setCandidateForm] = useState(DEFAULT_CANDIDATE_FORM);
+  const [candidates, setCandidates] = useState([]);
+  const [error, setError] = useState("");
+  const [history, setHistory] = useState([]);
+  const [ingestForm, setIngestForm] = useState(DEFAULT_INGEST_FORM);
+  const [loadingPromptPack, setLoadingPromptPack] = useState(false);
+  const [memories, setMemories] = useState([]);
+  const [overview, setOverview] = useState(null);
+  const [promptPack, setPromptPack] = useState("");
+  const [promptPackRun, setPromptPackRun] = useState(null);
+  const [running, setRunning] = useState(false);
   const auth = useApiKeyAuth({ apiBase: API, storageKey: "repo-memory_api_key" });
   const fetch_ = useMemo(() => createApiFetcher(auth.apiKey), [auth.apiKey]);
   const ready = auth.checked && !auth.needsAuth;
   const runtime = useProductRuntime({ apiBase: API, fetcher: fetch_, ready });
   const authConfigured = Boolean(runtime.authStatus?.auth_configured || runtime.health?.auth_enabled);
+
+  async function fetchJson(path, options, fallbackError) {
+    const response = await fetch_(`${API}${path}`, options);
+    return parseJsonResponse(response, fallbackError);
+  }
+
+  async function refreshMemoryData() {
+    if (!ready) {
+      return;
+    }
+    setError("");
+    const [overviewResult, historyResult, memoriesResult, candidatesResult] = await Promise.allSettled([
+      fetchJson("/overview", undefined, "RepoMemory could not load overview."),
+      fetchJson("/history", undefined, "RepoMemory could not load history."),
+      fetchJson("/memories", undefined, "RepoMemory could not load memories."),
+      fetchJson("/failguard/candidates", undefined, "RepoMemory could not load FailGuard candidates."),
+    ]);
+    setOverview(overviewResult.status === "fulfilled" ? overviewResult.value : null);
+    setHistory(historyResult.status === "fulfilled" ? historyResult.value.history || [] : []);
+    setMemories(memoriesResult.status === "fulfilled" ? memoriesResult.value.memories || [] : []);
+    setCandidates(candidatesResult.status === "fulfilled" ? candidatesResult.value.candidates || [] : []);
+    const failed = [overviewResult, historyResult, memoriesResult, candidatesResult].find((result) => result.status === "rejected");
+    if (failed) {
+      setError(failed.reason?.message || "RepoMemory could not load one or more backend resources.");
+    }
+  }
+
+  useEffect(() => {
+    refreshMemoryData();
+  }, [ready, fetch_]);
+
+  async function runIngest() {
+    setRunning(true);
+    setError("");
+    try {
+      const result = await fetchJson(
+        "/ingest",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            repo: ingestForm.repo,
+            merged_pr_limit: Number(ingestForm.merged_pr_limit) || 18,
+            issue_limit: Number(ingestForm.issue_limit) || 24,
+            since_days: Number(ingestForm.since_days) || 180,
+          }),
+        },
+        "RepoMemory could not ingest this repository.",
+      );
+      setPromptPack(result.prompt_pack || "");
+      setPromptPackRun({ id: result.id, repo: result.repo });
+      await refreshMemoryData();
+      await runtime.refresh();
+    } catch (err) {
+      setError(err.message || "RepoMemory could not ingest this repository.");
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  async function loadPromptPack(id) {
+    if (!id) return;
+    setLoadingPromptPack(true);
+    setError("");
+    try {
+      const result = await fetchJson(`/history/${id}/prompt-pack`, undefined, "RepoMemory could not load that prompt pack.");
+      setPromptPack(result.prompt_pack || "");
+      setPromptPackRun({ id: result.id, repo: result.repo });
+    } catch (err) {
+      setError(err.message || "RepoMemory could not load that prompt pack.");
+    } finally {
+      setLoadingPromptPack(false);
+    }
+  }
+
+  async function createCandidate() {
+    setError("");
+    try {
+      await fetchJson(
+        "/failguard/candidates",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(candidateForm),
+        },
+        "RepoMemory could not queue that FailGuard candidate.",
+      );
+      setCandidateForm(DEFAULT_CANDIDATE_FORM);
+      await refreshMemoryData();
+      await runtime.refresh();
+    } catch (err) {
+      setError(err.message || "RepoMemory could not queue that FailGuard candidate.");
+    }
+  }
+
+  async function promoteCandidate(id) {
+    setBusyCandidate(id);
+    setError("");
+    try {
+      await fetchJson(
+        `/failguard/candidates/${encodeURIComponent(id)}/promote`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ disposition: "policy", pinned: true }),
+        },
+        "RepoMemory could not promote that FailGuard candidate.",
+      );
+      await refreshMemoryData();
+      await runtime.refresh();
+    } catch (err) {
+      setError(err.message || "RepoMemory could not promote that FailGuard candidate.");
+    } finally {
+      setBusyCandidate("");
+    }
+  }
+
+  async function dismissCandidate(id) {
+    setBusyCandidate(id);
+    setError("");
+    try {
+      await fetchJson(
+        `/failguard/candidates/${encodeURIComponent(id)}/dismiss`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reason: "Dismissed from RepoMemory v2." }),
+        },
+        "RepoMemory could not dismiss that FailGuard candidate.",
+      );
+      await refreshMemoryData();
+      await runtime.refresh();
+    } catch (err) {
+      setError(err.message || "RepoMemory could not dismiss that FailGuard candidate.");
+    } finally {
+      setBusyCandidate("");
+    }
+  }
 
   if (!ready) {
     return (
@@ -356,14 +776,60 @@ export default function App() {
         productKey="repo-memory"
         tabs={TABS}
       />
-      {activeTab === "core" && <MemoryCore />}
-      {activeTab === "failguard" && (
-        <Placeholder
-          title="FailGuard Review"
-          body="Bad-outcome review and promotion surface for RepoMemory."
+      {activeTab === "core" && (
+        <MemoryCore
+          busyCandidate={busyCandidate}
+          candidates={candidates}
+          error={error}
+          form={ingestForm}
+          health={runtime.health}
+          history={history}
+          memories={memories}
+          onChangeForm={setIngestForm}
+          onDismissCandidate={dismissCandidate}
+          onPromoteCandidate={promoteCandidate}
+          onRefresh={() => {
+            refreshMemoryData();
+            runtime.refresh();
+          }}
+          onRunIngest={runIngest}
+          overview={overview}
+          running={running}
         />
       )}
-      {activeTab === "packs" && <PromptPackSurface />}
+      {activeTab === "failguard" && (
+        <FailGuardSurface
+          busyCandidate={busyCandidate}
+          candidateForm={candidateForm}
+          candidates={candidates}
+          error={error}
+          health={runtime.health}
+          history={history}
+          memories={memories}
+          onChangeCandidateForm={setCandidateForm}
+          onCreateCandidate={createCandidate}
+          onDismissCandidate={dismissCandidate}
+          onPromoteCandidate={promoteCandidate}
+          onRefresh={() => {
+            refreshMemoryData();
+            runtime.refresh();
+          }}
+          overview={overview}
+        />
+      )}
+      {activeTab === "packs" && (
+        <PromptPackSurface
+          candidates={candidates}
+          health={runtime.health}
+          history={history}
+          loadingPromptPack={loadingPromptPack}
+          memories={memories}
+          onLoadPromptPack={loadPromptPack}
+          overview={overview}
+          promptPack={promptPack}
+          promptPackRun={promptPackRun}
+        />
+      )}
     </ProductV2Shell>
   );
 }
