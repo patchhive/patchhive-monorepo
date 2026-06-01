@@ -180,6 +180,7 @@ function countHistoryStatus(history, status) {
 }
 
 function tabRailSections({ checks = [], health = {}, history = [], overview = null, review = null }) {
+  health = health || {};
   return {
     checks: [
       {
@@ -222,6 +223,7 @@ function tabRailSections({ checks = [], health = {}, history = [], overview = nu
 }
 
 function tabRailStats({ health = {}, history = [], overview = null, review = null }, tab) {
+  health = health || {};
   const latest = history[0] || overview?.recent_reviews?.[0] || {};
   if (tab === "checks") {
     return {
@@ -856,7 +858,7 @@ export default function App() {
         <ThreadSurface
           error={error}
           form={form}
-          health={runtime.health}
+          health={runtime.health || {}}
           history={history}
           onChangeForm={setForm}
           onCopyPrompts={copyPrompts}
@@ -875,7 +877,7 @@ export default function App() {
       {activeTab === "history" && (
         <HistorySurface
           activeReviewId={review?.id || ""}
-          health={runtime.health}
+          health={runtime.health || {}}
           history={history}
           loading={loadingHistory}
           onLoadReview={loadHistoryReview}

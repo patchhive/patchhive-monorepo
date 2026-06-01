@@ -250,6 +250,7 @@ function countDecisions(history, recommendation) {
 }
 
 function tabRailSections({ checks = [], health = {}, history = [], packs = [], review = null, rules = [], ruleForm = DEFAULT_RULE_FORM }) {
+  health = health || {};
   return {
     checks: [
       {
@@ -309,6 +310,7 @@ function tabRailSections({ checks = [], health = {}, history = [], packs = [], r
 }
 
 function tabRailStats({ health = {}, history = [], review = null, ruleForm = DEFAULT_RULE_FORM }, tab) {
+  health = health || {};
   const latest = history[0] || {};
   if (tab === "rules") {
     return {
@@ -1152,7 +1154,7 @@ export default function App() {
         <ReviewSurface
           error={error}
           form={form}
-          health={runtime.health}
+          health={runtime.health || {}}
           history={history}
           onChangeForm={setForm}
           onClear={clearReview}
@@ -1171,7 +1173,7 @@ export default function App() {
         <RulesSurface
           busy={rulesBusy}
           error={ruleError}
-          health={runtime.health}
+          health={runtime.health || {}}
           history={history}
           onApplyPack={applyPack}
           onDeleteRules={deleteRules}
@@ -1187,7 +1189,7 @@ export default function App() {
       {activeTab === "history" && (
         <HistorySurface
           activeReviewId={review?.id || ""}
-          health={runtime.health}
+          health={runtime.health || {}}
           history={history}
           loading={loadingHistory}
           onLoadReview={loadHistoryReview}
