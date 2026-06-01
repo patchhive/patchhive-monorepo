@@ -818,7 +818,7 @@ export default function App() {
           candidates={candidates}
           error={error}
           form={ingestForm}
-          health={runtime.health}
+          health={runtime.health || {}}
           history={history}
           memories={memories}
           onChangeForm={setIngestForm}
@@ -839,7 +839,7 @@ export default function App() {
           candidateForm={candidateForm}
           candidates={candidates}
           error={error}
-          health={runtime.health}
+          health={runtime.health || {}}
           history={history}
           memories={memories}
           onChangeCandidateForm={setCandidateForm}
@@ -856,7 +856,7 @@ export default function App() {
       {activeTab === "packs" && (
         <PromptPackSurface
           candidates={candidates}
-          health={runtime.health}
+          health={runtime.health || {}}
           history={history}
           loadingPromptPack={loadingPromptPack}
           memories={memories}

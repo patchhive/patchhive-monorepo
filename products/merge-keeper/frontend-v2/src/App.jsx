@@ -815,7 +815,7 @@ export default function App() {
           assessment={assessment}
           error={error}
           form={form}
-          health={runtime.health}
+          health={runtime.health || {}}
           history={history}
           onChangeForm={setForm}
           onLoadAssessment={loadAssessment}
@@ -832,7 +832,7 @@ export default function App() {
         <HistorySurface
           activeAssessmentId={assessment?.id || ""}
           assessment={assessment}
-          health={runtime.health}
+          health={runtime.health || {}}
           history={history}
           loading={loadingHistory}
           onLoadAssessment={loadAssessment}

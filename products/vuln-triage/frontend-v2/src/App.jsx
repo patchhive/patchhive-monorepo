@@ -671,7 +671,7 @@ export default function App() {
         <TriageSurface
           error={error}
           form={form}
-          health={runtime.health}
+          health={runtime.health || {}}
           history={history}
           onChangeForm={setForm}
           onLoadScan={loadScan}
@@ -688,7 +688,7 @@ export default function App() {
       {activeTab === "history" && (
         <HistorySurface
           activeScanId={scan?.id || ""}
-          health={runtime.health}
+          health={runtime.health || {}}
           history={history}
           loading={loadingHistory}
           onLoadScan={loadScan}

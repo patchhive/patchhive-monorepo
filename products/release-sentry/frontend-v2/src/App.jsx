@@ -709,7 +709,7 @@ export default function App() {
         <GateSurface
           error={error}
           form={form}
-          health={runtime.health}
+          health={runtime.health || {}}
           history={history}
           onChangeForm={setForm}
           onLoadRun={loadRun}
@@ -726,7 +726,7 @@ export default function App() {
       {activeTab === "history" && (
         <HistorySurface
           activeRunId={run?.id || ""}
-          health={runtime.health}
+          health={runtime.health || {}}
           history={history}
           loading={loadingHistory}
           onLoadRun={loadRun}
