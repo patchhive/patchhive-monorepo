@@ -787,6 +787,39 @@ function buildRail(presets, schedules, scan) {
   };
 }
 
+function buildLedgerRail(history, scan, timeline) {
+  return {
+    sections: [
+      {
+        title: "Scan history",
+        items: history.slice(0, 4).map((item) => ({
+          active: item.id === scan?.id,
+          badge: String(item.total_signals || 0),
+          badgeTone: item.warning_count > 0 ? "amber" : "signal",
+          label: item.top_repo || "scan",
+          value: item.trigger_type || "manual",
+        })),
+      },
+      {
+        title: "Selected sweep",
+        items: [
+          { label: "repos", badge: String(scan?.summary?.total_repos || 0), badgeTone: "signal" },
+          { label: "signals", badge: String(scan?.summary?.total_signals || 0), badgeTone: "amber" },
+          { label: "timeline", badge: String(timeline?.points?.length || 0), badgeTone: "signal" },
+        ],
+      },
+    ],
+    stats: {
+      title: "Ledger",
+      items: [
+        { label: "Saved scans", value: String(history.length) },
+        { label: "Selected", value: scan?.summary?.top_repo || "none" },
+        { label: "Signals", value: String(scan?.summary?.total_signals || 0), large: true, tone: "warn" },
+      ],
+    },
+  };
+}
+
 function AtlasBoard({
   actionMessage,
   authConfigured,
@@ -895,52 +928,58 @@ function AtlasBoard({
 }
 
 function LedgerBoard({
+  authConfigured,
+  health,
   history,
   loadingScan,
   onCopySummary,
   onExportReport,
   onLoadScan,
   onRefresh,
+  schedules,
   scan,
   sortBy,
   setSortBy,
   timeline,
 }) {
   const repos = useMemo(() => sortRepos(scan?.repos || [], sortBy), [scan, sortBy]);
+  const rail = useMemo(() => buildLedgerRail(history, scan, timeline), [history, scan, timeline]);
   return (
     <>
-      <SuiteTopline cells={[
-        { label: "Ledger", value: `${history.length} scans`, tone: "sig" },
-        { label: "Selected", value: scan?.summary?.top_repo || "none" },
-        { label: "Timeline", value: `${timeline?.points?.length || 0} points`, tone: "warn" },
-        { label: "Signals", value: scan?.summary?.total_signals || 0, tone: "warn" },
-        { label: "Trigger", value: scan?.trigger_type || "manual" },
-        { label: "Created", value: scan?.created_at ? timeAgo(scan.created_at) : "none" },
-      ]} />
-      <div className="ledger-layout">
-        <Panel eyebrow="History" title="Scan ledger" action={<button className="btn" onClick={onRefresh} type="button">Refresh</button>}>
-          <div className="panelbody repo-list">
-            {history.length === 0 ? (
-              <EmptyV2 title="No scans saved" body="Run a sweep from the atlas board to create history." />
-            ) : (
-              history.map((item) => (
-                <button
-                  className={`history-row${scan?.id === item.id ? " active" : ""}`}
-                  key={item.id}
-                  onClick={() => onLoadScan(item.id)}
-                  type="button"
-                >
-                  <span>
-                    <strong>{item.top_repo || "No top repo"}</strong>
-                    <small>{item.total_repos} repos - {item.total_signals} signals - {timeAgo(item.created_at)}</small>
-                  </span>
-                  <span className={`chip ${item.warning_count > 0 ? "amber" : "signal"}`}>{item.trigger_type || "manual"}</span>
-                </button>
-              ))
-            )}
+      <SuiteTopline cells={buildTopline(health, scan, schedules, authConfigured)} />
+      <div className="main-grid hive-workspace-grid">
+        <ProductRail sections={rail.sections} stats={rail.stats} />
+        <main className="workspace">
+          <div className="hero-row">
+            <div>
+              <div className="eyebrow">// Module - scan ledger</div>
+              <h1>Ops Ledger</h1>
+              <p className="subline">Saved scan history, selected sweep evidence, trend snapshots, and exportable reports.</p>
+            </div>
+            <button className="btn" onClick={onRefresh} type="button">Refresh</button>
           </div>
-        </Panel>
-        <main className="workspace ledger-workspace">
+          <Panel eyebrow="History" title="Scan ledger" action={<span className="chip signal">{history.length} saved</span>}>
+            <div className="panelbody repo-list">
+              {history.length === 0 ? (
+                <EmptyV2 title="No scans saved" body="Run a sweep from the atlas board to create history." />
+              ) : (
+                history.map((item) => (
+                  <button
+                    className={`history-row${scan?.id === item.id ? " active" : ""}`}
+                    key={item.id}
+                    onClick={() => onLoadScan(item.id)}
+                    type="button"
+                  >
+                    <span>
+                      <strong>{item.top_repo || "No top repo"}</strong>
+                      <small>{item.total_repos} repos - {item.total_signals} signals - {timeAgo(item.created_at)}</small>
+                    </span>
+                    <span className={`chip ${item.warning_count > 0 ? "amber" : "signal"}`}>{item.trigger_type || "manual"}</span>
+                  </button>
+                ))
+              )}
+            </div>
+          </Panel>
           {loadingScan && <Panel eyebrow="Loading" title="Opening scan"><div className="panelbody"><EmptyV2 title="Loading scan detail" /></div></Panel>}
           {!loadingScan && !scan && (
             <Panel eyebrow="Selected" title="Scan detail"><div className="panelbody"><EmptyV2 title="No scan selected" /></div></Panel>
@@ -1011,6 +1050,8 @@ function WatchFloor({
   onSignOut,
   repoControl,
   repoLists,
+  schedules,
+  scan,
   serviceTokenBusy,
   setRepoControl,
 }) {
@@ -1019,14 +1060,7 @@ function WatchFloor({
   const serviceScopes = authStatus?.service_auth_scopes || serviceToken?.scopes || [];
   return (
     <>
-      <SuiteTopline cells={[
-        { label: "Watch floor", value: health?.status || "unknown", tone: health?.status === "ok" ? "ok" : "warn" },
-        { label: "Auth", value: authConfigured ? "configured" : "open", tone: authConfigured ? "sig" : "warn" },
-        { label: "Saved scans", value: health?.scan_count || 0, tone: "sig" },
-        { label: "Allowlist", value: grouped.allowlist.length, tone: "ok" },
-        { label: "Denylist", value: grouped.denylist.length, tone: "warn" },
-        { label: "Opt-out", value: grouped.opt_out.length },
-      ]} />
+      <SuiteTopline cells={buildTopline(health, scan, schedules, authConfigured)} />
       <div className="main-grid focus-grid">
         <ProductRail
           sections={[
@@ -1556,12 +1590,15 @@ export default function App() {
       )}
       {activeTab === "ledger" && (
         <LedgerBoard
+          authConfigured={Boolean(authStatus?.auth_configured || health?.auth_enabled)}
+          health={health}
           history={history}
           loadingScan={loadingScan}
           onCopySummary={copySummary}
           onExportReport={exportReport}
           onLoadScan={loadScan}
           onRefresh={() => refreshCollections()}
+          schedules={schedules}
           scan={scan}
           setSortBy={setSortBy}
           sortBy={sortBy}
@@ -1586,6 +1623,8 @@ export default function App() {
           onSignOut={auth.logout}
           repoControl={repoControl}
           repoLists={repoLists}
+          schedules={schedules}
+          scan={scan}
           serviceTokenBusy={serviceTokenBusy}
           setRepoControl={setRepoControl}
         />
