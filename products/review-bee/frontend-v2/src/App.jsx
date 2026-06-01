@@ -174,9 +174,115 @@ function buildRailStats(review, overview) {
   };
 }
 
+function countHistoryStatus(history, status) {
+  return history.filter((item) => String(item.status || "").toLowerCase() === status).length;
+}
+
+function tabRailSections({ checks = [], health = {}, history = [], overview = null, review = null }) {
+  return {
+    checks: [
+      {
+        title: "Runtime",
+        items: [
+          { label: "backend", active: true, badge: health.status || "unknown", badgeTone: health.status === "ok" ? "green" : "amber" },
+          { label: "github", badge: healthReady(health) ? "ready" : "missing", badgeTone: healthReady(health) ? "green" : "red" },
+          { label: "webhook", badge: health.github?.webhook_ready ? "ready" : "optional", badgeTone: health.github?.webhook_ready ? "green" : "amber" },
+          { label: "auth", badge: health.auth_enabled ? "on" : "open", badgeTone: health.auth_enabled ? "green" : "amber" },
+        ],
+      },
+      {
+        title: "Review memory",
+        items: [
+          { label: "startup checks", badge: String(checks.length), badgeTone: checks.length ? "signal" : "green" },
+          { label: "saved reviews", badge: String(asCount(health.review_count || overview?.counts?.reviews)), badgeTone: "signal" },
+          { label: "repos", badge: String(asCount(health.repo_count || overview?.counts?.repos)), badgeTone: "signal" },
+        ],
+      },
+    ],
+    history: [
+      {
+        title: "Review state",
+        items: [
+          { label: "clear", active: review?.status === "clear", badge: String(countHistoryStatus(history, "clear")), badgeTone: "green" },
+          { label: "attention", active: review?.status === "attention", badge: String(countHistoryStatus(history, "attention")), badgeTone: "amber" },
+          { label: "blocked", active: review?.status === "blocked", badge: String(countHistoryStatus(history, "blocked")), badgeTone: "red" },
+        ],
+      },
+      {
+        title: "Saved pressure",
+        items: [
+          { label: "reviews", badge: String(history.length), badgeTone: "signal" },
+          { label: "open asks", badge: String(asCount(overview?.counts?.open_items)), badgeTone: asCount(overview?.counts?.open_items) ? "amber" : "green" },
+          { label: "current PR", value: review ? `${review.repo}#${review.pr_number}` : "none" },
+        ],
+      },
+    ],
+  };
+}
+
+function tabRailStats({ health = {}, history = [], overview = null, review = null }, tab) {
+  const latest = history[0] || overview?.recent_reviews?.[0] || {};
+  if (tab === "checks") {
+    return {
+      title: "Backend",
+      items: [
+        { label: "Status", value: health.status || "unknown", large: true, tone: health.status === "ok" ? "ok" : "warn" },
+        { label: "Database", value: health.db_ok ? "ok" : "check" },
+        { label: "GitHub", value: healthReady(health) ? "ready" : "missing" },
+      ],
+    };
+  }
+  return {
+    title: "Selected review",
+    items: [
+      { label: "Repository", value: review?.repo || latest.repo || "none" },
+      { label: "Pressure", value: String(review?.status || latest.status || "ready").toUpperCase(), large: true, tone: statusTone(review?.status || latest.status || "ready") },
+      { label: "Age", value: review?.created_at ? timeAgo(review.created_at) : latest.created_at ? timeAgo(latest.created_at) : "none" },
+    ],
+  };
+}
+
+function TabFrame({ children, health, overview, railSections, railStats, review }) {
+  return (
+    <>
+      <SuiteTopline cells={buildTopline(review, overview, health)} />
+      <div className="main-grid hive-workspace-grid">
+        <ProductRail sections={railSections} stats={railStats} />
+        <main className="workspace">{children}</main>
+      </div>
+    </>
+  );
+}
+
+function currentReviewRadarItem(review) {
+  const status = review?.status || (asCount(review?.metrics?.open_items) ? "attention" : "clear");
+  return {
+    id: review?.id || "current-review",
+    title: `${String(status).toUpperCase()} review`,
+    detail: review?.repo ? `${review.repo}#${review.pr_number}` : "Current PR review",
+    gain: status,
+    gainMeta: `${asCount(review?.metrics?.open_items)} open / ${asCount(review?.metrics?.resolved_items)} resolved`,
+    label: status,
+    minWindow: 7,
+    position: { left: "50%", top: "44%" },
+    stats: [
+      { label: "Repo", value: review?.repo || "repo" },
+      { label: "PR", value: review?.pr_number ? `#${review.pr_number}` : "none" },
+      { label: "Open", value: String(asCount(review?.metrics?.open_items)) },
+      { label: "Resolved", value: String(asCount(review?.metrics?.resolved_items)) },
+      { label: "Reviewers", value: String(asCount(review?.metrics?.reviewer_count)) },
+    ],
+    summary: review?.summary || "ReviewBee current PR result.",
+    tone: statusTone(status),
+    vector: review?.pr_number ? `PR-${review.pr_number}` : "CURRENT",
+    vectorTone: statusTone(status) === "amber" ? "warn" : "",
+  };
+}
+
 function buildRadarItems(review, history, overview) {
-  if (review?.checklist?.length) {
-    return review.checklist.map((item, index) => ({
+  if (review) {
+    const items = [currentReviewRadarItem(review)];
+    const checklistItems = (review.checklist || []).map((item, index) => ({
       id: item.key || `checklist-${index + 1}`,
       title: item.title || `Checklist item ${index + 1}`,
       detail: item.title || item.category || "Checklist item",
@@ -184,7 +290,7 @@ function buildRadarItems(review, history, overview) {
       gainMeta: `${asCount(item.open_threads)} open / ${asCount(item.resolved_threads)} resolved`,
       label: item.key || `C${index + 1}`,
       minWindow: index < 3 ? 7 : index < 6 ? 14 : 30,
-      position: POSITIONS[index % POSITIONS.length],
+      position: POSITIONS[(index + 1) % POSITIONS.length],
       stats: [
         { label: "Category", value: item.category || "review" },
         { label: "Status", value: item.status || "open" },
@@ -197,6 +303,7 @@ function buildRadarItems(review, history, overview) {
       vector: item.key || `ITEM-${index + 1}`,
       vectorTone: itemTone(item) === "amber" ? "warn" : "",
     }));
+    return [...items, ...checklistItems];
   }
 
   if (history.length) {
@@ -504,9 +611,12 @@ function ThreadSurface({
   );
 }
 
-function HistorySurface({ activeReviewId, history, loading, onLoadReview, onRefresh }) {
+function HistorySurface({ activeReviewId, health, history, loading, onLoadReview, onRefresh, overview, review }) {
+  const railSections = useMemo(() => tabRailSections({ health, history, overview, review }).history, [health, history, overview, review]);
+  const railStats = useMemo(() => tabRailStats({ health, history, overview, review }, "history"), [health, history, overview, review]);
+
   return (
-    <div className="product-page-shell">
+    <TabFrame health={health} overview={overview} railSections={railSections} railStats={railStats} review={review}>
       <div className="hero-row">
         <div>
           <div className="eyebrow">// ReviewBee review queue</div>
@@ -541,14 +651,16 @@ function HistorySurface({ activeReviewId, history, loading, onLoadReview, onRefr
           )}
         </div>
       </Panel>
-    </div>
+    </TabFrame>
   );
 }
 
-function ChecksSurface({ runtime }) {
+function ChecksSurface({ history, overview, review, runtime }) {
   const health = runtime.health || {};
   const checks = runtime.checks || [];
   const checkWarnings = checks.filter((check) => check.level === "warn" || check.level === "error").length;
+  const railSections = useMemo(() => tabRailSections({ checks, health, history, overview, review }).checks, [checks, health, history, overview, review]);
+  const railStats = useMemo(() => tabRailStats({ health, history, overview, review }, "checks"), [health, history, overview, review]);
   const metrics = [
     { label: "Status", value: health.status || "unknown", tone: health.status === "ok" ? "ok" : "warn", sub: health.version || "backend" },
     { label: "GitHub", value: healthReady(health) ? "ready" : "missing", tone: healthReady(health) ? "ok" : "hot", sub: "PR reads" },
@@ -558,7 +670,7 @@ function ChecksSurface({ runtime }) {
   ];
 
   return (
-    <div className="product-page-shell">
+    <TabFrame health={health} overview={overview} railSections={railSections} railStats={railStats} review={review}>
       <div className="hero-row">
         <div>
           <div className="eyebrow">// ReviewBee readiness</div>
@@ -604,7 +716,7 @@ function ChecksSurface({ runtime }) {
           </div>
         </Panel>
       </div>
-    </div>
+    </TabFrame>
   );
 }
 
@@ -762,13 +874,16 @@ export default function App() {
       {activeTab === "history" && (
         <HistorySurface
           activeReviewId={review?.id || ""}
+          health={runtime.health}
           history={history}
           loading={loadingHistory}
           onLoadReview={loadHistoryReview}
           onRefresh={refreshProductData}
+          overview={overview}
+          review={review}
         />
       )}
-      {activeTab === "checks" && <ChecksSurface runtime={runtime} />}
+      {activeTab === "checks" && <ChecksSurface history={history} overview={overview} review={review} runtime={runtime} />}
     </ProductV2Shell>
   );
 }
