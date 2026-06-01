@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createApiFetcher, useApiKeyAuth, useProductRuntime } from "@patchhivehq/product-shell/auth";
 import {
   DeckBar,
@@ -18,224 +18,387 @@ const TABS = [
   { id: "checks", label: "Checks" },
 ];
 
-const TOPLINE_CELLS = [
-  { label: "FlakeSting", value: "CI trust", tone: "sig" },
-  { label: "System", value: "Online", tone: "ok" },
-  { label: "Mode", value: "Read only" },
-  { label: "GitHub", value: "Actions read", tone: "sig" },
-  { label: "Lookback", value: "25 runs", tone: "warn" },
-  { label: "Last scan", value: "T-02:00" },
+const POSITIONS = [
+  { left: "50%", top: "23%" },
+  { left: "72%", top: "47%" },
+  { left: "59%", top: "75%" },
+  { left: "28%", top: "62%" },
+  { left: "31%", top: "35%" },
+  { left: "46%", top: "54%" },
+  { left: "69%", top: "64%" },
+  { left: "37%", top: "76%" },
 ];
 
-const RAIL_SECTIONS = [
-  {
-    title: "Workflows",
-    items: [
-      { label: "ci.yml / test", active: true, pin: true },
-      { label: "release.yml", value: "clear" },
-      { label: "lint.yml", value: "watch" },
-      { label: "nightly.yml", value: "noisy" },
-    ],
-  },
-  {
-    title: "Signals",
-    items: [
-      { label: "fail/pass swing", active: true, badge: "9", badgeTone: "amber" },
-      { label: "rerun pressure", badge: "6", badgeTone: "red" },
-      { label: "runner skew", badge: "3", badgeTone: "signal" },
-      { label: "stable jobs", badge: "18", badgeTone: "green" },
-    ],
-  },
-];
-
-const RAIL_STATS = {
-  title: "Active repo",
-  items: [
-    { label: "Repository", value: "patchhive/repo-reaper" },
-    { label: "CI trust", value: "WARN", large: true, tone: "warn" },
-    { label: "Candidate", value: "quarantine" },
-  ],
+const DEFAULT_FORM = {
+  repo: "",
+  branch: "",
+  workflow_name: "",
+  lookback_runs: "25",
 };
 
-const METRICS = [
-  { label: "Flake score", value: "72", tone: "warn", sub: "+18 vs last scan" },
-  { label: "Swing jobs", value: "9", tone: "warn", sub: "fail/pass flips" },
-  { label: "Reruns", value: "6", tone: "hot", sub: "operator retries" },
-  { label: "Runner skew", value: "3", tone: "sig", sub: "ubuntu-latest" },
-  { label: "Stable jobs", value: "18", tone: "ok", sub: "safe signal" },
-];
+function asCount(value) {
+  const number = Number(value || 0);
+  return Number.isFinite(number) ? number : 0;
+}
 
-const SIGNALS = [
-  {
-    id: "FS-01",
-    title: "api-route-tests",
-    source: "swing",
-    tone: "amber",
-    state: "unstable",
-    value: "7 flips",
-    position: { left: "50%", top: "23%" },
-    summary: "The same test job alternates pass and fail across adjacent runs without code touching the tested path.",
-  },
-  {
-    id: "FS-02",
-    title: "integration-linux",
-    source: "rerun",
-    tone: "red",
-    state: "quarantine",
-    value: "4 reruns",
-    position: { left: "72%", top: "47%" },
-    summary: "Manual reruns repeatedly turn failure into pass, which makes this check unsafe as a merge blocker.",
-  },
-  {
-    id: "FS-03",
-    title: "docs-link-check",
-    source: "stable",
-    tone: "green",
-    state: "stable",
-    value: "25 pass",
-    position: { left: "59%", top: "75%" },
-    summary: "The job stays green across the full lookback window and can be trusted as normal signal.",
-  },
-  {
-    id: "FS-04",
-    title: "browser-e2e",
-    source: "runner",
+function timeAgo(value) {
+  if (!value) return "never";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  const seconds = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000));
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 48) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
+function githubReady(health) {
+  return Boolean(health?.github_ready || health?.github?.token_configured);
+}
+
+function signalTone(signal) {
+  const status = String(signal?.status || signal?.kind || "").toLowerCase();
+  if (status.includes("quarantine") || status.includes("unstable") || asCount(signal?.score) >= 80) return "red";
+  if (status.includes("watch") || status.includes("runner") || asCount(signal?.score) >= 50) return "amber";
+  if (status.includes("stable")) return "green";
+  return "signal";
+}
+
+function metricToneFromSignalCount(count) {
+  if (asCount(count) >= 8) return "hot";
+  if (asCount(count) > 0) return "warn";
+  return "ok";
+}
+
+async function parseJsonResponse(response, fallbackError) {
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.error || data.message || fallbackError);
+  }
+  return data;
+}
+
+function buildTopline(health, overview, scan, history) {
+  const counts = overview?.counts || {};
+  const latest = scan || history[0] || {};
+  return [
+    { label: "FlakeSting", value: "CI trust", tone: "sig" },
+    { label: "System", value: health?.status || "checking", tone: health?.status === "ok" ? "ok" : "warn" },
+    { label: "Mode", value: "Read only" },
+    { label: "GitHub", value: githubReady(health) ? "Actions read" : "token missing", tone: githubReady(health) ? "sig" : "warn" },
+    { label: "Flaky", value: String(asCount(scan?.metrics?.flaky_signals || counts.flaky_signals || health?.flaky_signal_count)), tone: "warn" },
+    { label: "Last scan", value: latest.created_at ? timeAgo(latest.created_at) : counts.scans ? "loaded" : "none" },
+  ];
+}
+
+function buildMetrics(scan, overview, health) {
+  if (scan) {
+    const metrics = scan.metrics || {};
+    return [
+      { label: "Flaky signals", value: String(asCount(metrics.flaky_signals)), tone: metricToneFromSignalCount(metrics.flaky_signals), sub: scan.trend ? `${scan.trend.flaky_signal_delta > 0 ? "+" : ""}${scan.trend.flaky_signal_delta} vs prior` : "current scan" },
+      { label: "Failed runs", value: String(asCount(metrics.failed_runs)), tone: asCount(metrics.failed_runs) ? "warn" : "ok", sub: `${asCount(metrics.workflow_runs)} runs` },
+      { label: "Reruns", value: String(asCount(metrics.rerun_like_runs)), tone: asCount(metrics.rerun_like_runs) ? "hot" : "ok", sub: "retry pressure" },
+      { label: "Quarantine", value: String(asCount(metrics.quarantine_candidates)), tone: asCount(metrics.quarantine_candidates) ? "hot" : "ok", sub: "candidate jobs" },
+      { label: "Completed", value: String(asCount(metrics.completed_runs)), tone: "sig", sub: `${asCount(metrics.successful_runs)} successful` },
+    ];
+  }
+  const counts = overview?.counts || {};
+  return [
+    { label: "Scans", value: String(asCount(counts.scans || health?.scan_count)), tone: "sig", sub: `${asCount(counts.repos || health?.repo_count)} repos` },
+    { label: "Flaky signals", value: String(asCount(counts.flaky_signals || health?.flaky_signal_count)), tone: metricToneFromSignalCount(counts.flaky_signals || health?.flaky_signal_count), sub: "saved scans" },
+    { label: "Quarantine", value: String(asCount(counts.quarantine_candidates || health?.quarantine_candidate_count)), tone: asCount(counts.quarantine_candidates || health?.quarantine_candidate_count) ? "hot" : "ok", sub: "saved scans" },
+    { label: "GitHub", value: githubReady(health) ? "READY" : "MISSING", tone: githubReady(health) ? "ok" : "warn", sub: "Actions reads" },
+    { label: "History", value: String(asCount(overview?.recent_scans?.length)), tone: "sig", sub: "recent runs" },
+  ];
+}
+
+function buildRail(scan, history, overview, health) {
+  const latest = history[0] || {};
+  return {
+    sections: [
+      {
+        title: "Workflows",
+        items: scan?.signals?.length
+          ? scan.signals.slice(0, 4).map((signal, index) => ({
+            active: index === 0,
+            label: signal.workflow_name || signal.job_name || signal.key,
+            value: signal.status || signal.kind,
+          }))
+          : history.slice(0, 4).map((item, index) => ({
+            active: index === 0,
+            label: item.workflow_name || item.repo,
+            value: item.flaky_signals ? "watch" : "clear",
+          })),
+      },
+      {
+        title: "Signals",
+        items: [
+          { label: "flaky signals", active: true, badge: String(asCount(scan?.metrics?.flaky_signals || overview?.counts?.flaky_signals)), badgeTone: "amber" },
+          { label: "rerun pressure", badge: String(asCount(scan?.metrics?.rerun_like_runs)), badgeTone: asCount(scan?.metrics?.rerun_like_runs) ? "red" : "green" },
+          { label: "quarantine", badge: String(asCount(scan?.metrics?.quarantine_candidates || overview?.counts?.quarantine_candidates)), badgeTone: asCount(scan?.metrics?.quarantine_candidates || overview?.counts?.quarantine_candidates) ? "red" : "green" },
+          { label: "saved scans", badge: String(history.length), badgeTone: "signal" },
+        ],
+      },
+    ],
+    stats: {
+      title: "Active repo",
+      items: [
+        { label: "Repository", value: scan?.repo || latest.repo || "none" },
+        { label: "CI trust", value: scan?.metrics?.quarantine_candidates ? "QUARANTINE" : scan?.metrics?.flaky_signals ? "WATCH" : "READY", large: true, tone: scan?.metrics?.quarantine_candidates ? "hot" : scan?.metrics?.flaky_signals ? "warn" : "ok" },
+        { label: "Branch", value: scan?.branch || latest.branch || "default" },
+      ],
+    },
+  };
+}
+
+function buildRadarItems(scan, history) {
+  if (scan?.signals?.length) {
+    return scan.signals.slice(0, 8).map((signal, index) => ({
+      detail: signal.job_name || signal.workflow_name || signal.key,
+      gain: signal.status || signal.kind || "signal",
+      gainMeta: `${asCount(signal.score)} score`,
+      id: signal.key || `flake-${index + 1}`,
+      label: signal.job_name || signal.step_name || `F${index + 1}`,
+      minWindow: index < 3 ? 7 : index < 6 ? 14 : 30,
+      position: POSITIONS[index % POSITIONS.length],
+      stats: [
+        { label: "Kind", value: signal.kind || "flake" },
+        { label: "Status", value: signal.status || "watch" },
+        { label: "Score", value: String(asCount(signal.score)) },
+        { label: "Fail", value: String(asCount(signal.failure_count)) },
+        { label: "Reruns", value: String(asCount(signal.rerun_hits)) },
+      ],
+      summary: signal.summary || signal.evidence?.[0] || "FlakeSting signal.",
+      title: signal.step_name || signal.job_name || signal.workflow_name || signal.key,
+      tone: signalTone(signal),
+      vector: signal.kind || signal.workflow_name || "ci",
+      vectorTone: signalTone(signal) === "red" || signalTone(signal) === "amber" ? "warn" : "",
+    }));
+  }
+  if (history.length) {
+    return history.slice(0, 8).map((item, index) => ({
+      detail: item.repo,
+      gain: item.quarantine_candidates ? "quarantine" : item.flaky_signals ? "watch" : "clear",
+      gainMeta: `${asCount(item.flaky_signals)} signals`,
+      id: item.id || `history-${index + 1}`,
+      label: item.workflow_name || item.repo?.split("/").pop() || `S${index + 1}`,
+      minWindow: index < 3 ? 7 : index < 6 ? 14 : 30,
+      position: POSITIONS[index % POSITIONS.length],
+      stats: [
+        { label: "Repo", value: item.repo },
+        { label: "Workflow", value: item.workflow_name || "all" },
+        { label: "Flaky", value: String(asCount(item.flaky_signals)) },
+        { label: "Quarantine", value: String(asCount(item.quarantine_candidates)) },
+        { label: "Age", value: timeAgo(item.created_at) },
+      ],
+      summary: item.summary || "Saved FlakeSting scan.",
+      title: item.workflow_name || item.repo,
+      tone: item.quarantine_candidates ? "red" : item.flaky_signals ? "amber" : "green",
+      vector: item.trend?.status || "saved",
+      vectorTone: item.quarantine_candidates || item.flaky_signals ? "warn" : "",
+    }));
+  }
+  return [{
+    detail: "No workflow scan yet",
+    gain: "standby",
+    gainMeta: "GitHub Actions",
+    id: "flake-sting-ready",
+    label: "FS",
+    position: { left: "50%", top: "44%" },
+    stats: [
+      { label: "Mode", value: "read only" },
+      { label: "Actions", value: "ready" },
+      { label: "History", value: "empty" },
+      { label: "Reruns", value: "unknown" },
+      { label: "Action", value: "scan" },
+    ],
+    summary: "Scan GitHub Actions history to populate FlakeSting's live instability radar.",
+    title: "FlakeSting ready",
     tone: "signal",
-    state: "runner skew",
-    value: "3 hosts",
-    position: { left: "28%", top: "62%" },
-    summary: "Failures cluster on one runner image and disappear on rerun, suggesting environment pressure.",
-  },
-  {
-    id: "FS-05",
-    title: "cargo-nextest",
-    source: "swing",
-    tone: "amber",
-    state: "watch",
-    value: "2 flips",
-    position: { left: "31%", top: "35%" },
-    summary: "Low-volume pass/fail movement is visible, but the evidence is not strong enough for quarantine.",
-  },
-];
+    vector: "READY",
+  }];
+}
 
-const LINKS = [
-  { from: "FS-01", to: "FS-05", style: { left: "35%", top: "29%", width: "120px", transform: "rotate(-16deg)" } },
-  { from: "FS-01", to: "FS-02", style: { left: "52%", top: "35%", width: "126px", transform: "rotate(36deg)" } },
-  { from: "FS-02", to: "FS-03", style: { left: "63%", top: "60%", width: "104px", transform: "rotate(109deg)" } },
-  { from: "FS-04", to: "FS-03", style: { left: "34%", top: "68%", width: "170px", transform: "rotate(12deg)" } },
-];
+function buildRadarFeed(scan, history, health) {
+  if (scan) {
+    return [
+      { text: scan.summary || "FlakeSting completed the workflow scan.", tone: scan.metrics?.quarantine_candidates ? "red" : scan.metrics?.flaky_signals ? "amber" : "green" },
+      { text: `${asCount(scan.metrics?.flaky_signals)} flaky signals and ${asCount(scan.metrics?.quarantine_candidates)} quarantine candidates are active.`, tone: scan.metrics?.quarantine_candidates ? "red" : scan.metrics?.flaky_signals ? "amber" : "green" },
+      { text: scan.trend?.status ? `Trend is ${scan.trend.status}.` : "Trend appears after a prior comparable scan exists.", tone: scan.trend?.status === "rising" ? "amber" : "signal" },
+    ];
+  }
+  return [
+    { text: history.length ? `${history.length} saved CI scans are available.` : "FlakeSting is waiting for a workflow scan.", tone: "signal" },
+    { text: githubReady(health) ? "GitHub token is ready for Actions history reads." : "Configure GitHub token access before live scans.", tone: githubReady(health) ? "green" : "amber" },
+    { text: "The radar fills with job and step instability signals once a scan completes.", tone: "signal" },
+  ];
+}
 
-const FILTERS = [
-  { id: "all", label: "all" },
-  { id: "swing", label: "swing" },
-  { id: "rerun", label: "rerun" },
-  { id: "runner", label: "runner" },
-];
+function StatusBanner({ tone = "signal", children }) {
+  if (!children) return null;
+  return <div className={`status-banner ${tone}`}>{children}</div>;
+}
 
-const FLAKY_QUEUE = [
-  { rank: "01", title: "integration-linux", meta: "manual reruns turn red to green", tone: "red", label: "quarantine" },
-  { rank: "02", title: "api-route-tests", meta: "7 pass/fail swings in 25 runs", tone: "amber", label: "watch" },
-  { rank: "03", title: "browser-e2e", meta: "failures cluster on one runner image", tone: "signal", label: "runner" },
-  { rank: "04", title: "docs-link-check", meta: "stable across full lookback window", tone: "green", label: "stable" },
-];
-
-const EVIDENCE = [
-  { title: "Rerun pressure detected", meta: "4 of 6 failed runs passed on retry", label: "high", tone: "red" },
-  { title: "Runner image skew", meta: "failures cluster on ubuntu-latest 20260519", label: "watch", tone: "signal" },
-  { title: "MergeKeeper caution", meta: "CI signal should be weighted lower for this PR", label: "warn", tone: "amber" },
-];
-
-const HISTORY = [
-  { title: "repo-reaper / ci.yml", meta: "flake score rose from 54 to 72", label: "worse", tone: "amber" },
-  { title: "signal-hive / lint.yml", meta: "stable across 30 runs", label: "clear", tone: "green" },
-  { title: "trust-gate / test.yml", meta: "runner skew still present", label: "watch", tone: "signal" },
-];
-
-function InstabilityMap() {
+function InstabilityMap({ health, history, scan }) {
+  const items = useMemo(() => buildRadarItems(scan, history), [scan, history]);
+  const feed = useMemo(() => buildRadarFeed(scan, history, health), [scan, history, health]);
   return (
     <SuiteRadar
       ariaLabel="FlakeSting CI instability radar"
       detailLabel="Instability reason"
-      feed={[
-        { text: "Manual reruns repeatedly turn failure into pass.", tone: "red" },
-        { text: "Fail/pass swings are clustered in route and integration jobs.", tone: "amber" },
-        { text: "Docs link checks are stable across the full lookback window." },
-      ]}
+      feed={feed}
       gainLabel="State"
-      items={SIGNALS.map((signal) => ({
-        ...signal,
-        detail: signal.title,
-        gain: signal.state,
-        gainMeta: signal.value,
-        label: signal.id,
-        stats: [
-          { label: "Source", value: signal.source },
-          { label: "State", value: signal.state },
-          { label: "Value", value: signal.value },
-          { label: "Trust", value: signal.tone === "green" ? "stable" : "noisy" },
-          { label: "Action", value: signal.tone === "red" ? "quarantine" : "watch" },
-        ],
-        vector: signal.id,
-        vectorTone: signal.tone === "amber" || signal.tone === "red" ? "warn" : "",
-      }))}
-      signalLabel="signals"
-      vectorLabel="Selected signal"
+      itemQueryParam="flake"
+      items={items}
+      signalLabel={scan ? "signals" : "scans"}
+      vectorLabel={scan ? "Selected signal" : "Selected scan"}
     />
   );
 }
 
-function FlakyQueuePanel() {
+function ScanForm({ error, form, onChange, onRun, running }) {
+  const set = (key, value) => onChange((current) => ({ ...current, [key]: value }));
   return (
-    <Panel eyebrow="Queue" title="Flaky candidates" action={<span className="chip amber">2 watch</span>}>
-      <div className="panelbody repo-list queue-grid">
-        {FLAKY_QUEUE.map((item) => (
-          <div className="ledger-row" key={item.rank}>
-            <div className="rank">{item.rank}</div>
-            <div>
-              <div className="repo-name">{item.title}</div>
-              <div className="feed-meta">{item.meta}</div>
+    <Panel eyebrow="Scan" title="GitHub Actions intake" action={<span className="chip signal">read only</span>}>
+      <form
+        className="panelbody control-stack"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onRun();
+        }}
+      >
+        <div className="form-grid">
+          <label className="v2-field">
+            Repository
+            <input className="v2-input" onChange={(event) => set("repo", event.target.value)} placeholder="owner/repo" value={form.repo} />
+          </label>
+          <label className="v2-field">
+            Branch
+            <input className="v2-input" onChange={(event) => set("branch", event.target.value)} placeholder="optional" value={form.branch} />
+          </label>
+          <label className="v2-field">
+            Workflow
+            <input className="v2-input" onChange={(event) => set("workflow_name", event.target.value)} placeholder="optional" value={form.workflow_name} />
+          </label>
+          <label className="v2-field">
+            Lookback runs
+            <input className="v2-input" min="5" max="40" onChange={(event) => set("lookback_runs", event.target.value)} type="number" value={form.lookback_runs} />
+          </label>
+        </div>
+        <button className="btn primary" disabled={running || !form.repo.trim()} type="submit">
+          {running ? "Scanning..." : "Scan workflow"}
+        </button>
+        {error && <StatusBanner tone="red">{error}</StatusBanner>}
+      </form>
+    </Panel>
+  );
+}
+
+function FlakyQueuePanel({ history, onLoadScan, scan }) {
+  if (scan) {
+    return (
+      <Panel eyebrow="Queue" title="Flaky candidates" action={<span className={`chip ${scan.metrics?.quarantine_candidates ? "red" : "amber"}`}>{asCount(scan.metrics?.quarantine_candidates)} quarantine</span>}>
+        <div className="panelbody repo-list queue-grid">
+          {scan.signals?.length ? scan.signals.slice(0, 8).map((signal, index) => (
+            <div className="ledger-row" key={signal.key || index}>
+              <div className="rank">{String(index + 1).padStart(2, "0")}</div>
+              <div>
+                <div className="repo-name">{signal.step_name || signal.job_name || signal.workflow_name}</div>
+                <div className="feed-meta">{signal.summary || signal.evidence?.[0]}</div>
+                <div className="repo-meta">
+                  <span className={`chip ${signalTone(signal)}`}>{signal.status || signal.kind}</span>
+                  <span className="chip amber">{asCount(signal.failure_count)} fail</span>
+                  <span className="chip green">{asCount(signal.success_count)} pass</span>
+                </div>
+              </div>
+              <span className={`chip ${signalTone(signal)}`}>{asCount(signal.score)}</span>
             </div>
-            <span className={`chip ${item.tone}`}>{item.label}</span>
+          )) : (
+            <div className="empty-v2">
+              <strong>No flaky signals</strong>
+              <span>This workflow scan did not find unstable jobs or steps.</span>
+            </div>
+          )}
+        </div>
+      </Panel>
+    );
+  }
+  return (
+    <Panel eyebrow="Queue" title="Recent scans" action={<span className="chip signal">{history.length} saved</span>}>
+      <div className="panelbody repo-list queue-grid">
+        {history.length ? history.slice(0, 5).map((item) => (
+          <div className="ledger-row" key={item.id}>
+            <div className="rank">{asCount(item.flaky_signals)}</div>
+            <div>
+              <div className="repo-name">{item.repo}</div>
+              <div className="feed-meta">{item.summary || item.workflow_name || "Saved FlakeSting scan."}</div>
+            </div>
+            <button className="btn" onClick={() => onLoadScan(item.id)} type="button">Load</button>
           </div>
-        ))}
+        )) : (
+          <div className="empty-v2">
+            <strong>No scans yet</strong>
+            <span>Scan GitHub Actions history to populate the queue.</span>
+          </div>
+        )}
       </div>
     </Panel>
   );
 }
 
-function SidePanels() {
+function SidePanels({ health, scan }) {
+  const evidence = (scan?.signals || []).flatMap((signal) => (signal.evidence || []).slice(0, 1).map((text) => ({ text, signal }))).slice(0, 3);
   return (
     <aside className="side">
       <Panel eyebrow="Evidence" title="Why it looks flaky">
         <div className="panelbody repo-list">
-          {EVIDENCE.map((item) => (
-            <div className="feed-item" key={item.title}>
+          {evidence.length ? evidence.map((item) => (
+            <div className="feed-item" key={`${item.signal.key}-${item.text}`}>
               <div>
-                <div className="feed-title">{item.title}</div>
-                <div className="feed-meta">{item.meta}</div>
+                <div className="feed-title">{item.signal.job_name || item.signal.workflow_name}</div>
+                <div className="feed-meta">{item.text}</div>
               </div>
-              <span className={`chip ${item.tone}`}>{item.label}</span>
+              <span className={`chip ${signalTone(item.signal)}`}>{item.signal.status || "signal"}</span>
             </div>
-          ))}
+          )) : (
+            <div className="rowline"><span className="muted">Evidence</span><span className="chip signal">waiting</span></div>
+          )}
+          <div className="rowline"><span className="muted">GitHub token</span><span className={`chip ${githubReady(health) ? "green" : "amber"}`}>{githubReady(health) ? "ready" : "missing"}</span></div>
         </div>
       </Panel>
       <Panel eyebrow="Consumers" title="Signal handoff">
         <div className="panelbody repo-list">
-          <div className="rowline"><span className="muted">MergeKeeper</span><span className="chip amber">caution</span></div>
-          <div className="rowline"><span className="muted">ReleaseSentry</span><span className="chip signal">watch</span></div>
-          <div className="rowline"><span className="muted">Human action</span><span className="chip red">quarantine</span></div>
+          <div className="rowline"><span className="muted">MergeKeeper</span><span className={`chip ${scan?.metrics?.flaky_signals ? "amber" : "green"}`}>{scan?.metrics?.flaky_signals ? "caution" : "clear"}</span></div>
+          <div className="rowline"><span className="muted">ReleaseSentry</span><span className={`chip ${scan?.metrics?.quarantine_candidates ? "amber" : "signal"}`}>{scan?.metrics?.quarantine_candidates ? "watch" : "context"}</span></div>
+          <div className="rowline"><span className="muted">Human action</span><span className={`chip ${scan?.metrics?.quarantine_candidates ? "red" : "green"}`}>{scan?.metrics?.quarantine_candidates ? "quarantine" : "none"}</span></div>
         </div>
       </Panel>
     </aside>
   );
 }
 
-function InstabilitySurface() {
+function InstabilitySurface({
+  error,
+  form,
+  health,
+  history,
+  onChangeForm,
+  onLoadScan,
+  onRefresh,
+  onRunScan,
+  overview,
+  running,
+  scan,
+}) {
+  const rail = useMemo(() => buildRail(scan, history, overview, health), [scan, history, overview, health]);
+  const metrics = useMemo(() => buildMetrics(scan, overview, health), [scan, overview, health]);
   return (
     <>
-      <SuiteTopline cells={TOPLINE_CELLS} />
+      <SuiteTopline cells={buildTopline(health, overview, scan, history)} />
       <div className="main-grid">
-        <ProductRail sections={RAIL_SECTIONS} stats={RAIL_STATS} />
+        <ProductRail sections={rail.sections} stats={rail.stats} />
         <main className="workspace">
           <div className="hero-row">
             <div>
@@ -244,79 +407,239 @@ function InstabilitySurface() {
               <p className="subline">Workflow history, reruns, runner skew, and fail/pass swings turned into readable CI trust pressure.</p>
             </div>
             <div className="actions">
-              <span className="chip amber">warn</span>
-              <span className="chip signal">25 run lookback</span>
-              <button className="btn primary" type="button">Scan workflow</button>
+              <span className={`chip ${githubReady(health) ? "green" : "amber"}`}>{githubReady(health) ? "github ready" : "github missing"}</span>
+              <button className="btn" onClick={onRefresh} type="button">Refresh</button>
             </div>
           </div>
-          <MetricBand metrics={METRICS} />
+          <ScanForm error={error} form={form} onChange={onChangeForm} onRun={onRunScan} running={running} />
+          <MetricBand metrics={metrics} />
           <div className="atlas-layout suite-four-layout">
             <Panel eyebrow="Instability" title="CI signal map" action={<span className="chip signal">ci radar</span>}>
-              <InstabilityMap />
+              <InstabilityMap health={health} history={history} scan={scan} />
             </Panel>
-            <FlakyQueuePanel />
+            <FlakyQueuePanel history={history} onLoadScan={onLoadScan} scan={scan} />
           </div>
         </main>
-        <SidePanels />
+        <SidePanels health={health} scan={scan} />
       </div>
     </>
   );
 }
 
-function SecondaryFrame({ children }) {
+function SecondaryFrame({ children, health, history, overview, scan }) {
+  const rail = useMemo(() => buildRail(scan, history, overview, health), [scan, history, overview, health]);
   return (
     <>
-      <SuiteTopline cells={TOPLINE_CELLS} />
+      <SuiteTopline cells={buildTopline(health, overview, scan, history)} />
       <div className="main-grid hive-workspace-grid">
-        <ProductRail sections={RAIL_SECTIONS} stats={RAIL_STATS} />
+        <ProductRail sections={rail.sections} stats={rail.stats} />
         <main className="workspace">{children}</main>
       </div>
     </>
   );
 }
 
-function HistorySurface() {
+function HistorySurface({ activeScanId, health, history, loading, onLoadScan, onRefresh, overview, scan }) {
   return (
-    <SecondaryFrame>
-      <div>
-        <div className="eyebrow">// FlakeSting instability queue</div>
-        <h1>Scan History</h1>
-        <p className="subline">Comparable CI scans and whether trust pressure is rising or improving.</p>
+    <SecondaryFrame health={health} history={history} overview={overview} scan={scan}>
+      <div className="hero-row">
+        <div>
+          <div className="eyebrow">// FlakeSting instability queue</div>
+          <h1>Scan History</h1>
+          <p className="subline">Comparable CI scans and whether trust pressure is rising or improving.</p>
+        </div>
+        <button className="btn" onClick={onRefresh} type="button">{loading ? "Refreshing..." : "Refresh"}</button>
       </div>
-      <Panel eyebrow="Recent" title="Workflow scans">
+      <Panel eyebrow="Recent" title="Workflow scans" action={<span className="chip signal">{history.length} saved</span>}>
         <div className="panelbody repo-list queue-grid">
-          {HISTORY.map((item) => (
-            <div className="feed-item" key={item.title}>
+          {history.length ? history.map((item) => (
+            <div className="ledger-row" key={item.id}>
+              <div className="rank">{item.id === activeScanId ? "SEL" : asCount(item.flaky_signals)}</div>
               <div>
-                <div className="feed-title">{item.title}</div>
-                <div className="feed-meta">{item.meta}</div>
+                <div className="repo-name">{item.repo}</div>
+                <div className="feed-meta">{item.summary || item.workflow_name || "Saved FlakeSting scan."}</div>
+                <div className="repo-meta">
+                  <span className="chip amber">{asCount(item.flaky_signals)} flaky</span>
+                  <span className="chip red">{asCount(item.quarantine_candidates)} quarantine</span>
+                  <span className="chip signal">{item.trend?.status || "trend pending"}</span>
+                  <span className="chip">{timeAgo(item.created_at)}</span>
+                </div>
               </div>
-              <span className={`chip ${item.tone}`}>{item.label}</span>
+              <button className="btn" onClick={() => onLoadScan(item.id)} type="button">Load</button>
             </div>
-          ))}
+          )) : (
+            <div className="empty-v2">
+              <strong>No scans saved</strong>
+              <span>Scan a workflow to create CI trust history.</span>
+            </div>
+          )}
         </div>
       </Panel>
     </SecondaryFrame>
   );
 }
 
-function Placeholder({ title, body }) {
+function checkTone(level) {
+  if (level === "error") return "red";
+  if (level === "warn") return "amber";
+  return "green";
+}
+
+function ChecksSurface({ history, overview, runtime, scan }) {
+  const health = runtime.health || {};
+  const checks = runtime.checks || [];
+  const warnings = checks.filter((check) => check.level === "warn" || check.level === "error").length;
+  const metrics = [
+    { label: "Status", value: health.status || "unknown", tone: health.status === "ok" ? "ok" : "warn", sub: health.version || "backend" },
+    { label: "GitHub", value: githubReady(health) ? "ready" : "missing", tone: githubReady(health) ? "ok" : "hot", sub: "Actions reads" },
+    { label: "Scans", value: String(asCount(health.scan_count || overview?.counts?.scans)), tone: "sig", sub: `${asCount(health.repo_count || overview?.counts?.repos)} repos` },
+    { label: "Flaky", value: String(asCount(health.flaky_signal_count || overview?.counts?.flaky_signals)), tone: metricToneFromSignalCount(health.flaky_signal_count || overview?.counts?.flaky_signals), sub: "signals" },
+    { label: "Checks", value: warnings ? String(warnings) : "clear", tone: warnings ? "warn" : "ok", sub: "startup" },
+  ];
   return (
-    <SecondaryFrame>
-      <div className="eyebrow">// FlakeSting instability queue</div>
-      <h1>{title}</h1>
-      <p className="subline">{body}</p>
+    <SecondaryFrame health={health} history={history} overview={overview} scan={scan}>
+      <div className="hero-row">
+        <div>
+          <div className="eyebrow">// FlakeSting readiness</div>
+          <h1>Checks</h1>
+          <p className="subline">Backend health, GitHub Actions access, database state, and startup checks.</p>
+        </div>
+        <button className="btn" onClick={runtime.refresh} type="button">{runtime.loading ? "Refreshing..." : "Refresh"}</button>
+      </div>
+      {runtime.error && <StatusBanner tone="red">{runtime.error}</StatusBanner>}
+      <MetricBand metrics={metrics} />
+      <div className="atlas-layout suite-four-layout">
+        <Panel eyebrow="Health" title="Backend status" action={<span className={`chip ${health.status === "ok" ? "green" : "amber"}`}>{health.status || "unknown"}</span>}>
+          <div className="panelbody repo-list">
+            <div className="rowline"><span className="muted">Auth enabled</span><span className={`chip ${health.auth_enabled ? "green" : "amber"}`}>{health.auth_enabled ? "yes" : "no"}</span></div>
+            <div className="rowline"><span className="muted">GitHub token</span><span className={`chip ${githubReady(health) ? "green" : "red"}`}>{githubReady(health) ? "ready" : "missing"}</span></div>
+            <div className="feed-item">
+              <div>
+                <div className="feed-title">Database</div>
+                <div className="feed-meta break-all">{health.db_path || "unknown"}</div>
+              </div>
+              <span className={`chip ${health.db_ok ? "green" : "red"}`}>{health.db_ok ? "ok" : "check"}</span>
+            </div>
+          </div>
+        </Panel>
+        <Panel eyebrow="Startup" title="Startup checks" action={<span className={`chip ${warnings ? "amber" : "green"}`}>{warnings ? `${warnings} warnings` : "clear"}</span>}>
+          <div className="panelbody repo-list">
+            {checks.length ? checks.map((check, index) => (
+              <div className="feed-item" key={`${check.msg}-${index}`}>
+                <div>
+                  <div className="feed-title">{check.level || "info"}</div>
+                  <div className="feed-meta">{check.msg}</div>
+                </div>
+                <span className={`chip ${checkTone(check.level)}`}>{check.level || "info"}</span>
+              </div>
+            )) : (
+              <div className="empty-v2">
+                <strong>No checks</strong>
+                <span>No startup checks were returned by the backend.</span>
+              </div>
+            )}
+          </div>
+        </Panel>
+      </div>
     </SecondaryFrame>
   );
 }
 
 export default function App() {
   const [activeTab, setActiveTab] = useState("instability");
+  const [error, setError] = useState("");
+  const [form, setForm] = useState(DEFAULT_FORM);
+  const [history, setHistory] = useState([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [overview, setOverview] = useState(null);
+  const [running, setRunning] = useState(false);
+  const [scan, setScan] = useState(null);
   const auth = useApiKeyAuth({ apiBase: API, storageKey: "flake-sting_api_key" });
   const fetch_ = useMemo(() => createApiFetcher(auth.apiKey), [auth.apiKey]);
   const ready = auth.checked && !auth.needsAuth;
   const runtime = useProductRuntime({ apiBase: API, fetcher: fetch_, ready });
   const authConfigured = Boolean(runtime.authStatus?.auth_configured || runtime.health?.auth_enabled);
+
+  async function fetchJson(path, options, fallbackError) {
+    const response = await fetch_(`${API}${path}`, options);
+    return parseJsonResponse(response, fallbackError);
+  }
+
+  async function refreshFlakeData() {
+    if (!ready) return;
+    setLoadingHistory(true);
+    const [overviewResult, historyResult] = await Promise.allSettled([
+      fetchJson("/overview", undefined, "FlakeSting could not load overview."),
+      fetchJson("/history", undefined, "FlakeSting could not load history."),
+    ]);
+    setOverview(overviewResult.status === "fulfilled" ? overviewResult.value : null);
+    setHistory(historyResult.status === "fulfilled" ? historyResult.value || [] : []);
+    setLoadingHistory(false);
+    const failed = [overviewResult, historyResult].find((result) => result.status === "rejected");
+    if (failed) {
+      setError(failed.reason?.message || "FlakeSting could not load one or more backend resources.");
+    }
+  }
+
+  useEffect(() => {
+    refreshFlakeData();
+  }, [ready, fetch_]);
+
+  async function runScan() {
+    setRunning(true);
+    setError("");
+    try {
+      const result = await fetchJson(
+        "/scan/github/actions",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            repo: form.repo,
+            branch: form.branch,
+            workflow_name: form.workflow_name,
+            lookback_runs: Number(form.lookback_runs) || 25,
+          }),
+        },
+        "FlakeSting could not scan that workflow.",
+      );
+      setScan(result);
+      setForm((current) => ({
+        ...current,
+        branch: result.branch || current.branch,
+        repo: result.repo || current.repo,
+        workflow_name: result.workflow_name || current.workflow_name,
+      }));
+      setActiveTab("instability");
+      await refreshFlakeData();
+      await runtime.refresh();
+    } catch (err) {
+      setError(err.message || "FlakeSting could not scan that workflow.");
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  async function loadScan(id) {
+    if (!id) return;
+    setRunning(true);
+    setError("");
+    try {
+      const result = await fetchJson(`/history/${id}`, undefined, "FlakeSting could not load that scan.");
+      setScan(result);
+      setForm((current) => ({
+        ...current,
+        branch: result.branch || current.branch,
+        repo: result.repo || current.repo,
+        workflow_name: result.workflow_name || current.workflow_name,
+      }));
+      setActiveTab("instability");
+    } catch (err) {
+      setError(err.message || "FlakeSting could not load that scan.");
+    } finally {
+      setRunning(false);
+    }
+  }
 
   if (!ready) {
     return (
@@ -341,14 +664,37 @@ export default function App() {
         productKey="flake-sting"
         tabs={TABS}
       />
-      {activeTab === "instability" && <InstabilitySurface />}
-      {activeTab === "history" && <HistorySurface />}
-      {activeTab === "checks" && (
-        <Placeholder
-          title="Checks"
-          body="GitHub Actions and token readiness checks for FlakeSting."
+      {activeTab === "instability" && (
+        <InstabilitySurface
+          error={error}
+          form={form}
+          health={runtime.health}
+          history={history}
+          onChangeForm={setForm}
+          onLoadScan={loadScan}
+          onRefresh={() => {
+            refreshFlakeData();
+            runtime.refresh();
+          }}
+          onRunScan={runScan}
+          overview={overview}
+          running={running}
+          scan={scan}
         />
       )}
+      {activeTab === "history" && (
+        <HistorySurface
+          activeScanId={scan?.id || ""}
+          health={runtime.health}
+          history={history}
+          loading={loadingHistory}
+          onLoadScan={loadScan}
+          onRefresh={refreshFlakeData}
+          overview={overview}
+          scan={scan}
+        />
+      )}
+      {activeTab === "checks" && <ChecksSurface history={history} overview={overview} runtime={runtime} scan={scan} />}
     </ProductV2Shell>
   );
 }
