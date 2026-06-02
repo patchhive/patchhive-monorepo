@@ -47,6 +47,7 @@ cd ../frontend-v2 && npm install && npm run dev
 | `BOT_GITHUB_TOKEN` or `GITHUB_TOKEN` | Optional fine-grained PAT for pull request, review, and check reads. Analysis-only scopes: Metadata (read), Pull requests (read), Checks (read), Commit statuses (read). Add Checks (write), Commit statuses (write), and Issues (write) for GitHub publishing. |
 | `MERGE_KEEPER_GITHUB_WEBHOOK_SECRET` | Optional signed webhook secret for refreshes. |
 | `MERGE_KEEPER_PUBLIC_URL` | Optional public URL for links from GitHub artifacts back to saved runs. |
+| `MERGE_KEEPER_REQUIRE_APPROVAL` | Optional default approval policy. Defaults to `true`; set `false` for repos where a clean/check-passing PR can be ready without review approval. Manual v2 runs can override this per assessment. |
 | `PATCHHIVE_REVIEW_BEE_URL` / `PATCHHIVE_REVIEW_BEE_API_KEY` | Optional ReviewBee context. |
 | `PATCHHIVE_TRUST_GATE_URL` / `PATCHHIVE_TRUST_GATE_API_KEY` | Optional TrustGate context. |
 | `PATCHHIVE_REPO_MEMORY_URL` / `PATCHHIVE_REPO_MEMORY_API_KEY` | Optional RepoMemory merge expectations. |

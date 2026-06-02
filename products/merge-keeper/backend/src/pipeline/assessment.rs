@@ -26,6 +26,7 @@ pub async fn run_github_pr_assessment(
     repo: String,
     pr_number: i64,
     publish_report: bool,
+    approval_required: bool,
     trigger: String,
     event: String,
     action: String,
@@ -33,7 +34,7 @@ pub async fn run_github_pr_assessment(
     let context = github::fetch_merge_context(&state.http, &repo, pr_number)
         .await
         .map_err(|err| api_error(StatusCode::BAD_GATEWAY, err.to_string()))?;
-    let mut assessment = build_assessment(state, &context).await;
+    let mut assessment = build_assessment(state, &context, approval_required).await;
     assessment.github = Some(GitHubAssessmentContext {
         repo: context.pr.repo.clone(),
         pr_number: context.pr.number,
@@ -62,7 +63,22 @@ pub async fn run_github_pr_assessment(
 
 use crate::db;
 
-pub async fn build_assessment(state: &AppState, context: &GitHubMergeContext) -> MergeAssessment {
+pub fn approval_required_default() -> bool {
+    std::env::var("MERGE_KEEPER_REQUIRE_APPROVAL")
+        .map(|value| {
+            !matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "0" | "false" | "no" | "off"
+            )
+        })
+        .unwrap_or(true)
+}
+
+pub async fn build_assessment(
+    state: &AppState,
+    context: &GitHubMergeContext,
+    approval_required: bool,
+) -> MergeAssessment {
     let created_at = Utc::now().to_rfc3339();
     let reviewer_states = reviewer_states(context);
     let reviewer_count = reviewer_states.len() as u32;
@@ -195,7 +211,7 @@ pub async fn build_assessment(state: &AppState, context: &GitHubMergeContext) ->
         ));
     }
 
-    if approvals == 0 {
+    if approval_required && approvals == 0 {
         warnings.push(make_signal(
             "no-approval",
             "warn",
@@ -285,7 +301,13 @@ pub async fn build_assessment(state: &AppState, context: &GitHubMergeContext) ->
     }
     .to_string();
 
-    let summary = build_summary(&readiness, &metrics, &blockers, &warnings);
+    let summary = build_summary(
+        &readiness,
+        &metrics,
+        &blockers,
+        &warnings,
+        approval_required,
+    );
 
     MergeAssessment {
         id: Uuid::new_v4().to_string(),
@@ -296,6 +318,7 @@ pub async fn build_assessment(state: &AppState, context: &GitHubMergeContext) ->
         pr_url: context.pr.html_url.clone(),
         readiness,
         summary,
+        approval_required,
         mergeable,
         mergeable_state,
         base_ref: context.pr.base_ref.clone(),
@@ -558,11 +581,21 @@ fn build_summary(
     metrics: &MergeMetrics,
     blockers: &[MergeSignal],
     warnings: &[MergeSignal],
+    approval_required: bool,
 ) -> String {
     match readiness {
-        "ready" => format!(
-            "This PR looks merge-ready: approvals are in place, no active changes-requested state remains, review pressure is quiet, and the current check picture is green."
-        ),
+        "ready" => {
+            let approval_text = if approval_required {
+                "approvals are in place"
+            } else if metrics.approvals > 0 {
+                "approval is present, though not required for this run"
+            } else {
+                "approval requirement is disabled for this run"
+            };
+            format!(
+                "This PR looks merge-ready: {approval_text}, no active changes-requested state remains, review pressure is quiet, and the current check picture is green."
+            )
+        },
         "blocked" => format!(
             "This PR is blocked right now. Biggest blockers: {}. Snapshot: {} approval{}, {} failing check{}, {} active review thread{}.",
             blockers
@@ -593,5 +626,17 @@ fn build_summary(
             metrics.actionable_open_threads,
             plural_suffix(metrics.actionable_open_threads),
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::build_summary;
+    use crate::models::MergeMetrics;
+
+    #[test]
+    fn ready_summary_names_optional_approval_policy() {
+        let summary = build_summary("ready", &MergeMetrics::default(), &[], &[], false);
+        assert!(summary.contains("approval requirement is disabled"));
     }
 }

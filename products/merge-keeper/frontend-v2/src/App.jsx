@@ -34,6 +34,7 @@ const DEFAULT_FORM = {
   repo: "",
   pr_number: "",
   publish_report: false,
+  require_approval: true,
 };
 
 function asCount(value) {
@@ -121,7 +122,7 @@ function buildMetrics(assessment, overview, health) {
     const failing = asCount(metrics.failing_checks);
     return [
       { label: "Readiness", value: String(assessment.readiness || "ready").toUpperCase(), tone: metricTone(assessment.readiness), sub: assessment.summary || "latest assessment" },
-      { label: "Review pressure", value: String(asCount(metrics.actionable_open_threads || metrics.open_review_threads)), tone: asCount(metrics.actionable_open_threads || metrics.open_review_threads) ? "warn" : "ok", sub: `${asCount(metrics.reviewer_count)} reviewers` },
+      { label: "Review pressure", value: String(asCount(metrics.actionable_open_threads || metrics.open_review_threads)), tone: asCount(metrics.actionable_open_threads || metrics.open_review_threads) ? "warn" : "ok", sub: `${asCount(metrics.reviewer_count)} reviewers - ${assessment.approval_required === false ? "approval optional" : "approval required"}` },
       { label: "Checks", value: `${successful}/${successful + pending + failing}`, tone: failing ? "hot" : pending ? "warn" : "ok", sub: `${failing} failing, ${pending} pending` },
       { label: "Risk", value: assessment.trust_gate?.recommendation ? String(assessment.trust_gate.recommendation).toUpperCase() : "LOCAL", tone: metricTone(assessment.trust_gate?.recommendation || "ready"), sub: assessment.trust_gate?.summary || "TrustGate optional" },
       { label: "Changed files", value: String(asCount(metrics.changed_files)), tone: "sig", sub: `+${asCount(metrics.additions)} -${asCount(metrics.deletions)}` },
@@ -189,6 +190,7 @@ function currentAssessmentItem(assessment) {
       { label: "Repo", value: assessment?.repo || "repo" },
       { label: "PR", value: assessment?.pr_number ? `#${assessment.pr_number}` : "none" },
       { label: "Checks", value: String(asCount(assessment?.metrics?.successful_checks)) },
+      { label: "Approval", value: assessment?.approval_required === false ? "optional" : "required" },
       { label: "Blockers", value: String(asCount(assessment?.blockers?.length)) },
       { label: "Warnings", value: String(asCount(assessment?.warnings?.length)) },
     ],
@@ -425,6 +427,18 @@ function AssessmentForm({ error, form, onChange, onRun, running }) {
           <span>
             <span className="repo-name" style={{ display: "block", fontSize: "0.8rem" }}>Publish readiness report</span>
             <span className="feed-meta">Optional write-back. Leave off for local read-only assessment.</span>
+          </span>
+        </label>
+        <label className="rowline" style={{ alignItems: "flex-start", justifyContent: "flex-start" }}>
+          <input
+            checked={form.require_approval !== false}
+            onChange={(event) => onChange((current) => ({ ...current, require_approval: event.target.checked }))}
+            style={{ marginTop: 3 }}
+            type="checkbox"
+          />
+          <span>
+            <span className="repo-name" style={{ display: "block", fontSize: "0.8rem" }}>Require active approval</span>
+            <span className="feed-meta">Turn off for repos where checks and mergeability are enough for a ready call.</span>
           </span>
         </label>
         {error && <StatusBanner tone="red">{error}</StatusBanner>}
@@ -706,6 +720,7 @@ export default function App() {
   const ready = auth.checked && !auth.needsAuth;
   const runtime = useProductRuntime({ apiBase: API, fetcher: fetch_, ready });
   const authConfigured = Boolean(runtime.authStatus?.auth_configured || runtime.health?.auth_enabled);
+  const approvalDefault = runtime.health?.policy?.approval_required_default;
 
   async function fetchJson(path, options, fallbackError) {
     const response = await fetch_(`${API}${path}`, options);
@@ -734,6 +749,12 @@ export default function App() {
     refreshMergeData();
   }, [ready, fetch_]);
 
+  useEffect(() => {
+    if (typeof approvalDefault === "boolean") {
+      setForm((current) => ({ ...current, require_approval: approvalDefault }));
+    }
+  }, [approvalDefault]);
+
   async function runAssessment() {
     setRunning(true);
     setError("");
@@ -747,6 +768,7 @@ export default function App() {
             repo: form.repo,
             pr_number: Number(form.pr_number) || 0,
             publish_report: Boolean(form.publish_report),
+            require_approval: form.require_approval !== false,
           }),
         },
         "MergeKeeper could not assess that pull request.",
@@ -756,6 +778,7 @@ export default function App() {
         repo: result.repo || form.repo,
         pr_number: result.pr_number ? String(result.pr_number) : form.pr_number,
         publish_report: Boolean(form.publish_report),
+        require_approval: result.approval_required !== false,
       });
       setActiveTab("readiness");
       await refreshMergeData();
@@ -778,6 +801,7 @@ export default function App() {
         repo: result.repo || "",
         pr_number: result.pr_number ? String(result.pr_number) : "",
         publish_report: false,
+        require_approval: result.approval_required !== false,
       });
       setActiveTab("readiness");
     } catch (err) {

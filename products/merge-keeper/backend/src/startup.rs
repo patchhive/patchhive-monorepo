@@ -31,6 +31,15 @@ pub async fn validate_config() -> Vec<StartupCheck> {
     checks.push(StartupCheck::info(
         "MergeKeeper reads pull request merge pressure and returns a simple readiness state: ready, hold, or blocked.",
     ));
+    if crate::pipeline::assessment::approval_required_default() {
+        checks.push(StartupCheck::info(
+            "Approval policy defaults to required. Manual runs can disable it for repos that do not require review approval.",
+        ));
+    } else {
+        checks.push(StartupCheck::info(
+            "Approval policy defaults to optional. Manual runs can still require approval per assessment.",
+        ));
+    }
 
     if let Some(url) = crate::integrations::review_bee_url() {
         checks.push(StartupCheck::info(format!(

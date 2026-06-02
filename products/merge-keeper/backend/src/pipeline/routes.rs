@@ -21,7 +21,7 @@ use crate::{
     STARTUP_CHECKS,
 };
 
-use super::assessment::run_github_pr_assessment;
+use super::assessment::{approval_required_default, run_github_pr_assessment};
 use super::utils::{api_error, valid_repo, ApiError};
 
 type JsonResult<T> = Result<Json<T>, ApiError>;
@@ -153,6 +153,9 @@ pub async fn health() -> Json<serde_json::Value> {
         "hold_count": counts.hold_runs,
         "blocked_count": counts.blocked_runs,
         "mode": "github-merge-readiness",
+        "policy": {
+            "approval_required_default": approval_required_default(),
+        },
         "github": {
             "token_configured": github::github_token_configured(),
             "webhook_secret_configured": github::webhook_secret_configured(),
@@ -208,6 +211,9 @@ pub async fn assess_github_pr(
         repo.to_string(),
         request.pr_number,
         request.publish_report,
+        request
+            .require_approval
+            .unwrap_or_else(approval_required_default),
         "manual_pr_lookup".into(),
         "pull_request".into(),
         "manual".into(),
@@ -311,6 +317,7 @@ pub async fn github_webhook(
         repo,
         pr_number,
         true,
+        approval_required_default(),
         "github_webhook".into(),
         event.clone(),
         action.clone(),

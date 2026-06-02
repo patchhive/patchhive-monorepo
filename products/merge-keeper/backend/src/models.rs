@@ -6,6 +6,8 @@ pub struct AssessmentRequest {
     pub pr_number: i64,
     #[serde(default = "default_publish_report")]
     pub publish_report: bool,
+    #[serde(default)]
+    pub require_approval: Option<bool>,
 }
 
 fn default_publish_report() -> bool {
@@ -180,6 +182,8 @@ pub struct MergeAssessment {
     pub readiness: String,
     #[serde(default)]
     pub summary: String,
+    #[serde(default = "default_approval_required")]
+    pub approval_required: bool,
     #[serde(default)]
     pub mergeable: String,
     #[serde(default)]
@@ -206,6 +210,10 @@ pub struct MergeAssessment {
     pub github: Option<GitHubAssessmentContext>,
     #[serde(default)]
     pub github_report: Option<GitHubReportOutcome>,
+}
+
+fn default_approval_required() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
