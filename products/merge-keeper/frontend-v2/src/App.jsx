@@ -227,6 +227,135 @@ function signalItem(signal, index, kind) {
   };
 }
 
+function supportItem(config, index) {
+  return {
+    detail: config.detail,
+    gain: config.gain,
+    gainMeta: config.gainMeta,
+    id: config.id,
+    label: config.label,
+    minWindow: 7,
+    position: POSITIONS[index % POSITIONS.length],
+    stats: config.stats,
+    summary: config.summary,
+    title: config.title,
+    tone: config.tone || "green",
+    vector: config.vector,
+    vectorTone: config.vectorTone || "",
+  };
+}
+
+function mergeStateTone(assessment) {
+  const state = String(assessment?.mergeable_state || "unknown").toLowerCase();
+  if (state === "dirty" || state === "blocked" || assessment?.mergeable === "no") return "red";
+  if (state === "unknown" || state === "unstable" || state === "behind" || state === "has_hooks") return "amber";
+  return "green";
+}
+
+function supportingItems(assessment) {
+  const metrics = assessment?.metrics || {};
+  const successful = asCount(metrics.successful_checks);
+  const pending = asCount(metrics.pending_checks);
+  const failing = asCount(metrics.failing_checks);
+  const totalChecks = successful + pending + failing;
+  const checkTone = failing ? "red" : pending ? "amber" : "green";
+  const reviewTone = asCount(metrics.changes_requested) ? "red" : asCount(metrics.actionable_open_threads) || asCount(metrics.open_review_threads) ? "amber" : "green";
+  const approvalTone = assessment?.approval_required === false
+    ? "signal"
+    : asCount(metrics.approvals)
+      ? "green"
+      : "amber";
+
+  return [
+    supportItem({
+      detail: assessment?.mergeable_state || "unknown",
+      gain: assessment?.mergeable || "unknown",
+      gainMeta: "mergeable",
+      id: "mergeability-signal",
+      label: "MG",
+      stats: [
+        { label: "State", value: assessment?.mergeable_state || "unknown" },
+        { label: "Mergeable", value: assessment?.mergeable || "unknown" },
+        { label: "Base", value: assessment?.base_ref || "base" },
+        { label: "Head", value: assessment?.head_ref || "head" },
+        { label: "PR", value: `#${assessment?.pr_number || "none"}` },
+      ],
+      summary: assessment?.mergeable_state === "clean"
+        ? "GitHub says the pull request can be cleanly merged."
+        : `GitHub reports mergeability state ${assessment?.mergeable_state || "unknown"}.`,
+      title: "Mergeability",
+      tone: mergeStateTone(assessment),
+      vector: "merge",
+      vectorTone: mergeStateTone(assessment) === "green" ? "" : "warn",
+    }, 0),
+    supportItem({
+      detail: totalChecks ? `${successful} of ${totalChecks} checks clear` : "No checks reported",
+      gain: totalChecks ? `${successful}/${totalChecks}` : "none",
+      gainMeta: `${failing} fail / ${pending} pending`,
+      id: "check-health-signal",
+      label: "CI",
+      stats: [
+        { label: "Successful", value: String(successful) },
+        { label: "Pending", value: String(pending) },
+        { label: "Failing", value: String(failing) },
+        { label: "Total", value: String(totalChecks) },
+        { label: "State", value: checkTone },
+      ],
+      summary: failing
+        ? "At least one status context or check run is failing."
+        : pending
+          ? "Some checks are still pending."
+          : "The current check picture is green.",
+      title: "Check health",
+      tone: checkTone,
+      vector: "checks",
+      vectorTone: checkTone === "green" ? "" : "warn",
+    }, 1),
+    supportItem({
+      detail: `${asCount(metrics.actionable_open_threads)} actionable threads`,
+      gain: asCount(metrics.actionable_open_threads) ? "active" : "quiet",
+      gainMeta: `${asCount(metrics.open_review_threads)} open threads`,
+      id: "review-pressure-signal",
+      label: "RV",
+      stats: [
+        { label: "Reviewers", value: String(asCount(metrics.reviewer_count)) },
+        { label: "Approvals", value: String(asCount(metrics.approvals)) },
+        { label: "Changes", value: String(asCount(metrics.changes_requested)) },
+        { label: "Threads", value: String(asCount(metrics.open_review_threads)) },
+        { label: "Actionable", value: String(asCount(metrics.actionable_open_threads)) },
+      ],
+      summary: reviewTone === "green"
+        ? "Review pressure is quiet for this assessment."
+        : "Review pressure still needs attention before a clean ready call.",
+      title: "Review pressure",
+      tone: reviewTone,
+      vector: "review",
+      vectorTone: reviewTone === "green" ? "" : "warn",
+    }, 2),
+    supportItem({
+      detail: assessment?.approval_required === false ? "Approval optional for this run" : "Approval required for this run",
+      gain: assessment?.approval_required === false ? "optional" : String(asCount(metrics.approvals)),
+      gainMeta: assessment?.approval_required === false ? "policy override" : "active approvals",
+      id: "approval-policy-signal",
+      label: "AP",
+      stats: [
+        { label: "Required", value: assessment?.approval_required === false ? "no" : "yes" },
+        { label: "Approvals", value: String(asCount(metrics.approvals)) },
+        { label: "Reviewers", value: String(asCount(metrics.reviewer_count)) },
+        { label: "Changes", value: String(asCount(metrics.changes_requested)) },
+        { label: "State", value: approvalTone },
+      ],
+      summary: assessment?.approval_required === false
+        ? "This run allows a clean/check-passing PR to be ready without an active approval."
+        : "This run requires at least one active approval before MergeKeeper calls the PR ready.",
+      title: "Approval policy",
+      tone: approvalTone,
+      vector: "approval",
+      vectorTone: approvalTone === "amber" || approvalTone === "red" ? "warn" : "",
+    }, 3),
+  ];
+}
+
 function contextItems(assessment, startIndex) {
   const items = [];
   if (assessment?.review_bee) {
@@ -303,9 +432,16 @@ function contextItems(assessment, startIndex) {
 
 function buildRadarItems(assessment, history) {
   if (assessment) {
-    const blockers = (assessment.blockers || []).map((signal, index) => signalItem(signal, index, "blocker"));
-    const warnings = (assessment.warnings || []).map((signal, index) => signalItem(signal, index + blockers.length, "warning"));
-    return [currentAssessmentItem(assessment), ...blockers, ...warnings, ...contextItems(assessment, blockers.length + warnings.length + 1)];
+    const support = supportingItems(assessment);
+    const blockers = (assessment.blockers || []).map((signal, index) => signalItem(signal, index + support.length, "blocker"));
+    const warnings = (assessment.warnings || []).map((signal, index) => signalItem(signal, index + support.length + blockers.length, "warning"));
+    return [
+      currentAssessmentItem(assessment),
+      ...support,
+      ...blockers,
+      ...warnings,
+      ...contextItems(assessment, support.length + blockers.length + warnings.length + 1),
+    ];
   }
 
   if (history.length) {
