@@ -210,7 +210,7 @@ function signalItem(signal, index, kind) {
     gainMeta: signal.evidence?.[0] || signal.key || kind,
     id: signal.key || `${kind}-${index + 1}`,
     label: signal.severity || kind,
-    minWindow: index < 3 ? 7 : index < 6 ? 14 : 30,
+    minWindow: 7,
     position: POSITIONS[(index + 1) % POSITIONS.length],
     stats: [
       { label: "Kind", value: kind },
@@ -365,7 +365,7 @@ function contextItems(assessment, startIndex) {
       gainMeta: `${asCount(assessment.review_bee.open_items)} open`,
       id: "review-bee-context",
       label: "RB",
-      minWindow: 14,
+      minWindow: 7,
       position: POSITIONS[startIndex % POSITIONS.length],
       stats: [
         { label: "Status", value: assessment.review_bee.status || "review" },
@@ -389,7 +389,7 @@ function contextItems(assessment, startIndex) {
       gainMeta: `${asCount(assessment.trust_gate.risk_score)} risk`,
       id: "trust-gate-context",
       label: "TG",
-      minWindow: 14,
+      minWindow: 7,
       position: POSITIONS[(startIndex + items.length) % POSITIONS.length],
       stats: [
         { label: "Decision", value: assessment.trust_gate.recommendation || "risk" },
@@ -412,7 +412,7 @@ function contextItems(assessment, startIndex) {
       gainMeta: `${asCount(assessment.repo_memory.policy_entries)} policy`,
       id: "repo-memory-context",
       label: "RM",
-      minWindow: 30,
+      minWindow: 7,
       position: POSITIONS[(startIndex + items.length) % POSITIONS.length],
       stats: [
         { label: "Policy", value: String(asCount(assessment.repo_memory.policy_entries)) },
