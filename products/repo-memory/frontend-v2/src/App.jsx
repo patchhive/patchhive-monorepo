@@ -587,7 +587,7 @@ function FailGuardSurface({
         <div>
           <div className="eyebrow">// RepoMemory bad-outcome queue</div>
           <h1>FailGuard Review</h1>
-          <p className="subline">Queue painful outcomes, then promote the useful ones into durable failure-pattern memory.</p>
+          <p className="subline">Review bad-outcome candidates, then promote useful lessons into durable failure-pattern memory.</p>
         </div>
         <button className="btn" onClick={onRefresh} type="button">Refresh</button>
       </div>
