@@ -375,13 +375,13 @@ function MemoryLattice({ candidates, history, memories, overview }) {
   return (
     <SuiteRadar
       ariaLabel="RepoMemory live memory radar"
-      detailLabel="Memory detail"
+      detailLabel="Signal detail"
       feed={feed}
       gainLabel="Signal"
       itemQueryParam="memory"
       items={items}
       signalLabel="signals"
-      vectorLabel="Selected memory"
+      vectorLabel="Selected signal"
     />
   );
 }
