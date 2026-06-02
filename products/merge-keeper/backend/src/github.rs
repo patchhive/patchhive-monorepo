@@ -5,12 +5,15 @@ use patchhive_github_pr::{
     GitHubPullReview, GitHubPullReviewThread,
 };
 use reqwest::Client;
+use tokio::time::{sleep, Duration};
 
 use crate::models::{GitHubReportOutcome, MergeAssessment};
 
 const STATUS_CONTEXT: &str = "mergekeeper/readiness";
 const CHECK_RUN_NAME: &str = "MergeKeeper";
 const COMMENT_MARKER: &str = "<!-- patchhive-mergekeeper-report -->";
+const MERGEABLE_REFRESH_ATTEMPTS: usize = 2;
+const MERGEABLE_REFRESH_DELAY_MS: u64 = 900;
 
 pub struct GitHubMergeContext {
     pub pr: GitHubPullRequestDetail,
@@ -46,7 +49,7 @@ pub async fn fetch_merge_context(
     pr_number: i64,
 ) -> Result<GitHubMergeContext> {
     let client = pr_client(client);
-    let pr = client.fetch_pull_request(repo, pr_number).await?;
+    let pr = fetch_pull_request_with_mergeability_refresh(&client, repo, pr_number).await?;
     let reviews = client.fetch_pull_request_reviews(repo, pr_number).await?;
     let threads = client
         .fetch_pull_request_review_threads(repo, pr_number)
@@ -61,6 +64,28 @@ pub async fn fetch_merge_context(
         commit_health,
         diff,
     })
+}
+
+async fn fetch_pull_request_with_mergeability_refresh(
+    client: &GitHubPrClient,
+    repo: &str,
+    pr_number: i64,
+) -> Result<GitHubPullRequestDetail> {
+    let mut pr = client.fetch_pull_request(repo, pr_number).await?;
+    for _ in 0..MERGEABLE_REFRESH_ATTEMPTS {
+        if !mergeability_needs_refresh(&pr) {
+            break;
+        }
+        sleep(Duration::from_millis(MERGEABLE_REFRESH_DELAY_MS)).await;
+        pr = client.fetch_pull_request(repo, pr_number).await?;
+    }
+    Ok(pr)
+}
+
+fn mergeability_needs_refresh(pr: &GitHubPullRequestDetail) -> bool {
+    pr.mergeable.is_none()
+        || pr.mergeable_state.trim().is_empty()
+        || pr.mergeable_state.eq_ignore_ascii_case("unknown")
 }
 
 fn details_url(assessment: &MergeAssessment) -> Option<String> {
@@ -232,10 +257,35 @@ fn cross_product_markdown(assessment: &MergeAssessment) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::cross_product_markdown;
+    use super::{cross_product_markdown, mergeability_needs_refresh};
     use crate::models::{
         MergeAssessment, RepoMemoryContextPreview, ReviewBeeContext, TrustGateContext,
     };
+    use patchhive_github_pr::GitHubPullRequestDetail;
+
+    #[test]
+    fn mergeability_refresh_only_waits_for_unsettled_github_state() {
+        assert!(mergeability_needs_refresh(&GitHubPullRequestDetail {
+            mergeable: None,
+            mergeable_state: "unknown".into(),
+            ..GitHubPullRequestDetail::default()
+        }));
+        assert!(mergeability_needs_refresh(&GitHubPullRequestDetail {
+            mergeable: Some(true),
+            mergeable_state: "".into(),
+            ..GitHubPullRequestDetail::default()
+        }));
+        assert!(!mergeability_needs_refresh(&GitHubPullRequestDetail {
+            mergeable: Some(true),
+            mergeable_state: "clean".into(),
+            ..GitHubPullRequestDetail::default()
+        }));
+        assert!(!mergeability_needs_refresh(&GitHubPullRequestDetail {
+            mergeable: Some(false),
+            mergeable_state: "dirty".into(),
+            ..GitHubPullRequestDetail::default()
+        }));
+    }
 
     #[test]
     fn cross_product_markdown_suppresses_zero_value_context_counts() {
