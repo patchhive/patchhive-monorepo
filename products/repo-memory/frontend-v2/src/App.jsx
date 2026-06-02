@@ -203,9 +203,55 @@ function buildMetrics(health, overview, memories, candidates) {
   ];
 }
 
-function buildRadarItems(overview, memories) {
+function repoInitials(repo = "", fallback = "RM") {
+  const parts = repo.split("/").filter(Boolean);
+  if (parts.length >= 2) {
+    return `${parts[0].charAt(0)}${parts[1].charAt(0)}`.toUpperCase();
+  }
+  return (repo || fallback).slice(0, 2).toUpperCase();
+}
+
+function runWindow(createdAt) {
+  if (!createdAt) return 30;
+  const created = new Date(createdAt);
+  if (Number.isNaN(created.getTime())) return 30;
+  const ageDays = Math.max(0, (Date.now() - created.getTime()) / 86400000);
+  if (ageDays <= 7) return 7;
+  if (ageDays <= 14) return 14;
+  return 30;
+}
+
+function runSummary(run) {
+  const memoriesCreated = asCount(run.memories_created);
+  if (memoriesCreated > 0) {
+    return `${run.repo} produced ${memoriesCreated} durable ${memoriesCreated === 1 ? "memory" : "memories"} on its latest ingest.`;
+  }
+  return `${run.repo} was scanned, but no repeated convention or failure pattern crossed RepoMemory's confidence threshold yet.`;
+}
+
+function recentRunSignals(history, entries) {
+  const memoryRunIds = new Set(entries.map((memory) => memory.run_id).filter(Boolean));
+  const memoryRepos = new Set(entries.map((memory) => memory.repo).filter(Boolean));
+  const seenRepos = new Set();
+  return history.filter((run) => {
+    if (!run?.id || memoryRunIds.has(run.id)) {
+      return false;
+    }
+    if (asCount(run.memories_created) > 0 && memoryRepos.has(run.repo)) {
+      return false;
+    }
+    if (seenRepos.has(run.repo)) {
+      return false;
+    }
+    seenRepos.add(run.repo);
+    return true;
+  });
+}
+
+function buildRadarItems(overview, memories, history = []) {
   const entries = memoryList(overview, memories);
-  if (!entries.length) {
+  const runSignals = recentRunSignals(history, entries);
+  if (!entries.length && !runSignals.length) {
     return [{
       detail: "No memory ingests yet",
       gain: "standby",
@@ -227,7 +273,7 @@ function buildRadarItems(overview, memories) {
     }];
   }
 
-  return entries.slice(0, 8).map((memory, index) => {
+  const memoryItems = entries.slice(0, 8).map((memory, index) => {
     const confidence = Number(memory.confidence || 0);
     const tone = kindTone(memory.kind, memory.disposition);
     return {
@@ -252,11 +298,48 @@ function buildRadarItems(overview, memories) {
       vectorTone: tone === "amber" || tone === "red" ? "warn" : "",
     };
   });
+
+  const runItems = runSignals.slice(0, Math.max(0, 8 - memoryItems.length)).map((run, index) => {
+    const memoriesCreated = asCount(run.memories_created);
+    const positionIndex = memoryItems.length + index;
+    return {
+      detail: run.repo,
+      gain: memoriesCreated ? String(memoriesCreated) : "early",
+      gainMeta: memoriesCreated ? "memories created" : "0 memories",
+      gainTone: memoriesCreated ? "ok" : "sig",
+      id: `ingest-${run.id}`,
+      label: repoInitials(run.repo, `R${index + 1}`),
+      minWindow: runWindow(run.created_at),
+      position: POSITIONS[positionIndex % POSITIONS.length],
+      stats: [
+        { label: "Run", value: "saved" },
+        { label: "Memories", value: String(memoriesCreated) },
+        { label: "Conventions", value: String(asCount(run.conventions)) },
+        { label: "Failures", value: String(asCount(run.failures)) },
+        { label: "Age", value: timeAgo(run.created_at) },
+      ],
+      summary: run.top_memory || runSummary(run),
+      title: run.repo || `Ingest ${index + 1}`,
+      tone: memoriesCreated ? "green" : "signal",
+      vector: memoriesCreated ? "INGEST" : "EARLY SIGNAL",
+    };
+  });
+
+  return [...memoryItems, ...runItems];
 }
 
-function buildRadarFeed(overview, memories, candidates) {
+function buildRadarFeed(overview, memories, candidates, history = []) {
   const entries = memoryList(overview, memories);
+  const latestRun = history[0];
   if (!entries.length) {
+    if (latestRun) {
+      const memoriesCreated = asCount(latestRun.memories_created);
+      return [
+        { text: `${latestRun.repo} saved ${timeAgo(latestRun.created_at)} with ${memoriesCreated} durable ${memoriesCreated === 1 ? "memory" : "memories"}.`, tone: memoriesCreated ? "green" : "signal" },
+        { text: latestRun.top_memory || runSummary(latestRun), tone: memoriesCreated ? "green" : "signal" },
+        { text: `${openCandidates(candidates).length} FailGuard candidates are waiting for operator review.`, tone: openCandidates(candidates).length ? "amber" : "green" },
+      ];
+    }
     return [
       { text: "RepoMemory is waiting for a repo ingest before it can build durable context.", tone: "signal" },
       { text: "FailGuard candidates can still queue lessons for later promotion.", tone: openCandidates(candidates).length ? "amber" : "green" },
@@ -265,10 +348,11 @@ function buildRadarFeed(overview, memories, candidates) {
   }
   const top = entries[0];
   return [
+    latestRun && { text: `${latestRun.repo} latest ingest: ${asCount(latestRun.memories_created)} durable memories, ${timeAgo(latestRun.created_at)}.`, tone: asCount(latestRun.memories_created) ? "green" : "signal" },
     { text: top?.prompt_line || top?.detail || "RepoMemory loaded live memory entries.", tone: kindTone(top?.kind, top?.disposition) },
     { text: `${openCandidates(candidates).length} FailGuard candidates are waiting for operator review.`, tone: openCandidates(candidates).length ? "amber" : "green" },
     { text: `${entries.length} featured memories are available for TrustGate, RepoReaper, and HiveCore handoff.`, tone: "signal" },
-  ];
+  ].filter(Boolean);
 }
 
 function StatusBanner({ tone = "signal", children }) {
@@ -285,18 +369,18 @@ function Field({ label, children }) {
   );
 }
 
-function MemoryLattice({ candidates, memories, overview }) {
-  const items = useMemo(() => buildRadarItems(overview, memories), [overview, memories]);
-  const feed = useMemo(() => buildRadarFeed(overview, memories, candidates), [overview, memories, candidates]);
+function MemoryLattice({ candidates, history, memories, overview }) {
+  const items = useMemo(() => buildRadarItems(overview, memories, history), [overview, memories, history]);
+  const feed = useMemo(() => buildRadarFeed(overview, memories, candidates, history), [overview, memories, candidates, history]);
   return (
     <SuiteRadar
       ariaLabel="RepoMemory live memory radar"
       detailLabel="Memory detail"
       feed={feed}
-      gainLabel="Confidence"
+      gainLabel="Signal"
       itemQueryParam="memory"
       items={items}
-      signalLabel="memories"
+      signalLabel="signals"
       vectorLabel="Selected memory"
     />
   );
@@ -451,7 +535,7 @@ function MemoryCore({
           <IngestPanel error={error} form={form} onChange={onChangeForm} onRun={onRunIngest} running={running} />
           <div className="atlas-layout suite-four-layout">
             <Panel eyebrow="Graph" title="Repo knowledge map" action={<span className="chip signal">memory radar</span>}>
-              <MemoryLattice candidates={candidates} memories={memories} overview={overview} />
+              <MemoryLattice candidates={candidates} history={history} memories={memories} overview={overview} />
             </Panel>
             <MemoryQueuePanel
               busyCandidate={busyCandidate}
