@@ -344,9 +344,11 @@ function buildRadarItems(scan, history) {
 
 function buildRadarFeed(scan, history, health) {
   if (scan) {
+    const metrics = scan.metrics || {};
+    const runCount = asCount(metrics.workflow_runs);
     return [
-      { text: scan.summary || "FlakeSting completed the workflow scan.", tone: scan.metrics?.quarantine_candidates ? "red" : scan.metrics?.flaky_signals ? "amber" : "green" },
-      { text: `${asCount(scan.metrics?.flaky_signals)} flaky signals and ${asCount(scan.metrics?.quarantine_candidates)} quarantine candidates are active.`, tone: scan.metrics?.quarantine_candidates ? "red" : scan.metrics?.flaky_signals ? "amber" : "green" },
+      { text: `${runCount} GitHub Actions runs inspected for ${scan.repo || "the selected repo"}.`, tone: "signal" },
+      { text: `${asCount(metrics.flaky_signals)} flaky signals and ${asCount(metrics.quarantine_candidates)} quarantine candidates are active.`, tone: metrics.quarantine_candidates ? "red" : metrics.flaky_signals ? "amber" : "green" },
       { text: scan.trend?.status ? `Trend is ${scan.trend.status}.` : "Baseline saved. A trend appears after the next comparable scan.", tone: scan.trend?.status === "rising" ? "amber" : "signal" },
     ];
   }
