@@ -143,6 +143,22 @@ The backend owns the authority:
 
 HiveCore should not need private product database reads or browser-exposed service tokens to control the suite.
 
+## First Frontend To Connect
+
+HiveCore should be the first frontend wired to `patchhive-backend`.
+
+That does not mean HiveCore owns the product engines first. It means the first useful backend skeleton should expose enough suite-level routes for HiveCore to prove the control-plane shape:
+
+- operator auth/session
+- product registry
+- product health/status
+- shared credential status
+- run index
+- event log
+- gateway dispatch to existing product backends
+
+Once HiveCore can see and control the suite through the unified backend, product frontends can follow the same API base one by one. SignalHive should still be the first product engine moved into the backend because it is read-only and central to the suite story.
+
 ## API Shape
 
 Product APIs should be mounted under stable namespaces:
@@ -245,12 +261,13 @@ This should be gradual.
 1. Keep current product backends working.
 2. Create the shared `patchhive-backend` runtime skeleton.
 3. Add product enable flags such as `PATCHHIVE_PRODUCTS=signal-hive` and `PATCHHIVE_PRODUCTS=all`.
-4. Make HiveCore frontend optionally talk to the unified backend.
+4. Wire HiveCore frontend to the unified backend first for suite auth, product registry, product health, run index, and gateway dispatch.
 5. Add gateway routes so the unified backend can proxy existing product APIs during migration.
-6. Move SignalHive into the unified backend first because it is read-only and already central to the suite story.
-7. Update SignalHive standalone repo packaging to use the shared backend image with only SignalHive enabled.
-8. Repeat product by product, prioritizing read-only products before write-capable products.
-9. Retire old individual product backends only after each product's logic is safely hosted by the unified backend and standalone repo packaging is updated.
+6. Point product v2 frontends at the unified backend after HiveCore proves the control-plane path.
+7. Move SignalHive into the unified backend as the first in-process product engine because it is read-only and already central to the suite story.
+8. Update SignalHive standalone repo packaging to use the shared backend image with only SignalHive enabled.
+9. Repeat product by product, prioritizing read-only products before write-capable products.
+10. Retire old individual product backends only after each product's logic is safely hosted by the unified backend and standalone repo packaging is updated.
 
 ## First Products To Move
 
