@@ -752,6 +752,7 @@ function RulesSurface({
   history,
   onApplyPack,
   onClearReview,
+  onClearRuleForm,
   onDeleteRules,
   onRefresh,
   onSaveRules,
@@ -778,6 +779,7 @@ function RulesSurface({
         </div>
         <div className="actions">
           {review && <button className="btn" onClick={onClearReview} type="button">Clear review</button>}
+          <button className="btn" onClick={onClearRuleForm} type="button">Clear rules form</button>
           <button className="btn" onClick={onRefresh} type="button">Refresh</button>
         </div>
       </div>
@@ -1133,6 +1135,11 @@ export default function App() {
     setRuleForm(next);
   }
 
+  function clearRuleForm() {
+    setRuleError("");
+    setRuleForm(DEFAULT_RULE_FORM);
+  }
+
   function clearReview() {
     setError("");
     setForm(DEFAULT_FORM);
@@ -1195,6 +1202,7 @@ export default function App() {
           history={history}
           onApplyPack={applyPack}
           onClearReview={unloadReview}
+          onClearRuleForm={clearRuleForm}
           onDeleteRules={deleteRules}
           onRefresh={refreshTrustData}
           onSaveRules={saveRules}
