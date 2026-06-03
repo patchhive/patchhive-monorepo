@@ -208,6 +208,7 @@ function supportingScanItems(scan) {
   const completedRuns = asCount(metrics.completed_runs);
   const reruns = asCount(metrics.rerun_like_runs);
   const trend = scan?.trend;
+  const hasTrend = Boolean(trend?.status);
   const trendTone = trend?.status === "rising" ? "amber" : trend?.status === "improving" ? "green" : "signal";
 
   return [
@@ -250,22 +251,22 @@ function supportingScanItems(scan) {
       vectorTone: reruns ? "warn" : "",
     }, 2),
     supportItem({
-      detail: trend?.status || "baseline",
-      gain: trend?.status || "new",
-      gainMeta: trend ? `${trend.flaky_signal_delta > 0 ? "+" : ""}${trend.flaky_signal_delta} signals` : "first scan",
-      id: "trend-signal",
-      label: "TR",
+      detail: hasTrend ? trend.status : "first comparable scan",
+      gain: hasTrend ? trend.status : "baseline",
+      gainMeta: hasTrend ? `${trend.flaky_signal_delta > 0 ? "+" : ""}${trend.flaky_signal_delta} signals` : "trend pending",
+      id: hasTrend ? "trend-signal" : "baseline-signal",
+      label: hasTrend ? "TR" : "BL",
       stats: [
-        { label: "Status", value: trend?.status || "baseline" },
+        { label: "Status", value: hasTrend ? trend.status : "baseline" },
         { label: "Signal delta", value: String(trend?.flaky_signal_delta || 0) },
         { label: "Quarantine delta", value: String(trend?.quarantine_delta || 0) },
         { label: "New", value: String(trend?.new_signal_count || 0) },
         { label: "Cleared", value: String(trend?.cleared_signal_count || 0) },
       ],
-      summary: trend ? `Trend is ${trend.status} compared with the prior comparable scan.` : "Trend appears after a prior comparable scan exists.",
-      title: "Trend",
+      summary: hasTrend ? `Trend is ${trend.status} compared with the prior comparable scan.` : "Baseline saved. A trend appears after the next comparable scan.",
+      title: hasTrend ? "Trend" : "Baseline",
       tone: trendTone,
-      vector: "trend",
+      vector: hasTrend ? "trend" : "baseline",
       vectorTone: trendTone === "amber" ? "warn" : "",
     }, 3),
   ];
@@ -346,7 +347,7 @@ function buildRadarFeed(scan, history, health) {
     return [
       { text: scan.summary || "FlakeSting completed the workflow scan.", tone: scan.metrics?.quarantine_candidates ? "red" : scan.metrics?.flaky_signals ? "amber" : "green" },
       { text: `${asCount(scan.metrics?.flaky_signals)} flaky signals and ${asCount(scan.metrics?.quarantine_candidates)} quarantine candidates are active.`, tone: scan.metrics?.quarantine_candidates ? "red" : scan.metrics?.flaky_signals ? "amber" : "green" },
-      { text: scan.trend?.status ? `Trend is ${scan.trend.status}.` : "Trend appears after a prior comparable scan exists.", tone: scan.trend?.status === "rising" ? "amber" : "signal" },
+      { text: scan.trend?.status ? `Trend is ${scan.trend.status}.` : "Baseline saved. A trend appears after the next comparable scan.", tone: scan.trend?.status === "rising" ? "amber" : "signal" },
     ];
   }
   return [
@@ -472,7 +473,7 @@ function SidePanels({ health, scan }) {
   const evidence = (scan?.signals || []).flatMap((signal) => (signal.evidence || []).slice(0, 1).map((text) => ({ text, signal }))).slice(0, 3);
   return (
     <aside className="side">
-      <Panel eyebrow="Evidence" title="Why it looks flaky">
+      <Panel eyebrow="Evidence" title={evidence.length ? "Why it looks flaky" : "Evidence status"}>
         <div className="panelbody repo-list">
           {evidence.length ? evidence.map((item) => (
             <div className="feed-item" key={`${item.signal.key}-${item.text}`}>
@@ -483,7 +484,7 @@ function SidePanels({ health, scan }) {
               <span className={`chip ${signalTone(item.signal)}`}>{item.signal.status || "signal"}</span>
             </div>
           )) : (
-            <div className="rowline"><span className="muted">Evidence</span><span className="chip signal">waiting</span></div>
+            <div className="rowline"><span className="muted">Flaky evidence</span><span className="chip green">none</span></div>
           )}
           <div className="rowline"><span className="muted">GitHub token</span><span className={`chip ${githubReady(health) ? "green" : "amber"}`}>{githubReady(health) ? "ready" : "missing"}</span></div>
         </div>
@@ -581,7 +582,7 @@ function HistorySurface({ activeScanId, health, history, loading, onLoadScan, on
                 <div className="repo-meta">
                   <span className="chip amber">{asCount(item.flaky_signals)} flaky</span>
                   <span className="chip red">{asCount(item.quarantine_candidates)} quarantine</span>
-                  <span className="chip signal">{item.trend?.status || "trend pending"}</span>
+                  <span className="chip signal">{item.trend?.status || "baseline"}</span>
                   <span className="chip">{timeAgo(item.created_at)}</span>
                 </div>
               </div>
