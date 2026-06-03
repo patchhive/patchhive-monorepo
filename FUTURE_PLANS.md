@@ -158,6 +158,7 @@ back here instead of living in parallel long-term.
 - Keep SignalHive visibility-first.
 - Keep TrustGate / memory / safety layers ahead of broader autonomous write behavior.
 - Keep HiveCore control-plane-first: product APIs remain the source of truth, and deeper orchestration should arrive through shared contracts instead of private database reads.
+- Decide feature boundaries early: if an idea naturally strengthens an existing product, build it there; if it has its own operator workflow, data contract, or trust boundary, make it a standalone product from the start instead of parking it somewhere temporary and splitting it later.
 - Build public PatchHive identity and transparency layers later so reputation is earned through visible output, outcomes, contribution quality, and maintainer trust.
 
 ## Later Feature Ideas
@@ -250,3 +251,4 @@ Use this section for bigger, later-stage ideas. Favor evidence-weighted forecast
 - Add feedback-loop measurement that tracks how well PatchHive learns from failed patches, rejected suggestions, maintainer edits, overrides, and follow-up incidents.
 - Add contribution quality trends that show whether automated fixes are getting safer, more accepted, and more useful over time.
 - Add ecosystem health contribution metrics that estimate PatchHive's broader effect on open source sustainability without overstating causality.
+- Evaluate new ideas by product fit before implementation: MergeKeeper should own merge-readiness signals, RepoReaper should own patch-and-PR execution, HiveCore should own orchestration, and any capability with a distinct repeated workflow should become its own product without waiting for a later extraction.
