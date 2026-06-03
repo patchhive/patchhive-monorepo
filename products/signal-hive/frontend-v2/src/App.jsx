@@ -827,6 +827,7 @@ function AtlasBoard({
   checks,
   error,
   health,
+  onClearScan,
   onDeletePreset,
   onDeleteSchedule,
   onExportReport,
@@ -875,6 +876,7 @@ function AtlasBoard({
             <div className="actions">
               <span className="chip signal">{params.max_repos} repos max</span>
               <span className="chip">{toList(params.languages).join(" - ") || "allowlist"}</span>
+              {scan && <button className="btn" onClick={onClearScan} type="button">Clear scan</button>}
               <button className="btn primary" disabled={running} onClick={onRun} type="button">
                 {running ? "Scanning" : "Run sweep"}
               </button>
@@ -933,6 +935,7 @@ function LedgerBoard({
   health,
   history,
   loadingScan,
+  onClearScan,
   onCopySummary,
   onExportReport,
   onLoadScan,
@@ -957,7 +960,10 @@ function LedgerBoard({
               <h1>Ops Ledger</h1>
               <p className="subline">Saved scan history, selected sweep evidence, trend snapshots, and exportable reports.</p>
             </div>
-            <button className="btn" onClick={onRefresh} type="button">Refresh</button>
+            <div className="actions">
+              {scan && <button className="btn" onClick={onClearScan} type="button">Clear scan</button>}
+              <button className="btn" onClick={onRefresh} type="button">Refresh</button>
+            </div>
           </div>
           <Panel eyebrow="History" title="Scan ledger" action={<span className="chip signal">{history.length} saved</span>}>
             <div className="panelbody repo-list">
@@ -1043,6 +1049,7 @@ function WatchFloor({
   generatedServiceToken,
   health,
   onAddRepoControl,
+  onClearScan,
   onCopyServiceToken,
   onGenerateServiceToken,
   onRefresh,
@@ -1085,6 +1092,7 @@ function WatchFloor({
               <p className="subline">Operator auth, startup checks, and repo discovery boundaries for the read-only scan layer.</p>
             </div>
             <div className="actions">
+              {scan && <button className="btn" onClick={onClearScan} type="button">Clear scan</button>}
               <button className="btn" onClick={onRefresh} type="button">Refresh</button>
               {authConfigured && <button className="btn" onClick={onSignOut} type="button">Sign out</button>}
             </div>
@@ -1444,6 +1452,12 @@ export default function App() {
     }
   };
 
+  const clearScan = () => {
+    setScan(null);
+    setTimeline(null);
+    setError("");
+  };
+
   const exportReport = async () => {
     if (!scan?.id) return;
     try {
@@ -1556,6 +1570,7 @@ export default function App() {
           checks={checks}
           error={error}
           health={health}
+          onClearScan={clearScan}
           onDeletePreset={deletePreset}
           onDeleteSchedule={deleteSchedule}
           onExportReport={exportReport}
@@ -1595,6 +1610,7 @@ export default function App() {
           health={health}
           history={history}
           loadingScan={loadingScan}
+          onClearScan={clearScan}
           onCopySummary={copySummary}
           onExportReport={exportReport}
           onLoadScan={loadScan}
@@ -1616,6 +1632,7 @@ export default function App() {
           generatedServiceToken={generatedServiceToken}
           health={health}
           onAddRepoControl={addRepoControl}
+          onClearScan={clearScan}
           onCopyServiceToken={copyServiceToken}
           onGenerateServiceToken={generateServiceToken}
           onRefresh={() => refreshCollections()}
