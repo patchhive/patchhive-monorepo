@@ -681,6 +681,7 @@ function ReadinessSurface({
   health,
   history,
   onChangeForm,
+  onClearAssessment,
   onLoadAssessment,
   onRefresh,
   onRunAssessment,
@@ -704,6 +705,7 @@ function ReadinessSurface({
             <div className="actions">
               <span className={`chip ${readinessTone(assessment?.readiness || "ready")}`}>{assessment?.readiness || "ready"}</span>
               <span className={`chip ${githubReady(health) ? "green" : "amber"}`}>{githubReady(health) ? "github ready" : "github missing"}</span>
+              {assessment && <button className="btn" onClick={onClearAssessment} type="button">Clear assessment</button>}
               <button className="btn" onClick={onRefresh} type="button">Refresh</button>
             </div>
           </div>
@@ -735,7 +737,7 @@ function SecondaryFrame({ assessment, children, health, history, overview }) {
   );
 }
 
-function HistorySurface({ activeAssessmentId, assessment, health, history, loading, onLoadAssessment, onRefresh, overview }) {
+function HistorySurface({ activeAssessmentId, assessment, health, history, loading, onClearAssessment, onLoadAssessment, onRefresh, overview }) {
   return (
     <SecondaryFrame assessment={assessment} health={health} history={history} overview={overview}>
       <div className="hero-row">
@@ -744,7 +746,10 @@ function HistorySurface({ activeAssessmentId, assessment, health, history, loadi
           <h1>Decision Log</h1>
           <p className="subline">Saved readiness calls and the evidence that changed them.</p>
         </div>
-        <button className="btn" onClick={onRefresh} type="button">{loading ? "Refreshing..." : "Refresh"}</button>
+        <div className="actions">
+          {assessment && <button className="btn" onClick={onClearAssessment} type="button">Clear assessment</button>}
+          <button className="btn" onClick={onRefresh} type="button">{loading ? "Refreshing..." : "Refresh"}</button>
+        </div>
       </div>
       <Panel eyebrow="Recent" title="Readiness history" action={<span className="chip signal">{history.length} saved</span>}>
         <div className="panelbody repo-list queue-grid">
@@ -781,7 +786,7 @@ function checkTone(level) {
   return "green";
 }
 
-function ChecksSurface({ assessment, history, overview, runtime }) {
+function ChecksSurface({ assessment, history, onClearAssessment, overview, runtime }) {
   const health = runtime.health || {};
   const checks = runtime.checks || [];
   const warnings = checks.filter((check) => check.level === "warn" || check.level === "error").length;
@@ -800,7 +805,10 @@ function ChecksSurface({ assessment, history, overview, runtime }) {
           <h1>Checks</h1>
           <p className="subline">Backend health, GitHub access, webhooks, and integration readiness before a merge call.</p>
         </div>
-        <button className="btn" onClick={runtime.refresh} type="button">{runtime.loading ? "Refreshing..." : "Refresh"}</button>
+        <div className="actions">
+          {assessment && <button className="btn" onClick={onClearAssessment} type="button">Clear assessment</button>}
+          <button className="btn" onClick={runtime.refresh} type="button">{runtime.loading ? "Refreshing..." : "Refresh"}</button>
+        </div>
       </div>
       {runtime.error && <StatusBanner tone="red">{runtime.error}</StatusBanner>}
       <MetricBand metrics={metrics} />
@@ -947,6 +955,11 @@ export default function App() {
     }
   }
 
+  function clearAssessment() {
+    setAssessment(null);
+    setError("");
+  }
+
   if (!ready) {
     return (
       <ProductV2AuthGate
@@ -978,6 +991,7 @@ export default function App() {
           health={runtime.health || {}}
           history={history}
           onChangeForm={setForm}
+          onClearAssessment={clearAssessment}
           onLoadAssessment={loadAssessment}
           onRefresh={() => {
             refreshMergeData();
@@ -995,12 +1009,13 @@ export default function App() {
           health={runtime.health || {}}
           history={history}
           loading={loadingHistory}
+          onClearAssessment={clearAssessment}
           onLoadAssessment={loadAssessment}
           onRefresh={refreshMergeData}
           overview={overview}
         />
       )}
-      {activeTab === "checks" && <ChecksSurface assessment={assessment} history={history} overview={overview} runtime={runtime} />}
+      {activeTab === "checks" && <ChecksSurface assessment={assessment} history={history} onClearAssessment={clearAssessment} overview={overview} runtime={runtime} />}
     </ProductV2Shell>
   );
 }
