@@ -1,0 +1,42 @@
+key = "release-sentry"
+code = "RSY"
+name = "ReleaseSentry"
+role = "release readiness evidence"
+module_path = "crate::products::release_sentry"
+route_prefix = "/api/products/release-sentry"
+migration_stage = "not-started"
+
+[safety]
+read_only = true
+credential_scopes = ["github:repo:read", "github:actions:read", "github:releases:read"]
+evidence_required = ["release target", "CI state", "blocker summary"]
+
+[[capabilities]]
+id = "release-health"
+label = "Release health"
+description = "Assess ship readiness from release evidence."
+
+[[capabilities]]
+id = "tag-read"
+label = "Tag read"
+description = "Read tag and release metadata."
+
+[[capabilities]]
+id = "read-only"
+label = "Read-only"
+description = "Does not publish releases."
+
+[[routes]]
+method = "GET"
+path = "/api/products/release-sentry/health"
+description = "Report ReleaseSentry runtime health."
+
+[[routes]]
+method = "POST"
+path = "/api/products/release-sentry/assess/github/repo"
+description = "Assess release readiness for a repo."
+
+[[routes]]
+method = "GET"
+path = "/api/products/release-sentry/runs"
+description = "List ReleaseSentry assessments."

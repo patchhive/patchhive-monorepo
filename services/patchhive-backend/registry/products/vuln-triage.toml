@@ -1,0 +1,42 @@
+key = "vuln-triage"
+code = "VT"
+name = "VulnTriage"
+role = "security finding triage"
+module_path = "crate::products::vuln_triage"
+route_prefix = "/api/products/vuln-triage"
+migration_stage = "not-started"
+
+[safety]
+read_only = true
+credential_scopes = ["github:security_events:read", "github:dependabot:read"]
+evidence_required = ["security alert snapshot", "severity inputs", "reachability hints"]
+
+[[capabilities]]
+id = "code-scanning"
+label = "Code scanning"
+description = "Read GitHub code scanning alerts."
+
+[[capabilities]]
+id = "dependabot-alerts"
+label = "Dependabot alerts"
+description = "Read dependency vulnerability alerts."
+
+[[capabilities]]
+id = "read-only"
+label = "Read-only"
+description = "Does not patch or dismiss findings."
+
+[[routes]]
+method = "GET"
+path = "/api/products/vuln-triage/health"
+description = "Report VulnTriage runtime health."
+
+[[routes]]
+method = "POST"
+path = "/api/products/vuln-triage/triage/github/repo"
+description = "Rank security findings for a repo."
+
+[[routes]]
+method = "GET"
+path = "/api/products/vuln-triage/runs"
+description = "List VulnTriage runs."

@@ -3,6 +3,7 @@ FROM rust:1.82-bookworm AS builder
 WORKDIR /app
 COPY Cargo.toml ./
 COPY src ./src
+COPY registry ./registry
 RUN cargo build --release
 
 FROM debian:bookworm-slim
@@ -19,4 +20,3 @@ ENV PATCHHIVE_PRODUCTS=all
 EXPOSE 8100
 
 CMD ["patchhive-backend"]
-

@@ -1,0 +1,44 @@
+key = "trust-gate"
+code = "TG"
+name = "TrustGate"
+role = "diff policy and risk review"
+module_path = "crate::products::trust_gate"
+route_prefix = "/api/products/trust-gate"
+migration_stage = "not-started"
+
+[safety]
+read_only = false
+writes_external_state = true
+requires_operator_approval = true
+credential_scopes = ["github:pull_requests:read", "github:checks:write"]
+evidence_required = ["diff", "policy pack", "decision report"]
+
+[[capabilities]]
+id = "diff-review"
+label = "Diff review"
+description = "Review diffs against policy and risk rules."
+
+[[capabilities]]
+id = "policy-rules"
+label = "Policy rules"
+description = "Apply repo-specific trust and safety rules."
+
+[[capabilities]]
+id = "risk-decision"
+label = "Risk decision"
+description = "Return safe, warn, or block decisions."
+
+[[routes]]
+method = "GET"
+path = "/api/products/trust-gate/health"
+description = "Report TrustGate runtime health."
+
+[[routes]]
+method = "POST"
+path = "/api/products/trust-gate/review/github/pr"
+description = "Review a GitHub PR diff."
+
+[[routes]]
+method = "GET"
+path = "/api/products/trust-gate/runs"
+description = "List TrustGate decisions."

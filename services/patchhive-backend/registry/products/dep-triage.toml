@@ -1,0 +1,42 @@
+key = "dep-triage"
+code = "DT"
+name = "DepTriage"
+role = "dependency update triage"
+module_path = "crate::products::dep_triage"
+route_prefix = "/api/products/dep-triage"
+migration_stage = "not-started"
+
+[safety]
+read_only = true
+credential_scopes = ["github:pull_requests:read", "github:dependabot:read"]
+evidence_required = ["dependency PRs", "alert sample", "scoring inputs"]
+
+[[capabilities]]
+id = "dependency-prs"
+label = "Dependency PRs"
+description = "Read dependency update pull requests."
+
+[[capabilities]]
+id = "dependabot-alerts"
+label = "Dependabot alerts"
+description = "Read dependency security alert pressure."
+
+[[capabilities]]
+id = "read-only"
+label = "Read-only"
+description = "Does not merge or rewrite dependencies."
+
+[[routes]]
+method = "GET"
+path = "/api/products/dep-triage/health"
+description = "Report DepTriage runtime health."
+
+[[routes]]
+method = "POST"
+path = "/api/products/dep-triage/triage/github/repo"
+description = "Rank dependency update pressure for a repo."
+
+[[routes]]
+method = "GET"
+path = "/api/products/dep-triage/runs"
+description = "List DepTriage runs."

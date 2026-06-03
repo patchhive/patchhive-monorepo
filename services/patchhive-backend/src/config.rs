@@ -1,10 +1,11 @@
-use std::{collections::HashSet, env, net::SocketAddr};
+use std::{collections::HashSet, env, net::SocketAddr, path::PathBuf};
 
 use anyhow::{Context, Result};
 
 #[derive(Clone, Debug)]
 pub struct Config {
     pub bind_addr: SocketAddr,
+    pub db_path: PathBuf,
     pub product_selection: ProductSelection,
 }
 
@@ -29,9 +30,13 @@ impl Config {
         let product_selection = ProductSelection::from_env_value(
             env::var("PATCHHIVE_PRODUCTS").unwrap_or_else(|_| "all".to_string()),
         );
+        let db_path = env::var("PATCHHIVE_DB_PATH")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| PathBuf::from("patchhive-backend.db"));
 
         Ok(Self {
             bind_addr,
+            db_path,
             product_selection,
         })
     }

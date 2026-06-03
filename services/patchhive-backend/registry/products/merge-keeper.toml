@@ -1,0 +1,42 @@
+key = "merge-keeper"
+code = "MK"
+name = "MergeKeeper"
+role = "merge readiness assessment"
+module_path = "crate::products::merge_keeper"
+route_prefix = "/api/products/merge-keeper"
+migration_stage = "not-started"
+
+[safety]
+read_only = true
+credential_scopes = ["github:pull_requests:read", "github:checks:read"]
+evidence_required = ["PR URL", "review state", "check state"]
+
+[[capabilities]]
+id = "pr-readiness"
+label = "PR readiness"
+description = "Assess whether a PR is ready, held, or blocked."
+
+[[capabilities]]
+id = "checks"
+label = "Checks"
+description = "Read CI/check state for merge readiness."
+
+[[capabilities]]
+id = "review-state"
+label = "Review state"
+description = "Read approval and unresolved-review state."
+
+[[routes]]
+method = "GET"
+path = "/api/products/merge-keeper/health"
+description = "Report MergeKeeper runtime health."
+
+[[routes]]
+method = "POST"
+path = "/api/products/merge-keeper/assess/github/pr"
+description = "Assess a GitHub PR for merge readiness."
+
+[[routes]]
+method = "GET"
+path = "/api/products/merge-keeper/runs"
+description = "List MergeKeeper assessments."

@@ -1,0 +1,42 @@
+key = "flake-sting"
+code = "FS"
+name = "FlakeSting"
+role = "CI flake detection"
+module_path = "crate::products::flake_sting"
+route_prefix = "/api/products/flake-sting"
+migration_stage = "not-started"
+
+[safety]
+read_only = true
+credential_scopes = ["github:actions:read"]
+evidence_required = ["repo identity", "workflow run sample", "lookback window"]
+
+[[capabilities]]
+id = "actions-history"
+label = "Actions history"
+description = "Read GitHub Actions run history."
+
+[[capabilities]]
+id = "flake-signal"
+label = "Flake signal"
+description = "Detect fail/pass swings and retry pressure."
+
+[[capabilities]]
+id = "read-only"
+label = "Read-only"
+description = "Does not mutate CI or repositories."
+
+[[routes]]
+method = "GET"
+path = "/api/products/flake-sting/health"
+description = "Report FlakeSting runtime health."
+
+[[routes]]
+method = "POST"
+path = "/api/products/flake-sting/scan/github/actions"
+description = "Scan GitHub Actions history for flaky signals."
+
+[[routes]]
+method = "GET"
+path = "/api/products/flake-sting/runs"
+description = "List FlakeSting scans."

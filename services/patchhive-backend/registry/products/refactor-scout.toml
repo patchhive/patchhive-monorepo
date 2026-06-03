@@ -1,0 +1,42 @@
+key = "refactor-scout"
+code = "RS"
+name = "RefactorScout"
+role = "conservative refactor discovery"
+module_path = "crate::products::refactor_scout"
+route_prefix = "/api/products/refactor-scout"
+migration_stage = "not-started"
+
+[safety]
+read_only = true
+credential_scopes = ["local:filesystem:read"]
+evidence_required = ["local path allowlist", "file metrics", "ranking reason"]
+
+[[capabilities]]
+id = "local-scan"
+label = "Local scan"
+description = "Scan explicitly allowed local repository paths."
+
+[[capabilities]]
+id = "refactor-candidates"
+label = "Refactor candidates"
+description = "Surface conservative cleanup opportunities."
+
+[[capabilities]]
+id = "read-only"
+label = "Read-only"
+description = "Does not rewrite local files."
+
+[[routes]]
+method = "GET"
+path = "/api/products/refactor-scout/health"
+description = "Report RefactorScout runtime health."
+
+[[routes]]
+method = "POST"
+path = "/api/products/refactor-scout/scan/local"
+description = "Scan a local repo path for refactor opportunities."
+
+[[routes]]
+method = "GET"
+path = "/api/products/refactor-scout/runs"
+description = "List RefactorScout scans."

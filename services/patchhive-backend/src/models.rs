@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize)]
 pub struct HealthResponse {
@@ -31,19 +31,24 @@ pub struct SessionResponse {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct ProductResponse {
-    pub key: &'static str,
-    pub slug: &'static str,
-    pub name: &'static str,
-    pub title: &'static str,
-    pub role: &'static str,
+    pub key: String,
+    pub slug: String,
+    pub name: String,
+    pub title: String,
+    pub code: String,
+    pub role: String,
+    pub module_path: String,
     pub enabled: bool,
     pub status: ProductStatus,
     pub migration_stage: MigrationStage,
     pub route_prefix: String,
-    pub capabilities: &'static [&'static str],
+    pub capabilities: Vec<String>,
+    pub capability_metadata: Vec<CapabilityMetadata>,
+    pub safety: SafetyBoundary,
+    pub routes: Vec<RouteClaim>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[allow(dead_code)]
 #[serde(rename_all = "kebab-case")]
 pub enum ProductStatus {
@@ -52,7 +57,7 @@ pub enum ProductStatus {
     EnginePending,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[allow(dead_code)]
 #[serde(rename_all = "kebab-case")]
 pub enum MigrationStage {
@@ -63,12 +68,46 @@ pub enum MigrationStage {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct ProductHealthResponse {
-    pub key: &'static str,
-    pub name: &'static str,
+    pub key: String,
+    pub name: String,
     pub enabled: bool,
     pub status: ProductStatus,
     pub migration_stage: MigrationStage,
-    pub message: &'static str,
+    pub message: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct RouteClaim {
+    pub method: String,
+    pub path: String,
+    pub description: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct CapabilityMetadata {
+    pub id: String,
+    pub label: String,
+    pub description: String,
+    #[serde(default)]
+    pub mutating: bool,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub struct SafetyBoundary {
+    #[serde(default)]
+    pub read_only: bool,
+    #[serde(default)]
+    pub writes_external_state: bool,
+    #[serde(default)]
+    pub mutates_repositories: bool,
+    #[serde(default)]
+    pub opens_pull_requests: bool,
+    #[serde(default)]
+    pub requires_operator_approval: bool,
+    #[serde(default)]
+    pub credential_scopes: Vec<String>,
+    #[serde(default)]
+    pub evidence_required: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -96,10 +135,10 @@ pub struct SetupProduct {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct RuntimeProduct {
-    pub slug: &'static str,
-    pub icon: &'static str,
-    pub title: &'static str,
-    pub role: &'static str,
+    pub slug: String,
+    pub icon: String,
+    pub title: String,
+    pub role: String,
     pub status: &'static str,
     pub api_url: String,
     pub enabled: bool,
@@ -110,17 +149,17 @@ pub struct RuntimeProduct {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct RunSummary {
-    pub id: &'static str,
-    pub product_key: &'static str,
-    pub status: &'static str,
-    pub message: &'static str,
+    pub id: String,
+    pub product_key: String,
+    pub status: String,
+    pub message: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
 pub struct SuiteEvent {
-    pub id: &'static str,
-    pub kind: &'static str,
-    pub message: &'static str,
+    pub id: String,
+    pub kind: String,
+    pub message: String,
     pub created_at: DateTime<Utc>,
 }
 

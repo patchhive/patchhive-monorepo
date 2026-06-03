@@ -13,7 +13,6 @@ use crate::{
         AuthStatusResponse, ErrorResponse, HealthResponse, ProductResponse, SessionResponse,
         SetupResponse,
     },
-    registry,
     state::AppState,
 };
 
@@ -51,8 +50,8 @@ async fn health(State(state): State<Arc<AppState>>) -> Json<HealthResponse> {
         version: env!("CARGO_PKG_VERSION"),
         mode: state.config.product_selection.mode_label(),
         enabled_products: state.enabled_product_count(),
-        db_ok: true,
-        product_override_count: 0,
+        db_ok: state.db_ok(),
+        product_override_count: state.product_override_count(),
     })
 }
 
@@ -77,9 +76,11 @@ async fn session(State(state): State<Arc<AppState>>) -> Json<SessionResponse> {
 
 async fn products(State(state): State<Arc<AppState>>) -> Json<Vec<ProductResponse>> {
     Json(
-        registry::PRODUCTS
+        state
+            .registry
+            .products()
             .iter()
-            .map(|product| product.to_response(state.product_enabled(product.key)))
+            .map(|product| product.to_response(state.product_enabled(product.key.as_str())))
             .collect(),
     )
 }
@@ -88,9 +89,10 @@ async fn product_health(
     State(state): State<Arc<AppState>>,
     Path(product_key): Path<String>,
 ) -> impl IntoResponse {
-    match registry::find_product(&product_key) {
+    match state.registry.find(&product_key) {
         Some(product) => {
-            Json(product.to_health_response(state.product_enabled(product.key))).into_response()
+            Json(product.to_health_response(state.product_enabled(product.key.as_str())))
+                .into_response()
         }
         None => (
             StatusCode::NOT_FOUND,

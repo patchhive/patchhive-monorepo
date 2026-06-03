@@ -1,0 +1,39 @@
+key = "review-bee"
+code = "RB"
+name = "ReviewBee"
+role = "PR review feedback checklist"
+module_path = "crate::products::review_bee"
+route_prefix = "/api/products/review-bee"
+migration_stage = "not-started"
+
+[safety]
+read_only = false
+writes_external_state = true
+requires_operator_approval = true
+credential_scopes = ["github:pull_requests:read", "github:issues:write"]
+evidence_required = ["PR URL", "review thread snapshot", "comment preview"]
+
+[[capabilities]]
+id = "pr-review-read"
+label = "PR review read"
+description = "Read PR review threads and conversation context."
+
+[[capabilities]]
+id = "checklist"
+label = "Checklist"
+description = "Turn review feedback into a follow-up checklist."
+
+[[routes]]
+method = "GET"
+path = "/api/products/review-bee/health"
+description = "Report ReviewBee runtime health."
+
+[[routes]]
+method = "POST"
+path = "/api/products/review-bee/review/github/pr"
+description = "Analyze a GitHub PR review thread."
+
+[[routes]]
+method = "GET"
+path = "/api/products/review-bee/runs"
+description = "List ReviewBee review runs."

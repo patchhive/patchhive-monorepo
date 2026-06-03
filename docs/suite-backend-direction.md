@@ -188,6 +188,26 @@ Shared suite APIs should live outside product namespaces:
 
 Product frontends should not need to know whether a request is handled by an in-process product module or by temporary gateway proxying.
 
+## Product Registry Manifests
+
+The unified backend should treat product registration as a manifest-driven plugin
+boundary, not as a hardcoded list in `main.rs`.
+
+The current v1 format lives in `services/patchhive-backend/registry/products/*.toml`.
+Each product manifest declares:
+
+- product identity: `key`, `code`, `name`, and `role`
+- in-process mounting target: `module_path`
+- API namespace: `route_prefix`
+- migration state: `migration_stage`
+- capability metadata: `[[capabilities]]` with optional `mutating`
+- safety boundaries: `[safety]` read-only state, external writes, repo mutation, approval requirements, credential scopes, and evidence expectations
+- route claims: `[[routes]]` with method, path, and description
+
+This gives HiveCore and the backend one source of truth for what a product is,
+what routes it owns, what it can do, and what safety posture applies before
+capability dispatch is implemented.
+
 ## Product Engine Rule
 
 Product logic should be portable inside the shared backend.
@@ -212,6 +232,10 @@ Standalone product repos should package the shared backend image, not copy produ
 ## Storage
 
 The preferred long-term storage shape is one backend-owned SQLite database with namespaced product tables and shared suite tables.
+
+The first shared DB implementation now lives in `services/patchhive-backend/src/db.rs`
+and is configured with `PATCHHIVE_DB_PATH`. It initializes suite-level tables
+for events, run summaries, registry overrides, and shared config.
 
 Shared tables should cover:
 

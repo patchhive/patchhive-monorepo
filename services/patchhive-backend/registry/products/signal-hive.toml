@@ -1,0 +1,42 @@
+key = "signal-hive"
+code = "SH"
+name = "SignalHive"
+role = "maintenance signal reconnaissance"
+module_path = "crate::products::signal_hive"
+route_prefix = "/api/products/signal-hive"
+migration_stage = "not-started"
+
+[safety]
+read_only = true
+credential_scopes = ["github:repo:read", "github:issues:read", "github:code:read"]
+evidence_required = ["scan parameters", "repo sample list"]
+
+[[capabilities]]
+id = "repo-discovery"
+label = "Repo discovery"
+description = "Discover repositories from broad operator scopes."
+
+[[capabilities]]
+id = "signal-scan"
+label = "Signal scan"
+description = "Scan repos for stale issues, recurring patterns, and maintenance pressure."
+
+[[capabilities]]
+id = "read-only"
+label = "Read-only"
+description = "Does not mutate repositories or open pull requests."
+
+[[routes]]
+method = "GET"
+path = "/api/products/signal-hive/health"
+description = "Report SignalHive runtime health."
+
+[[routes]]
+method = "POST"
+path = "/api/products/signal-hive/scans"
+description = "Start a maintenance signal scan."
+
+[[routes]]
+method = "GET"
+path = "/api/products/signal-hive/runs"
+description = "List SignalHive scan history."

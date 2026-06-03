@@ -1,0 +1,44 @@
+key = "hive-core"
+code = "HC"
+name = "HiveCore"
+role = "control plane and suite cockpit"
+module_path = "crate::products::hive_core"
+route_prefix = "/api/products/hive-core"
+migration_stage = "not-started"
+
+[safety]
+read_only = false
+writes_external_state = false
+requires_operator_approval = true
+credential_scopes = ["suite:control", "products:configure"]
+evidence_required = ["operator session", "capability dispatch log"]
+
+[[capabilities]]
+id = "suite-status"
+label = "Suite status"
+description = "Read suite health, product status, and runtime mode."
+
+[[capabilities]]
+id = "product-registry"
+label = "Product registry"
+description = "Read product manifests, claimed routes, and capabilities."
+
+[[capabilities]]
+id = "run-index"
+label = "Run index"
+description = "Read suite-wide run summaries and event history."
+
+[[routes]]
+method = "GET"
+path = "/api/products"
+description = "List registered PatchHive products."
+
+[[routes]]
+method = "GET"
+path = "/api/runs"
+description = "List suite-wide run summaries."
+
+[[routes]]
+method = "GET"
+path = "/api/events"
+description = "List suite-wide events."

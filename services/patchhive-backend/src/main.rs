@@ -1,4 +1,5 @@
 mod config;
+mod db;
 mod models;
 mod registry;
 mod routes;
@@ -20,7 +21,7 @@ async fn main() -> Result<()> {
 
     let config = Config::from_env()?;
     let bind_addr = config.bind_addr;
-    let state = Arc::new(AppState::new(config));
+    let state = Arc::new(AppState::new(config)?);
 
     let app = Router::new()
         .merge(routes::router())

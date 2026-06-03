@@ -125,6 +125,8 @@ Shared platform guidance:
 - Keep product APIs close enough that HiveCore can orchestrate them without heavy translation layers.
 - Standardize request/response envelopes, error shapes, run/job identifiers, and async webhook/run lifecycle patterns as products are built out.
 - Treat repo discovery safety, output caps, and cross-product contracts as platform guardrails, not optional product polish.
+- The unified backend product registry lives in `services/patchhive-backend/registry/products/*.toml`; product modules should declare identity, route claims, capabilities, safety boundaries, and module paths there instead of being hardcoded in `main.rs`.
+- The unified backend shared SQLite DB is configured with `PATCHHIVE_DB_PATH`; suite tables stay backend-owned, while product tables should be product-namespaced as engines migrate in-process.
 - All product routers should layer `patchhive_product_core::rate_limit::rate_limit_middleware` so auth, mutating, and run-triggering routes share backend rate limiting.
 - When the same Rust backend seam exists in 2 or more products, prefer extracting it into `crates/patchhive-product-core` before starting another product.
 - See [docs/platform-guardrails.md](/home/coemedia/Documents/code/patchhive/docs/platform-guardrails.md) and [docs/product-api-contract-v1.md](/home/coemedia/Documents/code/patchhive/docs/product-api-contract-v1.md).

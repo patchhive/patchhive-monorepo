@@ -1,0 +1,48 @@
+key = "repo-reaper"
+code = "RR"
+name = "RepoReaper"
+role = "autonomous patch and PR execution"
+module_path = "crate::products::repo_reaper"
+route_prefix = "/api/products/repo-reaper"
+migration_stage = "not-started"
+
+[safety]
+read_only = false
+writes_external_state = true
+mutates_repositories = true
+opens_pull_requests = true
+requires_operator_approval = true
+credential_scopes = ["github:contents:write", "github:pull_requests:write", "provider:ai"]
+evidence_required = ["issue URL", "generated patch", "test result", "TrustGate decision"]
+
+[[capabilities]]
+id = "issue-hunt"
+label = "Issue hunt"
+description = "Find candidate bug issues."
+
+[[capabilities]]
+id = "patch-generation"
+label = "Patch generation"
+description = "Generate, review, and validate candidate patches."
+mutating = true
+
+[[capabilities]]
+id = "pull-request"
+label = "Pull request"
+description = "Open attributed PatchHive pull requests."
+mutating = true
+
+[[routes]]
+method = "GET"
+path = "/api/products/repo-reaper/health"
+description = "Report RepoReaper runtime health."
+
+[[routes]]
+method = "POST"
+path = "/api/products/repo-reaper/hunts"
+description = "Start a guarded issue hunt."
+
+[[routes]]
+method = "GET"
+path = "/api/products/repo-reaper/runs"
+description = "List RepoReaper runs."
