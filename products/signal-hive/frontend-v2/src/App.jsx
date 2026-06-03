@@ -545,6 +545,8 @@ function QueuePanel({ onExportReport, scan, sortBy, setSortBy }) {
 function ScanControlPanel({
   actionMessage,
   error,
+  onClearPreset,
+  onClearSchedule,
   onDeletePreset,
   onDeleteSchedule,
   onLoadPreset,
@@ -624,6 +626,7 @@ function ScanControlPanel({
             </Field>
             <div className="actions">
               <button className="btn" disabled={!selectedPresetName} onClick={onLoadPreset} type="button">Load</button>
+              <button className="btn" onClick={onClearPreset} type="button">Clear preset</button>
               <button className="btn" disabled={!selectedPresetName} onClick={onDeletePreset} type="button">Delete</button>
               <button className="btn" onClick={onRefresh} type="button">Refresh</button>
             </div>
@@ -647,6 +650,7 @@ function ScanControlPanel({
             </Field>
             <div className="actions">
               <button className="btn" disabled={!selectedScheduleName} onClick={onLoadSchedule} type="button">Load</button>
+              <button className="btn" onClick={onClearSchedule} type="button">Clear schedule</button>
               <button className="btn" disabled={!selectedScheduleName || running} onClick={onRunSchedule} type="button">Run now</button>
               <button className="btn" disabled={!selectedScheduleName} onClick={onDeleteSchedule} type="button">Delete</button>
             </div>
@@ -886,6 +890,8 @@ function AtlasBoard({
           <ScanControlPanel
             actionMessage={actionMessage}
             error={error}
+            onClearPreset={onClearPreset}
+            onClearSchedule={onClearSchedule}
             onDeletePreset={onDeletePreset}
             onDeleteSchedule={onDeleteSchedule}
             onLoadPreset={onLoadPreset}
@@ -1393,6 +1399,13 @@ export default function App() {
     setActionMessage({ tone: "signal", text: `Loaded preset: ${selectedPreset.name}` });
   };
 
+  const clearPreset = () => {
+    setParams(DEFAULT_PARAMS);
+    setPresetName("");
+    setSelectedPresetName("");
+    setActionMessage({ tone: "signal", text: "Preset form cleared." });
+  };
+
   const saveSchedule = async () => {
     if (!scheduleName.trim()) return;
     try {
@@ -1432,6 +1445,15 @@ export default function App() {
     setScheduleCadence(String(selectedSchedule.cadence_hours || 24));
     setScheduleEnabled(selectedSchedule.enabled ? "true" : "false");
     setActionMessage({ tone: "signal", text: `Loaded schedule: ${selectedSchedule.name}` });
+  };
+
+  const clearSchedule = () => {
+    setParams(DEFAULT_PARAMS);
+    setScheduleName("");
+    setScheduleCadence("24");
+    setScheduleEnabled("true");
+    setSelectedScheduleName("");
+    setActionMessage({ tone: "signal", text: "Schedule form cleared." });
   };
 
   const runSchedule = async () => {
@@ -1571,6 +1593,8 @@ export default function App() {
           error={error}
           health={health}
           onClearScan={clearScan}
+          onClearPreset={clearPreset}
+          onClearSchedule={clearSchedule}
           onDeletePreset={deletePreset}
           onDeleteSchedule={deleteSchedule}
           onExportReport={exportReport}
