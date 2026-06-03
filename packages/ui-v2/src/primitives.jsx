@@ -93,6 +93,21 @@ const PRODUCT_ACCENTS = {
   },
 };
 
+const PRODUCT_BRANDS = {
+  "repo-reaper": { name: "RepoReaper", subtitle: "patch execution cell" },
+  "signal-hive": { name: "SignalHive", subtitle: "reconnaissance cell" },
+  "review-bee": { name: "ReviewBee", subtitle: "review resolution cell" },
+  "trust-gate": { name: "TrustGate", subtitle: "trust guard cell" },
+  "repo-memory": { name: "RepoMemory", subtitle: "memory comb" },
+  "merge-keeper": { name: "MergeKeeper", subtitle: "comb readiness" },
+  "flake-sting": { name: "FlakeSting", subtitle: "CI sting detector" },
+  "dep-triage": { name: "DepTriage", subtitle: "dependency comb" },
+  "vuln-triage": { name: "VulnTriage", subtitle: "security comb" },
+  "refactor-scout": { name: "RefactorScout", subtitle: "cleanup scout cell" },
+  "release-sentry": { name: "ReleaseSentry", subtitle: "release watch cell" },
+  "hive-core": { name: "HiveCore", subtitle: "control center" },
+};
+
 const ProductV2RuntimeContext = createContext({
   authConfigured: false,
   runtime: null,
@@ -228,11 +243,31 @@ function runtimeCells(cells, runtime, authConfigured) {
   });
 }
 
-export function ProductV2Shell({ authConfigured = false, children, runtime = null }) {
+function productBrand(productKey = "signal-hive", productName) {
+  const brand = PRODUCT_BRANDS[productKey] || PRODUCT_BRANDS["signal-hive"];
+  return {
+    name: productName || brand.name,
+    subtitle: brand.subtitle,
+  };
+}
+
+export function PatchHiveProductFooter({ productKey = "signal-hive", productName }) {
+  const brand = productBrand(productKey, productName);
+  return (
+    <footer className="patchhive-footer" aria-label="PatchHive product identity">
+      <span className="footer-brand">{brand.name} by PatchHive</span>
+      <span className="footer-subtitle">{brand.subtitle}</span>
+      <span className="footer-meta">Autonomous maintenance suite</span>
+    </footer>
+  );
+}
+
+export function ProductV2Shell({ authConfigured = false, children, productKey = "signal-hive", productName, runtime = null, showFooter = true }) {
   const contextValue = useMemo(() => ({ authConfigured, runtime }), [authConfigured, runtime]);
   return (
     <ProductV2RuntimeContext.Provider value={contextValue}>
       {children}
+      {showFooter && <PatchHiveProductFooter productKey={productKey} productName={productName} />}
     </ProductV2RuntimeContext.Provider>
   );
 }

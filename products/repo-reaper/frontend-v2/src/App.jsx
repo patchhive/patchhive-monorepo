@@ -1004,7 +1004,7 @@ export default function App() {
   const health = runtime.health || {};
 
   return (
-    <ProductV2Shell authConfigured={authConfigured} runtime={runtime}>
+    <ProductV2Shell authConfigured={authConfigured} productKey="repo-reaper" productName="RepoReaper" runtime={runtime}>
       <DeckBar
         activeTab={activeTab}
         brandEyebrow="PatchHive"

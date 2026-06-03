@@ -2,6 +2,7 @@ export {
   DeckBar,
   MetricBand,
   Panel,
+  PatchHiveProductFooter,
   ProductV2AuthGate,
   ProductV2Shell,
   PlaceholderSurface,

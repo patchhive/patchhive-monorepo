@@ -4,6 +4,7 @@ import {
   DeckBar,
   MetricBand,
   Panel,
+  ProductV2Shell,
   ProductRail,
   SuiteTopline,
   applySuiteAccent,
@@ -1056,7 +1057,7 @@ export default function App() {
   }
 
   return (
-    <>
+    <ProductV2Shell productKey="hive-core" productName="HiveCore">
       <DeckBar
         activeTab={activeTab}
         brandEyebrow="PatchHive"
@@ -1094,6 +1095,6 @@ export default function App() {
       )}
       {activeTab === "defaults" && <DefaultsSurface health={health} products={products} setup={setup} />}
       {activeTab === "contracts" && <ContractsSurface health={health} products={products} setup={setup} />}
-    </>
+    </ProductV2Shell>
   );
 }

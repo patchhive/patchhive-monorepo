@@ -670,7 +670,7 @@ export default function App() {
   }
 
   return (
-    <ProductV2Shell authConfigured={authConfigured} runtime={runtime}>
+    <ProductV2Shell authConfigured={authConfigured} productKey="vuln-triage" productName="VulnTriage" runtime={runtime}>
       <DeckBar
         activeTab={activeTab}
         brandEyebrow="PatchHive"

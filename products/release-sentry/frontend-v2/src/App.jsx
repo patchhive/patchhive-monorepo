@@ -708,7 +708,7 @@ export default function App() {
   }
 
   return (
-    <ProductV2Shell authConfigured={authConfigured} runtime={runtime}>
+    <ProductV2Shell authConfigured={authConfigured} productKey="release-sentry" productName="ReleaseSentry" runtime={runtime}>
       <DeckBar
         activeTab={activeTab}
         brandEyebrow="PatchHive"

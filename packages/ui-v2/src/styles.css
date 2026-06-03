@@ -180,6 +180,54 @@ h1 {
   white-space: nowrap;
 }
 
+.patchhive-footer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 16px;
+  margin: 18px clamp(12px, 2vw, 24px) 20px;
+  padding: 10px clamp(14px, 2vw, 22px);
+  border-top: 1px solid rgb(var(--signal-rgb) / 0.28);
+  border-bottom: 1px solid rgb(var(--signal-rgb) / 0.16);
+  background:
+    linear-gradient(90deg, rgb(var(--signal-rgb) / 0.08), transparent 28%, transparent 72%, rgb(var(--signal-rgb) / 0.06));
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.footer-brand,
+.footer-subtitle,
+.footer-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.footer-brand,
+.footer-meta {
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.footer-brand {
+  color: var(--text);
+  font-family: var(--orb);
+  font-size: 0.82rem;
+}
+
+.footer-subtitle {
+  color: var(--signal2);
+  font-size: 0.78rem;
+  letter-spacing: 0.16em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.footer-meta {
+  color: var(--dim);
+  text-align: right;
+}
+
 .decknav {
   display: flex;
   align-items: stretch;
@@ -3325,6 +3373,17 @@ h1 {
 
   .range-panel {
     justify-content: flex-end;
+  }
+
+  .patchhive-footer {
+    grid-template-columns: 1fr;
+    gap: 5px;
+    text-align: left;
+  }
+
+  .footer-subtitle,
+  .footer-meta {
+    text-align: left;
   }
 
   h1 {

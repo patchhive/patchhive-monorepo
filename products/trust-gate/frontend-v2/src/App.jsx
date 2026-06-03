@@ -1164,7 +1164,7 @@ export default function App() {
   }
 
   return (
-    <ProductV2Shell authConfigured={authConfigured} runtime={runtime}>
+    <ProductV2Shell authConfigured={authConfigured} productKey="trust-gate" productName="TrustGate" runtime={runtime}>
       <DeckBar
         activeTab={activeTab}
         brandEyebrow="PatchHive"

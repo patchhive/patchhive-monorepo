@@ -4,6 +4,7 @@ import {
   DeckBar,
   MetricBand,
   Panel,
+  ProductV2Shell,
   ProductRail,
   SuiteRadar,
   SuiteTopline,
@@ -1575,7 +1576,11 @@ export default function App() {
   }
 
   return (
-    <>
+    <ProductV2Shell
+      authConfigured={Boolean(authStatus?.auth_configured || health?.auth_enabled)}
+      productKey="signal-hive"
+      productName="SignalHive"
+    >
       <DeckBar
         activeTab={activeTab}
         brandEyebrow="PatchHive"
@@ -1671,6 +1676,6 @@ export default function App() {
           setRepoControl={setRepoControl}
         />
       )}
-    </>
+    </ProductV2Shell>
   );
 }
