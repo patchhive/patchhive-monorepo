@@ -649,6 +649,7 @@ function ReviewSurface({
   history,
   onChangeForm,
   onClear,
+  onClearReview,
   onRefreshData,
   onRunGitHub,
   onRunManual,
@@ -676,6 +677,7 @@ function ReviewSurface({
             <div className="actions">
               <span className={`chip ${recommendationTone(review?.recommendation || "ready")}`}>{review?.recommendation || "ready"}</span>
               <span className={`chip ${githubReady(health) ? "green" : "amber"}`}>{githubReady(health) ? "github ready" : "manual ready"}</span>
+              {review && <button className="btn" onClick={onClearReview} type="button">Clear review</button>}
               <button className="btn" onClick={onRefreshData} type="button">Refresh data</button>
             </div>
           </div>
@@ -697,7 +699,7 @@ function ReviewSurface({
   );
 }
 
-function HistorySurface({ activeReviewId, health, history, loading, onLoadReview, onRefresh, review }) {
+function HistorySurface({ activeReviewId, health, history, loading, onClearReview, onLoadReview, onRefresh, review }) {
   const railSections = useMemo(() => tabRailSections({ health, history, review }).history, [health, history, review]);
   const railStats = useMemo(() => tabRailStats({ health, history, review }, "history"), [health, history, review]);
 
@@ -709,7 +711,10 @@ function HistorySurface({ activeReviewId, health, history, loading, onLoadReview
           <h1>Decision Log</h1>
           <p className="subline">Saved diff decisions, risk scores, source type, and rule outcomes over time.</p>
         </div>
-        <button className="btn" onClick={onRefresh} type="button">{loading ? "Refreshing..." : "Refresh"}</button>
+        <div className="actions">
+          {review && <button className="btn" onClick={onClearReview} type="button">Clear review</button>}
+          <button className="btn" onClick={onRefresh} type="button">{loading ? "Refreshing..." : "Refresh"}</button>
+        </div>
       </div>
       <Panel eyebrow="History" title="Prior reviews" action={<span className="chip signal">{history.length} saved</span>}>
         <div className="panelbody repo-list queue-grid">
@@ -746,6 +751,7 @@ function RulesSurface({
   health,
   history,
   onApplyPack,
+  onClearReview,
   onDeleteRules,
   onRefresh,
   onSaveRules,
@@ -770,7 +776,10 @@ function RulesSurface({
           <h1>Rule Packs</h1>
           <p className="subline">Tune repo-specific blocked paths, sensitive paths, suspicious terms, and scope caps used by live reviews.</p>
         </div>
-        <button className="btn" onClick={onRefresh} type="button">Refresh</button>
+        <div className="actions">
+          {review && <button className="btn" onClick={onClearReview} type="button">Clear review</button>}
+          <button className="btn" onClick={onRefresh} type="button">Refresh</button>
+        </div>
       </div>
       {error && <div className="status-banner red">{error}</div>}
       <div className="atlas-layout suite-four-layout">
@@ -865,7 +874,7 @@ function RulesSurface({
   );
 }
 
-function ChecksSurface({ history, review, runtime }) {
+function ChecksSurface({ history, onClearReview, review, runtime }) {
   const health = runtime.health || {};
   const checks = runtime.checks || [];
   const checkWarnings = checks.filter((check) => check.level === "warn" || check.level === "error").length;
@@ -887,7 +896,10 @@ function ChecksSurface({ history, review, runtime }) {
           <h1>Checks</h1>
           <p className="subline">Backend health, auth posture, GitHub readiness, rule memory, and startup checks.</p>
         </div>
-        <button className="btn" onClick={runtime.refresh} type="button">{runtime.loading ? "Refreshing..." : "Refresh"}</button>
+        <div className="actions">
+          {review && <button className="btn" onClick={onClearReview} type="button">Clear review</button>}
+          <button className="btn" onClick={runtime.refresh} type="button">{runtime.loading ? "Refreshing..." : "Refresh"}</button>
+        </div>
       </div>
       {runtime.error && <div className="status-banner red">{runtime.error}</div>}
       <MetricBand metrics={metrics} />
@@ -1127,6 +1139,11 @@ export default function App() {
     setReview(null);
   }
 
+  function unloadReview() {
+    setError("");
+    setReview(null);
+  }
+
   if (!ready) {
     return (
       <ProductV2AuthGate
@@ -1158,6 +1175,7 @@ export default function App() {
           history={history}
           onChangeForm={setForm}
           onClear={clearReview}
+          onClearReview={unloadReview}
           onRefreshData={() => {
             refreshTrustData();
             runtime.refresh();
@@ -1176,6 +1194,7 @@ export default function App() {
           health={runtime.health || {}}
           history={history}
           onApplyPack={applyPack}
+          onClearReview={unloadReview}
           onDeleteRules={deleteRules}
           onRefresh={refreshTrustData}
           onSaveRules={saveRules}
@@ -1192,12 +1211,13 @@ export default function App() {
           health={runtime.health || {}}
           history={history}
           loading={loadingHistory}
+          onClearReview={unloadReview}
           onLoadReview={loadHistoryReview}
           onRefresh={refreshTrustData}
           review={review}
         />
       )}
-      {activeTab === "checks" && <ChecksSurface history={history} review={review} runtime={runtime} />}
+      {activeTab === "checks" && <ChecksSurface history={history} onClearReview={unloadReview} review={review} runtime={runtime} />}
     </ProductV2Shell>
   );
 }
