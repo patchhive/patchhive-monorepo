@@ -10,6 +10,8 @@ Shared Rust crates can be exported the same way when multiple standalone product
 
 Shared templates can be exported the same way when you want starter scaffolds to have their own GitHub identity.
 
+Shared services can be exported the same way when you want standalone service repositories for visibility, releases, or Docker image build context.
+
 ## Principles
 
 - Develop products in the monorepo first.
@@ -18,7 +20,8 @@ Shared templates can be exported the same way when you want starter scaffolds to
 - Treat standalone package repositories as exported mirrors, not the primary development home.
 - Treat standalone crate repositories as exported mirrors, not the primary development home.
 - Treat standalone template repositories as exported mirrors, not the primary development home.
-- Re-export products, packages, and crates from the monorepo instead of manually copying files around.
+- Treat standalone service repositories as exported mirrors, not the primary development home.
+- Re-export products, packages, crates, templates, and services from the monorepo instead of manually copying files around.
 
 ## Shared Packages
 
@@ -253,6 +256,28 @@ That creates a subtree export branch from `templates/product-starter` and can pu
 
 If the template scaffold has a Rust backend, `export-template.sh` now refreshes the scaffold's standalone-safe `backend/Cargo.lock` before exporting.
 
+## Service Export Script
+
+Use:
+
+```bash
+./scripts/export-service.sh <service-name>
+```
+
+Example:
+
+```bash
+./scripts/export-service.sh patchhive-backend
+```
+
+If you want to push directly to a standalone service remote:
+
+```bash
+PATCHHIVE_EXPORT_FORCE_WITH_LEASE=1 ./scripts/export-service.sh patchhive-backend https://github.com/patchhive/patchhive-unified-backend.git main
+```
+
+That creates a subtree export branch from `services/patchhive-backend` and pushes it into the standalone mirror. The guarded force-with-lease mode is appropriate when replacing initial hand-made mirror commits with the first real monorepo export.
+
 ## Recommended First Export
 
 1. Create an empty GitHub repository for the product.
@@ -287,13 +312,21 @@ If the template scaffold has a Rust backend, `export-template.sh` now refreshes 
 5. Keep the canonical scaffold in the monorepo.
 6. Keep the canonical template history and docs rooted in the monorepo.
 
+## Recommended Service Export
+
+1. Keep the service source under `services/<service-name>` in the monorepo.
+2. Create or confirm the standalone service mirror repository.
+3. Run the service export script.
+4. Push the export branch to the service repo.
+5. Keep canonical service changes in the monorepo and re-export when needed.
+
 ## Day-To-Day Workflow
 
 The intended long-term flow is:
 
 1. Build inside the monorepo.
 2. Commit and push monorepo changes first.
-3. Export a product, package, crate, or template when you want its standalone repository updated.
+3. Export a product, package, crate, template, or service when you want its standalone repository updated.
 4. Push the export branch into the corresponding standalone repository.
 
 This keeps one clean source of truth while still giving each product its own GitHub identity.
