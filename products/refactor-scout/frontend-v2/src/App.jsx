@@ -371,6 +371,7 @@ function ScoutSurface({
   health,
   history,
   onChangeForm,
+  onClearScan,
   onLoadScan,
   onRefresh,
   onRunScan,
@@ -394,6 +395,7 @@ function ScoutSurface({
             </div>
             <div className="actions">
               <span className={`chip ${(health?.allowed_roots || []).length ? "green" : "amber"}`}>{(health?.allowed_roots || []).length ? "root ready" : "root missing"}</span>
+              {scan && <button className="btn" onClick={onClearScan} type="button">Clear scan</button>}
               <button className="btn" onClick={onRefresh} type="button">Refresh</button>
             </div>
           </div>
@@ -425,7 +427,7 @@ function SecondaryFrame({ children, health, history, overview, scan }) {
   );
 }
 
-function HistorySurface({ activeScanId, health, history, loading, onLoadScan, onRefresh, overview, scan }) {
+function HistorySurface({ activeScanId, health, history, loading, onClearScan, onLoadScan, onRefresh, overview, scan }) {
   return (
     <SecondaryFrame health={health} history={history} overview={overview} scan={scan}>
       <div className="hero-row">
@@ -434,7 +436,10 @@ function HistorySurface({ activeScanId, health, history, loading, onLoadScan, on
           <h1>Scan History</h1>
           <p className="subline">Saved local scans with high-safety lead movement and ignored-path evidence.</p>
         </div>
-        <button className="btn" onClick={onRefresh} type="button">{loading ? "Refreshing..." : "Refresh"}</button>
+        <div className="actions">
+          {scan && <button className="btn" onClick={onClearScan} type="button">Clear scan</button>}
+          <button className="btn" onClick={onRefresh} type="button">{loading ? "Refreshing..." : "Refresh"}</button>
+        </div>
       </div>
       <Panel eyebrow="Recent" title="Local scans" action={<span className="chip signal">{history.length} saved</span>}>
         <div className="panelbody repo-list queue-grid">
@@ -471,7 +476,7 @@ function checkTone(level) {
   return "green";
 }
 
-function ChecksSurface({ history, overview, runtime, scan }) {
+function ChecksSurface({ history, onClearScan, overview, runtime, scan }) {
   const health = runtime.health || {};
   const checks = runtime.checks || [];
   const warnings = checks.filter((check) => check.level === "warn" || check.level === "error").length;
@@ -490,7 +495,10 @@ function ChecksSurface({ history, overview, runtime, scan }) {
           <h1>Checks</h1>
           <p className="subline">Backend health, filesystem guardrails, local scan scope, and startup checks.</p>
         </div>
-        <button className="btn" onClick={runtime.refresh} type="button">{runtime.loading ? "Refreshing..." : "Refresh"}</button>
+        <div className="actions">
+          {scan && <button className="btn" onClick={onClearScan} type="button">Clear scan</button>}
+          <button className="btn" onClick={runtime.refresh} type="button">{runtime.loading ? "Refreshing..." : "Refresh"}</button>
+        </div>
       </div>
       {runtime.error && <StatusBanner tone="red">{runtime.error}</StatusBanner>}
       <MetricBand metrics={metrics} />
@@ -615,6 +623,11 @@ export default function App() {
     }
   }
 
+  function clearScan() {
+    setScan(null);
+    setError("");
+  }
+
   if (!ready) {
     return (
       <ProductV2AuthGate
@@ -645,6 +658,7 @@ export default function App() {
           health={runtime.health || {}}
           history={history}
           onChangeForm={setForm}
+          onClearScan={clearScan}
           onLoadScan={loadScan}
           onRefresh={() => {
             refreshScoutData();
@@ -662,13 +676,14 @@ export default function App() {
           health={runtime.health || {}}
           history={history}
           loading={loadingHistory}
+          onClearScan={clearScan}
           onLoadScan={loadScan}
           onRefresh={refreshScoutData}
           overview={overview}
           scan={scan}
         />
       )}
-      {activeTab === "checks" && <ChecksSurface history={history} overview={overview} runtime={runtime} scan={scan} />}
+      {activeTab === "checks" && <ChecksSurface history={history} onClearScan={clearScan} overview={overview} runtime={runtime} scan={scan} />}
     </ProductV2Shell>
   );
 }
