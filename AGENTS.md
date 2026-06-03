@@ -503,7 +503,7 @@ Important env vars:
 - SQLite only.
 - HiveCore should become the orchestration and global-settings layer for the specialist products.
 - Products should be buildable independently, but their APIs should converge toward shared contracts so HiveCore can coordinate them.
-- Long-term suite direction: one browser-facing HiveCore/suite backend with many product frontends. Product identities and workflows remain distinct, while HiveCore owns shared auth, product registry, credentials/config, routing, and cross-product orchestration. See `docs/suite-backend-direction.md`.
+- Long-term suite direction: one shared `patchhive-backend` runtime with many product frontends. HiveCore should connect to that backend as the control-plane frontend, while standalone product repos eventually launch the shared backend Docker image with only their product enabled. Product identities and workflows remain distinct, and the backend owns shared auth, product registry, credentials/config, routing, run history, and cross-product orchestration. See `docs/suite-backend-direction.md`.
 - Product boundaries should be decided early. If a capability clearly strengthens an existing product, build it there; if it needs its own operator workflow, data contract, trust boundary, or repeated lifecycle, create it as a standalone product from the start instead of treating extraction as inevitable cleanup.
 - Watch Mode is a UI toggle backed by SQLite settings.
 - PatchHive should contribute under its own GitHub identity with explicit autonomous attribution.
