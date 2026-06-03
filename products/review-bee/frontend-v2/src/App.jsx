@@ -567,6 +567,7 @@ function ThreadSurface({
   health,
   history,
   onChangeForm,
+  onClearReview,
   onCopyPrompts,
   onCopyReport,
   onLoadReview,
@@ -596,6 +597,7 @@ function ThreadSurface({
             <div className="actions">
               <span className={`chip ${statusTone(review?.status || "ready")}`}>{review?.status || "ready"}</span>
               <span className={`chip ${healthReady(health) ? "green" : "amber"}`}>{healthReady(health) ? "github ready" : "github missing"}</span>
+              {review && <button className="btn" onClick={onClearReview} type="button">Clear review</button>}
               <button className="btn" onClick={onRefreshData} type="button">Refresh data</button>
             </div>
           </div>
@@ -614,7 +616,7 @@ function ThreadSurface({
   );
 }
 
-function HistorySurface({ activeReviewId, health, history, loading, onLoadReview, onRefresh, overview, review }) {
+function HistorySurface({ activeReviewId, health, history, loading, onClearReview, onLoadReview, onRefresh, overview, review }) {
   const railSections = useMemo(() => tabRailSections({ health, history, overview, review }).history, [health, history, overview, review]);
   const railStats = useMemo(() => tabRailStats({ health, history, overview, review }, "history"), [health, history, overview, review]);
 
@@ -626,7 +628,10 @@ function HistorySurface({ activeReviewId, health, history, loading, onLoadReview
           <h1>Review History</h1>
           <p className="subline">Saved PR review runs, unresolved pressure, and checklist outcomes over time.</p>
         </div>
-        <button className="btn" onClick={onRefresh} type="button">{loading ? "Refreshing..." : "Refresh"}</button>
+        <div className="actions">
+          {review && <button className="btn" onClick={onClearReview} type="button">Clear review</button>}
+          <button className="btn" onClick={onRefresh} type="button">{loading ? "Refreshing..." : "Refresh"}</button>
+        </div>
       </div>
       <Panel eyebrow="Recent" title="Review runs" action={<span className="chip signal">{history.length} saved</span>}>
         <div className="panelbody repo-list queue-grid">
@@ -658,7 +663,7 @@ function HistorySurface({ activeReviewId, health, history, loading, onLoadReview
   );
 }
 
-function ChecksSurface({ history, overview, review, runtime }) {
+function ChecksSurface({ history, onClearReview, overview, review, runtime }) {
   const health = runtime.health || {};
   const checks = runtime.checks || [];
   const checkWarnings = checks.filter((check) => check.level === "warn" || check.level === "error").length;
@@ -680,7 +685,10 @@ function ChecksSurface({ history, overview, review, runtime }) {
           <h1>Checks</h1>
           <p className="subline">Backend health, GitHub review access, webhook posture, and startup checks before a PR review run.</p>
         </div>
-        <button className="btn" onClick={runtime.refresh} type="button">{runtime.loading ? "Refreshing..." : "Refresh"}</button>
+        <div className="actions">
+          {review && <button className="btn" onClick={onClearReview} type="button">Clear review</button>}
+          <button className="btn" onClick={runtime.refresh} type="button">{runtime.loading ? "Refreshing..." : "Refresh"}</button>
+        </div>
       </div>
       {runtime.error && <div className="status-banner red">{runtime.error}</div>}
       <MetricBand metrics={metrics} />
@@ -816,6 +824,11 @@ export default function App() {
     }
   }
 
+  function clearReview() {
+    setReview(null);
+    setError("");
+  }
+
   async function copyPrompts() {
     if (!review?.prompt_suggestions?.length || !navigator?.clipboard) {
       return;
@@ -861,6 +874,7 @@ export default function App() {
           health={runtime.health || {}}
           history={history}
           onChangeForm={setForm}
+          onClearReview={clearReview}
           onCopyPrompts={copyPrompts}
           onCopyReport={copyReport}
           onLoadReview={loadHistoryReview}
@@ -880,13 +894,14 @@ export default function App() {
           health={runtime.health || {}}
           history={history}
           loading={loadingHistory}
+          onClearReview={clearReview}
           onLoadReview={loadHistoryReview}
           onRefresh={refreshProductData}
           overview={overview}
           review={review}
         />
       )}
-      {activeTab === "checks" && <ChecksSurface history={history} overview={overview} review={review} runtime={runtime} />}
+      {activeTab === "checks" && <ChecksSurface history={history} onClearReview={clearReview} overview={overview} review={review} runtime={runtime} />}
     </ProductV2Shell>
   );
 }
