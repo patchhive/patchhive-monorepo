@@ -71,6 +71,7 @@ patchhive/
   templates/
     product-starter/        shared starter for new PatchHive products
   services/
+    patchhive-backend/     shared PatchHive suite backend runtime
     patchhive-launcher/     localhost-only host-control daemon for HiveCore first-stack start/stop
   products/
     repo-reaper/            built first, current active product

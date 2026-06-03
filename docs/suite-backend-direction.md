@@ -16,6 +16,8 @@ HiveCore frontend        /
 
 HiveCore becomes the cockpit and control-plane frontend. The unified backend becomes the suite runtime that owns auth, credentials, product registry, run history, shared config, product APIs, and cross-product orchestration.
 
+The canonical implementation lives in `services/patchhive-backend/` in the PatchHive monorepo. The standalone `patchhive/patchhive-unified-backend` repository may be updated later as an exported mirror, but it should not become a second source of truth.
+
 ## Decision
 
 Standalone product repositories should eventually launch the shared PatchHive backend Docker image with only their product enabled, instead of carrying long-term independent backend implementations.
