@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { createApiFetcher, useApiKeyAuth } from "@patchhivehq/product-shell/auth";
 import {
   DeckBar,
   MetricBand,
@@ -28,7 +27,7 @@ const TOPLINE_CELLS = [
   { label: "Last poll", value: "T-00:42" },
 ];
 
-const PRODUCTS = [
+const PRODUCT_PRESENTATION = [
   {
     slug: "signal-hive",
     code: "SH",
@@ -264,6 +263,8 @@ const PRODUCTS = [
   },
 ];
 
+const PRODUCT_PRESENTATION_BY_SLUG = Object.fromEntries(PRODUCT_PRESENTATION.map((product) => [product.slug, product]));
+
 const METRICS = [
   { label: "Green blips", value: "7", tone: "ok", sub: "healthy products" },
   { label: "Yellow blips", value: "2", tone: "warn", sub: "needs attention" },
@@ -293,32 +294,32 @@ const RAIL_SECTIONS = [
 ];
 
 const RAIL_STATS = {
-  title: "Control plane",
+  title: "Unified backend",
   items: [
-    { label: "Primary link", value: "launcher:8210" },
-    { label: "Radar", value: "10/11", large: true, tone: "warn" },
-    { label: "Mode", value: "operator gated" },
+    { label: "Primary link", value: "patchhive-backend" },
+    { label: "Radar", value: "registry", large: true, tone: "signal" },
+    { label: "Mode", value: "suite runtime" },
   ],
 };
 
 const ATTENTION = [
-  { title: "ReleaseSentry is down", meta: "Red radar blip means health endpoint is currently unreachable", label: "down", tone: "red" },
-  { title: "FlakeSting has not started", meta: "Not-started products stay off the radar until launcher brings them online", label: "hidden", tone: "signal" },
-  { title: "RepoReaper remains guarded", meta: "write actions require TrustGate and dry-run confirmation", label: "guarded", tone: "red" },
-  { title: "VulnTriage needs run detail", meta: "Yellow radar blip means the product is reachable but has contract drift", label: "issue", tone: "amber" },
+  { title: "Product engines are pending", meta: "The unified backend owns the registry now; engines move in one product at a time.", label: "pending", tone: "amber" },
+  { title: "HiveCore is first client", meta: "This UI now reads the unified backend control-plane contract directly.", label: "live", tone: "signal" },
+  { title: "Gateway routes are next", meta: "Existing product APIs can be proxied before engines are fully migrated.", label: "bridge", tone: "amber" },
+  { title: "RepoReaper moves late", meta: "Write-capable execution waits for auth, approvals, and safety contracts.", label: "guarded", tone: "red" },
 ];
 
 const LAUNCH_QUEUE = [
-  { rank: "01", title: "Start FlakeSting", meta: "not-started products do not appear on the radar until launched", tone: "signal", label: "start" },
-  { rank: "02", title: "Open SignalHive reconnaissance", meta: "first handoff into TrustGate and RepoMemory", tone: "signal", label: "open" },
-  { rank: "03", title: "Restart ReleaseSentry", meta: "red radar blip should clear after health endpoint responds", tone: "red", label: "down" },
-  { rank: "04", title: "Hold RepoReaper write actions", meta: "yellow until policy and memory handoff clears", tone: "amber", label: "hold" },
+  { rank: "01", title: "Wire HiveCore", meta: "make the control-plane UI read patchhive-backend first", tone: "signal", label: "now" },
+  { rank: "02", title: "Add gateway routes", meta: "proxy existing product APIs through the unified backend", tone: "amber", label: "next" },
+  { rank: "03", title: "Move SignalHive engine", meta: "first read-only product engine to run in-process", tone: "signal", label: "first" },
+  { rank: "04", title: "Add auth and storage", meta: "operator auth, run index, event log, and shared config", tone: "amber", label: "core" },
 ];
 
 const CONTRACT_FLAGS = [
-  { title: "Run detail", meta: "RepoReaper and VulnTriage need /runs/:id detail parity", label: "2 gaps", tone: "amber" },
-  { title: "Service health", meta: "ReleaseSentry is visible as red until health recovers", label: "down", tone: "red" },
-  { title: "Startup checks", meta: "All visible products report expected setup state", label: "clear", tone: "green" },
+  { title: "Unified registry", meta: "HiveCore reads product names, roles, status, and route prefixes from patchhive-backend.", label: "live", tone: "green" },
+  { title: "Product engines", meta: "Enabled products report pending until their real engines are migrated or proxied.", label: "pending", tone: "amber" },
+  { title: "Action dispatch", meta: "Mutating product actions stay disabled until backend approval contracts exist.", label: "guarded", tone: "red" },
 ];
 
 const DEFAULTS = [
@@ -329,7 +330,7 @@ const DEFAULTS = [
 
 const SUITE_ACTIONS = [
   { label: "Poll suite", meta: "Refresh all product health and contract state", tone: "signal" },
-  { label: "Start missing", meta: "Launch products that are not on radar", tone: "green" },
+  { label: "Sync registry", meta: "Reload enabled products from patchhive-backend", tone: "green" },
   { label: "Lock writes", meta: "Keep action products in guarded mode", tone: "amber" },
 ];
 
@@ -352,9 +353,9 @@ async function fetchEnvelope(fetch_, path, opts = {}) {
 }
 
 function productTone(status = "") {
-  if (status === "online") return "green";
-  if (status === "degraded") return "amber";
-  if (status === "disabled" || status === "unconfigured") return "signal";
+  if (status === "online" || status === "integrated") return "green";
+  if (status === "degraded" || status === "engine-pending" || status === "gateway-pending") return "amber";
+  if (status === "disabled" || status === "unconfigured" || status === "not-started") return "signal";
   if (status === "offline" || status === "down") return "red";
   return "";
 }
@@ -368,40 +369,99 @@ function statusTone(status = "") {
 
 function liveProductsFrom(setup, products) {
   if (setup?.products?.length) {
-    return setup.products.map((item) => item.runtime);
+    return setup.products.map((item) => normalizeRuntimeProduct(item.runtime || item));
   }
-  return Array.isArray(products) ? products : [];
+  return Array.isArray(products) ? products.map(normalizeRuntimeProduct) : [];
+}
+
+function normalizeRuntimeProduct(product = {}) {
+  const slug = product.slug || product.key;
+  const presentation = PRODUCT_PRESENTATION_BY_SLUG[slug] || {};
+  const status = product.status || (product.enabled === false ? "disabled" : "engine-pending");
+  return {
+    ...presentation,
+    ...product,
+    slug,
+    code: product.icon || presentation.code || slug?.slice(0, 2).toUpperCase() || "--",
+    title: product.title || product.name || presentation.title || slug || "Unknown product",
+    role: product.role || presentation.role || "",
+    status,
+    enabled: product.enabled !== false,
+    api_url: product.api_url || product.route_prefix || `/api/products/${slug}`,
+    service_token_configured: Boolean(product.service_token_configured),
+    contract_drift_count: Number(product.contract_drift_count || 0),
+  };
+}
+
+function radarStateForStatus(status = "") {
+  if (status === "online" || status === "integrated") {
+    return { state: "good", stateTone: "green" };
+  }
+  if (status === "offline" || status === "down") {
+    return { state: "down", stateTone: "red" };
+  }
+  if (status === "disabled" || status === "unconfigured" || status === "not-started") {
+    return { state: "not started", stateTone: "", started: false };
+  }
+  return { state: "issues", stateTone: "amber" };
+}
+
+function buildRadarProducts(setup, products) {
+  return liveProductsFrom(setup, products)
+    .filter((product) => product.slug && product.slug !== "hive-core")
+    .map((product) => {
+      const presentation = PRODUCT_PRESENTATION_BY_SLUG[product.slug] || {};
+      const radarState = radarStateForStatus(product.status);
+      const driftCount = Number(product.contract_drift_count || 0);
+      return {
+        ...presentation,
+        ...product,
+        ...radarState,
+        code: product.code || presentation.code,
+        position: presentation.position || { left: "50%", top: "50%" },
+        health: product.role || presentation.health || "unified backend product",
+        run: product.status === "online" ? "control route online" : "engine migration pending",
+        drift: driftCount ? `${driftCount} flags` : "none",
+        contract: product.api_url || `/api/products/${product.slug}`,
+        handoff: product.enabled ? "unified backend route registered" : "disabled by PATCHHIVE_PRODUCTS",
+        url: presentation.url,
+        actions: presentation.actions || [
+          { label: "Inspect route", meta: "Review unified backend product metadata", tone: "signal" },
+          { label: "Hold actions", meta: "Wait for backend approval contracts", tone: "amber" },
+        ],
+      };
+    });
 }
 
 function buildLiveTopline(health, setup, products) {
   const liveProducts = liveProductsFrom(setup, products);
   const downstream = liveProducts.filter((product) => product.slug !== "hive-core" && product.enabled !== false);
-  const online = liveProducts.filter((product) => product.status === "online" || product.status === "degraded").length;
+  const active = liveProducts.filter((product) => product.status !== "disabled" && product.enabled !== false).length;
   const paired = downstream.filter((product) => product.service_token_configured).length;
   const drift = liveProducts.reduce((total, product) => total + Number(product.contract_drift_count || 0), 0);
   return [
     { label: "HiveCore", value: health?.status || "unknown", tone: statusTone(health?.status) },
-    { label: "System", value: health?.mode || "control-plane", tone: "sig" },
-    { label: "Products", value: `${online} / ${liveProducts.length || 11}`, tone: online ? "ok" : "warn" },
-    { label: "Paired", value: `${paired} / ${downstream.length || 10}`, tone: paired === downstream.length && downstream.length ? "ok" : "warn" },
+    { label: "Backend", value: "unified", tone: "sig" },
+    { label: "Mode", value: health?.mode || "suite runtime", tone: "sig" },
+    { label: "Enabled", value: `${active} / ${liveProducts.length || 12}`, tone: active ? "ok" : "warn" },
+    { label: "Tokens", value: `${paired} / ${downstream.length || 11}`, tone: paired === downstream.length && downstream.length ? "ok" : "warn" },
     { label: "Drift", value: String(drift), tone: drift ? "warn" : "ok" },
-    { label: "Bootstrap", value: setup?.suite_bootstrap_configured ? "ready" : "missing", tone: setup?.suite_bootstrap_configured ? "ok" : "warn" },
   ];
 }
 
 function buildLiveMetrics(health, setup, products) {
   const liveProducts = liveProductsFrom(setup, products);
   const online = liveProducts.filter((product) => product.status === "online").length;
-  const degraded = liveProducts.filter((product) => product.status === "degraded").length;
+  const pending = liveProducts.filter((product) => product.status === "degraded" || product.status === "engine-pending" || product.status === "gateway-pending").length;
   const offline = liveProducts.filter((product) => product.status === "offline").length;
-  const paired = liveProducts.filter((product) => product.slug !== "hive-core" && product.service_token_configured).length;
-  const pairReady = (setup?.products || []).filter((item) => item.pairing_ready).length;
+  const disabled = liveProducts.filter((product) => product.status === "disabled" || product.enabled === false).length;
+  const drift = liveProducts.reduce((total, product) => total + Number(product.contract_drift_count || 0), 0);
   return [
-    { label: "Online", value: String(online), tone: "ok", sub: "healthy products" },
-    { label: "Degraded", value: String(degraded), tone: "warn", sub: "reachable with warnings" },
+    { label: "Online", value: String(online), tone: "ok", sub: "unified routes ready" },
+    { label: "Pending", value: String(pending), tone: "warn", sub: "engines or gateways pending" },
     { label: "Offline", value: String(offline), tone: offline ? "hot" : "ok", sub: "down products" },
-    { label: "Paired", value: String(paired), tone: paired ? "sig" : "warn", sub: "service tokens saved" },
-    { label: "Pair ready", value: String(pairReady), tone: pairReady ? "warn" : "ok", sub: health?.status || "control plane" },
+    { label: "Disabled", value: String(disabled), tone: "sig", sub: "hidden from radar" },
+    { label: "Drift", value: String(drift), tone: drift ? "warn" : "ok", sub: health?.mode || "suite runtime" },
   ];
 }
 
@@ -410,125 +470,12 @@ function StatusBanner({ tone = "signal", children }) {
   return <div className={`status-banner ${tone}`}>{children}</div>;
 }
 
-function AuthScreen({
-  authError,
-  bootstrapRequired,
-  checked,
-  generateKey,
-  login,
-}) {
-  const [key, setKey] = useState("");
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [generatedKey, setGeneratedKey] = useState("");
-  const [copiedKey, setCopiedKey] = useState(false);
-
-  const submit = async (event) => {
-    event.preventDefault();
-    if (!key.trim()) return;
-    setBusy(true);
-    setError("");
-    try {
-      const res = await fetch(`${API}/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ api_key: key.trim() }),
-      });
-      if (!res.ok) {
-        throw new Error("Invalid API key.");
-      }
-      login(key.trim());
-    } catch (err) {
-      setError(err.message || "Cannot reach HiveCore.");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const generate = async () => {
-    setBusy(true);
-    setError("");
-    try {
-      const nextKey = await generateKey({ autoLogin: false });
-      setGeneratedKey(nextKey);
-      setKey(nextKey);
-      setCopiedKey(false);
-    } catch (err) {
-      setError(err.message || "Could not generate an API key.");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const copyGeneratedKey = async () => {
-    if (!generatedKey) return;
-    try {
-      await navigator.clipboard.writeText(generatedKey);
-      setCopiedKey(true);
-    } catch {
-      setError("Could not copy generated API key.");
-    }
-  };
-
-  if (!checked) {
-    return (
-      <div className="auth-shell">
-        <div className="auth-card">
-          <span className="micro">// HiveCore</span>
-          <div className="auth-title">Checking session</div>
-          <div className="auth-meter" />
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="auth-shell">
-      <form className="auth-card" onSubmit={submit}>
-        <span className="micro">// Control plane access</span>
-        <div className="auth-title">HiveCore</div>
-        <p className="auth-copy">
-          {bootstrapRequired ? "Generate the first local API key or enter an existing one." : "Enter the local HiveCore API key."}
-        </p>
-        <label className="v2-field">
-          <span>API endpoint</span>
-          <input className="v2-input" readOnly value={API} />
-        </label>
-        <label className="v2-field">
-          <span>API key</span>
-          <input className="v2-input" onChange={(event) => setKey(event.target.value)} placeholder="hive-core-..." type="password" value={key} />
-        </label>
-        {(authError || error) && <StatusBanner tone="red">{error || authError}</StatusBanner>}
-        {generatedKey && (
-          <StatusBanner tone="green">
-            Generated key for this browser session. Copy it now, then press Enter: <span className="break-all">{generatedKey}</span>
-          </StatusBanner>
-        )}
-        {copiedKey && <StatusBanner tone="signal">API key copied.</StatusBanner>}
-        <button className="btn primary" disabled={busy || !key.trim()} type="submit">
-          {busy ? "Authenticating" : "Enter"}
-        </button>
-        {generatedKey && (
-          <button className="btn" disabled={busy} onClick={copyGeneratedKey} type="button">
-            Copy generated key
-          </button>
-        )}
-        {bootstrapRequired && (
-          <button className="btn" disabled={busy} onClick={generate} type="button">
-            {busy ? "Generating" : "Generate local API key"}
-          </button>
-        )}
-      </form>
-    </div>
-  );
-}
-
-function SuiteProductRadar({ selectedProduct, onSelect }) {
-  const visibleProducts = PRODUCTS.filter((product) => product.started !== false);
+function SuiteProductRadar({ products, selectedProduct, onSelect }) {
+  const visibleProducts = products.filter((product) => product.started !== false);
   const activeProduct = selectedProduct?.started === false ? visibleProducts[0] : selectedProduct;
 
   return (
-    <Panel eyebrow="Control" title="Product status radar" action={<span className="chip signal">10 blips</span>}>
+    <Panel eyebrow="Control" title="Product status radar" action={<span className="chip signal">{visibleProducts.length} blips</span>}>
       <div className="constellation-shell">
         <div className="status-key" aria-label="Radar status legend">
           <span><i className="green" /> good</span>
@@ -550,7 +497,7 @@ function SuiteProductRadar({ selectedProduct, onSelect }) {
             <span className="orbit-axis axis-a" />
             <span className="orbit-axis axis-b" />
             <button
-              className="hive-node core active"
+              className={`hive-node core${activeProduct ? "" : " active"}`}
               onClick={() => onSelect(null)}
               style={{ "--node-color": "#7bd8e8" }}
               type="button"
@@ -591,7 +538,7 @@ function SuiteProductRadar({ selectedProduct, onSelect }) {
                 <span className="label">Product detail</span>
                 <span className="readout-value">{activeProduct?.run || "suite board poll"}</span>
               </div>
-              {activeProduct && (
+              {activeProduct?.url && (
                 <a className="btn" href={`http://${activeProduct.url}`} rel="noreferrer" target="_blank">
                   Open UI
                 </a>
@@ -641,7 +588,7 @@ function CockpitControlsPanel({ onPairFirstStack, onRefresh, running, selectedPr
         {actions.map((action) => {
           const actionHandler = !activeProduct && action.label === "Poll suite"
             ? onRefresh
-            : !activeProduct && action.label === "Start missing"
+            : !activeProduct && action.label === "Sync registry"
               ? onPairFirstStack
               : undefined;
           return (
@@ -657,7 +604,7 @@ function CockpitControlsPanel({ onPairFirstStack, onRefresh, running, selectedPr
           </button>
           );
         })}
-        {activeProduct && (
+        {activeProduct?.url && (
           <a className="cockpit-action" href={`http://${activeProduct.url}`} rel="noreferrer" target="_blank">
             <span>Open dashboard</span>
             <small>Jump to the specialist view</small>
@@ -718,12 +665,17 @@ function SuiteBoard({
   health,
   onPairFirstStack,
   onRefresh,
-  onSignOut,
   products,
   running,
   setup,
 }) {
-  const [selectedProduct, setSelectedProduct] = useState(() => PRODUCTS.find((product) => product.started !== false));
+  const radarProducts = useMemo(() => buildRadarProducts(setup, products), [setup, products]);
+  const [selectedSlug, setSelectedSlug] = useState(null);
+  const selectedProduct = useMemo(
+    () => selectedSlug ? radarProducts.find((product) => product.slug === selectedSlug) || null : null,
+    [radarProducts, selectedSlug],
+  );
+  const selectProduct = useCallback((product) => setSelectedSlug(product?.slug || null), []);
 
   return (
     <>
@@ -735,22 +687,21 @@ function SuiteBoard({
             <div>
               <div className="eyebrow">// Module - suite control</div>
               <h1>HiveCore Command</h1>
-              <p className="subline">PatchHive product health, launcher state, contract drift, and product controls in one cockpit.</p>
+              <p className="subline">PatchHive product registry, runtime status, contract drift, and guarded controls from the unified backend.</p>
             </div>
             <div className="actions">
-              <span className={`chip ${setup?.launcher?.available ? "signal" : "amber"}`}>{setup?.launcher?.available ? "launcher ready" : "launcher offline"}</span>
+              <span className="chip signal">unified backend</span>
               <span className="chip amber">{liveProductsFrom(setup, products).reduce((total, product) => total + Number(product.contract_drift_count || 0), 0)} drift flags</span>
               <button className="btn primary" disabled={running} onClick={onRefresh} type="button">
                 {running ? "Polling" : "Poll suite"}
               </button>
-              <button className="btn" onClick={onSignOut} type="button">Sign out</button>
             </div>
           </div>
           {error && <StatusBanner tone="red">{error}</StatusBanner>}
           {actionMessage && <StatusBanner tone={actionMessage.tone}>{actionMessage.text}</StatusBanner>}
           <MetricBand metrics={setup || health ? buildLiveMetrics(health, setup, products) : METRICS} />
           <div className="atlas-layout suite-four-layout">
-            <SuiteProductRadar selectedProduct={selectedProduct} onSelect={setSelectedProduct} />
+            <SuiteProductRadar products={radarProducts} selectedProduct={selectedProduct} onSelect={selectProduct} />
             <CockpitControlsPanel
               onPairFirstStack={onPairFirstStack}
               onRefresh={onRefresh}
@@ -784,7 +735,6 @@ function LaunchStack({
   error,
   health,
   onPairFirstStack,
-  onProvisionProduct,
   onRefresh,
   products,
   running,
@@ -794,8 +744,8 @@ function LaunchStack({
   const runtimeProducts = setupProducts.length
     ? setupProducts.map((item) => item.runtime)
     : products;
-  const pairedCount = runtimeProducts.filter((product) => product.slug !== "hive-core" && product.service_token_configured).length;
   const downstreamCount = runtimeProducts.filter((product) => product.slug !== "hive-core").length;
+  const enabledCount = runtimeProducts.filter((product) => product.slug !== "hive-core" && product.enabled !== false).length;
 
   return (
     <HiveTabFrame health={health} products={products} setup={setup}>
@@ -808,8 +758,8 @@ function LaunchStack({
         <button className="btn" disabled={running} onClick={onRefresh} type="button">
           Refresh
         </button>
-        <button className="btn primary" disabled={running || !setup?.suite_bootstrap_configured} onClick={onPairFirstStack} type="button">
-          {running ? "Pairing" : "Pair running products"}
+        <button className="btn primary" disabled={running} onClick={onPairFirstStack} type="button">
+          {running ? "Syncing" : "Sync registry"}
         </button>
       </div>
       {error && <StatusBanner tone="red">{error}</StatusBanner>}
@@ -819,25 +769,23 @@ function LaunchStack({
           <div><span className="label">HiveCore</span><strong>{health?.status || "unknown"}</strong></div>
           <div><span className="label">DB</span><strong>{health?.db_ok ? "ok" : "check"}</strong></div>
           <div><span className="label">Overrides</span><strong>{health?.product_override_count ?? "none"}</strong></div>
-          <div><span className="label">Launcher</span><strong>{setup?.launcher?.available ? "ready" : "offline"}</strong></div>
-          <div><span className="label">Suite bootstrap</span><strong>{setup?.suite_bootstrap_configured ? "ready" : "missing"}</strong></div>
-          <div><span className="label">Paired</span><strong>{pairedCount} / {downstreamCount || 10}</strong></div>
+          <div><span className="label">Backend</span><strong>{health?.mode || "unified"}</strong></div>
+          <div><span className="label">Launcher</span><strong>{setup?.launcher?.available ? "bridged" : "pending"}</strong></div>
+          <div><span className="label">Enabled</span><strong>{enabledCount} / {downstreamCount || 11}</strong></div>
         </div>
       </Panel>
-      <Panel eyebrow="Pairing" title="Service-token control">
+      <Panel eyebrow="Registry" title="Unified product registry">
         <div className="panelbody hive-launch-grid">
           {setupProducts.length === 0 && (
             <div className="empty-v2">
               <span className="micro">// Empty</span>
               <strong>No setup data loaded</strong>
-              <span>Refresh HiveCore after logging in to load product pairing state.</span>
+              <span>Refresh HiveCore to load the unified backend product registry.</span>
             </div>
           )}
           {setupProducts.map((item) => {
             const runtime = item.runtime;
-            const canProvision = runtime.slug !== "hive-core" && runtime.enabled !== false;
-            const staleToken = runtime.service_token_configured && runtime.health?.runs_ok === false && Boolean(runtime.health?.runs_error);
-            const needsToken = !runtime.service_token_configured || runtime.legacy_api_key_configured || item.auth_status?.service_auth_legacy || item.auth_status?.service_auth_expired || staleToken;
+            const canInspect = runtime.slug !== "hive-core" && runtime.enabled !== false;
             return (
               <article className={`launch-card ${productTone(runtime.status)}`} key={runtime.slug}>
                 <div className="launch-card-head">
@@ -850,22 +798,22 @@ function LaunchStack({
                   <div className="launch-title">{runtime.title}</div>
                   <div className="launch-url">{runtime.api_url}</div>
                   <div className="launch-token-state">
-                    {runtime.service_token_configured ? "service token saved" : "service token missing"}
+                    {runtime.enabled === false ? "disabled by PATCHHIVE_PRODUCTS" : "registered in patchhive-backend"}
                   </div>
-                  {staleToken && <div className="launch-warning">saved token cannot read runs; rotate to repair</div>}
+                  {runtime.status !== "online" && runtime.enabled !== false && <div className="launch-warning">product engine or gateway route is still pending</div>}
                   {item.auth_status_error && <div className="launch-warning">{item.auth_status_error}</div>}
                 </div>
                 <div className="launch-card-footer">
-                  <span className={`chip ${runtime.service_token_configured ? "green" : "amber"}`}>
-                    {runtime.service_token_configured ? "paired" : "unpaired"}
+                  <span className={`chip ${runtime.enabled === false ? "signal" : productTone(runtime.status)}`}>
+                    {runtime.enabled === false ? "disabled" : runtime.status}
                   </span>
                   <button
                     className="btn"
-                    disabled={running || !canProvision || (!item.pairing_ready && !needsToken)}
-                    onClick={() => onProvisionProduct(runtime.slug)}
+                    disabled={running || !canInspect}
+                    onClick={onRefresh}
                     type="button"
                   >
-                    {runtime.service_token_configured ? "Rotate" : "Provision"}
+                    Inspect
                   </button>
                 </div>
               </article>
@@ -953,8 +901,7 @@ function ContractsSurface({ health, products, setup }) {
 }
 
 export default function App() {
-  const auth = useApiKeyAuth({ apiBase: API, storageKey: "hive-core_api_key" });
-  const fetch_ = useMemo(() => createApiFetcher(auth.apiKey), [auth.apiKey]);
+  const fetch_ = useCallback((url, opts = {}) => fetch(url, opts), []);
   const [activeTab, setActiveTab] = usePersistentProductTab("hive-core", TABS, "suite");
   const [health, setHealth] = useState(null);
   const [setup, setSetup] = useState(null);
@@ -963,14 +910,11 @@ export default function App() {
   const [error, setError] = useState("");
   const [actionMessage, setActionMessage] = useState(null);
 
-  const ready = auth.checked && !auth.needsAuth;
-
   useEffect(() => {
     applySuiteAccent("hive-core");
   }, []);
 
   const refreshControlPlane = useCallback(async ({ quiet = false } = {}) => {
-    if (!ready) return;
     if (!quiet) {
       setRunning(true);
       setActionMessage(null);
@@ -992,14 +936,13 @@ export default function App() {
       setError(failed.reason?.message || "HiveCore could not load one or more control-plane resources.");
     }
     if (!quiet) setRunning(false);
-  }, [fetch_, ready]);
+  }, [fetch_]);
 
   useEffect(() => {
-    if (!ready) return undefined;
     refreshControlPlane({ quiet: true });
     const timer = setInterval(() => refreshControlPlane({ quiet: true }), 15000);
     return () => clearInterval(timer);
-  }, [ready, refreshControlPlane]);
+  }, [refreshControlPlane]);
 
   const pairFirstStack = async () => {
     setRunning(true);
@@ -1023,39 +966,6 @@ export default function App() {
     }
   };
 
-  const provisionProduct = async (slug) => {
-    if (!slug) return;
-    setRunning(true);
-    setError("");
-    setActionMessage(null);
-    try {
-      const data = await fetchEnvelope(fetch_, `/products/${slug}/provision-service-token`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      });
-      await refreshControlPlane({ quiet: true });
-      setActionMessage({ tone: "green", text: data.message || `HiveCore provisioned ${slug}.` });
-      setActiveTab("launch");
-    } catch (err) {
-      setError(err.message || `HiveCore could not provision ${slug}.`);
-    } finally {
-      setRunning(false);
-    }
-  };
-
-  if (!ready) {
-    return (
-      <AuthScreen
-        authError={auth.authError}
-        bootstrapRequired={auth.bootstrapRequired}
-        checked={auth.checked}
-        generateKey={auth.generateKey}
-        login={auth.login}
-      />
-    );
-  }
-
   return (
     <ProductV2Shell productKey="hive-core" productName="HiveCore">
       <DeckBar
@@ -1074,7 +984,6 @@ export default function App() {
           health={health}
           onPairFirstStack={pairFirstStack}
           onRefresh={() => refreshControlPlane()}
-          onSignOut={auth.logout}
           products={products}
           running={running}
           setup={setup}
@@ -1086,7 +995,6 @@ export default function App() {
           error={error}
           health={health}
           onPairFirstStack={pairFirstStack}
-          onProvisionProduct={provisionProduct}
           onRefresh={() => refreshControlPlane()}
           products={products}
           running={running}
