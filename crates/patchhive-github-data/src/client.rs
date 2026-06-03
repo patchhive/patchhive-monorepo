@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Context, Result};
 use reqwest::{
-    header::{ACCEPT, AUTHORIZATION, HeaderMap, HeaderValue, USER_AGENT},
+    header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, USER_AGENT},
     Client,
 };
 use serde::de::DeserializeOwned;
@@ -33,8 +33,14 @@ pub fn github_token_configured() -> bool {
 pub fn request_headers(user_agent: &str, token: Option<&str>) -> Result<HeaderMap> {
     let mut headers = HeaderMap::new();
     headers.insert(USER_AGENT, HeaderValue::from_str(user_agent)?);
-    headers.insert("X-GitHub-Api-Version", HeaderValue::from_static("2022-11-28"));
-    headers.insert(ACCEPT, HeaderValue::from_static("application/vnd.github+json"));
+    headers.insert(
+        "X-GitHub-Api-Version",
+        HeaderValue::from_static("2022-11-28"),
+    );
+    headers.insert(
+        ACCEPT,
+        HeaderValue::from_static("application/vnd.github+json"),
+    );
     if let Some(token) = token {
         headers.insert(
             AUTHORIZATION,
@@ -73,10 +79,25 @@ pub async fn get_json<T: DeserializeOwned>(
         return Err(anyhow!("GitHub GET {path} -> {status}: {body}"));
     }
 
-    response
-        .json::<T>()
+    let body = response
+        .text()
         .await
-        .with_context(|| format!("Could not decode GitHub JSON for {path}"))
+        .with_context(|| format!("Could not read GitHub response body for {path}"))?;
+    serde_json::from_str::<T>(&body).with_context(|| {
+        format!(
+            "Could not decode GitHub JSON for {path}. Response preview: {}",
+            response_preview(&body)
+        )
+    })
+}
+
+fn response_preview(body: &str) -> String {
+    let compact = body.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut preview = compact.chars().take(240).collect::<String>();
+    if compact.chars().count() > 240 {
+        preview.push_str("...");
+    }
+    preview
 }
 
 pub async fn get_paginated_json<T: DeserializeOwned>(
@@ -151,10 +172,9 @@ pub async fn get_paginated_field_json<T: DeserializeOwned>(
 
         let page_len = page_items.len();
         for item in page_items {
-            items.push(
-                serde_json::from_value::<T>(item.clone())
-                    .with_context(|| format!("Could not decode GitHub JSON field `{array_key}` for {path}"))?,
-            );
+            items.push(serde_json::from_value::<T>(item.clone()).with_context(|| {
+                format!("Could not decode GitHub JSON field `{array_key}` for {path}")
+            })?);
         }
 
         if page_len < page_size {
@@ -172,7 +192,14 @@ async fn get_public_json<T: DeserializeOwned>(
     query: &[(&str, String)],
 ) -> Result<T> {
     let token = github_token();
-    get_json(client, "patchhive-github-data/0.1", path, query, token.as_deref()).await
+    get_json(
+        client,
+        "patchhive-github-data/0.1",
+        path,
+        query,
+        token.as_deref(),
+    )
+    .await
 }
 
 async fn get_authenticated_json<T: DeserializeOwned>(
@@ -181,7 +208,14 @@ async fn get_authenticated_json<T: DeserializeOwned>(
     query: &[(&str, String)],
 ) -> Result<T> {
     let token = github_token_required()?;
-    get_json(client, "patchhive-github-data/0.1", path, query, Some(token.as_str())).await
+    get_json(
+        client,
+        "patchhive-github-data/0.1",
+        path,
+        query,
+        Some(token.as_str()),
+    )
+    .await
 }
 
 pub async fn validate_token(client: &Client) -> Result<()> {
@@ -294,8 +328,8 @@ mod tests {
 
     #[test]
     fn request_headers_adds_bearer_token_when_present() {
-        let headers = request_headers("patchhive-test", Some("secret-token"))
-            .expect("headers should build");
+        let headers =
+            request_headers("patchhive-test", Some("secret-token")).expect("headers should build");
 
         assert_eq!(
             headers
@@ -376,10 +410,7 @@ pub async fn code_search_count(client: &Client, query: &str) -> Result<u32> {
     let response: GitHubCodeSearchResponse = get_public_json(
         client,
         "/search/code",
-        &[
-            ("q", query.trim().to_string()),
-            ("per_page", "1".into()),
-        ],
+        &[("q", query.trim().to_string()), ("per_page", "1".into())],
     )
     .await?;
     Ok(response.total_count)
