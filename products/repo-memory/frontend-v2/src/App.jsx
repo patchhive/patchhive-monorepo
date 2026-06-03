@@ -121,6 +121,13 @@ function rememberedPromptPackRun() {
   return window.localStorage.getItem(PROMPT_PACK_RUN_STORAGE_KEY) || "";
 }
 
+function forgetPromptPackRun() {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.localStorage.removeItem(PROMPT_PACK_RUN_STORAGE_KEY);
+}
+
 async function parseJsonResponse(response, fallbackError) {
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -640,6 +647,7 @@ function PromptPackSurface({
   history,
   loadingPromptPack,
   memories,
+  onClearPromptPack,
   onLoadPromptPack,
   overview,
   promptPack,
@@ -654,7 +662,10 @@ function PromptPackSurface({
           <h1>Prompt Packs</h1>
           <p className="subline">Reusable repo context bundles for TrustGate, RepoReaper, and future HiveCore handoffs.</p>
         </div>
-        <span className="chip signal">{history.length} runs</span>
+        <div className="actions">
+          {promptPack && <button className="btn" onClick={onClearPromptPack} type="button">Clear pack</button>}
+          <span className="chip signal">{history.length} runs</span>
+        </div>
       </div>
       <div className="atlas-layout suite-four-layout">
         <Panel eyebrow="Runs" title="Saved ingests" action={<span className="chip signal">{history.length} saved</span>}>
@@ -681,7 +692,11 @@ function PromptPackSurface({
             )}
           </div>
         </Panel>
-        <Panel eyebrow="Context" title={promptPackRun?.repo || "Prompt pack"} action={<span className="chip signal">{promptPack ? "loaded" : "empty"}</span>}>
+        <Panel
+          eyebrow="Context"
+          title={promptPackRun?.repo || "Prompt pack"}
+          action={promptPack ? <button className="btn" onClick={onClearPromptPack} type="button">Clear pack</button> : <span className="chip signal">empty</span>}
+        >
           <div className="panelbody control-stack">
             <textarea
               className="v2-input"
@@ -791,6 +806,15 @@ export default function App() {
     } finally {
       setLoadingPromptPack(false);
     }
+  }
+
+  function clearPromptPack() {
+    const firstRunId = history[0]?.id || promptPackRun?.id || rememberedPromptPackRun();
+    forgetPromptPackRun();
+    autoLoadedPromptPackRef.current = firstRunId || "";
+    setPromptPack("");
+    setPromptPackRun(null);
+    setError("");
   }
 
   useEffect(() => {
@@ -944,6 +968,7 @@ export default function App() {
           history={history}
           loadingPromptPack={loadingPromptPack}
           memories={memories}
+          onClearPromptPack={clearPromptPack}
           onLoadPromptPack={loadPromptPack}
           overview={overview}
           promptPack={promptPack}
