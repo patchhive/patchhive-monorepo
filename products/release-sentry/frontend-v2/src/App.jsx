@@ -422,6 +422,7 @@ function GateSurface({
   health,
   history,
   onChangeForm,
+  onClearRun,
   onLoadRun,
   onRefresh,
   onRunCheck,
@@ -445,6 +446,7 @@ function GateSurface({
             </div>
             <div className="actions">
               <span className={`chip ${githubReady(health) ? "green" : "amber"}`}>{githubReady(health) ? "github ready" : "token missing"}</span>
+              {run && <button className="btn" onClick={onClearRun} type="button">Clear run</button>}
               <button className="btn" onClick={onRefresh} type="button">Refresh</button>
             </div>
           </div>
@@ -476,7 +478,7 @@ function SecondaryFrame({ children, health, history, overview, run }) {
   );
 }
 
-function HistorySurface({ activeRunId, health, history, loading, onLoadRun, onRefresh, overview, run }) {
+function HistorySurface({ activeRunId, health, history, loading, onClearRun, onLoadRun, onRefresh, overview, run }) {
   return (
     <SecondaryFrame health={health} history={history} overview={overview} run={run}>
       <div className="hero-row">
@@ -485,7 +487,10 @@ function HistorySurface({ activeRunId, health, history, loading, onLoadRun, onRe
           <h1>Run History</h1>
           <p className="subline">Saved release checks with readiness changes, blockers, and final ship/no-ship evidence.</p>
         </div>
-        <button className="btn" onClick={onRefresh} type="button">{loading ? "Refreshing..." : "Refresh"}</button>
+        <div className="actions">
+          {run && <button className="btn" onClick={onClearRun} type="button">Clear run</button>}
+          <button className="btn" onClick={onRefresh} type="button">{loading ? "Refreshing..." : "Refresh"}</button>
+        </div>
       </div>
       <Panel eyebrow="Recent" title="Release checks" action={<span className="chip signal">{history.length} saved</span>}>
         <div className="panelbody repo-list queue-grid">
@@ -521,7 +526,7 @@ function checkTone(level) {
   return "green";
 }
 
-function ChecksSurface({ history, overview, runtime, run }) {
+function ChecksSurface({ history, onClearRun, overview, runtime, run }) {
   const health = runtime.health || {};
   const checks = runtime.checks || [];
   const warnings = checks.filter((check) => check.level === "warn" || check.level === "error").length;
@@ -540,7 +545,10 @@ function ChecksSurface({ history, overview, runtime, run }) {
           <h1>Checks</h1>
           <p className="subline">Backend health, GitHub release permissions, saved run counts, and startup checks.</p>
         </div>
-        <button className="btn" onClick={runtime.refresh} type="button">{runtime.loading ? "Refreshing..." : "Refresh"}</button>
+        <div className="actions">
+          {run && <button className="btn" onClick={onClearRun} type="button">Clear run</button>}
+          <button className="btn" onClick={runtime.refresh} type="button">{runtime.loading ? "Refreshing..." : "Refresh"}</button>
+        </div>
       </div>
       {runtime.error && <StatusBanner tone="red">{runtime.error}</StatusBanner>}
       <MetricBand metrics={metrics} />
@@ -682,6 +690,11 @@ export default function App() {
     }
   }
 
+  function clearRun() {
+    setRun(null);
+    setError("");
+  }
+
   if (!ready) {
     return (
       <ProductV2AuthGate
@@ -712,6 +725,7 @@ export default function App() {
           health={runtime.health || {}}
           history={history}
           onChangeForm={setForm}
+          onClearRun={clearRun}
           onLoadRun={loadRun}
           onRefresh={() => {
             refreshGateData();
@@ -729,13 +743,14 @@ export default function App() {
           health={runtime.health || {}}
           history={history}
           loading={loadingHistory}
+          onClearRun={clearRun}
           onLoadRun={loadRun}
           onRefresh={refreshGateData}
           overview={overview}
           run={run}
         />
       )}
-      {activeTab === "checks" && <ChecksSurface history={history} overview={overview} runtime={runtime} run={run} />}
+      {activeTab === "checks" && <ChecksSurface history={history} onClearRun={clearRun} overview={overview} runtime={runtime} run={run} />}
     </ProductV2Shell>
   );
 }
