@@ -530,6 +530,7 @@ function MissionDeck({
   history,
   lifetimeCost,
   onChangeParams,
+  onClearRun,
   onLoadRun,
   onRefresh,
   onStartRun,
@@ -556,6 +557,7 @@ function MissionDeck({
             </div>
             <div className="actions">
               <span className={`chip ${githubReady(config, health) ? "green" : "amber"}`}>{githubReady(config, health) ? "bot ready" : "bot missing"}</span>
+              {selectedRun && <button className="btn" onClick={onClearRun} type="button">Clear run</button>}
               <button className="btn" onClick={onRefresh} type="button">Refresh</button>
             </div>
           </div>
@@ -575,7 +577,7 @@ function MissionDeck({
   );
 }
 
-function DryRunSurface({ config, dry, error, health, history, onChangeParams, onRefresh, onStartDryRun, params, selectedRun, stream, watchMode }) {
+function DryRunSurface({ config, dry, error, health, history, onChangeParams, onClearRun, onRefresh, onStartDryRun, params, selectedRun, stream, watchMode }) {
   const rail = useMemo(() => buildRail(health, config, { ...stream, params }, history, selectedRun, watchMode), [health, config, stream, params, history, selectedRun, watchMode]);
   const dryIssues = normalizeIssues(dry.issues);
   const metrics = [
@@ -599,6 +601,7 @@ function DryRunSurface({ config, dry, error, health, history, onChangeParams, on
             </div>
             <div className="actions">
               <span className="chip green">no writes</span>
+              {selectedRun && <button className="btn" onClick={onClearRun} type="button">Clear run</button>}
               <button className="btn" onClick={onRefresh} type="button">Refresh</button>
             </div>
           </div>
@@ -653,7 +656,7 @@ function SecondaryFrame({ children, config, health, history, selectedRun, stream
   );
 }
 
-function HistorySurface({ config, health, history, loading, onLoadRun, onRefresh, selectedRun, stream, watchMode }) {
+function HistorySurface({ config, health, history, loading, onClearRun, onLoadRun, onRefresh, selectedRun, stream, watchMode }) {
   return (
     <SecondaryFrame config={config} health={health} history={history} selectedRun={selectedRun} stream={stream} watchMode={watchMode}>
       <div className="hero-row">
@@ -662,7 +665,10 @@ function HistorySurface({ config, health, history, loading, onLoadRun, onRefresh
           <h1>Run History</h1>
           <p className="subline">Saved autonomous runs, attempts, cost, fixes, and held work.</p>
         </div>
-        <button className="btn" onClick={onRefresh} type="button">{loading ? "Refreshing..." : "Refresh"}</button>
+        <div className="actions">
+          {selectedRun && <button className="btn" onClick={onClearRun} type="button">Clear run</button>}
+          <button className="btn" onClick={onRefresh} type="button">{loading ? "Refreshing..." : "Refresh"}</button>
+        </div>
       </div>
       <Panel eyebrow="Recent" title="Autonomous runs" action={<span className="chip signal">{history.length} saved</span>}>
         <div className="panelbody repo-list queue-grid">
@@ -691,7 +697,7 @@ function HistorySurface({ config, health, history, loading, onLoadRun, onRefresh
   );
 }
 
-function PrMonitorSurface({ config, health, history, onRefresh, prs, selectedRun, stream, watchMode }) {
+function PrMonitorSurface({ config, health, history, onClearRun, onRefresh, prs, selectedRun, stream, watchMode }) {
   return (
     <SecondaryFrame config={config} health={health} history={history} selectedRun={selectedRun} stream={stream} watchMode={watchMode}>
       <div className="hero-row">
@@ -700,7 +706,10 @@ function PrMonitorSurface({ config, health, history, onRefresh, prs, selectedRun
           <h1>PR Monitor</h1>
           <p className="subline">Outbound contribution history, maintainer response, merged state, and tracked review status.</p>
         </div>
-        <button className="btn" onClick={onRefresh} type="button">Refresh</button>
+        <div className="actions">
+          {selectedRun && <button className="btn" onClick={onClearRun} type="button">Clear run</button>}
+          <button className="btn" onClick={onRefresh} type="button">Refresh</button>
+        </div>
       </div>
       <PrOutcomePanel prs={prs} />
     </SecondaryFrame>
@@ -713,7 +722,7 @@ function checkTone(level) {
   return "green";
 }
 
-function ChecksSurface({ agents, config, health, history, onRefresh, runtime, selectedRun, stream, watchMode }) {
+function ChecksSurface({ agents, config, health, history, onClearRun, onRefresh, runtime, selectedRun, stream, watchMode }) {
   const checks = runtime.checks || [];
   const warnings = checks.filter((check) => check.level === "warn" || check.level === "error").length;
   const metrics = [
@@ -731,7 +740,10 @@ function ChecksSurface({ agents, config, health, history, onRefresh, runtime, se
           <h1>Checks</h1>
           <p className="subline">Backend health, bot identity, AI provider readiness, team setup, and startup checks.</p>
         </div>
-        <button className="btn" onClick={onRefresh} type="button">{runtime.loading ? "Refreshing..." : "Refresh"}</button>
+        <div className="actions">
+          {selectedRun && <button className="btn" onClick={onClearRun} type="button">Clear run</button>}
+          <button className="btn" onClick={onRefresh} type="button">{runtime.loading ? "Refreshing..." : "Refresh"}</button>
+        </div>
       </div>
       {runtime.error && <StatusBanner tone="red">{runtime.error}</StatusBanner>}
       <MetricBand metrics={metrics} />
@@ -972,6 +984,11 @@ export default function App() {
     }
   }
 
+  function clearRun() {
+    setSelectedRun(null);
+    setError("");
+  }
+
   if (!ready) {
     return (
       <ProductV2AuthGate
@@ -1006,6 +1023,7 @@ export default function App() {
           history={history}
           lifetimeCost={lifetimeCost}
           onChangeParams={setParams}
+          onClearRun={clearRun}
           onLoadRun={loadRun}
           onRefresh={() => {
             refreshData();
@@ -1028,6 +1046,7 @@ export default function App() {
           health={health}
           history={history}
           onChangeParams={setDryParams}
+          onClearRun={clearRun}
           onRefresh={() => {
             refreshData();
             runtime.refresh();
@@ -1045,6 +1064,7 @@ export default function App() {
           health={health}
           history={history}
           loading={loading}
+          onClearRun={clearRun}
           onLoadRun={loadRun}
           onRefresh={refreshData}
           selectedRun={selectedRun}
@@ -1057,6 +1077,7 @@ export default function App() {
           config={config}
           health={health}
           history={history}
+          onClearRun={clearRun}
           onRefresh={refreshData}
           prs={prs}
           selectedRun={selectedRun}
@@ -1070,6 +1091,7 @@ export default function App() {
           config={config}
           health={health}
           history={history}
+          onClearRun={clearRun}
           onRefresh={() => {
             refreshData();
             runtime.refresh();
