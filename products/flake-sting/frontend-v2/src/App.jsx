@@ -154,16 +154,134 @@ function buildRail(scan, history, overview, health) {
   };
 }
 
+function scanTone(scan) {
+  if (asCount(scan?.metrics?.quarantine_candidates)) return "red";
+  if (asCount(scan?.metrics?.flaky_signals) || asCount(scan?.metrics?.rerun_like_runs)) return "amber";
+  return "green";
+}
+
+function supportItem(config, index) {
+  return {
+    detail: config.detail,
+    gain: config.gain,
+    gainMeta: config.gainMeta,
+    id: config.id,
+    label: config.label,
+    minWindow: 7,
+    position: POSITIONS[index % POSITIONS.length],
+    stats: config.stats,
+    summary: config.summary,
+    title: config.title,
+    tone: config.tone || "signal",
+    vector: config.vector,
+    vectorTone: config.vectorTone || "",
+  };
+}
+
+function currentScanItem(scan) {
+  const tone = scanTone(scan);
+  return supportItem({
+    detail: scan?.repo || "Current workflow scan",
+    gain: asCount(scan?.metrics?.quarantine_candidates) ? "quarantine" : asCount(scan?.metrics?.flaky_signals) ? "watch" : "clear",
+    gainMeta: `${asCount(scan?.metrics?.flaky_signals)} signals`,
+    id: scan?.id || "current-flake-scan",
+    label: "FS",
+    stats: [
+      { label: "Repo", value: scan?.repo || "repo" },
+      { label: "Workflow", value: scan?.workflow_name || "all" },
+      { label: "Runs", value: String(asCount(scan?.metrics?.workflow_runs)) },
+      { label: "Signals", value: String(asCount(scan?.metrics?.flaky_signals)) },
+      { label: "Quarantine", value: String(asCount(scan?.metrics?.quarantine_candidates)) },
+    ],
+    summary: scan?.summary || "FlakeSting current workflow scan.",
+    title: "Current scan",
+    tone,
+    vector: "scan",
+    vectorTone: tone === "red" || tone === "amber" ? "warn" : "",
+  }, 0);
+}
+
+function supportingScanItems(scan) {
+  const metrics = scan?.metrics || {};
+  const failedRuns = asCount(metrics.failed_runs);
+  const successfulRuns = asCount(metrics.successful_runs);
+  const completedRuns = asCount(metrics.completed_runs);
+  const reruns = asCount(metrics.rerun_like_runs);
+  const trend = scan?.trend;
+  const trendTone = trend?.status === "rising" ? "amber" : trend?.status === "improving" ? "green" : "signal";
+
+  return [
+    supportItem({
+      detail: `${completedRuns} completed runs`,
+      gain: completedRuns ? `${successfulRuns}/${completedRuns}` : "none",
+      gainMeta: `${failedRuns} failed`,
+      id: "run-outcome-signal",
+      label: "RN",
+      stats: [
+        { label: "Completed", value: String(completedRuns) },
+        { label: "Success", value: String(successfulRuns) },
+        { label: "Failed", value: String(failedRuns) },
+        { label: "Lookback", value: String(asCount(metrics.workflow_runs)) },
+        { label: "Branch", value: scan?.branch || "default" },
+      ],
+      summary: failedRuns ? "Recent workflow history includes failed runs." : "Recent workflow runs are not showing failure pressure.",
+      title: "Run outcomes",
+      tone: failedRuns ? "amber" : "green",
+      vector: "runs",
+      vectorTone: failedRuns ? "warn" : "",
+    }, 1),
+    supportItem({
+      detail: `${reruns} rerun-like runs`,
+      gain: reruns ? "pressure" : "quiet",
+      gainMeta: "retry pressure",
+      id: "rerun-pressure-signal",
+      label: "RR",
+      stats: [
+        { label: "Reruns", value: String(reruns) },
+        { label: "Failed", value: String(failedRuns) },
+        { label: "Signals", value: String(asCount(metrics.flaky_signals)) },
+        { label: "Quarantine", value: String(asCount(metrics.quarantine_candidates)) },
+        { label: "State", value: reruns ? "watch" : "clear" },
+      ],
+      summary: reruns ? "Rerun pressure is present, which can point to unstable CI." : "No retry pressure is visible in this scan.",
+      title: "Rerun pressure",
+      tone: reruns ? "amber" : "green",
+      vector: "reruns",
+      vectorTone: reruns ? "warn" : "",
+    }, 2),
+    supportItem({
+      detail: trend?.status || "baseline",
+      gain: trend?.status || "new",
+      gainMeta: trend ? `${trend.flaky_signal_delta > 0 ? "+" : ""}${trend.flaky_signal_delta} signals` : "first scan",
+      id: "trend-signal",
+      label: "TR",
+      stats: [
+        { label: "Status", value: trend?.status || "baseline" },
+        { label: "Signal delta", value: String(trend?.flaky_signal_delta || 0) },
+        { label: "Quarantine delta", value: String(trend?.quarantine_delta || 0) },
+        { label: "New", value: String(trend?.new_signal_count || 0) },
+        { label: "Cleared", value: String(trend?.cleared_signal_count || 0) },
+      ],
+      summary: trend ? `Trend is ${trend.status} compared with the prior comparable scan.` : "Trend appears after a prior comparable scan exists.",
+      title: "Trend",
+      tone: trendTone,
+      vector: "trend",
+      vectorTone: trendTone === "amber" ? "warn" : "",
+    }, 3),
+  ];
+}
+
 function buildRadarItems(scan, history) {
-  if (scan?.signals?.length) {
-    return scan.signals.slice(0, 8).map((signal, index) => ({
+  if (scan) {
+    const support = [currentScanItem(scan), ...supportingScanItems(scan)];
+    const signalItems = (scan.signals || []).slice(0, Math.max(0, 8 - support.length)).map((signal, index) => ({
       detail: signal.job_name || signal.workflow_name || signal.key,
       gain: signal.status || signal.kind || "signal",
       gainMeta: `${asCount(signal.score)} score`,
       id: signal.key || `flake-${index + 1}`,
-      label: signal.job_name || signal.step_name || `F${index + 1}`,
-      minWindow: index < 3 ? 7 : index < 6 ? 14 : 30,
-      position: POSITIONS[index % POSITIONS.length],
+      label: signal.status === "quarantine" ? `Q${index + 1}` : `F${index + 1}`,
+      minWindow: 7,
+      position: POSITIONS[(support.length + index) % POSITIONS.length],
       stats: [
         { label: "Kind", value: signal.kind || "flake" },
         { label: "Status", value: signal.status || "watch" },
@@ -177,6 +295,7 @@ function buildRadarItems(scan, history) {
       vector: signal.kind || signal.workflow_name || "ci",
       vectorTone: signalTone(signal) === "red" || signalTone(signal) === "amber" ? "warn" : "",
     }));
+    return [...support, ...signalItems];
   }
   if (history.length) {
     return history.slice(0, 8).map((item, index) => ({
