@@ -659,6 +659,7 @@ function HistorySurface({ activeReviewId, health, history, loading, onClearRevie
           )}
         </div>
       </Panel>
+      {review && <ChecklistPanel history={history} onLoadReview={onLoadReview} review={review} />}
     </TabFrame>
   );
 }
@@ -816,7 +817,6 @@ export default function App() {
         pr_number: result.pr_number ? String(result.pr_number) : "",
         publish_comment: false,
       });
-      setActiveTab("threads");
     } catch (err) {
       setError(err.message || "ReviewBee could not load that review.");
     } finally {
