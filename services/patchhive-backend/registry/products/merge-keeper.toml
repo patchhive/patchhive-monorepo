@@ -11,6 +11,11 @@ read_only = true
 credential_scopes = ["github:pull_requests:read", "github:checks:read"]
 evidence_required = ["PR URL", "review state", "check state"]
 
+[health]
+endpoint = "/api/products/merge-keeper/health"
+timeout_ms = 2000
+healthy_status = 200
+
 [[capabilities]]
 id = "pr-readiness"
 label = "PR readiness"

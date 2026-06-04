@@ -11,6 +11,11 @@ read_only = true
 credential_scopes = ["github:repo:read", "github:actions:read", "github:releases:read"]
 evidence_required = ["release target", "CI state", "blocker summary"]
 
+[health]
+endpoint = "/api/products/release-sentry/health"
+timeout_ms = 2000
+healthy_status = 200
+
 [[capabilities]]
 id = "release-health"
 label = "Release health"

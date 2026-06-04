@@ -4,8 +4,9 @@ use anyhow::{Context, Result};
 use serde::Deserialize;
 
 use crate::models::{
-    AuthStatusResponse, CapabilityMetadata, GatewayStatus, MigrationStage, ProductHealthResponse,
-    ProductResponse, ProductStatus, RouteClaim, RuntimeProduct, SafetyBoundary, SetupProduct,
+    AuthStatusResponse, CapabilityMetadata, GatewayStatus, MigrationStage, ProductHealthContract,
+    ProductHealthResponse, ProductResponse, ProductStatus, RouteClaim, RuntimeProduct,
+    SafetyBoundary, SetupProduct,
 };
 
 const MANIFEST_SOURCES: &[&str] = &[
@@ -45,6 +46,8 @@ pub struct ProductManifest {
     pub safety: SafetyBoundary,
     #[serde(default)]
     pub gateway: Option<GatewayConfig>,
+    #[serde(default)]
+    pub health: ProductHealthContract,
     #[serde(default)]
     pub routes: Vec<RouteClaim>,
 }
@@ -116,6 +119,7 @@ impl ProductManifest {
             capability_metadata: self.capabilities.clone(),
             safety: self.safety.clone(),
             gateway,
+            health: self.health.clone(),
             routes: self.routes.clone(),
         }
     }
@@ -283,10 +287,22 @@ mod tests {
             .expect("SignalHive manifest should exist");
 
         assert_eq!(registry.products().len(), 12);
+        assert!(registry
+            .products()
+            .iter()
+            .all(|product| !product.health.endpoint.is_empty()));
         assert!(!signal_hive.capabilities.is_empty());
         assert!(!signal_hive.routes.is_empty());
         assert!(signal_hive.safety.read_only);
         assert!(signal_hive.gateway_target_url().is_some());
+        assert_eq!(
+            signal_hive.health.endpoint,
+            "/api/products/signal-hive/health"
+        );
+        assert_eq!(signal_hive.health.timeout_ms, 2_000);
+        assert!(signal_hive
+            .route_claim_for("GET", "/api/products/signal-hive/health")
+            .is_some());
         assert!(signal_hive
             .route_claim_for("GET", "/api/products/signal-hive/history/scan-1/timeline")
             .is_some());

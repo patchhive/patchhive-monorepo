@@ -11,6 +11,11 @@ read_only = true
 credential_scopes = ["github:pull_requests:read", "github:dependabot:read"]
 evidence_required = ["dependency PRs", "alert sample", "scoring inputs"]
 
+[health]
+endpoint = "/api/products/dep-triage/health"
+timeout_ms = 2000
+healthy_status = 200
+
 [[capabilities]]
 id = "dependency-prs"
 label = "Dependency PRs"

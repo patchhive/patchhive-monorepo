@@ -15,6 +15,11 @@ evidence_required = ["scan parameters", "repo sample list"]
 default_url = "http://127.0.0.1:8010"
 env_var = "SIGNAL_HIVE_GATEWAY_URL"
 
+[health]
+endpoint = "/api/products/signal-hive/health"
+timeout_ms = 2000
+healthy_status = 200
+
 [[capabilities]]
 id = "repo-discovery"
 label = "Repo discovery"

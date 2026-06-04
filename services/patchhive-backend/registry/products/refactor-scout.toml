@@ -11,6 +11,11 @@ read_only = true
 credential_scopes = ["local:filesystem:read"]
 evidence_required = ["local path allowlist", "file metrics", "ranking reason"]
 
+[health]
+endpoint = "/api/products/refactor-scout/health"
+timeout_ms = 2000
+healthy_status = 200
+
 [[capabilities]]
 id = "local-scan"
 label = "Local scan"

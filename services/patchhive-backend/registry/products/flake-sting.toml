@@ -11,6 +11,11 @@ read_only = true
 credential_scopes = ["github:actions:read"]
 evidence_required = ["repo identity", "workflow run sample", "lookback window"]
 
+[health]
+endpoint = "/api/products/flake-sting/health"
+timeout_ms = 2000
+healthy_status = 200
+
 [[capabilities]]
 id = "actions-history"
 label = "Actions history"

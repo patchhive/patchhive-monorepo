@@ -13,6 +13,11 @@ requires_operator_approval = false
 credential_scopes = ["github:repo:read", "github:pull_requests:read", "github:issues:read"]
 evidence_required = ["repo identity", "source event", "memory summary"]
 
+[health]
+endpoint = "/api/products/repo-memory/health"
+timeout_ms = 2000
+healthy_status = 200
+
 [[capabilities]]
 id = "memory-ingest"
 label = "Memory ingest"

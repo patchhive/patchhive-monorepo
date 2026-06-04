@@ -46,6 +46,7 @@ pub struct ProductResponse {
     pub capability_metadata: Vec<CapabilityMetadata>,
     pub safety: SafetyBoundary,
     pub gateway: GatewayStatus,
+    pub health: ProductHealthContract,
     pub routes: Vec<RouteClaim>,
 }
 
@@ -89,6 +90,23 @@ pub struct GatewayStatus {
     pub configured: bool,
     pub target_url: Option<String>,
     pub env_var: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct ProductHealthContract {
+    pub endpoint: String,
+    pub timeout_ms: u64,
+    pub healthy_status: u16,
+}
+
+impl Default for ProductHealthContract {
+    fn default() -> Self {
+        Self {
+            endpoint: String::new(),
+            timeout_ms: 2_000,
+            healthy_status: 200,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

@@ -122,6 +122,12 @@ product's `[[routes]]` claims before forwarding it to the configured target.
 SignalHive is the first gateway target, defaulting to `http://127.0.0.1:8010`
 and overrideable with `SIGNAL_HIVE_GATEWAY_URL`.
 
+Product availability is also manifest-driven. Each product declares a `[health]`
+endpoint, timeout budget, and expected healthy status. Gateway mode checks that
+health contract before routing non-health product traffic, so dead product
+services fail fast as `product-unavailable` instead of leaking raw proxy errors
+through normal product workflows.
+
 ## HiveCore Role
 
 HiveCore should connect to `patchhive-backend` like every other frontend.
@@ -209,6 +215,7 @@ Each product manifest declares:
 - capability metadata: `[[capabilities]]` with optional `mutating`
 - safety boundaries: `[safety]` read-only state, external writes, repo mutation, approval requirements, credential scopes, and evidence expectations
 - gateway target: optional `[gateway]` default URL and env override while product logic still lives in the old backend
+- health contract: `[health]` endpoint, timeout budget, and expected healthy status for availability checks
 - route claims: `[[routes]]` with method, path, and description
 
 This gives HiveCore and the backend one source of truth for what a product is,

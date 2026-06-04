@@ -11,6 +11,11 @@ read_only = true
 credential_scopes = ["github:security_events:read", "github:dependabot:read"]
 evidence_required = ["security alert snapshot", "severity inputs", "reachability hints"]
 
+[health]
+endpoint = "/api/products/vuln-triage/health"
+timeout_ms = 2000
+healthy_status = 200
+
 [[capabilities]]
 id = "code-scanning"
 label = "Code scanning"

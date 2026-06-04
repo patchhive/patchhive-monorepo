@@ -74,6 +74,7 @@ Each manifest declares:
 - `[[capabilities]]` entries with `id`, `label`, `description`, and optional `mutating`.
 - `[safety]` boundaries such as read-only status, external writes, repo mutation, approval requirements, credential scopes, and required evidence.
 - Optional `[gateway]` settings with `default_url` and `env_var` while a product still runs in its existing backend.
+- `[health]` settings with the suite endpoint, timeout budget, and expected healthy status.
 - `[[routes]]` claims with method, path, and description.
 
 Example:
@@ -95,6 +96,11 @@ evidence_required = ["scan parameters", "repo sample list"]
 [gateway]
 default_url = "http://127.0.0.1:8010"
 env_var = "SIGNAL_HIVE_GATEWAY_URL"
+
+[health]
+endpoint = "/api/products/signal-hive/health"
+timeout_ms = 2000
+healthy_status = 200
 
 [[capabilities]]
 id = "signal-scan"
@@ -125,8 +131,9 @@ cargo run
 ```
 
 Requests under `/api/products/signal-hive/*` are validated against the
-SignalHive manifest route claims, then forwarded to the SignalHive backend with
-the product prefix stripped. For example:
+SignalHive manifest route claims. Non-health requests first run the manifest
+health check, then forward to the SignalHive backend with the product prefix
+stripped. For example:
 
 ```text
 GET  /api/products/signal-hive/health  -> GET  http://127.0.0.1:8010/health
@@ -134,7 +141,8 @@ POST /api/products/signal-hive/scan    -> POST http://127.0.0.1:8010/scan
 ```
 
 Unclaimed routes return `route-not-claimed`; disabled products return
-`product-disabled`; missing gateway targets return `gateway-unconfigured`.
+`product-disabled`; missing gateway targets return `gateway-unconfigured`;
+unhealthy gateway targets return `product-unavailable`.
 
 ## Shared DB
 

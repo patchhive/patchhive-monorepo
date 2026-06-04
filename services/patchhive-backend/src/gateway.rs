@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use axum::{
     body::{to_bytes, Body},
@@ -7,7 +7,7 @@ use axum::{
     Json,
 };
 
-use crate::{models::ErrorResponse, state::AppState};
+use crate::{models::ErrorResponse, registry::ProductManifest, state::AppState};
 
 const MAX_GATEWAY_BODY_BYTES: usize = 25 * 1024 * 1024;
 
@@ -61,7 +61,18 @@ pub async fn proxy_product_request(
         );
     }
 
-    let Some(path_suffix) = path.strip_prefix(product.route_prefix.as_str()) else {
+    if let Err(response) =
+        check_gateway_health(&state, product, target_url.as_str(), path.as_str()).await
+    {
+        return response;
+    }
+
+    let Some(downstream_url) = downstream_url_for(
+        product,
+        target_url.as_str(),
+        path.as_str(),
+        parts.uri.query(),
+    ) else {
         return json_error(
             StatusCode::BAD_GATEWAY,
             "gateway-prefix-mismatch",
@@ -71,17 +82,6 @@ pub async fn proxy_product_request(
             ),
         );
     };
-    let downstream_path = if path_suffix.is_empty() {
-        "/"
-    } else {
-        path_suffix
-    };
-    let query = parts
-        .uri
-        .query()
-        .map(|query| format!("?{query}"))
-        .unwrap_or_default();
-    let downstream_url = format!("{target_url}{downstream_path}{query}");
 
     let body = match to_bytes(body, MAX_GATEWAY_BODY_BYTES).await {
         Ok(body) => body,
@@ -169,6 +169,75 @@ pub async fn proxy_product_request(
         response.headers_mut().insert(name, value);
     }
     response
+}
+
+async fn check_gateway_health(
+    state: &AppState,
+    product: &ProductManifest,
+    target_url: &str,
+    request_path: &str,
+) -> Result<(), Response> {
+    if product.health.endpoint.is_empty() || request_path == product.health.endpoint {
+        return Ok(());
+    }
+
+    let Some(health_url) =
+        downstream_url_for(product, target_url, product.health.endpoint.as_str(), None)
+    else {
+        return Err(json_error(
+            StatusCode::BAD_GATEWAY,
+            "gateway-health-prefix-mismatch",
+            format!(
+                "Health endpoint `{}` does not live under {}.",
+                product.health.endpoint, product.route_prefix
+            ),
+        ));
+    };
+
+    let timeout = Duration::from_millis(product.health.timeout_ms.max(1));
+    let response = match state.http.get(&health_url).timeout(timeout).send().await {
+        Ok(response) => response,
+        Err(err) => {
+            return Err(json_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "product-unavailable",
+                format!(
+                    "{} health check failed at {}: {err}",
+                    product.name, product.health.endpoint
+                ),
+            ));
+        }
+    };
+
+    let status = response.status().as_u16();
+    if status == product.health.healthy_status {
+        Ok(())
+    } else {
+        Err(json_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "product-unavailable",
+            format!(
+                "{} health check returned {status}, expected {}.",
+                product.name, product.health.healthy_status
+            ),
+        ))
+    }
+}
+
+fn downstream_url_for(
+    product: &ProductManifest,
+    target_url: &str,
+    path: &str,
+    query: Option<&str>,
+) -> Option<String> {
+    let path_suffix = path.strip_prefix(product.route_prefix.as_str())?;
+    let downstream_path = if path_suffix.is_empty() {
+        "/"
+    } else {
+        path_suffix
+    };
+    let query = query.map(|query| format!("?{query}")).unwrap_or_default();
+    Some(format!("{target_url}{downstream_path}{query}"))
 }
 
 fn json_error(status: StatusCode, error: &'static str, message: String) -> Response {

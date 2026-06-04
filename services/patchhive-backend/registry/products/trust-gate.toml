@@ -13,6 +13,11 @@ requires_operator_approval = true
 credential_scopes = ["github:pull_requests:read", "github:checks:write"]
 evidence_required = ["diff", "policy pack", "decision report"]
 
+[health]
+endpoint = "/api/products/trust-gate/health"
+timeout_ms = 2000
+healthy_status = 200
+
 [[capabilities]]
 id = "diff-review"
 label = "Diff review"
