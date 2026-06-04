@@ -292,6 +292,9 @@ pub(crate) fn checklist_summary(
 }
 
 pub(crate) fn overall_status(metrics: &ReviewMetrics, requested_changes_reviews: u32) -> String {
+    if metrics.review_count == 0 && metrics.thread_count == 0 && metrics.reviewer_count == 0 {
+        return "quiet".into();
+    }
     if metrics.open_items == 0 && metrics.actionable_threads == 0 {
         return "clear".into();
     }
@@ -310,6 +313,9 @@ pub(crate) fn build_summary(
     status: &str,
 ) -> String {
     if checklist.is_empty() {
+        if status == "quiet" {
+            return "ReviewBee did not find review activity on this PR yet. Treat this as no review signal, not a clear merge recommendation.".into();
+        }
         return "ReviewBee did not find actionable review feedback in the current PR threads. This PR looks close to merge from a comment-clustering perspective.".into();
     }
 
@@ -328,6 +334,7 @@ pub(crate) fn build_summary(
         .collect::<Vec<_>>();
 
     let status_lead = match status {
+        "quiet" => "ReviewBee has no review activity to evaluate yet.",
         "clear" => "The active review queue looks clear.",
         "resolved" => "Most actionable feedback appears resolved already.",
         "attention" => "This PR still needs focused follow-up before it feels merge-ready.",

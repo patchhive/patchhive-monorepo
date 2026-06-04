@@ -30,6 +30,8 @@ const POSITIONS = [
   { left: "52%", top: "53%" },
 ];
 
+const QUIET_REVIEW_SUMMARY = "ReviewBee did not find review activity on this PR yet. Treat this as no review signal, not a clear merge recommendation.";
+
 function asCount(value) {
   const number = Number(value || 0);
   return Number.isFinite(number) ? number : 0;
@@ -64,6 +66,43 @@ function statusTone(status) {
     return "red";
   }
   return "signal";
+}
+
+function reviewCounts(run) {
+  const metrics = run?.metrics || {};
+  return {
+    actionable: asCount(metrics.actionable_threads ?? run?.actionable_threads),
+    open: asCount(metrics.open_items ?? run?.open_items),
+    resolved: asCount(metrics.resolved_items ?? run?.resolved_items),
+    reviews: asCount(metrics.review_count ?? run?.review_count),
+    reviewers: asCount(metrics.reviewer_count ?? run?.reviewer_count),
+    threads: asCount(metrics.thread_count ?? run?.thread_count),
+  };
+}
+
+function hasNoReviewEvidence(run) {
+  const counts = reviewCounts(run);
+  return counts.actionable === 0
+    && counts.open === 0
+    && counts.resolved === 0
+    && counts.reviews === 0
+    && counts.reviewers === 0
+    && counts.threads === 0;
+}
+
+function displayRunStatus(run, fallback = "ready") {
+  const status = String(run?.status || fallback || "").toLowerCase();
+  if (status === "clear" && hasNoReviewEvidence(run)) {
+    return "quiet";
+  }
+  return status;
+}
+
+function displayRunSummary(run, fallback = "Saved ReviewBee run.") {
+  if (displayRunStatus(run) === "quiet" && hasNoReviewEvidence(run)) {
+    return QUIET_REVIEW_SUMMARY;
+  }
+  return run?.summary || fallback;
 }
 
 function itemTone(item) {
@@ -102,7 +141,7 @@ async function parseJsonResponse(response, fallbackError) {
 
 function buildTopline(review, overview, health) {
   const openItems = review?.metrics?.open_items ?? overview?.counts?.open_items ?? 0;
-  const status = review?.status || (openItems > 0 ? "attention" : "ready");
+  const status = review ? displayRunStatus(review) : (openItems > 0 ? "attention" : "ready");
   return [
     { label: "ReviewBee", value: "Review queue", tone: "sig" },
     { label: "System", value: health?.status || "checking", tone: health?.status === "ok" ? "ok" : "warn" },
@@ -139,7 +178,7 @@ function buildRailSections(review, history, overview) {
     : history.slice(0, 4).map((item, index) => ({
       label: `${item.repo}#${item.pr_number}`,
       active: index === 0,
-      value: item.status || "saved",
+      value: displayRunStatus(item, "saved"),
     }));
   const latest = history[0] || {};
   const openItems = review?.metrics?.open_items ?? overview?.counts?.open_items ?? 0;
@@ -165,18 +204,19 @@ function buildRailSections(review, history, overview) {
 }
 
 function buildRailStats(review, overview) {
+  const status = displayRunStatus(review, "ready");
   return {
     title: "Active PR",
     items: [
       { label: "Repository", value: review?.repo || overview?.recent_reviews?.[0]?.repo || "none" },
-      { label: "Pressure", value: review?.status ? review.status.toUpperCase() : "READY", large: true, tone: statusTone(review?.status || "ready") },
+      { label: "Pressure", value: review ? status.toUpperCase() : "READY", large: true, tone: statusTone(status) },
       { label: "Comment", value: review?.github_report?.state || "local" },
     ],
   };
 }
 
 function countHistoryStatus(history, status) {
-  return history.filter((item) => String(item.status || "").toLowerCase() === status).length;
+  return history.filter((item) => displayRunStatus(item, "saved") === status).length;
 }
 
 function tabRailSections({ checks = [], health = {}, history = [], overview = null, review = null }) {
@@ -205,9 +245,9 @@ function tabRailSections({ checks = [], health = {}, history = [], overview = nu
       {
         title: "Review state",
         items: [
-          { label: "clear", active: review?.status === "clear", badge: String(countHistoryStatus(history, "clear")), badgeTone: "green" },
-          { label: "attention", active: review?.status === "attention", badge: String(countHistoryStatus(history, "attention")), badgeTone: "amber" },
-          { label: "blocked", active: review?.status === "blocked", badge: String(countHistoryStatus(history, "blocked")), badgeTone: "red" },
+          { label: "quiet", active: displayRunStatus(review) === "quiet", badge: String(countHistoryStatus(history, "quiet")), badgeTone: "signal" },
+          { label: "clear", active: displayRunStatus(review) === "clear", badge: String(countHistoryStatus(history, "clear")), badgeTone: "green" },
+          { label: "attention", active: displayRunStatus(review) === "attention", badge: String(countHistoryStatus(history, "attention")), badgeTone: "amber" },
         ],
       },
       {
@@ -235,11 +275,12 @@ function tabRailStats({ health = {}, history = [], overview = null, review = nul
       ],
     };
   }
+  const status = review ? displayRunStatus(review) : displayRunStatus(latest, "ready");
   return {
     title: "Selected review",
     items: [
       { label: "Repository", value: review?.repo || latest.repo || "none" },
-      { label: "Pressure", value: String(review?.status || latest.status || "ready").toUpperCase(), large: true, tone: statusTone(review?.status || latest.status || "ready") },
+      { label: "Pressure", value: status.toUpperCase(), large: true, tone: statusTone(status) },
       { label: "Age", value: review?.created_at ? timeAgo(review.created_at) : latest.created_at ? timeAgo(latest.created_at) : "none" },
     ],
   };
@@ -258,7 +299,7 @@ function TabFrame({ children, health, overview, railSections, railStats, review 
 }
 
 function currentReviewRadarItem(review) {
-  const status = review?.status || (asCount(review?.metrics?.open_items) ? "attention" : "clear");
+  const status = displayRunStatus(review, asCount(review?.metrics?.open_items) ? "attention" : "clear");
   return {
     id: review?.id || "current-review",
     title: `${String(status).toUpperCase()} review`,
@@ -275,7 +316,7 @@ function currentReviewRadarItem(review) {
       { label: "Resolved", value: String(asCount(review?.metrics?.resolved_items)) },
       { label: "Reviewers", value: String(asCount(review?.metrics?.reviewer_count)) },
     ],
-    summary: review?.summary || "ReviewBee current PR result.",
+    summary: displayRunSummary(review, "ReviewBee current PR result."),
     tone: statusTone(status),
     vector: review?.pr_number ? `PR-${review.pr_number}` : "CURRENT",
     vectorTone: statusTone(status) === "amber" ? "warn" : "",
@@ -310,27 +351,30 @@ function buildRadarItems(review, history, overview) {
   }
 
   if (history.length) {
-    return history.slice(0, 8).map((item, index) => ({
-      id: item.id || `history-${index + 1}`,
-      title: `${item.repo}#${item.pr_number}`,
-      detail: item.pr_title || `${item.repo} PR #${item.pr_number}`,
-      gain: item.status || "saved",
-      gainMeta: `${asCount(item.open_items)} open / ${asCount(item.resolved_items)} resolved`,
-      label: `PR${item.pr_number}`,
-      minWindow: index < 3 ? 7 : index < 6 ? 14 : 30,
-      position: POSITIONS[index % POSITIONS.length],
-      stats: [
-        { label: "Repo", value: item.repo },
-        { label: "PR", value: `#${item.pr_number}` },
-        { label: "Open", value: String(asCount(item.open_items)) },
-        { label: "Resolved", value: String(asCount(item.resolved_items)) },
-        { label: "Reviewers", value: String(asCount(item.reviewer_count)) },
-      ],
-      summary: item.summary || "Saved ReviewBee run.",
-      tone: statusTone(item.status),
-      vector: item.status || "saved",
-      vectorTone: statusTone(item.status) === "amber" ? "warn" : "",
-    }));
+    return history.slice(0, 8).map((item, index) => {
+      const status = displayRunStatus(item, "saved");
+      return {
+        id: item.id || `history-${index + 1}`,
+        title: `${item.repo}#${item.pr_number}`,
+        detail: item.pr_title || `${item.repo} PR #${item.pr_number}`,
+        gain: status,
+        gainMeta: `${asCount(item.open_items)} open / ${asCount(item.resolved_items)} resolved`,
+        label: `PR${item.pr_number}`,
+        minWindow: index < 3 ? 7 : index < 6 ? 14 : 30,
+        position: POSITIONS[index % POSITIONS.length],
+        stats: [
+          { label: "Repo", value: item.repo },
+          { label: "PR", value: `#${item.pr_number}` },
+          { label: "Open", value: String(asCount(item.open_items)) },
+          { label: "Resolved", value: String(asCount(item.resolved_items)) },
+          { label: "Reviewers", value: String(asCount(item.reviewer_count)) },
+        ],
+        summary: displayRunSummary(item, "Saved ReviewBee run."),
+        tone: statusTone(status),
+        vector: status,
+        vectorTone: statusTone(status) === "amber" ? "warn" : "",
+      };
+    });
   }
 
   return [{
@@ -357,8 +401,9 @@ function buildRadarItems(review, history, overview) {
 function buildRadarFeed(review, overview, health) {
   if (review) {
     const report = review.github_report;
+    const status = displayRunStatus(review);
     return [
-      { text: review.summary || "ReviewBee completed the PR review pass.", tone: statusTone(review.status) },
+      { text: displayRunSummary(review, "ReviewBee completed the PR review pass."), tone: statusTone(status) },
       { text: `${asCount(review.metrics?.open_items)} open asks and ${asCount(review.metrics?.resolved_items)} resolved items are visible in the checklist.`, tone: asCount(review.metrics?.open_items) ? "amber" : "green" },
       { text: report?.message || "GitHub comment output is local until publishing is enabled.", tone: reportTone(report) },
     ];
@@ -447,8 +492,10 @@ function ThreadMap({ health, history, overview, review }) {
 function ChecklistPanel({ history, onLoadReview, review }) {
   const rows = review?.checklist || [];
   if (review) {
+    const status = displayRunStatus(review);
+    const openItems = asCount(review.metrics?.open_items);
     return (
-      <Panel eyebrow="Checklist" title="Action groups" action={<span className={`chip ${asCount(review.metrics?.open_items) ? "amber" : "green"}`}>{asCount(review.metrics?.open_items)} open</span>}>
+      <Panel eyebrow="Checklist" title="Action groups" action={<span className={`chip ${status === "quiet" ? "signal" : openItems ? "amber" : "green"}`}>{status === "quiet" ? "quiet" : `${openItems} open`}</span>}>
         <div className="panelbody repo-list queue-grid">
           {rows.length ? rows.map((item, index) => (
             <div className="ledger-row" key={item.key || item.title || index}>
@@ -466,8 +513,8 @@ function ChecklistPanel({ history, onLoadReview, review }) {
             </div>
           )) : (
             <div className="empty-v2">
-              <strong>Clear review</strong>
-              <span>ReviewBee did not find actionable checklist items for this PR.</span>
+              <strong>{status === "quiet" ? "No review signal" : "No checklist items"}</strong>
+              <span>{displayRunSummary(review, "ReviewBee did not find actionable checklist items for this PR.")}</span>
             </div>
           )}
         </div>
@@ -478,21 +525,24 @@ function ChecklistPanel({ history, onLoadReview, review }) {
   return (
     <Panel eyebrow="Checklist" title="Recent review runs" action={<span className="chip signal">{history.length} saved</span>}>
       <div className="panelbody repo-list queue-grid">
-        {history.length ? history.slice(0, 5).map((item, index) => (
-          <div className="ledger-row" key={item.id || `${item.repo}-${item.pr_number}`}>
-            <div className="rank">{String(index + 1).padStart(2, "0")}</div>
-            <div>
-              <div className="repo-name">{item.repo}#{item.pr_number}</div>
-              <div className="feed-meta">{item.summary || item.pr_title || "Saved ReviewBee run."}</div>
-              <div className="repo-meta">
-                <span className={`chip ${statusTone(item.status)}`}>{item.status || "saved"}</span>
-                <span className="chip amber">{asCount(item.open_items)} open</span>
-                <span className="chip green">{asCount(item.resolved_items)} resolved</span>
+        {history.length ? history.slice(0, 5).map((item, index) => {
+          const status = displayRunStatus(item, "saved");
+          return (
+            <div className="ledger-row" key={item.id || `${item.repo}-${item.pr_number}`}>
+              <div className="rank">{String(index + 1).padStart(2, "0")}</div>
+              <div>
+                <div className="repo-name">{item.repo}#{item.pr_number}</div>
+                <div className="feed-meta">{displayRunSummary(item, item.pr_title || "Saved ReviewBee run.")}</div>
+                <div className="repo-meta">
+                  <span className={`chip ${statusTone(status)}`}>{status}</span>
+                  <span className="chip amber">{asCount(item.open_items)} open</span>
+                  <span className="chip green">{asCount(item.resolved_items)} resolved</span>
+                </div>
               </div>
+              <button className="btn" onClick={() => onLoadReview(item.id)} type="button">Load</button>
             </div>
-            <button className="btn" onClick={() => onLoadReview(item.id)} type="button">Load</button>
-          </div>
-        )) : (
+          );
+        }) : (
           <div className="empty-v2">
             <strong>No reviews yet</strong>
             <span>Run ReviewBee on a pull request and the checklist history will appear here.</span>
@@ -506,6 +556,7 @@ function ChecklistPanel({ history, onLoadReview, review }) {
 function SidePanels({ health, onCopyReport, onCopyPrompts, review }) {
   const reviewers = review?.reviewers || [];
   const report = review?.github_report;
+  const status = displayRunStatus(review);
   return (
     <aside className="side">
       <Panel eyebrow="Evidence" title="Review pressure">
@@ -513,9 +564,9 @@ function SidePanels({ health, onCopyReport, onCopyPrompts, review }) {
           <div className="feed-item">
             <div>
               <div className="feed-title">Status</div>
-              <div className="feed-meta">{review?.summary || "Run a PR review to see current pressure."}</div>
+              <div className="feed-meta">{review ? displayRunSummary(review, "ReviewBee current PR result.") : "Run a PR review to see current pressure."}</div>
             </div>
-            <span className={`chip ${statusTone(review?.status || "ready")}`}>{review?.status || "ready"}</span>
+            <span className={`chip ${statusTone(status)}`}>{status}</span>
           </div>
           <div className="feed-item">
             <div>
@@ -581,6 +632,7 @@ function ThreadSurface({
   const railSections = useMemo(() => buildRailSections(review, history, overview), [review, history, overview]);
   const railStats = useMemo(() => buildRailStats(review, overview), [review, overview]);
   const topline = useMemo(() => buildTopline(review, overview, health), [review, overview, health]);
+  const status = displayRunStatus(review);
 
   return (
     <>
@@ -595,7 +647,7 @@ function ThreadSurface({
               <p className="subline">Run a GitHub PR review, collapse review thread noise, and keep the actionable checklist visible.</p>
             </div>
             <div className="actions">
-              <span className={`chip ${statusTone(review?.status || "ready")}`}>{review?.status || "ready"}</span>
+              <span className={`chip ${statusTone(status)}`}>{status}</span>
               <span className={`chip ${healthReady(health) ? "green" : "amber"}`}>{healthReady(health) ? "github ready" : "github missing"}</span>
               {review && <button className="btn" onClick={onClearReview} type="button">Clear review</button>}
               <button className="btn" onClick={onRefreshData} type="button">Refresh data</button>
@@ -635,23 +687,26 @@ function HistorySurface({ activeReviewId, health, history, loading, onClearRevie
       </div>
       <Panel eyebrow="Recent" title="Review runs" action={<span className="chip signal">{history.length} saved</span>}>
         <div className="panelbody repo-list queue-grid">
-          {history.length ? history.map((item) => (
-            <div className="ledger-row" key={item.id || `${item.repo}-${item.pr_number}`}>
-              <div className="rank">{item.id === activeReviewId ? "SEL" : `#${item.pr_number}`}</div>
-              <div>
-                <div className="repo-name">{item.repo} - PR #{item.pr_number}</div>
-                <div className="feed-meta">{item.summary || item.pr_title || "Saved ReviewBee run."}</div>
-                <div className="repo-meta">
-                  <span className={`chip ${statusTone(item.status)}`}>{item.status || "saved"}</span>
-                  <span className="chip amber">{asCount(item.open_items)} open</span>
-                  <span className="chip green">{asCount(item.resolved_items)} resolved</span>
-                  <span className="chip signal">{asCount(item.reviewer_count)} reviewers</span>
-                  <span className="chip">{timeAgo(item.created_at)}</span>
+          {history.length ? history.map((item) => {
+            const status = displayRunStatus(item, "saved");
+            return (
+              <div className="ledger-row" key={item.id || `${item.repo}-${item.pr_number}`}>
+                <div className="rank">{item.id === activeReviewId ? "SEL" : `#${item.pr_number}`}</div>
+                <div>
+                  <div className="repo-name">{item.repo} - PR #{item.pr_number}</div>
+                  <div className="feed-meta">{displayRunSummary(item, item.pr_title || "Saved ReviewBee run.")}</div>
+                  <div className="repo-meta">
+                    <span className={`chip ${statusTone(status)}`}>{status}</span>
+                    <span className="chip amber">{asCount(item.open_items)} open</span>
+                    <span className="chip green">{asCount(item.resolved_items)} resolved</span>
+                    <span className="chip signal">{asCount(item.reviewer_count)} reviewers</span>
+                    <span className="chip">{timeAgo(item.created_at)}</span>
+                  </div>
                 </div>
+                <button className="btn" onClick={() => onLoadReview(item.id)} type="button">Load</button>
               </div>
-              <button className="btn" onClick={() => onLoadReview(item.id)} type="button">Load</button>
-            </div>
-          )) : (
+            );
+          }) : (
             <div className="empty-v2">
               <strong>No review history</strong>
               <span>Run ReviewBee on a pull request and saved checklists will appear here.</span>

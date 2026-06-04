@@ -73,6 +73,7 @@ fn recommendation_emoji(status: &str) -> &'static str {
 
 fn next_move(review: &ReviewResult) -> &'static str {
     match review.status.as_str() {
+        "quiet" => "ReviewBee did not find review activity yet. Treat this as no review signal rather than a green merge recommendation.",
         "clear" => "This PR looks close to merge from a reviewer-feedback standpoint. A quick human scan is still healthy, but ReviewBee did not find active follow-up.",
         "resolved" => "Most prior requests look cleared. Double-check the remaining thread state and merge when the repo is comfortable.",
         "attention" => "This PR still has concentrated review pressure. The open checklist below is the work to clear before merge.",
