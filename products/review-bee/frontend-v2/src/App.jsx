@@ -401,9 +401,7 @@ function buildRadarItems(review, history, overview) {
 function buildRadarFeed(review, overview, health) {
   if (review) {
     const report = review.github_report;
-    const status = displayRunStatus(review);
     return [
-      { text: displayRunSummary(review, "ReviewBee completed the PR review pass."), tone: statusTone(status) },
       { text: `${asCount(review.metrics?.open_items)} open asks and ${asCount(review.metrics?.resolved_items)} resolved items are visible in the checklist.`, tone: asCount(review.metrics?.open_items) ? "amber" : "green" },
       { text: report?.message || "GitHub comment output is local until publishing is enabled.", tone: reportTone(report) },
     ];
