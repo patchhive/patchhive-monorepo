@@ -13,6 +13,10 @@ requires_operator_approval = true
 credential_scopes = ["github:pull_requests:read", "github:issues:write"]
 evidence_required = ["PR URL", "review thread snapshot", "comment preview"]
 
+[gateway]
+default_url = "http://127.0.0.1:8040"
+env_var = "REVIEW_BEE_GATEWAY_URL"
+
 [health]
 endpoint = "/api/products/review-bee/health"
 timeout_ms = 2000
@@ -34,6 +38,41 @@ path = "/api/products/review-bee/health"
 description = "Report ReviewBee runtime health."
 
 [[routes]]
+method = "GET"
+path = "/api/products/review-bee/auth/status"
+description = "Read ReviewBee auth bootstrap state."
+
+[[routes]]
+method = "POST"
+path = "/api/products/review-bee/auth/login"
+description = "Validate a ReviewBee API key."
+
+[[routes]]
+method = "POST"
+path = "/api/products/review-bee/auth/generate-key"
+description = "Generate the first local ReviewBee API key."
+
+[[routes]]
+method = "POST"
+path = "/api/products/review-bee/auth/generate-service-token"
+description = "Generate a ReviewBee service token for HiveCore."
+
+[[routes]]
+method = "POST"
+path = "/api/products/review-bee/auth/rotate-service-token"
+description = "Rotate the ReviewBee service token."
+
+[[routes]]
+method = "GET"
+path = "/api/products/review-bee/startup/checks"
+description = "Read ReviewBee startup checks."
+
+[[routes]]
+method = "GET"
+path = "/api/products/review-bee/capabilities"
+description = "Read ReviewBee product capabilities."
+
+[[routes]]
 method = "POST"
 path = "/api/products/review-bee/review/github/pr"
 description = "Analyze a GitHub PR review thread."
@@ -42,3 +81,28 @@ description = "Analyze a GitHub PR review thread."
 method = "GET"
 path = "/api/products/review-bee/runs"
 description = "List ReviewBee review runs."
+
+[[routes]]
+method = "GET"
+path = "/api/products/review-bee/runs/:id"
+description = "Read a ReviewBee review run detail."
+
+[[routes]]
+method = "GET"
+path = "/api/products/review-bee/overview"
+description = "Read ReviewBee overview metrics and recent reviews."
+
+[[routes]]
+method = "GET"
+path = "/api/products/review-bee/history"
+description = "List ReviewBee review history."
+
+[[routes]]
+method = "GET"
+path = "/api/products/review-bee/history/:id"
+description = "Read a ReviewBee review detail."
+
+[[routes]]
+method = "POST"
+path = "/api/products/review-bee/webhooks/github"
+description = "Receive signed GitHub PR review webhooks."
