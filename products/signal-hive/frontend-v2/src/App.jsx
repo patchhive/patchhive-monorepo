@@ -473,7 +473,7 @@ function RepoCard({ repo }) {
   );
 }
 
-function RadarScope({ scan }) {
+function RadarScope({ resetKey, scan }) {
   const items = useMemo(() => buildRadarItems(scan), [scan]);
   const windows = useMemo(() => buildRadarWindows(scan), [scan]);
   const feed = useMemo(() => {
@@ -508,6 +508,7 @@ function RadarScope({ scan }) {
       gainLabel="Priority gain"
       itemQueryParam="repo"
       items={items}
+      key={`signal-radar-${scan?.id || "empty"}-${resetKey}`}
       signalLabel="signals"
       vectorLabel="Sweep vector"
       windows={windows}
@@ -833,7 +834,6 @@ function AtlasBoard({
   error,
   health,
   onClearPreset,
-  onClearScan,
   onClearSchedule,
   onDeletePreset,
   onDeleteSchedule,
@@ -841,6 +841,7 @@ function AtlasBoard({
   onLoadPreset,
   onLoadSchedule,
   onRefresh,
+  onResetRadarView,
   onRun,
   onRunSchedule,
   onSavePreset,
@@ -848,6 +849,7 @@ function AtlasBoard({
   params,
   presetName,
   presets,
+  radarResetKey,
   repoLists,
   running,
   scan,
@@ -883,7 +885,7 @@ function AtlasBoard({
             <div className="actions">
               <span className="chip signal">{params.max_repos} repos max</span>
               <span className="chip">{toList(params.languages).join(" - ") || "allowlist"}</span>
-              {scan && <button className="btn" onClick={onClearScan} type="button">Clear scan</button>}
+              {scan && <button className="btn" onClick={onResetRadarView} type="button">Reset radar</button>}
               <button className="btn primary" disabled={running} onClick={onRun} type="button">
                 {running ? "Scanning" : "Run sweep"}
               </button>
@@ -928,7 +930,7 @@ function AtlasBoard({
               title="Field intensity map"
               action={<span className="chip signal">{scan ? "live radar" : "idle radar"}</span>}
             >
-              <RadarScope scan={scan} />
+              <RadarScope resetKey={radarResetKey} scan={scan} />
             </Panel>
             <QueuePanel onExportReport={onExportReport} scan={scan} sortBy={sortBy} setSortBy={setSortBy} />
           </div>
@@ -1251,6 +1253,7 @@ export default function App() {
   const [schedules, setSchedules] = useState([]);
   const [repoLists, setRepoLists] = useState([]);
   const [sortBy, setSortBy] = useState("priority");
+  const [radarResetKey, setRadarResetKey] = useState(0);
   const [running, setRunning] = useState(false);
   const [loadingScan, setLoadingScan] = useState(false);
   const [error, setError] = useState("");
@@ -1483,6 +1486,23 @@ export default function App() {
     setError("");
   };
 
+  const resetRadarView = () => {
+    if (typeof window !== "undefined") {
+      const nextParams = new URLSearchParams(window.location.search);
+      nextParams.delete("repo");
+      nextParams.delete("window");
+      const query = nextParams.toString();
+      window.history.replaceState(
+        null,
+        "",
+        `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash || ""}`,
+      );
+    }
+    setRadarResetKey((value) => value + 1);
+    setError("");
+    setActionMessage({ tone: "signal", text: "Radar view reset." });
+  };
+
   const exportReport = async () => {
     if (!scan?.id) return;
     try {
@@ -1599,7 +1619,6 @@ export default function App() {
           checks={checks}
           error={error}
           health={health}
-          onClearScan={clearScan}
           onClearPreset={clearPreset}
           onClearSchedule={clearSchedule}
           onDeletePreset={deletePreset}
@@ -1608,6 +1627,7 @@ export default function App() {
           onLoadPreset={loadPreset}
           onLoadSchedule={loadSchedule}
           onRefresh={() => refreshCollections()}
+          onResetRadarView={resetRadarView}
           onRun={runScan}
           onRunSchedule={runSchedule}
           onSavePreset={savePreset}
@@ -1615,6 +1635,7 @@ export default function App() {
           params={params}
           presetName={presetName}
           presets={presets}
+          radarResetKey={radarResetKey}
           repoLists={repoLists}
           running={running}
           scan={scan}
