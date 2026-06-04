@@ -12,6 +12,7 @@ use crate::{
 pub struct AppState {
     pub config: Config,
     pub registry: ProductRegistry,
+    pub http: reqwest::Client,
     db: SharedDb,
     started_at: chrono::DateTime<Utc>,
 }
@@ -24,6 +25,7 @@ impl AppState {
         let state = Self {
             config,
             registry,
+            http: reqwest::Client::new(),
             db,
             started_at,
         };

@@ -1,9 +1,11 @@
+use std::env;
+
 use anyhow::{Context, Result};
 use serde::Deserialize;
 
 use crate::models::{
-    AuthStatusResponse, CapabilityMetadata, MigrationStage, ProductHealthResponse, ProductResponse,
-    ProductStatus, RouteClaim, RuntimeProduct, SafetyBoundary, SetupProduct,
+    AuthStatusResponse, CapabilityMetadata, GatewayStatus, MigrationStage, ProductHealthResponse,
+    ProductResponse, ProductStatus, RouteClaim, RuntimeProduct, SafetyBoundary, SetupProduct,
 };
 
 const MANIFEST_SOURCES: &[&str] = &[
@@ -42,7 +44,15 @@ pub struct ProductManifest {
     #[serde(default)]
     pub safety: SafetyBoundary,
     #[serde(default)]
+    pub gateway: Option<GatewayConfig>,
+    #[serde(default)]
     pub routes: Vec<RouteClaim>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+pub struct GatewayConfig {
+    pub default_url: Option<String>,
+    pub env_var: Option<String>,
 }
 
 fn default_route_prefix() -> String {
@@ -74,7 +84,18 @@ impl ProductRegistry {
 }
 
 impl ProductManifest {
+    pub fn gateway_target_url(&self) -> Option<String> {
+        self.gateway.as_ref().and_then(GatewayConfig::target_url)
+    }
+
+    pub fn route_claim_for(&self, method: &str, path: &str) -> Option<&RouteClaim> {
+        self.routes.iter().find(|route| {
+            route.method.eq_ignore_ascii_case(method) && route_path_matches(&route.path, path)
+        })
+    }
+
     pub fn to_response(&self, enabled: bool) -> ProductResponse {
+        let gateway = self.gateway_status();
         ProductResponse {
             key: self.key.clone(),
             slug: self.key.clone(),
@@ -84,7 +105,7 @@ impl ProductManifest {
             role: self.role.clone(),
             module_path: self.module_path.clone(),
             enabled,
-            status: product_status(enabled),
+            status: product_status(enabled, gateway.configured),
             migration_stage: self.migration_stage(),
             route_prefix: self.route_prefix.clone(),
             capabilities: self
@@ -94,6 +115,7 @@ impl ProductManifest {
                 .collect(),
             capability_metadata: self.capabilities.clone(),
             safety: self.safety.clone(),
+            gateway,
             routes: self.routes.clone(),
         }
     }
@@ -105,12 +127,16 @@ impl ProductManifest {
                 icon: self.code.clone(),
                 title: self.name.clone(),
                 role: self.role.clone(),
-                status: runtime_status(&self.key, enabled),
+                status: runtime_status(&self.key, enabled, self.gateway_target_url().is_some()),
                 api_url: self.route_prefix.clone(),
                 enabled,
                 service_token_configured: false,
                 legacy_api_key_configured: false,
-                contract_drift_count: contract_drift_count(&self.key, enabled),
+                contract_drift_count: contract_drift_count(
+                    &self.key,
+                    enabled,
+                    self.gateway_target_url().is_some(),
+                ),
             },
             pairing_ready: false,
             auth_status: AuthStatusResponse {
@@ -128,7 +154,7 @@ impl ProductManifest {
             key: self.key.clone(),
             name: self.name.clone(),
             enabled,
-            status: product_status(enabled),
+            status: product_status(enabled, self.gateway_target_url().is_some()),
             migration_stage: self.migration_stage(),
             message: if enabled {
                 format!(
@@ -153,28 +179,56 @@ impl ProductManifest {
             .position(|key| *key == self.key.as_str())
             .unwrap_or(usize::MAX)
     }
-}
 
-pub fn product_status(enabled: bool) -> ProductStatus {
-    if enabled {
-        ProductStatus::EnginePending
-    } else {
-        ProductStatus::Disabled
+    fn gateway_status(&self) -> GatewayStatus {
+        let target_url = self.gateway_target_url();
+        GatewayStatus {
+            configured: target_url.is_some(),
+            target_url,
+            env_var: self
+                .gateway
+                .as_ref()
+                .and_then(|gateway| gateway.env_var.clone()),
+        }
     }
 }
 
-pub fn runtime_status(key: &str, enabled: bool) -> &'static str {
+impl GatewayConfig {
+    pub fn target_url(&self) -> Option<String> {
+        self.env_var
+            .as_ref()
+            .and_then(|key| env::var(key).ok())
+            .filter(|value| !value.trim().is_empty())
+            .or_else(|| self.default_url.clone())
+            .map(|value| value.trim().trim_end_matches('/').to_string())
+            .filter(|value| !value.is_empty())
+    }
+}
+
+pub fn product_status(enabled: bool, gateway_configured: bool) -> ProductStatus {
+    if !enabled {
+        ProductStatus::Disabled
+    } else if gateway_configured {
+        ProductStatus::GatewayPending
+    } else {
+        ProductStatus::EnginePending
+    }
+}
+
+pub fn runtime_status(key: &str, enabled: bool, gateway_configured: bool) -> &'static str {
     if !enabled {
         "disabled"
     } else if key == "hive-core" {
         "online"
+    } else if gateway_configured {
+        "gateway-pending"
     } else {
         "degraded"
     }
 }
 
-pub fn contract_drift_count(key: &str, enabled: bool) -> usize {
-    if enabled && key != "hive-core" {
+pub fn contract_drift_count(key: &str, enabled: bool, gateway_configured: bool) -> usize {
+    if enabled && key != "hive-core" && !gateway_configured {
         1
     } else {
         0
@@ -196,6 +250,27 @@ const PRODUCT_ORDER: &[&str] = &[
     "repo-reaper",
 ];
 
+fn route_path_matches(pattern: &str, path: &str) -> bool {
+    let pattern_parts = pattern.trim_matches('/').split('/').collect::<Vec<_>>();
+    let path_parts = path.trim_matches('/').split('/').collect::<Vec<_>>();
+
+    let mut path_index = 0;
+    for part in pattern_parts {
+        if part.starts_with('*') {
+            return true;
+        }
+        let Some(path_part) = path_parts.get(path_index) else {
+            return false;
+        };
+        if !part.starts_with(':') && part != *path_part {
+            return false;
+        }
+        path_index += 1;
+    }
+
+    path_index == path_parts.len()
+}
+
 #[cfg(test)]
 mod tests {
     use super::ProductRegistry;
@@ -211,6 +286,16 @@ mod tests {
         assert!(!signal_hive.capabilities.is_empty());
         assert!(!signal_hive.routes.is_empty());
         assert!(signal_hive.safety.read_only);
+        assert!(signal_hive.gateway_target_url().is_some());
+        assert!(signal_hive
+            .route_claim_for("GET", "/api/products/signal-hive/history/scan-1/timeline")
+            .is_some());
+        assert!(signal_hive
+            .route_claim_for("DELETE", "/api/products/signal-hive/repo-lists/owner/repo")
+            .is_some());
+        assert!(signal_hive
+            .route_claim_for("POST", "/api/products/signal-hive/not-a-real-route")
+            .is_none());
         assert_eq!(signal_hive.module_path, "crate::products::signal_hive");
     }
 }

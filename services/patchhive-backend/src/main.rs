@@ -1,5 +1,6 @@
 mod config;
 mod db;
+mod gateway;
 mod models;
 mod registry;
 mod routes;

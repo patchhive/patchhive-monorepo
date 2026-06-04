@@ -73,6 +73,7 @@ Each manifest declares:
 - `migration_stage` so HiveCore can tell shell, gateway, and integrated products apart.
 - `[[capabilities]]` entries with `id`, `label`, `description`, and optional `mutating`.
 - `[safety]` boundaries such as read-only status, external writes, repo mutation, approval requirements, credential scopes, and required evidence.
+- Optional `[gateway]` settings with `default_url` and `env_var` while a product still runs in its existing backend.
 - `[[routes]]` claims with method, path, and description.
 
 Example:
@@ -91,6 +92,10 @@ read_only = true
 credential_scopes = ["github:repo:read", "github:issues:read"]
 evidence_required = ["scan parameters", "repo sample list"]
 
+[gateway]
+default_url = "http://127.0.0.1:8010"
+env_var = "SIGNAL_HIVE_GATEWAY_URL"
+
 [[capabilities]]
 id = "signal-scan"
 label = "Signal scan"
@@ -98,13 +103,38 @@ description = "Scan repos for maintenance pressure."
 
 [[routes]]
 method = "POST"
-path = "/api/products/signal-hive/scans"
+path = "/api/products/signal-hive/scan"
 description = "Start a maintenance signal scan."
 ```
 
-The current registry is metadata-only. Product modules are not mounted yet, but
-the manifest contract is the shape that future in-process mounting and gateway
-dispatch should use.
+Product modules are not mounted in-process yet, but the manifest contract now
+drives gateway dispatch and is the shape future in-process mounting should use.
+
+## Gateway Dispatch
+
+Gateway dispatch lets the unified backend expose stable suite URLs while the
+actual product engine still runs in its existing backend.
+
+SignalHive is the first gateway target:
+
+```bash
+SIGNAL_HIVE_GATEWAY_URL=http://127.0.0.1:8010 \
+PATCHHIVE_BIND_ADDR=127.0.0.1:8120 \
+PATCHHIVE_PRODUCTS=hive-core,signal-hive \
+cargo run
+```
+
+Requests under `/api/products/signal-hive/*` are validated against the
+SignalHive manifest route claims, then forwarded to the SignalHive backend with
+the product prefix stripped. For example:
+
+```text
+GET  /api/products/signal-hive/health  -> GET  http://127.0.0.1:8010/health
+POST /api/products/signal-hive/scan    -> POST http://127.0.0.1:8010/scan
+```
+
+Unclaimed routes return `route-not-claimed`; disabled products return
+`product-disabled`; missing gateway targets return `gateway-unconfigured`.
 
 ## Shared DB
 

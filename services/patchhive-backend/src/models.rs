@@ -45,6 +45,7 @@ pub struct ProductResponse {
     pub capabilities: Vec<String>,
     pub capability_metadata: Vec<CapabilityMetadata>,
     pub safety: SafetyBoundary,
+    pub gateway: GatewayStatus,
     pub routes: Vec<RouteClaim>,
 }
 
@@ -81,6 +82,13 @@ pub struct RouteClaim {
     pub method: String,
     pub path: String,
     pub description: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct GatewayStatus {
+    pub configured: bool,
+    pub target_url: Option<String>,
+    pub env_var: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

@@ -11,6 +11,10 @@ read_only = true
 credential_scopes = ["github:repo:read", "github:issues:read", "github:code:read"]
 evidence_required = ["scan parameters", "repo sample list"]
 
+[gateway]
+default_url = "http://127.0.0.1:8010"
+env_var = "SIGNAL_HIVE_GATEWAY_URL"
+
 [[capabilities]]
 id = "repo-discovery"
 label = "Repo discovery"
@@ -32,11 +36,126 @@ path = "/api/products/signal-hive/health"
 description = "Report SignalHive runtime health."
 
 [[routes]]
+method = "GET"
+path = "/api/products/signal-hive/auth/status"
+description = "Read SignalHive auth bootstrap state."
+
+[[routes]]
 method = "POST"
-path = "/api/products/signal-hive/scans"
-description = "Start a maintenance signal scan."
+path = "/api/products/signal-hive/auth/login"
+description = "Validate a SignalHive API key."
+
+[[routes]]
+method = "POST"
+path = "/api/products/signal-hive/auth/generate-key"
+description = "Generate the first local SignalHive API key."
+
+[[routes]]
+method = "POST"
+path = "/api/products/signal-hive/auth/generate-service-token"
+description = "Generate a SignalHive service token for HiveCore."
+
+[[routes]]
+method = "POST"
+path = "/api/products/signal-hive/auth/rotate-service-token"
+description = "Rotate the SignalHive service token."
+
+[[routes]]
+method = "GET"
+path = "/api/products/signal-hive/startup/checks"
+description = "Read SignalHive startup checks."
+
+[[routes]]
+method = "GET"
+path = "/api/products/signal-hive/capabilities"
+description = "Read SignalHive product capabilities."
 
 [[routes]]
 method = "GET"
 path = "/api/products/signal-hive/runs"
+description = "List SignalHive run summaries."
+
+[[routes]]
+method = "GET"
+path = "/api/products/signal-hive/runs/:id"
+description = "Read a SignalHive run detail."
+
+[[routes]]
+method = "POST"
+path = "/api/products/signal-hive/smoke"
+description = "Run a SignalHive smoke check."
+
+[[routes]]
+method = "GET"
+path = "/api/products/signal-hive/presets"
+description = "List SignalHive scan presets."
+
+[[routes]]
+method = "POST"
+path = "/api/products/signal-hive/presets"
+description = "Save a SignalHive scan preset."
+
+[[routes]]
+method = "DELETE"
+path = "/api/products/signal-hive/presets/:name"
+description = "Delete a SignalHive scan preset."
+
+[[routes]]
+method = "GET"
+path = "/api/products/signal-hive/schedules"
+description = "List SignalHive scan schedules."
+
+[[routes]]
+method = "POST"
+path = "/api/products/signal-hive/schedules"
+description = "Save a SignalHive scan schedule."
+
+[[routes]]
+method = "DELETE"
+path = "/api/products/signal-hive/schedules/:name"
+description = "Delete a SignalHive scan schedule."
+
+[[routes]]
+method = "POST"
+path = "/api/products/signal-hive/schedules/:name/run"
+description = "Run a SignalHive schedule immediately."
+
+[[routes]]
+method = "GET"
+path = "/api/products/signal-hive/repo-lists"
+description = "List SignalHive repo discovery controls."
+
+[[routes]]
+method = "POST"
+path = "/api/products/signal-hive/repo-lists"
+description = "Add a SignalHive repo discovery control."
+
+[[routes]]
+method = "DELETE"
+path = "/api/products/signal-hive/repo-lists/*repo"
+description = "Remove a SignalHive repo discovery control."
+
+[[routes]]
+method = "POST"
+path = "/api/products/signal-hive/scan"
+description = "Start a maintenance signal scan."
+
+[[routes]]
+method = "GET"
+path = "/api/products/signal-hive/history"
 description = "List SignalHive scan history."
+
+[[routes]]
+method = "GET"
+path = "/api/products/signal-hive/history/:id"
+description = "Read a SignalHive scan detail."
+
+[[routes]]
+method = "GET"
+path = "/api/products/signal-hive/history/:id/timeline"
+description = "Read a SignalHive scan timeline."
+
+[[routes]]
+method = "GET"
+path = "/api/products/signal-hive/history/:id/report"
+description = "Read a SignalHive scan report."

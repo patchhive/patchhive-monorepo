@@ -116,6 +116,12 @@ The unified backend can proxy to existing product backends while product logic i
 
 Gateway mode should be treated as a bridge, not the end state.
 
+Gateway targets are declared in product registry manifests with optional
+`[gateway]` blocks. The unified backend validates a request against the
+product's `[[routes]]` claims before forwarding it to the configured target.
+SignalHive is the first gateway target, defaulting to `http://127.0.0.1:8010`
+and overrideable with `SIGNAL_HIVE_GATEWAY_URL`.
+
 ## HiveCore Role
 
 HiveCore should connect to `patchhive-backend` like every other frontend.
@@ -202,6 +208,7 @@ Each product manifest declares:
 - migration state: `migration_stage`
 - capability metadata: `[[capabilities]]` with optional `mutating`
 - safety boundaries: `[safety]` read-only state, external writes, repo mutation, approval requirements, credential scopes, and evidence expectations
+- gateway target: optional `[gateway]` default URL and env override while product logic still lives in the old backend
 - route claims: `[[routes]]` with method, path, and description
 
 This gives HiveCore and the backend one source of truth for what a product is,
