@@ -13,6 +13,10 @@ requires_operator_approval = true
 credential_scopes = ["github:pull_requests:read", "github:checks:write"]
 evidence_required = ["diff", "policy pack", "decision report"]
 
+[gateway]
+default_url = "http://127.0.0.1:8020"
+env_var = "TRUST_GATE_GATEWAY_URL"
+
 [health]
 endpoint = "/api/products/trust-gate/health"
 timeout_ms = 2000
@@ -39,6 +43,46 @@ path = "/api/products/trust-gate/health"
 description = "Report TrustGate runtime health."
 
 [[routes]]
+method = "GET"
+path = "/api/products/trust-gate/auth/status"
+description = "Read TrustGate auth bootstrap state."
+
+[[routes]]
+method = "POST"
+path = "/api/products/trust-gate/auth/login"
+description = "Validate a TrustGate API key."
+
+[[routes]]
+method = "POST"
+path = "/api/products/trust-gate/auth/generate-key"
+description = "Generate the first local TrustGate API key."
+
+[[routes]]
+method = "POST"
+path = "/api/products/trust-gate/auth/generate-service-token"
+description = "Generate a TrustGate service token for HiveCore."
+
+[[routes]]
+method = "POST"
+path = "/api/products/trust-gate/auth/rotate-service-token"
+description = "Rotate the TrustGate service token."
+
+[[routes]]
+method = "GET"
+path = "/api/products/trust-gate/startup/checks"
+description = "Read TrustGate startup checks."
+
+[[routes]]
+method = "GET"
+path = "/api/products/trust-gate/capabilities"
+description = "Read TrustGate product capabilities."
+
+[[routes]]
+method = "POST"
+path = "/api/products/trust-gate/review"
+description = "Review a pasted unified diff against TrustGate rules."
+
+[[routes]]
 method = "POST"
 path = "/api/products/trust-gate/review/github/pr"
 description = "Review a GitHub PR diff."
@@ -47,3 +91,58 @@ description = "Review a GitHub PR diff."
 method = "GET"
 path = "/api/products/trust-gate/runs"
 description = "List TrustGate decisions."
+
+[[routes]]
+method = "GET"
+path = "/api/products/trust-gate/runs/:id"
+description = "Read a TrustGate decision detail."
+
+[[routes]]
+method = "GET"
+path = "/api/products/trust-gate/rule-packs"
+description = "List TrustGate built-in rule packs."
+
+[[routes]]
+method = "GET"
+path = "/api/products/trust-gate/rules"
+description = "List saved TrustGate repo rules."
+
+[[routes]]
+method = "POST"
+path = "/api/products/trust-gate/rules"
+description = "Save TrustGate repo rules."
+
+[[routes]]
+method = "DELETE"
+path = "/api/products/trust-gate/rules/*repo"
+description = "Delete TrustGate repo rules."
+
+[[routes]]
+method = "GET"
+path = "/api/products/trust-gate/templates"
+description = "List TrustGate report templates."
+
+[[routes]]
+method = "POST"
+path = "/api/products/trust-gate/templates"
+description = "Save TrustGate report templates."
+
+[[routes]]
+method = "DELETE"
+path = "/api/products/trust-gate/templates/*repo"
+description = "Delete TrustGate report templates."
+
+[[routes]]
+method = "GET"
+path = "/api/products/trust-gate/history"
+description = "List TrustGate decision history."
+
+[[routes]]
+method = "GET"
+path = "/api/products/trust-gate/history/:id"
+description = "Read a TrustGate decision detail."
+
+[[routes]]
+method = "POST"
+path = "/api/products/trust-gate/webhooks/github"
+description = "Receive signed GitHub PR webhooks for TrustGate review."
