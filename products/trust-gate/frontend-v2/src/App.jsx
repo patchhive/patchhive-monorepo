@@ -741,6 +741,20 @@ function HistorySurface({ activeReviewId, health, history, loading, onClearRevie
           )}
         </div>
       </Panel>
+      {review && (
+        <div className="atlas-layout suite-four-layout">
+          <Panel eyebrow="Decision" title="Selected decision" action={<span className={`chip ${recommendationTone(review.recommendation)}`}>{review.recommendation}</span>}>
+            <DecisionGauge health={health} history={history} review={review} />
+          </Panel>
+          <RuleHitPanel review={review} />
+        </div>
+      )}
+      {review && (
+        <div className="atlas-layout suite-four-layout">
+          <FileRiskPanel review={review} />
+          <OutputPanel health={health} review={review} />
+        </div>
+      )}
     </TabFrame>
   );
 }
@@ -1070,7 +1084,6 @@ export default function App() {
       if (result.rules) {
         setRuleForm(fromRules(result.rules));
       }
-      setActiveTab("review");
     } catch (err) {
       setError(err.message || "TrustGate could not load that review.");
     } finally {
