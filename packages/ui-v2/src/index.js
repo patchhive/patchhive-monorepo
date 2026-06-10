@@ -1,5 +1,6 @@
 export {
   DeckBar,
+  HistoryDetailGrid,
   MetricBand,
   Panel,
   PatchHiveProductFooter,

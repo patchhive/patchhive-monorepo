@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createApiFetcher, useApiKeyAuth, useProductRuntime } from "@patchhivehq/product-shell/auth";
 import {
   DeckBar,
+  HistoryDetailGrid,
   MetricBand,
   Panel,
   ProductV2AuthGate,
@@ -693,6 +694,12 @@ function HistorySurface({ config, health, history, loading, onClearRun, onLoadRu
           )}
         </div>
       </Panel>
+      {selectedRun && (
+        <HistoryDetailGrid>
+          <CandidatePanel issues={stream.issues} onLoadRun={onLoadRun} selectedRun={selectedRun} />
+          <ValidationPanel selectedRun={selectedRun} stream={stream} />
+        </HistoryDetailGrid>
+      )}
     </SecondaryFrame>
   );
 }
@@ -978,7 +985,6 @@ export default function App() {
     try {
       const run = await fetchJson(`/history/${id}`, undefined, "RepoReaper could not load that run.");
       setSelectedRun(run);
-      setActiveTab("mission");
     } catch (err) {
       setError(err.message || "RepoReaper could not load that run.");
     }

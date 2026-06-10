@@ -640,6 +640,10 @@ h1 {
   grid-template-columns: minmax(0, 1.34fr) minmax(260px, 0.66fr);
 }
 
+.history-detail-grid {
+  align-items: start;
+}
+
 .queue-grid,
 .candidate-grid {
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));

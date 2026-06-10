@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createApiFetcher, useApiKeyAuth, useProductRuntime } from "@patchhivehq/product-shell/auth";
 import {
   DeckBar,
+  HistoryDetailGrid,
   MetricBand,
   Panel,
   ProductV2AuthGate,
@@ -776,6 +777,14 @@ function HistorySurface({ activeAssessmentId, assessment, health, history, loadi
           )}
         </div>
       </Panel>
+      {assessment && (
+        <HistoryDetailGrid>
+          <Panel eyebrow="Readiness" title="Selected merge pressure map" action={<span className="chip signal">merge radar</span>}>
+            <ReadinessMap assessment={assessment} health={health} history={history} />
+          </Panel>
+          <BlockerPanel assessment={assessment} history={history} onLoadAssessment={onLoadAssessment} />
+        </HistoryDetailGrid>
+      )}
     </SecondaryFrame>
   );
 }
@@ -947,7 +956,6 @@ export default function App() {
         publish_report: false,
         require_approval: result.approval_required !== false,
       });
-      setActiveTab("readiness");
     } catch (err) {
       setError(err.message || "MergeKeeper could not load that assessment.");
     } finally {

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createApiFetcher, useApiKeyAuth, useProductRuntime } from "@patchhivehq/product-shell/auth";
 import {
   DeckBar,
+  HistoryDetailGrid,
   MetricBand,
   Panel,
   ProductV2AuthGate,
@@ -742,18 +743,18 @@ function HistorySurface({ activeReviewId, health, history, loading, onClearRevie
         </div>
       </Panel>
       {review && (
-        <div className="atlas-layout suite-four-layout">
+        <HistoryDetailGrid>
           <Panel eyebrow="Decision" title="Selected decision" action={<span className={`chip ${recommendationTone(review.recommendation)}`}>{review.recommendation}</span>}>
             <DecisionGauge health={health} history={history} review={review} />
           </Panel>
           <RuleHitPanel review={review} />
-        </div>
+        </HistoryDetailGrid>
       )}
       {review && (
-        <div className="atlas-layout suite-four-layout">
+        <HistoryDetailGrid>
           <FileRiskPanel review={review} />
           <OutputPanel health={health} review={review} />
-        </div>
+        </HistoryDetailGrid>
       )}
     </TabFrame>
   );

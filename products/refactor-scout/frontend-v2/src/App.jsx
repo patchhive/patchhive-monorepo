@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createApiFetcher, useApiKeyAuth, useProductRuntime } from "@patchhivehq/product-shell/auth";
 import {
   DeckBar,
+  HistoryDetailGrid,
   MetricBand,
   Panel,
   ProductV2AuthGate,
@@ -466,6 +467,14 @@ function HistorySurface({ activeScanId, health, history, loading, onClearScan, o
           )}
         </div>
       </Panel>
+      {scan && (
+        <HistoryDetailGrid>
+          <Panel eyebrow="Scout" title="Selected opportunity map" action={<span className="chip signal">scout radar</span>}>
+            <RefactorMap health={health} history={history} scan={scan} />
+          </Panel>
+          <LeadQueuePanel history={history} onLoadScan={onLoadScan} scan={scan} />
+        </HistoryDetailGrid>
+      )}
     </SecondaryFrame>
   );
 }
@@ -615,7 +624,6 @@ export default function App() {
       const result = await fetchJson(`/history/${id}`, undefined, "RefactorScout could not load that scan.");
       setScan(result);
       setForm((current) => ({ ...current, repo_path: result.repo_path || current.repo_path }));
-      setActiveTab("scout");
     } catch (err) {
       setError(err.message || "RefactorScout could not load that scan.");
     } finally {

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createApiFetcher, useApiKeyAuth, useProductRuntime } from "@patchhivehq/product-shell/auth";
 import {
   DeckBar,
+  HistoryDetailGrid,
   MetricBand,
   Panel,
   ProductV2AuthGate,
@@ -712,7 +713,14 @@ function HistorySurface({ activeReviewId, health, history, loading, onClearRevie
           )}
         </div>
       </Panel>
-      {review && <ChecklistPanel history={history} onLoadReview={onLoadReview} review={review} />}
+      {review && (
+        <HistoryDetailGrid>
+          <Panel eyebrow="Threads" title="Selected thread map" action={<span className="chip signal">review radar</span>}>
+            <ThreadMap health={health} history={history} overview={overview} review={review} />
+          </Panel>
+          <ChecklistPanel history={history} onLoadReview={onLoadReview} review={review} />
+        </HistoryDetailGrid>
+      )}
     </TabFrame>
   );
 }

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createApiFetcher, useApiKeyAuth, useProductRuntime } from "@patchhivehq/product-shell/auth";
 import {
   DeckBar,
+  HistoryDetailGrid,
   MetricBand,
   Panel,
   ProductV2AuthGate,
@@ -603,6 +604,14 @@ function HistorySurface({ activeScanId, health, history, loading, onClearScan, o
           )}
         </div>
       </Panel>
+      {scan && (
+        <HistoryDetailGrid>
+          <Panel eyebrow="Instability" title="Selected CI signal map" action={<span className="chip signal">ci radar</span>}>
+            <InstabilityMap health={health} history={history} scan={scan} />
+          </Panel>
+          <FlakyQueuePanel history={history} onLoadScan={onLoadScan} scan={scan} />
+        </HistoryDetailGrid>
+      )}
     </SecondaryFrame>
   );
 }
@@ -764,7 +773,6 @@ export default function App() {
         repo: result.repo || current.repo,
         workflow_name: result.workflow_name || current.workflow_name,
       }));
-      setActiveTab("instability");
     } catch (err) {
       setError(err.message || "FlakeSting could not load that scan.");
     } finally {

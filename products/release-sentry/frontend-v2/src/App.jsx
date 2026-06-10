@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createApiFetcher, useApiKeyAuth, useProductRuntime } from "@patchhivehq/product-shell/auth";
 import {
   DeckBar,
+  HistoryDetailGrid,
   MetricBand,
   Panel,
   ProductV2AuthGate,
@@ -516,6 +517,14 @@ function HistorySurface({ activeRunId, health, history, loading, onClearRun, onL
           )}
         </div>
       </Panel>
+      {run && (
+        <HistoryDetailGrid>
+          <Panel eyebrow="Gate" title="Selected readiness map" action={<span className="chip signal">release radar</span>}>
+            <ReleaseMap health={health} history={history} run={run} />
+          </Panel>
+          <GateQueuePanel history={history} onLoadRun={onLoadRun} run={run} />
+        </HistoryDetailGrid>
+      )}
     </SecondaryFrame>
   );
 }
@@ -682,7 +691,6 @@ export default function App() {
         target_version: result.target_version || current.target_version,
         target_tag: result.target_tag || current.target_tag,
       }));
-      setActiveTab("gate");
     } catch (err) {
       setError(err.message || "ReleaseSentry could not load that run.");
     } finally {

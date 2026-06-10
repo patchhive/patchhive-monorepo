@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createApiFetcher, useApiKeyAuth, useProductRuntime } from "@patchhivehq/product-shell/auth";
 import {
   DeckBar,
+  HistoryDetailGrid,
   MetricBand,
   Panel,
   ProductV2AuthGate,
@@ -485,6 +486,14 @@ function HistorySurface({ activeScanId, health, history, loading, onClearScan, o
           )}
         </div>
       </Panel>
+      {scan && (
+        <HistoryDetailGrid>
+          <Panel eyebrow="Triage" title="Selected dependency map" action={<span className="chip signal">dependency radar</span>}>
+            <DependencyMap health={health} history={history} scan={scan} />
+          </Panel>
+          <UpdateQueuePanel history={history} onLoadScan={onLoadScan} scan={scan} />
+        </HistoryDetailGrid>
+      )}
     </SecondaryFrame>
   );
 }
@@ -635,7 +644,6 @@ export default function App() {
       const result = await fetchJson(`/history/${id}`, undefined, "DepTriage could not load that scan.");
       setScan(result);
       setForm((current) => ({ ...current, repo: result.repo || current.repo }));
-      setActiveTab("triage");
     } catch (err) {
       setError(err.message || "DepTriage could not load that scan.");
     } finally {

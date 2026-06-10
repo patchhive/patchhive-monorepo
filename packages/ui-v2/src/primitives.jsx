@@ -516,6 +516,11 @@ export function Panel({ eyebrow, title, action, children }) {
   );
 }
 
+export function HistoryDetailGrid({ children, className = "" }) {
+  const classes = ["history-detail-grid", "atlas-layout", "suite-four-layout", className].filter(Boolean).join(" ");
+  return <div className={classes}>{children}</div>;
+}
+
 function defaultMinWindow(index) {
   if (index < 3) {
     return 7;
