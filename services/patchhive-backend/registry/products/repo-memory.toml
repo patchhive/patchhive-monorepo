@@ -13,6 +13,10 @@ requires_operator_approval = false
 credential_scopes = ["github:repo:read", "github:pull_requests:read", "github:issues:read"]
 evidence_required = ["repo identity", "source event", "memory summary"]
 
+[gateway]
+default_url = "http://127.0.0.1:8030"
+env_var = "REPO_MEMORY_GATEWAY_URL"
+
 [health]
 endpoint = "/api/products/repo-memory/health"
 timeout_ms = 2000
@@ -39,11 +43,121 @@ path = "/api/products/repo-memory/health"
 description = "Report RepoMemory runtime health."
 
 [[routes]]
+method = "GET"
+path = "/api/products/repo-memory/auth/status"
+description = "Read RepoMemory auth bootstrap state."
+
+[[routes]]
 method = "POST"
-path = "/api/products/repo-memory/prompt-pack"
-description = "Generate a repo prompt pack."
+path = "/api/products/repo-memory/auth/login"
+description = "Validate a RepoMemory API key."
+
+[[routes]]
+method = "POST"
+path = "/api/products/repo-memory/auth/generate-key"
+description = "Generate the first local RepoMemory API key."
+
+[[routes]]
+method = "POST"
+path = "/api/products/repo-memory/auth/generate-service-token"
+description = "Generate a RepoMemory service token for HiveCore."
+
+[[routes]]
+method = "POST"
+path = "/api/products/repo-memory/auth/rotate-service-token"
+description = "Rotate the RepoMemory service token."
+
+[[routes]]
+method = "GET"
+path = "/api/products/repo-memory/startup/checks"
+description = "Read RepoMemory startup checks."
+
+[[routes]]
+method = "GET"
+path = "/api/products/repo-memory/capabilities"
+description = "Read RepoMemory product capabilities."
 
 [[routes]]
 method = "GET"
 path = "/api/products/repo-memory/runs"
 description = "List RepoMemory ingest runs."
+
+[[routes]]
+method = "GET"
+path = "/api/products/repo-memory/runs/:id"
+description = "Read a RepoMemory ingest run detail."
+
+[[routes]]
+method = "GET"
+path = "/api/products/repo-memory/overview"
+description = "Read RepoMemory overview metrics and featured memories."
+
+[[routes]]
+method = "GET"
+path = "/api/products/repo-memory/repos"
+description = "List repos known to RepoMemory."
+
+[[routes]]
+method = "GET"
+path = "/api/products/repo-memory/memories"
+description = "List durable RepoMemory entries."
+
+[[routes]]
+method = "POST"
+path = "/api/products/repo-memory/memories/curation"
+description = "Save RepoMemory curation state for a memory."
+
+[[routes]]
+method = "POST"
+path = "/api/products/repo-memory/failguard/lessons"
+description = "Capture a curated FailGuard lesson."
+
+[[routes]]
+method = "GET"
+path = "/api/products/repo-memory/failguard/candidates"
+description = "List reviewable FailGuard candidates."
+
+[[routes]]
+method = "POST"
+path = "/api/products/repo-memory/failguard/candidates"
+description = "Queue a FailGuard candidate for review."
+
+[[routes]]
+method = "POST"
+path = "/api/products/repo-memory/failguard/candidates/:id/promote"
+description = "Promote a FailGuard candidate into durable memory."
+
+[[routes]]
+method = "POST"
+path = "/api/products/repo-memory/failguard/candidates/:id/dismiss"
+description = "Dismiss a FailGuard candidate."
+
+[[routes]]
+method = "POST"
+path = "/api/products/repo-memory/context"
+description = "Return repo context for another PatchHive product or agent."
+
+[[routes]]
+method = "GET"
+path = "/api/products/repo-memory/history"
+description = "List RepoMemory ingest history."
+
+[[routes]]
+method = "GET"
+path = "/api/products/repo-memory/history/:id"
+description = "Read a RepoMemory ingest detail."
+
+[[routes]]
+method = "GET"
+path = "/api/products/repo-memory/history/:id/diff"
+description = "Read memory movement since the previous RepoMemory run."
+
+[[routes]]
+method = "GET"
+path = "/api/products/repo-memory/history/:id/prompt-pack"
+description = "Read a prompt pack for a saved RepoMemory run."
+
+[[routes]]
+method = "POST"
+path = "/api/products/repo-memory/ingest"
+description = "Ingest GitHub repo history into durable memory."
