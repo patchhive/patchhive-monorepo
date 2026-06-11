@@ -675,34 +675,50 @@ function HistorySurface({
       </div>
       {error && <StatusBanner tone="red">{error}</StatusBanner>}
       <HistoryDetailGrid>
-        <Panel eyebrow="History" title="Saved ingests" action={<span className="chip signal">{history.length} runs</span>}>
-          <div className="panelbody repo-list queue-grid">
-            {history.length ? history.map((item) => {
-              const active = selectedRun?.id === item.id;
-              return (
-                <div className={`ledger-row${active ? " active" : ""}`} key={item.id}>
-                  <div className="rank">{String(asCount(item.memories_created)).padStart(2, "0")}</div>
-                  <div>
-                    <div className="repo-name">{item.repo}</div>
-                    <div className="feed-meta">{item.top_memory || runSummary(item)}</div>
-                    <div className="repo-meta">
-                      <span className="chip signal">{timeAgo(item.created_at)}</span>
-                      <span className="chip green">{asCount(item.conventions)} conventions</span>
-                      <span className="chip amber">{asCount(item.failures)} failures</span>
-                      {active && <span className="chip">selected</span>}
+        <div className="control-stack">
+          <Panel eyebrow="History" title="Saved ingests" action={<span className="chip signal">{history.length} runs</span>}>
+            <div className="panelbody repo-list queue-grid">
+              {history.length ? history.map((item) => {
+                const active = selectedRun?.id === item.id;
+                return (
+                  <div className={`ledger-row${active ? " active" : ""}`} key={item.id}>
+                    <div className="rank">{String(asCount(item.memories_created)).padStart(2, "0")}</div>
+                    <div>
+                      <div className="repo-name">{item.repo}</div>
+                      <div className="feed-meta">{item.top_memory || runSummary(item)}</div>
+                      <div className="repo-meta">
+                        <span className="chip signal">{timeAgo(item.created_at)}</span>
+                        <span className="chip green">{asCount(item.conventions)} conventions</span>
+                        <span className="chip amber">{asCount(item.failures)} failures</span>
+                        {active && <span className="chip">selected</span>}
+                      </div>
                     </div>
+                    <button className="btn" disabled={loadingPromptPack} onClick={() => onLoadPromptPack(item.id)} type="button">Load pack</button>
                   </div>
-                  <button className="btn" disabled={loadingPromptPack} onClick={() => onLoadPromptPack(item.id)} type="button">Load pack</button>
+                );
+              }) : (
+                <div className="empty-v2">
+                  <strong>No ingest history</strong>
+                  <span>Run an ingest from Memory core to create the first saved RepoMemory run.</span>
                 </div>
-              );
-            }) : (
-              <div className="empty-v2">
-                <strong>No ingest history</strong>
-                <span>Run an ingest from Memory core to create the first saved RepoMemory run.</span>
-              </div>
-            )}
-          </div>
-        </Panel>
+              )}
+            </div>
+          </Panel>
+          <Panel
+            eyebrow="Prompt pack"
+            title={promptPackRun?.repo || "Loaded context"}
+            action={promptPack ? <button className="btn" onClick={onClearPromptPack} type="button">Clear pack</button> : <span className="chip signal">not loaded</span>}
+          >
+            <div className="panelbody control-stack">
+              <textarea
+                className="v2-input"
+                readOnly
+                style={{ fontFamily: "var(--mono)", lineHeight: 1.45, minHeight: 220, paddingTop: 10, resize: "vertical", whiteSpace: "pre-wrap" }}
+                value={promptPack || "Load a saved ingest to inspect the prompt pack from history."}
+              />
+            </div>
+          </Panel>
+        </div>
         <Panel
           eyebrow="Run detail"
           title={selectedRun?.repo || "No ingest selected"}
@@ -736,20 +752,6 @@ function HistorySurface({
               <span>Saved ingests appear here after RepoMemory reads repository history.</span>
             </div>
           )}
-        </Panel>
-        <Panel
-          eyebrow="Prompt pack"
-          title={promptPackRun?.repo || "Loaded context"}
-          action={promptPack ? <button className="btn" onClick={onClearPromptPack} type="button">Clear pack</button> : <span className="chip signal">not loaded</span>}
-        >
-          <div className="panelbody control-stack">
-            <textarea
-              className="v2-input"
-              readOnly
-              style={{ fontFamily: "var(--mono)", lineHeight: 1.45, minHeight: 220, paddingTop: 10, resize: "vertical", whiteSpace: "pre-wrap" }}
-              value={promptPack || "Load a saved ingest to inspect the prompt pack from history."}
-            />
-          </div>
         </Panel>
       </HistoryDetailGrid>
     </SecondaryFrame>
