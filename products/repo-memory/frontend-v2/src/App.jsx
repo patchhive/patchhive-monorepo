@@ -658,7 +658,7 @@ function HistorySurface({
   promptPack,
   promptPackRun,
 }) {
-  const selectedRun = history.find((item) => item.id === promptPackRun?.id) || history[0] || null;
+  const selectedRun = promptPackRun?.id ? history.find((item) => item.id === promptPackRun.id) || null : null;
   return (
     <SecondaryFrame candidates={candidates} health={health} history={history} memories={memories} overview={overview} selectedRepo={selectedRun?.repo}>
       <div className="hero-row">
