@@ -11,6 +11,10 @@ read_only = true
 credential_scopes = ["local:filesystem:read"]
 evidence_required = ["local path allowlist", "file metrics", "ranking reason"]
 
+[gateway]
+default_url = "http://127.0.0.1:8090"
+env_var = "REFACTOR_SCOUT_GATEWAY_URL"
+
 [health]
 endpoint = "/api/products/refactor-scout/health"
 timeout_ms = 2000

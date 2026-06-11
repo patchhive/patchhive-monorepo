@@ -15,6 +15,10 @@ requires_operator_approval = true
 credential_scopes = ["github:contents:write", "github:pull_requests:write", "provider:ai"]
 evidence_required = ["issue URL", "generated patch", "test result", "TrustGate decision"]
 
+[gateway]
+default_url = "http://127.0.0.1:8110"
+env_var = "REPO_REAPER_GATEWAY_URL"
+
 [health]
 endpoint = "/api/products/repo-reaper/health"
 timeout_ms = 2000

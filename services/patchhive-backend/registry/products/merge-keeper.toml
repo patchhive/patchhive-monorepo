@@ -11,6 +11,10 @@ read_only = true
 credential_scopes = ["github:pull_requests:read", "github:checks:read"]
 evidence_required = ["PR URL", "review state", "check state"]
 
+[gateway]
+default_url = "http://127.0.0.1:8050"
+env_var = "MERGE_KEEPER_GATEWAY_URL"
+
 [health]
 endpoint = "/api/products/merge-keeper/health"
 timeout_ms = 2000

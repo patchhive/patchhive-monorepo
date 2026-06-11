@@ -11,6 +11,10 @@ read_only = true
 credential_scopes = ["github:repo:read", "github:actions:read", "github:releases:read"]
 evidence_required = ["release target", "CI state", "blocker summary"]
 
+[gateway]
+default_url = "http://127.0.0.1:8100"
+env_var = "RELEASE_SENTRY_GATEWAY_URL"
+
 [health]
 endpoint = "/api/products/release-sentry/health"
 timeout_ms = 2000

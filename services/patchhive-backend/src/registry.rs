@@ -291,6 +291,15 @@ mod tests {
             .products()
             .iter()
             .all(|product| !product.health.endpoint.is_empty()));
+        // All products except hive-core (integrated control plane) must have a gateway target.
+        assert!(
+            registry
+                .products()
+                .iter()
+                .filter(|p| p.key != "hive-core")
+                .all(|p| p.gateway_target_url().is_some()),
+            "all products except hive-core must have a gateway target configured"
+        );
         assert!(!signal_hive.capabilities.is_empty());
         assert!(!signal_hive.routes.is_empty());
         assert!(signal_hive.safety.read_only);
