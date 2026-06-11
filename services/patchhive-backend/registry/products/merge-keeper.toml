@@ -7,9 +7,15 @@ route_prefix = "/api/products/merge-keeper"
 migration_stage = "not-started"
 
 [safety]
-read_only = true
-credential_scopes = ["github:pull_requests:read", "github:checks:read"]
-evidence_required = ["PR URL", "review state", "check state"]
+read_only = false
+writes_external_state = true
+requires_operator_approval = true
+credential_scopes = ["github:pull_requests:read", "github:checks:read", "github:checks:write", "github:statuses:write", "github:issues:write"]
+evidence_required = ["PR URL", "review state", "check state", "mergeability state"]
+
+[gateway]
+default_url = "http://127.0.0.1:8050"
+env_var = "MERGE_KEEPER_GATEWAY_URL"
 
 [health]
 endpoint = "/api/products/merge-keeper/health"
@@ -37,6 +43,41 @@ path = "/api/products/merge-keeper/health"
 description = "Report MergeKeeper runtime health."
 
 [[routes]]
+method = "GET"
+path = "/api/products/merge-keeper/auth/status"
+description = "Read MergeKeeper auth bootstrap state."
+
+[[routes]]
+method = "POST"
+path = "/api/products/merge-keeper/auth/login"
+description = "Validate a MergeKeeper API key."
+
+[[routes]]
+method = "POST"
+path = "/api/products/merge-keeper/auth/generate-key"
+description = "Generate the first local MergeKeeper API key."
+
+[[routes]]
+method = "POST"
+path = "/api/products/merge-keeper/auth/generate-service-token"
+description = "Generate a MergeKeeper service token for HiveCore."
+
+[[routes]]
+method = "POST"
+path = "/api/products/merge-keeper/auth/rotate-service-token"
+description = "Rotate the MergeKeeper service token."
+
+[[routes]]
+method = "GET"
+path = "/api/products/merge-keeper/startup/checks"
+description = "Read MergeKeeper startup checks."
+
+[[routes]]
+method = "GET"
+path = "/api/products/merge-keeper/capabilities"
+description = "Read MergeKeeper product capabilities."
+
+[[routes]]
 method = "POST"
 path = "/api/products/merge-keeper/assess/github/pr"
 description = "Assess a GitHub PR for merge readiness."
@@ -45,3 +86,28 @@ description = "Assess a GitHub PR for merge readiness."
 method = "GET"
 path = "/api/products/merge-keeper/runs"
 description = "List MergeKeeper assessments."
+
+[[routes]]
+method = "GET"
+path = "/api/products/merge-keeper/runs/:id"
+description = "Read a MergeKeeper assessment detail."
+
+[[routes]]
+method = "GET"
+path = "/api/products/merge-keeper/overview"
+description = "Read MergeKeeper overview metrics and recent assessments."
+
+[[routes]]
+method = "GET"
+path = "/api/products/merge-keeper/history"
+description = "List MergeKeeper assessment history."
+
+[[routes]]
+method = "GET"
+path = "/api/products/merge-keeper/history/:id"
+description = "Read a MergeKeeper assessment detail."
+
+[[routes]]
+method = "POST"
+path = "/api/products/merge-keeper/webhooks/github"
+description = "Receive signed GitHub PR and check webhooks for MergeKeeper readiness refreshes."
