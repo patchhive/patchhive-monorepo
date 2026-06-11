@@ -11,10 +11,6 @@ read_only = true
 credential_scopes = ["github:pull_requests:read", "github:dependabot:read"]
 evidence_required = ["dependency PRs", "alert sample", "scoring inputs"]
 
-[gateway]
-default_url = "http://127.0.0.1:8070"
-env_var = "DEP_TRIAGE_GATEWAY_URL"
-
 [health]
 endpoint = "/api/products/dep-triage/health"
 timeout_ms = 2000
