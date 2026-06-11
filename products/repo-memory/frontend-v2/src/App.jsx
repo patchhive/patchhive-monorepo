@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createApiFetcher, useApiKeyAuth, useProductRuntime } from "@patchhivehq/product-shell/auth";
 import {
   DeckBar,
+  HistoryDetailGrid,
   MetricBand,
   Panel,
   ProductV2AuthGate,
@@ -15,6 +16,7 @@ import { API } from "./config.js";
 
 const TABS = [
   { id: "core", label: "Memory core" },
+  { id: "history", label: "Ingest history" },
   { id: "failguard", label: "FailGuard" },
   { id: "packs", label: "Prompt packs" },
 ];
@@ -642,6 +644,118 @@ function FailGuardSurface({
   );
 }
 
+function HistorySurface({
+  candidates,
+  error,
+  health,
+  history,
+  loadingPromptPack,
+  memories,
+  onClearPromptPack,
+  onLoadPromptPack,
+  onRefresh,
+  overview,
+  promptPack,
+  promptPackRun,
+}) {
+  const selectedRun = history.find((item) => item.id === promptPackRun?.id) || history[0] || null;
+  return (
+    <SecondaryFrame candidates={candidates} health={health} history={history} memories={memories} overview={overview} selectedRepo={selectedRun?.repo}>
+      <div className="hero-row">
+        <div>
+          <div className="eyebrow">// RepoMemory ingest ledger</div>
+          <h1>Ingest History</h1>
+          <p className="subline">Saved repo memory runs, durable context counts, and prompt-pack handoff state.</p>
+        </div>
+        <div className="actions">
+          {promptPack && <button className="btn" onClick={onClearPromptPack} type="button">Clear pack</button>}
+          <button className="btn" onClick={onRefresh} type="button">Refresh</button>
+          <span className="chip signal">{history.length} saved</span>
+        </div>
+      </div>
+      {error && <StatusBanner tone="red">{error}</StatusBanner>}
+      <HistoryDetailGrid>
+        <Panel eyebrow="History" title="Saved ingests" action={<span className="chip signal">{history.length} runs</span>}>
+          <div className="panelbody repo-list queue-grid">
+            {history.length ? history.map((item) => {
+              const active = selectedRun?.id === item.id;
+              return (
+                <div className={`ledger-row${active ? " active" : ""}`} key={item.id}>
+                  <div className="rank">{String(asCount(item.memories_created)).padStart(2, "0")}</div>
+                  <div>
+                    <div className="repo-name">{item.repo}</div>
+                    <div className="feed-meta">{item.top_memory || runSummary(item)}</div>
+                    <div className="repo-meta">
+                      <span className="chip signal">{timeAgo(item.created_at)}</span>
+                      <span className="chip green">{asCount(item.conventions)} conventions</span>
+                      <span className="chip amber">{asCount(item.failures)} failures</span>
+                      {active && <span className="chip">selected</span>}
+                    </div>
+                  </div>
+                  <button className="btn" disabled={loadingPromptPack} onClick={() => onLoadPromptPack(item.id)} type="button">Load pack</button>
+                </div>
+              );
+            }) : (
+              <div className="empty-v2">
+                <strong>No ingest history</strong>
+                <span>Run an ingest from Memory core to create the first saved RepoMemory run.</span>
+              </div>
+            )}
+          </div>
+        </Panel>
+        <Panel
+          eyebrow="Run detail"
+          title={selectedRun?.repo || "No ingest selected"}
+          action={selectedRun ? <button className="btn" disabled={loadingPromptPack} onClick={() => onLoadPromptPack(selectedRun.id)} type="button">Load pack</button> : <span className="chip signal">empty</span>}
+        >
+          {selectedRun ? (
+            <div className="panelbody control-stack">
+              <MetricBand
+                metrics={[
+                  { label: "Memories", value: String(asCount(selectedRun.memories_created)), tone: asCount(selectedRun.memories_created) ? "sig" : "ok", sub: "created" },
+                  { label: "Conventions", value: String(asCount(selectedRun.conventions)), tone: "ok", sub: "learned" },
+                  { label: "Failures", value: String(asCount(selectedRun.failures)), tone: asCount(selectedRun.failures) ? "warn" : "ok", sub: "patterns" },
+                  { label: "Age", value: timeAgo(selectedRun.created_at), tone: "sig", sub: "saved" },
+                ]}
+              />
+              <div className="feed-item">
+                <div>
+                  <div className="feed-title">Latest memory signal</div>
+                  <div className="feed-meta">{selectedRun.top_memory || runSummary(selectedRun)}</div>
+                </div>
+                <span className={`chip ${asCount(selectedRun.memories_created) ? "green" : "signal"}`}>
+                  {asCount(selectedRun.memories_created) ? "durable" : "early"}
+                </span>
+              </div>
+              <div className="rowline"><span className="muted">Run id</span><span className="chip signal">{selectedRun.id}</span></div>
+              <div className="rowline"><span className="muted">Created</span><span>{selectedRun.created_at || "unknown"}</span></div>
+            </div>
+          ) : (
+            <div className="empty-v2">
+              <strong>No saved run selected</strong>
+              <span>Saved ingests appear here after RepoMemory reads repository history.</span>
+            </div>
+          )}
+        </Panel>
+        <Panel
+          eyebrow="Prompt pack"
+          title={promptPackRun?.repo || "Loaded context"}
+          action={promptPack ? <button className="btn" onClick={onClearPromptPack} type="button">Clear pack</button> : <span className="chip signal">not loaded</span>}
+        >
+          <div className="panelbody control-stack">
+            <textarea
+              className="v2-input"
+              readOnly
+              style={{ fontFamily: "var(--mono)", lineHeight: 1.45, minHeight: 220, paddingTop: 10, resize: "vertical", whiteSpace: "pre-wrap" }}
+              value={promptPack || "Load a saved ingest to inspect the prompt pack from history."}
+            />
+          </div>
+        </Panel>
+      </HistoryDetailGrid>
+    </SecondaryFrame>
+  );
+}
+
 function PromptPackSurface({
   health,
   history,
@@ -939,6 +1053,25 @@ export default function App() {
           onRunIngest={runIngest}
           overview={overview}
           running={running}
+        />
+      )}
+      {activeTab === "history" && (
+        <HistorySurface
+          candidates={candidates}
+          error={error}
+          health={runtime.health || {}}
+          history={history}
+          loadingPromptPack={loadingPromptPack}
+          memories={memories}
+          onClearPromptPack={clearPromptPack}
+          onLoadPromptPack={loadPromptPack}
+          onRefresh={() => {
+            refreshMemoryData();
+            runtime.refresh();
+          }}
+          overview={overview}
+          promptPack={promptPack}
+          promptPackRun={promptPackRun}
         />
       )}
       {activeTab === "failguard" && (
