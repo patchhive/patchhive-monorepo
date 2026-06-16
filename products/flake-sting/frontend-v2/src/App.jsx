@@ -10,6 +10,7 @@ import {
   ProductRail,
   SuiteRadar,
   SuiteTopline,
+  radarWindowFromTimestamp,
   usePersistentProductTab,
 } from "@patchhivehq/ui-v2";
 import { API } from "./config.js";
@@ -300,27 +301,33 @@ function buildRadarItems(scan, history) {
     return [...support, ...signalItems];
   }
   if (history.length) {
-    return history.slice(0, 8).map((item, index) => ({
-      detail: item.repo,
-      gain: item.quarantine_candidates ? "quarantine" : item.flaky_signals ? "watch" : "clear",
-      gainMeta: `${asCount(item.flaky_signals)} signals`,
-      id: item.id || `history-${index + 1}`,
-      label: item.workflow_name || item.repo?.split("/").pop() || `S${index + 1}`,
-      minWindow: index < 3 ? 7 : index < 6 ? 14 : 30,
-      position: POSITIONS[index % POSITIONS.length],
-      stats: [
-        { label: "Repo", value: item.repo },
-        { label: "Workflow", value: item.workflow_name || "all" },
-        { label: "Flaky", value: String(asCount(item.flaky_signals)) },
-        { label: "Quarantine", value: String(asCount(item.quarantine_candidates)) },
-        { label: "Age", value: timeAgo(item.created_at) },
-      ],
-      summary: item.summary || "Saved FlakeSting scan.",
-      title: item.workflow_name || item.repo,
-      tone: item.quarantine_candidates ? "red" : item.flaky_signals ? "amber" : "green",
-      vector: item.trend?.status || "saved",
-      vectorTone: item.quarantine_candidates || item.flaky_signals ? "warn" : "",
-    }));
+    return history.map((item, index) => {
+      const minWindow = radarWindowFromTimestamp(item.created_at);
+      if (!minWindow) {
+        return null;
+      }
+      return {
+        detail: item.repo,
+        gain: item.quarantine_candidates ? "quarantine" : item.flaky_signals ? "watch" : "clear",
+        gainMeta: `${asCount(item.flaky_signals)} signals`,
+        id: item.id || `history-${index + 1}`,
+        label: item.workflow_name || item.repo?.split("/").pop() || `S${index + 1}`,
+        minWindow,
+        position: POSITIONS[index % POSITIONS.length],
+        stats: [
+          { label: "Repo", value: item.repo },
+          { label: "Workflow", value: item.workflow_name || "all" },
+          { label: "Flaky", value: String(asCount(item.flaky_signals)) },
+          { label: "Quarantine", value: String(asCount(item.quarantine_candidates)) },
+          { label: "Age", value: timeAgo(item.created_at) },
+        ],
+        summary: item.summary || "Saved FlakeSting scan.",
+        title: item.workflow_name || item.repo,
+        tone: item.quarantine_candidates ? "red" : item.flaky_signals ? "amber" : "green",
+        vector: item.trend?.status || "saved",
+        vectorTone: item.quarantine_candidates || item.flaky_signals ? "warn" : "",
+      };
+    }).filter(Boolean);
   }
   return [{
     detail: "No workflow scan yet",
@@ -541,7 +548,7 @@ function InstabilitySurface({
           <MetricBand metrics={metrics} />
           <div className="atlas-layout suite-four-layout">
             <Panel eyebrow="Instability" title="CI signal map" action={<span className="chip signal">ci radar</span>}>
-              <InstabilityMap health={health} history={history} scan={scan} />
+              <InstabilityMap health={health} history={history} scan={null} />
             </Panel>
             <FlakyQueuePanel history={history} onLoadScan={onLoadScan} scan={scan} />
           </div>
