@@ -10,6 +10,7 @@ import {
   ProductRail,
   SuiteRadar,
   SuiteTopline,
+  radarWindowFromTimestamp,
   usePersistentProductTab,
 } from "@patchhivehq/ui-v2";
 import { API } from "./config.js";
@@ -176,27 +177,33 @@ function buildRadarItems(scan, history) {
     });
   }
   if (history.length) {
-    return history.slice(0, 8).map((item, index) => ({
-      detail: item.repo,
-      gain: item.fix_now ? "fix now" : item.plan_next ? "plan next" : "watch",
-      gainMeta: `${asCount(item.tracked_findings)} findings`,
-      id: item.id || `history-${index + 1}`,
-      label: item.repo?.split("/").pop() || `S${index + 1}`,
-      minWindow: index < 3 ? 7 : index < 6 ? 14 : 30,
-      position: POSITIONS[index % POSITIONS.length],
-      stats: [
-        { label: "Repo", value: item.repo },
-        { label: "Tracked", value: String(asCount(item.tracked_findings)) },
-        { label: "Fix", value: String(asCount(item.fix_now)) },
-        { label: "Plan", value: String(asCount(item.plan_next)) },
-        { label: "Age", value: timeAgo(item.created_at) },
-      ],
-      summary: item.summary || "Saved VulnTriage scan.",
-      title: item.repo,
-      tone: item.fix_now ? "red" : item.plan_next ? "amber" : "green",
-      vector: "saved",
-      vectorTone: item.fix_now || item.plan_next ? "warn" : "",
-    }));
+    return history.map((item, index) => {
+      const minWindow = radarWindowFromTimestamp(item.created_at);
+      if (!minWindow) {
+        return null;
+      }
+      return {
+        detail: item.repo,
+        gain: item.fix_now ? "fix now" : item.plan_next ? "plan next" : "watch",
+        gainMeta: `${asCount(item.tracked_findings)} findings`,
+        id: item.id || `history-${index + 1}`,
+        label: item.repo?.split("/").pop() || `S${index + 1}`,
+        minWindow,
+        position: POSITIONS[index % POSITIONS.length],
+        stats: [
+          { label: "Repo", value: item.repo },
+          { label: "Tracked", value: String(asCount(item.tracked_findings)) },
+          { label: "Fix", value: String(asCount(item.fix_now)) },
+          { label: "Plan", value: String(asCount(item.plan_next)) },
+          { label: "Age", value: timeAgo(item.created_at) },
+        ],
+        summary: item.summary || "Saved VulnTriage scan.",
+        title: item.repo,
+        tone: item.fix_now ? "red" : item.plan_next ? "amber" : "green",
+        vector: "saved",
+        vectorTone: item.fix_now || item.plan_next ? "warn" : "",
+      };
+    }).filter(Boolean);
   }
   return [{
     detail: "No security scan yet",
@@ -432,7 +439,7 @@ function TriageSurface({
           <MetricBand metrics={metrics} />
           <div className="atlas-layout suite-four-layout">
             <Panel eyebrow="Triage" title="Finding map" action={<span className="chip signal">finding radar</span>}>
-              <VulnerabilityMap health={health} history={history} scan={scan} />
+              <VulnerabilityMap health={health} history={history} scan={null} />
             </Panel>
             <FixQueuePanel history={history} onLoadScan={onLoadScan} scan={scan} />
           </div>
