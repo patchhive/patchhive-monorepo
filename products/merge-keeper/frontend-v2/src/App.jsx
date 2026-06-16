@@ -10,6 +10,7 @@ import {
   ProductRail,
   SuiteRadar,
   SuiteTopline,
+  radarWindowFromTimestamp,
   usePersistentProductTab,
 } from "@patchhivehq/ui-v2";
 import { API } from "./config.js";
@@ -446,27 +447,33 @@ function buildRadarItems(assessment, history, { includeSupportSignals = true } =
   }
 
   if (history.length) {
-    return history.slice(0, 8).map((item, index) => ({
-      detail: `${item.repo}#${item.pr_number}`,
-      gain: item.readiness || "saved",
-      gainMeta: `${asCount(item.blockers_count)} block / ${asCount(item.warnings_count)} warn`,
-      id: item.id || `history-${index + 1}`,
-      label: item.readiness || `PR${item.pr_number}`,
-      minWindow: index < 3 ? 7 : index < 6 ? 14 : 30,
-      position: POSITIONS[index % POSITIONS.length],
-      stats: [
-        { label: "Repo", value: item.repo },
-        { label: "PR", value: `#${item.pr_number}` },
-        { label: "Block", value: String(asCount(item.blockers_count)) },
-        { label: "Warn", value: String(asCount(item.warnings_count)) },
-        { label: "Age", value: timeAgo(item.created_at) },
-      ],
-      summary: item.summary || "Saved MergeKeeper readiness call.",
-      title: item.pr_title || `${item.repo}#${item.pr_number}`,
-      tone: readinessTone(item.readiness),
-      vector: item.readiness || "saved",
-      vectorTone: readinessTone(item.readiness) === "amber" || readinessTone(item.readiness) === "red" ? "warn" : "",
-    }));
+    return history.map((item, index) => {
+      const minWindow = radarWindowFromTimestamp(item.created_at);
+      if (!minWindow) {
+        return null;
+      }
+      return {
+        detail: `${item.repo}#${item.pr_number}`,
+        gain: item.readiness || "saved",
+        gainMeta: `${asCount(item.blockers_count)} block / ${asCount(item.warnings_count)} warn`,
+        id: item.id || `history-${index + 1}`,
+        label: item.readiness || `PR${item.pr_number}`,
+        minWindow,
+        position: POSITIONS[index % POSITIONS.length],
+        stats: [
+          { label: "Repo", value: item.repo },
+          { label: "PR", value: `#${item.pr_number}` },
+          { label: "Block", value: String(asCount(item.blockers_count)) },
+          { label: "Warn", value: String(asCount(item.warnings_count)) },
+          { label: "Age", value: timeAgo(item.created_at) },
+        ],
+        summary: item.summary || "Saved MergeKeeper readiness call.",
+        title: item.pr_title || `${item.repo}#${item.pr_number}`,
+        tone: readinessTone(item.readiness),
+        vector: item.readiness || "saved",
+        vectorTone: readinessTone(item.readiness) === "amber" || readinessTone(item.readiness) === "red" ? "warn" : "",
+      };
+    }).filter(Boolean);
   }
 
   return [{
@@ -717,7 +724,7 @@ function ReadinessSurface({
           <MetricBand metrics={metrics} />
           <div className="atlas-layout suite-four-layout">
             <Panel eyebrow="Readiness" title="Merge pressure map" action={<span className="chip signal">merge radar</span>}>
-              <ReadinessMap assessment={assessment} health={health} history={history} />
+              <ReadinessMap assessment={null} health={health} history={history} />
             </Panel>
             <BlockerPanel assessment={assessment} history={history} onLoadAssessment={onLoadAssessment} />
           </div>

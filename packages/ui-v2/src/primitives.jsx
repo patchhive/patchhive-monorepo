@@ -531,6 +531,27 @@ function defaultMinWindow(index) {
   return 30;
 }
 
+export function radarWindowFromTimestamp(value, maxWindow = 30) {
+  if (!value) {
+    return null;
+  }
+  const timestamp = new Date(value).getTime();
+  if (Number.isNaN(timestamp)) {
+    return null;
+  }
+  const ageDays = Math.max(0, (Date.now() - timestamp) / 86400000);
+  if (ageDays <= 7) {
+    return 7;
+  }
+  if (ageDays <= 14) {
+    return 14;
+  }
+  if (ageDays <= maxWindow) {
+    return maxWindow;
+  }
+  return null;
+}
+
 export function SuiteRadar({
   ariaLabel = "PatchHive signal radar",
   detailLabel = "Selected signal",

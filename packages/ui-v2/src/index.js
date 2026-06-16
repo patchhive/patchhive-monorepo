@@ -11,6 +11,7 @@ export {
   SuiteTopline,
   SuiteRadar,
   applySuiteAccent,
+  radarWindowFromTimestamp,
   toneClass,
   usePersistentProductTab,
 } from "./primitives.jsx";
