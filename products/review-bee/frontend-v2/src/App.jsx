@@ -10,6 +10,7 @@ import {
   ProductRail,
   SuiteRadar,
   SuiteTopline,
+  radarWindowFromTimestamp,
   usePersistentProductTab,
 } from "@patchhivehq/ui-v2";
 import { API } from "./config.js";
@@ -352,7 +353,11 @@ function buildRadarItems(review, history, overview) {
   }
 
   if (history.length) {
-    return history.slice(0, 8).map((item, index) => {
+    return history.map((item, index) => {
+      const minWindow = radarWindowFromTimestamp(item.created_at);
+      if (!minWindow) {
+        return null;
+      }
       const status = displayRunStatus(item, "saved");
       return {
         id: item.id || `history-${index + 1}`,
@@ -361,7 +366,7 @@ function buildRadarItems(review, history, overview) {
         gain: status,
         gainMeta: `${asCount(item.open_items)} open / ${asCount(item.resolved_items)} resolved`,
         label: `PR${item.pr_number}`,
-        minWindow: index < 3 ? 7 : index < 6 ? 14 : 30,
+        minWindow,
         position: POSITIONS[index % POSITIONS.length],
         stats: [
           { label: "Repo", value: item.repo },
@@ -375,7 +380,7 @@ function buildRadarItems(review, history, overview) {
         vector: status,
         vectorTone: statusTone(status) === "amber" ? "warn" : "",
       };
-    });
+    }).filter(Boolean);
   }
 
   return [{
@@ -656,7 +661,7 @@ function ThreadSurface({
           <MetricBand metrics={metrics} />
           <div className="atlas-layout suite-four-layout">
             <Panel eyebrow="Threads" title="Resolution map" action={<span className="chip signal">thread radar</span>}>
-              <ThreadMap health={health} history={history} overview={overview} review={review} />
+              <ThreadMap health={health} history={history} overview={overview} review={null} />
             </Panel>
             <ChecklistPanel history={history} onLoadReview={onLoadReview} review={review} />
           </div>
