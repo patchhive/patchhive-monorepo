@@ -10,6 +10,7 @@ import {
   ProductRail,
   SuiteRadar,
   SuiteTopline,
+  radarWindowFromTimestamp,
   usePersistentProductTab,
 } from "@patchhivehq/ui-v2";
 import { API } from "./config.js";
@@ -176,27 +177,33 @@ function buildRadarItems(scan, history) {
     }));
   }
   if (history.length) {
-    return history.slice(0, 8).map((item, index) => ({
-      detail: item.repo,
-      gain: item.update_now ? "update now" : item.watch ? "watch" : "saved",
-      gainMeta: `${asCount(item.tracked_items)} items`,
-      id: item.id || `history-${index + 1}`,
-      label: item.repo?.split("/").pop() || `S${index + 1}`,
-      minWindow: index < 3 ? 7 : index < 6 ? 14 : 30,
-      position: POSITIONS[index % POSITIONS.length],
-      stats: [
-        { label: "Repo", value: item.repo },
-        { label: "Tracked", value: String(asCount(item.tracked_items)) },
-        { label: "Now", value: String(asCount(item.update_now)) },
-        { label: "Watch", value: String(asCount(item.watch)) },
-        { label: "Age", value: timeAgo(item.created_at) },
-      ],
-      summary: item.summary || "Saved dependency triage scan.",
-      title: item.repo,
-      tone: item.update_now ? "red" : item.watch ? "amber" : "green",
-      vector: "saved",
-      vectorTone: item.update_now || item.watch ? "warn" : "",
-    }));
+    return history.map((item, index) => {
+      const minWindow = radarWindowFromTimestamp(item.created_at);
+      if (!minWindow) {
+        return null;
+      }
+      return {
+        detail: item.repo,
+        gain: item.update_now ? "update now" : item.watch ? "watch" : "saved",
+        gainMeta: `${asCount(item.tracked_items)} items`,
+        id: item.id || `history-${index + 1}`,
+        label: item.repo?.split("/").pop() || `S${index + 1}`,
+        minWindow,
+        position: POSITIONS[index % POSITIONS.length],
+        stats: [
+          { label: "Repo", value: item.repo },
+          { label: "Tracked", value: String(asCount(item.tracked_items)) },
+          { label: "Now", value: String(asCount(item.update_now)) },
+          { label: "Watch", value: String(asCount(item.watch)) },
+          { label: "Age", value: timeAgo(item.created_at) },
+        ],
+        summary: item.summary || "Saved dependency triage scan.",
+        title: item.repo,
+        tone: item.update_now ? "red" : item.watch ? "amber" : "green",
+        vector: "saved",
+        vectorTone: item.update_now || item.watch ? "warn" : "",
+      };
+    }).filter(Boolean);
   }
   return [{
     detail: "No dependency scan yet",
@@ -423,7 +430,7 @@ function TriageSurface({
           <MetricBand metrics={metrics} />
           <div className="atlas-layout suite-four-layout">
             <Panel eyebrow="Triage" title="Dependency map" action={<span className="chip signal">dependency radar</span>}>
-              <DependencyMap health={health} history={history} scan={scan} />
+              <DependencyMap health={health} history={history} scan={null} />
             </Panel>
             <UpdateQueuePanel history={history} onLoadScan={onLoadScan} scan={scan} />
           </div>
