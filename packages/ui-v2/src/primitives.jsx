@@ -552,6 +552,47 @@ export function radarWindowFromTimestamp(value, maxWindow = 30) {
   return null;
 }
 
+function radarDemoTimestamp(daysAgo) {
+  return new Date(Date.now() - daysAgo * 86400000).toISOString();
+}
+
+function buildRadarDemoItems() {
+  const demoRuns = [
+    { daysAgo: 2, gain: "good", label: "D2", position: { left: "42%", top: "31%" }, tone: "green" },
+    { daysAgo: 5, gain: "warn", label: "D5", position: { left: "61%", top: "27%" }, tone: "amber" },
+    { daysAgo: 10, gain: "clear", label: "D10", position: { left: "71%", top: "49%" }, tone: "green" },
+    { daysAgo: 13, gain: "hold", label: "D13", position: { left: "54%", top: "72%" }, tone: "amber" },
+    { daysAgo: 20, gain: "fixed", label: "D20", position: { left: "31%", top: "62%" }, tone: "green" },
+    { daysAgo: 29, gain: "down", label: "D29", position: { left: "36%", top: "42%" }, tone: "red" },
+  ];
+
+  return demoRuns.map((run) => {
+    const createdAt = radarDemoTimestamp(run.daysAgo);
+    const minWindow = radarWindowFromTimestamp(createdAt) || 30;
+    return {
+      detail: `Synthetic run from ${run.daysAgo} days ago`,
+      gain: run.gain,
+      gainMeta: `appears at ${minWindow}d`,
+      id: `demo-run-${run.daysAgo}d`,
+      label: run.label,
+      minWindow,
+      position: run.position,
+      stats: [
+        { label: "Age", value: `${run.daysAgo}d` },
+        { label: "Window", value: `${minWindow}d` },
+        { label: "Mode", value: "demo" },
+        { label: "Source", value: "synthetic" },
+        { label: "Real data", value: "hidden" },
+      ],
+      summary: "Demo radar fixture. Remove radarDemo=1 from the URL to return to live product data.",
+      title: `Demo run ${run.daysAgo}d`,
+      tone: run.tone,
+      vector: `${run.daysAgo} day demo`,
+      vectorTone: run.tone === "red" || run.tone === "amber" ? "warn" : "",
+    };
+  });
+}
+
 export function SuiteRadar({
   ariaLabel = "PatchHive signal radar",
   detailLabel = "Selected signal",
@@ -574,9 +615,18 @@ export function SuiteRadar({
     const raw = Number(params.get("window") || firstWindow);
     return windows[raw] ? raw : firstWindow;
   });
+  const demoEnabled = params.get("radarDemo") === "1" || params.get("demoRadar") === "1";
+  const demoItems = useMemo(() => (demoEnabled ? buildRadarDemoItems() : []), [demoEnabled]);
+  const radarItems = demoEnabled ? demoItems : items;
+  const radarFeed = demoEnabled
+    ? [
+      { text: "Demo radar mode is active. Real product data is hidden until radarDemo=1 is removed.", tone: "amber" },
+      { text: "7d shows 2 synthetic runs, 14d shows 4, and 30d shows 6.", tone: "signal" },
+    ]
+    : feed;
   const normalizedItems = useMemo(
-    () => items.map((item, index) => ({ ...item, minWindow: item.minWindow || defaultMinWindow(index) })),
-    [items],
+    () => radarItems.map((item, index) => ({ ...item, minWindow: item.minWindow || defaultMinWindow(index) })),
+    [radarItems],
   );
   const visibleItems = useMemo(
     () => normalizedItems.filter((item) => item.minWindow <= windowDays),
@@ -713,9 +763,9 @@ export function SuiteRadar({
           )}
           <span className="micro">{selectedItem.summary}</span>
         </div>
-        {feed.length > 0 && (
+        {radarFeed.length > 0 && (
           <div className="readout-feed">
-            {feed.map((line) => (
+            {radarFeed.map((line) => (
               <div className={`readout-line ${line.tone || ""}`} key={line.text}>{line.text}</div>
             ))}
           </div>
