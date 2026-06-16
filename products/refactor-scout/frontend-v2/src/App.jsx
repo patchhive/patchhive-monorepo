@@ -10,6 +10,7 @@ import {
   ProductRail,
   SuiteRadar,
   SuiteTopline,
+  radarWindowFromTimestamp,
   usePersistentProductTab,
 } from "@patchhivehq/ui-v2";
 import { API } from "./config.js";
@@ -169,27 +170,33 @@ function buildRadarItems(scan, history) {
     }));
   }
   if (history.length) {
-    return history.slice(0, 8).map((item, index) => ({
-      detail: item.repo_path,
-      gain: item.high_safety ? "high safety" : "saved",
-      gainMeta: `${asCount(item.opportunities)} leads`,
-      id: item.id || `history-${index + 1}`,
-      label: item.repo_name || `S${index + 1}`,
-      minWindow: index < 3 ? 7 : index < 6 ? 14 : 30,
-      position: POSITIONS[index % POSITIONS.length],
-      stats: [
-        { label: "Repo", value: item.repo_name || "repo" },
-        { label: "Leads", value: String(asCount(item.opportunities)) },
-        { label: "High", value: String(asCount(item.high_safety)) },
-        { label: "Medium", value: String(asCount(item.medium_safety)) },
-        { label: "Age", value: timeAgo(item.created_at) },
-      ],
-      summary: item.summary || "Saved RefactorScout scan.",
-      title: item.repo_name || item.repo_path,
-      tone: item.high_safety ? "green" : item.medium_safety ? "amber" : "signal",
-      vector: "saved",
-      vectorTone: item.medium_safety ? "warn" : "",
-    }));
+    return history.map((item, index) => {
+      const minWindow = radarWindowFromTimestamp(item.created_at);
+      if (!minWindow) {
+        return null;
+      }
+      return {
+        detail: item.repo_path,
+        gain: item.high_safety ? "high safety" : "saved",
+        gainMeta: `${asCount(item.opportunities)} leads`,
+        id: item.id || `history-${index + 1}`,
+        label: item.repo_name || `S${index + 1}`,
+        minWindow,
+        position: POSITIONS[index % POSITIONS.length],
+        stats: [
+          { label: "Repo", value: item.repo_name || "repo" },
+          { label: "Leads", value: String(asCount(item.opportunities)) },
+          { label: "High", value: String(asCount(item.high_safety)) },
+          { label: "Medium", value: String(asCount(item.medium_safety)) },
+          { label: "Age", value: timeAgo(item.created_at) },
+        ],
+        summary: item.summary || "Saved RefactorScout scan.",
+        title: item.repo_name || item.repo_path,
+        tone: item.high_safety ? "green" : item.medium_safety ? "amber" : "signal",
+        vector: "saved",
+        vectorTone: item.medium_safety ? "warn" : "",
+      };
+    }).filter(Boolean);
   }
   return [{
     detail: "No local scan yet",
@@ -404,7 +411,7 @@ function ScoutSurface({
           <MetricBand metrics={metrics} />
           <div className="atlas-layout suite-four-layout">
             <Panel eyebrow="Scout" title="Opportunity map" action={<span className="chip signal">scout radar</span>}>
-              <RefactorMap health={health} history={history} scan={scan} />
+              <RefactorMap health={health} history={history} scan={null} />
             </Panel>
             <LeadQueuePanel history={history} onLoadScan={onLoadScan} scan={scan} />
           </div>
