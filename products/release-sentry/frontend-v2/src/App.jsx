@@ -10,6 +10,7 @@ import {
   ProductRail,
   SuiteRadar,
   SuiteTopline,
+  radarWindowFromTimestamp,
   usePersistentProductTab,
 } from "@patchhivehq/ui-v2";
 import { API } from "./config.js";
@@ -196,7 +197,11 @@ function buildRadarItems(run, history) {
     });
   }
   if (history.length) {
-    return history.slice(0, 8).map((item, index) => {
+    return history.map((item, index) => {
+      const minWindow = radarWindowFromTimestamp(item.created_at);
+      if (!minWindow) {
+        return null;
+      }
       const tone = decisionTone(item.decision);
       return {
         detail: item.repo,
@@ -204,7 +209,7 @@ function buildRadarItems(run, history) {
         gainMeta: `${asCount(item.score)} score`,
         id: item.id || `history-${index + 1}`,
         label: item.target_tag || item.target_version || `R${index + 1}`,
-        minWindow: index < 3 ? 7 : index < 6 ? 14 : 30,
+        minWindow,
         position: POSITIONS[index % POSITIONS.length],
         stats: [
           { label: "Repo", value: item.repo },
@@ -219,7 +224,7 @@ function buildRadarItems(run, history) {
         vector: "saved",
         vectorTone: tone === "red" || tone === "amber" ? "warn" : "",
       };
-    });
+    }).filter(Boolean);
   }
   return [{
     detail: "No release check yet",
@@ -455,7 +460,7 @@ function GateSurface({
           <MetricBand metrics={metrics} />
           <div className="atlas-layout suite-four-layout">
             <Panel eyebrow="Gate" title="Readiness map" action={<span className="chip signal">release radar</span>}>
-              <ReleaseMap health={health} history={history} run={run} />
+              <ReleaseMap health={health} history={history} run={null} />
             </Panel>
             <GateQueuePanel history={history} onLoadRun={onLoadRun} run={run} />
           </div>
