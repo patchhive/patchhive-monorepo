@@ -10,6 +10,7 @@ import {
   ProductRail,
   SuiteRadar,
   SuiteTopline,
+  radarWindowFromTimestamp,
   usePersistentProductTab,
 } from "@patchhivehq/ui-v2";
 import { API } from "./config.js";
@@ -220,16 +221,6 @@ function repoInitials(repo = "", fallback = "RM") {
   return (repo || fallback).slice(0, 2).toUpperCase();
 }
 
-function runWindow(createdAt) {
-  if (!createdAt) return 30;
-  const created = new Date(createdAt);
-  if (Number.isNaN(created.getTime())) return 30;
-  const ageDays = Math.max(0, (Date.now() - created.getTime()) / 86400000);
-  if (ageDays <= 7) return 7;
-  if (ageDays <= 14) return 14;
-  return 30;
-}
-
 function runSummary(run) {
   const memoriesCreated = asCount(run.memories_created);
   if (memoriesCreated > 0) {
@@ -238,29 +229,8 @@ function runSummary(run) {
   return `${run.repo} was scanned, but no repeated convention or failure pattern crossed RepoMemory's confidence threshold yet.`;
 }
 
-function recentRunSignals(history, entries) {
-  const memoryRunIds = new Set(entries.map((memory) => memory.run_id).filter(Boolean));
-  const memoryRepos = new Set(entries.map((memory) => memory.repo).filter(Boolean));
-  const seenRepos = new Set();
-  return history.filter((run) => {
-    if (!run?.id || memoryRunIds.has(run.id)) {
-      return false;
-    }
-    if (asCount(run.memories_created) > 0 && memoryRepos.has(run.repo)) {
-      return false;
-    }
-    if (seenRepos.has(run.repo)) {
-      return false;
-    }
-    seenRepos.add(run.repo);
-    return true;
-  });
-}
-
 function buildRadarItems(overview, memories, history = []) {
-  const entries = memoryList(overview, memories);
-  const runSignals = recentRunSignals(history, entries);
-  if (!entries.length && !runSignals.length) {
+  if (!history.length) {
     return [{
       detail: "No memory ingests yet",
       gain: "standby",
@@ -282,35 +252,12 @@ function buildRadarItems(overview, memories, history = []) {
     }];
   }
 
-  const memoryItems = entries.slice(0, 8).map((memory, index) => {
-    const confidence = Number(memory.confidence || 0);
-    const tone = kindTone(memory.kind, memory.disposition);
-    return {
-      detail: memory.repo,
-      gain: formatConfidence(confidence),
-      gainMeta: `${asCount(memory.frequency)} hits`,
-      id: memory.id || memory.memory_ref || `memory-${index + 1}`,
-      label: memory.kind === "failure_pattern" ? "FG" : `M${index + 1}`,
-      minWindow: index < 3 ? 7 : index < 6 ? 14 : 30,
-      position: POSITIONS[index % POSITIONS.length],
-      stats: [
-        { label: "Kind", value: shortKind(memory.kind) },
-        { label: "Confidence", value: formatConfidence(confidence) },
-        { label: "Frequency", value: String(asCount(memory.frequency)) },
-        { label: "Pinned", value: memory.pinned ? "yes" : "no" },
-        { label: "State", value: memory.disposition || "signal" },
-      ],
-      summary: memory.detail || memory.prompt_line || "RepoMemory entry.",
-      title: memory.title || memory.memory_ref || `Memory ${index + 1}`,
-      tone,
-      vector: memory.kind || "memory",
-      vectorTone: tone === "amber" || tone === "red" ? "warn" : "",
-    };
-  });
-
-  const runItems = runSignals.slice(0, Math.max(0, 8 - memoryItems.length)).map((run, index) => {
+  return history.map((run, index) => {
+    const minWindow = radarWindowFromTimestamp(run.created_at);
+    if (!minWindow) {
+      return null;
+    }
     const memoriesCreated = asCount(run.memories_created);
-    const positionIndex = memoryItems.length + index;
     return {
       detail: run.repo,
       gain: memoriesCreated ? String(memoriesCreated) : "early",
@@ -318,8 +265,8 @@ function buildRadarItems(overview, memories, history = []) {
       gainTone: memoriesCreated ? "ok" : "sig",
       id: `ingest-${run.id}`,
       label: repoInitials(run.repo, `R${index + 1}`),
-      minWindow: runWindow(run.created_at),
-      position: POSITIONS[positionIndex % POSITIONS.length],
+      minWindow,
+      position: POSITIONS[index % POSITIONS.length],
       stats: [
         { label: "Run", value: "saved" },
         { label: "Memories", value: String(memoriesCreated) },
@@ -332,9 +279,7 @@ function buildRadarItems(overview, memories, history = []) {
       tone: memoriesCreated ? "green" : "signal",
       vector: memoriesCreated ? "INGEST" : "EARLY SIGNAL",
     };
-  });
-
-  return [...memoryItems, ...runItems];
+  }).filter(Boolean);
 }
 
 function buildRadarFeed(overview, memories, candidates, history = []) {
