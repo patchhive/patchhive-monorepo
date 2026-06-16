@@ -431,9 +431,9 @@ function contextItems(assessment, startIndex) {
   return items;
 }
 
-function buildRadarItems(assessment, history) {
+function buildRadarItems(assessment, history, { includeSupportSignals = true } = {}) {
   if (assessment) {
-    const support = supportingItems(assessment);
+    const support = includeSupportSignals ? supportingItems(assessment) : [];
     const blockers = (assessment.blockers || []).map((signal, index) => signalItem(signal, index + support.length, "blocker"));
     const warnings = (assessment.warnings || []).map((signal, index) => signalItem(signal, index + support.length + blockers.length, "warning"));
     return [
@@ -511,8 +511,11 @@ function StatusBanner({ tone = "signal", children }) {
   return <div className={`status-banner ${tone}`}>{children}</div>;
 }
 
-function ReadinessMap({ assessment, health, history }) {
-  const items = useMemo(() => buildRadarItems(assessment, history), [assessment, history]);
+function ReadinessMap({ assessment, health, history, includeSupportSignals = true }) {
+  const items = useMemo(
+    () => buildRadarItems(assessment, history, { includeSupportSignals }),
+    [assessment, history, includeSupportSignals],
+  );
   const feed = useMemo(() => buildRadarFeed(assessment, history, health), [assessment, history, health]);
   return (
     <SuiteRadar
@@ -780,7 +783,7 @@ function HistorySurface({ activeAssessmentId, assessment, health, history, loadi
       {assessment && (
         <HistoryDetailGrid>
           <Panel eyebrow="Readiness" title="Selected merge pressure map" action={<span className="chip signal">merge radar</span>}>
-            <ReadinessMap assessment={assessment} health={health} history={history} />
+            <ReadinessMap assessment={assessment} health={health} history={history} includeSupportSignals={false} />
           </Panel>
           <BlockerPanel assessment={assessment} history={history} onLoadAssessment={onLoadAssessment} />
         </HistoryDetailGrid>
