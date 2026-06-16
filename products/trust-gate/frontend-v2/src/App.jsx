@@ -10,6 +10,7 @@ import {
   ProductRail,
   SuiteRadar,
   SuiteTopline,
+  radarWindowFromTimestamp,
   usePersistentProductTab,
 } from "@patchhivehq/ui-v2";
 import { API } from "./config.js";
@@ -433,27 +434,33 @@ function buildRadarItems(review, history) {
   }
 
   if (history.length) {
-    return history.slice(0, 8).map((item, index) => ({
-      detail: item.repo,
-      gain: item.recommendation || "saved",
-      gainMeta: `${asCount(item.files_changed)} files`,
-      id: item.id || `history-${index + 1}`,
-      label: item.recommendation || `R${index + 1}`,
-      minWindow: index < 3 ? 7 : index < 6 ? 14 : 30,
-      position: POSITIONS[index % POSITIONS.length],
-      stats: [
-        { label: "Repo", value: item.repo },
-        { label: "Source", value: item.source_kind || "manual" },
-        { label: "Risk", value: String(asCount(item.risk_score)) },
-        { label: "Files", value: String(asCount(item.files_changed)) },
-        { label: "Age", value: timeAgo(item.created_at) },
-      ],
-      summary: item.summary || "Saved TrustGate decision.",
-      title: item.repo,
-      tone: recommendationTone(item.recommendation),
-      vector: item.recommendation || "saved",
-      vectorTone: item.recommendation === "warn" || item.recommendation === "block" ? "warn" : "",
-    }));
+    return history.map((item, index) => {
+      const minWindow = radarWindowFromTimestamp(item.created_at);
+      if (!minWindow) {
+        return null;
+      }
+      return {
+        detail: item.repo,
+        gain: item.recommendation || "saved",
+        gainMeta: `${asCount(item.files_changed)} files`,
+        id: item.id || `history-${index + 1}`,
+        label: item.recommendation || `R${index + 1}`,
+        minWindow,
+        position: POSITIONS[index % POSITIONS.length],
+        stats: [
+          { label: "Repo", value: item.repo },
+          { label: "Source", value: item.source_kind || "manual" },
+          { label: "Risk", value: String(asCount(item.risk_score)) },
+          { label: "Files", value: String(asCount(item.files_changed)) },
+          { label: "Age", value: timeAgo(item.created_at) },
+        ],
+        summary: item.summary || "Saved TrustGate decision.",
+        title: item.repo,
+        tone: recommendationTone(item.recommendation),
+        vector: item.recommendation || "saved",
+        vectorTone: item.recommendation === "warn" || item.recommendation === "block" ? "warn" : "",
+      };
+    }).filter(Boolean);
   }
 
   return [{
@@ -686,7 +693,7 @@ function ReviewSurface({
           <MetricBand metrics={metrics} />
           <div className="atlas-layout suite-four-layout">
             <Panel eyebrow="Decision" title="Safety recommendation" action={<span className={`chip ${recommendationTone(review?.recommendation || "ready")}`}>risk radar</span>}>
-              <DecisionGauge health={health} history={history} review={review} />
+              <DecisionGauge health={health} history={history} review={null} />
             </Panel>
             <RuleHitPanel review={review} />
           </div>
