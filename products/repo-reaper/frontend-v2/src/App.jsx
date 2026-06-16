@@ -10,6 +10,7 @@ import {
   ProductRail,
   SuiteRadar,
   SuiteTopline,
+  radarWindowFromTimestamp,
   usePersistentProductTab,
 } from "@patchhivehq/ui-v2";
 import { API } from "./config.js";
@@ -32,16 +33,6 @@ const POSITIONS = [
   { left: "66%", top: "29%" },
   { left: "36%", top: "73%" },
 ];
-
-const ROLE_ORDER = ["scout", "judge", "reaper", "smith", "gatekeeper"];
-
-const ROLE_LABELS = {
-  scout: "Scout",
-  judge: "Judge",
-  reaper: "Reaper",
-  smith: "Smith",
-  gatekeeper: "Gatekeeper",
-};
 
 const DEFAULT_PARAMS = {
   language: "python",
@@ -244,53 +235,58 @@ function buildRail(health, config, stream, history, selectedRun, watchMode) {
   };
 }
 
-function buildAgentItems(agents, stream) {
-  const agentStatuses = stream.agentStatuses || {};
-  const byRole = {};
-  (agents || []).forEach((agent) => {
-    const role = agent.role || "agent";
-    if (!byRole[role]) byRole[role] = [];
-    byRole[role].push(agent);
-  });
-  const ordered = ROLE_ORDER.map((role) => {
-    const configured = byRole[role]?.[0] || {};
-    const status = agentStatuses[configured.id] || {};
+function buildRunRadarItems(history) {
+  if (!history.length) {
+    return [{
+      detail: "No autonomous run yet",
+      gain: "standby",
+      gainMeta: "guarded writes",
+      id: "repo-reaper-ready",
+      label: "RR",
+      position: { left: "50%", top: "44%" },
+      stats: [
+        { label: "Mode", value: "guarded" },
+        { label: "History", value: "empty" },
+        { label: "PRs", value: "none" },
+        { label: "Cost", value: "$0.0000" },
+        { label: "Action", value: "start" },
+      ],
+      summary: "Start a guarded hunt to populate RepoReaper's autonomous run radar.",
+      title: "RepoReaper ready",
+      tone: "signal",
+      vector: "READY",
+    }];
+  }
+  return history.map((run, index) => {
+    const minWindow = radarWindowFromTimestamp(run.started_at || run.created_at);
+    if (!minWindow) {
+      return null;
+    }
+    const fixed = asCount(run.total_fixed);
+    const attempted = asCount(run.total_attempted);
+    const tone = statusTone(run.status);
     return {
-      ...configured,
-      role,
-      id: configured.id || role,
-      label: configured.name || ROLE_LABELS[role] || role,
-      status: status.status || configured.status || "idle",
-      current_task: status.task || configured.current_task || "",
-      provider: configured.provider || "provider",
-      model: configured.model || "model",
-    };
-  });
-  const extras = (agents || []).filter((agent) => !ROLE_ORDER.includes(agent.role));
-  return [...ordered, ...extras].slice(0, 8).map((agent, index) => {
-    const tone = statusTone(agent.status);
-    return {
-      detail: agent.current_task || agent.status || "idle",
-      gain: agent.status || "idle",
-      gainMeta: agent.model || "model",
-      id: agent.id || `agent-${index + 1}`,
-      label: `${String(index + 1).padStart(2, "0")} ${agent.label || agent.name || ROLE_LABELS[agent.role] || "Agent"}`,
-      minWindow: index < 3 ? 7 : index < 6 ? 14 : 30,
+      detail: run.id,
+      gain: run.status || "saved",
+      gainMeta: attempted ? `${fixed}/${attempted} fixed` : `${fixed} fixed`,
+      id: run.id || `run-${index + 1}`,
+      label: run.id ? run.id.slice(0, 6).toUpperCase() : `R${index + 1}`,
+      minWindow,
       position: POSITIONS[index % POSITIONS.length],
       stats: [
-        { label: "Role", value: agent.role || "agent" },
-        { label: "Status", value: agent.status || "idle" },
-        { label: "Provider", value: agent.provider || "provider" },
-        { label: "Model", value: agent.model || "model" },
-        { label: "Task", value: agent.current_task || "standby" },
+        { label: "Status", value: run.status || "saved" },
+        { label: "Fixed", value: String(fixed) },
+        { label: "Attempted", value: String(attempted) },
+        { label: "Cost", value: formatMoney(run.total_cost_usd) },
+        { label: "Age", value: timeAgo(run.started_at || run.created_at) },
       ],
-      summary: agent.current_task || `${agent.label || agent.name || "Agent"} is ${agent.status || "idle"}.`,
-      title: agent.label || agent.name || ROLE_LABELS[agent.role] || "Agent",
+      summary: `${fixed} fixed of ${attempted} attempted in this saved RepoReaper run.`,
+      title: run.id || `Autonomous run ${index + 1}`,
       tone,
-      vector: agent.role || "agent",
+      vector: "saved run",
       vectorTone: tone === "red" || tone === "amber" ? "warn" : "",
     };
-  });
+  }).filter(Boolean);
 }
 
 function buildRadarFeed(stream, history, config) {
@@ -312,19 +308,19 @@ function StatusBanner({ tone = "signal", children }) {
   return <div className={`status-banner ${tone}`}>{children}</div>;
 }
 
-function AgentPipeline({ agents, config, history, stream }) {
-  const items = useMemo(() => buildAgentItems(agents, stream), [agents, stream]);
+function RunRadar({ config, history, stream }) {
+  const items = useMemo(() => buildRunRadarItems(history), [history]);
   const feed = useMemo(() => buildRadarFeed(stream, history, config), [stream, history, config]);
   return (
     <SuiteRadar
-      ariaLabel="RepoReaper agent pipeline radar"
-      detailLabel="Agent report"
+      ariaLabel="RepoReaper autonomous run radar"
+      detailLabel="Run report"
       feed={feed}
       gainLabel="Status"
-      itemQueryParam="agent"
+      itemQueryParam="run"
       items={items}
-      signalLabel="agents"
-      vectorLabel="Active phase"
+      signalLabel="runs"
+      vectorLabel="Selected run"
     />
   );
 }
@@ -524,7 +520,6 @@ function PrOutcomePanel({ prs }) {
 }
 
 function MissionDeck({
-  agents,
   config,
   error,
   health,
@@ -565,8 +560,8 @@ function MissionDeck({
           <RunForm disabled={!githubReady(config, health) || !aiReady(config)} error={error} onChange={onChangeParams} onStart={onStartRun} params={params} running={stream.running} title="Start hunt" />
           <MetricBand metrics={metrics} />
           <div className="atlas-layout suite-four-layout">
-            <Panel eyebrow="Pipeline" title="Agent execution chain" action={<span className={`chip ${stream.running ? "amber" : "signal"}`}>{stream.phase || "standby"}</span>}>
-              <AgentPipeline agents={agents} config={config} history={history} stream={stream} />
+            <Panel eyebrow="Pipeline" title="Autonomous run map" action={<span className={`chip ${stream.running ? "amber" : "signal"}`}>{stream.phase || "standby"}</span>}>
+              <RunRadar config={config} history={history} stream={stream} />
             </Panel>
             <CandidatePanel issues={stream.issues} onLoadRun={onLoadRun} selectedRun={selectedRun} />
           </div>
@@ -1022,7 +1017,6 @@ export default function App() {
       />
       {activeTab === "mission" && (
         <MissionDeck
-          agents={agents}
           config={config}
           error={error}
           health={health}
