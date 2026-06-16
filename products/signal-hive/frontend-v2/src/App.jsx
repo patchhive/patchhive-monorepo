@@ -8,6 +8,7 @@ import {
   ProductRail,
   SuiteRadar,
   SuiteTopline,
+  radarWindowFromTimestamp,
   usePersistentProductTab,
 } from "@patchhivehq/ui-v2";
 import { API } from "./config.js";
@@ -180,48 +181,40 @@ function radarPosition(index, total, score) {
   };
 }
 
-function buildRadarItems(scan) {
-  const repos = sortRepos(scan?.repos || [], "priority");
-  const total = repos.length || 1;
-  return repos.map((repo, index) => {
-    const score = Math.round(Number(repo.priority_score || 0));
-    const trend = repo.trend?.priority_delta;
-    const trendLabel = typeof trend === "number" ? `${trend > 0 ? "+" : ""}${Math.round(trend)}` : "new";
+function buildRunRadarItems(history) {
+  const recentRuns = history
+    .map((item) => ({ ...item, minWindow: radarWindowFromTimestamp(item.created_at) }))
+    .filter((item) => item.minWindow);
+  const total = recentRuns.length || 1;
+  return recentRuns.map((item, index) => {
+    const signalCount = Number(item.total_signals || 0);
+    const warningCount = Number(item.warning_count || 0);
+    const tone = warningCount ? "amber" : signalCount ? "signal" : "green";
     return {
-      id: repo.full_name,
-      label: `${shortRepoName(repo.full_name)} ${score}`,
-      tone: scoreTone(score),
-      minWindow: index < 5 ? 7 : index < 8 ? 14 : 30,
-      position: radarPosition(index, total, score),
+      id: item.id,
+      label: item.trigger_type || `S${index + 1}`,
+      tone,
+      minWindow: item.minWindow,
+      position: radarPosition(index, total, Math.min(100, signalCount * 4 + warningCount * 10)),
       pingDelay: `${index * 0.22}s`,
-      title: repo.full_name,
-      detail: repo.full_name,
-      vector: String(Math.round((index * 47 + score * 2) % 360)).padStart(3, "0"),
-      vectorTone: scoreTextTone(score),
-      gain: `${score}%`,
-      gainTone: scoreTextTone(score),
-      gainMeta: "priority score",
-      value: `${score}`,
+      title: item.top_repo || `Sweep ${index + 1}`,
+      detail: item.top_repo || "No top repo",
+      vector: item.trigger_type || "scan",
+      vectorTone: warningCount ? "warn" : "",
+      gain: `${signalCount}`,
+      gainTone: warningCount ? "warn" : "sig",
+      gainMeta: "signals found",
+      value: `${signalCount}`,
       stats: [
-        { label: "Score", value: score },
-        { label: "Stale", value: `${repo.stale_issues || 0}/${repo.sampled_issues || 0}` },
-        { label: "Dupes", value: duplicateCount(repo) },
-        { label: "Markers", value: markerCount(repo) },
-        { label: "Trend", value: trendLabel },
+        { label: "Repos", value: String(item.total_repos || 0) },
+        { label: "Signals", value: String(signalCount) },
+        { label: "Warnings", value: String(warningCount) },
+        { label: "Trigger", value: item.trigger_type || "manual" },
+        { label: "Age", value: timeAgo(item.created_at) },
       ],
-      summary: repo.summary || repo.signals?.[0] || "No major maintenance signals found.",
+      summary: item.summary || `${item.total_repos || 0} repos scanned with ${signalCount} signals found.`,
     };
   });
-}
-
-function buildRadarWindows(scan) {
-  const repos = scan?.repos || [];
-  const count = (days) => buildRadarItems({ repos }).filter((item) => item.minWindow <= days).length;
-  return {
-    7: { label: "7 day live pass", count: `${count(7)} signals`, outer: "7d", mid: "3d", inner: "24h" },
-    14: { label: "14 day history pass", count: `${count(14)} signals`, outer: "14d", mid: "7d", inner: "3d" },
-    30: { label: "30 day deep sweep", count: `${count(30)} signals`, outer: "30d", mid: "14d", inner: "7d" },
-  };
 }
 
 function scanMetrics(scan) {
@@ -473,26 +466,22 @@ function RepoCard({ repo }) {
   );
 }
 
-function RadarScope({ resetKey, scan }) {
-  const items = useMemo(() => buildRadarItems(scan), [scan]);
-  const windows = useMemo(() => buildRadarWindows(scan), [scan]);
+function RadarScope({ history, resetKey }) {
+  const items = useMemo(() => buildRunRadarItems(history), [history]);
   const feed = useMemo(() => {
-    const warnings = (scan?.warnings || []).map((text) => ({ text, tone: "amber" }));
-    const signals = sortRepos(scan?.repos || [], "priority")
-      .flatMap((repo) => (repo.signals || []).slice(0, 1).map((text) => ({
-        text: `${repo.full_name}: ${text}`,
-        tone: scoreTone(repo.priority_score || 0),
-      })));
-    return [...warnings, ...signals].slice(0, 3);
-  }, [scan]);
+    return history.slice(0, 3).map((item) => ({
+      text: `${item.top_repo || "SignalHive sweep"}: ${item.total_repos || 0} repos, ${item.total_signals || 0} signals, ${timeAgo(item.created_at)}.`,
+      tone: item.warning_count ? "amber" : "signal",
+    }));
+  }, [history]);
 
-  if (!scan || items.length === 0) {
+  if (items.length === 0) {
     return (
       <div className="signal-map radar-empty-shell">
         <div className="radar-frame">
           <EmptyV2
-            title="No scan loaded"
-            body="Run a sweep or open a saved scan to populate the radar with real repository signals."
+            title="No recent sweeps"
+            body="Run a sweep to populate the 7, 14, and 30 day radar with real SignalHive runs."
           />
         </div>
       </div>
@@ -505,13 +494,12 @@ function RadarScope({ resetKey, scan }) {
       detailLabel="Selected repo scan"
       echoes={[]}
       feed={feed}
-      gainLabel="Priority gain"
-      itemQueryParam="repo"
+      gainLabel="Run signals"
+      itemQueryParam="scan"
       items={items}
-      key={`signal-radar-${scan?.id || "empty"}-${resetKey}`}
-      signalLabel="signals"
-      vectorLabel="Sweep vector"
-      windows={windows}
+      key={`signal-radar-history-${resetKey}`}
+      signalLabel="runs"
+      vectorLabel="Selected sweep"
     />
   );
 }
@@ -833,6 +821,7 @@ function AtlasBoard({
   checks,
   error,
   health,
+  history,
   onClearPreset,
   onClearSchedule,
   onDeletePreset,
@@ -930,7 +919,7 @@ function AtlasBoard({
               title="Field intensity map"
               action={<span className="chip signal">{scan ? "live radar" : "idle radar"}</span>}
             >
-              <RadarScope resetKey={radarResetKey} scan={scan} />
+              <RadarScope history={history} resetKey={radarResetKey} />
             </Panel>
             <QueuePanel onExportReport={onExportReport} scan={scan} sortBy={sortBy} setSortBy={setSortBy} />
           </div>
@@ -1619,6 +1608,7 @@ export default function App() {
           checks={checks}
           error={error}
           health={health}
+          history={history}
           onClearPreset={clearPreset}
           onClearSchedule={clearSchedule}
           onDeletePreset={deletePreset}
