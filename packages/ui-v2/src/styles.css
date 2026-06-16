@@ -759,23 +759,10 @@ h1 {
   border-radius: 50%;
   pointer-events: none;
   background:
-    radial-gradient(circle at 69% 31%, rgba(214, 75, 75, 0.28), transparent 8%),
-    radial-gradient(circle at 43% 57%, rgba(230, 160, 29, 0.24), transparent 7%),
-    radial-gradient(circle at 24% 37%, rgb(var(--signal2-rgb) / 0.22), transparent 7%),
-    radial-gradient(circle at 64% 18%, rgba(214, 75, 75, 0.18), transparent 6%),
-    radial-gradient(circle at 30% 72%, rgba(230, 160, 29, 0.18), transparent 7%),
-    radial-gradient(circle at 80% 48%, rgb(var(--signal2-rgb) / 0.16), transparent 6%);
-  opacity: 0.18;
+    radial-gradient(circle at center, rgb(var(--signal2-rgb) / 0.12), transparent 38%),
+    radial-gradient(circle at 50% 50%, rgb(var(--signal-rgb) / 0.08), transparent 62%);
+  opacity: 0.22;
   mix-blend-mode: screen;
-  transition: opacity 0.22s ease;
-}
-
-.signal-map[data-window="14"] .radar-density {
-  opacity: 0.38;
-}
-
-.signal-map[data-window="30"] .radar-density {
-  opacity: 0.68;
 }
 
 .radar-sweep {
@@ -787,10 +774,6 @@ h1 {
   filter: blur(0.2px);
   opacity: 0.9;
   mix-blend-mode: screen;
-}
-
-.signal-map[data-window="30"] .radar-sweep {
-  background: conic-gradient(from 0deg, rgb(var(--signal2-rgb) / 0.56) 0deg, rgba(49, 196, 124, 0.28) 24deg, rgb(var(--signal-rgb) / 0.1) 58deg, transparent 82deg 360deg);
 }
 
 .radar-line {
