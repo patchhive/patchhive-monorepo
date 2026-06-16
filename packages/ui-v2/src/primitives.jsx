@@ -572,7 +572,7 @@ function buildRadarDemoItems() {
     return {
       detail: `Synthetic run from ${run.daysAgo} days ago`,
       gain: run.gain,
-      gainMeta: `appears at ${minWindow}d`,
+      gainMeta: `first visible at ${minWindow}d`,
       id: `demo-run-${run.daysAgo}d`,
       label: run.label,
       minWindow,
@@ -584,7 +584,7 @@ function buildRadarDemoItems() {
         { label: "Source", value: "synthetic" },
         { label: "Real data", value: "hidden" },
       ],
-      summary: "Demo radar fixture. Remove radarDemo=1 from the URL to return to live product data.",
+      summary: "Demo radar fixture. Wider windows keep earlier blips visible; remove radarDemo=1 to return to live product data.",
       title: `Demo run ${run.daysAgo}d`,
       tone: run.tone,
       vector: `${run.daysAgo} day demo`,
@@ -621,7 +621,7 @@ export function SuiteRadar({
   const radarFeed = demoEnabled
     ? [
       { text: "Demo radar mode is active. Real product data is hidden until radarDemo=1 is removed.", tone: "amber" },
-      { text: "7d shows 2 synthetic runs, 14d shows 4, and 30d shows 6.", tone: "signal" },
+      { text: "7d shows 2 synthetic runs, 14d keeps those 2 and adds 2 more, and 30d keeps all 4 and adds 2 more.", tone: "signal" },
     ]
     : feed;
   const normalizedItems = useMemo(
