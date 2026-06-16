@@ -45,9 +45,18 @@ patchhive/
   packages/     shared frontend and gateway packages
   crates/       shared Rust libraries
   templates/    starter scaffolds and reusable repo templates
+  services/    shared backend and support services
   scripts/      export, release, and maintenance workflows
   docs/         internal operating docs and release workflows
 ```
+
+## Services
+
+| Service | Purpose |
+| --- | --- |
+| `patchhive-backend` | Shared suite backend runtime and product manifest registry. |
+| `patchhive-launcher` | Localhost-only host-control daemon for HiveCore setup and stack lifecycle. |
+| `patchhive-registry` | Opt-in hosted registry MVP for sanitized suite snapshots and public demo reads. |
 
 ## Getting Started
 

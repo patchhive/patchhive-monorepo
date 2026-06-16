@@ -272,6 +272,16 @@ Create a small `patchhive-registry` service with:
 This can be a service under `services/` first. It only needs its own repo if it
 becomes independently deployed.
 
+Current non-HiveCore implementation:
+
+- Static registry website exists in `patchhive-sites/apps/registry/` and reads a
+  checked-in public-demo fixture.
+- Hosted-service MVP exists in `services/patchhive-registry/` with install
+  registration, authenticated heartbeat and smoke ingestion, SQLite storage,
+  shared PatchHive rate limiting, and public-demo read endpoints.
+- HiveCore is not required for either piece yet; Phase 1 and Phase 4 remain the
+  HiveCore-specific work.
+
 ### Phase 4: HiveCore Publisher
 
 Add HiveCore settings for:

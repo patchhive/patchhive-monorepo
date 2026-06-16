@@ -73,6 +73,7 @@ patchhive/
   services/
     patchhive-backend/     shared PatchHive suite backend runtime
     patchhive-launcher/     localhost-only host-control daemon for HiveCore first-stack start/stop
+    patchhive-registry/     opt-in registry service for sanitized public suite snapshots
   products/
     repo-reaper/            built first, current active product
     signal-hive/
