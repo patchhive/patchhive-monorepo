@@ -644,7 +644,10 @@ h1 {
   align-items: start;
 }
 
-.queue-grid,
+.queue-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .candidate-grid {
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
@@ -1230,6 +1233,12 @@ h1 {
   font-size: 0.7rem;
   letter-spacing: 0.12em;
   text-transform: uppercase;
+}
+
+.ledger-row .repo-name {
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
 }
 
 .trust-map {
