@@ -541,6 +541,8 @@ function ChecklistPanel({ history, onLoadReview, review }) {
                   <span className={`chip ${statusTone(status)}`}>{status}</span>
                   <span className="chip amber">{asCount(item.open_items)} open</span>
                   <span className="chip green">{asCount(item.resolved_items)} resolved</span>
+                  <span className="chip signal">{asCount(item.reviewer_count)} reviewers</span>
+                  <span className="chip">{timeAgo(item.created_at)}</span>
                 </div>
               </div>
               <button className="btn" onClick={() => onLoadReview(item.id)} type="button">Load</button>

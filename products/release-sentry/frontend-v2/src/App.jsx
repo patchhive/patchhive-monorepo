@@ -374,6 +374,11 @@ function GateQueuePanel({ history, onLoadRun, run }) {
             <div>
               <div className="repo-name">{item.repo} / {releaseLabel(item)}</div>
               <div className="feed-meta">{item.summary || "Saved ReleaseSentry run."}</div>
+              <div className="repo-meta">
+                <span className={`chip ${decisionTone(item.decision)}`}>{item.decision || "decision"}</span>
+                <span className="chip signal">{item.branch || "branch"}</span>
+                <span className="chip">{timeAgo(item.created_at)}</span>
+              </div>
             </div>
             <button className="btn" onClick={() => onLoadRun(item.id)} type="button">Load</button>
           </div>

@@ -346,6 +346,12 @@ function UpdateQueuePanel({ history, onLoadScan, scan }) {
             <div>
               <div className="repo-name">{item.repo}</div>
               <div className="feed-meta">{item.summary || "Saved dependency triage scan."}</div>
+              <div className="repo-meta">
+                <span className="chip red">{asCount(item.update_now)} now</span>
+                <span className="chip amber">{asCount(item.watch)} watch</span>
+                <span className="chip green">{asCount(item.ignore_for_now)} ignore</span>
+                <span className="chip">{timeAgo(item.created_at)}</span>
+              </div>
             </div>
             <button className="btn" onClick={() => onLoadScan(item.id)} type="button">Load</button>
           </div>

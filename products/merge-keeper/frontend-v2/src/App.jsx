@@ -629,6 +629,12 @@ function BlockerPanel({ assessment, history, onLoadAssessment }) {
             <div>
               <div className="repo-name">{item.repo}</div>
               <div className="feed-meta">{item.summary || item.pr_title || "Saved MergeKeeper run."}</div>
+              <div className="repo-meta">
+                <span className={`chip ${readinessTone(item.readiness)}`}>{item.readiness || "saved"}</span>
+                <span className="chip red">{asCount(item.blockers_count)} block</span>
+                <span className="chip amber">{asCount(item.warnings_count)} warn</span>
+                <span className="chip">{timeAgo(item.created_at)}</span>
+              </div>
             </div>
             <button className="btn" onClick={() => onLoadAssessment(item.id)} type="button">Load</button>
           </div>

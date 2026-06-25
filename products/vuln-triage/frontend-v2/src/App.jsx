@@ -353,6 +353,12 @@ function FixQueuePanel({ history, onLoadScan, scan }) {
             <div>
               <div className="repo-name">{item.repo}</div>
               <div className="feed-meta">{item.summary || "Saved VulnTriage scan."}</div>
+              <div className="repo-meta">
+                <span className="chip red">{asCount(item.fix_now)} fix</span>
+                <span className="chip amber">{asCount(item.plan_next)} plan</span>
+                <span className="chip green">{asCount(item.watch)} watch</span>
+                <span className="chip">{timeAgo(item.created_at)}</span>
+              </div>
             </div>
             <button className="btn" onClick={() => onLoadScan(item.id)} type="button">Load</button>
           </div>

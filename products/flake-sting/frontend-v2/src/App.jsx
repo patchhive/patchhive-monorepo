@@ -465,6 +465,12 @@ function FlakyQueuePanel({ history, onLoadScan, scan }) {
             <div>
               <div className="repo-name">{item.repo}</div>
               <div className="feed-meta">{item.summary || item.workflow_name || "Saved FlakeSting scan."}</div>
+              <div className="repo-meta">
+                <span className="chip amber">{asCount(item.flaky_signals)} flaky</span>
+                <span className="chip red">{asCount(item.quarantine_candidates)} quarantine</span>
+                <span className="chip signal">{item.trend?.status || "baseline"}</span>
+                <span className="chip">{timeAgo(item.created_at)}</span>
+              </div>
             </div>
             <button className="btn" onClick={() => onLoadScan(item.id)} type="button">Load</button>
           </div>

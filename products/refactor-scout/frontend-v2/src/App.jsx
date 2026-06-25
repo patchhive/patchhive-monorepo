@@ -327,6 +327,12 @@ function LeadQueuePanel({ history, onLoadScan, scan }) {
             <div>
               <div className="repo-name">{item.repo_name || item.repo_path}</div>
               <div className="feed-meta">{item.summary || "Saved RefactorScout scan."}</div>
+              <div className="repo-meta">
+                <span className="chip green">{asCount(item.high_safety)} high</span>
+                <span className="chip amber">{asCount(item.medium_safety)} medium</span>
+                <span className="chip signal">{asCount(item.opportunities)} leads</span>
+                <span className="chip">{timeAgo(item.created_at)}</span>
+              </div>
             </div>
             <button className="btn" onClick={() => onLoadScan(item.id)} type="button">Load</button>
           </div>
