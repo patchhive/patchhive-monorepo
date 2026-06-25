@@ -1107,6 +1107,10 @@ h1 {
   gap: 10px;
 }
 
+.queue-grid {
+  gap: 14px;
+}
+
 .repo-card,
 .feed-item {
   border: 1px solid var(--line);
@@ -1215,30 +1219,55 @@ h1 {
 
 .ledger-row {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 12px;
-  padding: 12px;
+  grid-template-columns: minmax(52px, auto) minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 16px;
+  min-height: 104px;
+  padding: 16px;
   border: 1px solid var(--line);
-  background: rgba(7, 16, 24, 0.72);
+  background:
+    radial-gradient(circle at 95% 18%, rgb(var(--signal-rgb) / 0.08), transparent 22%),
+    linear-gradient(180deg, rgba(11, 29, 43, 0.84), rgba(7, 16, 24, 0.74));
+  box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.22);
 }
 
 .rank {
   min-width: 48px;
-  height: 30px;
+  min-height: 36px;
   display: grid;
   place-items: center;
   border: 1px solid var(--line2);
   color: var(--signal2);
-  font-size: 0.7rem;
+  font-family: var(--orb);
+  font-size: 0.72rem;
   letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
+.queue-grid .rank {
+  margin-top: 6px;
+}
+
 .ledger-row .repo-name {
   overflow-wrap: anywhere;
+  font-size: 0.98rem;
   text-overflow: clip;
   white-space: normal;
+}
+
+.ledger-row .feed-meta {
+  max-width: 78ch;
+  color: var(--muted);
+  font-size: 0.8rem;
+  letter-spacing: 0.04em;
+  line-height: 1.42;
+  text-transform: none;
+}
+
+.ledger-row > .btn:last-child,
+.ledger-row > .chip:last-child {
+  align-self: center;
+  justify-self: end;
 }
 
 .trust-map {
