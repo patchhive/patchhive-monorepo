@@ -11,6 +11,10 @@ read_only = true
 credential_scopes = ["github:actions:read"]
 evidence_required = ["repo identity", "workflow run sample", "lookback window"]
 
+[gateway]
+default_url = "http://127.0.0.1:8060"
+env_var = "FLAKE_STING_GATEWAY_URL"
+
 [health]
 endpoint = "/api/products/flake-sting/health"
 timeout_ms = 2000
@@ -37,6 +41,41 @@ path = "/api/products/flake-sting/health"
 description = "Report FlakeSting runtime health."
 
 [[routes]]
+method = "GET"
+path = "/api/products/flake-sting/auth/status"
+description = "Read FlakeSting auth bootstrap state."
+
+[[routes]]
+method = "POST"
+path = "/api/products/flake-sting/auth/login"
+description = "Validate a FlakeSting API key."
+
+[[routes]]
+method = "POST"
+path = "/api/products/flake-sting/auth/generate-key"
+description = "Generate the first local FlakeSting API key."
+
+[[routes]]
+method = "POST"
+path = "/api/products/flake-sting/auth/generate-service-token"
+description = "Generate a FlakeSting service token for HiveCore."
+
+[[routes]]
+method = "POST"
+path = "/api/products/flake-sting/auth/rotate-service-token"
+description = "Rotate the FlakeSting service token."
+
+[[routes]]
+method = "GET"
+path = "/api/products/flake-sting/startup/checks"
+description = "Read FlakeSting startup checks."
+
+[[routes]]
+method = "GET"
+path = "/api/products/flake-sting/capabilities"
+description = "Read FlakeSting product capabilities."
+
+[[routes]]
 method = "POST"
 path = "/api/products/flake-sting/scan/github/actions"
 description = "Scan GitHub Actions history for flaky signals."
@@ -45,3 +84,23 @@ description = "Scan GitHub Actions history for flaky signals."
 method = "GET"
 path = "/api/products/flake-sting/runs"
 description = "List FlakeSting scans."
+
+[[routes]]
+method = "GET"
+path = "/api/products/flake-sting/runs/:id"
+description = "Read a FlakeSting scan detail."
+
+[[routes]]
+method = "GET"
+path = "/api/products/flake-sting/overview"
+description = "Read FlakeSting overview metrics and recent scans."
+
+[[routes]]
+method = "GET"
+path = "/api/products/flake-sting/history"
+description = "List FlakeSting scan history."
+
+[[routes]]
+method = "GET"
+path = "/api/products/flake-sting/history/:id"
+description = "Read a FlakeSting scan detail."
