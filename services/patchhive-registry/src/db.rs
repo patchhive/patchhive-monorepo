@@ -155,10 +155,33 @@ impl RegistryStore {
         let now = Utc::now().to_rfc3339();
         let smoke_json = serde_json::to_string(&request.smoke)?;
         let conn = self.pool.get()?;
-        let updated = conn.execute(
-            "UPDATE installs SET smoke_json=?1, updated_at=?2 WHERE install_id=?3",
-            params![smoke_json, now, install_id],
-        )?;
+        let snapshot_json = conn
+            .query_row(
+                "SELECT snapshot_json FROM installs WHERE install_id=?1",
+                [install_id],
+                |row| row.get::<_, Option<String>>(0),
+            )
+            .optional()?
+            .flatten()
+            .map(|value| {
+                let mut snapshot: RegistrySnapshot =
+                    serde_json::from_str(&value).context("stored snapshot is invalid")?;
+                snapshot.smoke = request.smoke.clone();
+                serde_json::to_string(&snapshot).context("could not serialize updated snapshot")
+            })
+            .transpose()?;
+
+        let updated = if let Some(snapshot_json) = snapshot_json {
+            conn.execute(
+                "UPDATE installs SET smoke_json=?1, snapshot_json=?2, updated_at=?3 WHERE install_id=?4",
+                params![smoke_json, snapshot_json, now, install_id],
+            )?
+        } else {
+            conn.execute(
+                "UPDATE installs SET smoke_json=?1, updated_at=?2 WHERE install_id=?3",
+                params![smoke_json, now, install_id],
+            )?
+        };
         if updated == 0 {
             return Err(anyhow!("unknown install"));
         }
@@ -186,7 +209,7 @@ impl RegistryStore {
         let mut installs = Vec::new();
         for row in rows {
             let (install_id, public_slug, display_name, last_heartbeat_at, snapshot_json) = row?;
-            let snapshot: RegistrySnapshot = serde_json::from_str(&snapshot_json)?;
+            let snapshot = public_snapshot_from_json(&snapshot_json)?;
             installs.push(PublicInstallSummary {
                 install_id,
                 public_slug,
@@ -217,9 +240,24 @@ impl RegistryStore {
             .optional()?;
 
         snapshot_json
-            .map(|value| serde_json::from_str(&value).context("stored snapshot is invalid"))
+            .map(|value| public_snapshot_from_json(&value))
             .transpose()
     }
+}
+
+fn public_snapshot_from_json(value: &str) -> Result<RegistrySnapshot> {
+    let snapshot: RegistrySnapshot =
+        serde_json::from_str(value).context("stored snapshot is invalid")?;
+    Ok(sanitize_public_snapshot(snapshot))
+}
+
+fn sanitize_public_snapshot(mut snapshot: RegistrySnapshot) -> RegistrySnapshot {
+    snapshot.install_mode = RegistryMode::PublicDemo;
+    snapshot.privacy = None;
+    for product in &mut snapshot.products {
+        product.note = None;
+    }
+    snapshot
 }
 
 fn hash_token(token: &str) -> String {
@@ -264,6 +302,7 @@ fn sanitize_slug(value: &str) -> String {
 mod tests {
     use super::*;
     use crate::models::{FleetSnapshot, HiveCoreSnapshot, ProductSnapshot, SmokeSnapshot};
+    use serde_json::json;
 
     fn test_store() -> RegistryStore {
         let path = std::env::temp_dir().join(format!(
@@ -372,5 +411,82 @@ mod tests {
         assert!(!store
             .authorize(&registered.install_id, "phr_wrong")
             .expect("auth should query"));
+    }
+
+    #[test]
+    fn smoke_update_refreshes_public_snapshot() {
+        let store = test_store();
+        let public = store
+            .register_install(RegisterInstallRequest {
+                install_mode: RegistryMode::PublicDemo,
+                display_name: Some("Public Demo".into()),
+                public_slug: Some("public-demo".into()),
+                hivecore_version: Some("0.1.0".into()),
+            })
+            .expect("public register should work");
+
+        store
+            .save_heartbeat(&public.install_id, snapshot(&public.install_id))
+            .expect("heartbeat should save");
+        store
+            .save_smoke(
+                &public.install_id,
+                SmokeUpdateRequest {
+                    smoke: SmokeSnapshot {
+                        latest_tier: "release-gate".into(),
+                        latest_status: "attention".into(),
+                        passed: 3,
+                        warned: 1,
+                        failed: 0,
+                        skipped: 0,
+                        generated_at: Some("2026-06-16T15:00:00Z".into()),
+                    },
+                },
+            )
+            .expect("smoke update should save");
+
+        let public_snapshot = store
+            .public_snapshot("public-demo")
+            .expect("public snapshot should query")
+            .expect("public snapshot should exist");
+        assert_eq!(public_snapshot.smoke.latest_tier, "release-gate");
+        assert_eq!(public_snapshot.smoke.latest_status, "attention");
+        assert_eq!(public_snapshot.smoke.passed, 3);
+
+        let public_installs = store.public_installs().expect("public list should load");
+        assert_eq!(public_installs[0].latest_smoke_status, "attention");
+    }
+
+    #[test]
+    fn public_snapshots_strip_freeform_fields() {
+        let store = test_store();
+        let public = store
+            .register_install(RegisterInstallRequest {
+                install_mode: RegistryMode::PublicDemo,
+                display_name: Some("Public Demo".into()),
+                public_slug: Some("public-demo".into()),
+                hivecore_version: Some("0.1.0".into()),
+            })
+            .expect("public register should work");
+        let mut snapshot = snapshot(&public.install_id);
+        snapshot.privacy = Some(json!({
+            "repo_names": ["private-owner/private-repo"],
+            "local_paths": ["/home/operator/private"]
+        }));
+        snapshot.products[0].note = Some("private-owner/private-repo had local path drift".into());
+
+        store
+            .save_heartbeat(&public.install_id, snapshot)
+            .expect("heartbeat should save");
+        let public_snapshot = store
+            .public_snapshot("public-demo")
+            .expect("public snapshot should query")
+            .expect("public snapshot should exist");
+
+        assert!(public_snapshot.privacy.is_none());
+        assert!(public_snapshot
+            .products
+            .iter()
+            .all(|product| product.note.is_none()));
     }
 }
