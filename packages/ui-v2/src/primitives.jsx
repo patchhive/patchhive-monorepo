@@ -1,9 +1,9 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 
 const DEFAULT_RADAR_WINDOWS = {
-  7: { label: "7 day live pass", outer: "7d", mid: "3d", inner: "24h" },
-  14: { label: "14 day history pass", outer: "14d", mid: "7d", inner: "3d" },
-  30: { label: "30 day deep sweep", outer: "30d", mid: "14d", inner: "7d" },
+  7: { label: "7 day live pass", readoutLabel: "7 day window", outer: "7d", mid: "3d", inner: "24h" },
+  14: { label: "14 day history pass", readoutLabel: "14 day window", outer: "14d", mid: "7d", inner: "3d" },
+  30: { label: "30 day deep sweep", readoutLabel: "30 day window", outer: "30d", mid: "14d", inner: "7d" },
 };
 
 const PRODUCT_ACCENTS = {
@@ -741,7 +741,7 @@ export function SuiteRadar({
         <div className="readout-card">
           <span className="label">{vectorLabel}</span>
           <span className={`readout-value${toneClass(selectedItem.vectorTone)}`}>{selectedItem.vector || selectedItem.id}</span>
-          <span className="micro">{activeWindow.label}</span>
+          <span className="micro">{activeWindow.readoutLabel || `${windowDays} day window`}</span>
         </div>
         <div className="readout-card">
           <span className="label">{gainLabel}</span>
