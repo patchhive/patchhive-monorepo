@@ -176,6 +176,31 @@ function buildRadarItems(scan, history) {
       vectorTone: recommendationTone(item.recommendation) === "red" || recommendationTone(item.recommendation) === "amber" ? "warn" : "",
     }));
   }
+  if (scan) {
+    const metrics = scan.metrics || {};
+    const hasTriagePressure = asCount(metrics.update_now) || asCount(metrics.watch) || asCount(metrics.tracked_items);
+    return [{
+      detail: scan.repo,
+      gain: metrics.update_now ? "update now" : metrics.watch ? "watch" : hasTriagePressure ? "ignore" : "clear",
+      gainMeta: `${asCount(metrics.tracked_items)} items`,
+      id: scan.id || "dep-triage-scan",
+      label: scan.repo?.split("/").pop() || "scan",
+      minWindow: 7,
+      position: POSITIONS[0],
+      stats: [
+        { label: "Repo", value: scan.repo },
+        { label: "Tracked", value: String(asCount(metrics.tracked_items)) },
+        { label: "Now", value: String(asCount(metrics.update_now)) },
+        { label: "Watch", value: String(asCount(metrics.watch)) },
+        { label: "Age", value: timeAgo(scan.created_at) },
+      ],
+      summary: scan.summary || "Saved dependency triage scan.",
+      title: scan.repo,
+      tone: metrics.update_now ? "red" : metrics.watch ? "amber" : "green",
+      vector: hasTriagePressure ? "triage" : "clear",
+      vectorTone: metrics.update_now || metrics.watch ? "warn" : "",
+    }];
+  }
   if (history.length) {
     return history.map((item, index) => {
       const minWindow = radarWindowFromTimestamp(item.created_at);
@@ -184,7 +209,7 @@ function buildRadarItems(scan, history) {
       }
       return {
         detail: item.repo,
-        gain: item.update_now ? "update now" : item.watch ? "watch" : "saved",
+        gain: item.update_now ? "update now" : item.watch ? "watch" : item.tracked_items ? "ignore" : "clear",
         gainMeta: `${asCount(item.tracked_items)} items`,
         id: item.id || `history-${index + 1}`,
         label: item.repo?.split("/").pop() || `S${index + 1}`,
@@ -229,7 +254,6 @@ function buildRadarItems(scan, history) {
 function buildRadarFeed(scan, history, health) {
   if (scan) {
     return [
-      { text: scan.summary || "DepTriage completed the dependency scan.", tone: scan.metrics?.update_now ? "red" : scan.metrics?.watch ? "amber" : "green" },
       { text: `${asCount(scan.metrics?.update_now)} update-now items and ${asCount(scan.metrics?.watch)} watch items are active.`, tone: scan.metrics?.update_now ? "red" : scan.metrics?.watch ? "amber" : "green" },
       { text: scan.warnings?.[0] || "Dependency PRs and alerts are ranked into actionable buckets.", tone: scan.warnings?.length ? "amber" : "signal" },
     ];
@@ -249,6 +273,7 @@ function StatusBanner({ tone = "signal", children }) {
 function DependencyMap({ health, history, scan }) {
   const items = useMemo(() => buildRadarItems(scan, history), [scan, history]);
   const feed = useMemo(() => buildRadarFeed(scan, history, health), [scan, history, health]);
+  const hasPackageItems = Boolean(scan?.items?.length);
   return (
     <SuiteRadar
       ariaLabel="DepTriage dependency pressure radar"
@@ -257,8 +282,8 @@ function DependencyMap({ health, history, scan }) {
       gainLabel="Decision"
       itemQueryParam="dependency"
       items={items}
-      signalLabel={scan ? "packages" : "scans"}
-      vectorLabel={scan ? "Selected package" : "Selected scan"}
+      signalLabel={hasPackageItems ? "packages" : "scans"}
+      vectorLabel={hasPackageItems ? "Selected package" : "Selected scan"}
     />
   );
 }
