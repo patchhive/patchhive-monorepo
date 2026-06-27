@@ -659,10 +659,15 @@ export function SuiteRadar({
   };
 
   useEffect(() => {
-    if (!selectedItem || selectedItem.minWindow > windowDays) {
+    const currentItem = selectedItem
+      ? normalizedItems.find((item) => item.id === selectedItem.id)
+      : null;
+    if (!currentItem || currentItem.minWindow > windowDays) {
       const nextItem = visibleItems[0] || normalizedItems[0];
       setSelectedItem(nextItem);
       updateRadarUrl(nextItem, windowDays);
+    } else if (currentItem !== selectedItem) {
+      setSelectedItem(currentItem);
     }
   }, [normalizedItems, selectedItem, visibleItems, windowDays]);
 
