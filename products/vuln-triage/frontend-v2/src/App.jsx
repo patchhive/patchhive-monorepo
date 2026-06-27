@@ -69,6 +69,18 @@ function findingTone(finding = {}) {
   return "signal";
 }
 
+function recommendationLabel(value) {
+  return String(value || "watch").replaceAll("_", " ");
+}
+
+function warningLabel(warning) {
+  const value = String(warning || "");
+  if (value.includes("BOT_GITHUB_TOKEN is not set") || value.includes("GITHUB_TOKEN is not set")) {
+    return "Security feeds were skipped because GitHub token access is not configured.";
+  }
+  return value;
+}
+
 function metricTone(value, hotTone = "hot") {
   return asCount(value) ? hotTone : "ok";
 }
@@ -155,7 +167,7 @@ function buildRadarItems(scan, history) {
       const tone = findingTone(finding);
       return {
         detail: finding.location || finding.package_name || finding.source || finding.title,
-        gain: finding.recommendation || "watch",
+        gain: recommendationLabel(finding.recommendation),
         gainMeta: `${asCount(finding.score)} score`,
         id: finding.key || `finding-${index + 1}`,
         label: finding.source || finding.severity || `V${index + 1}`,
@@ -163,7 +175,7 @@ function buildRadarItems(scan, history) {
         position: POSITIONS[index % POSITIONS.length],
         stats: [
           { label: "Severity", value: finding.severity || "unknown" },
-          { label: "Decision", value: finding.recommendation || "watch" },
+          { label: "Decision", value: recommendationLabel(finding.recommendation) },
           { label: "Score", value: String(asCount(finding.score)) },
           { label: "Source", value: finding.source || finding.tool_name || "github" },
           { label: "Owner", value: finding.owner_hint || "unrouted" },
@@ -231,12 +243,12 @@ function buildRadarFeed(scan, history, health) {
     return [
       { text: scan.summary || "VulnTriage completed the security scan.", tone: scan.metrics?.fix_now ? "red" : scan.metrics?.plan_next ? "amber" : "green" },
       { text: `${asCount(scan.metrics?.fix_now)} fix-now and ${asCount(scan.metrics?.plan_next)} plan-next findings are active.`, tone: scan.metrics?.fix_now ? "red" : scan.metrics?.plan_next ? "amber" : "green" },
-      { text: scan.warnings?.[0] || "Security alerts are ranked into engineering decisions.", tone: scan.warnings?.length ? "amber" : "signal" },
+      { text: warningLabel(scan.warnings?.[0]) || "Security alerts are ranked into engineering decisions.", tone: scan.warnings?.length ? "amber" : "signal" },
     ];
   }
   return [
     { text: history.length ? `${history.length} saved security scans are available.` : "VulnTriage is waiting for a repository scan.", tone: "signal" },
-    { text: githubReady(health) ? "GitHub token is ready for security reads." : "Configure GitHub token access before live scans.", tone: githubReady(health) ? "green" : "amber" },
+    { text: githubReady(health) ? "GitHub token is ready for security reads." : "Add a GitHub token to scan code scanning and Dependabot security alerts.", tone: githubReady(health) ? "green" : "amber" },
     { text: "The radar fills with vulnerability findings once a scan completes.", tone: "signal" },
   ];
 }
@@ -263,7 +275,8 @@ function VulnerabilityMap({ health, history, scan }) {
   );
 }
 
-function ScanForm({ error, form, onChange, onRun, running }) {
+function ScanForm({ error, form, health, onChange, onRun, running }) {
+  const securityFeedsReady = githubReady(health);
   return (
     <Panel eyebrow="Scan" title="GitHub security intake" action={<span className="chip signal">read only</span>}>
       <form
@@ -280,26 +293,28 @@ function ScanForm({ error, form, onChange, onRun, running }) {
           </label>
           <label className="rowline" style={{ alignItems: "flex-start", justifyContent: "flex-start" }}>
             <input
-              checked={Boolean(form.include_code_scanning)}
-              onChange={(event) => onChange((current) => ({ ...current, include_code_scanning: event.target.checked }))}
+              checked={securityFeedsReady && Boolean(form.include_code_scanning)}
+              disabled={!securityFeedsReady}
+              onChange={(event) => onChange((current) => ({ ...current, include_code_scanning: securityFeedsReady && event.target.checked }))}
               style={{ marginTop: 3 }}
               type="checkbox"
             />
             <span>
               <span className="repo-name" style={{ display: "block", fontSize: "0.8rem" }}>Code scanning</span>
-              <span className="feed-meta">Include GitHub code scanning alerts when accessible.</span>
+              <span className="feed-meta">{securityFeedsReady ? "Include GitHub code scanning alerts." : "Add a GitHub token to read code scanning alerts."}</span>
             </span>
           </label>
           <label className="rowline" style={{ alignItems: "flex-start", justifyContent: "flex-start" }}>
             <input
-              checked={Boolean(form.include_dependency_alerts)}
-              onChange={(event) => onChange((current) => ({ ...current, include_dependency_alerts: event.target.checked }))}
+              checked={securityFeedsReady && Boolean(form.include_dependency_alerts)}
+              disabled={!securityFeedsReady}
+              onChange={(event) => onChange((current) => ({ ...current, include_dependency_alerts: securityFeedsReady && event.target.checked }))}
               style={{ marginTop: 3 }}
               type="checkbox"
             />
             <span>
               <span className="repo-name" style={{ display: "block", fontSize: "0.8rem" }}>Dependabot alerts</span>
-              <span className="feed-meta">Include dependency vulnerability alerts when available.</span>
+              <span className="feed-meta">{securityFeedsReady ? "Include dependency vulnerability alerts." : "Add a GitHub token to read dependency vulnerability alerts."}</span>
             </span>
           </label>
           <div className="v2-field">
@@ -327,7 +342,7 @@ function FixQueuePanel({ history, onLoadScan, scan }) {
                 <div className="repo-name">{finding.title || finding.package_name || finding.key}</div>
                 <div className="feed-meta">{finding.summary || finding.next_action || finding.location}</div>
                 <div className="repo-meta">
-                  <span className={`chip ${findingTone(finding)}`}>{finding.recommendation || "watch"}</span>
+                  <span className={`chip ${findingTone(finding)}`}>{recommendationLabel(finding.recommendation)}</span>
                   <span className="chip signal">{finding.severity || finding.source || "security"}</span>
                   {finding.location && <span className="chip">{finding.location}</span>}
                 </div>
@@ -383,7 +398,7 @@ function SidePanels({ scan }) {
             <div className="feed-item" key={warning}>
               <div>
                 <div className="feed-title">Scan warning</div>
-                <div className="feed-meta">{warning}</div>
+                <div className="feed-meta">{warningLabel(warning)}</div>
               </div>
               <span className="chip amber">warn</span>
             </div>
@@ -441,7 +456,7 @@ function TriageSurface({
               <button className="btn" onClick={onRefresh} type="button">Refresh</button>
             </div>
           </div>
-          <ScanForm error={error} form={form} onChange={onChangeForm} onRun={onRunScan} running={running} />
+          <ScanForm error={error} form={form} health={health} onChange={onChangeForm} onRun={onRunScan} running={running} />
           <MetricBand metrics={metrics} />
           <div className="atlas-layout suite-four-layout">
             <Panel eyebrow="Triage" title="Finding map" action={<span className="chip signal">finding radar</span>}>
@@ -640,8 +655,8 @@ export default function App() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             repo: form.repo,
-            include_code_scanning: Boolean(form.include_code_scanning),
-            include_dependency_alerts: Boolean(form.include_dependency_alerts),
+            include_code_scanning: githubReady(runtime.health) && Boolean(form.include_code_scanning),
+            include_dependency_alerts: githubReady(runtime.health) && Boolean(form.include_dependency_alerts),
           }),
         },
         "VulnTriage could not scan that repository.",
