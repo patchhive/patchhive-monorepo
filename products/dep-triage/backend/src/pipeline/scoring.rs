@@ -261,12 +261,12 @@ pub fn build_summary(
     );
 
     if let Some(top) = top {
-        summary.push_str(&format!(
-            " Highest urgency: {} ({}, {}).",
-            top.package_name,
-            top.recommendation.replace('_', " "),
-            top.summary
-        ));
+        let label = if metrics.update_now == 0 && metrics.watch == 0 {
+            "Top defer"
+        } else {
+            "Highest urgency"
+        };
+        summary.push_str(&format!(" {label}: {}", top.summary));
     }
 
     summary

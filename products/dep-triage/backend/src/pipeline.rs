@@ -12,9 +12,11 @@ pub use routes::{
 mod tests {
     use super::{
         analysis::looks_like_dependency_pr,
+        scoring::build_summary,
         utils::{compare_versions, infer_runtime_impact, parse_package_name},
     };
     use crate::github::{GitHubPullFile, GitHubPullRequest};
+    use crate::models::{DependencyTriageItem, TriageMetrics};
 
     #[test]
     fn compares_semver_jumps() {
@@ -54,5 +56,25 @@ mod tests {
             "tokio",
         );
         assert_eq!(runtime, "runtime");
+    }
+
+    #[test]
+    fn all_deferred_summary_uses_top_defer_copy() {
+        let metrics = TriageMetrics {
+            tracked_items: 2,
+            ignore_for_now: 2,
+            ..TriageMetrics::default()
+        };
+        let top = DependencyTriageItem {
+            package_name: "build-dependencies".into(),
+            recommendation: "ignore_for_now".into(),
+            summary: "build-dependencies is a safe defer for now.".into(),
+            ..DependencyTriageItem::default()
+        };
+
+        let summary = build_summary("RevenueCat/purchases-kmp", &metrics, Some(&top));
+
+        assert!(summary.contains("Top defer: build-dependencies is a safe defer for now."));
+        assert!(!summary.contains("Highest urgency"));
     }
 }

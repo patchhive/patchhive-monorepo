@@ -72,6 +72,16 @@ function recommendationLabel(recommendation) {
   return String(recommendation || "watch").replaceAll("_", " ");
 }
 
+function summaryLabel(summary) {
+  const softened = String(summary || "Saved dependency triage scan.").replace(
+    /([A-Za-z0-9_@./:-]+(?: [A-Za-z0-9_@./:-]+)*) is currently marked `ignore for now` because DepTriage saw ([^.]+)\./g,
+    "$1 is a safe defer for now after DepTriage saw $2."
+  );
+  return softened.includes("0 update now, 0 watch")
+    ? softened.replaceAll("Highest urgency:", "Top defer:")
+    : softened;
+}
+
 function metricTone(recommendation) {
   const tone = recommendationTone(recommendation);
   if (tone === "red") return "hot";
@@ -173,7 +183,7 @@ function buildRadarItems(scan, history) {
         { label: "Source", value: item.source || "github" },
         { label: "Alerts", value: String(item.alerts?.length || 0) },
       ],
-      summary: item.summary || item.reasons?.[0] || "Dependency triage item.",
+      summary: summaryLabel(item.summary || item.reasons?.[0] || "Dependency triage item."),
       title: item.package_name || item.key || `Dependency ${index + 1}`,
       tone: recommendationTone(item.recommendation),
       vector: item.update_kind || item.ecosystem || item.source || "dependency",
@@ -198,7 +208,7 @@ function buildRadarItems(scan, history) {
         { label: "Watch", value: String(asCount(metrics.watch)) },
         { label: "Age", value: timeAgo(scan.created_at) },
       ],
-      summary: scan.summary || "Saved dependency triage scan.",
+      summary: summaryLabel(scan.summary),
       title: scan.repo,
       tone: metrics.update_now ? "red" : metrics.watch ? "amber" : "green",
       vector: hasTriagePressure ? "triage" : "clear",
@@ -226,7 +236,7 @@ function buildRadarItems(scan, history) {
           { label: "Watch", value: String(asCount(item.watch)) },
           { label: "Age", value: timeAgo(item.created_at) },
         ],
-        summary: item.summary || "Saved dependency triage scan.",
+        summary: summaryLabel(item.summary),
         title: item.repo,
         tone: item.update_now ? "red" : item.watch ? "amber" : "green",
         vector: "saved",
@@ -347,7 +357,7 @@ function UpdateQueuePanel({ history, onLoadScan, scan }) {
               <div className="rank">{String(index + 1).padStart(2, "0")}</div>
               <div>
                 <div className="repo-name">{item.package_name || item.key}</div>
-                <div className="feed-meta">{item.summary || item.reasons?.[0]}</div>
+                <div className="feed-meta">{summaryLabel(item.summary || item.reasons?.[0] || "Dependency triage item.")}</div>
                 <div className="repo-meta">
                   <span className={`chip ${recommendationTone(item.recommendation)}`}>{recommendationLabel(item.recommendation)}</span>
                   <span className="chip signal">{item.ecosystem || item.source}</span>
@@ -374,7 +384,7 @@ function UpdateQueuePanel({ history, onLoadScan, scan }) {
             <div className="rank">{asCount(item.update_now)}</div>
             <div>
               <div className="repo-name">{item.repo}</div>
-              <div className="feed-meta">{item.summary || "Saved dependency triage scan."}</div>
+              <div className="feed-meta">{summaryLabel(item.summary)}</div>
               <div className="repo-meta">
                 <span className="chip red">{asCount(item.update_now)} now</span>
                 <span className="chip amber">{asCount(item.watch)} watch</span>
@@ -510,7 +520,7 @@ function HistorySurface({ activeScanId, health, history, loading, onClearScan, o
               <div className="rank">{item.id === activeScanId ? "SEL" : asCount(item.update_now)}</div>
               <div>
                 <div className="repo-name">{item.repo}</div>
-                <div className="feed-meta">{item.summary || "Saved dependency triage scan."}</div>
+                <div className="feed-meta">{summaryLabel(item.summary)}</div>
                 <div className="repo-meta">
                   <span className="chip red">{asCount(item.update_now)} now</span>
                   <span className="chip amber">{asCount(item.watch)} watch</span>
