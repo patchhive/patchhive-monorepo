@@ -35,7 +35,7 @@ const POSITIONS = [
 const DEFAULT_FORM = {
   repo: "",
   pr_limit: "25",
-  include_alerts: true,
+  include_alerts: false,
 };
 
 function asCount(value) {
@@ -80,6 +80,14 @@ function summaryLabel(summary) {
   return softened.includes("0 update now, 0 watch")
     ? softened.replaceAll("Highest urgency:", "Top defer:")
     : softened;
+}
+
+function warningLabel(warning) {
+  const value = String(warning || "");
+  if (value.includes("BOT_GITHUB_TOKEN is not set") || value.includes("GITHUB_TOKEN is not set")) {
+    return "Dependabot alerts were skipped because GitHub token access is not configured.";
+  }
+  return value;
 }
 
 function metricTone(recommendation) {
@@ -269,7 +277,7 @@ function buildRadarFeed(scan, history, health) {
   if (scan) {
     return [
       { text: `${asCount(scan.metrics?.update_now)} update-now items and ${asCount(scan.metrics?.watch)} watch items are active.`, tone: scan.metrics?.update_now ? "red" : scan.metrics?.watch ? "amber" : "green" },
-      { text: scan.warnings?.[0] || "Dependency PRs and alerts are ranked into actionable buckets.", tone: scan.warnings?.length ? "amber" : "signal" },
+      { text: warningLabel(scan.warnings?.[0]) || "Dependency PRs and alerts are ranked into actionable buckets.", tone: scan.warnings?.length ? "amber" : "signal" },
     ];
   }
   return [
@@ -302,7 +310,8 @@ function DependencyMap({ health, history, scan }) {
   );
 }
 
-function ScanForm({ error, form, onChange, onRun, running }) {
+function ScanForm({ error, form, health, onChange, onRun, running }) {
+  const alertsReady = githubReady(health);
   return (
     <Panel eyebrow="Scan" title="GitHub dependency intake" action={<span className="chip signal">read only</span>}>
       <form
@@ -323,14 +332,15 @@ function ScanForm({ error, form, onChange, onRun, running }) {
           </label>
           <label className="rowline" style={{ alignItems: "flex-start", justifyContent: "flex-start" }}>
             <input
-              checked={Boolean(form.include_alerts)}
-              onChange={(event) => onChange((current) => ({ ...current, include_alerts: event.target.checked }))}
+              checked={alertsReady && Boolean(form.include_alerts)}
+              disabled={!alertsReady}
+              onChange={(event) => onChange((current) => ({ ...current, include_alerts: alertsReady && event.target.checked }))}
               style={{ marginTop: 3 }}
               type="checkbox"
             />
             <span>
               <span className="repo-name" style={{ display: "block", fontSize: "0.8rem" }}>Include Dependabot alerts</span>
-              <span className="feed-meta">Adds security urgency when alert access is available.</span>
+              <span className="feed-meta">{alertsReady ? "Adds security urgency from GitHub alerts." : "Add a GitHub token to include alert pressure."}</span>
             </span>
           </label>
           <div className="v2-field">
@@ -471,7 +481,7 @@ function TriageSurface({
               <button className="btn" onClick={onRefresh} type="button">Refresh</button>
             </div>
           </div>
-          <ScanForm error={error} form={form} onChange={onChangeForm} onRun={onRunScan} running={running} />
+          <ScanForm error={error} form={form} health={health} onChange={onChangeForm} onRun={onRunScan} running={running} />
           <MetricBand metrics={metrics} />
           <div className="atlas-layout suite-four-layout">
             <Panel eyebrow="Triage" title="Dependency map" action={<span className="chip signal">dependency radar</span>}>
@@ -671,7 +681,7 @@ export default function App() {
           body: JSON.stringify({
             repo: form.repo,
             pr_limit: Number(form.pr_limit) || 25,
-            include_alerts: Boolean(form.include_alerts),
+            include_alerts: githubReady(runtime.health) && Boolean(form.include_alerts),
           }),
         },
         "DepTriage could not scan that repository.",
