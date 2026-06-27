@@ -200,6 +200,27 @@ fn stored_service_value(config: &ApiKeyAuthConfig) -> String {
         .unwrap_or_default()
 }
 
+fn format_env_value(value: &str) -> String {
+    if value
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.' | '/' | ':' | '@'))
+    {
+        return value.to_string();
+    }
+
+    let mut escaped = String::new();
+    for ch in value.chars() {
+        match ch {
+            '\\' => escaped.push_str("\\\\"),
+            '"' => escaped.push_str("\\\""),
+            '\n' => escaped.push_str("\\n"),
+            '\r' => escaped.push_str("\\r"),
+            _ => escaped.push(ch),
+        }
+    }
+    format!("\"{escaped}\"")
+}
+
 fn persist_env_value(env_path: &Path, env_var: &str, value: &str) -> Result<()> {
     let existing = fs::read_to_string(env_path).unwrap_or_default();
     let filtered = existing
@@ -207,11 +228,12 @@ fn persist_env_value(env_path: &Path, env_var: &str, value: &str) -> Result<()> 
         .filter(|line| !line.trim_start().starts_with(&format!("{env_var}=")))
         .collect::<Vec<_>>()
         .join("\n");
+    let formatted_value = format_env_value(value);
 
     let content = if filtered.trim().is_empty() {
-        format!("{env_var}={value}\n")
+        format!("{env_var}={formatted_value}\n")
     } else {
-        format!("{filtered}\n{env_var}={value}\n")
+        format!("{filtered}\n{env_var}={formatted_value}\n")
     };
 
     // Atomic write: write to a temp file then rename to avoid TOCTOU.
@@ -1049,6 +1071,43 @@ mod tests {
         );
         assert!(verify_service_token(&config, &key));
         assert!(!verify_service_token(&config, "svc_wrong"));
+
+        clear_runtime_env_value(&env_var);
+        clear_runtime_env_value(&service_env_var);
+        let _ = fs::remove_file(env_path);
+    }
+
+    #[test]
+    fn scoped_service_token_record_survives_dotenv_reload() {
+        let env_var = format!("PATCHHIVE_TEST_AUTH_{}", uuid::Uuid::new_v4().simple());
+        let service_env_var = format!(
+            "PATCHHIVE_TEST_SERVICE_AUTH_{}",
+            uuid::Uuid::new_v4().simple()
+        );
+        let env_path = std::env::temp_dir().join(format!("{env_var}.env"));
+        let config = test_config_with_service(&env_var, &service_env_var, env_path.clone());
+
+        generate_and_save_service_token(&config).expect("service token generation should succeed");
+        let written = fs::read_to_string(&env_path).expect("env file should be written");
+        assert!(written.contains(&format!("{service_env_var}=\"{{\\\"id\\\"")));
+
+        let reloaded = dotenvy::from_path_iter(&env_path)
+            .expect("env file should parse")
+            .find_map(|item| {
+                let (key, value) = item.ok()?;
+                (key == service_env_var).then_some(value)
+            })
+            .expect("service token record should reload");
+        let record = parse_service_record(&reloaded).expect("reloaded record should parse");
+
+        assert_eq!(record.name, "control-plane");
+        assert_eq!(
+            record.scopes,
+            vec![
+                SERVICE_SCOPE_RUNS_READ.to_string(),
+                SERVICE_SCOPE_ACTIONS_DISPATCH.to_string()
+            ]
+        );
 
         clear_runtime_env_value(&env_var);
         clear_runtime_env_value(&service_env_var);
