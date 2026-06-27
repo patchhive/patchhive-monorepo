@@ -68,6 +68,10 @@ function recommendationTone(recommendation) {
   return "signal";
 }
 
+function recommendationLabel(recommendation) {
+  return String(recommendation || "watch").replaceAll("_", " ");
+}
+
 function metricTone(recommendation) {
   const tone = recommendationTone(recommendation);
   if (tone === "red") return "hot";
@@ -156,7 +160,7 @@ function buildRadarItems(scan, history) {
   if (scan?.items?.length) {
     return scan.items.slice(0, 8).map((item, index) => ({
       detail: item.package_name || item.key,
-      gain: item.recommendation || "watch",
+      gain: recommendationLabel(item.recommendation),
       gainMeta: `${asCount(item.score)} score`,
       id: item.key || `dep-${index + 1}`,
       label: item.package_name || `D${index + 1}`,
@@ -164,7 +168,7 @@ function buildRadarItems(scan, history) {
       position: POSITIONS[index % POSITIONS.length],
       stats: [
         { label: "Package", value: item.package_name || "package" },
-        { label: "Decision", value: item.recommendation || "watch" },
+        { label: "Decision", value: recommendationLabel(item.recommendation) },
         { label: "Score", value: String(asCount(item.score)) },
         { label: "Source", value: item.source || "github" },
         { label: "Alerts", value: String(item.alerts?.length || 0) },
@@ -260,7 +264,7 @@ function buildRadarFeed(scan, history, health) {
   }
   return [
     { text: history.length ? `${history.length} saved dependency scans are available.` : "DepTriage is waiting for a repository scan.", tone: "signal" },
-    { text: githubReady(health) ? "GitHub token is ready for dependency PR and alert reads." : "Configure GitHub token access before live scans.", tone: githubReady(health) ? "green" : "amber" },
+    { text: githubReady(health) ? "GitHub token is ready for dependency PR and alert reads." : "Public PR scans work without a token; add GitHub access for Dependabot alerts and stronger rate limits.", tone: githubReady(health) ? "green" : "amber" },
     { text: "The radar fills with package-level decisions once a scan completes.", tone: "signal" },
   ];
 }
@@ -345,7 +349,7 @@ function UpdateQueuePanel({ history, onLoadScan, scan }) {
                 <div className="repo-name">{item.package_name || item.key}</div>
                 <div className="feed-meta">{item.summary || item.reasons?.[0]}</div>
                 <div className="repo-meta">
-                  <span className={`chip ${recommendationTone(item.recommendation)}`}>{item.recommendation}</span>
+                  <span className={`chip ${recommendationTone(item.recommendation)}`}>{recommendationLabel(item.recommendation)}</span>
                   <span className="chip signal">{item.ecosystem || item.source}</span>
                   <span className="chip">{asCount(item.score)} score</span>
                 </div>
