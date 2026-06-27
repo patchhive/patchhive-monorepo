@@ -444,6 +444,13 @@ fn build_item_summary(
         parts.join(", ")
     };
 
+    if recommendation == "ignore_for_now" {
+        return format!(
+            "{} is a safe defer for now: its score stayed below the watch threshold after DepTriage saw {}.",
+            package_name, driver
+        );
+    }
+
     format!(
         "{} is currently marked `{}` because DepTriage saw {}.",
         package_name,
