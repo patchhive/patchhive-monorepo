@@ -250,11 +250,12 @@ function buildRadarItems(scan, history) {
 
 function buildRadarFeed(scan, history, health) {
   if (scan) {
+    const hasFindings = Boolean(scan.findings?.length);
     return [
-      { text: scan.summary || "VulnTriage completed the security scan.", tone: scan.metrics?.fix_now ? "red" : scan.metrics?.plan_next ? "amber" : "green" },
+      hasFindings ? { text: scan.summary || "VulnTriage completed the security scan.", tone: scan.metrics?.fix_now ? "red" : scan.metrics?.plan_next ? "amber" : "green" } : null,
       { text: `${asCount(scan.metrics?.fix_now)} fix-now and ${asCount(scan.metrics?.plan_next)} plan-next findings are active.`, tone: scan.metrics?.fix_now ? "red" : scan.metrics?.plan_next ? "amber" : "green" },
       { text: warningLabel(scan.warnings?.[0]) || "Security alerts are ranked into engineering decisions.", tone: scan.warnings?.length ? "amber" : "signal" },
-    ];
+    ].filter(Boolean);
   }
   return [
     { text: history.length ? `${history.length} saved security scans are available.` : "VulnTriage is waiting for a repository scan.", tone: "signal" },
