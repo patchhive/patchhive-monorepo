@@ -457,6 +457,8 @@ Important env vars:
 - VulnTriage should stay triage-first and read-only.
 - Its job is to turn GitHub code scanning and dependency alerts into a ranked queue of `fix now`, `plan next`, and `watch`.
 - The MVP should work without live AI providers by scoring severity, reachability proxy, owner hints, and practical next steps with deterministic heuristics.
+- Current live GitHub security-feed scans are strongest for repositories where the operator has security-read access; third-party public repositories may return `403` even when the token is valid.
+- Outbound/random public repo discovery needs a future public-intelligence fallback mode using OSV/GHSA advisories, manifest and lockfile parsing, public dependency inference, and lightweight code-pattern heuristics. Treat missing GitHub alert access as a product boundary, not a scanner bug.
 - VulnTriage should help small teams behave like they have an AppSec triage layer without forcing them to stare at raw GitHub alert noise.
 - VulnTriage should reuse `patchhive-github-security` for typed code scanning and Dependabot reads instead of growing another private GitHub security client.
 

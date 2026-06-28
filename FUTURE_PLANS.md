@@ -92,6 +92,7 @@ back here instead of living in parallel long-term.
 - Add report export modes later once teams want to turn the ranked queue into a planning artifact or weekly security digest.
 - Add historical compare mode so operators can see which findings are new, which were cleared, and which keep surviving scan after scan.
 - Add time-to-patch tracking so PatchHive can measure how quickly monitored repos move from advisory to merged fix.
+- Add public repository fallback intelligence for outbound discovery where GitHub security alert feeds are unavailable: OSV and GHSA advisory lookup, manifest and lockfile parsing, public dependency inference, and lightweight vulnerable-usage heuristics.
 - Add a real-time CVE response workflow where VulnTriage identifies affected monitored repos, assesses severity and exploitability, queues fix candidates, and sends them through TrustGate before RepoReaper acts.
 - Add coordinated disclosure mode for vulnerabilities PatchHive discovers directly, including private reporting, embargo-aware handling, and CVE filing assistance where appropriate.
 - Consider AI-assisted finding summaries later through `patchhive-ai-local`, but keep the base ranking loop useful without AI.
@@ -215,6 +216,7 @@ Use this section for bigger, later-stage ideas. Favor evidence-weighted forecast
 - Add transitive vulnerability propagation mapping that shows how alerts flow through dependency trees and which top-level packages carry the practical fix path.
 - Add vulnerability trend correlation that finds recurring weakness classes, affected subsystems, and repeated dependency families over time.
 - Add fix-complexity estimates based on affected paths, dependency depth, available patched versions, migration scope, and required validation evidence.
+- Add public vuln intelligence fallback for third-party public repos, using OSV/GHSA advisory lookup, manifest and lockfile parsing, public dependency inference, and code-pattern heuristics when GitHub code scanning or Dependabot alert APIs are not accessible.
 
 ### RepoReaper
 

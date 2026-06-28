@@ -59,6 +59,12 @@ cd frontend-v2 && npm install && npm run dev
 
 VulnTriage works best with a fine-grained GitHub token that has the matching security read permissions for the repositories being scanned.
 
+## Security Feed Access Boundary
+
+VulnTriage's current MVP reads GitHub code scanning alerts and Dependabot security alerts. Those are protected repository feeds, not general public data. A valid token can still receive `403 Forbidden` on public repositories when the operator does not have security-read access or when the target repo has alerts disabled.
+
+That means the current product is strongest for repos the operator owns, administers, or has been granted security access to. For outbound/random public repository discovery, VulnTriage needs a future public-intelligence fallback mode: OSV/GHSA advisory lookup, manifest and lockfile parsing, public dependency inference, and code-pattern heuristics. That fallback is a planned feature, not a current MVP bug.
+
 ## Safety Boundary
 
 VulnTriage is intentionally read-only. It does not dismiss alerts, patch repositories, open issues, or publish security statuses. It uses `patchhive-github-security` for typed GitHub security reads and keeps ranking decisions visible and product-owned.

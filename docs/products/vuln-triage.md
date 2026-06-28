@@ -73,6 +73,26 @@ npm run dev
 
 VulnTriage works best with a fine-grained GitHub token that has the matching security read permissions for the repositories being scanned.
 
+## GitHub Security Feed Access Boundary
+
+VulnTriage's current live scan loop depends on GitHub security alert APIs:
+
+- code scanning alerts
+- Dependabot security alerts
+
+Those feeds are protected repository data. Even for public repositories, GitHub may return `403 Forbidden` unless the token belongs to an account or installation with the required security-read access and the repository has the relevant alert feature enabled. That is expected behavior, not a broken VulnTriage scan.
+
+For repositories the operator owns, administers, or has been granted security access to, VulnTriage should use the native GitHub alert feeds because they are the most direct source of triage data.
+
+For outbound or random public repository discovery, VulnTriage needs a separate public-intelligence fallback mode instead of relying on private GitHub alert feeds. Future fallback sources should include:
+
+- OSV and GHSA advisory lookup by ecosystem and package name.
+- manifest and lockfile parsing for public dependency evidence.
+- public dependency inference when lockfiles are unavailable.
+- lightweight code-pattern heuristics for common vulnerable usage patterns.
+
+That fallback would let VulnTriage surface useful security pressure for third-party public repos without needing privileged repository security access. Treat this as a planned product capability, not a current MVP bug.
+
 ## HiveCore Fit
 
 HiveCore can surface VulnTriage as the security pressure view for the suite. Future CVE response flows should route through explicit approval, TrustGate review, and RepoReaper execution rather than letting triage imply automatic patching.
@@ -259,7 +279,8 @@ Helm charts are available in the `deploy/` directory for production deployments.
 ### Common Issues
 
 1. **Authentication Failures**
-   - Verify GitHub token has required security permissions (security_events: read, dependabot_secrets: read, contents: read for code scanning)
+   - Verify GitHub token has the required security-read permissions for the target repository: Metadata read, Code scanning alerts read, and Dependabot alerts read for fine-grained tokens.
+   - For classic tokens, verify equivalent security alert access such as `security_events`, and use `repo` when private repositories require it.
    - Check that rate limits are not being exceeded
    - Ensure network connectivity to GitHub API
 
@@ -267,6 +288,7 @@ Helm charts are available in the `deploy/` directory for production deployments.
    - Verify repository access and correct repository reference
    - Check that code scanning and Dependabot alerts are actually enabled
    - Review repository security settings if expected alerts are missing
+   - For third-party public repositories, remember that GitHub security alert feeds may be unavailable without explicit access; use future public-intelligence fallback work instead of treating the `403` as a scanner failure.
 
 3. **Analysis Problems**
    - Verify that alert normalization is working for your security tools
