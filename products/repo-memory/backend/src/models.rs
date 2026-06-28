@@ -113,6 +113,8 @@ pub struct IngestSummary {
     pub merged_prs_analyzed: u32,
     pub review_feedback_items: u32,
     pub closed_issues_analyzed: u32,
+    #[serde(default)]
+    pub partial_read_warnings: u32,
     pub memories_created: u32,
     pub conventions: u32,
     pub failures: u32,
@@ -126,6 +128,7 @@ impl IngestSummary {
             merged_prs_analyzed: 0,
             review_feedback_items: 0,
             closed_issues_analyzed: 0,
+            partial_read_warnings: 0,
             memories_created: 0,
             conventions: 0,
             failures: 0,
@@ -155,6 +158,7 @@ pub struct HistoryItem {
     pub conventions: u32,
     pub failures: u32,
     pub hotspots: u32,
+    pub partial_read_warnings: u32,
     pub top_memory: String,
 }
 

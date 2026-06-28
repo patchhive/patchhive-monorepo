@@ -400,16 +400,30 @@ pub async fn ingest(
     .map_err(upstream_error)?;
 
     let mut bundles = Vec::new();
+    let mut partial_read_warnings = 0u32;
     for pr in pulls {
-        let reviews = github::fetch_pr_reviews(&state.http, &params.repo, pr.number)
-            .await
-            .unwrap_or_default();
-        let comments = github::fetch_pr_review_comments(&state.http, &params.repo, pr.number)
-            .await
-            .unwrap_or_default();
-        let files = github::fetch_pr_files(&state.http, &params.repo, pr.number)
-            .await
-            .unwrap_or_default();
+        let reviews = match github::fetch_pr_reviews(&state.http, &params.repo, pr.number).await {
+            Ok(reviews) => reviews,
+            Err(_) => {
+                partial_read_warnings += 1;
+                Vec::new()
+            }
+        };
+        let comments =
+            match github::fetch_pr_review_comments(&state.http, &params.repo, pr.number).await {
+                Ok(comments) => comments,
+                Err(_) => {
+                    partial_read_warnings += 1;
+                    Vec::new()
+                }
+            };
+        let files = match github::fetch_pr_files(&state.http, &params.repo, pr.number).await {
+            Ok(files) => files,
+            Err(_) => {
+                partial_read_warnings += 1;
+                Vec::new()
+            }
+        };
         bundles.push(PullBundle {
             pr,
             reviews,
@@ -427,7 +441,8 @@ pub async fn ingest(
     .await
     .map_err(upstream_error)?;
 
-    let run = build_memory_run(params, bundles, issues).map_err(internal_from_anyhow)?;
+    let run = build_memory_run(params, bundles, issues, partial_read_warnings)
+        .map_err(internal_from_anyhow)?;
     db::save_run(&run).map_err(internal_error)?;
     Ok(Json(run))
 }

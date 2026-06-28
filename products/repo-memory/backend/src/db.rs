@@ -287,6 +287,7 @@ pub fn list_history(repo: Option<&str>) -> rusqlite::Result<Vec<HistoryItem>> {
             conventions: summary.conventions,
             failures: summary.failures,
             hotspots: summary.hotspots,
+            partial_read_warnings: summary.partial_read_warnings,
             top_memory: summary.top_memory,
         })
     })?;

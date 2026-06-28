@@ -48,6 +48,7 @@ pub fn build_summary(
     merged_prs_analyzed: u32,
     review_feedback_items: u32,
     closed_issues_analyzed: u32,
+    partial_read_warnings: u32,
 ) -> IngestSummary {
     let conventions = entries
         .iter()
@@ -66,6 +67,7 @@ pub fn build_summary(
         merged_prs_analyzed,
         review_feedback_items,
         closed_issues_analyzed,
+        partial_read_warnings,
         memories_created: entries.len() as u32,
         conventions,
         failures,
@@ -134,7 +136,16 @@ pub fn build_prompt_pack(repo: &str, summary: &IngestSummary, entries: &[MemoryE
     }
 
     if sections.is_empty() {
-        sections.push("## Early signal\n- RepoMemory has not seen enough repeated patterns yet. Read recent merged PRs and reviewer comments before trusting automation.".into());
+        let partial_note = if summary.partial_read_warnings > 0 {
+            format!(
+                "\n- This ingest had {} partial GitHub read warning{}, so rerun with stronger repository access before treating the absence of durable memories as complete evidence.",
+                summary.partial_read_warnings,
+                if summary.partial_read_warnings == 1 { "" } else { "s" }
+            )
+        } else {
+            String::new()
+        };
+        sections.push(format!("## Early signal\n- RepoMemory has not seen enough repeated patterns yet. Read recent merged PRs and reviewer comments before trusting automation.{partial_note}"));
     }
 
     format!(

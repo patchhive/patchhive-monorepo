@@ -223,8 +223,13 @@ function repoInitials(repo = "", fallback = "RM") {
 
 function runSummary(run) {
   const memoriesCreated = asCount(run.memories_created);
+  const partialReads = asCount(run.partial_read_warnings);
   if (memoriesCreated > 0) {
-    return `${run.repo} produced ${memoriesCreated} durable ${memoriesCreated === 1 ? "memory" : "memories"} on its latest ingest.`;
+    const partialNote = partialReads ? ` ${partialReads} GitHub evidence read${partialReads === 1 ? " was" : "s were"} partial, so rerun with stronger access before treating this as complete coverage.` : "";
+    return `${run.repo} produced ${memoriesCreated} durable ${memoriesCreated === 1 ? "memory" : "memories"} on its latest ingest.${partialNote}`;
+  }
+  if (partialReads > 0) {
+    return `${run.repo} was scanned with partial GitHub evidence: ${partialReads} read${partialReads === 1 ? " was" : "s were"} unavailable, so RepoMemory did not have enough repeated context to promote durable memories yet.`;
   }
   return `${run.repo} was scanned, but no repeated convention or failure pattern crossed RepoMemory's confidence threshold yet.`;
 }
@@ -272,9 +277,10 @@ function buildRadarItems(overview, memories, history = []) {
         { label: "Memories", value: String(memoriesCreated) },
         { label: "Conventions", value: String(asCount(run.conventions)) },
         { label: "Failures", value: String(asCount(run.failures)) },
+        { label: "Partial", value: String(asCount(run.partial_read_warnings)) },
         { label: "Age", value: timeAgo(run.created_at) },
       ],
-      summary: run.top_memory || runSummary(run),
+      summary: asCount(run.partial_read_warnings) ? runSummary(run) : run.top_memory || runSummary(run),
       title: run.repo || `Ingest ${index + 1}`,
       tone: memoriesCreated ? "green" : "signal",
       vector: memoriesCreated ? "INGEST" : "EARLY SIGNAL",
@@ -290,7 +296,7 @@ function buildRadarFeed(overview, memories, candidates, history = []) {
       const memoriesCreated = asCount(latestRun.memories_created);
       return [
         { text: `${latestRun.repo} saved ${timeAgo(latestRun.created_at)} with ${memoriesCreated} durable ${memoriesCreated === 1 ? "memory" : "memories"}.`, tone: memoriesCreated ? "green" : "signal" },
-        { text: latestRun.top_memory || runSummary(latestRun), tone: memoriesCreated ? "green" : "signal" },
+        { text: asCount(latestRun.partial_read_warnings) ? runSummary(latestRun) : latestRun.top_memory || runSummary(latestRun), tone: memoriesCreated ? "green" : "signal" },
         { text: `${openCandidates(candidates).length} FailGuard candidates are waiting for operator review.`, tone: openCandidates(candidates).length ? "amber" : "green" },
       ];
     }
@@ -623,18 +629,19 @@ function HistorySurface({
         <div className="control-stack">
           <Panel eyebrow="History" title="Saved ingests" action={<span className="chip signal">{history.length} runs</span>}>
             <div className="panelbody repo-list queue-grid">
-              {history.length ? history.map((item) => {
+              {history.length ? history.map((item, index) => {
                 const active = selectedRun?.id === item.id;
                 return (
                   <div className={`ledger-row${active ? " active" : ""}`} key={item.id}>
-                    <div className="rank">{String(asCount(item.memories_created)).padStart(2, "0")}</div>
+                    <div className="rank">{active ? "SEL" : String(index + 1).padStart(2, "0")}</div>
                     <div>
                       <div className="repo-name">{item.repo}</div>
-                      <div className="feed-meta">{item.top_memory || runSummary(item)}</div>
+                      <div className="feed-meta">{asCount(item.partial_read_warnings) ? runSummary(item) : item.top_memory || runSummary(item)}</div>
                       <div className="repo-meta">
                         <span className="chip signal">{timeAgo(item.created_at)}</span>
                         <span className="chip green">{asCount(item.conventions)} conventions</span>
                         <span className="chip amber">{asCount(item.failures)} failures</span>
+                        {asCount(item.partial_read_warnings) > 0 && <span className="chip amber">{asCount(item.partial_read_warnings)} partial</span>}
                         {active && <span className="chip">selected</span>}
                       </div>
                     </div>
@@ -682,7 +689,7 @@ function HistorySurface({
               <div className="feed-item">
                 <div>
                   <div className="feed-title">Latest memory signal</div>
-                  <div className="feed-meta">{selectedRun.top_memory || runSummary(selectedRun)}</div>
+                  <div className="feed-meta">{asCount(selectedRun.partial_read_warnings) ? runSummary(selectedRun) : selectedRun.top_memory || runSummary(selectedRun)}</div>
                 </div>
                 <span className={`chip ${asCount(selectedRun.memories_created) ? "green" : "signal"}`}>
                   {asCount(selectedRun.memories_created) ? "durable" : "early"}
@@ -731,16 +738,17 @@ function PromptPackSurface({
       <div className="atlas-layout suite-four-layout">
         <Panel eyebrow="Runs" title="Saved ingests" action={<span className="chip signal">{history.length} saved</span>}>
           <div className="panelbody repo-list queue-grid">
-            {history.length ? history.map((item) => (
+            {history.length ? history.map((item, index) => (
               <div className="ledger-row" key={item.id}>
-                <div className="rank">{String(asCount(item.memories_created)).padStart(2, "0")}</div>
+                <div className="rank">{String(index + 1).padStart(2, "0")}</div>
                 <div>
                   <div className="repo-name">{item.repo}</div>
-                  <div className="feed-meta">{item.top_memory || "Saved RepoMemory ingest."}</div>
+                  <div className="feed-meta">{asCount(item.partial_read_warnings) ? runSummary(item) : item.top_memory || "Saved RepoMemory ingest."}</div>
                   <div className="repo-meta">
                     <span className="chip signal">{timeAgo(item.created_at)}</span>
                     <span className="chip green">{asCount(item.conventions)} conventions</span>
                     <span className="chip amber">{asCount(item.failures)} failures</span>
+                    {asCount(item.partial_read_warnings) > 0 && <span className="chip amber">{asCount(item.partial_read_warnings)} partial</span>}
                   </div>
                 </div>
                 <button className="btn" disabled={loadingPromptPack} onClick={() => onLoadPromptPack(item.id)} type="button">Load pack</button>

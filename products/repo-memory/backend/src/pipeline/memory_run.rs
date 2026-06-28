@@ -18,6 +18,7 @@ pub fn build_memory_run(
     params: IngestParams,
     bundles: Vec<super::PullBundle>,
     issues: Vec<crate::models::GitHubIssue>,
+    partial_read_warnings: u32,
 ) -> Result<IngestRecord> {
     let run_id = Uuid::new_v4().to_string();
     let created_at = Utc::now().to_rfc3339();
@@ -417,6 +418,7 @@ pub fn build_memory_run(
         bundles.len() as u32,
         review_feedback_items,
         issues.len() as u32,
+        partial_read_warnings,
     );
     let prompt_pack = build_prompt_pack(&repo, &summary, &entries);
 

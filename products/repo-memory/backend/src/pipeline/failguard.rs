@@ -474,7 +474,7 @@ pub fn build_failguard_lesson_run(
             })
             .then_with(|| right.frequency.cmp(&left.frequency))
     });
-    let summary = build_summary(&entries, 0, 0, 0);
+    let summary = build_summary(&entries, 0, 0, 0, 0);
     let prompt_pack = build_prompt_pack(&repo, &summary, &entries);
 
     IngestRecord {
