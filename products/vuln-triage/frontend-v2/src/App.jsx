@@ -375,9 +375,9 @@ function FixQueuePanel({ history, onLoadScan, scan }) {
   return (
     <Panel eyebrow="Queue" title="Recent scans" action={<span className="chip signal">{history.length} saved</span>}>
       <div className="panelbody repo-list queue-grid">
-        {history.length ? history.slice(0, 5).map((item) => (
+        {history.length ? history.slice(0, 5).map((item, index) => (
           <div className="ledger-row" key={item.id}>
-            <div className="rank">{asCount(item.fix_now)}</div>
+            <div className="rank">{String(index + 1).padStart(2, "0")}</div>
             <div>
               <div className="repo-name">{item.repo}</div>
               <div className="feed-meta">{item.summary || "Saved VulnTriage scan."}</div>
@@ -513,9 +513,9 @@ function HistorySurface({ activeScanId, health, history, loading, onClearScan, o
       </div>
       <Panel eyebrow="Recent" title="Security scans" action={<span className="chip signal">{history.length} saved</span>}>
         <div className="panelbody repo-list queue-grid">
-          {history.length ? history.map((item) => (
+          {history.length ? history.map((item, index) => (
             <div className="ledger-row" key={item.id}>
-              <div className="rank">{item.id === activeScanId ? "SEL" : asCount(item.fix_now)}</div>
+              <div className="rank">{item.id === activeScanId ? "SEL" : String(index + 1).padStart(2, "0")}</div>
               <div>
                 <div className="repo-name">{item.repo}</div>
                 <div className="feed-meta">{item.summary || "Saved VulnTriage scan."}</div>
