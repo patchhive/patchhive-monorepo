@@ -65,6 +65,7 @@ Every product backend should converge toward:
 See:
 
 - [Product API Contract v1](/home/coemedia/Documents/code/patchhive/docs/product-api-contract-v1.md)
+- [Suite runs and fix capabilities](/home/coemedia/Documents/code/patchhive/docs/suite-runs-and-fix-capabilities.md)
 
 ## 4. Implementation Notes
 

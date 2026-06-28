@@ -179,6 +179,43 @@ Rules:
 - HiveCore should block advertised destructive actions until an explicit approval flow exists.
 - Products own request validation, side effects, and run history after dispatch.
 
+## Scan And Fix Capabilities
+
+Products should model scan and fix work as different actions.
+
+- Scan actions discover or analyze and should be read-only.
+- Fix actions mutate code, repository state, CI settings, release state, or GitHub objects and must advertise that through capability metadata.
+- Any product that naturally owns a fix type should eventually expose an explicit fix action for it.
+- Products that do not naturally own fixes should still participate in suite runs as signal, memory, policy, or validation providers.
+
+Recommended fix action fields:
+
+```json
+{
+  "id": "create_refactor_pr",
+  "label": "Create refactor PR",
+  "method": "POST",
+  "path": "/fix/refactor-pr",
+  "description": "Create a small refactor PR for a selected lead.",
+  "starts_run": true,
+  "destructive": true,
+  "mutates_repo": true,
+  "opens_pr": true,
+  "requires_approval": true,
+  "required_scopes": [
+    "github:contents:write",
+    "github:pull_requests:write"
+  ],
+  "quality_gates": [
+    "tests",
+    "trust-gate",
+    "repo-memory-context"
+  ]
+}
+```
+
+HiveCore may use these actions during suite runs, but the product still owns validation, side effects, detailed evidence, and run history. See [Suite runs and fix capabilities](suite-runs-and-fix-capabilities.md).
+
 ## Required Integration Endpoints
 
 Every product should expose these endpoints in addition to any product-specific routes:

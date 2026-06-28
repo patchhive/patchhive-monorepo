@@ -157,6 +157,20 @@ The backend owns the authority:
 
 HiveCore should not need private product database reads or browser-exposed service tokens to control the suite.
 
+## Suite Runs And Fixes
+
+The unified backend should eventually support HiveCore-owned suite runs: one orchestration run can dispatch product-owned scans, combine the resulting findings, and expose which findings have explicit product-owned fix actions.
+
+The guiding rule is simple:
+
+- every product can scan
+- some products can fix
+- every fix is explicit, auditable, policy-constrained, and routed through advertised product capabilities
+
+Scan actions should stay read-only. Fix actions should be separate mutating capabilities with approval metadata, required scopes, quality gates, and run history. Products that naturally own a fix type should eventually advertise a fix action for that type, while guard products such as TrustGate and memory products such as RepoMemory strengthen or block fixes instead of silently mutating code.
+
+See [Suite runs and fix capabilities](suite-runs-and-fix-capabilities.md).
+
 ## First Frontend To Connect
 
 HiveCore should be the first frontend wired to `patchhive-backend`.

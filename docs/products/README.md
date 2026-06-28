@@ -36,6 +36,8 @@ through product-owned APIs; it does not replace standalone product operation.
   [../product-api-contract-v1.md](../product-api-contract-v1.md).
 - Discovery products should honor allowlist, denylist, and opt-out controls.
 - Write-capable products should prefer no action over weak output.
+- Products should separate read-only scan actions from explicit fix actions; see
+  [../suite-runs-and-fix-capabilities.md](../suite-runs-and-fix-capabilities.md).
 - HiveCore should consume product-owned APIs rather than private databases.
 - Product pages should list the same local ports and standalone mirror links as
   their product `README.md` files.
