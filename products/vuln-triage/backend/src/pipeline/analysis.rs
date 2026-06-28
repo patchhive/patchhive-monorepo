@@ -58,7 +58,7 @@ pub async fn build_scan_result(
     });
 
     let metrics = build_metrics(&findings);
-    let summary = build_summary(repo, &metrics, findings.first());
+    let summary = build_summary(repo, &metrics, &warnings, findings.first());
 
     Ok(VulnScanResult {
         id: Uuid::new_v4().to_string(),
@@ -105,8 +105,34 @@ fn build_metrics(findings: &[VulnerabilityFinding]) -> VulnMetrics {
     metrics
 }
 
-fn build_summary(repo: &str, metrics: &VulnMetrics, top: Option<&VulnerabilityFinding>) -> String {
+fn build_summary(
+    repo: &str,
+    metrics: &VulnMetrics,
+    warnings: &[String],
+    top: Option<&VulnerabilityFinding>,
+) -> String {
     if metrics.tracked_findings == 0 {
+        if warnings
+            .iter()
+            .any(|warning| security_permission_blocked(warning))
+        {
+            return format!(
+                "VulnTriage could not read GitHub security alerts for `{repo}` with the current token. Grant code scanning and/or Dependabot alert read access for this repository, then rerun the scan."
+            );
+        }
+        if warnings
+            .iter()
+            .any(|warning| security_token_missing(warning))
+        {
+            return format!(
+                "VulnTriage could not read GitHub security alerts for `{repo}` because security-feed token access is not configured."
+            );
+        }
+        if !warnings.is_empty() {
+            return format!(
+                "VulnTriage did not receive actionable findings from the readable feeds for `{repo}`, but one or more GitHub security feeds could not be read."
+            );
+        }
         return format!(
             "VulnTriage did not find open security alerts worth ranking in `{repo}` right now."
         );
@@ -128,6 +154,14 @@ fn build_summary(repo: &str, metrics: &VulnMetrics, top: Option<&VulnerabilityFi
         summary.push_str(&format!(" Highest urgency: {}.", top.title));
     }
     summary
+}
+
+fn security_permission_blocked(warning: &str) -> bool {
+    warning.contains("403 Forbidden") || warning.contains("Resource not accessible")
+}
+
+fn security_token_missing(warning: &str) -> bool {
+    warning.contains("BOT_GITHUB_TOKEN is not set") || warning.contains("GITHUB_TOKEN is not set")
 }
 
 fn code_scanning_to_finding(alert: github::GitHubCodeScanningAlert) -> VulnerabilityFinding {

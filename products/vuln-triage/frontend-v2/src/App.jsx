@@ -90,6 +90,31 @@ function warningLabel(warning) {
   return value;
 }
 
+function warningBlocksSecurityFeeds(warning) {
+  const value = String(warning || "");
+  return value.includes("403 Forbidden") || value.includes("Resource not accessible");
+}
+
+function warningMissingSecurityToken(warning) {
+  const value = String(warning || "");
+  return value.includes("BOT_GITHUB_TOKEN is not set") || value.includes("GITHUB_TOKEN is not set");
+}
+
+function scanSummary(scan) {
+  const repo = scan?.repo || "this repository";
+  const hasFindings = asCount(scan?.metrics?.tracked_findings) > 0 || Boolean(scan?.findings?.length);
+  if (!hasFindings && scan?.warnings?.some(warningBlocksSecurityFeeds)) {
+    return `VulnTriage could not read GitHub security alerts for \`${repo}\` with the current token. Grant code scanning and/or Dependabot alert read access for this repository, then rerun the scan.`;
+  }
+  if (!hasFindings && scan?.warnings?.some(warningMissingSecurityToken)) {
+    return `VulnTriage could not read GitHub security alerts for \`${repo}\` because security-feed token access is not configured.`;
+  }
+  if (!hasFindings && scan?.warnings?.length) {
+    return `VulnTriage did not receive actionable findings from the readable feeds for \`${repo}\`, but one or more GitHub security feeds could not be read.`;
+  }
+  return scan?.summary || "Saved VulnTriage scan.";
+}
+
 function metricTone(value, hotTone = "hot") {
   return asCount(value) ? hotTone : "ok";
 }
@@ -219,7 +244,7 @@ function buildRadarItems(scan, history) {
           { label: "Plan", value: String(asCount(item.plan_next)) },
           { label: "Age", value: timeAgo(item.created_at) },
         ],
-        summary: item.summary || "Saved VulnTriage scan.",
+        summary: scan?.id === item.id ? scanSummary(scan) : item.summary || "Saved VulnTriage scan.",
         title: item.repo,
         tone: item.fix_now ? "red" : item.plan_next ? "amber" : "green",
         vector: "saved",
@@ -253,7 +278,7 @@ function buildRadarFeed(scan, history, health) {
     const hasFindings = Boolean(scan.findings?.length);
     const firstWarning = warningLabel(scan.warnings?.[0]);
     return [
-      hasFindings ? { text: scan.summary || "VulnTriage completed the security scan.", tone: scan.metrics?.fix_now ? "red" : scan.metrics?.plan_next ? "amber" : "green" } : null,
+      hasFindings ? { text: scanSummary(scan), tone: scan.metrics?.fix_now ? "red" : scan.metrics?.plan_next ? "amber" : "green" } : null,
       { text: `${asCount(scan.metrics?.fix_now)} fix-now and ${asCount(scan.metrics?.plan_next)} plan-next findings are active.`, tone: scan.metrics?.fix_now ? "red" : scan.metrics?.plan_next ? "amber" : "green" },
       firstWarning ? { text: firstWarning, tone: "amber" } : null,
       hasFindings && !firstWarning ? { text: "Security alerts are ranked into engineering decisions.", tone: "signal" } : null,
@@ -380,7 +405,7 @@ function FixQueuePanel({ history, onLoadScan, scan }) {
             <div className="rank">{String(index + 1).padStart(2, "0")}</div>
             <div>
               <div className="repo-name">{item.repo}</div>
-              <div className="feed-meta">{item.summary || "Saved VulnTriage scan."}</div>
+              <div className="feed-meta">{scan?.id === item.id ? scanSummary(scan) : item.summary || "Saved VulnTriage scan."}</div>
               <div className="repo-meta">
                 <span className="chip red">{asCount(item.fix_now)} fix</span>
                 <span className="chip amber">{asCount(item.plan_next)} plan</span>
@@ -518,7 +543,7 @@ function HistorySurface({ activeScanId, health, history, loading, onClearScan, o
               <div className="rank">{item.id === activeScanId ? "SEL" : String(index + 1).padStart(2, "0")}</div>
               <div>
                 <div className="repo-name">{item.repo}</div>
-                <div className="feed-meta">{item.summary || "Saved VulnTriage scan."}</div>
+                <div className="feed-meta">{scan?.id === item.id ? scanSummary(scan) : item.summary || "Saved VulnTriage scan."}</div>
                 <div className="repo-meta">
                   <span className="chip red">{asCount(item.fix_now)} fix</span>
                   <span className="chip amber">{asCount(item.plan_next)} plan</span>
