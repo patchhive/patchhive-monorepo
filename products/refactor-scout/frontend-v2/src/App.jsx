@@ -198,7 +198,7 @@ function buildRadarItems(scan, history) {
       }
       return {
         detail: item.repo_path,
-        gain: item.high_safety ? "high safety" : "saved",
+        gain: item.high_safety ? `${asCount(item.high_safety)} high` : "saved",
         gainMeta: `${asCount(item.opportunities)} leads`,
         id: item.id || `history-${index + 1}`,
         label: item.repo_name || `S${index + 1}`,
@@ -267,9 +267,9 @@ function RefactorMap({ health, history, scan }) {
   return (
     <SuiteRadar
       ariaLabel="RefactorScout opportunity radar"
-      detailLabel="Suggested first move"
+      detailLabel={scan ? "Suggested first move" : "Scan target"}
       feed={feed}
-      gainLabel="Safety"
+      gainLabel={scan ? "Safety" : "Scan state"}
       itemQueryParam="refactor"
       items={items}
       signalLabel={scan ? "leads" : "scans"}
@@ -390,7 +390,7 @@ function SidePanels({ health, scan }) {
           <div className="rowline"><span className="muted">Remote FS</span><span className={`chip ${health?.remote_fs_enabled ? "amber" : "green"}`}>{health?.remote_fs_enabled ? "enabled" : "blocked"}</span></div>
         </div>
       </Panel>
-      <Panel eyebrow="Consumers" title="Signal handoff">
+      <Panel eyebrow="Consumers" title="Cleanup handoff">
         <div className="panelbody repo-list">
           <div className="rowline"><span className="muted">RepoMemory</span><span className="chip signal">context</span></div>
           <div className="rowline"><span className="muted">TrustGate</span><span className={`chip ${scan?.metrics?.high_safety ? "green" : "signal"}`}>{scan?.metrics?.high_safety ? "safe" : "ready"}</span></div>
