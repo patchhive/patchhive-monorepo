@@ -98,7 +98,7 @@ Run the backend command from `products/review-bee` so it loads the product-root 
 | `REVIEW_BEE_GITHUB_WEBHOOK_SECRET` | Signed webhook secret. |
 | `REVIEW_BEE_PUBLIC_URL` | Public URL used in maintained comments. |
 
-ReviewBee works best with a fine-grained GitHub token. Reading pull requests, reviews, and review threads is enough for the core product loop. Maintained checklist comments need the smallest write permission that supports PR comment updates in your environment.
+ReviewBee works best with a fine-grained GitHub token. Metadata read and Pull requests read are enough for the core product loop. Maintained checklist comments need Issues write or Pull requests write. See [GitHub token scopes](../github-token-scopes.md).
 
 ## HiveCore Fit
 
@@ -250,7 +250,7 @@ services:
 ### Common Issues
 
 1. **Authentication Failures**
-   - Verify GitHub token has required permissions (pull_requests: read, issues: read, reviews: read, comments: read for detailed analysis)
+   - Verify GitHub token has required permissions: Metadata read and Pull requests read for analysis; Issues write or Pull requests write only for maintained checklist comments.
    - Check that rate limits are not being exceeded
    - Ensure network connectivity to GitHub API
 

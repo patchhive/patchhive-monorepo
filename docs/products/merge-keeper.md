@@ -77,7 +77,7 @@ npm run dev
 | `PATCHHIVE_TRUST_GATE_URL` | Optional TrustGate integration. |
 | `PATCHHIVE_REPO_MEMORY_URL` | Optional RepoMemory integration. |
 
-MergeKeeper works best with a fine-grained GitHub token. Reading pull requests, reviews, and commit health is enough for the base product loop. Maintained comments or check-style output may need extra write permissions.
+MergeKeeper works best with a fine-grained GitHub token. Metadata read and Pull requests read are enough for the base product loop; Actions read can add CI evidence. Maintained comments or check-style output may need extra write permissions. See [GitHub token scopes](../github-token-scopes.md).
 
 ## HiveCore Fit
 
@@ -225,7 +225,7 @@ Helm charts are available in the `deploy/` directory for production deployments.
 ### Common Issues
 
 1. **Authentication Failures**
-   - Verify GitHub token has required permissions (pull_requests: read, reviews: read, checks: read, statuses: read for detailed analysis)
+   - Verify GitHub token has required permissions: Metadata read and Pull requests read for readiness analysis; Actions read for workflow evidence; write permissions only for maintained comments, statuses, or checks.
    - Check that rate limits are not being exceeded
    - Ensure network connectivity to GitHub API
 

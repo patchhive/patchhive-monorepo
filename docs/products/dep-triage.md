@@ -62,7 +62,7 @@ npm run dev
 
 | Variable | Purpose |
 |----------|---------|
-| `BOT_GITHUB_TOKEN` | GitHub token for pull request and optional alert reads. |
+| `BOT_GITHUB_TOKEN` | GitHub token for pull request and optional Dependabot alert reads. |
 | `GITHUB_TOKEN` | Optional fallback GitHub token. |
 | `DEP_TRIAGE_API_KEY_HASH` | Optional preconfigured API-key hash. |
 | `DEP_TRIAGE_SERVICE_TOKEN_HASH` | Optional pre-seeded service-token hash for HiveCore or other PatchHive product callers. |
@@ -209,7 +209,7 @@ Helm charts are available in the `deploy/` directory for production deployments.
 ### Common Issues
 
 1. **Authentication Failures**
-   - Verify GitHub token has required permissions (pull_requests: read, contents: read for Dependabot alerts)
+   - Verify GitHub token has required permissions: Metadata read and Pull requests read for dependency PRs; Dependabot alerts read for alert enrichment. See [GitHub token scopes](../github-token-scopes.md).
    - Check that rate limits are not being exceeded
    - Ensure network connectivity to GitHub API
 

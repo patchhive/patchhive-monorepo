@@ -78,7 +78,7 @@ npm run dev
 | `SIGNAL_MARKER_REPO_LIMIT` | Cap for TODO/FIXME code-search reads. |
 | `PATCHHIVE_ALLOW_REMOTE_BOOTSTRAP` | Explicit opt-in for remote first-run bootstrap. |
 
-SignalHive works best with a fine-grained GitHub token. For public-only scanning, start with `Metadata: Read` and `Issues: Read`; add `Contents: Read` only if your setup needs GitHub-backed TODO or FIXME code-search reads.
+SignalHive works best with a fine-grained GitHub token. For public-only scanning, start with `Metadata: Read` and `Issues: Read`; add `Contents: Read` only if your setup needs GitHub-backed TODO or FIXME code-search reads. See [GitHub token scopes](../github-token-scopes.md).
 
 To keep the same password across SignalHive, TrustGate, RepoReaper, and HiveCore, run `./scripts/set-suite-api-key.sh --stack first` from the monorepo root and restart the stack. For every PatchHive product, run `./scripts/set-suite-api-key.sh` with no extra flags. Once the hash is pre-seeded, logging in through a subdomain works normally without remote bootstrap.
 
@@ -212,7 +212,7 @@ Helm charts are available in the `deploy/` directory for production deployments.
 ### Common Issues
 
 1. **Authentication Failures**
-   - Verify GitHub token has required permissions (Metadata: Read, Issues: Read, Contents: Read for code scanning)
+   - Verify GitHub token has required permissions: Metadata read and Issues read for issue scans; Contents read for TODO/FIXME marker scans.
    - Check that rate limits are not being exceeded
    - Ensure network connectivity to GitHub API
 

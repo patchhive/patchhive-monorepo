@@ -92,6 +92,8 @@ Recommended read-only scopes:
 
 Write scopes should only be added later if ReleaseSentry becomes a release gate that posts checks or comments.
 
+See [GitHub token scopes](../github-token-scopes.md) for the suite-wide matrix.
+
 ## Future Integrations
 
 - HiveCore suite release verification.

@@ -71,7 +71,7 @@ npm run dev
 | `VULN_TRIAGE_DB_PATH` | SQLite database path. |
 | `VULN_TRIAGE_PORT` | Backend port. |
 
-VulnTriage works best with a fine-grained GitHub token that has the matching security read permissions for the repositories being scanned.
+VulnTriage works best with a fine-grained GitHub token that has the matching security read permissions for the repositories being scanned. See [GitHub token scopes](../github-token-scopes.md).
 
 ## GitHub Security Feed Access Boundary
 

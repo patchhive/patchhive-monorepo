@@ -74,7 +74,7 @@ npm run dev
 | `FLAKE_STING_PORT` | Backend port. |
 | `RUST_LOG` | Rust logging level. |
 
-FlakeSting works best with a fine-grained GitHub token. GitHub Actions read access is the main requirement for the MVP.
+FlakeSting works best with a fine-grained GitHub token. GitHub Actions read access is the main requirement for the MVP. See [GitHub token scopes](../github-token-scopes.md).
 
 ## HiveCore Fit
 
@@ -227,7 +227,7 @@ Helm charts are available in the `deploy/` directory for production deployments.
 ### Common Issues
 
 1. **Authentication Failures**
-   - Verify GitHub token has required permissions (workflows: read, jobs: read, logs: read for detailed analysis)
+   - Verify GitHub token has required permissions: Metadata read and Actions read for workflow run and job history.
    - Check that rate limits are not being exceeded
    - Ensure network connectivity to GitHub API
 

@@ -97,7 +97,7 @@ To reuse the same password across SignalHive, TrustGate, RepoReaper, and HiveCor
 
 To give HiveCore a dedicated machine credential instead of reusing the operator login secret, generate a service token from `POST /auth/generate-service-token` and save that token in HiveCore Settings.
 
-If you only want to work on public repositories, keep your GitHub token public-only. If you want RepoReaper to clone, push, and open pull requests against specific repositories, grant only the write permissions those repositories actually need.
+If you only want to work on public repositories, keep your GitHub token public-only. If you want RepoReaper to clone, push, and open pull requests against specific repositories, grant only the write permissions those repositories actually need. See [GitHub token scopes](../github-token-scopes.md).
 
 ## AI and Platform Integrations
 
@@ -244,7 +244,7 @@ Helm charts are available in the `deploy/` directory for production deployments.
 ### Common Issues
 
 1. **Authentication Failures**
-   - Verify GitHub token has required permissions (repo, workflow, admin:org)
+   - Verify GitHub token has required permissions: Metadata read, Contents read/write, Pull requests read/write, and Issues read for the base loop; add Issues write only when updating issues, and Workflows read/write only when patching `.github/workflows`.
    - Check that `BOT_GITHUB_USER` and `BOT_GITHUB_EMAIL` are set for commits
    - Ensure local API key hash matches when using shared suite authentication
 

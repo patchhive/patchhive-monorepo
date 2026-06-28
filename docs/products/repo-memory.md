@@ -70,7 +70,7 @@ npm run dev
 | `REPO_MEMORY_DB_PATH` | SQLite database path. |
 | `REPO_MEMORY_PORT` | Backend port. |
 
-RepoMemory works best with a fine-grained GitHub token. Reading merged pull requests, reviews, and issues is enough for the core MVP loop.
+RepoMemory works best with a fine-grained GitHub token. Metadata read, Pull requests read, Issues read, and Contents read cover the current memory ingest loop. See [GitHub token scopes](../github-token-scopes.md).
 
 ## Cross-Product Fit
 
@@ -238,7 +238,7 @@ Helm charts are available in the `deploy/` directory for production deployments.
 ### Common Issues
 
 1. **Authentication Failures**
-   - Verify GitHub token has required permissions (pull_requests: read, issues: read, reviews: read, contents: read for code search)
+   - Verify GitHub token has required permissions: Metadata read, Pull requests read, Issues read, and Contents read for PR, review, issue, and file evidence.
    - Check that rate limits are not being exceeded
    - Ensure network connectivity to GitHub API
 

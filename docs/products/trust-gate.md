@@ -89,7 +89,7 @@ To reuse the same password across SignalHive, TrustGate, RepoReaper, and HiveCor
 
 To give HiveCore a dedicated machine credential instead of reusing the operator login secret, generate a service token from `POST /auth/generate-service-token` and save that token in HiveCore Settings.
 
-TrustGate works without GitHub for pasted diff review, but GitHub integration is what makes it operational inside real pull request flow. Direct pull request diff fetches need read access; maintained comments, statuses, or check-style output may require the smallest write permission your environment supports.
+TrustGate works without GitHub for pasted diff review, but GitHub integration is what makes it operational inside real pull request flow. Direct pull request diff fetches need Metadata read and Pull requests read; maintained comments, statuses, or check-style output may require the smallest write permission your environment supports. See [GitHub token scopes](../github-token-scopes.md).
 
 ## HiveCore Fit
 
@@ -275,7 +275,7 @@ Helm charts are available in the `deploy/` directory for production deployments.
 ### Common Issues
 
 1. **Authentication Failures**
-   - Verify GitHub token has required permissions (pull_requests: read, contents: read for diffs, statuses: read/write for checks, issues: read/write for comments)
+   - Verify GitHub token has required permissions: Metadata read and Pull requests read for PR diff review; Issues write or Pull requests write for maintained comments; Commit statuses write or Checks write only when GitHub reporting is enabled.
    - Check that rate limits are not being exceeded
    - Ensure network connectivity to GitHub API
 
