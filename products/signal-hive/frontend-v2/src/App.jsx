@@ -169,6 +169,10 @@ function sortRepos(repos, sortBy) {
   return next;
 }
 
+function plural(value, singular, pluralValue = `${singular}s`) {
+  return Number(value || 0) === 1 ? singular : pluralValue;
+}
+
 function radarPosition(index, total, score) {
   const angle = -76 + index * 137.5;
   const radians = (angle * Math.PI) / 180;
@@ -203,7 +207,7 @@ function buildRunRadarItems(history) {
       vectorTone: warningCount ? "warn" : "",
       gain: `${signalCount}`,
       gainTone: warningCount ? "warn" : "sig",
-      gainMeta: "signals found",
+      gainMeta: warningCount ? "partial scan" : "signals found",
       value: `${signalCount}`,
       stats: [
         { label: "Repos", value: String(item.total_repos || 0) },
@@ -212,7 +216,9 @@ function buildRunRadarItems(history) {
         { label: "Trigger", value: item.trigger_type || "manual" },
         { label: "Age", value: timeAgo(item.created_at) },
       ],
-      summary: item.summary || `${item.total_repos || 0} repos scanned with ${signalCount} signals found.`,
+      summary: warningCount
+        ? `${item.total_repos || 0} repos scanned with ${signalCount} signals found, but ${warningCount} ${plural(warningCount, "warning")} made this a partial-evidence scan.`
+        : item.summary || `${item.total_repos || 0} repos scanned with ${signalCount} signals found.`,
     };
   });
 }
@@ -223,7 +229,7 @@ function scanMetrics(scan) {
   const dupes = repos.reduce((sum, repo) => sum + duplicateCount(repo), 0);
   const recurring = repos.reduce((sum, repo) => sum + recurringCount(repo), 0);
   return [
-    { label: "Repos scanned", value: String(scan?.summary?.total_repos || 0), tone: "sig", sub: scan ? "complete" : "waiting" },
+    { label: "Repos scanned", value: String(scan?.summary?.total_repos || 0), tone: "sig", sub: scan?.warnings?.length ? "partial evidence" : scan ? "complete" : "waiting" },
     { label: "Signals found", value: String(scan?.summary?.total_signals || 0), tone: "warn", sub: scan?.trend ? `${scan.trend.total_signals_delta > 0 ? "+" : ""}${scan.trend.total_signals_delta} vs prior` : "latest scan" },
     { label: "Stale issues", value: String(stale), tone: "hot", sub: `${scan?.params?.stale_days || 45}+ days` },
     { label: "Duplicate pairs", value: String(dupes), tone: "", sub: "likely matches" },
@@ -238,7 +244,9 @@ function buildReportSummary(scan) {
     `Top repo: ${scan.summary?.top_repo || "none"}`,
     `Repos scanned: ${scan.summary?.total_repos || 0}`,
     `Signals found: ${scan.summary?.total_signals || 0}`,
+    scan.warnings?.length ? `Warnings: ${scan.warnings.length}` : "Warnings: 0",
     "",
+    ...(scan.warnings?.length ? ["Scan warnings:", ...scan.warnings.map((warning) => `- ${warning}`), ""] : []),
     "Ranked queue:",
     ...sortRepos(scan.repos || [], "priority").map((repo, index) => (
       `${index + 1}. ${repo.full_name} - ${Math.round(repo.priority_score || 0)} - ${repo.summary || "No summary"}`
@@ -470,7 +478,9 @@ function RadarScope({ history, resetKey }) {
   const items = useMemo(() => buildRunRadarItems(history), [history]);
   const feed = useMemo(() => {
     return history.slice(0, 3).map((item) => ({
-      text: `${item.top_repo || "SignalHive sweep"}: ${item.total_repos || 0} repos, ${item.total_signals || 0} signals, ${timeAgo(item.created_at)}.`,
+      text: item.warning_count
+        ? `${item.top_repo || "SignalHive sweep"}: partial scan with ${item.warning_count} ${plural(item.warning_count, "warning")}, ${item.total_signals || 0} signals, ${timeAgo(item.created_at)}.`
+        : `${item.top_repo || "SignalHive sweep"}: ${item.total_repos || 0} repos, ${item.total_signals || 0} signals, ${timeAgo(item.created_at)}.`,
       tone: item.warning_count ? "amber" : "signal",
     }));
   }, [history]);
@@ -979,9 +989,9 @@ function LedgerBoard({
                   >
                     <span>
                       <strong>{item.top_repo || "No top repo"}</strong>
-                      <small>{item.total_repos} repos - {item.total_signals} signals - {timeAgo(item.created_at)}</small>
+                      <small>{item.total_repos} repos - {item.total_signals} signals{item.warning_count ? ` - ${item.warning_count} ${plural(item.warning_count, "warning")}` : ""} - {timeAgo(item.created_at)}</small>
                     </span>
-                    <span className={`chip ${item.warning_count > 0 ? "amber" : "signal"}`}>{item.trigger_type || "manual"}</span>
+                    <span className={`chip ${item.warning_count > 0 ? "amber" : "signal"}`}>{item.warning_count > 0 ? "partial" : item.trigger_type || "manual"}</span>
                   </button>
                 ))
               )}
@@ -1348,7 +1358,12 @@ export default function App() {
       setScan(data);
       await loadTimeline(data.id);
       await refreshCollections();
-      setActionMessage({ tone: "green", text: `Scan complete: ${data.summary?.total_signals || 0} signals across ${data.summary?.total_repos || 0} repos.` });
+      setActionMessage({
+        tone: data.warnings?.length ? "amber" : "green",
+        text: data.warnings?.length
+          ? `Scan finished with partial evidence: ${data.summary?.total_signals || 0} signals across ${data.summary?.total_repos || 0} repos, plus ${data.warnings.length} ${plural(data.warnings.length, "warning")}.`
+          : `Scan complete: ${data.summary?.total_signals || 0} signals across ${data.summary?.total_repos || 0} repos.`,
+      });
     } catch (err) {
       setError(err.message || "Signal scan failed.");
     } finally {
