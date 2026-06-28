@@ -78,6 +78,15 @@ function warningLabel(warning) {
   if (value.includes("BOT_GITHUB_TOKEN is not set") || value.includes("GITHUB_TOKEN is not set")) {
     return "Security feeds were skipped because GitHub token access is not configured.";
   }
+  if (value.includes("/code-scanning/alerts") && value.includes("403 Forbidden")) {
+    return "Code scanning alerts could not be read. The token needs code scanning alert read access for this repository.";
+  }
+  if (value.includes("/dependabot/alerts") && value.includes("Dependabot alerts are disabled")) {
+    return "Dependabot alerts are disabled for this repository, so dependency vulnerability pressure is unavailable.";
+  }
+  if (value.includes("/dependabot/alerts") && value.includes("403 Forbidden")) {
+    return "Dependabot alerts could not be read. The token needs Dependabot alert read access for this repository.";
+  }
   return value;
 }
 
