@@ -4,12 +4,16 @@ name = "RefactorScout"
 role = "conservative refactor discovery"
 module_path = "crate::products::refactor_scout"
 route_prefix = "/api/products/refactor-scout"
-migration_stage = "not-started"
+migration_stage = "gateway"
 
 [safety]
 read_only = true
 credential_scopes = ["local:filesystem:read"]
 evidence_required = ["local path allowlist", "file metrics", "ranking reason"]
+
+[gateway]
+default_url = "http://127.0.0.1:8090"
+env_var = "REFACTOR_SCOUT_GATEWAY_URL"
 
 [health]
 endpoint = "/api/products/refactor-scout/health"
@@ -37,6 +41,41 @@ path = "/api/products/refactor-scout/health"
 description = "Report RefactorScout runtime health."
 
 [[routes]]
+method = "GET"
+path = "/api/products/refactor-scout/auth/status"
+description = "Read RefactorScout auth bootstrap state."
+
+[[routes]]
+method = "POST"
+path = "/api/products/refactor-scout/auth/login"
+description = "Validate a RefactorScout API key."
+
+[[routes]]
+method = "POST"
+path = "/api/products/refactor-scout/auth/generate-key"
+description = "Generate the first local RefactorScout API key."
+
+[[routes]]
+method = "POST"
+path = "/api/products/refactor-scout/auth/generate-service-token"
+description = "Generate a RefactorScout service token for HiveCore."
+
+[[routes]]
+method = "POST"
+path = "/api/products/refactor-scout/auth/rotate-service-token"
+description = "Rotate the RefactorScout service token."
+
+[[routes]]
+method = "GET"
+path = "/api/products/refactor-scout/startup/checks"
+description = "Read RefactorScout startup checks."
+
+[[routes]]
+method = "GET"
+path = "/api/products/refactor-scout/capabilities"
+description = "Read RefactorScout product capabilities."
+
+[[routes]]
 method = "POST"
 path = "/api/products/refactor-scout/scan/local"
 description = "Scan a local repo path for refactor opportunities."
@@ -45,3 +84,23 @@ description = "Scan a local repo path for refactor opportunities."
 method = "GET"
 path = "/api/products/refactor-scout/runs"
 description = "List RefactorScout scans."
+
+[[routes]]
+method = "GET"
+path = "/api/products/refactor-scout/runs/:id"
+description = "Read a RefactorScout scan detail."
+
+[[routes]]
+method = "GET"
+path = "/api/products/refactor-scout/overview"
+description = "Read RefactorScout overview metrics and recent scans."
+
+[[routes]]
+method = "GET"
+path = "/api/products/refactor-scout/history"
+description = "List RefactorScout scan history."
+
+[[routes]]
+method = "GET"
+path = "/api/products/refactor-scout/history/:id"
+description = "Read a RefactorScout scan detail."
