@@ -321,9 +321,9 @@ function LeadQueuePanel({ history, onLoadScan, scan }) {
   return (
     <Panel eyebrow="Queue" title="Recent scans" action={<span className="chip signal">{history.length} saved</span>}>
       <div className="panelbody repo-list queue-grid">
-        {history.length ? history.slice(0, 5).map((item) => (
+        {history.length ? history.slice(0, 5).map((item, index) => (
           <div className="ledger-row" key={item.id}>
-            <div className="rank">{asCount(item.high_safety)}</div>
+            <div className="rank">{String(index + 1).padStart(2, "0")}</div>
             <div>
               <div className="repo-name">{item.repo_name || item.repo_path}</div>
               <div className="feed-meta">{item.summary || "Saved RefactorScout scan."}</div>
@@ -417,7 +417,7 @@ function ScoutSurface({
           <MetricBand metrics={metrics} />
           <div className="atlas-layout suite-four-layout">
             <Panel eyebrow="Scout" title="Opportunity map" action={<span className="chip signal">scout radar</span>}>
-              <RefactorMap health={health} history={history} scan={null} />
+              <RefactorMap health={health} history={history} scan={scan} />
             </Panel>
             <LeadQueuePanel history={history} onLoadScan={onLoadScan} scan={scan} />
           </div>
@@ -457,9 +457,9 @@ function HistorySurface({ activeScanId, health, history, loading, onClearScan, o
       </div>
       <Panel eyebrow="Recent" title="Local scans" action={<span className="chip signal">{history.length} saved</span>}>
         <div className="panelbody repo-list queue-grid">
-          {history.length ? history.map((item) => (
+          {history.length ? history.map((item, index) => (
             <div className="ledger-row" key={item.id}>
-              <div className="rank">{item.id === activeScanId ? "SEL" : asCount(item.high_safety)}</div>
+              <div className="rank">{item.id === activeScanId ? "SEL" : String(index + 1).padStart(2, "0")}</div>
               <div>
                 <div className="repo-name">{item.repo_name || item.repo_path}</div>
                 <div className="feed-meta">{item.summary || "Saved RefactorScout scan."}</div>
