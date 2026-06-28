@@ -53,7 +53,9 @@ pub(crate) fn build_summary(
     );
 
     if let Some(top) = top {
-        summary.push_str(&format!(" Strongest lead: {}.", top.summary));
+        summary.push_str(" Strongest lead: ");
+        summary.push_str(top.summary.trim_end_matches(['.', '!', '?']));
+        summary.push('.');
     }
 
     summary

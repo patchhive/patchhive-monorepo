@@ -499,6 +499,7 @@ fn should_descend(entry: &DirEntry) -> bool {
         ".git"
             | ".next"
             | ".turbo"
+            | ".vite"
             | ".venv"
             | "build"
             | "coverage"
