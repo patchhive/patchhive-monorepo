@@ -194,10 +194,11 @@ function buildRadarItems(scan, history) {
       if (!minWindow) {
         return null;
       }
+      const tracked = asCount(item.tracked_findings);
       return {
         detail: item.repo,
-        gain: item.fix_now ? "fix now" : item.plan_next ? "plan next" : "watch",
-        gainMeta: `${asCount(item.tracked_findings)} findings`,
+        gain: item.fix_now ? "fix now" : item.plan_next ? "plan next" : tracked ? "watch" : "clear",
+        gainMeta: `${tracked} findings`,
         id: item.id || `history-${index + 1}`,
         label: item.repo?.split("/").pop() || `S${index + 1}`,
         minWindow,
@@ -320,7 +321,7 @@ function ScanForm({ error, form, health, onChange, onRun, running }) {
           <div className="v2-field">
             Action
             <button className="btn primary" disabled={running || !form.repo.trim()} type="submit">
-              {running ? "Scanning..." : "Scan findings"}
+              {running ? "Scanning..." : securityFeedsReady ? "Scan findings" : "Save empty scan"}
             </button>
           </div>
         </div>
