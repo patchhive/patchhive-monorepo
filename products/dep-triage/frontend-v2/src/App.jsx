@@ -10,6 +10,7 @@ import {
   ProductRail,
   SuiteRadar,
   SuiteTopline,
+  humanizeToken,
   radarWindowFromTimestamp,
   usePersistentProductTab,
 } from "@patchhivehq/ui-v2";
@@ -69,7 +70,7 @@ function recommendationTone(recommendation) {
 }
 
 function recommendationLabel(recommendation) {
-  return String(recommendation || "watch").replaceAll("_", " ");
+  return humanizeToken(recommendation, "watch");
 }
 
 function summaryLabel(summary) {
@@ -225,7 +226,7 @@ function buildRadarItems(scan, history) {
       summary: summaryLabel(item.summary || item.reasons?.[0] || "Dependency triage item."),
       title: item.package_name || item.key || `Dependency ${index + 1}`,
       tone: recommendationTone(item.recommendation),
-      vector: item.update_kind || item.ecosystem || item.source || "dependency",
+      vector: humanizeToken(item.update_kind || item.ecosystem || item.source, "dependency"),
       vectorTone: recommendationTone(item.recommendation) === "red" || recommendationTone(item.recommendation) === "amber" ? "warn" : "",
     }));
   }
@@ -403,11 +404,11 @@ function UpdateQueuePanel({ history, onLoadScan, scan }) {
                 <div className="feed-meta">{summaryLabel(item.summary || item.reasons?.[0] || "Dependency triage item.")}</div>
                 <div className="repo-meta">
                   <span className={`chip ${recommendationTone(item.recommendation)}`}>{recommendationLabel(item.recommendation)}</span>
-                  <span className="chip signal">{item.ecosystem || item.source}</span>
+                  <span className="chip signal">{humanizeToken(item.ecosystem || item.source, "github")}</span>
                   <span className="chip">{asCount(item.score)} score</span>
                 </div>
               </div>
-              <span className={`chip ${recommendationTone(item.recommendation)}`}>{item.update_kind || "dep"}</span>
+              <span className={`chip ${recommendationTone(item.recommendation)}`}>{humanizeToken(item.update_kind, "dep")}</span>
             </div>
           )) : (
             <div className="empty-v2">

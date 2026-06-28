@@ -10,6 +10,7 @@ import {
   ProductRail,
   SuiteRadar,
   SuiteTopline,
+  humanizeToken,
   radarWindowFromTimestamp,
   usePersistentProductTab,
 } from "@patchhivehq/ui-v2";
@@ -70,7 +71,7 @@ function findingTone(finding = {}) {
 }
 
 function recommendationLabel(value) {
-  return String(value || "watch").replaceAll("_", " ");
+  return humanizeToken(value, "watch");
 }
 
 function warningLabel(warning) {
@@ -211,13 +212,13 @@ function buildRadarItems(scan, history) {
           { label: "Severity", value: finding.severity || "unknown" },
           { label: "Decision", value: recommendationLabel(finding.recommendation) },
           { label: "Score", value: String(asCount(finding.score)) },
-          { label: "Source", value: finding.source || finding.tool_name || "github" },
+          { label: "Source", value: humanizeToken(finding.source || finding.tool_name, "github") },
           { label: "Owner", value: finding.owner_hint || "unrouted" },
         ],
         summary: finding.summary || finding.evidence?.[0] || finding.next_action || "Vulnerability triage finding.",
         title: finding.title || finding.package_name || finding.key || `Finding ${index + 1}`,
         tone,
-        vector: finding.reachability || finding.ecosystem || finding.source || "security",
+        vector: humanizeToken(finding.reachability || finding.ecosystem || finding.source, "security"),
         vectorTone: tone === "red" || tone === "amber" ? "warn" : "",
       };
     });
@@ -381,7 +382,7 @@ function FixQueuePanel({ history, onLoadScan, scan }) {
                 <div className="feed-meta">{finding.summary || finding.next_action || finding.location}</div>
                 <div className="repo-meta">
                   <span className={`chip ${findingTone(finding)}`}>{recommendationLabel(finding.recommendation)}</span>
-                  <span className="chip signal">{finding.severity || finding.source || "security"}</span>
+                  <span className="chip signal">{humanizeToken(finding.severity || finding.source, "security")}</span>
                   {finding.location && <span className="chip">{finding.location}</span>}
                 </div>
               </div>

@@ -134,6 +134,14 @@ export function toneClass(tone) {
   return tone ? ` ${tone}` : "";
 }
 
+export function humanizeToken(value, fallback = "") {
+  const text = String(value ?? "").trim();
+  if (!text) {
+    return fallback;
+  }
+  return text.replace(/[_-]+/g, " ").replace(/\s+/g, " ");
+}
+
 function productTabStorageKey(productKey) {
   return `${productKey || "patchhive"}_active_tab`;
 }

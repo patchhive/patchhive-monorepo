@@ -10,6 +10,7 @@ import {
   ProductRail,
   SuiteRadar,
   SuiteTopline,
+  humanizeToken,
   radarWindowFromTimestamp,
   usePersistentProductTab,
 } from "@patchhivehq/ui-v2";
@@ -163,27 +164,31 @@ function buildRail(scan, history, overview, health) {
 
 function buildRadarItems(scan, history) {
   if (scan?.opportunities?.length) {
-    return scan.opportunities.slice(0, 8).map((lead, index) => ({
-      detail: lead.path || lead.title,
-      gain: lead.safety || "lead",
-      gainMeta: `${asCount(lead.score)} score`,
-      id: lead.id || `lead-${index + 1}`,
-      label: lead.kind || `R${index + 1}`,
-      minWindow: index < 3 ? 7 : index < 6 ? 14 : 30,
-      position: POSITIONS[index % POSITIONS.length],
-      stats: [
-        { label: "Kind", value: lead.kind || "refactor" },
-        { label: "Safety", value: lead.safety || "unknown" },
-        { label: "Score", value: String(asCount(lead.score)) },
-        { label: "Effort", value: lead.effort || "unknown" },
-        { label: "Lang", value: lead.language || "n/a" },
-      ],
-      summary: cleanSentence(lead.summary || lead.suggestion || lead.evidence?.[0], "RefactorScout opportunity."),
-      title: lead.title || lead.path || `Lead ${index + 1}`,
-      tone: safetyTone(lead.safety) === "signal" ? scoreTone(lead.score) : safetyTone(lead.safety),
-      vector: lead.kind || lead.path || "refactor",
-      vectorTone: safetyTone(lead.safety) === "amber" || safetyTone(lead.safety) === "red" ? "warn" : "",
-    }));
+    return scan.opportunities.slice(0, 8).map((lead, index) => {
+      const kind = humanizeToken(lead.kind, "refactor");
+      const safety = humanizeToken(lead.safety, "lead");
+      return {
+        detail: lead.path || lead.title,
+        gain: safety,
+        gainMeta: `${asCount(lead.score)} score`,
+        id: lead.id || `lead-${index + 1}`,
+        label: kind || `R${index + 1}`,
+        minWindow: index < 3 ? 7 : index < 6 ? 14 : 30,
+        position: POSITIONS[index % POSITIONS.length],
+        stats: [
+          { label: "Kind", value: kind },
+          { label: "Safety", value: humanizeToken(lead.safety, "unknown") },
+          { label: "Score", value: String(asCount(lead.score)) },
+          { label: "Effort", value: humanizeToken(lead.effort, "unknown") },
+          { label: "Lang", value: lead.language || "n/a" },
+        ],
+        summary: cleanSentence(lead.summary || lead.suggestion || lead.evidence?.[0], "RefactorScout opportunity."),
+        title: lead.title || lead.path || `Lead ${index + 1}`,
+        tone: safetyTone(lead.safety) === "signal" ? scoreTone(lead.score) : safetyTone(lead.safety),
+        vector: kind,
+        vectorTone: safetyTone(lead.safety) === "amber" || safetyTone(lead.safety) === "red" ? "warn" : "",
+      };
+    });
   }
   if (history.length) {
     return history.map((item, index) => {
@@ -318,8 +323,8 @@ function LeadQueuePanel({ history, onLoadScan, scan }) {
                 <div className="repo-name">{lead.title || lead.path}</div>
                 <div className="feed-meta">{cleanSentence(lead.summary || lead.suggestion)}</div>
                 <div className="repo-meta">
-                  <span className={`chip ${safetyTone(lead.safety)}`}>{lead.safety || "lead"}</span>
-                  <span className="chip signal">{lead.kind}</span>
+                  <span className={`chip ${safetyTone(lead.safety)}`}>{humanizeToken(lead.safety, "lead")}</span>
+                  <span className="chip signal">{humanizeToken(lead.kind, "refactor")}</span>
                   <span className="chip">{lead.path}</span>
                 </div>
               </div>

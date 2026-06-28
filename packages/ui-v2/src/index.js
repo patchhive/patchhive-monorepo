@@ -11,6 +11,7 @@ export {
   SuiteTopline,
   SuiteRadar,
   applySuiteAccent,
+  humanizeToken,
   radarWindowFromTimestamp,
   toneClass,
   usePersistentProductTab,
