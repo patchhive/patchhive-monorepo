@@ -478,17 +478,18 @@ function ReviewForm({ error, form, onChange, onRun, running }) {
 function ThreadMap({ health, history, overview, review }) {
   const items = useMemo(() => buildRadarItems(review, history, overview), [review, history, overview]);
   const feed = useMemo(() => buildRadarFeed(review, overview, health), [review, overview, health]);
+  const hasChecklistItems = Boolean(review?.checklist?.length);
 
   return (
     <SuiteRadar
       ariaLabel="ReviewBee thread radar"
-      detailLabel={review ? "Checklist detail" : "Review detail"}
+      detailLabel={hasChecklistItems ? "Checklist detail" : "Review detail"}
       feed={feed}
-      gainLabel={review ? "Item state" : "Run state"}
+      gainLabel={hasChecklistItems ? "Item state" : "Run state"}
       itemQueryParam="review"
       items={items}
-      signalLabel={review ? "items" : "runs"}
-      vectorLabel={review ? "Selected item" : "Selected run"}
+      signalLabel={hasChecklistItems ? "items" : "runs"}
+      vectorLabel={hasChecklistItems ? "Selected item" : "Selected run"}
     />
   );
 }

@@ -264,16 +264,17 @@ function StatusBanner({ tone = "signal", children }) {
 function RefactorMap({ health, history, scan }) {
   const items = useMemo(() => buildRadarItems(scan, history), [scan, history]);
   const feed = useMemo(() => buildRadarFeed(scan, history, health), [scan, history, health]);
+  const hasLeads = Boolean(scan?.opportunities?.length);
   return (
     <SuiteRadar
       ariaLabel="RefactorScout opportunity radar"
-      detailLabel={scan ? "Suggested first move" : "Scan target"}
+      detailLabel={hasLeads ? "Suggested first move" : "Scan target"}
       feed={feed}
-      gainLabel={scan ? "Safety" : "Scan state"}
+      gainLabel={hasLeads ? "Safety" : "Scan state"}
       itemQueryParam="refactor"
       items={items}
-      signalLabel={scan ? "leads" : "scans"}
-      vectorLabel={scan ? "Selected lead" : "Selected scan"}
+      signalLabel={hasLeads ? "leads" : "scans"}
+      vectorLabel={hasLeads ? "Selected lead" : "Selected scan"}
     />
   );
 }

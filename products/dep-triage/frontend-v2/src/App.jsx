@@ -333,9 +333,9 @@ function DependencyMap({ health, history, scan }) {
   return (
     <SuiteRadar
       ariaLabel="DepTriage dependency pressure radar"
-      detailLabel="Triage reason"
+      detailLabel={hasPackageItems ? "Triage reason" : "Scan target"}
       feed={feed}
-      gainLabel="Decision"
+      gainLabel={hasPackageItems ? "Decision" : "Scan state"}
       itemQueryParam="dependency"
       items={items}
       signalLabel={hasPackageItems ? "packages" : "scans"}

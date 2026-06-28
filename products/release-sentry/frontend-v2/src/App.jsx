@@ -270,16 +270,17 @@ function StatusBanner({ tone = "signal", children }) {
 function ReleaseMap({ health, history, run }) {
   const items = useMemo(() => buildRadarItems(run, history), [run, history]);
   const feed = useMemo(() => buildRadarFeed(run, history, health), [run, history, health]);
+  const hasChecks = Boolean(run?.checks?.length);
   return (
     <SuiteRadar
       ariaLabel="ReleaseSentry readiness radar"
-      detailLabel="Evidence"
+      detailLabel={hasChecks ? "Evidence" : "Release target"}
       feed={feed}
       gainLabel="Decision"
       itemQueryParam="release"
       items={items}
-      signalLabel={run ? "checks" : "runs"}
-      vectorLabel={run ? "Selected check" : "Selected run"}
+      signalLabel={hasChecks ? "checks" : "runs"}
+      vectorLabel={hasChecks ? "Selected check" : "Selected run"}
     />
   );
 }

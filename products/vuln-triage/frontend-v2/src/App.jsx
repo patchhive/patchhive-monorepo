@@ -306,7 +306,7 @@ function VulnerabilityMap({ health, history, scan }) {
       ariaLabel="VulnTriage vulnerability pressure radar"
       detailLabel={hasFindings ? "Triage reason" : "Scan target"}
       feed={feed}
-      gainLabel="Decision"
+      gainLabel={hasFindings ? "Decision" : "Scan state"}
       itemQueryParam="finding"
       items={items}
       signalLabel={hasFindings ? "findings" : "scans"}

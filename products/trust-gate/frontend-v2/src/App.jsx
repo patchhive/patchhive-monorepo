@@ -558,16 +558,20 @@ function ReviewInput({ error, form, onChange, onClear, onRunGitHub, onRunManual,
 function DecisionGauge({ health, history, review }) {
   const items = useMemo(() => buildRadarItems(review, history), [review, history]);
   const feed = useMemo(() => buildRadarFeed(review, health), [review, health]);
+  const hasRiskItems = Boolean(
+    review?.findings?.length
+      || (review?.files || []).some((file) => file.status === "blocked" || file.status === "warn"),
+  );
   return (
     <SuiteRadar
       ariaLabel="TrustGate policy risk radar"
-      detailLabel={review ? "Risk detail" : "Decision detail"}
+      detailLabel={hasRiskItems ? "Risk detail" : "Decision detail"}
       feed={feed}
-      gainLabel={review ? "Severity" : "Decision"}
+      gainLabel={hasRiskItems ? "Severity" : "Decision"}
       itemQueryParam="risk"
       items={items}
-      signalLabel={review ? "findings" : "decisions"}
-      vectorLabel={review ? "Primary reason" : "Selected decision"}
+      signalLabel={hasRiskItems ? "findings" : "decisions"}
+      vectorLabel={hasRiskItems ? "Primary reason" : "Selected decision"}
     />
   );
 }
