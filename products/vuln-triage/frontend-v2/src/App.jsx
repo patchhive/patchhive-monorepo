@@ -300,16 +300,17 @@ function StatusBanner({ tone = "signal", children }) {
 function VulnerabilityMap({ health, history, scan }) {
   const items = useMemo(() => buildRadarItems(scan, history), [scan, history]);
   const feed = useMemo(() => buildRadarFeed(scan, history, health), [scan, history, health]);
+  const hasFindings = Boolean(scan?.findings?.length);
   return (
     <SuiteRadar
       ariaLabel="VulnTriage vulnerability pressure radar"
-      detailLabel="Triage reason"
+      detailLabel={hasFindings ? "Triage reason" : "Scan target"}
       feed={feed}
       gainLabel="Decision"
       itemQueryParam="finding"
       items={items}
-      signalLabel={scan ? "findings" : "scans"}
-      vectorLabel={scan ? "Selected finding" : "Selected scan"}
+      signalLabel={hasFindings ? "findings" : "scans"}
+      vectorLabel={hasFindings ? "Selected finding" : "Selected scan"}
     />
   );
 }
@@ -429,9 +430,16 @@ function FixQueuePanel({ history, onLoadScan, scan }) {
 
 function SidePanels({ scan }) {
   const warnings = scan?.warnings || [];
+  const metrics = scan?.metrics || {};
+  const tracked = asCount(metrics.tracked_findings);
+  const fixNow = asCount(metrics.fix_now);
+  const planNext = asCount(metrics.plan_next);
+  const evidenceTitle = tracked ? "Why it ranks high" : "Security evidence";
+  const humanAction = fixNow ? "fix now" : planNext ? "plan next" : tracked ? "watch" : "none";
+  const humanActionTone = fixNow ? "red" : planNext ? "amber" : tracked ? "signal" : "green";
   return (
     <aside className="side">
-      <Panel eyebrow="Evidence" title="Why it ranks high">
+      <Panel eyebrow="Evidence" title={evidenceTitle}>
         <div className="panelbody repo-list">
           {warnings.length ? warnings.slice(0, 3).map((warning) => (
             <div className="feed-item" key={warning}>
@@ -450,11 +458,11 @@ function SidePanels({ scan }) {
           )}
         </div>
       </Panel>
-      <Panel eyebrow="Consumers" title="Signal handoff">
+      <Panel eyebrow="Consumers" title="Security handoff">
         <div className="panelbody repo-list">
-          <div className="rowline"><span className="muted">ReleaseSentry</span><span className={`chip ${scan?.metrics?.fix_now ? "red" : "green"}`}>{scan?.metrics?.fix_now ? "hold" : "ready"}</span></div>
+          <div className="rowline"><span className="muted">ReleaseSentry</span><span className={`chip ${fixNow ? "red" : planNext ? "amber" : "green"}`}>{fixNow ? "hold" : planNext ? "watch" : "ready"}</span></div>
           <div className="rowline"><span className="muted">TrustGate</span><span className="chip amber">rules</span></div>
-          <div className="rowline"><span className="muted">Human action</span><span className={`chip ${scan?.metrics?.fix_now ? "red" : "signal"}`}>{scan?.metrics?.fix_now ? "fix now" : "watch"}</span></div>
+          <div className="rowline"><span className="muted">Human action</span><span className={`chip ${humanActionTone}`}>{humanAction}</span></div>
         </div>
       </Panel>
     </aside>
