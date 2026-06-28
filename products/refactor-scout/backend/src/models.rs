@@ -122,6 +122,8 @@ pub struct OverviewCounts {
     #[serde(default)]
     pub high_safety: u32,
     #[serde(default)]
+    pub medium_safety: u32,
+    #[serde(default)]
     pub large_file_count: u32,
     #[serde(default)]
     pub long_function_count: u32,
@@ -145,6 +147,8 @@ pub struct OverviewPayload {
     pub opportunity_count: u32,
     #[serde(default)]
     pub high_safety_count: u32,
+    #[serde(default)]
+    pub medium_safety_count: u32,
     #[serde(default)]
     pub large_file_count: u32,
     #[serde(default)]

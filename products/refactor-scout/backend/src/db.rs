@@ -170,6 +170,7 @@ pub fn overview_counts() -> OverviewCounts {
         repos.insert(repo_path);
         counts.opportunities += metrics.opportunities;
         counts.high_safety += metrics.high_safety;
+        counts.medium_safety += metrics.medium_safety;
         counts.large_file_count += metrics.large_file_count;
         counts.long_function_count += metrics.long_function_count;
         counts.repeated_literal_count += metrics.repeated_literal_count;

@@ -125,6 +125,10 @@ function buildMetrics(scan, overview, health) {
 function buildRail(scan, history, overview, health) {
   const latest = history[0] || {};
   const roots = overview?.allowed_roots || health?.allowed_roots || [];
+  const highSafety = asCount(scan?.metrics?.high_safety || latest.high_safety || overview?.high_safety_count || health?.high_safety_count);
+  const mediumSafety = asCount(scan?.metrics?.medium_safety || latest.medium_safety || overview?.medium_safety_count || health?.medium_safety_count);
+  const opportunities = asCount(scan?.metrics?.opportunities || latest.opportunities || overview?.opportunity_count || health?.opportunity_count);
+  const activeDecision = opportunities ? "SCOUT" : "READY";
   return {
     sections: [
       {
@@ -139,8 +143,8 @@ function buildRail(scan, history, overview, health) {
       {
         title: "Heuristics",
         items: [
-          { label: "high safety", active: true, badge: String(asCount(scan?.metrics?.high_safety || overview?.high_safety_count)), badgeTone: "green" },
-          { label: "medium safety", badge: String(asCount(scan?.metrics?.medium_safety)), badgeTone: "amber" },
+          { label: "high safety", active: true, badge: String(highSafety), badgeTone: "green" },
+          { label: "medium safety", badge: String(mediumSafety), badgeTone: "amber" },
           { label: "oversized files", badge: String(asCount(scan?.metrics?.large_file_count || overview?.large_file_count)), badgeTone: "signal" },
           { label: "literal repeats", badge: String(asCount(scan?.metrics?.repeated_literal_count || overview?.repeated_literal_count)), badgeTone: "signal" },
         ],
@@ -150,8 +154,8 @@ function buildRail(scan, history, overview, health) {
       title: "Active repo",
       items: [
         { label: "Repository", value: scan?.repo_name || latest.repo_name || overview?.last_repo || "none" },
-        { label: "Decision", value: scan?.metrics?.high_safety ? "SCOUT" : "READY", large: true, tone: scan?.metrics?.high_safety ? "ok" : "sig" },
-        { label: "Opportunities", value: String(asCount(scan?.metrics?.opportunities || latest.opportunities)) },
+        { label: "Decision", value: activeDecision, large: true, tone: opportunities ? "ok" : "sig" },
+        { label: "Opportunities", value: String(opportunities) },
       ],
     },
   };
