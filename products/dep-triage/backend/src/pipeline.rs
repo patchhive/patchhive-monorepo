@@ -72,7 +72,7 @@ mod tests {
             ..DependencyTriageItem::default()
         };
 
-        let summary = build_summary("RevenueCat/purchases-kmp", &metrics, Some(&top));
+        let summary = build_summary("RevenueCat/purchases-kmp", &metrics, &[], Some(&top));
 
         assert!(summary.contains("Top defer: build-dependencies is a safe defer for now."));
         assert!(!summary.contains("Highest urgency"));

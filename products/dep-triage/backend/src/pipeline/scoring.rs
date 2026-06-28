@@ -198,7 +198,7 @@ pub async fn build_scan_result(
     });
 
     let metrics = build_metrics(pulls.len() as u32, items.as_slice());
-    let summary = build_summary(repo, &metrics, items.first());
+    let summary = build_summary(repo, &metrics, &warnings, items.first());
 
     Ok(TriageScanResult {
         id: Uuid::new_v4().to_string(),
@@ -243,9 +243,31 @@ pub fn build_metrics(scanned_pull_requests: u32, items: &[DependencyTriageItem])
 pub fn build_summary(
     repo: &str,
     metrics: &TriageMetrics,
+    warnings: &[String],
     top: Option<&DependencyTriageItem>,
 ) -> String {
     if metrics.tracked_items == 0 {
+        if warnings
+            .iter()
+            .any(|warning| dependabot_permission_blocked(warning))
+        {
+            return format!(
+                "DepTriage could not read Dependabot alerts for `{repo}` with the current token. Dependency PRs were checked, but grant Dependabot alert read access for this repository to include security pressure."
+            );
+        }
+        if warnings
+            .iter()
+            .any(|warning| dependabot_token_missing(warning))
+        {
+            return format!(
+                "DepTriage checked dependency PRs for `{repo}`, but skipped Dependabot security alerts because GitHub token access is not configured."
+            );
+        }
+        if !warnings.is_empty() {
+            return format!(
+                "DepTriage did not receive actionable dependency items from the readable sources for `{repo}`, but one or more dependency evidence sources could not be read."
+            );
+        }
         return format!(
             "DepTriage did not find open dependency PRs or security alerts that need ranking in `{repo}` right now."
         );
@@ -270,6 +292,14 @@ pub fn build_summary(
     }
 
     summary
+}
+
+fn dependabot_permission_blocked(warning: &str) -> bool {
+    warning.contains("403 Forbidden") || warning.contains("Resource not accessible")
+}
+
+fn dependabot_token_missing(warning: &str) -> bool {
+    warning.contains("BOT_GITHUB_TOKEN is not set") || warning.contains("GITHUB_TOKEN is not set")
 }
 
 pub fn finalize_item(builder: Builder) -> DependencyTriageItem {

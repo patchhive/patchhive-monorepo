@@ -87,7 +87,38 @@ function warningLabel(warning) {
   if (value.includes("BOT_GITHUB_TOKEN is not set") || value.includes("GITHUB_TOKEN is not set")) {
     return "Dependabot alerts were skipped because GitHub token access is not configured.";
   }
+  if (value.includes("/dependabot/alerts") && value.includes("Dependabot alerts are disabled")) {
+    return "Dependabot alerts are disabled for this repository, so dependency vulnerability pressure is unavailable.";
+  }
+  if (value.includes("/dependabot/alerts") && (value.includes("403 Forbidden") || value.includes("Resource not accessible"))) {
+    return "Dependabot alerts could not be read. The token needs Dependabot alert read access for this repository.";
+  }
   return value;
+}
+
+function warningBlocksDependabotAlerts(warning) {
+  const value = String(warning || "");
+  return value.includes("403 Forbidden") || value.includes("Resource not accessible");
+}
+
+function warningMissingGitHubToken(warning) {
+  const value = String(warning || "");
+  return value.includes("BOT_GITHUB_TOKEN is not set") || value.includes("GITHUB_TOKEN is not set");
+}
+
+function scanSummary(scan) {
+  const repo = scan?.repo || "this repository";
+  const hasItems = asCount(scan?.metrics?.tracked_items) > 0 || Boolean(scan?.items?.length);
+  if (!hasItems && scan?.warnings?.some(warningBlocksDependabotAlerts)) {
+    return `DepTriage could not read Dependabot alerts for \`${repo}\` with the current token. Dependency PRs were checked, but grant Dependabot alert read access for this repository to include security pressure.`;
+  }
+  if (!hasItems && scan?.warnings?.some(warningMissingGitHubToken)) {
+    return `DepTriage checked dependency PRs for \`${repo}\`, but skipped Dependabot security alerts because GitHub token access is not configured.`;
+  }
+  if (!hasItems && scan?.warnings?.length) {
+    return `DepTriage did not receive actionable dependency items from the readable sources for \`${repo}\`, but one or more dependency evidence sources could not be read.`;
+  }
+  return summaryLabel(scan?.summary);
 }
 
 function metricTone(recommendation) {
@@ -216,7 +247,7 @@ function buildRadarItems(scan, history) {
         { label: "Watch", value: String(asCount(metrics.watch)) },
         { label: "Age", value: timeAgo(scan.created_at) },
       ],
-      summary: summaryLabel(scan.summary),
+      summary: scanSummary(scan),
       title: scan.repo,
       tone: metrics.update_now ? "red" : metrics.watch ? "amber" : "green",
       vector: hasTriagePressure ? "triage" : "clear",
@@ -244,7 +275,7 @@ function buildRadarItems(scan, history) {
           { label: "Watch", value: String(asCount(item.watch)) },
           { label: "Age", value: timeAgo(item.created_at) },
         ],
-        summary: summaryLabel(item.summary),
+        summary: scan?.id === item.id ? scanSummary(scan) : summaryLabel(item.summary),
         title: item.repo,
         tone: item.update_now ? "red" : item.watch ? "amber" : "green",
         vector: "saved",
@@ -275,10 +306,12 @@ function buildRadarItems(scan, history) {
 
 function buildRadarFeed(scan, history, health) {
   if (scan) {
+    const firstWarning = warningLabel(scan.warnings?.[0]);
     return [
       { text: `${asCount(scan.metrics?.update_now)} update-now items and ${asCount(scan.metrics?.watch)} watch items are active.`, tone: scan.metrics?.update_now ? "red" : scan.metrics?.watch ? "amber" : "green" },
-      { text: warningLabel(scan.warnings?.[0]) || "Dependency PRs and alerts are ranked into actionable buckets.", tone: scan.warnings?.length ? "amber" : "signal" },
-    ];
+      firstWarning ? { text: firstWarning, tone: "amber" } : null,
+      scan?.items?.length && !firstWarning ? { text: "Dependency PRs and alerts are ranked into actionable buckets.", tone: "signal" } : null,
+    ].filter(Boolean);
   }
   return [
     { text: history.length ? `${history.length} saved dependency scans are available.` : "DepTriage is waiting for a repository scan.", tone: "signal" },
@@ -389,12 +422,12 @@ function UpdateQueuePanel({ history, onLoadScan, scan }) {
   return (
     <Panel eyebrow="Queue" title="Recent scans" action={<span className="chip signal">{history.length} saved</span>}>
       <div className="panelbody repo-list queue-grid">
-        {history.length ? history.slice(0, 5).map((item) => (
+        {history.length ? history.slice(0, 5).map((item, index) => (
           <div className="ledger-row" key={item.id}>
-            <div className="rank">{asCount(item.update_now)}</div>
+            <div className="rank">{String(index + 1).padStart(2, "0")}</div>
             <div>
               <div className="repo-name">{item.repo}</div>
-              <div className="feed-meta">{summaryLabel(item.summary)}</div>
+              <div className="feed-meta">{scan?.id === item.id ? scanSummary(scan) : summaryLabel(item.summary)}</div>
               <div className="repo-meta">
                 <span className="chip red">{asCount(item.update_now)} now</span>
                 <span className="chip amber">{asCount(item.watch)} watch</span>
@@ -425,7 +458,7 @@ function SidePanels({ health, scan }) {
             <div className="feed-item" key={warning}>
               <div>
                 <div className="feed-title">Scan warning</div>
-                <div className="feed-meta">{warning}</div>
+                <div className="feed-meta">{warningLabel(warning)}</div>
               </div>
               <span className="chip amber">warn</span>
             </div>
@@ -525,12 +558,12 @@ function HistorySurface({ activeScanId, health, history, loading, onClearScan, o
       </div>
       <Panel eyebrow="Recent" title="Dependency scans" action={<span className="chip signal">{history.length} saved</span>}>
         <div className="panelbody repo-list queue-grid">
-          {history.length ? history.map((item) => (
+          {history.length ? history.map((item, index) => (
             <div className="ledger-row" key={item.id}>
-              <div className="rank">{item.id === activeScanId ? "SEL" : asCount(item.update_now)}</div>
+              <div className="rank">{item.id === activeScanId ? "SEL" : String(index + 1).padStart(2, "0")}</div>
               <div>
                 <div className="repo-name">{item.repo}</div>
-                <div className="feed-meta">{summaryLabel(item.summary)}</div>
+                <div className="feed-meta">{scan?.id === item.id ? scanSummary(scan) : summaryLabel(item.summary)}</div>
                 <div className="repo-meta">
                   <span className="chip red">{asCount(item.update_now)} now</span>
                   <span className="chip amber">{asCount(item.watch)} watch</span>
