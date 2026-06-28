@@ -55,6 +55,18 @@ function timeAgo(value) {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
+function cleanSentence(value, fallback = "") {
+  const text = String(value || "").trim();
+  if (!text) return fallback;
+  return text.replace(/\.\.+$/, ".");
+}
+
+function visibleWarnings(warnings = []) {
+  return warnings
+    .filter((warning) => !String(warning || "").includes("/.vite/") && !String(warning || "").includes("\\.vite\\"))
+    .map((warning) => cleanSentence(warning));
+}
+
 function safetyTone(safety) {
   const value = String(safety || "").toLowerCase();
   if (value === "high") return "green";
@@ -162,7 +174,7 @@ function buildRadarItems(scan, history) {
         { label: "Effort", value: lead.effort || "unknown" },
         { label: "Lang", value: lead.language || "n/a" },
       ],
-      summary: lead.summary || lead.suggestion || lead.evidence?.[0] || "RefactorScout opportunity.",
+      summary: cleanSentence(lead.summary || lead.suggestion || lead.evidence?.[0], "RefactorScout opportunity."),
       title: lead.title || lead.path || `Lead ${index + 1}`,
       tone: safetyTone(lead.safety) === "signal" ? scoreTone(lead.score) : safetyTone(lead.safety),
       vector: lead.kind || lead.path || "refactor",
@@ -190,7 +202,7 @@ function buildRadarItems(scan, history) {
           { label: "Medium", value: String(asCount(item.medium_safety)) },
           { label: "Age", value: timeAgo(item.created_at) },
         ],
-        summary: item.summary || "Saved RefactorScout scan.",
+        summary: cleanSentence(item.summary, "Saved RefactorScout scan."),
         title: item.repo_name || item.repo_path,
         tone: item.high_safety ? "green" : item.medium_safety ? "amber" : "signal",
         vector: "saved",
@@ -221,10 +233,11 @@ function buildRadarItems(scan, history) {
 
 function buildRadarFeed(scan, history, health) {
   if (scan) {
+    const warnings = visibleWarnings(scan.warnings);
     return [
-      { text: scan.summary || "RefactorScout completed the local scan.", tone: scan.metrics?.high_safety ? "green" : scan.metrics?.medium_safety ? "amber" : "signal" },
+      { text: cleanSentence(scan.summary, "RefactorScout completed the local scan."), tone: scan.metrics?.high_safety ? "green" : scan.metrics?.medium_safety ? "amber" : "signal" },
       { text: `${asCount(scan.metrics?.high_safety)} high-safety and ${asCount(scan.metrics?.medium_safety)} medium-safety leads are active.`, tone: scan.metrics?.high_safety ? "green" : "amber" },
-      { text: scan.warnings?.[0] || "Scan stayed inside configured filesystem guardrails.", tone: scan.warnings?.length ? "amber" : "signal" },
+      { text: warnings[0] || "Scan stayed inside configured filesystem guardrails.", tone: warnings.length ? "amber" : "signal" },
     ];
   }
   return [
@@ -299,7 +312,7 @@ function LeadQueuePanel({ history, onLoadScan, scan }) {
               <div className="rank">{String(index + 1).padStart(2, "0")}</div>
               <div>
                 <div className="repo-name">{lead.title || lead.path}</div>
-                <div className="feed-meta">{lead.summary || lead.suggestion}</div>
+                <div className="feed-meta">{cleanSentence(lead.summary || lead.suggestion)}</div>
                 <div className="repo-meta">
                   <span className={`chip ${safetyTone(lead.safety)}`}>{lead.safety || "lead"}</span>
                   <span className="chip signal">{lead.kind}</span>
@@ -326,7 +339,7 @@ function LeadQueuePanel({ history, onLoadScan, scan }) {
             <div className="rank">{String(index + 1).padStart(2, "0")}</div>
             <div>
               <div className="repo-name">{item.repo_name || item.repo_path}</div>
-              <div className="feed-meta">{item.summary || "Saved RefactorScout scan."}</div>
+              <div className="feed-meta">{cleanSentence(item.summary, "Saved RefactorScout scan.")}</div>
               <div className="repo-meta">
                 <span className="chip green">{asCount(item.high_safety)} high</span>
                 <span className="chip amber">{asCount(item.medium_safety)} medium</span>
@@ -348,7 +361,7 @@ function LeadQueuePanel({ history, onLoadScan, scan }) {
 }
 
 function SidePanels({ health, scan }) {
-  const warnings = scan?.warnings || [];
+  const warnings = visibleWarnings(scan?.warnings || []);
   return (
     <aside className="side">
       <Panel eyebrow="Evidence" title="Why it is safe">
@@ -357,7 +370,7 @@ function SidePanels({ health, scan }) {
             <div className="feed-item" key={warning}>
               <div>
                 <div className="feed-title">Scan warning</div>
-                <div className="feed-meta">{warning}</div>
+                <div className="feed-meta">{cleanSentence(warning)}</div>
               </div>
               <span className="chip amber">warn</span>
             </div>
@@ -462,7 +475,7 @@ function HistorySurface({ activeScanId, health, history, loading, onClearScan, o
               <div className="rank">{item.id === activeScanId ? "SEL" : String(index + 1).padStart(2, "0")}</div>
               <div>
                 <div className="repo-name">{item.repo_name || item.repo_path}</div>
-                <div className="feed-meta">{item.summary || "Saved RefactorScout scan."}</div>
+                <div className="feed-meta">{cleanSentence(item.summary, "Saved RefactorScout scan.")}</div>
                 <div className="repo-meta">
                   <span className="chip green">{asCount(item.high_safety)} high</span>
                   <span className="chip amber">{asCount(item.medium_safety)} medium</span>
