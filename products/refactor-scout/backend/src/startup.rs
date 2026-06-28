@@ -22,8 +22,8 @@ pub async fn validate_config(state: &AppState) -> Vec<StartupCheck> {
 
     let allowed_roots = state.allowed_root_labels();
     if allowed_roots.is_empty() {
-        checks.push(StartupCheck::error(
-            "RefactorScout has no readable allowed roots configured, so local repo scans will fail.",
+        checks.push(StartupCheck::warn(
+            "RefactorScout has no readable allowed roots configured, so local path scans will fail. Public GitHub repo scans can still use temporary clones.",
         ));
     } else {
         checks.push(StartupCheck::info(format!(
@@ -49,8 +49,21 @@ pub async fn validate_config(state: &AppState) -> Vec<StartupCheck> {
         ));
     }
 
+    match tokio::process::Command::new("git")
+        .arg("--version")
+        .output()
+        .await
+    {
+        Ok(output) if output.status.success() => checks.push(StartupCheck::info(
+            "GitHub repo scans can use temporary git clones that are removed after analysis.",
+        )),
+        _ => checks.push(StartupCheck::warn(
+            "GitHub repo scans require the git CLI. Local filesystem path scans still work.",
+        )),
+    }
+
     checks.push(StartupCheck::info(
-        "RefactorScout is currently a read-only local repo scanner for safe refactor opportunities such as oversized files, oversized functions, and repeated string literals.",
+        "RefactorScout is currently a read-only repo scanner for safe refactor opportunities such as oversized files, oversized functions, and repeated string literals.",
     ));
 
     checks

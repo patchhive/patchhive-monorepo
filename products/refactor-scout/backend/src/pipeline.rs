@@ -11,7 +11,7 @@ pub use routes::{
 #[cfg(test)]
 mod tests {
     use super::analysis::build_summary;
-    use super::scanning::{analyze_file, resolve_scan_root};
+    use super::scanning::{analyze_file, parse_github_repo_target, resolve_scan_root};
     use crate::{models::ScanMetrics, state::AppState};
     use std::{fs, path::PathBuf};
 
@@ -74,5 +74,29 @@ const C = "service unavailable while syncing billing customers";
             .contains("outside the configured allowed roots"));
 
         fs::remove_dir_all(PathBuf::from(base)).ok();
+    }
+
+    #[test]
+    fn github_repo_targets_parse_common_inputs() {
+        assert_eq!(
+            parse_github_repo_target("patchhive/patchhive2")
+                .map(|target| target.label())
+                .as_deref(),
+            Some("patchhive/patchhive2")
+        );
+        assert_eq!(
+            parse_github_repo_target("https://github.com/patchhive/patchhive2.git")
+                .map(|target| target.label())
+                .as_deref(),
+            Some("patchhive/patchhive2")
+        );
+        assert_eq!(
+            parse_github_repo_target("git@github.com:patchhive/patchhive2.git")
+                .map(|target| target.label())
+                .as_deref(),
+            Some("patchhive/patchhive2")
+        );
+        assert!(parse_github_repo_target("https://example.com/patchhive/patchhive2").is_none());
+        assert!(parse_github_repo_target("patchhive/patchhive2/tree/main").is_none());
     }
 }

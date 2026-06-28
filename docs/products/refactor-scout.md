@@ -4,7 +4,7 @@
   <img src="../../../patchhive3.png" width="120" alt="PatchHive logo" />
 </p>
 
-RefactorScout surfaces safe, high-value refactor opportunities before structural code drift turns expensive. It scans local repository paths and ranks conservative cleanup leads such as oversized files, oversized functions, and repeated string literals.
+RefactorScout surfaces safe, high-value refactor opportunities before structural code drift turns expensive. It scans local repository paths or public GitHub repositories and ranks conservative cleanup leads such as oversized files, oversized functions, and repeated string literals.
 
 ## Product Role
 
@@ -12,15 +12,17 @@ RefactorScout is refactor-first, read-only, and conservative. Its job is to help
 
 ## Core Workflow
 
-1. Point RefactorScout at a local repository path inside an allowed root.
+1. Point RefactorScout at a local repository path inside an allowed root, or a public GitHub repo such as `owner/repo`.
 2. Walk the repository without mutating anything.
-3. Rank refactor leads with explicit evidence.
-4. Save scan history.
-5. Reload or copy the ranked queue when planning cleanup work.
+3. Remove any temporary GitHub clone after the scan finishes.
+4. Rank refactor leads with explicit evidence.
+5. Save scan history.
+6. Reload or copy the ranked queue when planning cleanup work.
 
 ## Inputs
 
 - Local repository path.
+- Public GitHub repo slug or URL.
 - Explicit filesystem allowlist roots.
 - Optional scan settings.
 
@@ -37,8 +39,10 @@ RefactorScout is read-only. It does not rewrite code, apply codemods, or open pu
 
 Important safety rules:
 - Set `REFACTOR_SCOUT_ALLOWED_ROOTS` before scanning broad checkout directories.
+- GitHub repo scans are cloned to a temporary directory and removed after analysis.
 - Remote filesystem scans are disabled by default.
 - Set `REFACTOR_SCOUT_ALLOW_REMOTE_FS=true` only when authenticated remote clients should intentionally trigger scans.
+- Future write-capable refactor PRs should be a separate explicit action, not part of a normal scan.
 
 ## Local Development
 
@@ -73,13 +77,14 @@ npm run dev
 | `REFACTOR_SCOUT_PORT` | Backend port. |
 | `REFACTOR_SCOUT_ALLOWED_ROOTS` | Colon-separated filesystem roots allowed for scans. |
 | `REFACTOR_SCOUT_ALLOW_REMOTE_FS` | Explicit opt-in for authenticated remote filesystem scans. |
+| `REFACTOR_SCOUT_CLONE_TIMEOUT_SECS` | Optional timeout for temporary public GitHub clones. Defaults to 120 seconds. |
 | `PATCHHIVE_ALLOW_REMOTE_BOOTSTRAP` | Explicit opt-in for remote first-run bootstrap. |
 
-RefactorScout scans local filesystem paths, so set `REFACTOR_SCOUT_ALLOWED_ROOTS` before pointing it at broader checkout directories. By default, filesystem scans are limited to localhost callers even when API-key auth is enabled.
+RefactorScout scans local filesystem paths and public GitHub repositories. Set `REFACTOR_SCOUT_ALLOWED_ROOTS` before pointing it at broader checkout directories. Public GitHub repo inputs are cloned into a temporary directory, scanned, and removed after the scan. By default, filesystem scans are limited to localhost callers even when API-key auth is enabled.
 
 ## HiveCore Fit
 
-HiveCore can surface RefactorScout as the suite's conservative cleanup discovery view. Future handoffs should stay explicit: RefactorScout identifies work, TrustGate evaluates risk, and write-capable products act only with approval.
+HiveCore can surface RefactorScout as the suite's conservative cleanup discovery view. Future handoffs should stay explicit: RefactorScout identifies work, TrustGate evaluates risk, and write-capable products act only with approval. A later `Create refactor PR` flow can make RefactorScout write-capable without making scan itself mutate repositories.
 
 ## Technical Architecture
 

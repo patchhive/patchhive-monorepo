@@ -11,8 +11,9 @@ It is a read-only scouting product inside PatchHive: a product that looks for cl
 
 ## Core Workflow
 
-- point RefactorScout at a local repository path inside an allowed root
+- point RefactorScout at a local repository path inside an allowed root, or a public GitHub repo such as `owner/repo`
 - walk the repo without mutating anything
+- remove any temporary GitHub clone after the scan finishes
 - rank safe refactor leads like oversized files, oversized functions, and repeated string literals
 - save scan history so recurring cleanup pressure is visible over time
 - copy or reload the ranked queue when it is time to schedule cleanup work
@@ -57,10 +58,11 @@ cd frontend-v2 && npm install && npm run dev
 | `REFACTOR_SCOUT_PORT` | Backend port for split local runs. |
 | `REFACTOR_SCOUT_ALLOWED_ROOTS` | Colon-separated filesystem roots that may be scanned. |
 | `REFACTOR_SCOUT_ALLOW_REMOTE_FS` | Allows authenticated remote clients to trigger filesystem scans. Keep unset unless intentional. |
+| `REFACTOR_SCOUT_CLONE_TIMEOUT_SECS` | Optional timeout for temporary public GitHub clones. Defaults to 120 seconds. |
 | `PATCHHIVE_ALLOW_REMOTE_BOOTSTRAP` | Allows first-time key bootstrap from non-localhost clients. Keep unset for local use. |
 | `RUST_LOG` | Rust logging level. |
 
-RefactorScout scans local filesystem paths, so set `REFACTOR_SCOUT_ALLOWED_ROOTS` before pointing it at broader checkout directories. By default, filesystem scans are limited to localhost callers even when API-key auth is enabled.
+RefactorScout scans local filesystem paths and public GitHub repositories. Set `REFACTOR_SCOUT_ALLOWED_ROOTS` before pointing it at broader checkout directories. GitHub repo inputs are cloned into a temporary directory, scanned, and removed after the scan. By default, filesystem scans are limited to localhost callers even when API-key auth is enabled.
 
 ## Safety Boundary
 
@@ -77,9 +79,11 @@ That means the product should prefer:
 
 It does not rewrite code, apply codemods, open pull requests, or scan outside configured filesystem boundaries.
 
+Future write-capable refactor PRs should stay behind an explicit action such as `Create refactor PR`: scan first, select a lead, branch in an isolated clone, run tests, pass TrustGate, then open a clearly attributed PatchHive PR. A normal scan should remain read-only.
+
 ## HiveCore Fit
 
-HiveCore can surface RefactorScout health, capabilities, run history, and conservative cleanup opportunities. RefactorScout stays standalone and local-scan-first; HiveCore should not expand filesystem access beyond the product's own guardrails.
+HiveCore can surface RefactorScout health, capabilities, run history, and conservative cleanup opportunities. RefactorScout stays standalone and scan-first; HiveCore should not expand filesystem access beyond the product's own guardrails.
 
 ## Standalone Repository
 

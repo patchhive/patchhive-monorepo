@@ -21,7 +21,7 @@ use crate::{
 };
 
 use super::analysis::scan_request_allowed;
-use super::scanning::{build_scan_result, MAX_SCAN_FILES};
+use super::scanning::{build_scan_result_for_input, MAX_SCAN_FILES};
 
 type ApiError = (StatusCode, Json<serde_json::Value>);
 pub type JsonResult<T> = Result<Json<T>, ApiError>;
@@ -37,10 +37,10 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
         "RefactorScout",
         vec![contract::action(
             "scan_local_repo",
-            "Scan local repo",
+            "Scan repo target",
             "POST",
             "/scan/local",
-            "Surface safe refactor opportunities from an allowed local repository path.",
+            "Surface safe refactor opportunities from an allowed local path or public GitHub repository.",
             true,
         )],
         vec![
@@ -192,7 +192,7 @@ pub async fn scan_local_repo(
     if !scan_request_allowed(&headers, state.remote_fs_enabled) {
         return Err(api_error(
             StatusCode::FORBIDDEN,
-            "Filesystem scans are limited to localhost callers unless REFACTOR_SCOUT_ALLOW_REMOTE_FS=true.",
+            "RefactorScout scans are limited to localhost callers unless REFACTOR_SCOUT_ALLOW_REMOTE_FS=true.",
         ));
     }
 
@@ -205,7 +205,8 @@ pub async fn scan_local_repo(
     }
 
     let max_files = request.max_files.clamp(25, MAX_SCAN_FILES);
-    let result = build_scan_result(&state, repo_path, max_files)
+    let result = build_scan_result_for_input(&state, repo_path, max_files)
+        .await
         .map_err(|err| api_error(StatusCode::BAD_REQUEST, err.to_string()))?;
 
     db::save_scan(&result)

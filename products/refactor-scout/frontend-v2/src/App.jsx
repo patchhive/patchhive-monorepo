@@ -96,8 +96,8 @@ function buildTopline(health, overview, scan, history) {
   return [
     { label: "RefactorScout", value: "Refactor map", tone: "sig" },
     { label: "System", value: health?.status || "checking", tone: health?.status === "ok" ? "ok" : "warn" },
-    { label: "Mode", value: "Local read" },
-    { label: "Scope", value: (overview?.allowed_roots || health?.allowed_roots || []).length ? "Allowed root" : "local only", tone: "sig" },
+    { label: "Mode", value: "Repo read" },
+    { label: "Scope", value: (overview?.allowed_roots || health?.allowed_roots || []).length ? "Local / GitHub" : "GitHub clone", tone: "sig" },
     { label: "Safety", value: `${asCount(scan?.metrics?.high_safety || overview?.high_safety_count || health?.high_safety_count)} high`, tone: "ok" },
     { label: "Last scan", value: latest.created_at ? timeAgo(latest.created_at) : overview?.scan_count ? "loaded" : "none" },
   ];
@@ -220,20 +220,20 @@ function buildRadarItems(scan, history) {
     }).filter(Boolean);
   }
   return [{
-    detail: "No local scan yet",
+    detail: "No repo scan yet",
     gain: "standby",
     gainMeta: "allowed path",
     id: "refactor-scout-ready",
     label: "RS",
     position: { left: "50%", top: "44%" },
     stats: [
-      { label: "Mode", value: "local" },
+      { label: "Mode", value: "read only" },
       { label: "Root", value: "required" },
       { label: "History", value: "empty" },
       { label: "Safety", value: "first" },
       { label: "Action", value: "scan" },
     ],
-    summary: "Scan an allowed local repo path to populate RefactorScout's live opportunity radar.",
+    summary: "Scan an allowed local path or public GitHub repo to populate RefactorScout's live opportunity radar.",
     title: "RefactorScout ready",
     tone: "signal",
     vector: "READY",
@@ -244,14 +244,14 @@ function buildRadarFeed(scan, history, health) {
   if (scan) {
     const warnings = visibleWarnings(scan.warnings);
     return [
-      { text: cleanSentence(scan.summary, "RefactorScout completed the local scan."), tone: scan.metrics?.high_safety ? "green" : scan.metrics?.medium_safety ? "amber" : "signal" },
+      { text: cleanSentence(scan.summary, "RefactorScout completed the repo scan."), tone: scan.metrics?.high_safety ? "green" : scan.metrics?.medium_safety ? "amber" : "signal" },
       { text: `${asCount(scan.metrics?.high_safety)} high-safety and ${asCount(scan.metrics?.medium_safety)} medium-safety leads are active.`, tone: scan.metrics?.high_safety ? "green" : "amber" },
       { text: warnings[0] || "Scan stayed inside configured filesystem guardrails.", tone: warnings.length ? "amber" : "signal" },
     ];
   }
   return [
-    { text: history.length ? `${history.length} saved local scans are available.` : "RefactorScout is waiting for a local repo scan.", tone: "signal" },
-    { text: (health?.allowed_roots || []).length ? "Allowed roots are configured for local scanning." : "Configure allowed roots before scanning arbitrary paths.", tone: (health?.allowed_roots || []).length ? "green" : "amber" },
+    { text: history.length ? `${history.length} saved repo scans are available.` : "RefactorScout is waiting for a path or GitHub repo scan.", tone: "signal" },
+    { text: (health?.allowed_roots || []).length ? "Allowed roots are configured for local scans; GitHub repos use temporary clones." : "Local scans need allowed roots; public GitHub repos can still use temporary clones.", tone: (health?.allowed_roots || []).length ? "green" : "amber" },
     { text: "The radar fills with file-level cleanup leads after a scan completes.", tone: "signal" },
   ];
 }
@@ -281,7 +281,7 @@ function RefactorMap({ health, history, scan }) {
 function ScanForm({ error, form, onChange, onRun, running }) {
   const set = (key, value) => onChange((current) => ({ ...current, [key]: value }));
   return (
-    <Panel eyebrow="Scan" title="Local repo intake" action={<span className="chip signal">local read</span>}>
+    <Panel eyebrow="Scan" title="Repo intake" action={<span className="chip signal">local or GitHub</span>}>
       <form
         className="panelbody control-stack"
         onSubmit={(event) => {
@@ -291,8 +291,8 @@ function ScanForm({ error, form, onChange, onRun, running }) {
       >
         <div className="form-grid">
           <label className="v2-field">
-            Repo path
-            <input className="v2-input" onChange={(event) => set("repo_path", event.target.value)} placeholder="/mnt/docker/code/patchhive" value={form.repo_path} />
+            Path or GitHub repo
+            <input className="v2-input" onChange={(event) => set("repo_path", event.target.value)} placeholder="/mnt/docker/code/patchhive or patchhive/patchhive2" value={form.repo_path} />
           </label>
           <label className="v2-field">
             Max files
@@ -301,7 +301,7 @@ function ScanForm({ error, form, onChange, onRun, running }) {
           <div className="v2-field">
             Action
             <button className="btn primary" disabled={running || !form.repo_path.trim()} type="submit">
-              {running ? "Scanning..." : "Scan path"}
+              {running ? "Scanning..." : "Scan repo"}
             </button>
           </div>
         </div>
@@ -361,7 +361,7 @@ function LeadQueuePanel({ history, onLoadScan, scan }) {
         )) : (
           <div className="empty-v2">
             <strong>No scans yet</strong>
-            <span>Scan an allowed local repo path to populate the queue.</span>
+            <span>Scan an allowed local path or public GitHub repo to populate the queue.</span>
           </div>
         )}
       </div>
@@ -427,7 +427,7 @@ function ScoutSurface({
             <div>
               <div className="eyebrow">// Module - conservative cleanup</div>
               <h1>Refactor Opportunity</h1>
-              <p className="subline">Local repo paths, explicit scan caps, and explainable heuristics turned into safe cleanup leads.</p>
+              <p className="subline">Local paths or public GitHub repos, explicit scan caps, and explainable heuristics turned into safe cleanup leads.</p>
             </div>
             <div className="actions">
               <span className={`chip ${(health?.allowed_roots || []).length ? "green" : "amber"}`}>{(health?.allowed_roots || []).length ? "root ready" : "root missing"}</span>
@@ -470,14 +470,14 @@ function HistorySurface({ activeScanId, health, history, loading, onClearScan, o
         <div>
           <div className="eyebrow">// RefactorScout cleanup queue</div>
           <h1>Scan History</h1>
-          <p className="subline">Saved local scans with high-safety lead movement and ignored-path evidence.</p>
+          <p className="subline">Saved local and GitHub scans with high-safety lead movement and ignored-path evidence.</p>
         </div>
         <div className="actions">
           {scan && <button className="btn" onClick={onClearScan} type="button">Clear scan</button>}
           <button className="btn" onClick={onRefresh} type="button">{loading ? "Refreshing..." : "Refresh"}</button>
         </div>
       </div>
-      <Panel eyebrow="Recent" title="Local scans" action={<span className="chip signal">{history.length} saved</span>}>
+      <Panel eyebrow="Recent" title="Repo scans" action={<span className="chip signal">{history.length} saved</span>}>
         <div className="panelbody repo-list queue-grid">
           {history.length ? history.map((item, index) => (
             <div className="ledger-row" key={item.id}>
@@ -497,7 +497,7 @@ function HistorySurface({ activeScanId, health, history, loading, onClearScan, o
           )) : (
             <div className="empty-v2">
               <strong>No scans saved</strong>
-              <span>Scan an allowed local repo path to create history.</span>
+              <span>Scan an allowed local path or public GitHub repo to create history.</span>
             </div>
           )}
         </div>
@@ -537,7 +537,7 @@ function ChecksSurface({ history, onClearScan, overview, runtime, scan }) {
         <div>
           <div className="eyebrow">// RefactorScout readiness</div>
           <h1>Checks</h1>
-          <p className="subline">Backend health, filesystem guardrails, local scan scope, and startup checks.</p>
+          <p className="subline">Backend health, filesystem guardrails, temporary clone cleanup, and startup checks.</p>
         </div>
         <div className="actions">
           {scan && <button className="btn" onClick={onClearScan} type="button">Clear scan</button>}
@@ -637,7 +637,7 @@ export default function App() {
             max_files: Number(form.max_files) || 250,
           }),
         },
-        "RefactorScout could not scan that path.",
+        "RefactorScout could not scan that repo.",
       );
       setScan(result);
       setForm((current) => ({ ...current, repo_path: result.repo_path || current.repo_path }));
@@ -645,7 +645,7 @@ export default function App() {
       await refreshScoutData();
       await runtime.refresh();
     } catch (err) {
-      setError(err.message || "RefactorScout could not scan that path.");
+      setError(err.message || "RefactorScout could not scan that repo.");
     } finally {
       setRunning(false);
     }

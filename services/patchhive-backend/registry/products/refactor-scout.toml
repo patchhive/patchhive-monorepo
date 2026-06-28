@@ -8,8 +8,8 @@ migration_stage = "gateway-ready"
 
 [safety]
 read_only = true
-credential_scopes = ["local:filesystem:read"]
-evidence_required = ["local path allowlist", "file metrics", "ranking reason"]
+credential_scopes = ["local:filesystem:read", "github:public-repo:clone"]
+evidence_required = ["local path allowlist or temporary GitHub clone", "file metrics", "ranking reason"]
 
 [gateway]
 default_url = "http://127.0.0.1:8090"
@@ -22,8 +22,8 @@ healthy_status = 200
 
 [[capabilities]]
 id = "local-scan"
-label = "Local scan"
-description = "Scan explicitly allowed local repository paths."
+label = "Repo scan"
+description = "Scan explicitly allowed local repository paths or public GitHub repositories."
 
 [[capabilities]]
 id = "refactor-candidates"
@@ -78,7 +78,7 @@ description = "Read RefactorScout product capabilities."
 [[routes]]
 method = "POST"
 path = "/api/products/refactor-scout/scan/local"
-description = "Scan a local repo path for refactor opportunities."
+description = "Scan a local repo path or public GitHub repository for refactor opportunities."
 
 [[routes]]
 method = "GET"

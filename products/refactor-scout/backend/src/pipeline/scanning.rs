@@ -1,9 +1,15 @@
-use std::{collections::HashMap, path::Path};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+    process::{Output, Stdio},
+    time::Duration,
+};
 
 use anyhow::{anyhow, Result};
 use chrono::Utc;
 use once_cell::sync::Lazy;
 use regex::Regex;
+use tokio::process::Command;
 use uuid::Uuid;
 use walkdir::{DirEntry, WalkDir};
 
@@ -19,6 +25,8 @@ pub(crate) const LONG_FUNCTION_THRESHOLD: usize = 60;
 pub(crate) const REPEATED_LITERAL_MIN_LEN: usize = 12;
 pub(crate) const REPEATED_LITERAL_MIN_REPEATS: u32 = 3;
 pub(crate) const MAX_WARNINGS: usize = 12;
+const DEFAULT_CLONE_TIMEOUT_SECS: u64 = 120;
+const MAX_CLONE_ERROR_BYTES: usize = 600;
 
 static RUST_FN_RE: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"^\s*(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?fn\s+([A-Za-z_][A-Za-z0-9_]*)")
@@ -54,6 +62,67 @@ pub(crate) struct ScanArtifacts {
     pub(crate) limit_hit: bool,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct GitHubRepoTarget {
+    owner: String,
+    repo: String,
+}
+
+impl GitHubRepoTarget {
+    pub(crate) fn label(&self) -> String {
+        format!("{}/{}", self.owner, self.repo)
+    }
+
+    fn clone_url(&self) -> String {
+        format!("https://github.com/{}/{}.git", self.owner, self.repo)
+    }
+}
+
+struct TemporaryClone {
+    path: PathBuf,
+}
+
+impl TemporaryClone {
+    fn new(target: &GitHubRepoTarget) -> Result<Self> {
+        let parent = std::env::temp_dir().join("refactor-scout-clones");
+        std::fs::create_dir_all(&parent).map_err(|err| {
+            anyhow!(
+                "Could not create temporary clone directory `{}`: {err}",
+                parent.display()
+            )
+        })?;
+
+        Ok(Self {
+            path: parent.join(format!(
+                "{}-{}-{}",
+                sanitize_clone_segment(&target.owner),
+                sanitize_clone_segment(&target.repo),
+                Uuid::new_v4()
+            )),
+        })
+    }
+}
+
+impl Drop for TemporaryClone {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.path);
+    }
+}
+
+pub async fn build_scan_result_for_input(
+    state: &crate::state::AppState,
+    repo_path: &str,
+    max_files: u32,
+) -> Result<RefactorScanResult> {
+    if !should_use_local_scan(repo_path) {
+        if let Some(target) = parse_github_repo_target(repo_path) {
+            return build_github_scan_result(target, max_files).await;
+        }
+    }
+
+    build_scan_result(state, repo_path, max_files)
+}
+
 pub fn build_scan_result(
     state: &crate::state::AppState,
     repo_path: &str,
@@ -65,7 +134,25 @@ pub fn build_scan_result(
         .and_then(|name| name.to_str())
         .unwrap_or(repo_path)
         .to_string();
+    build_scan_result_from_root(&root, root.display().to_string(), repo_name, max_files)
+}
 
+async fn build_github_scan_result(
+    target: GitHubRepoTarget,
+    max_files: u32,
+) -> Result<RefactorScanResult> {
+    let clone = TemporaryClone::new(&target)?;
+    clone_github_repo(&target, &clone.path).await?;
+    let label = target.label();
+    build_scan_result_from_root(&clone.path, label.clone(), label, max_files)
+}
+
+fn build_scan_result_from_root(
+    root: &Path,
+    repo_path: String,
+    repo_name: String,
+    max_files: u32,
+) -> Result<RefactorScanResult> {
     let mut artifacts = scan_repo(&root, max_files)?;
     if artifacts.limit_hit {
         push_warning(
@@ -95,13 +182,152 @@ pub fn build_scan_result(
     Ok(RefactorScanResult {
         id: Uuid::new_v4().to_string(),
         created_at: Utc::now().to_rfc3339(),
-        repo_path: root.display().to_string(),
+        repo_path,
         repo_name,
         summary,
         metrics,
         opportunities: artifacts.opportunities,
         warnings: artifacts.warnings,
     })
+}
+
+async fn clone_github_repo(target: &GitHubRepoTarget, destination: &Path) -> Result<()> {
+    let timeout_secs = clone_timeout_secs();
+    let mut command = Command::new("git");
+    command
+        .arg("clone")
+        .arg("--depth")
+        .arg("1")
+        .arg("--single-branch")
+        .arg(target.clone_url())
+        .arg(destination)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+
+    let child = command.spawn().map_err(|err| {
+        anyhow!(
+            "Could not start git clone for `{}`: {err}. Install git or scan a local path instead.",
+            target.label()
+        )
+    })?;
+
+    let output = tokio::time::timeout(Duration::from_secs(timeout_secs), child.wait_with_output())
+        .await
+        .map_err(|_| {
+            anyhow!(
+                "Timed out cloning `{}` after {timeout_secs} seconds.",
+                target.label()
+            )
+        })?
+        .map_err(|err| anyhow!("Could not run git clone for `{}`: {err}", target.label()))?;
+
+    if !output.status.success() {
+        return Err(anyhow!(
+            "Could not clone `{}` from GitHub: {}",
+            target.label(),
+            command_output_summary(&output)
+        ));
+    }
+
+    Ok(())
+}
+
+fn command_output_summary(output: &Output) -> String {
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let text = if !stderr.is_empty() {
+        stderr
+    } else if !stdout.is_empty() {
+        stdout
+    } else {
+        format!("git exited with status {}", output.status)
+    };
+    if text.chars().count() <= MAX_CLONE_ERROR_BYTES {
+        text
+    } else {
+        format!(
+            "{}...",
+            text.chars().take(MAX_CLONE_ERROR_BYTES).collect::<String>()
+        )
+    }
+}
+
+fn clone_timeout_secs() -> u64 {
+    std::env::var("REFACTOR_SCOUT_CLONE_TIMEOUT_SECS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(DEFAULT_CLONE_TIMEOUT_SECS)
+}
+
+fn should_use_local_scan(repo_path: &str) -> bool {
+    let trimmed = repo_path.trim();
+    let path = Path::new(trimmed);
+    path.exists() || path.is_absolute() || trimmed.starts_with('.') || trimmed.starts_with('~')
+}
+
+pub(crate) fn parse_github_repo_target(input: &str) -> Option<GitHubRepoTarget> {
+    let trimmed = input.trim().trim_end_matches('/');
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    if let Some(path) = trimmed.strip_prefix("https://github.com/") {
+        return parse_github_path(path);
+    }
+    if let Some(path) = trimmed.strip_prefix("http://github.com/") {
+        return parse_github_path(path);
+    }
+    if let Some(path) = trimmed.strip_prefix("github.com/") {
+        return parse_github_path(path);
+    }
+    if let Some(path) = trimmed.strip_prefix("git@github.com:") {
+        return parse_github_path(path);
+    }
+
+    parse_github_path(trimmed)
+}
+
+fn parse_github_path(path: &str) -> Option<GitHubRepoTarget> {
+    if path.contains('?') || path.contains('#') || path.contains(':') {
+        return None;
+    }
+
+    let cleaned = path.trim().trim_matches('/').trim_end_matches(".git");
+    let mut parts = cleaned.split('/');
+    let owner = parts.next()?;
+    let repo = parts.next()?;
+    if parts.next().is_some() || !valid_github_segment(owner) || !valid_github_segment(repo) {
+        return None;
+    }
+
+    Some(GitHubRepoTarget {
+        owner: owner.to_string(),
+        repo: repo.to_string(),
+    })
+}
+
+fn valid_github_segment(segment: &str) -> bool {
+    !segment.is_empty()
+        && segment.len() <= 100
+        && segment
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.'))
+}
+
+fn sanitize_clone_segment(segment: &str) -> String {
+    segment
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.') {
+                ch
+            } else {
+                '-'
+            }
+        })
+        .collect()
 }
 
 pub(crate) fn resolve_scan_root(
