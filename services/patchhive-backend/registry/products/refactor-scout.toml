@@ -4,7 +4,7 @@ name = "RefactorScout"
 role = "conservative refactor discovery"
 module_path = "crate::products::refactor_scout"
 route_prefix = "/api/products/refactor-scout"
-migration_stage = "gateway"
+migration_stage = "gateway-ready"
 
 [safety]
 read_only = true
