@@ -544,7 +544,11 @@ async fn build_scan_result(
         flaky_signals: signals.len() as u32,
         quarantine_candidates,
     };
-    let summary = if signals.is_empty() {
+    let summary = if metrics.workflow_runs == 0 {
+        format!(
+            "FlakeSting did not find matching completed workflow runs for `{repo}`. No CI instability evidence was available to rank for this scan."
+        )
+    } else if signals.is_empty() {
         format!(
             "FlakeSting did not find fail/pass swings in the last {} matching workflow run{} for `{}`.",
             metrics.workflow_runs,

@@ -355,7 +355,7 @@ function buildRadarFeed(scan, history, health) {
     const metrics = scan.metrics || {};
     const runCount = asCount(metrics.workflow_runs);
     return [
-      { text: `${runCount} GitHub Actions runs inspected for ${scan.repo || "the selected repo"}.`, tone: "signal" },
+      { text: runCount ? `${runCount} GitHub Actions runs inspected for ${scan.repo || "the selected repo"}.` : `No matching completed GitHub Actions runs were available for ${scan.repo || "the selected repo"}.`, tone: runCount ? "signal" : "amber" },
       { text: `${asCount(metrics.flaky_signals)} flaky signals and ${asCount(metrics.quarantine_candidates)} quarantine candidates are active.`, tone: metrics.quarantine_candidates ? "red" : metrics.flaky_signals ? "amber" : "green" },
       { text: scan.trend?.status ? `Trend is ${scan.trend.status}.` : "Baseline saved. A trend appears after the next comparable scan.", tone: scan.trend?.status === "rising" ? "amber" : "signal" },
     ];
@@ -459,9 +459,9 @@ function FlakyQueuePanel({ history, onLoadScan, scan }) {
   return (
     <Panel eyebrow="Queue" title="Recent scans" action={<span className="chip signal">{history.length} saved</span>}>
       <div className="panelbody repo-list queue-grid">
-        {history.length ? history.slice(0, 5).map((item) => (
+        {history.length ? history.slice(0, 5).map((item, index) => (
           <div className="ledger-row" key={item.id}>
-            <div className="rank">{asCount(item.flaky_signals)}</div>
+            <div className="rank">{String(index + 1).padStart(2, "0")}</div>
             <div>
               <div className="repo-name">{item.repo}</div>
               <div className="feed-meta">{item.summary || item.workflow_name || "Saved FlakeSting scan."}</div>
@@ -594,9 +594,9 @@ function HistorySurface({ activeScanId, health, history, loading, onClearScan, o
       </div>
       <Panel eyebrow="Recent" title="Workflow scans" action={<span className="chip signal">{history.length} saved</span>}>
         <div className="panelbody repo-list queue-grid">
-          {history.length ? history.map((item) => (
+          {history.length ? history.map((item, index) => (
             <div className="ledger-row" key={item.id}>
-              <div className="rank">{item.id === activeScanId ? "SEL" : asCount(item.flaky_signals)}</div>
+              <div className="rank">{item.id === activeScanId ? "SEL" : String(index + 1).padStart(2, "0")}</div>
               <div>
                 <div className="repo-name">{item.repo}</div>
                 <div className="feed-meta">{item.summary || item.workflow_name || "Saved FlakeSting scan."}</div>
