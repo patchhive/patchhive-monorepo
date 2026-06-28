@@ -52,8 +52,9 @@ pub fn save_scan(scan: &RefactorScanResult) -> rusqlite::Result<()> {
         .map_err(|err| rusqlite::Error::ToSqlConversionFailure(Box::new(err)))?;
     let opportunities_json = serde_json::to_string(&scan.opportunities)
         .map_err(|err| rusqlite::Error::ToSqlConversionFailure(Box::new(err)))?;
-    let warnings_json = serde_json::to_string(&scan.warnings)
+    let warnings_json = serde_json::to_string(&normalize_warnings(scan.warnings.clone()))
         .map_err(|err| rusqlite::Error::ToSqlConversionFailure(Box::new(err)))?;
+    let summary = normalize_summary(scan.summary.clone());
 
     conn.execute(
         r#"
@@ -68,7 +69,7 @@ pub fn save_scan(scan: &RefactorScanResult) -> rusqlite::Result<()> {
             scan.created_at,
             scan.repo_path,
             scan.repo_name,
-            scan.summary,
+            summary,
             metrics_json,
             opportunities_json,
             warnings_json,
@@ -88,7 +89,7 @@ pub fn get_scan(id: &str) -> Option<RefactorScanResult> {
         "#,
         [id],
         |row| {
-            Ok(RefactorScanResult {
+            Ok(normalize_scan(RefactorScanResult {
                 id: row.get(0)?,
                 created_at: row.get(1)?,
                 repo_path: row.get(2)?,
@@ -97,7 +98,7 @@ pub fn get_scan(id: &str) -> Option<RefactorScanResult> {
                 metrics: parse_json_column(row.get::<_, String>(5)?, 5)?,
                 opportunities: parse_json_column(row.get::<_, String>(6)?, 6)?,
                 warnings: parse_json_column(row.get::<_, String>(7)?, 7)?,
-            })
+            }))
         },
     )
     .ok()
@@ -125,7 +126,7 @@ pub fn history(limit: usize) -> Vec<HistoryItem> {
             created_at: row.get(1)?,
             repo_path: row.get(2)?,
             repo_name: row.get(3)?,
-            summary: row.get(4)?,
+            summary: normalize_summary(row.get(4)?),
             opportunities: metrics.opportunities,
             high_safety: metrics.high_safety,
             medium_safety: metrics.medium_safety,
@@ -189,9 +190,35 @@ fn parse_json_column<T: serde::de::DeserializeOwned>(
         .map_err(|err| rusqlite::Error::FromSqlConversionFailure(column, Type::Text, Box::new(err)))
 }
 
+fn normalize_scan(mut scan: RefactorScanResult) -> RefactorScanResult {
+    scan.summary = normalize_summary(scan.summary);
+    scan.warnings = normalize_warnings(scan.warnings);
+    scan
+}
+
+fn normalize_summary(summary: String) -> String {
+    let trimmed = summary.trim_end();
+    if trimmed.ends_with("..") {
+        format!("{}.", trimmed.trim_end_matches('.'))
+    } else {
+        summary
+    }
+}
+
+fn normalize_warnings(warnings: Vec<String>) -> Vec<String> {
+    warnings
+        .into_iter()
+        .filter(|warning| !generated_cache_warning(warning))
+        .collect()
+}
+
+fn generated_cache_warning(warning: &str) -> bool {
+    warning.contains("/.vite/") || warning.contains("\\.vite\\")
+}
+
 #[cfg(test)]
 mod tests {
-    use super::init_db;
+    use super::{init_db, normalize_summary, normalize_warnings};
     use rusqlite::Connection;
 
     #[test]
@@ -214,5 +241,23 @@ mod tests {
         .expect("schema should create");
 
         let _ = init_db;
+    }
+
+    #[test]
+    fn normalize_summary_collapses_legacy_double_period() {
+        assert_eq!(
+            normalize_summary("Strongest lead: extract helper..".into()),
+            "Strongest lead: extract helper."
+        );
+    }
+
+    #[test]
+    fn normalize_warnings_drops_generated_vite_cache_noise() {
+        let warnings = normalize_warnings(vec![
+            "Skipped /repo/.vite/deps/react-dom_client.js because it is larger than 341 KB.".into(),
+            "Scan stopped after 250 supported files.".into(),
+        ]);
+
+        assert_eq!(warnings, vec!["Scan stopped after 250 supported files."]);
     }
 }
