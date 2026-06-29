@@ -160,7 +160,7 @@ function issueTitle(issue) {
 }
 
 function issueRepo(issue) {
-  return issue.repo || issue.repository || issue.full_name || "repo";
+  return issue.repo || issue.repository || issue.full_name || "";
 }
 
 function issueScore(issue) {
@@ -202,6 +202,7 @@ function buildMetrics(health, stream, history, rejected, lifetimeCost, selectedR
 function buildRail(health, config, stream, history, selectedRun, watchMode) {
   const latest = selectedRun || newestRun(history) || {};
   const target = activeTarget(stream, selectedRun, history);
+  const targetRepo = issueRepo(target);
   const budget = stream.params?.cost_budget_usd || config?.COST_BUDGET_USD || "0";
   return {
     sections: [
@@ -227,7 +228,7 @@ function buildRail(health, config, stream, history, selectedRun, watchMode) {
     stats: {
       title: "Active target",
       items: [
-        { label: "Repository", value: issueRepo(target) || latest.id || "none" },
+        { label: "Repository", value: targetRepo || latest.id || "none" },
         { label: "Run confidence", value: issueScore(target) ? `${issueScore(target)}%` : latest.status || "ready", large: true, tone: issueScore(target) >= 70 ? "green" : metricToneFromStatus(latest.status) },
         { label: "Cost", value: formatMoney(stream.runCost || latest.total_cost_usd) },
       ],
@@ -319,7 +320,7 @@ function RunRadar({ config, history, stream }) {
       gainLabel="Status"
       itemQueryParam="run"
       items={items}
-      signalLabel="runs"
+      signalLabel={history.length ? "runs" : "standby"}
       vectorLabel="Selected run"
     />
   );
@@ -428,7 +429,7 @@ function CandidatePanel({ issues, selectedRun, onLoadRun }) {
     );
   }
   return (
-    <Panel eyebrow="History" title="Recent runs" action={<span className="chip signal">saved</span>}>
+    <Panel eyebrow="History" title="Recent runs" action={<span className="chip signal">0 saved</span>}>
       <div className="panelbody repo-list queue-grid">
         <div className="empty-v2">
           <strong>No live candidates</strong>
