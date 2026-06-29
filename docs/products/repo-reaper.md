@@ -1,52 +1,186 @@
-# RepoReaper
+# RepoReaper by PatchHive
 
-<p align="center">
-  <img src="../../../patchhive3.png" width="120" alt="PatchHive logo" />
-</p>
+> **Autonomous bug-fixing agent.** RepoReaper hunts open GitHub issues, generates patches, validates them, and opens pull requests — entirely by machine.
 
-RepoReaper is PatchHive's autonomous patch-and-pull-request product. It finds promising issues, plans a fix, generates a patch, reviews the result, validates the change, and opens a clearly attributed pull request only after the work clears its gates.
+| Attribute | Value |
+|-----------|-------|
+| **Product Role** | Outbound autonomous contribution — find, fix, validate, and open PRs |
+| **Status** | Active development |
+| **Standalone Repository** | [`patchhive/reporeaper`](https://github.com/patchhive/reporeaper) (mirror of this directory) |
+| **Local Port** | `8000` |
+
+---
 
 ## Product Role
 
-RepoReaper is the action layer in PatchHive. Signal products can identify work, TrustGate can review risk, RepoMemory can provide repo context, and RepoReaper is the product that can turn an approved candidate into a real contribution.
+RepoReaper is PatchHive's outbound contribution product. It is a **multi-agent system** that:
+
+1. **Discovers** open issues across GitHub repos (filtered by language, stars, labels, and custom allow/deny/opt-out lists)
+2. **Scores** issues for fixability using an AI Scout agent
+3. **Fork + clone** each target repo
+4. **Selects** relevant code via a Judge agent
+5. **Generates** a patch via a Reaper agent
+6. **Reviews** the patch via a Smith agent
+7. **Runs** tests in a sandboxed Docker environment
+8. **Publishes** a PR back to the original repo via a Gatekeeper agent
+
+RepoReaper is the **only current PatchHive product that writes code and opens pull requests**. It should be the last step in the early suite loop, after SignalHive and TrustGate have made candidate work visible.
+
+---
 
 ## Core Workflow
 
-1. Discover candidate issues from configured topics, languages, and repo policy.
-2. Score candidates for fixability and maintenance value.
-3. Select the most relevant files for the fix.
-4. Generate and apply a patch with the configured AI provider.
-5. Review the patch and reject low-confidence work.
-6. Run validation according to product settings.
-7. Open an attributed pull request when all gates pass.
+```
+┌──────────────┐     ┌──────────┐     ┌───────────┐     ┌──────────┐     ┌────────────┐
+│   Scout      │ ──► │  Judge   │ ──► │  Reaper   │ ──► │  Smith   │ ──► │ Gatekeeper │
+│ (discover +  │     │ (select  │     │ (generate │     │ (review  │     │ (test + PR │
+│  score)      │     │  files)  │     │  patch)   │     │ + refine)│     │  publish)  │
+└──────────────┘     └──────────┘     └───────────┘     └──────────┘     └────────────┘
+```
+
+### Phase 1 — Scan (Scout)
+- Queries GitHub search API (`GET /search/repositories`) with language, star minimum, and optional search query
+- Applies allowlist / denylist / opt-out filters from the `repo_lists` table
+- For each repo, collects up to 5 open issues matching the configured labels
+- AI-scores each issue (0–100) for fixability
+- Emits SSE events: `phase: scan`, `repos`, `issues`
+
+### Phase 2 — Triage
+- Prioritises issues by score, up to `max_issues` per run
+- Emits `phase: triage`
+
+### Phase 3 — Fix (Reaper / Judge / Smith / Gatekeeper)
+- For each issue, concurrently (limited by a semaphore of `concurrency`):
+  1. **Fork** the upstream repo via GitHub API
+  2. **Clone** (depth=10) using `GIT_ASKPASS` with the bot token
+  3. **Branch** (`reaper/issue-{N}`)
+  4. **Comment** on the issue announcing the hunt
+  5. **Judge** selects relevant files by analysing the repo structure
+  6. **Reaper** generates a unified diff patch via AI
+  7. **Self-heal**: if `git apply --check` fails, the Reaper retries with the error context
+  8. **Smith** reviews the patch — if confidence < `MIN_REVIEW_CONFIDENCE`, the patch is rejected (and optionally queued as a FailGuard candidate in RepoMemory)
+  9. **Gatekeeper** runs tests in a sandboxed Docker container (pytest, cargo, go, npm) with up to `retry_count` retries
+  10. **Gatekeeper** commits + pushes the branch and opens a PR (draft if tests fail, full PR if they pass)
+
+### Phase 4 — Finalize
+- Records the run summary: total fixed, attempted, cost
+- Emits `phase: done`
+- Resets `runActive` flag
+
+### Example Run Request
+
+```json
+POST /run
+X-API-Key: rr-...
+
+{
+  "search_query": "",
+  "language": "python",
+  "min_stars": 100,
+  "max_repos": 10,
+  "max_issues": 5,
+  "labels": ["bug"],
+  "concurrency": 3,
+  "retry_count": 2,
+  "cost_budget_usd": 0.50
+}
+```
+
+### Example Dry Run Request
+
+```json
+POST /dry-run
+X-API-Key: rr-...
+
+{
+  "search_query": "topic:machine-learning language:python stars:>500 is:public",
+  "language": "python",
+  "min_stars": 500,
+  "max_repos": 5,
+  "max_issues": 3,
+  "labels": ["bug", "help wanted"]
+}
+```
+
+### Response (SSE Stream)
+
+Run endpoints (`/run`, `/dry-run`) return `text/event-stream` with these event types:
+
+| Event | Data | Phase |
+|-------|------|-------|
+| `phase` | `{"phase":"scan"}` | Start |
+| `log` | `{"msg":"...","type":"info\|success\|warn\|error"}` | Any |
+| `agent_status` | `{"agent_id":"...","status":"idle\|working","task":"..."}` | Any |
+| `agent_log` | `{"agent_id":"...","agent":"...","role":"...","msg":"...","type":"...","ts":"..."}` | Any |
+| `repos` | `{"repos":[{"id":...,"full_name":"...","stars":...,...}]}` | Scan |
+| `issues` | `{"issues":[...]}` | Scan/Triage |
+| `issue_assign` | `{"id":...,"score":...,"reaper":"...","judge":"...","smith":"...","gatekeeper":"..."}` | Fix |
+| `issue_confidence` | `{"id":...,"confidence":...}` | Fix |
+| `issue_result` | `{"id":...,"status":"fixed\|skipped\|rejected\|error","pr":{...}}` | Fix |
+| `cost_update` | `{"run_cost":...,"lifetime_cost":...}` | Fix |
+| `error` | `{"msg":"..."}` | Any |
+| `done` | `{"total_fixed":...,"total_attempted":...,"run_id":"...","cost":...}` | Finalize |
+
+---
 
 ## Inputs
 
-- GitHub token and bot identity.
-- Topics, languages, and repository controls.
-- Optional RepoMemory context.
-- Optional local AI gateway through `PATCHHIVE_AI_URL`.
-- Provider credentials for direct AI provider calls when not using the local gateway.
+### RunRequest Schema
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `search_query` | string | `""` | GitHub search query override (defaults to `topic:machine-learning language:{lang} stars:>{min_stars} is:public`) |
+| `language` | string | `"python"` | Programming language filter |
+| `min_stars` | u32 | `100` | Minimum repo stars |
+| `max_repos` | u32 | `10` | Max repos to scan |
+| `max_issues` | u32 | `5` | Max issues to process |
+| `labels` | string[] | `["bug"]` | GitHub issue labels to filter by |
+| `concurrency` | u32 | `3` | Max concurrent fix jobs |
+| `retry_count` | u32 | `2` | Patch/test retry attempts per issue |
+| `cost_budget_usd` | f64 | `0.0` | Run cost cap (0 = uncapped) |
+
+### Repo Filters (via API)
+
+Three list types, stored in the `repo_lists` SQLite table:
+
+- **allowlist** — only scan these repos (overrides search)
+- **denylist** / **blocklist** — exclude specific repos
+- **opt_out** / **opt-out** / **optout** — respect upstream non-consent
+
+---
 
 ## Outputs
 
-- Run history with candidate, patch, review, validation, and cost details.
-- Rejected patch records with Smith feedback.
-- Pull requests authored by the PatchHive GitHub identity.
-- Optional FailGuard candidates when Smith rejects work.
+- **Pull requests** opened on target repos with full attribution:
+  - Commit message: `fix: {title} (closes #{N})`
+  - PR body includes: Reaper confidence, fixability score, files changed, test results, agent attribution, and `Closes #{N}`
+  - Draft PR if tests fail, full PR if tests pass
+- **Run history** persisted in SQLite
+- **Rejected patches** stored with Smith feedback for later review
+- **SSE stream** for real-time UI updates
+
+---
 
 ## Safety Boundary
 
-RepoReaper is write-capable, so it should be held to the strictest PatchHive guardrails. It should prefer opening no pull request over opening a weak one.
+- **Auth-gated**: API key (`rr-...`) required for all endpoints except `/health`, `/auth/*`, `/startup/checks`, `/capabilities`, and `/webhook/github`
+- **Bootstrap**: key generation is localhost-only
+- **Tests opt-in**: untrusted test execution is disabled by default (`REAPER_ENABLE_UNTRUSTED_TESTS` must be `true`)
+- **Sandboxed execution**: Docker sandbox with `--network none`, `--cap-drop ALL`, `--pids-limit 256`, `--memory 2g`, `--cpus 2`
+- **Host execution**: requires two env vars (`REAPER_ENABLE_UNTRUSTED_TESTS=true` + `REAPER_ALLOW_HOST_TESTS=true`)
+- **Test timeout**: configurable via `REAPER_TEST_TIMEOUT_SECONDS` (default: 600s)
+- **Cost budget**: `COST_BUDGET_USD` caps AI spend per run (0 = uncapped, with a warning)
+- **Concurrency limiting**: Semaphore-based; configurable per run
+- **Only one run at a time**: `runActive` atomic flag prevents concurrent hunts
+- **File system confinement**: `collect_files_selective` validates that all paths stay within the repo root; any path that canonicalizes outside is silently skipped
+- **No secrets in output**: API keys are masked in config responses
+- **Temporary work directories**: cleaned up after each attempt
 
-Key safety defaults:
-- API-key bootstrap is localhost-first.
-- Untrusted repo test execution is disabled by default.
-- Docker sandboxing is the default for enabled test execution.
-- Host test execution requires explicit opt-in.
-- Pull request publication is an intentional gate, not an incidental side effect.
+---
 
 ## Local Development
+
+### Docker (full stack)
 
 ```bash
 cd products/repo-reaper
@@ -54,241 +188,387 @@ cp .env.example .env
 docker compose up --build
 ```
 
-Defaults:
-- Frontend: `http://localhost:5173`
-- Backend: `http://localhost:8000`
-- Database: `REAPER_DB_PATH`
-- Work directory: `REAPER_WORK_DIR`
+| Service | URL |
+|---------|-----|
+| Backend | `http://localhost:8000` |
+| Frontend | `http://localhost:5173` |
+| Frontend v2 | `http://localhost:5195` |
 
-Split local workflow:
-```bash
-cd products/repo-reaper/backend
-cargo run
-cd ../frontend
-npm install
-npm run dev
-```
+Backend: `http://localhost:8000`
+Frontend: `http://localhost:5173`
 
-## Important Configuration
-
-| Variable | Purpose |
-|----------|---------|
-| `BOT_GITHUB_TOKEN` | GitHub token used for repo discovery, clone, push, and pull request creation. |
-| `BOT_GITHUB_USER` / `BOT_GITHUB_EMAIL` | Git identity for PatchHive commits and pull requests. |
-| `PROVIDER_API_KEY` | Direct AI provider API key when not using a local OpenAI-compatible gateway. |
-| `PATCHHIVE_AI_URL` | Optional OpenAI-compatible local gateway such as `@patchhive/ai-local`. |
-| `OLLAMA_BASE_URL` | Optional Ollama endpoint. |
-| `COST_BUDGET_USD` | Run budget cap. |
-| `MIN_REVIEW_CONFIDENCE` | Minimum Smith confidence before validation and PR delivery. |
-| `RETRY_COUNT` | Patch or validation retry count. |
-| `REAPER_ENABLE_UNTRUSTED_TESTS` | Enables validation commands for untrusted repos. Default is disabled. |
-| `REAPER_TEST_SANDBOX` | Test sandbox mode, usually `docker`. |
-| `REAPER_ALLOW_HOST_TESTS` | Allows host test execution when explicitly enabled. |
-| `REAPER_TEST_TIMEOUT_SECONDS` | Validation timeout, defaulting to `600`. |
-| `WEBHOOK_SECRET` | Optional webhook secret for watch-mode triggers. |
-| `PATCHHIVE_REPO_MEMORY_URL` / `PATCHHIVE_REPO_MEMORY_API_KEY` | Optional RepoMemory context and FailGuard candidate destination. |
-| `REAPER_API_KEY_HASH` | Optional pre-seeded app auth hash. Otherwise generate the first local key from the UI. |
-| `REAPER_SERVICE_TOKEN_HASH` | Optional service-token hash for HiveCore or other PatchHive service callers. |
-| `REAPER_DB_PATH` | SQLite path for runs, costs, and PR tracking. |
-| `REAPER_WORK_DIR` | Local workspace used for cloned repositories and patch attempts. |
-| `REAPER_PORT` | Backend port for split local runs. |
-
-To reuse the same password across SignalHive, TrustGate, RepoReaper, and HiveCore, run `./scripts/set-suite-api-key.sh --stack first` from the monorepo root before starting the stack. For every PatchHive product, run `./scripts/set-suite-api-key.sh`. Once the hash is pre-seeded, RepoReaper can be used through a subdomain without remote bootstrap.
-
-To give HiveCore a dedicated machine credential instead of reusing the operator login secret, generate a service token from `POST /auth/generate-service-token` and save that token in HiveCore Settings.
-
-If you only want to work on public repositories, keep your GitHub token public-only. If you want RepoReaper to clone, push, and open pull requests against specific repositories, grant only the write permissions those repositories actually need. See [GitHub token scopes](../github-token-scopes.md).
-
-## AI and Platform Integrations
-
-RepoReaper can run through direct provider APIs or through `@patchhive/ai-local`.
+### Split Backend + Frontend
 
 ```bash
-PATCHHIVE_AI_URL=http://127.0.0.1:8787/v1
+cp .env.example .env
+
+cd backend && cargo run
+cd ../frontend && npm install && npm run dev
+cd ../frontend-v2 && npm install && npm run dev
 ```
 
-Optional integrations:
-- `PATCHHIVE_REPO_MEMORY_URL` to load remembered conventions, hotspots, and failure patterns, and to queue FailGuard candidates from Smith rejections
-- future TrustGate and MergeKeeper flows to gate outbound changes more tightly
+### Environment
 
-## Safety Boundary (Expanded)
+```bash
+# Required
+BOT_GITHUB_TOKEN=ghp_...           # Fine-grained PAT: Metadata(ro), Contents(rw), Issues(rw), Pull requests(rw)
+BOT_GITHUB_USER=patchhive-bot
 
-- first-time API-key bootstrap is localhost-first
-- untrusted repo test execution is disabled by default
-- if tests are enabled, Docker sandboxing is the default
-- host test execution requires both `REAPER_ENABLE_UNTRUSTED_TESTS=true` and `REAPER_ALLOW_HOST_TESTS=true`
-- validation commands time out after `REAPER_TEST_TIMEOUT_SECONDS` seconds, defaulting to `600`
-- validation and pull request publication are treated as explicit gates, not incidental side effects
-- FailGuard is cross-cutting: RepoReaper can suggest candidates from Smith rejections, but RepoMemory owns review and promotion
+# Git identity
+BOT_GITHUB_EMAIL=bot@patchhive.dev
 
-RepoReaper is the only current PatchHive product that writes code and opens pull requests. It should be the last step in the early suite loop, after signal and trust layers have made the candidate work visible and reviewable.
+# AI — choose one of:
+PROVIDER_API_KEY=sk-...             # Direct provider key (global fallback)
+PATCHHIVE_AI_URL=http://...         # OpenAI-compatible local gateway (e.g. @patchhive/ai-local)
+OLLAMA_BASE_URL=http://localhost:11434
 
-## HiveCore Fit
+# Optional
+COST_BUDGET_USD=0.50                # Run cost cap
+MIN_REVIEW_CONFIDENCE=40            # Minimum Smith confidence (0–100)
+RETRY_COUNT=2                       # Patch retry attempts
+WEBHOOK_SECRET=whsec_...            # GitHub webhook secret for watch-mode
+REAPER_API_KEY_HASH=...             # Pre-seeded auth hash
+REAPER_SERVICE_TOKEN_HASH=...       # Service-token hash for HiveCore
+REAPER_DB_PATH=/tmp/repo-reaper.db
+REAPER_WORK_DIR=/tmp/repo-reaper
+REAPER_PORT=8000
+REAPER_ENABLE_UNTRUSTED_TESTS=false
+REAPER_TEST_SANDBOX=docker          # docker | host
+REAPER_ALLOW_HOST_TESTS=false
+REAPER_TEST_TIMEOUT_SECONDS=600
 
-HiveCore should treat RepoReaper as a product-owned autonomous action surface. It can show health, capabilities, run history, dispatchable actions, and PR outcomes, but RepoReaper keeps ownership of patch generation, validation, attribution, and pull request delivery.
+# RepoMemory integration (optional)
+PATCHHIVE_REPO_MEMORY_URL=http://...
+PATCHHIVE_REPO_MEMORY_API_KEY=...
+```
 
-## Standalone Repository
+---
 
-The PatchHive monorepo is the source of truth for RepoReaper development. The standalone [`patchhive/reporeaper`](https://github.com/patchhive/reporeaper) repository is an exported mirror of this directory.
+## Configuration (Environment Variables)
+
+| Variable | Required | Default | Purpose |
+|----------|----------|---------|---------|
+| `BOT_GITHUB_TOKEN` | ✅ | — | PAT for repo discovery, clone, push, PR creation |
+| `BOT_GITHUB_USER` | ✅ | — | Git commit author |
+| `BOT_GITHUB_EMAIL` | ❌ | — | Git commit email |
+| `PROVIDER_API_KEY` | ❌ | — | Fallback AI provider API key |
+| `PATCHHIVE_AI_URL` | ❌ | — | OpenAI-compatible local AI gateway |
+| `OLLAMA_BASE_URL` | ❌ | `http://localhost:11434` | Ollama endpoint |
+| `ANTHROPIC_API_KEY` | ❌ | — | Provider-specific API key |
+| `OPENAI_API_KEY` | ❌ | — | Provider-specific API key |
+| `GEMINI_API_KEY` | ❌ | — | Provider-specific API key |
+| `GROQ_API_KEY` | ❌ | — | Provider-specific API key |
+| `CUSTOM_AI_API_KEY` | ❌ | — | Provider-specific API key |
+| `CUSTOM_AI_BASE_URL` | ❌ | — | Provider-specific base URL |
+| `COST_BUDGET_USD` | ❌ | `0` (uncapped) | Per-run AI cost cap |
+| `MIN_REVIEW_CONFIDENCE` | ❌ | `40` | Min Smith confidence to proceed |
+| `RETRY_COUNT` | ❌ | `2` | Patch/test retries per issue |
+| `WEBHOOK_SECRET` | ❌ | — | GitHub webhook secret |
+| `REAPER_API_KEY_HASH` | ❌ | — | Pre-seeded auth hash (else UI generates) |
+| `REAPER_SERVICE_TOKEN_HASH` | ❌ | — | Service-token hash for HiveCore |
+| `REAPER_DB_PATH` | ❌ | `./reaper.db` | SQLite database path |
+| `REAPER_WORK_DIR` | ❌ | `/tmp/repo-reaper` | Clone workspace |
+| `REAPER_PORT` | ❌ | `8000` | HTTP listen port |
+| `REAPER_ENABLE_UNTRUSTED_TESTS` | ❌ | `false` | Enable test execution |
+| `REAPER_TEST_SANDBOX` | ❌ | `docker` | Test sandbox mode |
+| `REAPER_ALLOW_HOST_TESTS` | ❌ | `false` | Allow host test execution |
+| `REAPER_TEST_TIMEOUT_SECONDS` | ❌ | `600` | Test timeout |
+| `PATCHHIVE_REPO_MEMORY_URL` | ❌ | — | RepoMemory API endpoint |
+| `PATCHHIVE_REPO_MEMORY_API_KEY` | ❌ | — | RepoMemory API key |
+
+---
 
 ## Technical Architecture
 
-### Backend Structure
+### Module Tree
 
-RepoReaper's backend is organized around a multi-agent pipeline system:
+```
+backend/src/
+├── main.rs                  # Entry point, router, auth endpoints, health
+├── pipeline.rs              # Run orchestration: discover, execute_run, run_fix_wave, dry_run
+├── db.rs                    # SQLite persistence (runs, issue_attempts, pr_tracking, etc.)
+├── github.rs                # GitHub API client (search, issues, forks, PRs, webhooks)
+├── git_ops.rs               # Git operations (clone, branch, commit, push, apply_patch, run_tests)
+├── agents.rs                # AI agent coordination (score, select_files, generate_patch, smith, retry)
+├── ai_local.rs              # PatchHive AI local gateway client
+├── startup.rs               # Config validation and health checks
+├── state.rs                 # AppState, AgentConfig, AgentStats types
+├── fix_worker.rs            # Fix worker module (re-exports)
+├── fix_worker/
+│   ├── orchestrate.rs       # fix_one — per-issue orchestrator
+│   ├── context.rs           # Clone, code selection, enriched context loading
+│   ├── memory.rs            # RepoMemory context building, FailGuard candidate submission
+│   ├── patch.rs             # Patch self-heal, PR publishing
+│   ├── sse.rs               # SSE event helpers (alog, astatus, sse_ev)
+│   └── types.rs             # Shared types, agent selection, scope builders
+└── routes/
+    ├── mod.rs               # Route re-exports
+    ├── config.rs            # /config, /agents, /presets, /repo-lists, /cooldowns, /watch-mode
+    ├── history.rs           # /history, /runs, /diff, /leaderboard, /rejected, /pr-tracking
+    └── webhook.rs           # /webhook/github, /schedules
+```
 
-- **Scout**: Finds candidate issues and scores them for fixability
-- **Judge**: Narrows the patch to the most relevant files and code paths
-- **Reaper**: Generates the initial fix
-- **Smith**: Reviews and improves the patch before it moves forward
-- **Gatekeeper**: Runs validation and handles pull request delivery
+### Dependencies
 
-Each agent operates as a specialized module with clear responsibilities and interfaces.
+| Package | Purpose |
+|---------|---------|
+| `axum` | HTTP server & router |
+| `tokio` | Async runtime, mpsc channels, semaphore |
+| `rusqlite` | SQLite database |
+| `reqwest` | HTTP client for GitHub API & AI providers |
+| `serde` / `serde_json` | Serialization |
+| `patchhive_product_core` | Shared PatchHive primitives (auth, startup, rate-limit, RepoMemory client) |
+| `patchhive_github_pr` | GitHub token resolution, webhook signature verification |
+| `chrono` / `uuid` | Timestamps, IDs |
+| `tracing` / `tracing-subscriber` | Structured logging |
+| `dotenvy` | `.env` file loading |
+| `once_cell` | Static startup checks |
+| `anyhow` | Error handling |
 
-### Data Flow
+### Agent Model
 
-1. Issue discovery → Scoring → File selection → Patch generation
-2. Patch review → Confidence check → Validation → PR creation
-3. Throughout the process, cost tracking and safety checks are performed
-4. Results are stored in SQLite for history and analytics
+| Role | Icon | Color | Responsibility |
+|------|------|-------|----------------|
+| Scout | ◎ | `#4a9af0` | Search repos, collect issues, score fixability |
+| Judge | ⚖ | `#e0a030` | Analyse repo structure, select relevant files for the patch |
+| Reaper | ⚔ | `#c41e3a` | Generate the initial unified-diff patch |
+| Smith | ⬢ | `#7b2d8b` | Review the patch, provide feedback, optionally refine |
+| Gatekeeper | 🔒 | `#2a8a4a` | Run tests, commit & push, open PR |
 
-### Key Components
+Agents are configured via the `/agents` API endpoint. Each agent has:
+- `id` (auto-generated UUID8 if empty)
+- `name` (human-readable)
+- `role` (one of the five above)
+- `provider` (anthropic, openai, gemini, groq, custom, ollama)
+- `model` (specific model name)
+- `base_url`, `api_key`, `bot_token`, `bot_user` (per-agent overrides)
+- `status` (idle/working)
+- `stats` (fixed, skipped, errors, cost counters)
 
-- **Pipeline Orchestration**: Manages the flow between agents
-- **GitHub Integration**: Handles API calls, cloning, pushing, and PR operations
-- **AI Provider Abstraction**: Supports direct provider calls or local gateway
-- **Validation System**: Runs tests in sandboxed environments
-- **Database Layer**: Tracks runs, costs, patches, and PR outcomes
-- **Authentication System**: Manages API keys and service tokens
+### Supported AI Providers & Models
 
-### Extensibility Points
+| Provider | Models (static list) | Dynamic Discovery |
+|----------|---------------------|-------------------|
+| **Anthropic** | `claude-opus-4-6`, `claude-sonnet-4-6`, `claude-haiku-4-5`, `claude-sonnet-4-20250514` | `GET https://api.anthropic.com/v1/models` |
+| **OpenAI** | `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.4-nano`, `gpt-5.3-codex`, `gpt-5.2-codex`, `gpt-5.1`, `gpt-5-mini`, `gpt-5-nano`, `gpt-5.1-codex`, `gpt-5.1-codex-mini`, `gpt-5.1-codex-max`, `gpt-5-codex`, `gpt-5`, `gpt-4.1`, `gpt-4.1-mini`, `gpt-4.1-nano`, `o3`, `o4-mini`, `o3-mini` | `GET {base}/models` |
+| **Gemini** | `gemini-2.0-flash`, `gemini-2.0-flash-lite`, `gemini-1.5-pro`, `gemini-2.5-pro` | `GET https://generativelanguage.googleapis.com/v1beta/models` |
+| **Groq** | `llama-3.3-70b-versatile`, `llama-3.1-8b-instant`, `mixtral-8x7b-32768` | `GET {base}/models` |
+| **Custom** | `gpt-4.1-mini`, `qwen2.5-coder`, `llama3.2` | `GET {base}/models` |
+| **Ollama** | `llama3.2`, `codellama`, `deepseek-coder`, `qwen2.5-coder` | `GET {base}/api/tags` |
+| **PatchHive AI** (local gateway) | — | Via `PATCHHIVE_AI_URL/status` |
 
-- Custom validation commands can be added via configuration
-- Additional AI providers can be integrated through the abstraction layer
-- New agent types can be added to the pipeline for specialized workflows
-- Webhook support allows triggering runs from external events
+**Key fallback chain**: Provider-specific API key → global `PROVIDER_API_KEY` → error. The `PATCHHIVE_AI_URL` gateway is tried first for OpenAI-compatible requests when no custom `base_url` or `api_key` is supplied.
+
+### SSE Streaming
+
+All long-running operations (run, dry-run) use **Server-Sent Events**:
+
+```
+GET /run          → text/event-stream
+GET /dry-run      → text/event-stream
+```
+
+The `axum::response::sse::Sse` response wraps a `tokio::sync::mpsc::Receiver` with a `KeepAlive` every 15s. The client receives real-time `agent_log`, `agent_status`, `repos`, `issues`, `issue_result`, `cost_update`, and `done` events.
+
+### Database (SQLite)
+
+| Table | Purpose |
+|-------|---------|
+| `runs` | Run metadata (id, started_at, finished_at, total_fixed, total_attempted, total_cost_usd, status, config_json) |
+| `issue_attempts` | Per-issue attempt tracking (run_id, issue_number, status, skip_reason, pr_url, pr_number, agent assignments, cost, confidence, patch_diff) |
+| `pr_tracking` | PR lifecycle (pr_number, repo, state, merged, review_state, last_checked) |
+| `scheduled_runs` | Cron-based run schedules (cron_expr, config_json, enabled, last_run, next_run) |
+| `team_presets` | Saved agent team configurations |
+| `repo_lists` | Allowlist/denylist/opt-out entries |
+| `perf` | Agent performance metrics (agent_name, provider, model, role, outcome, cost) |
+| `settings` | Key-value settings (watch_mode) |
+
+### Startup Checks
+
+On boot, `startup::validate_config` runs:
+
+1. **`BOT_GITHUB_TOKEN`** — must be non-empty
+2. **`BOT_GITHUB_USER`** — must be non-empty
+3. **`PROVIDER_API_KEY`** — must be non-empty (unless using gateway)
+4. **GitHub API** — `GET https://api.github.com/user` to validate token
+5. **AI Gateway** — `GET {PATCHHIVE_AI_URL}/status` to discover ready providers
+6. **Orphan runs** — any `runs` with status `running` are recovered to `orphaned`
+
+---
 
 ## API Endpoints
 
-RepoReaper exposes a RESTful API for integration and control:
-
-### Health & Status
-- `GET /health` - Basic health check
-- `GET /startup/checks` - Detailed startup verification
-- `GET /capabilities` - Advertised product capabilities
-- `GET /version` - Version information
-
-### Run Management
-- `GET /runs` - List all runs with filtering and pagination
-- `GET /runs/:id` - Get details for a specific run
-- `POST /runs` - Trigger a new run
-- `DELETE /runs/:id` - Cancel a running job
-
-### Configuration
-- `GET /config` - Get current configuration (sanitized)
-- `POST /config` - Update runtime configuration
-
 ### Authentication
-- `POST /auth/generate-service-token` - Create a service token for machine-to-machine calls
-- `POST /auth/rotate-service-token` - Rotate an existing service token
 
-### Webhooks
-- `POST /webhook` - Receive webhook triggers (when configured)
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/auth/status` | Returns `{"auth_enabled": bool, "auth_configured": bool}` |
+| `POST` | `/auth/login` | `{"api_key": "rr-..."}` → `{"ok": true}` (localhost-only bootstrap) |
+| `POST` | `/auth/generate-key` | Generate first API key (localhost-only) |
+| `POST` | `/auth/generate-service-token` | Generate HiveCore service token |
+| `POST` | `/auth/rotate-service-token` | Rotate existing service token |
 
-## Monitoring & Observability
+### System
 
-RepoReaper provides several mechanisms for monitoring and debugging:
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/health` | Health check (returns version, agent count, run status, DB status, config errors) |
+| `GET` | `/startup/checks` | Startup check results |
+| `GET` | `/capabilities` | Product capabilities contract (for HiveCore) |
 
-### Metrics
-- Prometheus-compatible metrics endpoint at `/metrics`
-- Key metrics include run counts, success rates, duration histograms, and cost tracking
+### Runs (authenticated)
 
-### Logging
-- Structured logging with configurable log levels via `RUST_LOG`
-- Correlation IDs for tracing individual runs through the pipeline
-- Audit trails for all GitHub operations and AI interactions
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/run` | Start a full autonomous hunt (SSE stream) |
+| `POST` | `/dry-run` | Dry run — discover & score only, no patches (SSE stream) |
 
-### Health Checks
-- Liveness and readiness probes for Kubernetes deployment
-- Dependency health checks for database, AI providers, and GitHub connectivity
+### Configuration (authenticated)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/config` | Read config + provider models + roles + AI gateway status |
+| `POST` | `/config` | Save env vars (token, API key, URL, budget, confidence) |
+| `GET` | `/agents` | List configured agents + cooldowns |
+| `POST` | `/agents` | Replace entire agent team |
+| `DELETE` | `/agents/:id` | Remove an agent |
+| `GET` | `/models/:provider` | List available models (static + dynamic) |
+| `POST` | `/models/:provider` | Force model refresh with optional API key / base URL |
+| `GET` | `/ai-local/status` | PatchHive AI gateway status |
+| `GET` | `/presets` | List team presets |
+| `POST` | `/presets` | Save a team preset |
+| `DELETE` | `/presets/:name` | Delete a preset |
+| `GET` | `/repo-lists` | List allowlist/denylist/opt-out entries |
+| `POST` | `/repo-lists` | Add a repo to a list |
+| `DELETE` | `/repo-lists/*repo` | Remove a repo from all lists |
+| `GET` | `/cooldowns` | List provider cooldowns |
+| `DELETE` | `/cooldowns/:provider` | Clear a provider's cooldown |
+| `GET` | `/watch-mode` | Get watch mode state |
+| `POST` | `/watch-mode` | Set watch mode (auto-trigger on webhook) |
+| `GET` | `/stats/lifetime-cost` | Lifetime AI cost |
+
+### History (authenticated)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/history` | Run history |
+| `GET` | `/runs` | Detailed run list |
+| `GET` | `/diff/:run_id/:issue_number` | Patch diff for a specific attempt |
+| `GET` | `/leaderboard` | Agent performance leaderboard |
+| `GET` | `/rejected` | List rejected patches |
+| `GET` | `/pr-tracking` | PR lifecycle status |
+| `GET` | `/github/rate-limit` | GitHub API rate limit status |
+
+### Webhook & Scheduling (authenticated except webhook)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/webhook/github` | **Public** — GitHub webhook receiver (signature-verified) |
+| `GET` | `/schedules` | List scheduled runs |
+| `POST` | `/schedules` | Create/update a schedule (cron, config) |
+| `DELETE` | `/schedules/:id` | Delete a schedule |
+
+---
+
+## Webhook Integration
+
+RepoReaper accepts GitHub webhooks for **watch mode**:
+
+1. Configure a webhook in your GitHub repo pointing to `POST /webhook/github`
+2. Set `WEBHOOK_SECRET` to match the GitHub secret
+3. Enable watch mode via `POST /watch-mode {"enabled": true}`
+
+When a webhook arrives, RepoReaper verifies the signature using `patchhive_github_pr::verify_github_webhook_signature`. If watch mode is enabled and a run is not already active, it automatically triggers a new hunt with the last-used configuration.
+
+### Scheduled Runs
+
+Schedules are stored in the `scheduled_runs` table with a cron expression and JSON config. The scheduler runs on a 60-second tick. Three preset cron expressions are available:
+
+| Preset | Expression |
+|--------|-----------|
+| `hourly` | `0 * * * *` |
+| `nightly` | `0 2 * * *` |
+| `weekly` | `0 3 * * 0` |
+
+---
+
+## Monitoring
+
+| Endpoint | What It Provides |
+|----------|-----------------|
+| `GET /health` | Status, version, agent count, run active flag, watch mode, lifetime cost, auth state, config errors, DB path |
+| `GET /startup/checks` | Detailed startup check results |
+| `GET /github/rate-limit` | GitHub API rate limit consumption |
+| `GET /stats/lifetime-cost` | Total AI cost across all runs |
+| `GET /capabilities` | Product contract for HiveCore integration |
+
+---
 
 ## Deployment
 
 ### Docker
-RepoReaper provides multi-stage Docker builds for both backend and frontend:
 
-```yaml
-# docker-compose.yml excerpt
-services:
-  backend:
-    build: ./backend
-    ports: ["8000:8000"]
-    environment:
-      - BOT_GITHUB_TOKEN=${BOT_GITHUB_TOKEN}
-      - PROVIDER_API_KEY=${PROVIDER_API_KEY}
-  frontend:
-    build: ./frontend
-    ports: ["5173:5173"]
+```bash
+# Build and run
+docker compose up --build
+
+# Or build just the backend
+cd backend
+docker build -t repo-reaper .
+docker run -p 8000:8000 \
+  -e BOT_GITHUB_TOKEN=... \
+  -e BOT_GITHUB_USER=... \
+  -e PROVIDER_API_KEY=... \
+  -e REAPER_DB_PATH=/data/reaper.db \
+  -v reaper-data:/data \
+  repo-reaper
 ```
 
-### Kubernetes
-Helm charts are available in the `deploy/` directory for production deployments.
+### Native
 
-### Resource Requirements
-- Backend: Minimum 512MB RAM, 1 CPU core (scales with concurrent runs)
-- Frontend: Minimum 256MB RAM (scales with concurrent users)
-- Database: SQLite file storage (size depends on run history retention)
+```bash
+cd backend
+cp .env.example .env
+# Edit .env with your configuration
+cargo run --release
+```
+
+---
 
 ## Troubleshooting
 
-### Common Issues
+| Symptom | Likely Cause | Check |
+|---------|-------------|-------|
+| `No agents configured` | Agent team not set up via API | `GET /agents` |
+| `A hunt is already active` | Only one run allowed at a time | Wait or restart |
+| No issues found | Filters too restrictive or no matching repos | Check `GET /repo-lists` and search query |
+| GitHub 403 / rate limit | Token lacks permissions or rate-limited | `GET /github/rate-limit` |
+| `Apply failed` | Patch doesn't match cloned code | Check repo fork is up to date |
+| Smith rejection | Confidence below threshold | Raise `MIN_REVIEW_CONFIDENCE` or review patch quality |
+| Test failures | Environment issues or legit test breakage | Check Docker availability, review test output in history |
+| SSE connection drops | Network proxy or timeout | Ensure SSE support (no buffering proxy) |
 
-1. **Authentication Failures**
-   - Verify GitHub token has required permissions: Metadata read, Contents read/write, Pull requests read/write, and Issues read for the base loop; add Issues write only when updating issues, and Workflows read/write only when patching `.github/workflows`.
-   - Check that `BOT_GITHUB_USER` and `BOT_GITHUB_EMAIL` are set for commits
-   - Ensure local API key hash matches when using shared suite authentication
+---
 
-2. **AI Provider Problems**
-   - Validate API key format and credits for direct provider usage
-   - Check connectivity to `PATCHHIVE_AI_URL` when using local gateway
-   - Review provider-specific rate limits and error handling
+## Related Products
 
-3. **Validation Failures**
-   - Increase `REAPER_TEST_TIMEOUT_SECONDS` for slow test suites
-   - Ensure Docker daemon is running when using Docker sandbox
-   - Check repository-specific test requirements in validation configuration
+| Product | Relationship |
+|---------|-------------|
+| **SignalHive** | Precedes RepoReaper — surfaces candidate issues and signals |
+| **TrustGate** | Precedes RepoReaper — manages trust and review layers |
+| **HiveCore** | Orchestrator — can dispatch runs and display results via the capabilities contract |
+| **@patchhive/ai-local** | Local AI gateway — optional drop-in for direct provider calls |
+| **RepoMemory** | Optional context store — loads remembered conventions and queues FailGuard candidates from Smith rejections |
+| **MergeKeeper** | Future — could gate PR merging after RepoReaper opens the PR |
 
-4. **Performance Issues**
-   - Monitor database size and consider pruning old run history
-   - Adjust concurrent run limits based on available resources
-   - Review AI provider latency and consider local gateway for better performance
+---
 
-### Debugging
-- Enable debug logging with `RUST_LOG=debug`
-- Use the `/health` endpoint to verify service availability
-- Check run details via `/runs/:id` for step-by-step execution tracing
-- Consult the database directly for historical analysis when needed
+## Current Status
 
-## Contributing
-
-See [CONTRIBUTING.md](../../CONTRIBUTING.md) for detailed guidelines.
-
-### Development Setup
-1. Clone the repository
-2. Run `./scripts/setup-dev.sh` to install dependencies
-3. Copy `.env.example` to `.env` and configure required variables
-4. Start services with `docker compose up --build` or split workflow
-
-### Testing
-- Backend: `cargo test` (unit and integration tests)
-- Frontend: `npm test` (Jest and React Testing Library)
-- End-to-end: Cypress tests in `e2e/` directory
-
-### Documentation
-- Update API documentation when changing endpoints
-- Add runbooks for new operational procedures
-- Keep product documentation in sync with implementation changes
-
-## License
-
-See [LICENSE](../../LICENSE) for details.
+- **Active development** — core workflow (scan → fix → PR) is fully implemented
+- Frontend v1 at `/frontend/`, v2 prototype at `/frontend-v2/`
+- CI: GitHub Actions for Rust backend (`cargo build`, `cargo test`, `cargo clippy`)
+- No Prometheus or Kubernetes integration — health checks are HTTP-based
+- Configuration is via `.env` file or environment variables
+- Auth: API key hashing + optional service tokens for HiveCore
+- The standalone mirror repo [`patchhive/reporeaper`](https://github.com/patchhive/reporeaper) is an exported copy of this directory

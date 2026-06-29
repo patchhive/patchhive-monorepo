@@ -4,260 +4,686 @@
   <img src="../../../patchhive3.png" width="120" alt="PatchHive logo" />
 </p>
 
-DepTriage turns dependency update noise into a ranked engineering queue. It reads open dependency pull requests, optionally folds in Dependabot alerts, groups work by package, and recommends `update now`, `watch`, or `ignore for now`.
+DepTriage turns dependency update noise into a ranked engineering queue. It reads open dependency pull requests, optionally folds in Dependabot alerts, groups activity by package, and recommends `update now`, `watch`, or `ignore for now` — without any AI for the first loop.
+
+DepTriage is a **standalone backend service** with its own frontend, SQLite database, GitHub API integration, and a dedicated exported repo at [`patchhive/deptriage`](https://github.com/patchhive/deptriage).
+
+---
 
 ## Product Role
 
 DepTriage is dependency-triage-first. It helps teams spend attention on updates that matter instead of treating every dependency pull request as equally urgent.
 
+Many dependency PRs are bot-managed (Dependabot, Renovate) and monotonous. DepTriage overlays security alerts when available, groups overlapping PRs targeting the same package, and scores each group by urgency, staleness, runtime impact, and security severity. The output is a queue a human can act on without reading forty individual PRs.
+
+---
+
 ## Core Workflow
 
-1. Read open dependency pull requests for a target repository.
-2. Optionally read matching Dependabot alerts.
-3. Group related update activity by package.
-4. Score urgency, risk, and practical impact.
-5. Save scan history for later comparison.
+```
+Operator / HiveCore
+    │
+    │  POST /scan/github/dependencies { repo, pr_limit, include_alerts }
+    ▼
+DepTriage Backend
+    │
+    ├── 1. Fetch open pull requests for repo (pr_limit, sorted by updated desc)
+    ├── 2. For each PR, fetch changed files
+    ├── 3. Filter to dependency PRs (keyword match + manifest-only heuristics)
+    ├── 4. Analyze each dependency PR (ecosystem, package name, version range, source tool)
+    ├── 5. Optionally fetch Dependabot alerts (limit 100)
+    ├── 6. Group related PRs and alerts by package (ecosystem:package key)
+    ├── 7. Score each group: severity, update kind, runtime impact, staleness, multiplicity
+    ├── 8. Recommend per group: update_now / watch / ignore_for_now
+    ├── 9. Sort groups by priority (recommendation → score → stale_days → name)
+    ├── 10. Persist full scan result to SQLite
+    └── 11. Return TriageScanResult as JSON
+```
+
+---
 
 ## Inputs
 
-- GitHub repository reference.
-- Open dependency pull requests.
-- Optional Dependabot alerts.
-- Optional ownership or workspace context in future flows.
+### Request Body (`POST /scan/github/dependencies`)
+
+```json
+{
+  "repo": "patchhive/patchhive2",
+  "pr_limit": 25,
+  "include_alerts": true
+}
+```
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `repo` | string | `""` | Repository in `owner/name` format **(required)** |
+| `pr_limit` | number | `25` | Max open PRs to fetch (clamped 5–60) |
+| `include_alerts` | boolean | `true` | Whether to fetch Dependabot alerts |
+
+---
 
 ## Outputs
 
-- Ranked dependency queue.
-- Action bucket per package.
-- Evidence for why each update matters or can wait.
-- Saved scan history.
+### Response (`TriageScanResult`)
+
+```json
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "created_at": "2026-06-28T10:30:00Z",
+  "repo": "patchhive/patchhive2",
+  "summary": "DepTriage ranked 5 dependency items for `patchhive/patchhive2`: 2 update now, 1 watch, 2 ignore for now. Highest urgency: lodash is currently marked `update now` because DepTriage saw high severity alert, major version jump, runtime impact.",
+  "metrics": {
+    "scanned_pull_requests": 20,
+    "dependency_pull_requests": 4,
+    "open_alerts": 2,
+    "tracked_items": 5,
+    "update_now": 2,
+    "watch": 1,
+    "ignore_for_now": 2,
+    "runtime_updates": 3,
+    "major_updates": 1
+  },
+  "items": [
+    {
+      "key": "npm:lodash",
+      "package_name": "lodash",
+      "ecosystem": "npm",
+      "recommendation": "update_now",
+      "score": 74,
+      "update_kind": "major",
+      "runtime_impact": "runtime",
+      "source": "pull request + alert",
+      "summary": "lodash is currently marked `update now` because DepTriage saw high severity alert, major version jump, runtime impact.",
+      "reasons": [
+        "Open high severity alert is attached to this dependency.",
+        "This looks like a bot-managed major update touching 1 manifest.",
+        "Security severity for this dependency is high.",
+        "This update has been sitting open for about 14 days."
+      ],
+      "manifests": ["package.json"],
+      "changed_paths": ["package.json", "yarn.lock"],
+      "stale_days": 14,
+      "pull_requests": [
+        {
+          "number": 142,
+          "title": "Bump lodash from 4.17.20 to 4.17.21",
+          "html_url": "https://github.com/patchhive/patchhive2/pull/142",
+          "updated_at": "2026-06-14T08:00:00Z",
+          "author": "dependabot[bot]",
+          "source_tool": "dependabot",
+          "from_version": "4.17.20",
+          "to_version": "4.17.21",
+          "update_kind": "major",
+          "manifest_paths": ["package.json"],
+          "changed_paths": ["package.json", "yarn.lock"]
+        }
+      ],
+      "alerts": [
+        {
+          "number": 42,
+          "package_name": "lodash",
+          "ecosystem": "npm",
+          "severity": "high",
+          "summary": "Prototype Pollution in lodash",
+          "html_url": "https://github.com/patchhive/patchhive2/security/dependabot/42",
+          "created_at": "2026-06-01T12:00:00Z",
+          "vulnerable_version_range": "< 4.17.21",
+          "first_patched_version": "4.17.21"
+        }
+      ],
+      "evidence": [
+        "PR #142 · Bump lodash from 4.17.20 to 4.17.21 (4.17.20 → 4.17.21)",
+        "Dependabot alert #42 · Prototype Pollution in lodash"
+      ]
+    }
+  ],
+  "warnings": [
+    "Could not inspect changed files for PR #150: HTTP 403 Forbidden"
+  ]
+}
+```
+
+### Recommendation Buckets
+
+| Bucket | Score Condition | Meaning |
+|---|---|---|
+| `update_now` | Critical/high severity alert, OR score ≥ 55 | High urgency — update ASAP |
+| `watch` | Score ≥ 36 OR (major update AND runtime/mixed impact) | Monitor — needs attention soon |
+| `ignore_for_now` | Below thresholds | Safe to defer |
+
+### Score Calculation
+
+```
+score = severity_score
+       + update_kind_score
+       + runtime_impact_score
+       + staleness_score
+       + multiplicity_bonus
+       clamped to maximum 100
+```
+
+| Factor | Values |
+|---|---|
+| Severity | critical=70, high=56, moderate/medium=34, low=18, none=0 |
+| Update kind | major=24, minor=12, patch=5, unknown=8 |
+| Runtime impact | runtime=14, mixed=10, ci=4, tooling=2, unknown=0 |
+| Staleness | ≥30 days=12, ≥14 days=7, ≥7 days=3, <7 days=0 |
+| Multi PR bonus | >1 PRs = +8, >1 alerts = +6, >3 manifests = +4 |
+
+### Summary Strings
+
+When no items are found, the summary explains the reason:
+- Dependabot permissions blocked: explains the permission gap
+- Dependabot token missing: explains alerts were skipped
+- Other warnings: explains sources were unreadable
+- Clean: explains no dependency PRs or alerts were found
+
+---
 
 ## Safety Boundary
 
-DepTriage is read-only in the MVP. It does not merge dependency pull requests, change dependency files, or rewrite update configuration. Future execution should flow through RepoReaper and TrustGate.
+DepTriage is read-only in the MVP. It does **not**:
+- Merge dependency pull requests
+- Change dependency files or lockfiles
+- Dismiss or close alerts
+- Open follow-up issues
+- Rewrite update configuration
 
-## Local Development
+Its job is to turn dependency update noise into an explainable queue a human can act on. Future execution should flow through RepoReaper and TrustGate.
+
+---
+
+## API Endpoints
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `GET` | `/capabilities` | Public | Advertises DepTriage's capabilities to HiveCore |
+| `GET` | `/health` | Public | Service health, DB status, GitHub token readiness, scan counts |
+| `GET` | `/startup/checks` | Public | Logged startup validation results |
+| `GET` | `/auth/status` | Public | Whether auth is configured and enabled |
+| `POST` | `/auth/login` | Public | Verify an API key |
+| `POST` | `/auth/generate-key` | Localhost only | Generate first API key (one-shot) |
+| `POST` | `/auth/generate-service-token` | Localhost only | Generate first service token for HiveCore |
+| `POST` | `/auth/rotate-service-token` | Localhost only | Rotate service token |
+| `GET` | `/overview` | API key | Product overview with aggregated counts and recent scans |
+| `GET` | `/history` | API key | Recent 30 scan summaries |
+| `GET` | `/history/:id` | API key | Full scan result by ID |
+| `GET` | `/runs` | API key | Same as `/history` (for HiveCore compatibility) |
+| `GET` | `/runs/:id` | API key | Same as `/history/:id` (for HiveCore compatibility) |
+| `POST` | `/scan/github/dependencies` | API key / Service token | Run a dependency triage scan |
+
+### Auth
+
+- **API key authentication** is optional. Enabled by setting `DEP_TRIAGE_API_KEY_HASH`.
+- **Service token auth** for HiveCore dispatch. Enabled by setting `DEP_TRIAGE_SERVICE_TOKEN_HASH`. Dispatch path: `/scan/github/dependencies`.
+- Public paths: `/health`, `/auth/*`, `/capabilities`, `/startup/checks`.
+- Key generation limited to localhost bootstrap.
+- Unauthorized message: `"Unauthorized — provide X-API-Key or X-PatchHive-Service-Token."`
+
+### Endpoint Details
+
+#### `GET /capabilities`
+
+```json
+{
+  "product": "dep-triage",
+  "label": "DepTriage",
+  "actions": [
+    {
+      "id": "scan_github_dependencies",
+      "label": "Scan GitHub dependencies",
+      "method": "POST",
+      "path": "/scan/github/dependencies",
+      "description": "Rank dependency PRs and alerts into update, watch, and ignore decisions.",
+      "requires_repo": true
+    }
+  ],
+  "links": [
+    { "rel": "overview", "label": "Overview", "href": "/overview" },
+    { "rel": "history", "label": "History", "href": "/history" }
+  ]
+}
+```
+
+#### `GET /health`
+
+```json
+{
+  "status": "ok",
+  "version": "0.1.0",
+  "product": "DepTriage by PatchHive",
+  "auth_enabled": true,
+  "config_errors": 0,
+  "db_ok": true,
+  "db_path": "dep-triage.db",
+  "github_ready": true,
+  "scan_count": 23,
+  "repo_count": 5,
+  "tracked_item_count": 142,
+  "update_now_count": 12,
+  "watch_count": 48,
+  "ignore_count": 82,
+  "mode": "dependency-triage"
+}
+```
+
+Status is `"degraded"` when `config_errors > 0` or `db_ok` is `false`, otherwise `"ok"`.
+
+#### `GET /overview`
+
+```json
+{
+  "product": "DepTriage by PatchHive",
+  "tagline": "Turn dependency noise into a queue teams can actually act on.",
+  "counts": {
+    "scans": 23,
+    "repos": 5,
+    "tracked_items": 142,
+    "update_now": 12,
+    "watch": 48,
+    "ignore_for_now": 82
+  },
+  "recent_scans": [
+    { "id": "...", "repo": "patchhive/patchhive2", "summary": "...", "tracked_items": 5, "update_now": 2, "watch": 1, "ignore_for_now": 2, "created_at": "2026-06-28T10:30:00Z" }
+  ]
+}
+```
+
+#### `GET /history`
+
+Returns up to 30 `HistoryItem` records (most recent first):
+
+```json
+[
+  {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "repo": "patchhive/patchhive2",
+    "summary": "DepTriage ranked 5 dependency items...",
+    "tracked_items": 5,
+    "update_now": 2,
+    "watch": 1,
+    "ignore_for_now": 2,
+    "created_at": "2026-06-28T10:30:00Z"
+  }
+]
+```
+
+#### `GET /history/:id`
+
+Returns the full `TriageScanResult` for the given ID. Returns `404` with `{"error": "DepTriage scan not found"}` when the ID doesn't exist.
+
+#### `GET /startup/checks`
+
+```json
+{
+  "checks": [
+    { "severity": "info", "message": "DepTriage DB path: dep-triage.db" },
+    { "severity": "info", "message": "API-key auth is enabled for this product starter." },
+    { "severity": "info", "message": "GitHub token is configured. DepTriage can read dependency PRs and security alerts with healthy rate limits." },
+    { "severity": "info", "message": "DepTriage is read-only..." },
+    { "severity": "info", "message": "DepTriage turns dependency update noise into update-now, watch, and ignore-for-now queues without requiring AI for the first loop." }
+  ]
+}
+```
+
+#### `POST /scan/github/dependencies`
+
+Accepts `ScanRequest` JSON body (see Inputs section). Returns `TriageScanResult` (see Outputs section).
+
+| Status | Meaning |
+|---|---|
+| 200 | Scan completed successfully |
+| 400 | Invalid repo format (must be `owner/name`) |
+| 502 | Upstream GitHub API failure |
+| 500 | Database persistence failure |
+
+#### Auth Endpoints
+
+All auth endpoints return JSON responses with appropriate messages:
+
+- **`POST /auth/login`**: `{"ok": true, "auth_enabled": true, "auth_configured": true}`. Returns `503` if auth not enabled, `401` if invalid key.
+- **`POST /auth/generate-key`**: `{"api_key": "...", "message": "Store this — it won't be shown again"}`. Returns error if auth already configured.
+- **`POST /auth/generate-service-token`**: `{"service_token": "...", "message": "Store this for HiveCore or other PatchHive service callers — it won't be shown again"}`. Returns error if service auth already configured.
+- **`POST /auth/rotate-service-token`**: `{"service_token": "...", "message": "Store this replacement service token for HiveCore or other PatchHive service callers — it won't be shown again"}`. Returns error if service auth not configured.
+- **`GET /auth/status`**: Returns current auth configuration state.
+
+---
+
+## Configuration
+
+| Variable | Default | Description |
+|---|---|---|
+| `DEP_TRIAGE_PORT` | `8070` | Backend HTTP port |
+| `DEP_TRIAGE_DB_PATH` | `dep-triage.db` | SQLite database file path |
+| `DEP_TRIAGE_DB_POOL_SIZE` | — | SQLite connection pool size |
+| `DEP_TRIAGE_API_KEY_HASH` | — | Argon2 hash for API key auth (optional) |
+| `DEP_TRIAGE_SERVICE_TOKEN_HASH` | — | Argon2 hash for HiveCore service token (optional) |
+| `BOT_GITHUB_TOKEN` | — | GitHub personal access token for API calls (recommended) |
+| `GITHUB_TOKEN` | — | Fallback GitHub token (optional, less preferred) |
+| `RUST_LOG` | `info` | Logging level |
+
+### GitHub Token Scope
+
+Recommended scopes (fine-grained PAT):
+
+- **Metadata:** read
+- **Pull requests:** read
+- **Dependabot alerts:** read (required for alert enrichment)
+
+DepTriage works best with a fine-grained GitHub token. Reading pull requests is enough for the base product loop. Dependabot alert reads need the matching security permission; without that access, DepTriage still scores dependency pull requests and reports the limitation clearly.
+
+---
+
+## Technical Architecture
+
+### Service Layout
+
+```
+dep-triage/
+├── backend/
+│   └── src/
+│       ├── main.rs             ── Axum router, middleware, server init
+│       ├── models.rs           ── Request/response types (ScanRequest, TriageScanResult,
+│                                   DependencyTriageItem, DependencyPullRef, DependencyAlertRef,
+│                                   TriageMetrics, HistoryItem, OverviewPayload, OverviewCounts)
+│       ├── db.rs               ── SQLite persistence (scans, history, overview)
+│       ├── github.rs           ── GitHub API integration (PRs, PR files, Dependabot alerts)
+│       ├── state.rs            ── Shared AppState (reqwest Client)
+│       ├── startup.rs          ── Config validation checks
+│       └── pipeline/
+│           ├── routes.rs       ── All route handlers (health, auth, scan, history, overview)
+│           ├── analysis.rs     ── Dependency PR analysis, Builder state machine
+│           ├── scoring.rs      ── Scan orchestration, grouping, scoring, recommendations, persistence
+│           └── utils.rs        ── Version parsing, ecosystem inference, manifest detection,
+│                                   severity ranking, stale-day calculation, repo validation
+├── frontend/                   ── DepTriage UI (Vite, port 5180)
+├── frontend-v2/                ── UI v2 prototype (port 5203)
+├── docker-compose.yml          ── Docker deployment (backend, frontend, frontend-v2)
+├── .env.example                ── Configuration template
+└── README.md                   ── Product README
+```
+
+### Dependencies
+
+- **Axum** — HTTP server and routing
+- **patchhive-product-core** — Auth macros, SQLite pool, startup checks, rate limiting, CORS
+- **patchhive-github-data** — Shared GitHub API client, pull request/file data models
+- **patchhive-github-security** — Shared Dependabot alert data models
+- **reqwest** — HTTP client to GitHub REST API
+- **rusqlite** — SQLite driver
+- **serde / serde_json** — Serialization
+- **chrono** — Timestamp handling and stale-day calculation
+- **uuid** — Scan result IDs
+- **tokio** — Async runtime
+- **tracing** — Structured logging
+- **dotenvy** — `.env` file loading
+- **once_cell** — Lazy static initialization
+
+### Data Flow
+
+```
+                     POST /scan/github/dependencies { repo, pr_limit, include_alerts }
+                                         │
+                                         ▼
+                              ┌─────────────────────┐
+                              │  github::fetch_      │
+                              │  pull_requests()     │  ── GitHub API: GET /repos/{repo}/pulls
+                              └─────────┬───────────┘
+                                        │
+                                        ▼
+                       For each PR ──► github::fetch_pull_files()
+                                        │
+                                        ▼
+                              ┌─────────────────────┐
+                              │  looks_like_         │  ── Keyword + manifest heuristic
+                              │  dependency_pr()     │
+                              └─────────┬───────────┘
+                                        │ (dependency PRs only)
+                                        ▼
+                              ┌─────────────────────┐
+                              │  analyze_pull()      │  ── Extract package name, ecosystem,
+                              └─────────┬───────────┘     update kind, versions, source tool
+                                        │
+                                        ▼
+                     ┌──────────────────────────────────────┐
+                     │  github::fetch_dependabot_alerts()    │  ── (if include_alerts)
+                     └─────────────────┬────────────────────┘
+                                       │
+                                       ▼
+                              ┌─────────────────────┐
+                              │  Group by            │  ── Key: ecosystem:package
+                              │  ecosystem:package   │
+                              └─────────┬───────────┘
+                                        │
+                                        ▼
+                              ┌─────────────────────┐
+                              │  Score + Recommend   │  ── Severity, update kind, runtime,
+                              └─────────┬───────────┘     staleness, multiplicity → score
+                                        │                 → update_now / watch / ignore_for_now
+                                        ▼
+                              ┌─────────────────────┐
+                              │  Sort by priority    │  ── recommendation → score → stale → name
+                              └─────────┬───────────┘
+                                        │
+                                        ▼
+                              ┌─────────────────────┐
+                              │  Persist to SQLite   │  ── dep_triage_scans table
+                              └─────────┬───────────┘
+                                        │
+                                        ▼
+                             Return TriageScanResult JSON
+```
+
+### Manifest Detection
+
+DepTriage detects dependency ecosystems by inspecting changed file paths. Supported ecosystems:
+
+| Ecosystem | Manifest Files | Runtime Impact |
+|---|---|---|
+| npm | `package.json`, `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `bun.lock`, `bun.lockb` | runtime |
+| cargo | `Cargo.toml`, `Cargo.lock` | runtime |
+| python | `requirements.txt`, `requirements-dev.txt`, `requirements-test.txt`, `pyproject.toml`, `poetry.lock`, `Pipfile`, `Pipfile.lock`, `uv.lock`, `setup.py`, `setup.cfg` | runtime |
+| ruby | `Gemfile`, `Gemfile.lock` | runtime |
+| gomod | `go.mod`, `go.sum` | runtime |
+| maven | `pom.xml` | runtime |
+| gradle | `build.gradle`, `build.gradle.kts`, `gradle.properties`, `gradle.lockfile` | runtime |
+| composer | `composer.json`, `composer.lock` | runtime |
+| hex | `mix.exs`, `mix.lock` | runtime |
+| nuget | `Directory.Packages.props`, `packages.config` | runtime |
+| github-actions | `.github/workflows/*` | ci |
+
+### Package Name Inference
+
+DepTriage extracts the package name from PR title text using markers (`bump`, `update`, `upgrade`), falling back to the PR body, then to manifest filename (`package.json`, `Cargo.toml`, `pyproject.toml`).
+
+### Source Tool Detection
+
+DepTriage identifies the automation tool from PR content:
+- **dependabot**: title/body contains "dependabot"
+- **renovate**: title/body contains "renovate"
+- **manual**: anything else
+
+---
+
+## Monitoring
+
+### Health Endpoint (`GET /health`)
+
+```json
+{
+  "status": "ok",
+  "version": "0.1.0",
+  "product": "DepTriage by PatchHive",
+  "auth_enabled": true,
+  "config_errors": 0,
+  "db_ok": true,
+  "db_path": "dep-triage.db",
+  "github_ready": true,
+  "scan_count": 23,
+  "repo_count": 5,
+  "tracked_item_count": 142,
+  "update_now_count": 12,
+  "watch_count": 48,
+  "ignore_count": 82,
+  "mode": "dependency-triage"
+}
+```
+
+### Overview Endpoint (`GET /overview`)
+
+```json
+{
+  "product": "DepTriage by PatchHive",
+  "tagline": "Turn dependency noise into a queue teams can actually act on.",
+  "counts": {
+    "scans": 23,
+    "repos": 5,
+    "tracked_items": 142,
+    "update_now": 12,
+    "watch": 48,
+    "ignore_for_now": 82
+  },
+  "recent_scans": [
+    { "id": "...", "repo": "...", "summary": "...", "tracked_items": 5, "update_now": 2, "watch": 1, "ignore_for_now": 2, "created_at": "..." }
+  ]
+}
+```
+
+### Key Metrics
+
+| Metric | Source | What it tells you |
+|---|---|---|
+| `scan_count` | DB | Total dependency scans performed |
+| `update_now / watch / ignore_for_now` | DB | Recommendation distribution — high `ignore_for_now` rate may indicate healthy dependency posture or stale scans |
+| `github_ready` | Config | Whether `BOT_GITHUB_TOKEN` is configured |
+| `config_errors` | Startup checks | Count of failed startup validations |
+| `tracked_item_count` | DB | Total dependency items tracked across all scans |
+| `open_alerts` | Scan result | Total Dependabot security alerts associated with tracked items |
+
+---
+
+## Deployment
+
+### Local Development
 
 ```bash
 cd products/dep-triage
 cp .env.example .env
+# Edit .env: set BOT_GITHUB_TOKEN and optionally configure auth
 docker compose up --build
 ```
 
-Defaults:
-- Frontend: `http://localhost:5180`
-- Backend: `http://localhost:8070`
-- Database: `DEP_TRIAGE_DB_PATH`
+Split backend and frontend:
 
-Split local workflow:
 ```bash
 cd products/dep-triage/backend
+cp ../.env.example .env
 cargo run
+
 cd ../frontend
 npm install
 npm run dev
 ```
 
-## Important Configuration
+| Layer | URL |
+|---|---|
+| Backend | `http://localhost:8070` |
+| Frontend | `http://localhost:5180` |
+| Frontend v2 | `http://localhost:5203` |
 
-| Variable | Purpose |
-|----------|---------|
-| `BOT_GITHUB_TOKEN` | GitHub token for pull request and optional Dependabot alert reads. |
-| `GITHUB_TOKEN` | Optional fallback GitHub token. |
-| `DEP_TRIAGE_API_KEY_HASH` | Optional preconfigured API-key hash. |
-| `DEP_TRIAGE_SERVICE_TOKEN_HASH` | Optional pre-seeded service-token hash for HiveCore or other PatchHive product callers. |
-| `DEP_TRIAGE_DB_PATH` | SQLite database path. |
-| `DEP_TRIAGE_PORT` | Backend port. |
-
-## HiveCore Fit
-
-HiveCore can surface DepTriage health, run history, and ranked update pressure.
-The future cross-product path is DepTriage identifying an update, TrustGate checking risk, and RepoReaper executing the dependency migration only after the operator allows it.
-
-## Technical Architecture
-
-### Backend Structure
-
-DepTriage's backend is organized around a dependency analysis pipeline:
-
-- **Dependency PR Fetcher**: Retrieves open dependency pull requests from GitHub
-- **Dependabot Integration** (Optional): Fetches and processes Dependabot security and version update alerts
-- **Package Grouper**: Groups related update activity by package name and ecosystem
-- **Scoring Engine**: Evaluates each package update across multiple dimensions:
-  - **Urgency**: Security vulnerabilities, breaking changes, version age
-  - **Risk**: Release stability, download statistics, community adoption
-  - **Practical Impact**: Usage in codebase, change complexity, performance implications
-- **Recommendation Engine**: Translates scores into actionable buckets:
-  - `update now`: High urgency, low risk, high impact
-  - `watch`: Moderate urgency/risk or needs monitoring
-  - `ignore for now`: Low urgency, high risk, or low impact
-- **History Tracker**: Stores scan results for trend analysis and comparison
-
-### Data Flow
-
-1. Dependency PR discovery → Dependabot alert integration (optional)
-2. Package grouping → Multi-dimensional scoring → Action recommendation
-3. History storage → Trend analysis → Output generation
-4. Throughout the process, safety controls ensure read-only operation
-5. Results are stored in SQLite for history, trend analysis, and reporting
-
-### Key Components
-
-- **GitHub Client**: Handles API calls for pull request and Dependabot alert operations
-- **Dependency Parser**: Extracts package information from various lockfiles (package.json, Cargo.toml, pom.xml, etc.)
-- **Dependabot Processor**: Normalizes and processes Dependabot alerts when available
-- **Package Grouper**: Consolidates updates by package name and version constraints
-- **Scoring Algorithm**: Implements weighted scoring across urgency, risk, and impact factors
-- **Recommendation Engine**: Maps scores to actionable recommendations with confidence levels
-- **History Manager**: Tracks scan history for trend analysis and reporting
-- **Authentication System**: Manages API keys and service tokens for HiveCore integration
-
-### Extensibility Points
-
-- Additional package ecosystems can be supported (Maven, PyPI, RubyGems, etc.)
-- New scoring factors can be added (license compliance, maintenance status, etc.)
-- Alternative recommendation engines can be plugged in
-- Additional output formats can be supported (CSV, JSON, Slack/Teams notifications)
-- Webhook support for triggering scans from external events (e.g., cron, GitHub webhooks)
-
-## API Endpoints
-
-DepTriage exposes a RESTful API for integration and control:
-
-### Health & Status
-- `GET /health` - Basic health check
-- `GET /startup/checks` - Detailed startup verification
-- `GET /capabilities` - Advertised product capabilities
-- `GET /version` - Version information
-
-### Scan Management
-- `GET /scans` - List all scans with filtering and pagination
-- `GET /scans/:id` - Get details for a specific scan
-- `POST /scans` - Trigger a new scan
-- `DELETE /scans/:id` - Cancel a running scan
-
-### Dependency Management
-- `GET /dependencies` - List all tracked dependencies with current and latest versions
-- `GET /dependencies/:package` - Get details for a specific package
-- `GET /dependencies/:package/history` - Get version history for a package
-
-### Recommendations
-- `GET /recommendations` - Get ranked dependency queue with actions and evidence
-- `GET /recommendations/:package` - Get recommendation for a specific package
-- `GET /recommendations/summary` - Get summary counts by action bucket
-
-### Configuration
-- `GET /config` - Get current configuration (sanitized)
-- `POST /config` - Update runtime configuration
-
-### Authentication
-- `POST /auth/generate-service-token` - Create a service token for machine-to-machine calls
-- `POST /auth/rotate-service-token` - Rotate an existing service token
-
-### History & Reporting
-- `GET /history` - Get scan history for trend analysis
-- `GET /trends` - Get trend comparisons over time
-- `GET /reports` - List saved reports and presets
-- `POST /reports` - Save a new report or preset
-
-## Monitoring & Observability
-
-DepTriage provides several mechanisms for monitoring and debugging:
-
-### Metrics
-- Prometheus-compatible metrics endpoint at `/metrics`
-- Key metrics include scan counts, dependency processing rates, package grouping efficiency, and recommendation distribution
-
-### Logging
-- Structured logging with configurable log levels via `RUST_LOG`
-- Correlation IDs for tracing individual scans through the pipeline
-- Audit trails for all GitHub operations
-
-### Health Checks
-- Liveness and readiness probes for Kubernetes deployment
-- Dependency health checks for database and GitHub connectivity
-
-## Deployment
+Backend: `http://localhost:8070`
+Frontend: `http://localhost:5180`
 
 ### Docker
-DepTriage provides multi-stage Docker builds for both backend and frontend:
+
+The `docker-compose.yml` runs three services:
 
 ```yaml
-# docker-compose.yml excerpt
 services:
-  backend:
-    build: ./backend
-    ports: ["8070:8070"]
+  backend:         # image: ghcr.io/patchhive/deptriage-backend
+    ports: ["8070:8000"]  # container port 8000, mapped to 8070
+    volumes: [./data:/data]
     environment:
-      - BOT_GITHUB_TOKEN=${BOT_GITHUB_TOKEN}
-      - GITHUB_TOKEN=${GITHUB_TOKEN}
-  frontend:
-    build: ./frontend
-    ports: ["5180:5180"]
+      - DEP_TRIAGE_DB_PATH=/data/dep-triage.db
+      - DEP_TRIAGE_PORT=8000
+
+  frontend:        # image: ghcr.io/patchhive/deptriage-frontend
+    ports: ["5180:8080"]
+
+  frontend-v2:     # image: patchhive/deptriage-frontend-v2
+    ports: ["5203:8080"]
 ```
 
-### Kubernetes
-Helm charts are available in the `deploy/` directory for production deployments.
+For production deployment:
 
-### Resource Requirements
-- Backend: Minimum 256MB RAM, 1 CPU core (scales with concurrent scans)
-- Frontend: Minimum 256MB RAM (scales with concurrent users)
-- Database: SQLite file storage (size depends on scan history retention)
+1. Set `BOT_GITHUB_TOKEN` with appropriate scopes
+2. Set `DEP_TRIAGE_API_KEY_HASH` for API auth
+3. Set `DEP_TRIAGE_SERVICE_TOKEN_HASH` for HiveCore dispatch
+4. Configure `DEP_TRIAGE_DB_PATH` to a persisted volume
+5. Bootstrap the API key via `POST /auth/generate-key` from localhost
+
+---
 
 ## Troubleshooting
 
-### Common Issues
-
-1. **Authentication Failures**
-   - Verify GitHub token has required permissions: Metadata read and Pull requests read for dependency PRs; Dependabot alerts read for alert enrichment. See [GitHub token scopes](../github-token-scopes.md).
-   - Check that rate limits are not being exceeded
-   - Ensure network connectivity to GitHub API
-
-2. **Discovery Problems**
-   - Verify repository access and correct repository reference
-   - Check that dependency pull requests are actually open and not draft/closed
-   - Review Dependabot configuration if alerts are expected but not appearing
-
-3. **Performance Issues**
-   - Monitor database size and consider pruning old scan history
-   - Adjust concurrent scan limits based on available resources
-   - Review GitHub API rate limiting and consider caching strategies for frequent scans
-
-4. **Scoring Problems**
-   - Verify that package ecosystems are correctly detected
-   - Check that lockfile parsing is working for your specific dependency managers
-   - Review scoring weights if recommendations seem misaligned with expectations
+| Symptom | Likely Cause | Check |
+|---|---|---|
+| `502 BAD_GATEWAY` on scan | GitHub API is unreachable or token invalid | Verify `BOT_GITHUB_TOKEN` is set and valid; check GitHub API rate limits |
+| Scan returns zero items | No dependency PRs or alerts detected for the repo | Verify repo is correct `owner/name` format; check that dependency PRs are open and use recognized keywords |
+| Dependabot alerts not appearing | Token lacks Dependabot alerts read permission, or `include_alerts` is `false` | Set `include_alerts: true` and grant Dependabot alerts read scope to token |
+| `400 BAD_REQUEST` on scan | `repo` field is not in `owner/name` format | Ensure the repo string has exactly one `/` separator |
+| `404 NOT_FOUND` on history | Scan ID doesn't exist | Check the ID — scan may have been pruned or never persisted |
+| Auth errors on `/scan/github/dependencies` | Service token not set or expired | Generate/renew via `/auth/rotate-service-token` |
+| `db_ok: false` | SQLite file path wrong or disk full | Check `DEP_TRIAGE_DB_PATH` and verify filesystem space |
+| Consistently low scores / too many `ignore_for_now` | No high-severity alerts and no stale PRs | This is expected for repos with healthy dependency hygiene; scores increase with staleness and security pressure |
+| Recommendations seem misaligned | Scoring weights may not match team risk tolerance | The scoring is deterministic — review score_item() and recommend_item() weights in scoring.rs |
 
 ### Debugging
-- Enable debug logging with `RUST_LOG=debug`
-- Use the `/health` endpoint to verify service availability
-- Check scan details via `/scans/:id` for step-by-step execution tracing
-- Consult the database directly for historical analysis when needed
-- Verify lockfile parsing by examining raw dependency data in scan results
 
-## Contributing
+- Enable debug logging: `RUST_LOG=debug`
+- Use `GET /health` to verify service availability and token readiness
+- Check `GET /startup/checks` for startup validation results
+- Use `GET /history/:id` to inspect full scan results with per-item scoring details
+- Query the SQLite database directly: `sqlite3 dep-triage.db "SELECT id, repo, created_at FROM dep_triage_scans ORDER BY created_at DESC LIMIT 10"`
 
-See [CONTRIBUTING.md](../../CONTRIBUTING.md) for detailed guidelines.
+---
 
-### Development Setup
-1. Clone the repository
-2. Run `./scripts/setup-dev.sh` to install dependencies
-3. Copy `.env.example` to `.env` and configure required variables
-4. Start services with `docker compose up --build` or split workflow
+## Related Products
 
-### Testing
-- Backend: `cargo test` (unit and integration tests)
-- Frontend: `npm test` (Jest and React Testing Library)
-- End-to-end: Cypress tests in `e2e/` directory
+| Product | Relationship |
+|---|---|
+| **HiveCore** | Primary consumer — dispatches dependency scans via service token |
+| **ReleaseSentry** | Downstream — dependency health feeds into release readiness consideration |
+| **VulnTriage** | Parallel — security posture from different angle (code-level vs. dependency-level) |
+| **RepoReaper** | Future downstream — could execute dependency migrations after DepTriage identifies update priority and operator approves |
+| **TrustGate** | Future — could gate dependency update execution risk assessment |
 
-### Documentation
-- Update API documentation when changing endpoints
-- Add runbooks for new operational procedures
-- Keep product documentation in sync with implementation changes
+---
 
-## License
+## Current Status
 
-See [LICENSE](../../LICENSE) for details.
+| Area | Status |
+|---|---|
+| GitHub dependency PR scan | ✅ Implemented — fetch PRs, filter dependency PRs, analyze, group, score, recommend |
+| Dependabot alert integration | ✅ Implemented — optional, with clear warnings when permissions are missing |
+| Ecosystem detection | ✅ Implemented — 11 ecosystems via manifest detection with title/body fallback |
+| Scoring engine | ✅ Implemented — severity, update kind, runtime impact, staleness, multiplicity |
+| Recommendation buckets | ✅ Implemented — update_now, watch, ignore_for_now |
+| Persistence & history | ✅ Implemented — full scan persistence, history listing, detail retrieval |
+| Auth (API key + service token) | ✅ Implemented |
+| Capabilities advertisement | ✅ Implemented — `/capabilities` endpoint for HiveCore |
+| Overview API | ✅ Implemented — aggregated counts + recent scans |
+| HiveCore integration | ✅ Service token dispatch |
+| Frontend UI | ✅ Implemented (v1) |
+| Frontend v2 | 🚧 In progress |
+| Cross-product signal export | ❌ Future — expose dependency health to ReleaseSentry, HiveCore decision engine |
+| RepoReaper execution trigger | ❌ Future — auto-create PRs or merge approved updates |
+| Scheduled/cron scans | ❌ Future — recurring scans without manual POST |
+| Webhook-driven scans | ❌ Future — GitHub webhook triggers for new PRs |
+| Additional scoring factors | ❌ Future — license compliance, maintainer activity, download trends |
+| Slack/Teams notifications | ❌ Future — push recommendation summaries to communication channels |
+
+---
 
 ## Standalone Repository
 

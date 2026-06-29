@@ -8,39 +8,71 @@ FlakeSting detects flaky CI behavior before teams normalize unreliable checks.
 It reads GitHub Actions history, looks for pass/fail swings and rerun pressure,
 and ranks likely flaky jobs or steps with evidence.
 
+- **Product slug:** `flake-sting`
+- **Version:** `0.1.0`
+- **Mode:** `github-actions-flake-detection`
+
+---
+
 ## Product Role
 
 FlakeSting is CI-trust-first. It helps teams understand when a failing signal is
 really a flaky system problem rather than a straightforward product regression.
+It does **not** suppress failures, quarantine tests, or rerun workflows — it
+surfaces evidence so humans and downstream PatchHive products can treat that
+signal with the right level of trust.
+
+---
 
 ## Core Workflow
 
-1. Read recent GitHub Actions workflow runs and jobs.
-2. Detect fail/pass swings in test-like jobs and steps.
-3. Score unstable jobs and steps into a ranked flaky queue.
-4. Surface runner hints, rerun pressure, and evidence links.
-5. Compare against previous scans to show whether flake pressure is rising or
-   improving.
+1. **Read** recent GitHub Actions workflow runs and jobs for a target repository.
+2. **Detect** fail/pass swings in test-like jobs and steps (not every red build).
+3. **Score** unstable jobs and steps into a practical flaky queue.
+4. **Surface** runner hints, rerun pressure, and direct evidence links.
+5. **Compare** each scan to the previous comparable run so teams can see whether
+   flake pressure is rising or improving.
+
+---
 
 ## Inputs
 
-- GitHub repository reference.
-- GitHub Actions workflow runs and job history.
-- Optional scan window and history settings.
+- **GitHub repository reference** — `owner/name` format, validated server-side.
+- **GitHub Actions workflow runs and job history** — fetched via the GitHub
+  REST API using `patchhive-github-data`.
+- **Optional scan parameters:**
+  - Scan branch filter (default: all branches).
+  - Workflow name filter (substring match, case-insensitive).
+  - Lookback runs (default: 25, clamped 5–40).
+
+---
 
 ## Outputs
 
-- Ranked flaky queue.
-- Runner, OS, job, and step evidence.
-- Saved scan history.
-- Trend comparisons across scans.
+| Output | Description |
+|--------|-------------|
+| **Ranked flaky queue** | Signals sorted by score descending, then failure count descending, then workflow/job/step name. |
+| **Signal status** | `"quarantine"` (≥2 fails + ≥2 passes) or `"suspect"` (at least 1 fail + 1 pass, fewer than 2 of each). |
+| **Evidence links** | Per-signal HTML URLs pointing to the failing GitHub job page. |
+| **Runner/env hints** | Text hints when failures cluster on specific runners while passes appear elsewhere. |
+| **Rerun pressure** | Count of signal hits that came from workflow rerun attempts. |
+| **Flake trend** | Delta comparison against the previous scan for the same repo+branch+workflow — status is `"rising"`, `"improving"`, `"steady"`, or `"shifted"`. |
+| **Scan history** | Persisted scan results with full payload for trend analysis. |
+
+---
 
 ## Safety Boundary
 
-FlakeSting is read-only in the MVP. It does not rerun workflows, edit CI
-configuration, quarantine tests, or open cleanup issues by default.
+FlakeSting is **read-only**. It does not rerun workflows, edit CI configuration,
+mark checks, suppress failures, or open issues. It explains where CI signal
+looks unstable so humans and downstream PatchHive products can treat that
+signal with the right level of trust.
+
+---
 
 ## Local Development
+
+### Docker
 
 ```bash
 cd products/flake-sting
@@ -48,235 +80,653 @@ cp .env.example .env
 docker compose up --build
 ```
 
-Defaults:
-- Frontend: `http://localhost:5179`
-- Backend: `http://localhost:8060`
-- Database: `FLAKE_STING_DB_PATH`
+| Service | URL |
+|---------|-----|
+| Frontend (v1) | `http://localhost:5179` |
+| Frontend v2 prototype | `http://localhost:5198` |
+| Backend | `http://localhost:8060` |
 
-Split local workflow:
+Backend: `http://localhost:8060`
+Frontend: `http://localhost:5179`
+
+### Split Backend and Frontend
+
 ```bash
-cd products/flake-sting/backend
-cargo run
-cd ../frontend
-npm install
-npm run dev
+cp .env.example .env
+
+cd backend && cargo run
+cd ../frontend && npm install && npm run dev
+cd ../frontend-v2 && npm install && npm run dev
 ```
 
-## Important Configuration
+---
 
-| Variable | Purpose |
-|----------|---------|
-| `BOT_GITHUB_TOKEN` | GitHub token for Actions reads. |
-| `GITHUB_TOKEN` | Optional fallback GitHub token. |
-| `FLAKE_STING_API_KEY_HASH` | Optional preconfigured API-key hash. |
-| `FLAKE_STING_SERVICE_TOKEN_HASH` | Optional pre-seeded service-token hash for HiveCore or other PatchHive product callers. |
-| `FLAKE_STING_DB_PATH` | SQLite database path. |
-| `FLAKE_STING_PORT` | Backend port. |
-| `RUST_LOG` | Rust logging level. |
+## Configuration
 
-FlakeSting works best with a fine-grained GitHub token. GitHub Actions read access is the main requirement for the MVP. See [GitHub token scopes](../github-token-scopes.md).
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `BOT_GITHUB_TOKEN` | — | Fine-grained PAT for workflow run/job reads. Recommended scopes: Metadata (read), Actions (read). |
+| `GITHUB_TOKEN` | — | Fallback if `BOT_GITHUB_TOKEN` is not set. |
+| `FLAKE_STING_API_KEY_HASH` | — | Pre-seeded app auth hash. Otherwise generate the first local key from the UI. API keys use the `flake-sting-` prefix. |
+| `FLAKE_STING_SERVICE_TOKEN_HASH` | — | Pre-seeded service-token hash for HiveCore or other PatchHive product callers. Service tokens use the `flake-sting-svc-` prefix. |
+| `FLAKE_STING_DB_PATH` | `flake-sting.db` | SQLite path for flaky scan history. |
+| `FLAKE_STING_PORT` | `8060` | Backend listen port. |
+| `FLAKE_STING_DB_POOL_SIZE` | (pool default) | SQLite connection pool size. |
+| `RUST_LOG` | `info` | Rust logging level. |
 
-## HiveCore Fit
+FlakeSting works best with a fine-grained GitHub token. Without one,
+public-repo scans may still work, but GitHub rate limits will be tighter.
 
-HiveCore can surface FlakeSting as a CI trust signal. Longer term, FlakeSting
-should help MergeKeeper and RepoReaper understand whether validation failures
-represent real breakage or unstable infrastructure.
+---
 
 ## Technical Architecture
 
-### Backend Structure
+### Module Tree
 
-FlakeSting's backend is organized around a CI analysis pipeline:
+```
+flake-sting/backend/src/
+├── main.rs          — Router, auth config, server bootstrap
+├── models.rs        — Data types: ScanRequest, FlakeScanResult, FlakeSignal,
+│                       FlakeMetrics, FlakeTrend, HistoryItem, OverviewPayload
+├── db.rs            — SQLite persistence (init, save, history, overview, trend queries)
+├── github.rs        — Thin wrapper over patchhive-github-data for workflow run/job fetches
+├── pipeline.rs      — All route handlers + flake detection business logic
+├── startup.rs       — Config validation checks (auth, GitHub token, DB path)
+├── state.rs         — AppState (reqwest HTTP client)
+└── auth (macro)     — API-key + service-token middleware (from patchhive-product-core)
+```
 
-- **Workflow Runs Fetcher**: Retrieves recent GitHub Actions workflow runs and jobs
-- **Job & Step Analyzer**: Examines individual jobs and steps for pass/fail patterns
-- **Flakiness Detector**: Identifies unstable behavior through:
-  - **Pass/Fail Swings**: Jobs that alternate between passing and failing
-  - **Rerun Pressure**: Jobs that frequently get manually rerun
-  - **Runner Hints**: Patterns associated with specific runners or operating systems
-  - **Step-Level Instability**: Unreliable behavior within individual job steps
-- **Scoring Engine**: Quantifies flakiness based on:
-  - **Instability Frequency**: How often a job/step changes state
-  - **Recent Activity**: Weighting toward more recent runs
-  - **Evidence Strength**: Confidence in the flakiness detection
-  - **Impact Assessment**: How critical the job/step is to the pipeline
-- **Recommendation Engine**: Ranks findings into actionable priorities
-- **History Tracker**: Stores scan results for trend analysis and comparison
+### Key Dependencies
+
+| Crate | Purpose |
+|-------|---------|
+| `axum 0.7` | HTTP framework |
+| `patchhive-product-core` | Auth, rate limiting, CORS, product contract, SQLite pool |
+| `patchhive-github-data` | GitHub Actions workflow runs + jobs API client |
+| `rusqlite 0.31` | SQLite (bundled) |
+| `reqwest 0.12` | HTTP client for GitHub API |
+| `serde / serde_json` | Serialization |
+| `chrono` | Timestamps |
+| `uuid` | Scan ID generation |
+| `tokio` | Async runtime |
+| `tower-http` | CORS middleware |
 
 ### Data Flow
 
-1. Workflow run discovery → Job/step extraction → Pattern analysis
-2. Flakiness detection → Scoring → Ranking → Evidence collection
-3. History comparison → Trend analysis → Output generation
-4. Throughout the process, safety controls ensure read-only operation
-5. Results are stored in SQLite for history, trend analysis, and reporting
+```
+                    ┌─────────────┐
+                    │  /scan/     │
+                    │  github/    │
+                    │  actions    │
+                    │  POST       │
+                    └──────┬──────┘
+                           │ ScanRequest
+                           ▼
+┌────────────────────────────────────────────────────┐
+│               pipeline::scan_github_actions         │
+│  ┌──────────────────────────────────────────────┐  │
+│  │  1. Validate repo (owner/name format)        │  │
+│  │  2. Fetch workflow runs (patchhive-github-   │  │
+│  │     data, clamped lookback 5–40)             │  │
+│  │  3. Filter runs by workflow name (substring) │  │
+│  │  4. For each run, fetch jobs & steps          │  │
+│  │  5. Classify jobs/steps as test-like         │  │
+│  │  6. Record fail/pass swings into buckets     │  │
+│  │  7. Build FlakeSignals (threshold: ≥1 fail   │  │
+│  │     + ≥1 pass, total ≥2)                     │  │
+│  │  8. Score signals, sort descending            │  │
+│  │  9. Compute trend vs previous comparable scan │  │
+│  │ 10. Save to SQLite                            │  │
+│  └──────────────────────────────────────────────┘  │
+└──────────────────────┬─────────────────────────────┘
+                       │ FlakeScanResult
+                       ▼
+┌──────────────────────────────────────────────┐
+│  SQLite (flake_scans table)                   │
+│  • Indexed by created_at DESC                 │
+│  • Indexed by (repo, created_at DESC)         │
+│  • Full payload stored as JSON                │
+└──────────────────────────────────────────────┘
+```
 
-### Key Components
+### Flake Detection Algorithm
 
-- **GitHub Client**: Handles API calls for workflow runs, jobs, and steps
-- **Workflow Parser**: Normalizes workflow run data across different formats
-- **Job Analyzer**: Examines job-level patterns including conclusions, timing, and reruns
-- **Step Analyzer**: Drills into individual steps for granular flakiness detection
-- **Pattern Detector**: Implements algorithms for detecting swing patterns and instability
-- **Scoring Algorithm**: Computes flakiness scores with weighted factors
-- **Evidence Collector**: Gathers supporting data like runner info, timestamps, and logs
-- **History Manager**: Tracks scan history for trend analysis and reporting
-- **Authentication System**: Manages API keys and service tokens for HiveCore integration
+1. **Test-like classification** (`is_testish`): A job or step is "test-like" if
+   its name contains keywords such as `test`, `spec`, `integration`, `unit`,
+   `e2e`, `pytest`, `cargo test`, `jest`, `vitest`, `playwright`, `go test`,
+   `rspec`, `mvn test`, `gradle test` (case-insensitive).
 
-### Extensibility Points
+2. **Bucket recording** (`record_bucket`): For each test-like job/step that has
+   a conclusion of `success`, `failure`, `timed_out`, `cancelled`,
+   `action_required`, `startup_failure`, or `stale`, record whether it passed
+   or failed. If the run was a re-attempt (`run_attempt > 1`), increment rerun
+   counter. Collect evidence links.
 
-- Additional CI systems can be supported (GitLab CI, Jenkins, CircleCI, etc.)
-- New flakiness patterns can be detected (resource flakiness, timing flakiness, etc.)
-- Alternative scoring algorithms can be plugged in
-- Additional output formats can be supported (CSV, JSON, Slack/Teams notifications)
-- Webhook support for triggering scans from external events (e.g., cron, GitHub webhooks)
-- Integration with issue trackers to automatically create flakiness tickets
+3. **Signal generation** (`build_signal`): A signal is emitted only when a
+   job/step has **both** failures and successes across the scanned runs, and
+   the total count is at least 2. The `status` field is:
+   - `"quarantine"` — ≥2 failures AND ≥2 successes
+   - `"suspect"` — at least 1 failure and 1 success, but fewer than 2 of each
+
+4. **Scoring** (`signal_score`): Score = `overlap × 22 + failures × 16 +
+   rerun_hits × 10 + (12 if runner-clustering hint)`, capped at 100.
+
+5. **Trend computation** (`compute_trend`): Compares signal keys against the
+   previous scan for the same repo+branch+workflow. Results in status:
+   `"rising"`, `"improving"`, `"steady"`, or `"shifted"`.
+
+---
 
 ## API Endpoints
 
-FlakeSting exposes a RESTful API for integration and control:
+FlakeSting exposes a RESTful API. All protected endpoints require either an
+API key (`X-API-Key: flake-sting-...`) or a service token
+(`X-PatchHive-Service-Token: flake-sting-svc-...`).
 
-### Health & Status
-- `GET /health` - Basic health check
-- `GET /startup/checks` - Detailed startup verification
-- `GET /capabilities` - Advertised product capabilities
-- `GET /version` - Version information
+Service dispatch paths (for HiveCore): `/scan/github/actions`.
 
-### Scan Management
-- `GET /scans` - List all scans with filtering and pagination
-- `GET /scans/:id` - Get details for a specific scan
-- `POST /scans` - Trigger a new scan
-- `DELETE /scans/:id` - Cancel a running scan
+### Public Endpoints (No Auth Required)
 
-### Flakiness Analysis
-- `GET /flaky-jobs` - Get ranked list of flaky jobs with evidence
-- `GET /flaky-steps` - Get ranked list of flaky steps with evidence
-- `GET /flaky/:id` - Get details for a specific flaky job or step
-- `GET /flaky/summary` - Get summary statistics by flakiness type
+#### `GET /health`
 
-### Runner Analysis
-- `GET /runners` - Get runner-specific flakiness patterns
-- `GET /runners/:os` - Get flakiness by operating system
-- `GET /runners/:label` - Get flakiness by runner label
+Health check endpoint. Returns the current service status.
 
-### Evidence & Details
-- `GET /evidence/:id` - Get detailed evidence for a flaky detection
-- `GET /timeline/:id` - Get execution timeline for a job or step
-- `GET /reruns/:id` - Get rerun history for a job or step
+**Response (200):**
+```json
+{
+  "status": "ok",
+  "version": "0.1.0",
+  "product": "FlakeSting by PatchHive",
+  "auth_enabled": true,
+  "config_errors": 0,
+  "db_ok": true,
+  "db_path": "flake-sting.db",
+  "github_ready": true,
+  "scan_count": 42,
+  "repo_count": 5,
+  "flaky_signal_count": 128,
+  "quarantine_candidate_count": 17,
+  "mode": "github-actions-flake-detection"
+}
+```
 
-### Configuration
-- `GET /config` - Get current configuration (sanitized)
-- `POST /config` - Update runtime configuration
+**Status codes:**
+- `200 OK` — `status` is `"ok"` or `"degraded"`
+- The `status` field is `"degraded"` when config errors > 0 or `db_ok` is false
 
-### Authentication
-- `POST /auth/generate-service-token` - Create a service token for machine-to-machine calls
-- `POST /auth/rotate-service-token` - Rotate an existing service token
+#### `GET /startup/checks`
 
-### History & Reporting
-- `GET /history` - Get scan history for trend analysis
-- `GET /trends` - Get trend comparisons over time
-- `GET /reports` - List saved reports and presets
-- `POST /reports` - Save a new report or preset
+Returns startup validation check results.
 
-## Monitoring & Observability
+**Response (200):**
+```json
+{
+  "checks": [
+    { "level": "info", "message": "FlakeSting DB path: flake-sting.db" },
+    { "level": "info", "message": "API-key auth is enabled for FlakeSting." },
+    { "level": "info", "message": "GitHub token detected. ..." }
+  ]
+}
+```
 
-FlakeSting provides several mechanisms for monitoring and debugging:
+#### `GET /capabilities`
 
-### Metrics
-- Prometheus-compatible metrics endpoint at `/metrics`
-- Key metrics include scan counts, workflow processing rates, job/step analysis rates, and flakiness detection rates
+Advertises the product's HiveCore contract, available actions, and links.
 
-### Logging
-- Structured logging with configurable log levels via `RUST_LOG`
-- Correlation IDs for tracing individual scans through the pipeline
-- Audit trails for all GitHub operations
+**Response (200):**
+```json
+{
+  "schema_version": "patchhive.product.contract.v1",
+  "product_slug": "flake-sting",
+  "display_name": "FlakeSting",
+  "version": "0.1.0",
+  "standalone": true,
+  "hivecore": {
+    "can_launch": true,
+    "can_start_runs": true,
+    "can_list_runs": true,
+    "can_read_run_detail": true,
+    "can_apply_settings": false
+  },
+  "routes": {
+    "health": "/health",
+    "startup_checks": "/startup/checks",
+    "capabilities": "/capabilities",
+    "runs": "/runs",
+    "run_detail_template": "/runs/{id}"
+  },
+  "actions": [
+    {
+      "id": "scan_github_actions",
+      "label": "Scan GitHub Actions",
+      "method": "POST",
+      "path": "/scan/github/actions",
+      "description": "Detect flaky workflow and test behavior from GitHub Actions history.",
+      "starts_run": true,
+      "destructive": false,
+      "required_scopes": ["actions:dispatch"]
+    }
+  ],
+  "links": [
+    { "id": "overview", "label": "Overview", "path": "/overview" },
+    { "id": "history", "label": "History", "path": "/history" }
+  ]
+}
+```
 
-### Health Checks
-- Liveness and readiness probes for Kubernetes deployment
-- Dependency health checks for database and GitHub connectivity
+#### `GET /auth/status`
+
+Returns current authentication configuration state.
+
+**Response (200):**
+```json
+{
+  "auth_enabled": true,
+  "auth_configured": true,
+  "service_auth_enabled": true,
+  "bootstrap_only": false,
+  "hivecore_allowed": true
+}
+```
+
+#### `POST /auth/login`
+
+Validates an API key and returns auth status.
+
+**Request body:**
+```json
+{
+  "api_key": "flake-sting-..."
+}
+```
+
+**Response (200):**
+```json
+{
+  "ok": true,
+  "auth_enabled": true,
+  "auth_configured": true
+}
+```
+
+**Status codes:**
+- `200 OK` — Valid key
+- `401 Unauthorized` — Invalid key
+- `503 Service Unavailable` — Auth not enabled
+
+#### `POST /auth/generate-key`
+
+Generates a new API key. Only available when auth is not yet configured,
+and only from localhost (bootstrap mode).
+
+**Headers required:** `Host: localhost:...`
+
+**Response (200):**
+```json
+{
+  "api_key": "flake-sting-...",
+  "message": "Store this — it won't be shown again"
+}
+```
+
+**Status codes:**
+- `200 OK` — Key generated
+- `403 Forbidden` — Not a localhost request
+- `409 Conflict` — Auth already configured
+
+#### `POST /auth/generate-service-token`
+
+Generates a new service token for machine-to-machine calls (HiveCore etc.).
+Only available when service auth is not yet configured, and only from
+localhost.
+
+**Headers required:** `Host: localhost:...`
+
+**Response (200):**
+```json
+{
+  "service_token": "flake-sting-svc-...",
+  "message": "Store this for HiveCore or other PatchHive service callers — it won't be shown again"
+}
+```
+
+**Status codes:**
+- `200 OK` — Token generated
+- `403 Forbidden` — Not a localhost request
+- `409 Conflict` — Service auth already configured
+
+#### `POST /auth/rotate-service-token`
+
+Rotates an existing service token. Available only from localhost.
+
+**Headers required:** `Host: localhost:...`
+
+**Response (200):**
+```json
+{
+  "service_token": "flake-sting-svc-...",
+  "message": "Store this replacement service token for HiveCore or other PatchHive service callers — it won't be shown again"
+}
+```
+
+**Status codes:**
+- `200 OK` — Token rotated
+- `403 Forbidden` — Not a localhost request
+- `409 Conflict` — Service auth not yet configured
+
+### Protected Endpoints (Auth Required)
+
+#### `GET /overview`
+
+Returns product overview with aggregate counts and recent scans.
+
+**Response (200):**
+```json
+{
+  "product": "FlakeSting by PatchHive",
+  "tagline": "Detect, isolate, and explain flaky CI patterns before unreliable checks erode team trust.",
+  "counts": {
+    "scans": 42,
+    "repos": 5,
+    "flaky_signals": 128,
+    "quarantine_candidates": 17
+  },
+  "recent_scans": [
+    {
+      "id": "uuid-...",
+      "repo": "owner/repo",
+      "branch": "main",
+      "workflow_name": "CI",
+      "summary": "FlakeSting found 3 flaky signals...",
+      "flaky_signals": 3,
+      "quarantine_candidates": 1,
+      "created_at": "2026-06-28T10:00:00+00:00",
+      "trend": {
+        "status": "rising",
+        "compared_to_scan_id": "uuid-...",
+        "compared_to_created_at": "2026-06-27T10:00:00+00:00",
+        "flaky_signal_delta": 1,
+        "quarantine_delta": 0,
+        "rerun_delta": 2,
+        "new_signal_count": 2,
+        "cleared_signal_count": 1,
+        "new_signals": ["CI · test-linux / Run tests"],
+        "cleared_signals": ["CI · test-macos / lint"]
+      }
+    }
+  ]
+}
+```
+
+#### `GET /history`
+
+Returns scan history (most recent 30 scans).
+
+**Response (200):** `Vec<HistoryItem>` — identical shape to `recent_scans` above.
+
+#### `GET /history/:id`
+
+Returns a single scan's full detail by ID.
+
+**Response (200):** FlakeScanResult (see scan response below).
+
+**Status codes:**
+- `200 OK` — Scan found
+- `404 Not Found` — Scan not found
+
+#### `GET /runs`
+
+Returns scan history formatted as HiveCore contract `ProductRunsResponse`
+(most recent 30 scans).
+
+**Response (200):**
+```json
+{
+  "schema_version": "patchhive.product.contract.v1",
+  "product_slug": "flake-sting",
+  "runs": [
+    {
+      "id": "uuid-...",
+      "status": "completed",
+      "title": "owner/repo",
+      "summary": "2 flaky signals · 0 quarantine candidates",
+      "created_at": "2026-06-28T10:00:00+00:00",
+      "updated_at": "2026-06-28T10:00:00+00:00",
+      "detail_path": "/runs/uuid-...",
+      "raw": { ... }
+    }
+  ]
+}
+```
+
+#### `GET /runs/:id`
+
+Alias for `/history/:id`. Returns a single scan's full detail.
+
+**Response (200):** FlakeScanResult (see scan response below).
+
+**Status codes:**
+- `200 OK` — Scan found
+- `404 Not Found` — Scan not found
+
+#### `POST /scan/github/actions`
+
+Initiates a new flake scan against a GitHub repository's Actions history.
+This is the main product action.
+
+**Request body:**
+```json
+{
+  "repo": "owner/repo-name",
+  "branch": "main",
+  "workflow_name": "CI",
+  "lookback_runs": 25
+}
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `repo` | `string` | `""` (required) | Repository in `owner/name` format. |
+| `branch` | `string` | `""` | Branch filter. Empty = all branches. |
+| `workflow_name` | `string` | `""` | Workflow name filter (case-insensitive substring). Empty = all workflows. |
+| `lookback_runs` | `number` | `25` | Number of recent workflow runs to inspect (clamped 5–40). |
+
+**Response (200):** FlakeScanResult
+
+```json
+{
+  "id": "uuid-...",
+  "created_at": "2026-06-28T10:00:00+00:00",
+  "repo": "owner/repo-name",
+  "branch": "main",
+  "workflow_name": "CI",
+  "summary": "FlakeSting found 2 flaky signals across the last 25 matching workflow runs. Strongest suspect: step `Run tests` inside `test-linux` in workflow `CI` failed 3 times and passed 8 times across recent runs.",
+  "metrics": {
+    "workflow_runs": 25,
+    "completed_runs": 22,
+    "successful_runs": 18,
+    "failed_runs": 4,
+    "rerun_like_runs": 3,
+    "flaky_signals": 2,
+    "quarantine_candidates": 1
+  },
+  "signals": [
+    {
+      "key": "step:CI:test-linux:Run tests",
+      "kind": "step",
+      "status": "quarantine",
+      "score": 92,
+      "workflow_name": "CI",
+      "job_name": "test-linux",
+      "step_name": "Run tests",
+      "summary": "step `Run tests` inside `test-linux` in workflow `CI` failed 3 times and passed 8 times across recent runs.",
+      "failure_count": 3,
+      "success_count": 8,
+      "rerun_hits": 2,
+      "environment_hints": [
+        "Failures are clustering on `ubuntu-latest` while passes are showing up elsewhere.",
+        "2 signal hits came from rerun attempts, which is a classic flake smell."
+      ],
+      "evidence": [
+        "run #142 attempt 2 → failure on ubuntu-latest · https://github.com/owner/repo/actions/runs/142/job/1",
+        "run #143 attempt 1 → success on ubuntu-22.04 · https://github.com/owner/repo/actions/runs/143/job/2"
+      ]
+    }
+  ],
+  "trend": {
+    "status": "rising",
+    "compared_to_scan_id": "uuid-previous-...",
+    "compared_to_created_at": "2026-06-27T10:00:00+00:00",
+    "flaky_signal_delta": 1,
+    "quarantine_delta": 0,
+    "rerun_delta": 1,
+    "new_signal_count": 1,
+    "cleared_signal_count": 0,
+    "new_signals": ["CI · test-linux / Run tests"],
+    "cleared_signals": []
+  }
+}
+```
+
+**Status codes:**
+- `200 OK` — Scan completed successfully
+- `400 Bad Request` — Invalid repo format (not `owner/name`)
+- `502 Bad Gateway` — GitHub API fetch failure
+- `500 Internal Server Error` — Persistence failure
+
+---
+
+## Monitoring
+
+FlakeSting's only monitoring endpoint is `GET /health`, which provides:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `status` | `string` | `"ok"` or `"degraded"` |
+| `version` | `string` | Product version (`0.1.0`) |
+| `product` | `string` | Product display name |
+| `auth_enabled` | `bool` | Whether API-key auth is configured |
+| `config_errors` | `number` | Count of startup config check errors |
+| `db_ok` | `bool` | Whether SQLite responds to `SELECT 1` |
+| `db_path` | `string` | Resolved database path |
+| `github_ready` | `bool` | Whether a GitHub token is configured |
+| `scan_count` | `number` | Total scans in database |
+| `repo_count` | `number` | Distinct repositories scanned |
+| `flaky_signal_count` | `number` | Cumulative flaky signals across all scans |
+| `quarantine_candidate_count` | `number` | Cumulative quarantine candidates |
+| `mode` | `string` | Always `"github-actions-flake-detection"` |
+
+Logging is configured via `RUST_LOG`. There is no Prometheus endpoint,
+no Kubernetes liveness/readiness probes, and no metrics export.
+
+---
 
 ## Deployment
 
-### Docker
-FlakeSting provides multi-stage Docker builds for both backend and frontend:
+### Docker Compose
+
+The project ships a `docker-compose.yml` with three services:
 
 ```yaml
-# docker-compose.yml excerpt
 services:
   backend:
+    image: ghcr.io/patchhive/flakesting-backend:main
     build: ./backend
-    ports: ["8060:8060"]
+    ports: ["8060:8000"]        # Container port 8000
+    volumes: ["./data:/data"]
     environment:
-      - BOT_GITHUB_TOKEN=${BOT_GITHUB_TOKEN}
-      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - FLAKE_STING_DB_PATH=/data/flake-sting.db
+      - FLAKE_STING_PORT=8000
+      - RUST_LOG=info
+    env_file: [.env]
+    restart: unless-stopped
+
   frontend:
+    image: ghcr.io/patchhive/flakesting-frontend:main
     build: ./frontend
-    ports: ["5179:5179"]
+    ports: ["5179:8080"]
+    depends_on: [backend]
+    restart: unless-stopped
+
+  frontend-v2:
+    image: ghcr.io/patchhive/flakesting-frontend-v2:main
+    build:
+      context: ../..
+      dockerfile: products/flake-sting/frontend-v2/Dockerfile
+    ports: ["5198:8080"]
+    depends_on: [backend]
+    restart: unless-stopped
 ```
 
-### Kubernetes
-Helm charts are available in the `deploy/` directory for production deployments.
+Images are pulled from `ghcr.io/patchhive/`. Pull policy, image name, and
+tags are configurable via environment variables:
+- `PATCHHIVE_FLAKE_STING_BACKEND_IMAGE`
+- `PATCHHIVE_FLAKE_STING_FRONTEND_IMAGE`
+- `PATCHHIVE_FLAKE_STING_FRONTEND_V2_IMAGE`
+- `PATCHHIVE_IMAGE_TAG` (default: `main`)
+- `PATCHHIVE_IMAGE_PULL_POLICY` (default: `missing`)
+- `PATCHHIVE_BACKEND_UID` / `PATCHHIVE_BACKEND_GID` (default: `0`)
+
+**Note:** There is no Kubernetes/Helm deployment configuration. Docker Compose
+is the only supported deployment method.
 
 ### Resource Requirements
-- Backend: Minimum 256MB RAM, 1 CPU core (scales with concurrent scans)
-- Frontend: Minimum 256MB RAM (scales with concurrent users)
-- Database: SQLite file storage (size depends on scan history retention)
+
+- **Backend:** Minimal — single binary with bundled SQLite. Tested with 256 MB
+  RAM.
+- **Frontend:** Static web app served via container. Minimal overhead.
+- **Database:** SQLite file storage. Size depends on scan history retention.
+
+---
 
 ## Troubleshooting
 
-### Common Issues
-
-1. **Authentication Failures**
-   - Verify GitHub token has required permissions: Metadata read and Actions read for workflow run and job history.
-   - Check that rate limits are not being exceeded
-   - Ensure network connectivity to GitHub API
-
-2. **Discovery Problems**
-   - Verify repository access and correct repository reference
-   - Check that workflow runs are actually available and not restricted
-   - Review branch and workflow filters if expected runs are missing
-
-3. **Performance Issues**
-   - Monitor database size and consider pruning old scan history
-   - Adjust concurrent scan limits based on available resources
-   - Review GitHub API rate limiting and consider caching strategies for frequent scans
-
-4. **Flakiness Detection Problems**
-   - Verify that the lookback window is sufficient to capture patterns
-   - Check that job/step classification (test-like vs other) is working correctly
-   - Review sensitivity settings if flakiness seems over- or under-detected
+| Issue | Diagnosis | Resolution |
+|-------|-----------|------------|
+| **Auth failures on API calls** | `401 Unauthorized` on protected routes. | Set `FLAKE_STING_API_KEY_HASH` or generate a key via `POST /auth/generate-key` from localhost. |
+| **GitHub API errors** | `502 Bad Gateway` on `/scan/github/actions`. | Check `BOT_GITHUB_TOKEN` or `GITHUB_TOKEN` has `Actions: read` and `Metadata: read` scopes. |
+| **Rate limiting** | Slow scans or GitHub errors for public repos. | Configure a GitHub token to get higher rate limits. |
+| **No signals found** | Summary says "did not find fail/pass swings". | Increase `lookback_runs` (max 40). Verify job/step names match test-like keywords. Try without `workflow_name` and `branch` filters. |
+| **Empty scan results** | `workflow_runs` is 0. | Repository may have no completed workflow runs. Check repo name format (`owner/name`). |
+| **Database issues** | Health endpoint shows `db_ok: false`. | Verify `FLAKE_STING_DB_PATH` is writable. Check disk space. |
+| **Auth bootstrap** | `POST /auth/generate-key` returns 403. | Must be called from `localhost` (bootstrap restriction). Use `curl http://localhost:8060/auth/generate-key`. |
 
 ### Debugging
-- Enable debug logging with `RUST_LOG=debug`
-- Use the `/health` endpoint to verify service availability
-- Check scan details via `/scans/:id` for step-by-step execution tracing
-- Consult the database directly for historical analysis when needed
-- Examine raw workflow data to verify pattern detection logic
 
-## Contributing
+- Enable verbose logging: `RUST_LOG=debug`
+- Check startup checks: `GET /startup/checks`
+- Verify service state: `GET /health`
+- Examine a specific scan: `GET /history/:id`
+- Direct database inspection: `sqlite3 flake-sting.db "SELECT * FROM flake_scans;"`
 
-See [CONTRIBUTING.md](../../CONTRIBUTING.md) for detailed guidelines.
+---
 
-### Development Setup
-1. Clone the repository
-2. Run `./scripts/setup-dev.sh` to install dependencies
-3. Copy `.env.example` to `.env` and configure required variables
-4. Start services with `docker compose up --build` or split workflow
+## Related Products
 
-### Testing
-- Backend: `cargo test` (unit and integration tests)
-- Frontend: `npm test` (Jest and React Testing Library)
-- End-to-end: Cypress tests in `e2e/` directory
+- **HiveCore** — Can surface FlakeSting health, capabilities, run history, and
+  CI-trust pressure. Service dispatch paths (`/scan/github/actions`) allow
+  HiveCore to trigger scans remotely via the `X-PatchHive-Service-Token` auth
+  mechanism.
+- **MergeKeeper** (future) — Can use FlakeSting output to avoid over-trusting
+  flaky checks during merge validation.
 
-### Documentation
-- Update API documentation when changing endpoints
-- Add runbooks for new operational procedures
-- Keep product documentation in sync with implementation changes
-
-## License
-
-See [LICENSE](../../LICENSE) for details.
+---
 
 ## Standalone Repository
 
-The PatchHive monorepo is the source of truth for FlakeSting development. The standalone [`patchhive/flakesting`](https://github.com/patchhive/flakesting) repository is an exported mirror of this directory.
+The PatchHive monorepo is the source of truth for FlakeSting development. The
+standalone [`patchhive/flakesting`](https://github.com/patchhive/flakesting)
+repository is an exported mirror of this directory.
+
+---
+
+## Current Status
+
+- **Version:** `0.1.0`
+- **Mode:** `github-actions-flake-detection` (single CI provider)
+- **Auth:** API key + service token (optional, bootstrap from localhost)
+- **Storage:** SQLite (single file, no external database)
+- **CI platforms:** GitHub Actions only
+- **Deployment:** Docker Compose only (no Kubernetes/Helm)
+- **Observability:** Single `/health` endpoint with status + counters.
+  No Prometheus, no metrics export, no structured log correlation IDs.

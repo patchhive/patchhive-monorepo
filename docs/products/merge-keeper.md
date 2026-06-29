@@ -8,35 +8,43 @@ MergeKeeper turns pull request state into a clear merge-readiness decision. It r
 
 ## Product Role
 
-MergeKeeper is merge-readiness-first. It is the convergence point for GitHub state, ReviewBee review pressure, TrustGate safety decisions, RepoMemory repo expectations, and CI health.
+MergeKeeper is merge-readiness-first. It is the convergence point for GitHub state, ReviewBee review pressure, TrustGate safety decisions, RepoMemory repo expectations, and CI health. Its job is to make the path to merge obvious and explainable — it does not merge code, bypass review, approve pull requests, or force checks green in the MVP.
 
 ## Core Workflow
 
-1. Fetch pull request metadata and branch state.
-2. Read review decisions and unresolved review pressure.
-3. Inspect commit status and check health.
+1. Fetch pull request metadata, reviewer decisions, review-thread pressure, and check health.
+2. Convert that into a single merge-readiness state: `ready`, `hold`, or `blocked`.
+3. Show blockers and hold-level warnings clearly with evidence.
 4. Optionally fold in ReviewBee, TrustGate, and RepoMemory context.
-5. Produce a readiness state with clear reasons.
-6. Optionally publish visible GitHub output.
+5. Optionally publish a maintained PR comment and check/status signal back to GitHub.
+6. Persist every assessment to a SQLite history table.
 
 ## Inputs
 
-- GitHub pull request reference.
-- Reviews, review threads, commits, and checks.
-- Optional ReviewBee checklist state.
-- Optional TrustGate diff risk.
-- Optional RepoMemory merge expectations.
+- **GitHub pull request** — repository (`owner/name`) and PR number.
+- **Reviewer decisions** — approvals, changes-requested, comment-only reviews.
+- **Review threads** — resolved, unresolved, and actionable open threads.
+- **Commit/check health** — success, failure, pending status contexts and check runs.
+- **Diff data** — changed files, additions, deletions, and per-file paths.
+- **Optional: ReviewBee context** — open checklist items, actionable threads.
+- **Optional: TrustGate context** — recommendation, risk score, blocked/warning findings.
+- **Optional: RepoMemory context** — policy entries, pinned entries, repo-specific merge expectations.
+- **Configuration** — `require_approval` flag (defaults to `MERGE_KEEPER_REQUIRE_APPROVAL` env var or `true`).
 
 ## Outputs
 
-- `ready`, `hold`, or `blocked` decision.
-- Reason list and evidence.
-- Saved readiness history.
-- Optional maintained comment or check-style output.
+- **Readiness state**: `ready`, `hold`, or `blocked`.
+- **Blockers**: hard signals that block merge (e.g. merge conflict, failing checks, changes requested, closed/draft PR).
+- **Warnings**: hold-level signals (e.g. no approval, pending checks, open review threads, wide diff, integration findings).
+- **Evidence strings**: per-signal supporting detail (e.g. check names, reviewer names, thread excerpts).
+- **Merge metrics**: approvals, changes-requested, comment-reviews, reviewer count, review threads (total/open/actionable), successful/pending/failing checks, changed files, additions, deletions.
+- **Cross-product context**: embedded ReviewBee, TrustGate, RepoMemory previews when available.
+- **GitHub report** (optional): attempt to publish a maintained PR comment + check run (falls back to commit status).
+- **Persisted history**: full `MergeAssessment` JSON stored in SQLite with indexed lookups.
 
 ## Safety Boundary
 
-MergeKeeper does not merge code in the MVP. It tells a human or another product whether the pull request appears ready, blocked, or still waiting.
+MergeKeeper does not merge code, bypass review, approve pull requests, or force checks green in the MVP. Its job is to make the path to merge obvious and explainable.
 
 ## Local Development
 
@@ -48,8 +56,9 @@ docker compose up --build
 
 Defaults:
 - Frontend: `http://localhost:5178`
+- Frontend v2 prototype: `http://localhost:5197`
 - Backend: `http://localhost:8050`
-- Database: `MERGE_KEEPER_DB_PATH`
+- Database: `merge-keeper.db` (configurable via `MERGE_KEEPER_DB_PATH`)
 
 Split local workflow:
 ```bash
@@ -57,223 +66,308 @@ cd products/merge-keeper/backend
 cargo run
 
 cd ../frontend
-npm install
-npm run dev
+npm install && npm run dev
+
+# or for the v2 prototype
+cd ../frontend-v2
+npm install && npm run dev
 ```
 
-## Important Configuration
+## Configuration
 
 | Variable | Purpose |
 |----------|---------|
-| `BOT_GITHUB_TOKEN` | GitHub token for PR, review, and check reads. |
-| `GITHUB_TOKEN` | Optional fallback GitHub token. |
-| `MERGE_KEEPER_API_KEY_HASH` | Optional preconfigured API-key hash. |
+| `BOT_GITHUB_TOKEN` | Fine-grained PAT for pull request, review, and check reads. Add Checks (write), Commit statuses (write), and Issues (write) for GitHub publishing. |
+| `GITHUB_TOKEN` | Fallback GitHub token. |
+| `MERGE_KEEPER_GITHUB_WEBHOOK_SECRET` | Optional signed webhook secret for auto-refresh on supported PR events. |
+| `MERGE_KEEPER_PUBLIC_URL` | Optional public URL for deep-links from GitHub artifacts back to saved runs. |
+| `MERGE_KEEPER_REQUIRE_APPROVAL` | Default approval policy (`true` = require one active approval before calling a PR ready). Manual API runs can override per assessment. Defaults to `true`. |
+| `MERGE_KEEPER_API_KEY_HASH` | Optional pre-seeded API-key hash. Otherwise generate the first local key from the API (`POST /auth/generate-key`). |
 | `MERGE_KEEPER_SERVICE_TOKEN_HASH` | Optional pre-seeded service-token hash for HiveCore or other PatchHive product callers. |
-| `MERGE_KEEPER_DB_PATH` | SQLite database path. |
-| `MERGE_KEEPER_PORT` | Backend port. |
-| `MERGE_KEEPER_GITHUB_WEBHOOK_SECRET` | Signed webhook secret. |
-| `MERGE_KEEPER_PUBLIC_URL` | Public URL for GitHub-linked artifacts. |
-| `PATCHHIVE_REVIEW_BEE_URL` | Optional ReviewBee integration. |
-| `PATCHHIVE_TRUST_GATE_URL` | Optional TrustGate integration. |
-| `PATCHHIVE_REPO_MEMORY_URL` | Optional RepoMemory integration. |
+| `MERGE_KEEPER_DB_PATH` | SQLite database path (default: `merge-keeper.db`). |
+| `MERGE_KEEPER_DB_POOL_SIZE` | SQLite connection pool size (default: product-core default). |
+| `MERGE_KEEPER_PORT` | Backend port (default: `8050`). |
+| `PATCHHIVE_REVIEW_BEE_URL` | Optional ReviewBee base URL. |
+| `PATCHHIVE_REVIEW_BEE_API_KEY` | Optional ReviewBee API key. |
+| `PATCHHIVE_TRUST_GATE_URL` | Optional TrustGate base URL. |
+| `PATCHHIVE_TRUST_GATE_API_KEY` | Optional TrustGate API key. |
+| `PATCHHIVE_REPO_MEMORY_URL` | Optional RepoMemory base URL. |
+| `PATCHHIVE_REPO_MEMORY_API_KEY` | Optional RepoMemory API key. |
+| `RUST_LOG` | Rust logging level (default: `info`). |
 
-MergeKeeper works best with a fine-grained GitHub token. Metadata read and Pull requests read are enough for the base product loop; Actions read can add CI evidence. Maintained comments or check-style output may need extra write permissions. See [GitHub token scopes](../github-token-scopes.md).
+## Technical Architecture
 
-## HiveCore Fit
+### Module Tree
 
-HiveCore can use MergeKeeper as a suite-level readiness signal once product handoffs become more common. MergeKeeper should still make its decision through product-owned APIs and explicit integrations, not through private database reads.
+```
+backend/src/
+├── main.rs              # Router definition, server bootstrap
+├── models.rs            # Request/response types (AssessmentRequest, MergeAssessment, etc.)
+├── db.rs                # SQLite persistence (merge_runs table)
+├── github.rs            # GitHub API client, PR context fetching, report publishing
+├── integrations.rs      # ReviewBee, TrustGate, RepoMemory client wrappers
+├── startup.rs           # Configuration validation checks
+├── state.rs             # AppState (reqwest Client)
+├── pipeline/
+│   ├── mod.rs
+│   ├── routes.rs        # Axum route handlers for all endpoints
+│   ├── assessment.rs    # Readiness assessment logic (blockers, warnings, summary)
+│   └── utils.rs         # Shared utilities (API error helpers, text analysis, diff parsing)
+└── auth/                # Generated by patchhive_product_core::define_api_key_auth_module!
+```
+
+### Key Dependencies
+
+- **axum** — HTTP server framework
+- **patchhive_product_core** — shared library providing: auth module, rate limiting, CORS, SQLite pool, startup check framework, capability contract, RepoMemory client
+- **patchhive_github_pr** — GitHub PR client for fetching PR details, reviews, review threads, commit health, diffs, and publishing check runs / commit statuses / managed comments
+- **reqwest** — HTTP client for integrations
+- **rusqlite** — SQLite driver
+- **serde / serde_json** — serialization
+- **chrono** — timestamps
+- **uuid** — assessment IDs
+- **tokio** — async runtime
+- **tracing / tracing-subscriber** — structured logging
+
+### Data Flow
+
+1. **Request received** — `POST /assess/github/pr` (manual) or `POST /webhooks/github` (webhook).
+2. **GitHub fetch** — `github::fetch_merge_context()` retrieves PR detail, reviews, review threads, commit health, and diff in parallel via `GitHubPrClient`. Mergeability state is refreshed with up to 2 retries (900ms delay) if GitHub returns `unknown`.
+3. **Assessment build** — `build_assessment()` in `pipeline/assessment.rs`:
+   a. Counts approvals, changes-requested, comment-only reviews from latest-per-reviewer state.
+   b. Analyzes review threads for unresolved / actionable open threads.
+   c. Collects commit check health (success, failure, pending counts with evidence).
+   d. Applies hard blockers: closed PR, already merged, draft, merge conflict, failing checks, changes-requested.
+   e. Applies warnings: uncertain merge-state, pending checks, no approval, open review threads, wide diff.
+   f. Fetches ReviewBee, TrustGate, and RepoMemory context concurrently via `tokio::join!`.
+   g. Applies cross-product signals: ReviewBee pressure, TrustGate block/warn, RepoMemory policy expectations.
+   h. Readiness is determined: any blocker → `blocked`, any warning (but no blockers) → `hold`, otherwise → `ready`.
+4. **GitHub context attached** — trigger metadata (webhook event/action or manual) saved in assessment.
+5. **Report publish** — optionally publishes a maintained PR comment + check run (falls back to commit status) via `github::publish_assessment_outcome()`.
+6. **Persistence** — full `MergeAssessment` JSON stored in SQLite `merge_runs` table with indexed columns for history queries.
+
+## API Endpoints
+
+All non-public endpoints require `X-API-Key` or `X-PatchHive-Service-Token` header. Public paths: `/health`, `/auth/login`, `/auth/status`, `/auth/generate-key`, `/auth/generate-service-token`, `/auth/rotate-service-token`, `/startup/checks`, `/capabilities`, `/webhooks/github`.
+
+### Health & Status
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/health` | Health check. Returns service status, DB health, GitHub token readiness, integration configuration, assessment counts, and version. |
+| `GET` | `/startup/checks` | Detailed startup verification results (warnings, errors, info). |
+| `GET` | `/capabilities` | Advertised product capabilities following the PatchHive contract format (actions + links). |
+
+**`GET /health` response shape** (JSON):
+```json
+{
+  "status": "ok" | "degraded",
+  "version": "0.1.0",
+  "product": "MergeKeeper by PatchHive",
+  "auth_enabled": true,
+  "config_errors": 0,
+  "db_ok": true,
+  "db_path": "merge-keeper.db",
+  "github_ready": true,
+  "assessment_count": 42,
+  "repo_count": 5,
+  "ready_count": 30,
+  "hold_count": 8,
+  "blocked_count": 4,
+  "mode": "github-merge-readiness",
+  "policy": { "approval_required_default": true },
+  "github": {
+    "token_configured": true,
+    "webhook_secret_configured": true,
+    "public_url_configured": false,
+    "report_publish_ready": true
+  },
+  "integrations": {
+    "review_bee_configured": true,
+    "trust_gate_configured": true,
+    "repo_memory_configured": false
+  }
+}
+```
+
+Error states:
+- DB failure or config errors > 0 → `status: "degraded"`.
+- Missing GitHub token → `github_ready: false`, `report_publish_ready: false`.
+
+### Authentication
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/auth/status` | Returns current auth configuration state. Public. |
+| `POST` | `/auth/login` | Verify an API key. Body: `{"api_key": "..."}`. Returns `{"ok": true, "auth_enabled": true, "auth_configured": true}`. Errors: `503 SERVICE_UNAVAILABLE` if auth is not enabled, `401 UNAUTHORIZED` if key is invalid. Public. |
+| `POST` | `/auth/generate-key` | Generate the first API key (only when auth is not yet configured; localhost-only). Returns `{"api_key": "...", "message": "Store this — it won't be shown again"}`. Public. |
+| `POST` | `/auth/generate-service-token` | Generate the first service token for HiveCore or other PatchHive product callers (only when service auth is not yet configured). Returns `{"service_token": "...", "message": "..."}`. Public. |
+| `POST` | `/auth/rotate-service-token` | Rotate an existing service token. Returns `{"service_token": "...", "message": "..."}`. Public. |
+
+### Readiness Assessment
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/assess/github/pr` | Assess a GitHub pull request's merge readiness. **Requires auth.** |
+| `POST` | `/webhooks/github` | Process a signed GitHub webhook for automatic readiness refresh on supported PR events. Public. |
+
+**`POST /assess/github/pr` request body**:
+```json
+{
+  "repo": "owner/repo-name",
+  "pr_number": 123,
+  "publish_report": true,
+  "require_approval": true
+}
+```
+
+- `repo`: required, must be in `owner/name` format.
+- `pr_number`: required, must be > 0.
+- `publish_report`: optional, defaults to `true`.
+- `require_approval`: optional (`null` = use `MERGE_KEEPER_REQUIRE_APPROVAL` env default).
+
+**Response**: a full `MergeAssessment` object (see Outputs section for structure).
+
+Error codes:
+- `400 BAD_REQUEST` — invalid repo format or PR number.
+- `502 BAD_GATEWAY` — GitHub API error during fetch.
+- `500 INTERNAL_SERVER_ERROR` — persistence failure.
+
+**`POST /webhooks/github`**:
+- Requires `MERGE_KEEPER_GITHUB_WEBHOOK_SECRET` to be configured.
+- Verifies `X-Hub-Signature-256` against the webhook secret.
+- Supported events: `pull_request` (opened, reopened, synchronize, ready_for_review, edited, closed), `pull_request_review` (submitted, edited, dismissed), `pull_request_review_comment` (created, edited, deleted), `pull_request_review_thread` (resolved, unresolved), `check_run` (created, completed, rerequested), `check_suite` (completed, rerequested).
+- Returns `{"triggered": true, "event": "...", "action": "...", "readiness": "ready|hold|blocked", "assessment": {...}}`.
+- Unsupported events return `{"triggered": false, ...}`.
+
+### History & Overview
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/overview` | Product overview with aggregate counts (total runs, repos, ready/blocked/hold breakdown) and 6 most recent runs. Public. |
+| `GET` | `/history` | List last 30 assessment history items. Public. |
+| `GET` | `/history/:id` | Get a single full assessment by ID. Public. |
+| `GET` | `/runs` | HiveCore contract-compatible runs list (delegates to history). Public. |
+
+**`GET /overview` response shape**:
+```json
+{
+  "product": "MergeKeeper by PatchHive",
+  "tagline": "Read GitHub merge pressure and turn it into a clean readiness call...",
+  "counts": {
+    "runs": 42,
+    "repos": 5,
+    "ready_runs": 30,
+    "blocked_runs": 4,
+    "hold_runs": 8
+  },
+  "recent_runs": [ ... ]
+}
+```
+
+**`GET /history` response**: array of `HistoryItem` objects:
+```json
+{
+  "id": "uuid",
+  "repo": "owner/repo",
+  "pr_number": 123,
+  "pr_title": "Fix the thing",
+  "readiness": "ready",
+  "summary": "This PR looks merge-ready...",
+  "blockers_count": 0,
+  "warnings_count": 1,
+  "approvals_count": 1,
+  "failing_checks_count": 0,
+  "pending_checks_count": 0,
+  "created_at": "2025-01-01T00:00:00Z"
+}
+```
+
+**`GET /history/:id`** returns the full `MergeAssessment` JSON, or `404 {"error": "MergeKeeper run not found"}`.
+
+## Monitoring
+
+### Health Endpoint (`GET /health`)
+
+The health endpoint provides a single diagnostic snapshot including:
+
+- **Service status**: `"ok"` or `"degraded"` based on config errors and DB health.
+- **Database**: connection check via `SELECT 1`, reports path.
+- **GitHub readiness**: whether a token is configured, webhook secret is set, public URL is set, and whether report publishing is ready.
+- **Integration status**: whether ReviewBee, TrustGate, and RepoMemory are each configured.
+- **Assessment counts**: total runs, unique repos, and breakdown by readiness state.
+- **Policy**: current `approval_required_default` value.
+
+Designed for container orchestration health checks (Docker HEALTHCHECK, K8s probes if applicable).
+
+### Startup Checks (`GET /startup/checks`)
+
+Returns detailed info/warn/error-level checks from `startup::validate_config()` including DB path, auth status, GitHub token presence, approval policy, integration URLs, webhook secret, and public URL configuration.
+
+### Logging
+
+Controlled by `RUST_LOG` environment variable (default: `info`). Structured logging via `tracing` / `tracing-subscriber`.
+
+## Deployment
+
+### Docker
+
+```bash
+cd products/merge-keeper
+cp .env.example .env
+# Edit .env with your GitHub token and optional configuration
+docker compose up --build
+```
+
+The Docker Compose setup starts the backend (port 8050), the frontend (port 5178), and optionally the frontend-v2 prototype (port 5197).
+
+### Minimal Standalone
+
+```bash
+cd products/merge-keeper/backend
+cp ../.env.example .env
+# Set BOT_GITHUB_TOKEN at minimum
+cargo run --release
+```
+
+The backend runs on `MERGE_KEEPER_PORT` (default 8050). No external database server is required — SQLite stores history in a local file at `MERGE_KEEPER_DB_PATH`.
+
+## Troubleshooting
+
+| Symptom | Cause | Check |
+|---------|-------|-------|
+| `POST /assess/github/pr` returns `502` | GitHub API error — missing or invalid token, network issue, or PR doesn't exist | Verify `BOT_GITHUB_TOKEN` or `GITHUB_TOKEN` is set and has Metadata (read) + Pull requests (read) scopes. Verify the repo and PR number are correct. |
+| `POST /assess/github/pr` returns `400 "Repository must be in owner/name format"` | `repo` field is not in `owner/repo-name` format | Ensure the `repo` value contains exactly one `/` with non-empty owner and name segments. |
+| GitHub report is not published (`github_report.delivered: false`) | Token missing or lacks write scopes | Check `github_report.details` for the specific failure. Ensure token has Checks (write), Commit statuses (write), and Issues (write). |
+| Webhook returns `401` | Signature mismatch — `MERGE_KEEPER_GITHUB_WEBHOOK_SECRET` doesn't match the webhook secret configured in GitHub | Compare the webhook secret in GitHub repo settings with the `.env` value. |
+| Webhook returns `503` | `MERGE_KEEPER_GITHUB_WEBHOOK_SECRET` is not configured | Set `MERGE_KEEPER_GITHUB_WEBHOOK_SECRET` in `.env`. |
+| Webhook returns `{"triggered": false}` | The webhook event/action is not in the supported list | Supported events: `pull_request` (opened/reopened/synchronize/ready_for_review/edited/closed), `pull_request_review` (submitted/edited/dismissed), `pull_request_review_comment` (created/edited/deleted), `pull_request_review_thread` (resolved/unresolved), `check_run` (created/completed/rerequested), `check_suite` (completed/rerequested). |
+| Assessment always returns `blocked` with `pr-closed` | The PR is closed (merged or closed without merge) | Verify the PR is in open state. |
+| Assessment always returns `hold` with `no-approval` | `MERGE_KEEPER_REQUIRE_APPROVAL` defaults to `true` and no reviewer has approved | Set `require_approval: false` in the request body, or set `MERGE_KEEPER_REQUIRE_APPROVAL=false` in `.env`. |
+| DB connection error on startup | SQLite path is not writable or directory doesn't exist | Ensure the directory for `MERGE_KEEPER_DB_PATH` exists and is writable. Default path is the current working directory. |
+| Health shows `"status": "degraded"` | Config errors or DB health check failed | Check `GET /startup/checks` for specific errors. Verify DB path and permissions. Ensure a GitHub token is configured. |
 
 ## Integrations
 
 MergeKeeper is stronger when the rest of PatchHive is available, but it still works on its own.
 
-- `PATCHHIVE_REVIEW_BEE_URL` adds review churn context.
-- `PATCHHIVE_TRUST_GATE_URL` adds safety and policy pressure.
-- `PATCHHIVE_REPO_MEMORY_URL` adds repo-specific merge expectations.
+- **ReviewBee** (`PATCHHIVE_REVIEW_BEE_URL`): Adds review churn context. Calls `{url}/review/github/pr` with repo, pr_number, and publish_comment=false. Contributes `review-bee-pressure` (blocker) or `review-bee-follow-up` (warning) signals based on open checklist items and actionable threads.
+- **TrustGate** (`PATCHHIVE_TRUST_GATE_URL`): Adds safety and policy pressure via diff-risk analysis. Calls `{url}/review/github/pr` with repo, pr_number, ai_source="mergekeeper", and publish_status=false. Contributes `trust-gate-block` (blocker) or `trust-gate-warn` (warning) signals based on recommendation.
+- **RepoMemory** (`PATCHHIVE_REPO_MEMORY_URL`): Adds repo-specific merge expectations. Uses `patchhive_product_core::repo_memory::fetch_repo_memory_context()` with changed paths and diff summary. Contributes `repo-memory-policy` (warning) signal when policy or pinned entries exist.
 
 If those services are not configured, MergeKeeper falls back to GitHub-only readiness logic.
 
-## Technical Architecture
+## Related Products
 
-### Backend Structure
+- **ReviewBee** — tracks active review checklist state per PR.
+- **TrustGate** — evaluates diff risk and policy violations.
+- **RepoMemory** — stores repo-specific merge expectations and conventions.
+- **HiveCore** — can use MergeKeeper as a suite-level readiness signal once product handoffs mature.
 
-MergeKeeper's backend is organized around a pull request analysis pipeline:
+## Current Status
 
-- **PR Fetcher**: Retrieves pull request metadata, branch state, and GitHub context
-- **Review Analyzer**: Examines reviewer decisions, review threads, and unresolved pressure
-- **Commit & Check Inspector**: Analyzes commit status, check runs, and CI health
-- **Context Integrator**: Optionally folds in signals from ReviewBee, TrustGate, and RepoMemory
-- **Decision Engine**: Produces `ready`, `hold`, or `blocked` state with evidence-based reasoning
-- **Output Publisher**: Optionally maintains GitHub comments or check-style output for visibility
-- **History Tracker**: Stores readiness decisions for trend analysis and audit trails
-
-### Data Flow
-
-1. PR discovery → Metadata extraction → Branch analysis
-2. Review processing → Decision extraction → Pressure quantification
-3. Commit/check inspection → Status analysis → Health scoring
-4. Context integration (optional) → Signal fusion → Enhanced decision making
-5. Readiness determination → Reason compilation → Evidence collection
-6. Optional publishing → History storage → Output generation
-
-### Key Components
-
-- **GitHub Client**: Handles API calls for PRs, reviews, commits, and checks
-- **Review Parser**: Normalizes review data across different formats and states
-- **Commit Analyzer**: Examines commit signatures, status checks, and mergeability
-- **CI Health Monitor**: Tracks check run conclusions, timing, and trends
-- **Review Pressure Calculator**: Quantifies unresolved feedback and reviewer engagement
-- **Context Adapter**: Integrates signals from other PatchHive products when available
-- **Decision Matrix**: Combines all inputs into readiness states with confidence levels
-- **Evidence Collector**: Gathers supporting data like timestamps, reviewer info, and check details
-- **Publisher**: Maintains GitHub comments or check outputs for team visibility
-- **History Manager**: Tracks decision history for analytics and improvement
-
-### Extensibility Points
-
-- Additional context sources can be integrated (Linear, Jira, custom issue trackers)
-- Alternative decision algorithms can be plugged in (weighted scoring, ML models, etc.)
-- Additional output formats can be supported (Slack/Teams notifications, email summaries)
-- Webhook support for triggering re-evaluations from external events
-- Integration with merge queues and automation systems for safer merges
-
-## API Endpoints
-
-MergeKeeper exposes a RESTful API for integration and control:
-
-### Health & Status
-- `GET /health` - Basic health check
-- `GET /startup/checks` - Detailed startup verification
-- `GET /capabilities` - Advertised product capabilities
-- `GET /version` - Version information
-
-### Readiness Analysis
-- `GET /ready/:owner/:repo/:pull_number` - Get readiness decision for a PR
-- `GET /hold/:owner/:repo/:pull_number` - Get hold decision with reasons
-- `GET /blocked/:owner/:repo/:pull_number` - Get blocked decision with blockers
-- `GET /readiness/:owner/:repo/:pull_number` - Get full readiness analysis
-
-### Context Integration
-- `GET /context/reviewbee` - Get ReviewBee context if configured
-- `GET /context/trustgate` - Get TrustGate context if configured
-- `GET /context/repomemory` - Get RepoMemory context if configured
-
-### History & Analytics
-- `GET /history` - Get readiness decision history with filtering
-- `GET /statistics` - Get readiness statistics and trends
-- `GET /trends` - Get readiness trends over time
-
-### Configuration
-- `GET /config` - Get current configuration (sanitized)
-- `POST /config` - Update runtime configuration
-
-### Authentication
-- `POST /auth/generate-service-token` - Create a service token for machine-to-machine calls
-- `POST /auth/rotate-service-token` - Rotate an existing service token
-
-### Output Management
-- `POST /output/comment` - Publish or update a maintained GitHub comment
-- `POST /output/check` - Publish or update a check-style run
-- `DELETE /output/:id` - Remove a published output
-
-## Monitoring & Observability
-
-MergeKeeper provides several mechanisms for monitoring and debugging:
-
-### Metrics
-- Prometheus-compatible metrics endpoint at `/metrics`
-- Key metrics include PR processing rates, decision distributions, context integration usage, and output publication rates
-
-### Logging
-- Structured logging with configurable log levels via `RUST_LOG`
-- Correlation IDs for tracing individual PR analyses through the pipeline
-- Audit trails for all GitHub operations and published outputs
-
-### Health Checks
-- Liveness and readiness probes for Kubernetes deployment
-- Dependency health checks for database and GitHub connectivity
-
-## Deployment
-
-### Docker
-MergeKeeper provides multi-stage Docker builds for both backend and frontend:
-
-```yaml
-# docker-compose.yml excerpt
-services:
-  backend:
-    build: ./backend
-    ports: ["8050:8050"]
-    environment:
-      - BOT_GITHUB_TOKEN=${BOT_GITHUB_TOKEN}
-      - GITHUB_TOKEN=${GITHUB_TOKEN}
-  frontend:
-    build: ./frontend
-    ports: ["5178:5178"]
-```
-
-### Kubernetes
-Helm charts are available in the `deploy/` directory for production deployments.
-
-### Resource Requirements
-- Backend: Minimum 256MB RAM, 1 CPU core (scales with concurrent PR analysis)
-- Frontend: Minimum 256MB RAM (scales with concurrent users)
-- Database: SQLite file storage (size depends on readiness history retention)
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Authentication Failures**
-   - Verify GitHub token has required permissions: Metadata read and Pull requests read for readiness analysis; Actions read for workflow evidence; write permissions only for maintained comments, statuses, or checks.
-   - Check that rate limits are not being exceeded
-   - Ensure network connectivity to GitHub API
-
-2. **Analysis Problems**
-   - Verify PR access and correct repository reference
-   - Check that reviews and checks are actually available and not restricted
-   - Review branch protection rules if expected checks are missing
-
-3. **Integration Issues**
-   - Verify downstream service URLs are correct and accessible
-   - Check that service tokens are valid and not expired
-   - Review webhook configurations if refreshes aren't working
-
-4. **Performance Issues**
-   - Monitor database size and consider pruning old readiness history
-   - Adjust concurrent PR limits based on available resources
-   - Review GitHub API rate limiting and consider caching strategies for frequent analyses
-
-### Debugging
-- Enable debug logging with `RUST_LOG=debug`
-- Use the `/health` endpoint to verify service availability
-- Check analysis details via readiness endpoints for step-by-step execution tracing
-- Consult the database directly for historical analysis when needed
-- Examine raw PR data to verify decision logic
-
-## Contributing
-
-See [CONTRIBUTING.md](../../CONTRIBUTING.md) for detailed guidelines.
-
-### Development Setup
-1. Clone the repository
-2. Run `./scripts/setup-dev.sh` to install dependencies
-3. Copy `.env.example` to `.env` and configure required variables
-4. Start services with `docker compose up --build` or split workflow
-
-### Testing
-- Backend: `cargo test` (unit and integration tests)
-- Frontend: `npm test` (Jest and React Testing Library)
-- End-to-end: Cypress tests in `e2e/` directory
-
-### Documentation
-- Update API documentation when changing endpoints
-- Add runbooks for new operational procedures
-- Keep product documentation in sync with implementation changes
-
-## License
-
-See [LICENSE](../../LICENSE) for details.
+- **MVP features**: GitHub PR assessment with reviewer state, review threads, commit/check health, diff analysis, optional integration context, GitHub report publishing (PR comment + check run / commit status), webhook auto-refresh, SQLite history, auth (API key + service token), startup validation, health endpoint.
+- **Not yet in scope**: auto-merge, PR approval, forced check override, external issue tracker integration, Slack/Teams notifications, ML-based decision models.
 
 ## Standalone Repository
 
