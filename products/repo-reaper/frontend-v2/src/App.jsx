@@ -52,6 +52,32 @@ const DEFAULT_DRY_PARAMS = {
   concurrency: "1",
 };
 
+const AGENT_ROLES = [
+  { value: "scout", label: "Scout", detail: "scores issues and dry-run candidates" },
+  { value: "judge", label: "Judge", detail: "chooses code context" },
+  { value: "reaper", label: "Reaper", detail: "generates patches" },
+  { value: "smith", label: "Smith", detail: "rejects weak patches" },
+  { value: "gatekeeper", label: "Gatekeeper", detail: "validates and prepares PRs" },
+];
+
+const PROVIDER_MODELS = {
+  anthropic: "claude-sonnet-4-6",
+  openai: "gpt-5.4-mini",
+  gemini: "gemini-2.5-pro",
+  groq: "llama-3.3-70b-versatile",
+  custom: "gpt-4.1-mini",
+  ollama: "llama3.2",
+};
+
+const PROVIDER_LABELS = {
+  anthropic: "Anthropic",
+  openai: "OpenAI / local gateway",
+  gemini: "Gemini",
+  groq: "Groq",
+  custom: "Custom compatible",
+  ollama: "Ollama",
+};
+
 function asCount(value) {
   const number = Number(value || 0);
   return Number.isFinite(number) ? number : 0;
@@ -118,6 +144,46 @@ function githubReady(config, health) {
 
 function aiReady(config) {
   return Boolean(config?.PROVIDER_API_KEY_SET || config?.PATCHHIVE_AI_URL || config?.AI_LOCAL_STATUS?.ok || config?.AI_LOCAL_STATUS?.status === "ok");
+}
+
+function agentsReady(agents, health) {
+  return Boolean((Array.isArray(agents) && agents.length) || asCount(health?.agents));
+}
+
+function defaultAgentProvider(config) {
+  if (config?.PATCHHIVE_AI_URL || config?.AI_LOCAL_STATUS?.ok || config?.AI_LOCAL_STATUS?.status === "ok") return "openai";
+  if (config?.PROVIDER_API_KEY_SET) return "anthropic";
+  return "openai";
+}
+
+function blankAgent(config, role = "scout") {
+  const provider = defaultAgentProvider(config);
+  return {
+    api_key: "",
+    base_url: "",
+    bot_token: "",
+    bot_user: "",
+    model: PROVIDER_MODELS[provider] || "",
+    name: `PatchHive ${AGENT_ROLES.find((item) => item.value === role)?.label || "Agent"}`,
+    provider,
+    role,
+  };
+}
+
+function starterTeam(config) {
+  const provider = defaultAgentProvider(config);
+  const model = PROVIDER_MODELS[provider] || "";
+  return AGENT_ROLES.map((role) => ({
+    api_key: "",
+    base_url: "",
+    bot_token: "",
+    bot_user: "",
+    id: `${role.value}-${Date.now()}`,
+    model,
+    name: `PatchHive ${role.label}`,
+    provider,
+    role: role.value,
+  }));
 }
 
 async function parseJsonResponse(response, fallbackError) {
@@ -326,7 +392,7 @@ function RunRadar({ config, history, stream }) {
   );
 }
 
-function RunForm({ disabled, error, onChange, onStart, params, running, title }) {
+function RunForm({ disabled, disabledReason, error, onChange, onStart, params, running, title }) {
   const set = (key, value) => onChange((current) => ({ ...current, [key]: value }));
   return (
     <Panel eyebrow="Run" title={title} action={<span className="chip amber">guarded</span>}>
@@ -377,6 +443,7 @@ function RunForm({ disabled, error, onChange, onStart, params, running, title })
             </button>
           </div>
         </div>
+        {disabledReason && <StatusBanner tone="amber">{disabledReason}</StatusBanner>}
         {error && <StatusBanner tone="red">{error}</StatusBanner>}
       </form>
     </Panel>
@@ -521,6 +588,7 @@ function PrOutcomePanel({ prs }) {
 }
 
 function MissionDeck({
+  agents,
   config,
   error,
   health,
@@ -540,6 +608,14 @@ function MissionDeck({
 }) {
   const rail = useMemo(() => buildRail(health, config, { ...stream, params }, history, selectedRun, watchMode), [health, config, stream, params, history, selectedRun, watchMode]);
   const metrics = useMemo(() => buildMetrics(health, stream, history, rejected, lifetimeCost, selectedRun), [health, stream, history, rejected, lifetimeCost, selectedRun]);
+  const teamReady = agentsReady(agents, health);
+  const disabledReason = !teamReady
+    ? "Recruit a RepoReaper agent team in Checks before starting a hunt."
+    : !githubReady(config, health)
+      ? "Configure the PatchHive bot GitHub token before outbound hunts."
+      : !aiReady(config)
+        ? "Configure an AI provider or PatchHive Local AI before patch generation."
+        : "";
   return (
     <>
       <SuiteTopline cells={buildTopline(health, config, stream, history)} />
@@ -558,7 +634,7 @@ function MissionDeck({
               <button className="btn" onClick={onRefresh} type="button">Refresh</button>
             </div>
           </div>
-          <RunForm disabled={!githubReady(config, health) || !aiReady(config)} error={error} onChange={onChangeParams} onStart={onStartRun} params={params} running={stream.running} title="Start hunt" />
+          <RunForm disabled={!teamReady || !githubReady(config, health) || !aiReady(config)} disabledReason={disabledReason} error={error} onChange={onChangeParams} onStart={onStartRun} params={params} running={stream.running} title="Start hunt" />
           <MetricBand metrics={metrics} />
           <div className="atlas-layout suite-four-layout">
             <Panel eyebrow="Pipeline" title="Autonomous run map" action={<span className={`chip ${stream.running ? "amber" : "signal"}`}>{stream.phase || "standby"}</span>}>
@@ -574,9 +650,15 @@ function MissionDeck({
   );
 }
 
-function DryRunSurface({ config, dry, error, health, history, onChangeParams, onClearRun, onRefresh, onStartDryRun, params, selectedRun, stream, watchMode }) {
+function DryRunSurface({ agents, config, dry, error, health, history, onChangeParams, onClearRun, onRefresh, onStartDryRun, params, selectedRun, stream, watchMode }) {
   const rail = useMemo(() => buildRail(health, config, { ...stream, params }, history, selectedRun, watchMode), [health, config, stream, params, history, selectedRun, watchMode]);
   const dryIssues = normalizeIssues(dry.issues);
+  const teamReady = agentsReady(agents, health);
+  const disabledReason = !teamReady
+    ? "Dry Stalk still needs a Scout agent for scoring and analysis. Recruit a team in Checks; no repository writes will run here."
+    : !githubReady(config, health)
+      ? "Configure the PatchHive bot GitHub token before scanning candidate issues."
+      : "";
   const metrics = [
     { label: "Would target", value: String(dryIssues.length || asCount(dry.done?.total_would_reap)), tone: "sig", sub: "no writes" },
     { label: "Phase", value: dry.phase || "standby", tone: dry.running ? "warn" : "sig", sub: "dry stalk" },
@@ -602,7 +684,7 @@ function DryRunSurface({ config, dry, error, health, history, onChangeParams, on
               <button className="btn" onClick={onRefresh} type="button">Refresh</button>
             </div>
           </div>
-          <RunForm disabled={!githubReady(config, health)} error={error} onChange={onChangeParams} onStart={onStartDryRun} params={params} running={dry.running} title="Run Dry Stalk" />
+          <RunForm disabled={!teamReady || !githubReady(config, health)} disabledReason={disabledReason} error={error} onChange={onChangeParams} onStart={onStartDryRun} params={params} running={dry.running} title="Run Dry Stalk" />
           <MetricBand metrics={metrics} />
           <div className="atlas-layout suite-four-layout">
             <CandidatePanel issues={dryIssues} selectedRun={null} />
@@ -725,7 +807,84 @@ function checkTone(level) {
   return "green";
 }
 
-function ChecksSurface({ agents, config, health, history, onClearRun, onRefresh, runtime, selectedRun, stream, watchMode }) {
+function AgentTeamPanel({ agents, config, onSaveAgents, saving }) {
+  const [draft, setDraft] = useState(() => blankAgent(config));
+  const team = Array.isArray(agents) ? agents : [];
+  const set = (key, value) => setDraft((current) => {
+    if (key === "provider") {
+      return { ...current, provider: value, model: PROVIDER_MODELS[value] || current.model };
+    }
+    return { ...current, [key]: value };
+  });
+  const addAgent = () => {
+    if (!draft.name.trim() || !draft.role || !draft.provider || !draft.model.trim()) return;
+    onSaveAgents([...team, { ...draft, id: draft.id || `${draft.role}-${Date.now()}` }]);
+    setDraft(blankAgent(config, draft.role));
+  };
+  return (
+    <Panel eyebrow="Team" title="Agent team" action={<span className={`chip ${team.length ? "green" : "amber"}`}>{team.length} agents</span>}>
+      <div className="panelbody repo-list">
+        {!team.length && (
+          <div className="empty-v2">
+            <strong>No agents configured</strong>
+            <span>RepoReaper keeps agents in memory. Recruit a starter team after restarts before running Dry Stalk or full hunts.</span>
+          </div>
+        )}
+        {team.map((agent) => (
+          <div className="feed-item" key={agent.id || `${agent.role}-${agent.name}`}>
+            <div>
+              <div className="feed-title">{agent.name || agent.role}</div>
+              <div className="feed-meta">{agent.role || "agent"} · {agent.provider || "provider"} · {agent.model || "model"}</div>
+            </div>
+            <button className="btn" disabled={saving} onClick={() => onSaveAgents(team.filter((item) => item.id !== agent.id))} type="button">Remove</button>
+          </div>
+        ))}
+        <div className="form-grid">
+          <label className="v2-field">
+            Name
+            <input className="v2-input" onChange={(event) => set("name", event.target.value)} value={draft.name} />
+          </label>
+          <label className="v2-field">
+            Role
+            <select className="v2-input" onChange={(event) => set("role", event.target.value)} value={draft.role}>
+              {AGENT_ROLES.map((role) => <option key={role.value} value={role.value}>{role.label}</option>)}
+            </select>
+          </label>
+          <label className="v2-field">
+            Provider
+            <select className="v2-input" onChange={(event) => set("provider", event.target.value)} value={draft.provider}>
+              {Object.entries(PROVIDER_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+          </label>
+          <label className="v2-field">
+            Model
+            <input className="v2-input" onChange={(event) => set("model", event.target.value)} value={draft.model} />
+          </label>
+          {draft.provider === "custom" && (
+            <label className="v2-field">
+              Base URL
+              <input className="v2-input" onChange={(event) => set("base_url", event.target.value)} placeholder="https://api.example.com/v1" value={draft.base_url} />
+            </label>
+          )}
+          <label className="v2-field">
+            Provider key
+            <input className="v2-input" onChange={(event) => set("api_key", event.target.value)} placeholder="optional when global/local is configured" type="password" value={draft.api_key} />
+          </label>
+          <div className="v2-field">
+            Action
+            <button className="btn primary" disabled={saving || !draft.name.trim() || !draft.model.trim()} onClick={addAgent} type="button">Add agent</button>
+          </div>
+        </div>
+        <div className="repo-meta">
+          <button className="btn" disabled={saving} onClick={() => onSaveAgents(starterTeam(config))} type="button">Use starter team</button>
+          {AGENT_ROLES.map((role) => <span className="chip signal" key={role.value}>{role.label}: {role.detail}</span>)}
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
+function ChecksSurface({ agents, config, health, history, onClearRun, onRefresh, onSaveAgents, runtime, savingAgents, selectedRun, stream, watchMode }) {
   const checks = runtime.checks || [];
   const warnings = checks.filter((check) => check.level === "warn" || check.level === "error").length;
   const metrics = [
@@ -751,6 +910,7 @@ function ChecksSurface({ agents, config, health, history, onClearRun, onRefresh,
       {runtime.error && <StatusBanner tone="red">{runtime.error}</StatusBanner>}
       <MetricBand metrics={metrics} />
       <div className="atlas-layout suite-four-layout">
+        <AgentTeamPanel agents={agents} config={config} onSaveAgents={onSaveAgents} saving={savingAgents} />
         <Panel eyebrow="Health" title="Backend status" action={<span className={`chip ${health.status === "ok" ? "green" : "amber"}`}>{health.status || "unknown"}</span>}>
           <div className="panelbody repo-list">
             <div className="rowline"><span className="muted">Auth enabled</span><span className={`chip ${health.auth_enabled ? "green" : "amber"}`}>{health.auth_enabled ? "yes" : "no"}</span></div>
@@ -815,6 +975,7 @@ export default function App() {
   const [params, setParams] = useState(DEFAULT_PARAMS);
   const [prs, setPrs] = useState([]);
   const [rejected, setRejected] = useState([]);
+  const [savingAgents, setSavingAgents] = useState(false);
   const [selectedRun, setSelectedRun] = useState(null);
   const [stream, setStream] = useState(createInitialStream);
   const [watchMode, setWatchMode] = useState(false);
@@ -864,6 +1025,28 @@ export default function App() {
   }, [ready, fetch_]);
 
   useEffect(() => () => abortRef.current?.abort(), []);
+
+  async function saveAgents(nextAgents) {
+    setSavingAgents(true);
+    setError("");
+    try {
+      const payload = await fetchJson(
+        "/agents",
+        {
+          body: JSON.stringify({ agents: nextAgents }),
+          headers: { "Content-Type": "application/json" },
+          method: "POST",
+        },
+        "RepoReaper could not save the agent team.",
+      );
+      setAgents(payload.agents || []);
+      await runtime.refresh();
+    } catch (err) {
+      setError(err.message || "RepoReaper could not save the agent team.");
+    } finally {
+      setSavingAgents(false);
+    }
+  }
 
   function applyStreamEvent(event, payload, setter) {
     setter((current) => {
@@ -1018,6 +1201,7 @@ export default function App() {
       />
       {activeTab === "mission" && (
         <MissionDeck
+          agents={agents}
           config={config}
           error={error}
           health={health}
@@ -1041,6 +1225,7 @@ export default function App() {
       )}
       {activeTab === "dryrun" && (
         <DryRunSurface
+          agents={agents}
           config={config}
           dry={dryStream}
           error={error}
@@ -1097,7 +1282,9 @@ export default function App() {
             refreshData();
             runtime.refresh();
           }}
+          onSaveAgents={saveAgents}
           runtime={runtime}
+          savingAgents={savingAgents}
           selectedRun={selectedRun}
           stream={stream}
           watchMode={watchMode}
