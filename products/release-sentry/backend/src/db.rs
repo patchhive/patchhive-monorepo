@@ -104,6 +104,7 @@ pub fn history(limit: usize) -> Vec<HistoryItem> {
 
     stmt.query_map([limit as i64], |row| {
         let decision: String = row.get(5)?;
+        let summary: String = row.get(7)?;
         Ok(HistoryItem {
             id: row.get(0)?,
             repo: row.get(1)?,
@@ -113,7 +114,7 @@ pub fn history(limit: usize) -> Vec<HistoryItem> {
             status: decision.clone(),
             decision,
             score: row.get::<_, i64>(6)? as u32,
-            summary: row.get(7)?,
+            summary: normalize_saved_text(&summary),
             created_at: row.get(8)?,
             updated_at: row.get(9)?,
         })
@@ -134,7 +135,7 @@ pub fn get_run(id: &str) -> Option<ReleaseReadinessResult> {
         .ok()
         .flatten()?;
 
-    serde_json::from_str(&payload).ok()
+    serde_json::from_str(&payload).ok().map(normalize_saved_run)
 }
 
 pub fn overview_counts() -> OverviewCounts {
@@ -174,4 +175,22 @@ pub fn overview() -> OverviewPayload {
         counts: overview_counts(),
         recent_runs: history(6),
     }
+}
+
+fn normalize_saved_run(mut run: ReleaseReadinessResult) -> ReleaseReadinessResult {
+    run.summary = normalize_saved_text(&run.summary);
+    for check in &mut run.checks {
+        check.detail = normalize_saved_text(&check.detail);
+        for evidence in &mut check.evidence {
+            *evidence = normalize_saved_text(evidence);
+        }
+    }
+    for warning in &mut run.warnings {
+        *warning = normalize_saved_text(warning);
+    }
+    run
+}
+
+fn normalize_saved_text(value: &str) -> String {
+    value.replace("successs", "successful runs")
 }

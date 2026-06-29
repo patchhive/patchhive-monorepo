@@ -500,11 +500,13 @@ fn check_workflows(runs: &[github::GitHubActionsWorkflowRun], branch: &str) -> R
         label: "CI Health".into(),
         status: status.into(),
         detail: format!(
-            "{} success{}, {} failing, {} pending across {} recent run{} on `{branch}`.",
+            "{} successful run{}, {} failed run{}, {} pending run{} across {} recent workflow run{} on `{branch}`.",
             successes,
             plural(successes as u32),
             failures,
+            plural(failures as u32),
             pending,
+            plural(pending as u32),
             runs.len(),
             plural(runs.len() as u32)
         ),
@@ -743,7 +745,7 @@ fn build_summary(
             metrics.passed
         ),
         "hold" => format!(
-            "ReleaseSentry says hold {target} for {repo}: {} blocking check{} need attention.",
+            "ReleaseSentry says hold {target} for {repo}: {} blocking gate check{} need attention.",
             metrics.blocked,
             plural(metrics.blocked)
         ),
@@ -863,8 +865,9 @@ fn plural(value: u32) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::{decision_for_metrics, normalize_target_tag, score_for_metrics};
+    use super::{check_workflows, decision_for_metrics, normalize_target_tag, score_for_metrics};
     use crate::models::ReleaseReadinessMetrics;
+    use patchhive_github_data::models::GitHubActionsWorkflowRun;
 
     #[test]
     fn derives_target_tag_from_version() {
@@ -893,5 +896,29 @@ mod tests {
         };
         assert_eq!(decision_for_metrics(&metrics), "watch");
         assert_eq!(score_for_metrics(&metrics), 92);
+    }
+
+    #[test]
+    fn ci_detail_uses_readable_plural_words() {
+        let runs = vec![
+            GitHubActionsWorkflowRun {
+                conclusion: "success".into(),
+                ..GitHubActionsWorkflowRun::default()
+            },
+            GitHubActionsWorkflowRun {
+                conclusion: "success".into(),
+                ..GitHubActionsWorkflowRun::default()
+            },
+            GitHubActionsWorkflowRun {
+                conclusion: "failure".into(),
+                ..GitHubActionsWorkflowRun::default()
+            },
+        ];
+
+        let check = check_workflows(&runs, "main");
+
+        assert!(check.detail.contains("2 successful runs"));
+        assert!(check.detail.contains("1 failed run"));
+        assert!(!check.detail.contains("successs"));
     }
 }
