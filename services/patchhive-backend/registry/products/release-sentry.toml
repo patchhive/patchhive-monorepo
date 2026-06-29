@@ -11,6 +11,10 @@ read_only = true
 credential_scopes = ["github:repo:read", "github:actions:read", "github:releases:read"]
 evidence_required = ["release target", "CI state", "blocker summary"]
 
+[gateway]
+default_url = "http://127.0.0.1:8120"
+env_var = "RELEASE_SENTRY_GATEWAY_URL"
+
 [health]
 endpoint = "/api/products/release-sentry/health"
 timeout_ms = 2000
@@ -38,10 +42,65 @@ description = "Report ReleaseSentry runtime health."
 
 [[routes]]
 method = "POST"
-path = "/api/products/release-sentry/assess/github/repo"
+path = "/api/products/release-sentry/auth/login"
+description = "Validate a ReleaseSentry API key."
+
+[[routes]]
+method = "GET"
+path = "/api/products/release-sentry/auth/status"
+description = "Read ReleaseSentry auth bootstrap state."
+
+[[routes]]
+method = "POST"
+path = "/api/products/release-sentry/auth/generate-key"
+description = "Generate the first local ReleaseSentry API key."
+
+[[routes]]
+method = "POST"
+path = "/api/products/release-sentry/auth/generate-service-token"
+description = "Generate a ReleaseSentry service token for HiveCore."
+
+[[routes]]
+method = "POST"
+path = "/api/products/release-sentry/auth/rotate-service-token"
+description = "Rotate the ReleaseSentry service token."
+
+[[routes]]
+method = "GET"
+path = "/api/products/release-sentry/startup/checks"
+description = "Read ReleaseSentry startup checks."
+
+[[routes]]
+method = "GET"
+path = "/api/products/release-sentry/capabilities"
+description = "Read ReleaseSentry product capabilities."
+
+[[routes]]
+method = "POST"
+path = "/api/products/release-sentry/check/github/release"
 description = "Assess release readiness for a repo."
 
 [[routes]]
 method = "GET"
 path = "/api/products/release-sentry/runs"
 description = "List ReleaseSentry assessments."
+
+[[routes]]
+method = "GET"
+path = "/api/products/release-sentry/runs/:id"
+description = "Read a ReleaseSentry assessment detail."
+
+[[routes]]
+method = "GET"
+path = "/api/products/release-sentry/overview"
+description = "Read ReleaseSentry overview metrics and recent checks."
+
+[[routes]]
+method = "GET"
+path = "/api/products/release-sentry/history"
+description = "List ReleaseSentry release check history."
+
+[[routes]]
+method = "GET"
+path = "/api/products/release-sentry/history/:id"
+description = "Read a ReleaseSentry release check detail."
