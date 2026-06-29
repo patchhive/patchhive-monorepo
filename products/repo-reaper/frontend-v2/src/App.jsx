@@ -587,7 +587,7 @@ function DryRunSurface({ config, dry, error, health, history, onChangeParams, on
   return (
     <>
       <SuiteTopline cells={buildTopline(health, config, dry, history)} />
-      <div className="main-grid">
+      <div className="main-grid hive-workspace-grid">
         <ProductRail sections={rail.sections} stats={rail.stats} />
         <main className="workspace">
           <div className="hero-row">
