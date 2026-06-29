@@ -118,3 +118,10 @@ The PatchHive monorepo is the source of truth for RepoReaper development. The st
 ## Local Notes
 
 - The v2 prototype lives in `frontend-v2/` while the suite UI direction is being settled.
+- The v2 agent-team setup is intentionally lightweight for gateway testing. It
+  can recruit a starter team and update the current backend team, but the fuller
+  old team builder, team presets, richer provider/model controls, and
+  credential-safe persisted team configuration are deferred until the RepoReaper
+  unified-backend/HiveCore setup pass.
+- Dry Stalk is no-write, but it still needs at least a Scout agent because scoring and dry-run analysis use the AI agent pipeline.
+- Do not remove the old team/preset UI until v2 and the unified backend cover those workflows.

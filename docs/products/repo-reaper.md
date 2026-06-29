@@ -197,6 +197,33 @@ docker compose up --build
 Backend: `http://localhost:8000`
 Frontend: `http://localhost:5173`
 
+### Frontend v2 Temporary Scope
+
+The v2 prototype has a deliberately lightweight agent-team setup. It exists so
+Mission Deck and Dry Stalk can be tested honestly through gateway mode without
+pulling the entire old frontend team builder into the new shell.
+
+Current v2 behavior:
+
+- Checks can recruit a starter team and edit the backend's current in-memory
+  agent team through `/agents`.
+- Mission Deck and Dry Stalk are gated until an agent team exists, so the UI no
+  longer lets a run fail with a bare `No agents configured` backend error.
+- Dry Stalk remains no-write, but it still needs at least a Scout agent because
+  issue scoring and dry-run analysis use the AI agent pipeline.
+
+Deferred until the RepoReaper unified-backend pass:
+
+- full provider/model discovery parity with the old team builder
+- team preset save/load/delete in v2
+- richer per-agent controls, cooldown visibility, and live agent logs
+- credential-safe persisted team configuration instead of only the backend's
+  current in-memory team
+- HiveCore-driven setup for RepoReaper agent teams, approvals, and write gates
+
+Do not remove the old RepoReaper team/preset UI until the v2 replacement and the
+unified backend/HiveCore setup path cover those workflows.
+
 ### Split Backend + Frontend
 
 ```bash

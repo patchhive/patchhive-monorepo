@@ -28,6 +28,14 @@ Do not mix v2 work into the old UI code while the direction is still being
 settled. The old UI should remain available for normal product development and
 local runs.
 
+During gateway testing, a v2 product may carry a lightweight replacement for an
+old configuration surface when that is enough to test the live workflow. Any
+missing old-UI behavior must be documented in the product docs before the old UI
+is retired. RepoReaper is the current example: its v2 shell can recruit a
+starter agent team and gate runs honestly, but full team presets, richer
+provider/model controls, and credential-safe persisted team configuration remain
+deferred until the RepoReaper unified-backend/HiveCore setup pass.
+
 After every product has moved to v2, choose one cleanup path:
 
 - move the old UI code into a clearly named legacy location if it still has

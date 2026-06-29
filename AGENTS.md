@@ -354,6 +354,13 @@ Key features to preserve:
 - PR monitor
 - PatchHive branding in footer and PR bodies
 
+RepoReaper v2 temporary scope:
+- `products/repo-reaper/frontend-v2/` has a lightweight agent-team setup so Mission Deck and Dry Stalk can be tested honestly through gateway mode.
+- That v2 setup is intentionally not the full old frontend team builder. It can recruit a starter team and edit the in-memory backend team, but deeper provider model discovery, team presets, richer per-agent controls, and credential-safe persisted team configuration remain deferred.
+- Dry Stalk is still a no-write mode, but it needs at least a Scout agent because issue scoring and dry-run analysis use the AI agent pipeline.
+- Do not remove the old RepoReaper team/preset UI until the v2 replacement and unified-backend/HiveCore setup path cover those workflows.
+- When RepoReaper moves from gateway proxying into the unified backend, revisit agent team storage, preset migration, credential ownership, approval gates, and HiveCore-driven setup.
+
 RepoReaper defaults:
 - Backend: `VITE_API_URL` or the current browser origin
 - Frontend: `http://localhost:5173`
