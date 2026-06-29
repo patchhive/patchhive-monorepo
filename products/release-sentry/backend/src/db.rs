@@ -192,5 +192,7 @@ fn normalize_saved_run(mut run: ReleaseReadinessResult) -> ReleaseReadinessResul
 }
 
 fn normalize_saved_text(value: &str) -> String {
-    value.replace("successs", "successful runs")
+    value
+        .replace("successs", "successful runs")
+        .replace("blocking checks need attention", "blocking gate checks need attention")
 }
