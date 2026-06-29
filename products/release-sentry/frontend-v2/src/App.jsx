@@ -251,7 +251,7 @@ function buildRadarFeed(run, history, health) {
   if (run) {
     return [
       { text: run.summary || "ReleaseSentry completed the release check.", tone: decisionTone(run.decision) },
-      { text: `${asCount(run.metrics?.passed)} passed, ${asCount(run.metrics?.warned)} warned, and ${asCount(run.metrics?.blocked)} blocked checks are active.`, tone: decisionTone(run.decision) },
+      { text: `${asCount(run.metrics?.passed)} passed, ${asCount(run.metrics?.warned)} warned, and ${asCount(run.metrics?.blocked)} blocked gate checks are active.`, tone: decisionTone(run.decision) },
       { text: run.warnings?.[0] || "Release evidence is grouped into a ship/no-ship call.", tone: run.warnings?.length ? "amber" : "signal" },
     ];
   }

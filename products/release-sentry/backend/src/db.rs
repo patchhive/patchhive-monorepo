@@ -194,5 +194,11 @@ fn normalize_saved_run(mut run: ReleaseReadinessResult) -> ReleaseReadinessResul
 fn normalize_saved_text(value: &str) -> String {
     value
         .replace("successs", "successful runs")
-        .replace("blocking checks need attention", "blocking gate checks need attention")
+        .replace(
+            "blocking checks need attention",
+            "blocking gate checks need attention",
+        )
+        .replace("failing, ", "failed runs, ")
+        .replace(" pending across ", " pending runs across ")
+        .replace(" recent runs on ", " recent workflow runs on ")
 }
