@@ -67,6 +67,9 @@ async fn main() {
         eprintln!("DB init failed: {e}");
         std::process::exit(1);
     }
+    if let Err(e) = db::migrate_agent_secret_storage() {
+        tracing::warn!("RepoReaper agent secret migration failed: {e}");
+    }
 
     let orphans = db::recover_orphaned_runs();
     if !orphans.is_empty() {
@@ -74,6 +77,20 @@ async fn main() {
     }
 
     let state = AppState::new();
+
+    match db::load_active_agents() {
+        Ok(agents) if !agents.is_empty() => {
+            let mut map = state.agents.write().await;
+            for agent in agents {
+                map.insert(agent.id.clone(), agent);
+            }
+            info!("restored {} RepoReaper agent(s) from SQLite", map.len());
+        }
+        Ok(_) => {}
+        Err(err) => {
+            tracing::warn!("failed to restore RepoReaper active agent team: {err}");
+        }
+    }
 
     if db::get_setting("watch_mode", "false") == "true" {
         state

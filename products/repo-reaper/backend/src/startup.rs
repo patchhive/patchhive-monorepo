@@ -116,6 +116,16 @@ pub async fn validate_config(http: &Client) -> Vec<StartupCheck> {
         ));
     }
 
+    if crate::db::agent_token_protector().configured() {
+        results.push(StartupCheck::ok(
+            "RepoReaper active-team API keys and bot token overrides can be encrypted at rest.",
+        ));
+    } else {
+        results.push(StartupCheck::warn(
+            "REAPER_ENCRYPTION_KEY or PATCHHIVE_ENCRYPTION_KEY is not set. Active agent teams can persist, but per-agent API keys and bot token overrides remain memory-only and will not survive backend restarts.",
+        ));
+    }
+
     if std::env::var("WEBHOOK_SECRET")
         .unwrap_or_default()
         .is_empty()

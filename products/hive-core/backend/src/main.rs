@@ -21,7 +21,6 @@ patchhive_product_core::define_api_key_auth_module! {
 mod db;
 mod models;
 mod pipeline;
-mod secrets;
 mod startup;
 mod state;
 

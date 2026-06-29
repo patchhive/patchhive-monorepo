@@ -152,7 +152,6 @@ function agentsReady(agents, health) {
 
 function defaultAgentProvider(config) {
   if (config?.PATCHHIVE_AI_URL || config?.AI_LOCAL_STATUS?.ok || config?.AI_LOCAL_STATUS?.status === "ok") return "openai";
-  if (config?.PROVIDER_API_KEY_SET) return "anthropic";
   return "openai";
 }
 

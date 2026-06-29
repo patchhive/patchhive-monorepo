@@ -33,8 +33,10 @@ old configuration surface when that is enough to test the live workflow. Any
 missing old-UI behavior must be documented in the product docs before the old UI
 is retired. RepoReaper is the current example: its v2 shell can recruit a
 starter agent team and gate runs honestly, but full team presets, richer
-provider/model controls, and credential-safe persisted team configuration remain
-deferred until the RepoReaper unified-backend/HiveCore setup pass.
+provider/model controls, and the HiveCore setup path remain deferred until the
+RepoReaper unified-backend pass. Its active team and preset secret fields are
+already encrypted at rest when a RepoReaper or suite encryption key is
+configured.
 
 After every product has moved to v2, choose one cleanup path:
 

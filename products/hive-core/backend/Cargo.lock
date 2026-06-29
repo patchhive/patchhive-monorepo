@@ -495,19 +495,16 @@ checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 name = "hive-core"
 version = "0.1.0"
 dependencies = [
- "aes-gcm",
  "anyhow",
  "axum",
  "chrono",
  "dotenvy",
- "hex",
  "once_cell",
  "patchhive-product-core",
  "reqwest",
  "rusqlite",
  "serde",
  "serde_json",
- "sha2",
  "tokio",
  "tower-http 0.5.2",
  "tracing",
@@ -948,8 +945,8 @@ dependencies = [
 [[package]]
 name = "patchhive-product-core"
 version = "0.1.0"
-source = "git+https://github.com/patchhive/patchhive-product-core.git?rev=60890883e057ac5e18353dcb0413c002842a2eba#60890883e057ac5e18353dcb0413c002842a2eba"
 dependencies = [
+ "aes-gcm",
  "anyhow",
  "axum",
  "chrono",

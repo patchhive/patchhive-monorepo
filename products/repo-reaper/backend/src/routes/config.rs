@@ -10,7 +10,10 @@ use std::{collections::HashSet, fs, path::Path as StdPath, time::Duration};
 use uuid::Uuid;
 
 use crate::agents::{clear_cooldown, get_cooldowns};
-use crate::db::{get_conn, get_lifetime_cost, set_setting};
+use crate::db::{
+    agents_from_storage_json, agents_to_storage_json, get_conn, get_lifetime_cost,
+    save_active_agents, set_setting,
+};
 use crate::state::{AgentConfig, AppState};
 
 pub fn router() -> Router<AppState> {
@@ -638,11 +641,22 @@ async fn set_team(State(state): State<AppState>, Json(body): Json<TeamBody>) -> 
         a.current_task = String::new();
         map.insert(a.id.clone(), a);
     }
-    Json(json!({"agents": map.values().cloned().collect::<Vec<_>>()}))
+    let agents = map.values().cloned().collect::<Vec<_>>();
+    drop(map);
+    if let Err(err) = save_active_agents(&agents) {
+        tracing::warn!("failed to persist RepoReaper active agent team: {err}");
+    }
+    Json(json!({"agents": agents}))
 }
 
 async fn remove_agent(State(state): State<AppState>, Path(id): Path<String>) -> Json<Value> {
-    state.agents.write().await.remove(&id);
+    let mut map = state.agents.write().await;
+    map.remove(&id);
+    let agents = map.values().cloned().collect::<Vec<_>>();
+    drop(map);
+    if let Err(err) = save_active_agents(&agents) {
+        tracing::warn!("failed to persist RepoReaper active agent team: {err}");
+    }
     Json(json!({"ok": true}))
 }
 
@@ -650,11 +664,21 @@ async fn list_presets() -> Json<Value> {
     let Ok(conn) = get_conn() else {
         return Json(json!({"presets":[]}));
     };
-    let rows: Vec<Value> = conn.prepare("SELECT name, agents_json, created_at FROM team_presets ORDER BY created_at DESC").ok()
+    let rows: Vec<Value> = conn
+        .prepare("SELECT name, agents_json, created_at FROM team_presets ORDER BY created_at DESC")
+        .ok()
         .and_then(|mut s| {
-            let mapped = s.query_map([], |r| {
-            Ok(json!({"name": r.get::<_,String>(0)?, "agents": serde_json::from_str::<Value>(&r.get::<_,String>(1)?).unwrap_or_default(), "created_at": r.get::<_,String>(2)?}))
-            }).ok()?;
+            let mapped = s
+                .query_map([], |r| {
+                    let raw_agents = r.get::<_, String>(1)?;
+                    let agents = agents_from_storage_json(&raw_agents).unwrap_or_default();
+                    Ok(json!({
+                        "name": r.get::<_,String>(0)?,
+                        "agents": agents,
+                        "created_at": r.get::<_,String>(2)?
+                    }))
+                })
+                .ok()?;
             Some(mapped.flatten().collect())
         })
         .unwrap_or_default();
@@ -664,20 +688,19 @@ async fn list_presets() -> Json<Value> {
 #[derive(Deserialize)]
 struct PresetSave {
     name: String,
-    agents: Vec<Value>,
+    agents: Vec<AgentConfig>,
 }
 
 async fn save_preset(Json(body): Json<PresetSave>) -> Json<Value> {
     let Ok(conn) = get_conn() else {
         return Json(json!({"saved":false}));
     };
+    let Ok(agents_json) = agents_to_storage_json(&body.agents) else {
+        return Json(json!({"saved":false}));
+    };
     let _ = conn.execute(
         "INSERT OR REPLACE INTO team_presets(name, agents_json, created_at) VALUES(?1,?2,?3)",
-        rusqlite::params![
-            body.name,
-            serde_json::to_string(&body.agents).unwrap_or_default(),
-            Utc::now().to_rfc3339()
-        ],
+        rusqlite::params![body.name, agents_json, Utc::now().to_rfc3339()],
     );
     Json(json!({"saved": true}))
 }

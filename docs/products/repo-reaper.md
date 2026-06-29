@@ -209,16 +209,20 @@ Current v2 behavior:
   agent team through `/agents`.
 - Mission Deck and Dry Stalk are gated until an agent team exists, so the UI no
   longer lets a run fail with a bare `No agents configured` backend error.
+- RepoReaper persists the active team and saved team presets in SQLite.
+  Per-agent API keys and bot token overrides are encrypted at rest when
+  `REAPER_ENCRYPTION_KEY` or `PATCHHIVE_ENCRYPTION_KEY` is set. Without one of
+  those keys, secret fields stay memory-only and are not written to SQLite.
+  When an encryption key is added later, RepoReaper migrates existing plaintext
+  active-team and preset secret fields on boot.
 - Dry Stalk remains no-write, but it still needs at least a Scout agent because
   issue scoring and dry-run analysis use the AI agent pipeline.
 
 Deferred until the RepoReaper unified-backend pass:
 
 - full provider/model discovery parity with the old team builder
-- team preset save/load/delete in v2
+- full team preset save/load/delete management in v2
 - richer per-agent controls, cooldown visibility, and live agent logs
-- credential-safe persisted team configuration instead of only the backend's
-  current in-memory team
 - HiveCore-driven setup for RepoReaper agent teams, approvals, and write gates
 
 Do not remove the old RepoReaper team/preset UI until the v2 replacement and the
@@ -256,6 +260,7 @@ RETRY_COUNT=2                       # Patch retry attempts
 WEBHOOK_SECRET=whsec_...            # GitHub webhook secret for watch-mode
 REAPER_API_KEY_HASH=...             # Pre-seeded auth hash
 REAPER_SERVICE_TOKEN_HASH=...       # Service-token hash for HiveCore
+REAPER_ENCRYPTION_KEY=...           # Encrypts saved active-team secrets
 REAPER_DB_PATH=/tmp/repo-reaper.db
 REAPER_WORK_DIR=/tmp/repo-reaper
 REAPER_PORT=8000
@@ -293,6 +298,8 @@ PATCHHIVE_REPO_MEMORY_API_KEY=...
 | `WEBHOOK_SECRET` | ❌ | — | GitHub webhook secret |
 | `REAPER_API_KEY_HASH` | ❌ | — | Pre-seeded auth hash (else UI generates) |
 | `REAPER_SERVICE_TOKEN_HASH` | ❌ | — | Service-token hash for HiveCore |
+| `REAPER_ENCRYPTION_KEY` | ❌ | — | Encrypt active-team API keys and bot token overrides in SQLite |
+| `PATCHHIVE_ENCRYPTION_KEY` | ❌ | — | Suite-wide fallback encryption key used when `REAPER_ENCRYPTION_KEY` is unset |
 | `REAPER_DB_PATH` | ❌ | `./reaper.db` | SQLite database path |
 | `REAPER_WORK_DIR` | ❌ | `/tmp/repo-reaper` | Clone workspace |
 | `REAPER_PORT` | ❌ | `8000` | HTTP listen port |

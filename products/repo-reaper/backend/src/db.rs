@@ -1,9 +1,14 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use chrono::Utc;
 use once_cell::sync::Lazy;
+use patchhive_product_core::secrets::TokenProtector;
 use patchhive_product_core::sqlite::{PooledSqliteConnection, SqlitePool};
 use rusqlite::params;
 use std::path::PathBuf;
+
+use crate::state::AgentConfig;
+
+const ACTIVE_AGENTS_SETTING: &str = "active_agents_json";
 
 static DB_POOL: Lazy<SqlitePool> = Lazy::new(|| {
     SqlitePool::new(db_path(), "RepoReaper").with_pool_size_env("REAPER_DB_POOL_SIZE")
@@ -98,6 +103,127 @@ pub fn get_lifetime_cost() -> f64 {
         |r| r.get::<_, f64>(0),
     )
     .unwrap_or(0.0)
+}
+
+pub fn agent_token_protector() -> TokenProtector {
+    TokenProtector::from_env_candidates(&["REAPER_ENCRYPTION_KEY", "PATCHHIVE_ENCRYPTION_KEY"])
+}
+
+pub fn load_active_agents() -> Result<Vec<AgentConfig>> {
+    let raw = get_setting(ACTIVE_AGENTS_SETTING, "");
+    if raw.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+    agents_from_storage_json(&raw)
+}
+
+pub fn save_active_agents(agents: &[AgentConfig]) -> Result<()> {
+    let encoded = agents_to_storage_json(agents)?;
+    set_setting(ACTIVE_AGENTS_SETTING, &encoded)
+}
+
+pub fn migrate_agent_secret_storage() -> Result<()> {
+    let protector = agent_token_protector();
+    if !protector.configured() {
+        return Ok(());
+    }
+
+    let raw_active_agents = get_setting(ACTIVE_AGENTS_SETTING, "");
+    if !raw_active_agents.trim().is_empty() {
+        let active_agents: Vec<AgentConfig> = serde_json::from_str(&raw_active_agents)
+            .context("failed to decode RepoReaper active agent team during migration")?;
+        let migrated = agents_to_storage_json(&active_agents)?;
+        set_setting(ACTIVE_AGENTS_SETTING, &migrated)?;
+    }
+
+    let conn = get_conn()?;
+    let presets = {
+        let mut stmt = conn.prepare("SELECT name, agents_json FROM team_presets")?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        rows.flatten().collect::<Vec<_>>()
+    };
+
+    for (name, raw_agents) in presets {
+        let agents: Vec<AgentConfig> = serde_json::from_str(&raw_agents)
+            .with_context(|| format!("failed to decode RepoReaper team preset {name}"))?;
+        let migrated = agents_to_storage_json(&agents)?;
+        conn.execute(
+            "UPDATE team_presets SET agents_json=?1 WHERE name=?2",
+            params![migrated, name],
+        )?;
+    }
+
+    Ok(())
+}
+
+pub fn agents_to_storage_json(agents: &[AgentConfig]) -> Result<String> {
+    let protector = agent_token_protector();
+    let protected = agents
+        .iter()
+        .map(|agent| protect_agent_for_storage(agent, &protector))
+        .collect::<Result<Vec<_>>>()?;
+    serde_json::to_string(&protected).context("failed to encode RepoReaper agent team")
+}
+
+pub fn agents_from_storage_json(raw: &str) -> Result<Vec<AgentConfig>> {
+    let protector = agent_token_protector();
+    let stored: Vec<AgentConfig> =
+        serde_json::from_str(raw).context("failed to decode RepoReaper agent team")?;
+    stored
+        .into_iter()
+        .map(|agent| reveal_agent_from_storage(agent, &protector))
+        .collect()
+}
+
+fn protect_agent_for_storage(
+    agent: &AgentConfig,
+    protector: &TokenProtector,
+) -> Result<AgentConfig> {
+    let mut stored = agent.clone();
+    stored.api_key = protect_optional_secret(stored.api_key.as_deref(), protector)
+        .with_context(|| format!("failed to protect API key for {}", stored.name))?;
+    stored.bot_token = protect_optional_secret(stored.bot_token.as_deref(), protector)
+        .with_context(|| format!("failed to protect bot token for {}", stored.name))?;
+    Ok(stored)
+}
+
+fn reveal_agent_from_storage(
+    mut agent: AgentConfig,
+    protector: &TokenProtector,
+) -> Result<AgentConfig> {
+    agent.api_key = reveal_optional_secret(agent.api_key.as_deref(), protector)
+        .with_context(|| format!("failed to reveal API key for {}", agent.name))?;
+    agent.bot_token = reveal_optional_secret(agent.bot_token.as_deref(), protector)
+        .with_context(|| format!("failed to reveal bot token for {}", agent.name))?;
+    Ok(agent)
+}
+
+fn protect_optional_secret(
+    value: Option<&str>,
+    protector: &TokenProtector,
+) -> Result<Option<String>> {
+    let Some(value) = value.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+    if TokenProtector::is_encrypted_value(value) {
+        return Ok(Some(value.to_string()));
+    }
+    if !protector.configured() {
+        return Ok(None);
+    }
+    protector.protect_for_storage(value).map(Some)
+}
+
+fn reveal_optional_secret(
+    value: Option<&str>,
+    protector: &TokenProtector,
+) -> Result<Option<String>> {
+    let Some(value) = value.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+    protector.reveal_from_storage(value).map(Some)
 }
 
 pub struct RunStart<'a> {

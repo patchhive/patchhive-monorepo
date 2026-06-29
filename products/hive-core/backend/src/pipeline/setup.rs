@@ -12,9 +12,9 @@ use tokio::{spawn, time::sleep};
 use crate::{
     db,
     models::{
-        now_rfc3339, ok, FirstStackSetupResponse, SetupFleetLaunchJob, SetupFleetLaunchStep,
-        SetupLauncherProductStatus, SetupLauncherStatus, SetupProductCredentialRequirements,
-        SetupProductLogsResponse, SetupProductStatus, ProductRuntimeItem,
+        now_rfc3339, ok, FirstStackSetupResponse, ProductRuntimeItem, SetupFleetLaunchJob,
+        SetupFleetLaunchStep, SetupLauncherProductStatus, SetupLauncherStatus,
+        SetupProductCredentialRequirements, SetupProductLogsResponse, SetupProductStatus,
     },
     state::{product_catalog, AppState},
 };
@@ -871,7 +871,10 @@ fn launcher_product_running(
 }
 
 fn stored_service_token_cannot_read_runs(runtime: &ProductRuntimeItem) -> bool {
-    if !runtime.service_token_configured || runtime.legacy_api_key_configured || runtime.health.runs_ok {
+    if !runtime.service_token_configured
+        || runtime.legacy_api_key_configured
+        || runtime.health.runs_ok
+    {
         return false;
     }
 

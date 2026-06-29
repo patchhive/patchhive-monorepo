@@ -6,7 +6,7 @@ use anyhow::{anyhow, Context, Result};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
-const ENCRYPTED_TOKEN_PREFIX: &str = "enc:v1:";
+const ENCRYPTED_SECRET_PREFIX: &str = "enc:v1:";
 
 #[derive(Clone, Debug, Default)]
 pub struct TokenProtector {
@@ -14,13 +14,23 @@ pub struct TokenProtector {
 }
 
 impl TokenProtector {
-    pub fn from_env() -> Self {
+    pub fn from_env(env_key: &str) -> Self {
         Self::from_secret(
-            std::env::var("HIVECORE_ENCRYPTION_KEY")
+            std::env::var(env_key)
                 .ok()
                 .filter(|value| !value.trim().is_empty())
                 .as_deref(),
         )
+    }
+
+    pub fn from_env_candidates(env_keys: &[&str]) -> Self {
+        let secret = env_keys.iter().find_map(|env_key| {
+            std::env::var(env_key)
+                .ok()
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty())
+        });
+        Self::from_secret(secret.as_deref())
     }
 
     pub fn configured(&self) -> bool {
@@ -28,7 +38,7 @@ impl TokenProtector {
     }
 
     pub fn is_encrypted_value(raw: &str) -> bool {
-        raw.trim_start().starts_with(ENCRYPTED_TOKEN_PREFIX)
+        raw.trim_start().starts_with(ENCRYPTED_SECRET_PREFIX)
     }
 
     pub fn protect_for_storage(&self, plaintext: &str) -> Result<String> {
@@ -41,15 +51,15 @@ impl TokenProtector {
         };
 
         let cipher =
-            Aes256Gcm::new_from_slice(&key).context("failed to build HiveCore token cipher")?;
+            Aes256Gcm::new_from_slice(&key).context("failed to build PatchHive secret cipher")?;
         let nonce_bytes = Uuid::new_v4().into_bytes();
         let nonce = Nonce::from_slice(&nonce_bytes[..12]);
         let ciphertext = cipher
             .encrypt(nonce, plaintext.as_bytes())
-            .map_err(|_| anyhow!("failed to encrypt HiveCore service token"))?;
+            .map_err(|_| anyhow!("failed to encrypt PatchHive secret"))?;
 
         Ok(format!(
-            "{ENCRYPTED_TOKEN_PREFIX}{}:{}",
+            "{ENCRYPTED_SECRET_PREFIX}{}:{}",
             hex::encode(&nonce_bytes[..12]),
             hex::encode(ciphertext)
         ))
@@ -66,36 +76,34 @@ impl TokenProtector {
 
         let Some(key) = self.key else {
             return Err(anyhow!(
-                "HIVECORE_ENCRYPTION_KEY is required to read encrypted HiveCore service tokens"
+                "a PatchHive encryption key is required to read encrypted stored secrets"
             ));
         };
 
         let payload = stored
             .trim()
-            .strip_prefix(ENCRYPTED_TOKEN_PREFIX)
-            .ok_or_else(|| anyhow!("invalid encrypted HiveCore service token prefix"))?;
+            .strip_prefix(ENCRYPTED_SECRET_PREFIX)
+            .ok_or_else(|| anyhow!("invalid encrypted PatchHive secret prefix"))?;
         let (nonce_hex, ciphertext_hex) = payload
             .split_once(':')
-            .ok_or_else(|| anyhow!("invalid encrypted HiveCore service token payload"))?;
-        let nonce_bytes = hex::decode(nonce_hex)
-            .context("failed to decode encrypted HiveCore service-token nonce")?;
+            .ok_or_else(|| anyhow!("invalid encrypted PatchHive secret payload"))?;
+        let nonce_bytes =
+            hex::decode(nonce_hex).context("failed to decode encrypted PatchHive secret nonce")?;
         if nonce_bytes.len() != 12 {
-            return Err(anyhow!(
-                "invalid encrypted HiveCore service-token nonce length"
-            ));
+            return Err(anyhow!("invalid encrypted PatchHive secret nonce length"));
         }
         let ciphertext = hex::decode(ciphertext_hex)
-            .context("failed to decode encrypted HiveCore service-token ciphertext")?;
+            .context("failed to decode encrypted PatchHive secret ciphertext")?;
 
         let cipher =
-            Aes256Gcm::new_from_slice(&key).context("failed to build HiveCore token cipher")?;
+            Aes256Gcm::new_from_slice(&key).context("failed to build PatchHive secret cipher")?;
         let plaintext = cipher
             .decrypt(Nonce::from_slice(&nonce_bytes), ciphertext.as_ref())
-            .map_err(|_| anyhow!("failed to decrypt HiveCore service token"))?;
-        String::from_utf8(plaintext).context("decrypted HiveCore service token was not utf-8")
+            .map_err(|_| anyhow!("failed to decrypt PatchHive secret"))?;
+        String::from_utf8(plaintext).context("decrypted PatchHive secret was not utf-8")
     }
 
-    pub(crate) fn from_secret(secret: Option<&str>) -> Self {
+    pub fn from_secret(secret: Option<&str>) -> Self {
         Self {
             key: secret.map(derive_key),
         }
@@ -154,5 +162,17 @@ mod tests {
         assert!(TokenProtector::default()
             .reveal_from_storage(&encrypted)
             .is_err());
+    }
+
+    #[test]
+    fn token_protector_can_use_env_candidates() {
+        std::env::remove_var("PATCHHIVE_TEST_SECRET_A");
+        std::env::set_var("PATCHHIVE_TEST_SECRET_B", "candidate-secret");
+        let protector = TokenProtector::from_env_candidates(&[
+            "PATCHHIVE_TEST_SECRET_A",
+            "PATCHHIVE_TEST_SECRET_B",
+        ]);
+        std::env::remove_var("PATCHHIVE_TEST_SECRET_B");
+        assert!(protector.configured());
     }
 }

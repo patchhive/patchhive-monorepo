@@ -1,7 +1,6 @@
 use once_cell::sync::OnceCell;
+use patchhive_product_core::secrets::TokenProtector;
 use patchhive_product_core::startup::{StartupCheck, StartupCheckLevel};
-
-use crate::secrets::TokenProtector;
 
 static STARTUP_CHECKS: OnceCell<Vec<StartupCheck>> = OnceCell::new();
 
@@ -47,7 +46,7 @@ pub async fn validate_config() -> Vec<StartupCheck> {
     }
 
     let token_stats = crate::db::service_token_storage_stats();
-    let protector = TokenProtector::from_env();
+    let protector = TokenProtector::from_env("HIVECORE_ENCRYPTION_KEY");
     if token_stats.total == 0 {
         checks.push(StartupCheck::info(
             "HiveCore has no saved downstream product service tokens yet.",

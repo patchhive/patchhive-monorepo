@@ -2,11 +2,11 @@ use anyhow::{Context, Result};
 use std::collections::HashMap;
 
 use once_cell::sync::Lazy;
+use patchhive_product_core::secrets::TokenProtector;
 use patchhive_product_core::sqlite::{PooledSqliteConnection, SqlitePool};
 use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::models::{FirstStackSmokeRun, ProductActionEvent, ProductOverride, SuiteSettings};
-use crate::secrets::TokenProtector;
 
 static DB_POOL: Lazy<SqlitePool> = Lazy::new(|| {
     SqlitePool::new(db_path(), "HiveCore").with_pool_size_env("HIVE_CORE_DB_POOL_SIZE")
@@ -69,7 +69,7 @@ pub fn product_overrides() -> HashMap<String, ProductOverride> {
     let Ok(conn) = connect() else {
         return HashMap::new();
     };
-    match load_product_overrides(&conn, &TokenProtector::from_env()) {
+    match load_product_overrides(&conn, &TokenProtector::from_env("HIVECORE_ENCRYPTION_KEY")) {
         Ok(overrides) => overrides,
         Err(err) => {
             tracing::warn!("failed to load HiveCore product overrides: {err}");
@@ -80,7 +80,11 @@ pub fn product_overrides() -> HashMap<String, ProductOverride> {
 
 pub fn replace_product_overrides(overrides: &[ProductOverride]) -> Result<()> {
     let mut conn = connect()?;
-    replace_overrides(&mut conn, overrides, &TokenProtector::from_env())
+    replace_overrides(
+        &mut conn,
+        overrides,
+        &TokenProtector::from_env("HIVECORE_ENCRYPTION_KEY"),
+    )
 }
 
 pub fn service_token_storage_stats() -> ServiceTokenStorageStats {
@@ -278,7 +282,7 @@ fn add_missing_column(
 }
 
 fn migrate_service_token_storage(conn: &Connection) -> Result<()> {
-    let protector = TokenProtector::from_env();
+    let protector = TokenProtector::from_env("HIVECORE_ENCRYPTION_KEY");
     if !protector.configured() {
         return Ok(());
     }
@@ -586,7 +590,7 @@ mod tests {
         now_rfc3339, FirstStackSmokeRun, FirstStackSmokeStep, ProductActionEvent, ProductOverride,
         SuiteSettings,
     };
-    use crate::secrets::TokenProtector;
+    use patchhive_product_core::secrets::TokenProtector;
     use rusqlite::Connection;
     use serde_json::json;
 
