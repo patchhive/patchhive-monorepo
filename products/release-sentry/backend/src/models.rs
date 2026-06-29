@@ -140,6 +140,8 @@ pub struct HistoryItem {
     #[serde(default)]
     pub summary: String,
     #[serde(default)]
+    pub metrics: ReleaseReadinessMetrics,
+    #[serde(default)]
     pub created_at: String,
     #[serde(default)]
     pub updated_at: String,

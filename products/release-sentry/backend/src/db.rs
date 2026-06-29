@@ -92,7 +92,7 @@ pub fn history(limit: usize) -> Vec<HistoryItem> {
     let mut stmt = match conn.prepare(
         r#"
         SELECT id, repo, branch, target_version, target_tag, decision,
-               score, summary, created_at, updated_at
+               score, summary, created_at, updated_at, payload
         FROM release_sentry_runs
         ORDER BY created_at DESC
         LIMIT ?1
@@ -105,6 +105,19 @@ pub fn history(limit: usize) -> Vec<HistoryItem> {
     stmt.query_map([limit as i64], |row| {
         let decision: String = row.get(5)?;
         let summary: String = row.get(7)?;
+        let payload: String = row.get(10)?;
+        let saved_run = serde_json::from_str::<ReleaseReadinessResult>(&payload)
+            .ok()
+            .map(normalize_saved_run);
+        let summary = saved_run
+            .as_ref()
+            .map(|run| run.summary.clone())
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| normalize_saved_text(&summary));
+        let metrics = saved_run
+            .as_ref()
+            .map(|run| run.metrics.clone())
+            .unwrap_or_default();
         Ok(HistoryItem {
             id: row.get(0)?,
             repo: row.get(1)?,
@@ -114,7 +127,8 @@ pub fn history(limit: usize) -> Vec<HistoryItem> {
             status: decision.clone(),
             decision,
             score: row.get::<_, i64>(6)? as u32,
-            summary: normalize_saved_text(&summary),
+            summary,
+            metrics,
             created_at: row.get(8)?,
             updated_at: row.get(9)?,
         })

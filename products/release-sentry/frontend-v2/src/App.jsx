@@ -136,15 +136,17 @@ function buildMetrics(run, overview, health) {
 
 function buildRail(run, history, overview, health) {
   const latest = history[0] || {};
-  const metrics = run?.metrics || {};
+  const source = run || latest;
+  const metrics = source?.metrics || {};
+  const hasSource = Boolean(run || latest.id);
   return {
     sections: [
       {
         title: "Candidate",
         items: [
-          { label: `${run?.branch || latest.branch || "branch"} -> ${releaseLabel(run || latest)}`, active: true, pin: true },
+          { label: `${source?.branch || "branch"} -> ${hasSource ? releaseLabel(source) : "next release"}`, active: true, pin: true },
           { label: "workflow runs", value: String(asCount(metrics.workflow_runs)) },
-          { label: "target tag", value: run?.target_tag || latest.target_tag || "not set" },
+          { label: "target tag", value: source?.target_tag || "not set" },
           { label: "release blockers", value: String(asCount(metrics.release_blockers)) },
         ],
       },
@@ -159,11 +161,11 @@ function buildRail(run, history, overview, health) {
       },
     ],
     stats: {
-      title: "Active release",
+      title: run ? "Active release" : latest.id ? "Latest saved release" : "Active release",
       items: [
-        { label: "Repository", value: run?.repo || latest.repo || "none" },
-        { label: "Decision", value: (run?.decision || latest.decision || "READY").toUpperCase(), large: true, tone: metricTone(run?.decision || latest.decision || "ready") },
-        { label: "Score", value: String(asCount(run?.score || latest.score)) },
+        { label: "Repository", value: source?.repo || "none" },
+        { label: "Decision", value: (source?.decision || "READY").toUpperCase(), large: true, tone: metricTone(source?.decision || "ready") },
+        { label: "Score", value: String(asCount(source?.score)) },
       ],
     },
   };
