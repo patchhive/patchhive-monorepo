@@ -15,6 +15,10 @@ requires_operator_approval = true
 credential_scopes = ["github:contents:write", "github:pull_requests:write", "provider:ai"]
 evidence_required = ["issue URL", "generated patch", "test result", "TrustGate decision"]
 
+[gateway]
+default_url = "http://127.0.0.1:8000"
+env_var = "REPO_REAPER_GATEWAY_URL"
+
 [health]
 endpoint = "/api/products/repo-reaper/health"
 timeout_ms = 2000
@@ -44,10 +48,215 @@ description = "Report RepoReaper runtime health."
 
 [[routes]]
 method = "POST"
-path = "/api/products/repo-reaper/hunts"
-description = "Start a guarded issue hunt."
+path = "/api/products/repo-reaper/auth/login"
+description = "Validate a RepoReaper API key."
+
+[[routes]]
+method = "GET"
+path = "/api/products/repo-reaper/auth/status"
+description = "Read RepoReaper auth bootstrap state."
+
+[[routes]]
+method = "POST"
+path = "/api/products/repo-reaper/auth/generate-key"
+description = "Generate the first local RepoReaper API key."
+
+[[routes]]
+method = "POST"
+path = "/api/products/repo-reaper/auth/generate-service-token"
+description = "Generate a RepoReaper service token for HiveCore."
+
+[[routes]]
+method = "POST"
+path = "/api/products/repo-reaper/auth/rotate-service-token"
+description = "Rotate the RepoReaper service token."
+
+[[routes]]
+method = "GET"
+path = "/api/products/repo-reaper/startup/checks"
+description = "Read RepoReaper startup checks."
+
+[[routes]]
+method = "GET"
+path = "/api/products/repo-reaper/capabilities"
+description = "Read RepoReaper product capabilities."
+
+[[routes]]
+method = "POST"
+path = "/api/products/repo-reaper/run"
+description = "Start a guarded autonomous patch run."
+
+[[routes]]
+method = "POST"
+path = "/api/products/repo-reaper/dry-run"
+description = "Start a dry stalk run without writing patches or opening pull requests."
 
 [[routes]]
 method = "GET"
 path = "/api/products/repo-reaper/runs"
 description = "List RepoReaper runs."
+
+[[routes]]
+method = "GET"
+path = "/api/products/repo-reaper/runs/:run_id"
+description = "Read a RepoReaper run detail."
+
+[[routes]]
+method = "GET"
+path = "/api/products/repo-reaper/history"
+description = "List RepoReaper run history."
+
+[[routes]]
+method = "GET"
+path = "/api/products/repo-reaper/history/:run_id"
+description = "Read a RepoReaper history run detail."
+
+[[routes]]
+method = "GET"
+path = "/api/products/repo-reaper/diff/:run_id/:issue_number"
+description = "Read a stored patch diff for a run issue."
+
+[[routes]]
+method = "GET"
+path = "/api/products/repo-reaper/config"
+description = "Read RepoReaper bot, provider, and team config state."
+
+[[routes]]
+method = "POST"
+path = "/api/products/repo-reaper/config"
+description = "Update RepoReaper local config values."
+
+[[routes]]
+method = "GET"
+path = "/api/products/repo-reaper/ai-local/status"
+description = "Read the local AI gateway status."
+
+[[routes]]
+method = "GET"
+path = "/api/products/repo-reaper/models/:provider"
+description = "List models for a provider."
+
+[[routes]]
+method = "POST"
+path = "/api/products/repo-reaper/models/:provider"
+description = "Refresh models for a provider."
+
+[[routes]]
+method = "GET"
+path = "/api/products/repo-reaper/agents"
+description = "List RepoReaper agent team."
+
+[[routes]]
+method = "POST"
+path = "/api/products/repo-reaper/agents"
+description = "Save RepoReaper agent team."
+
+[[routes]]
+method = "DELETE"
+path = "/api/products/repo-reaper/agents/:id"
+description = "Remove a RepoReaper agent."
+
+[[routes]]
+method = "GET"
+path = "/api/products/repo-reaper/presets"
+description = "List RepoReaper presets."
+
+[[routes]]
+method = "POST"
+path = "/api/products/repo-reaper/presets"
+description = "Save a RepoReaper preset."
+
+[[routes]]
+method = "DELETE"
+path = "/api/products/repo-reaper/presets/:name"
+description = "Delete a RepoReaper preset."
+
+[[routes]]
+method = "GET"
+path = "/api/products/repo-reaper/repo-lists"
+description = "Read RepoReaper allowlist, denylist, and opt-out lists."
+
+[[routes]]
+method = "POST"
+path = "/api/products/repo-reaper/repo-lists"
+description = "Add a repo list entry."
+
+[[routes]]
+method = "DELETE"
+path = "/api/products/repo-reaper/repo-lists/*repo"
+description = "Remove a repo list entry."
+
+[[routes]]
+method = "GET"
+path = "/api/products/repo-reaper/cooldowns"
+description = "List provider cooldowns."
+
+[[routes]]
+method = "DELETE"
+path = "/api/products/repo-reaper/cooldowns/:provider"
+description = "Clear a provider cooldown."
+
+[[routes]]
+method = "GET"
+path = "/api/products/repo-reaper/watch-mode"
+description = "Read RepoReaper watch mode state."
+
+[[routes]]
+method = "POST"
+path = "/api/products/repo-reaper/watch-mode"
+description = "Update RepoReaper watch mode state."
+
+[[routes]]
+method = "GET"
+path = "/api/products/repo-reaper/stats/lifetime-cost"
+description = "Read RepoReaper lifetime cost."
+
+[[routes]]
+method = "GET"
+path = "/api/products/repo-reaper/leaderboard"
+description = "Read agent performance leaderboard."
+
+[[routes]]
+method = "GET"
+path = "/api/products/repo-reaper/rejected"
+description = "List rejected patches."
+
+[[routes]]
+method = "GET"
+path = "/api/products/repo-reaper/pr-tracking"
+description = "List tracked pull requests."
+
+[[routes]]
+method = "POST"
+path = "/api/products/repo-reaper/pr-tracking/:repo/:pr_number/refresh"
+description = "Refresh a tracked pull request state."
+
+[[routes]]
+method = "GET"
+path = "/api/products/repo-reaper/github/rate-limit"
+description = "Read GitHub rate limit state."
+
+[[routes]]
+method = "GET"
+path = "/api/products/repo-reaper/schedules"
+description = "List scheduled RepoReaper runs."
+
+[[routes]]
+method = "POST"
+path = "/api/products/repo-reaper/schedules"
+description = "Create a scheduled RepoReaper run."
+
+[[routes]]
+method = "DELETE"
+path = "/api/products/repo-reaper/schedules/:id"
+description = "Delete a scheduled RepoReaper run."
+
+[[routes]]
+method = "PATCH"
+path = "/api/products/repo-reaper/schedules/:id/toggle"
+description = "Toggle a scheduled RepoReaper run."
+
+[[routes]]
+method = "POST"
+path = "/api/products/repo-reaper/webhook/github"
+description = "Receive GitHub webhooks for watch mode."
