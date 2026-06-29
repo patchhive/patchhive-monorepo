@@ -11,17 +11,17 @@ pub async fn validate_config(client: &Client) -> Vec<StartupCheck> {
 
     if crate::auth::auth_enabled() {
         checks.push(StartupCheck::info(
-            "API-key auth is enabled for this product starter.",
+            "API-key auth is enabled for VulnTriage.",
         ));
     } else {
         checks.push(StartupCheck::warn(
-            "API-key auth is not enabled yet. Generate a key before exposing this starter beyond local development.",
+            "API-key auth is not enabled yet. Generate a key before exposing VulnTriage beyond local development.",
         ));
     }
 
     match crate::github::validate_token(client).await {
         Ok(_) => checks.push(StartupCheck::info(
-            "GitHub token is configured. VulnTriage can read code scanning and dependency alerts with healthier permissions.",
+            "GitHub token is configured. VulnTriage will read code scanning and Dependabot alerts when this token has access for the target repository.",
         )),
         Err(_) => checks.push(StartupCheck::warn(
             "BOT_GITHUB_TOKEN or GITHUB_TOKEN is not configured. Public reads may still work in some repos, but security APIs and rate limits will be weaker.",
