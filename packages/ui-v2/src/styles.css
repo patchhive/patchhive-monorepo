@@ -1120,6 +1120,8 @@ h1 {
 .repo-card {
   display: grid;
   gap: 12px;
+  min-width: 0;
+  overflow: hidden;
   padding: 13px;
 }
 
@@ -1130,6 +1132,15 @@ h1 {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.repo-head > :first-child {
+  min-width: 0;
+}
+
+.repo-card .muted {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
 }
 
 .repo-name {
