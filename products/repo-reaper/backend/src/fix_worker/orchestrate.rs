@@ -16,8 +16,8 @@ use super::memory::submit_smith_rejection_candidate;
 use super::patch::{apply_patch_with_self_heal, publish_pull_request};
 use super::sse::{alog, astatus, sse_ev};
 use super::types::{
-    build_attempt_target, build_issue_scope, cancelled, cfg, cleanup_work_path, finish_error_attempt,
-    finish_skipped_attempt, pick_fix_agents, FixIssueJob, SmithReviewOutcome,
+    build_attempt_target, build_issue_scope, cancelled, cfg, cleanup_work_path,
+    finish_error_attempt, finish_skipped_attempt, pick_fix_agents, FixIssueJob, SmithReviewOutcome,
 };
 
 pub async fn fix_one(job: FixIssueJob) {

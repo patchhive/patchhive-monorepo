@@ -190,9 +190,9 @@ async fn score_discovered_issues(
     scout: &AgentConfig,
     tx: &mpsc::Sender<Result<Event, Infallible>>,
     run_cost: Option<&Arc<AtomicI64>>,
-) {
+) -> bool {
     if issues.is_empty() {
-        return;
+        return true;
     }
 
     match agent_score_issues(http, issues, scout).await {
@@ -200,11 +200,13 @@ async fn score_discovered_issues(
             if let Some(run_cost) = run_cost {
                 run_cost.fetch_add((cost * 1_000_000.0) as i64, Ordering::Relaxed);
             }
+            true
         }
         Err(e) => {
             let _ = tx
                 .send(alog(scout, &format!("Scoring failed: {e}"), "warn"))
                 .await;
+            false
         }
     }
 }
@@ -216,7 +218,7 @@ async fn collect_targets(
     filters: &RepoFilters,
     tx: &mpsc::Sender<Result<Event, Infallible>>,
     run_cost: Option<&Arc<AtomicI64>>,
-) -> (Vec<Value>, Vec<Value>, Vec<Value>) {
+) -> (Vec<Value>, Vec<Value>, Vec<Value>, bool) {
     let (repos, mut issues) = discover(
         http,
         req,
@@ -228,14 +230,14 @@ async fn collect_targets(
     )
     .await;
 
-    score_discovered_issues(http, &mut issues, scout, tx, run_cost).await;
+    let scoring_available = score_discovered_issues(http, &mut issues, scout, tx, run_cost).await;
     let fixable = issues
         .iter()
         .take(req.max_issues)
         .cloned()
         .collect::<Vec<_>>();
 
-    (repos, issues, fixable)
+    (repos, issues, fixable, scoring_available)
 }
 
 async fn emit_queued_targets(
@@ -465,31 +467,61 @@ pub async fn dry_run(
             ))
             .await;
 
-        let (repos, issues, fixable) =
+        let (repos, issues, fixable, scoring_available) =
             collect_targets(&http, &req, &team.scout, &filters, &tx, None).await;
         let _ = tx.send(sse("issues", json!({"issues": issues}))).await;
-        let _ = tx
-            .send(alog(
-                &team.scout,
-                &format!(
-                    "[DRY STALK] Would reap {} issues — 0 changes made",
-                    fixable.len()
-                ),
-                "success",
-            ))
-            .await;
-
-        if let Ok((report, _)) = agent_dry_run_analysis(&http, &fixable, &repos, &team.scout).await
-        {
+        let mut analysis_available = false;
+        if scoring_available {
             let _ = tx
-                .send(sse("dry_run_report", json!({"report": report})))
+                .send(alog(
+                    &team.scout,
+                    &format!(
+                        "[DRY STALK] Would target {} scored issues — 0 changes made",
+                        fixable.len()
+                    ),
+                    "success",
+                ))
+                .await;
+
+            match agent_dry_run_analysis(&http, &fixable, &repos, &team.scout).await {
+                Ok((report, _)) => {
+                    analysis_available = true;
+                    let _ = tx
+                        .send(sse("dry_run_report", json!({"report": report})))
+                        .await;
+                }
+                Err(e) => {
+                    let _ = tx
+                        .send(alog(
+                            &team.scout,
+                            &format!("Dry-run analysis failed: {e}"),
+                            "warn",
+                        ))
+                        .await;
+                }
+            }
+        } else {
+            let _ = tx
+                .send(alog(
+                    &team.scout,
+                    &format!(
+                        "[DRY STALK] Found {} candidates, but Scout scoring and analysis could not run — 0 changes made",
+                        fixable.len()
+                    ),
+                    "warn",
+                ))
                 .await;
         }
 
         let _ = tx
             .send(sse(
                 "done",
-                json!({"dry_run": true, "total_would_reap": fixable.len()}),
+                json!({
+                    "analysis_available": analysis_available,
+                    "dry_run": true,
+                    "scoring_available": scoring_available,
+                    "total_would_reap": fixable.len()
+                }),
             ))
             .await;
     });
@@ -556,7 +588,7 @@ pub async fn execute_run(
     let _ = tx.send(sse("phase", json!({"phase":"scan"}))).await;
     let _ = tx.send(astatus(&team.scout.id, "working", "Hunting")).await;
 
-    let (repos, all_issues, fixable) =
+    let (repos, all_issues, fixable, _scoring_available) =
         collect_targets(&http, &req, &team.scout, &filters, &tx, Some(&run_cost)).await;
 
     let _ = tx.send(sse("phase", json!({"phase":"triage"}))).await;

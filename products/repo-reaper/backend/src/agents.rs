@@ -141,8 +141,12 @@ pub async fn ai_call(http: &Client, p: &AgentCallParams<'_>) -> Result<(String, 
 async fn anthropic_call(http: &Client, p: &AgentCallParams<'_>) -> Result<(String, f64)> {
     let key_owned = p
         .api_key
-        .map(|s| s.to_string())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
         .or_else(|| std::env::var("PROVIDER_API_KEY").ok())
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
         .ok_or_else(|| anyhow!("No API key for anthropic"))?;
     let key = key_owned.as_str();
     let body = json!({
@@ -209,8 +213,12 @@ async fn openai_call(http: &Client, p: &AgentCallParams<'_>, base: &str) -> Resu
 async fn gemini_call(http: &Client, p: &AgentCallParams<'_>) -> Result<(String, f64)> {
     let key_owned = p
         .api_key
-        .map(|s| s.to_string())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
         .or_else(|| std::env::var("PROVIDER_API_KEY").ok())
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
         .ok_or_else(|| anyhow!("No Gemini key"))?;
     let key = key_owned.as_str();
     let url = format!(

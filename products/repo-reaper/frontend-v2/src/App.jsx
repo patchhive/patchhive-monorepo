@@ -654,15 +654,17 @@ function DryRunSurface({ agents, config, dry, error, health, history, onChangePa
   const rail = useMemo(() => buildRail(health, config, { ...stream, params }, history, selectedRun, watchMode), [health, config, stream, params, history, selectedRun, watchMode]);
   const dryIssues = normalizeIssues(dry.issues);
   const teamReady = agentsReady(agents, health);
+  const scoringUnavailable = dry.done?.scoring_available === false;
+  const reportUnavailable = dry.done?.analysis_available === false && !dry.report;
   const disabledReason = !teamReady
     ? "Dry Stalk still needs a Scout agent for scoring and analysis. Recruit a team in Checks; no repository writes will run here."
     : !githubReady(config, health)
       ? "Configure the PatchHive bot GitHub token before scanning candidate issues."
       : "";
   const metrics = [
-    { label: "Would target", value: String(dryIssues.length || asCount(dry.done?.total_would_reap)), tone: "sig", sub: "no writes" },
+    { label: "Would target", value: String(dryIssues.length || asCount(dry.done?.total_would_reap)), tone: scoringUnavailable ? "warn" : "sig", sub: scoringUnavailable ? "unscored" : "no writes" },
     { label: "Phase", value: dry.phase || "standby", tone: dry.running ? "warn" : "sig", sub: "dry stalk" },
-    { label: "Report", value: dry.report ? "ready" : "none", tone: dry.report ? "ok" : "sig", sub: "Scout analysis" },
+    { label: "Report", value: dry.report ? "ready" : reportUnavailable ? "auth needed" : "none", tone: dry.report ? "ok" : reportUnavailable ? "warn" : "sig", sub: "Scout analysis" },
     { label: "Budget", value: "0", tone: "ok", sub: "no patch cost" },
     { label: "Writes", value: "0", tone: "ok", sub: "safe inspection" },
   ];
@@ -688,7 +690,7 @@ function DryRunSurface({ agents, config, dry, error, health, history, onChangePa
           <MetricBand metrics={metrics} />
           <div className="atlas-layout suite-four-layout">
             <CandidatePanel issues={dryIssues} selectedRun={null} />
-            <Panel eyebrow="Scout report" title="Dry-run analysis" action={<span className="chip signal">{dry.report ? "ready" : "waiting"}</span>}>
+            <Panel eyebrow="Scout report" title="Dry-run analysis" action={<span className={`chip ${dry.report ? "green" : reportUnavailable ? "amber" : "signal"}`}>{dry.report ? "ready" : reportUnavailable ? "auth needed" : "waiting"}</span>}>
               <div className="panelbody repo-list">
                 {dry.report ? (
                   <div className="feed-item">
@@ -700,8 +702,8 @@ function DryRunSurface({ agents, config, dry, error, health, history, onChangePa
                   </div>
                 ) : (
                   <div className="empty-v2">
-                    <strong>No dry-run report</strong>
-                    <span>Run Dry Stalk to inspect candidate quality without making changes.</span>
+                    <strong>{reportUnavailable ? "Scout analysis unavailable" : "No dry-run report"}</strong>
+                    <span>{reportUnavailable ? "Check the active agent provider key or switch the team to a configured local/OpenAI-compatible gateway." : "Run Dry Stalk to inspect candidate quality without making changes."}</span>
                   </div>
                 )}
                 {dry.logs?.slice(-4).map((log, index) => (

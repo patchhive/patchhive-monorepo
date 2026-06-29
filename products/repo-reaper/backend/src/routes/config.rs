@@ -630,6 +630,10 @@ async fn set_team(State(state): State<AppState>, Json(body): Json<TeamBody>) -> 
         if a.id.is_empty() {
             a.id = Uuid::new_v4().to_string()[..8].to_string();
         }
+        a.api_key = clean_optional(a.api_key.as_deref());
+        a.base_url = clean_optional(a.base_url.as_deref());
+        a.bot_token = clean_optional(a.bot_token.as_deref());
+        a.bot_user = clean_optional(a.bot_user.as_deref());
         a.status = "idle".into();
         a.current_task = String::new();
         map.insert(a.id.clone(), a);
