@@ -844,6 +844,8 @@ function AgentTeamPanel({ agents, apiKey, config, onSaveAgents, saving }) {
   const [draft, setDraft] = useState(() => blankAgent(config));
   const [defaults, setDefaults] = useState(() => blankTeamDefaults(config));
   const [freeOnly, setFreeOnly] = useState(false);
+  const [showProviderAdvanced, setShowProviderAdvanced] = useState(false);
+  const [showManualAgent, setShowManualAgent] = useState(false);
   const team = Array.isArray(agents) ? agents : [];
   const fallbackModels = useMemo(() => config?.providers || undefined, [config?.providers]);
   const setDefault = (key, value) => setDefaults((current) => {
@@ -893,11 +895,11 @@ function AgentTeamPanel({ agents, apiKey, config, onSaveAgents, saving }) {
         <div className="feed-item">
           <div>
             <div className="feed-title">Provider defaults</div>
-            <div className="feed-meta">Enter shared custom provider details once, then apply them to the whole active team.</div>
+            <div className="feed-meta">Shared provider, model, and optional credentials for the active team.</div>
           </div>
           <span className="chip signal">{PROVIDER_LABELS[defaults.provider] || defaults.provider}</span>
         </div>
-        <div className="form-grid">
+        <div className="form-grid compact">
           <label className="v2-field">
             Provider
             <select className="v2-input" onChange={(event) => setDefault("provider", event.target.value)} value={defaults.provider}>
@@ -917,10 +919,6 @@ function AgentTeamPanel({ agents, apiKey, config, onSaveAgents, saving }) {
             </select>
           </label>
           <label className="v2-field">
-            Manual model
-            <input className="v2-input" disabled={modelDiscovery.loading} onChange={(event) => setDefault("model", event.target.value)} placeholder="type any model id" value={defaults.model} />
-          </label>
-          <label className="v2-field">
             Base URL
             <input className="v2-input" onChange={(event) => setDefault("base_url", event.target.value)} placeholder="custom OpenAI-compatible endpoint" value={defaults.base_url} />
           </label>
@@ -928,49 +926,55 @@ function AgentTeamPanel({ agents, apiKey, config, onSaveAgents, saving }) {
             Provider key
             <input className="v2-input" onChange={(event) => setDefault("api_key", event.target.value)} placeholder="saved encrypted when key is configured" type="password" value={defaults.api_key} />
           </label>
-          <label className="v2-field">
-            Bot token override
-            <input className="v2-input" onChange={(event) => setDefault("bot_token", event.target.value)} placeholder="optional per-team override" type="password" value={defaults.bot_token} />
-          </label>
-          <label className="v2-field">
-            Bot user override
-            <input className="v2-input" onChange={(event) => setDefault("bot_user", event.target.value)} placeholder="optional bot username" value={defaults.bot_user} />
-          </label>
-          <div className="v2-field">
-            Model list
-            <button className="btn" disabled={saving || modelDiscovery.loading || !defaults.provider} onClick={() => modelDiscovery.loadModels({ includeProviderKey: true })} type="button">
-              {modelDiscovery.loading ? "Pulling..." : "Pull models"}
-            </button>
-          </div>
-          <label className="rowline" style={{ alignItems: "flex-start", justifyContent: "flex-start" }}>
-            <input checked={freeOnly} onChange={(event) => setFreeOnly(event.target.checked)} style={{ marginTop: 3 }} type="checkbox" />
-            <span>
-              <span className="repo-name" style={{ display: "block", fontSize: "0.8rem" }}>Free only</span>
-              <span className="feed-meta">Show provider models marked free while keeping manual entry available.</span>
-            </span>
-          </label>
-          <div className="v2-field">
-            Connectivity
-            <button className="btn" disabled={saving || modelDiscovery.testing || !defaults.provider || !defaults.model.trim()} onClick={modelDiscovery.testModel} type="button">
-              {modelDiscovery.testing ? "Testing..." : "Test model"}
-            </button>
-          </div>
         </div>
+        {showProviderAdvanced && (
+          <div className="form-grid compact">
+            <label className="v2-field">
+              Manual model
+              <input className="v2-input" disabled={modelDiscovery.loading} onChange={(event) => setDefault("model", event.target.value)} placeholder="type any model id" value={defaults.model} />
+            </label>
+            <label className="v2-field">
+              Bot token override
+              <input className="v2-input" onChange={(event) => setDefault("bot_token", event.target.value)} placeholder="optional per-team override" type="password" value={defaults.bot_token} />
+            </label>
+            <label className="v2-field">
+              Bot user override
+              <input className="v2-input" onChange={(event) => setDefault("bot_user", event.target.value)} placeholder="optional bot username" value={defaults.bot_user} />
+            </label>
+          </div>
+        )}
         <div className="repo-meta">
           <button className="btn primary" disabled={saving || !defaults.model.trim()} onClick={saveStarterTeam} type="button">Build starter with defaults</button>
           <button className="btn" disabled={saving || !team.length || !defaults.model.trim()} onClick={applyDefaultsToTeam} type="button">Apply defaults to team</button>
+          <button className="btn" disabled={saving || modelDiscovery.loading || !defaults.provider} onClick={() => modelDiscovery.loadModels({ includeProviderKey: true })} type="button">
+            {modelDiscovery.loading ? "Pulling..." : "Pull models"}
+          </button>
+          <button className="btn" disabled={saving || modelDiscovery.testing || !defaults.provider || !defaults.model.trim()} onClick={modelDiscovery.testModel} type="button">
+            {modelDiscovery.testing ? "Testing..." : "Test model"}
+          </button>
+          <button className="btn" onClick={() => setShowProviderAdvanced((visible) => !visible)} type="button">
+            {showProviderAdvanced ? "Hide advanced" : "Advanced"}
+          </button>
+          <button className="btn" onClick={() => setShowManualAgent((visible) => !visible)} type="button">
+            {showManualAgent ? "Hide manual agent" : "Manual agent"}
+          </button>
+          <label className="chip signal" style={{ cursor: "pointer", gap: 6 }}>
+            <input checked={freeOnly} onChange={(event) => setFreeOnly(event.target.checked)} type="checkbox" />
+            free only
+          </label>
           <span className="chip green">one provider setup</span>
           <span className="chip signal">{modelDiscovery.models.length} models</span>
-          {freeOnly && <span className="chip amber">free only</span>}
-          <span className="feed-meta" style={{ flexBasis: "100%" }}>{modelDiscovery.statusText}</span>
+          {modelDiscovery.statusText && (
+            <span className="feed-meta break-all" style={{ flexBasis: "100%" }}>{modelDiscovery.statusText}</span>
+          )}
           {modelDiscovery.filteredStatusText && (
-            <span className="feed-meta" style={{ flexBasis: "100%" }}>{modelDiscovery.filteredStatusText}</span>
+            <span className="feed-meta break-all" style={{ flexBasis: "100%" }}>{modelDiscovery.filteredStatusText}</span>
           )}
           {modelDiscovery.freeFilteredStatusText && (
-            <span className="feed-meta" style={{ flexBasis: "100%" }}>{modelDiscovery.freeFilteredStatusText}</span>
+            <span className="feed-meta break-all" style={{ flexBasis: "100%" }}>{modelDiscovery.freeFilteredStatusText}</span>
           )}
           {modelDiscovery.testStatusText && (
-            <span className="feed-meta" style={{ flexBasis: "100%" }}>{modelDiscovery.testStatusText}</span>
+            <span className="feed-meta break-all" style={{ flexBasis: "100%" }}>{modelDiscovery.testStatusText}</span>
           )}
         </div>
         {team.map((agent) => (
@@ -982,45 +986,49 @@ function AgentTeamPanel({ agents, apiKey, config, onSaveAgents, saving }) {
             <button className="btn" disabled={saving} onClick={() => onSaveAgents(team.filter((item) => item.id !== agent.id))} type="button">Remove</button>
           </div>
         ))}
-        <div className="form-grid">
-          <label className="v2-field">
-            Name
-            <input className="v2-input" onChange={(event) => set("name", event.target.value)} value={draft.name} />
-          </label>
-          <label className="v2-field">
-            Role
-            <select className="v2-input" onChange={(event) => set("role", event.target.value)} value={draft.role}>
-              {AGENT_ROLES.map((role) => <option key={role.value} value={role.value}>{role.label}</option>)}
-            </select>
-          </label>
-          <label className="v2-field">
-            Provider
-            <select className="v2-input" onChange={(event) => set("provider", event.target.value)} value={draft.provider}>
-              {Object.entries(PROVIDER_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-            </select>
-          </label>
-          <label className="v2-field">
-            Model
-            <input className="v2-input" onChange={(event) => set("model", event.target.value)} value={draft.model} />
-          </label>
-          {draft.provider === "custom" && (
-            <label className="v2-field">
-              Base URL
-              <input className="v2-input" onChange={(event) => set("base_url", event.target.value)} placeholder="https://api.example.com/v1" value={draft.base_url} />
-            </label>
-          )}
-          <label className="v2-field">
-            Provider key
-            <input className="v2-input" onChange={(event) => set("api_key", event.target.value)} placeholder="optional when global/local is configured" type="password" value={draft.api_key} />
-          </label>
-          <div className="v2-field">
-            Action
-            <button className="btn primary" disabled={saving || !draft.name.trim() || !draft.model.trim()} onClick={addAgent} type="button">Add agent</button>
-          </div>
-        </div>
-        <div className="repo-meta">
-          {AGENT_ROLES.map((role) => <span className="chip signal" key={role.value}>{role.label}: {role.detail}</span>)}
-        </div>
+        {showManualAgent && (
+          <>
+            <div className="form-grid compact">
+              <label className="v2-field">
+                Name
+                <input className="v2-input" onChange={(event) => set("name", event.target.value)} value={draft.name} />
+              </label>
+              <label className="v2-field">
+                Role
+                <select className="v2-input" onChange={(event) => set("role", event.target.value)} value={draft.role}>
+                  {AGENT_ROLES.map((role) => <option key={role.value} value={role.value}>{role.label}</option>)}
+                </select>
+              </label>
+              <label className="v2-field">
+                Provider
+                <select className="v2-input" onChange={(event) => set("provider", event.target.value)} value={draft.provider}>
+                  {Object.entries(PROVIDER_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                </select>
+              </label>
+              <label className="v2-field">
+                Model
+                <input className="v2-input" onChange={(event) => set("model", event.target.value)} value={draft.model} />
+              </label>
+              {draft.provider === "custom" && (
+                <label className="v2-field">
+                  Base URL
+                  <input className="v2-input" onChange={(event) => set("base_url", event.target.value)} placeholder="https://api.example.com/v1" value={draft.base_url} />
+                </label>
+              )}
+              <label className="v2-field">
+                Provider key
+                <input className="v2-input" onChange={(event) => set("api_key", event.target.value)} placeholder="optional when global/local is configured" type="password" value={draft.api_key} />
+              </label>
+              <div className="v2-field">
+                Action
+                <button className="btn primary" disabled={saving || !draft.name.trim() || !draft.model.trim()} onClick={addAgent} type="button">Add agent</button>
+              </div>
+            </div>
+            <div className="repo-meta">
+              {AGENT_ROLES.map((role) => <span className="chip signal" key={role.value}>{role.label}: {role.detail}</span>)}
+            </div>
+          </>
+        )}
       </div>
     </Panel>
   );
