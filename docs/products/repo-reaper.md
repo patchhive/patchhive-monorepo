@@ -210,6 +210,9 @@ Current v2 behavior:
 - Checks includes provider defaults for the active team, so custom
   OpenAI-compatible base URLs, provider keys, and optional bot overrides can be
   entered once and applied to every agent instead of pasted into each role.
+- Provider defaults can pull the current model list through RepoReaper's
+  `/models/:provider` endpoint while keeping manual model entry available for
+  custom providers with incomplete model-list support.
 - Mission Deck and Dry Stalk are gated until an agent team exists, so the UI no
   longer lets a run fail with a bare `No agents configured` backend error.
 - RepoReaper persists the active team and saved team presets in SQLite.

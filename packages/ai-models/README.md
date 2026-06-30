@@ -2,18 +2,27 @@
 
 Shared AI provider and model-selection UI for PatchHive products.
 
-This package keeps product frontends from each inventing their own provider list, fallback model catalog, model refresh button, and "live vs static" status copy. Products still own their backend model-discovery endpoints because backend behavior may depend on product-specific auth, local gateway settings, and provider safety rules.
+This package keeps product frontends from each inventing their own provider list,
+fallback model catalog, model refresh behavior, and "live vs static" status
+copy. Products still own their backend model-discovery endpoints because backend
+behavior may depend on product-specific auth, local gateway settings, and
+provider safety rules.
 
 ## What It Provides
 
-- `AIModelSelector`: provider + model selector with live refresh support.
+- `useProviderModelDiscovery`: UI-agnostic hook for v2 product frontends that
+  render their own controls.
+- `AIModelSelector`: legacy provider + model selector with live refresh support.
 - `AI_PROVIDERS`: shared provider metadata.
 - `DEFAULT_PROVIDER_MODELS`: conservative fallback model lists.
 - `defaultModelForProvider`: helper for initializing agent/config forms.
 
+Prefer `@patchhivehq/ai-models/model-discovery` for new v2 surfaces so they do
+not inherit old UI components while the suite is migrating.
+
 ## Expected Product Endpoint
 
-Products that use `AIModelSelector` should expose:
+Products that use `useProviderModelDiscovery` or `AIModelSelector` should expose:
 
 ```text
 GET /models/:provider

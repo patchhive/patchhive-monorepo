@@ -27,6 +27,10 @@ export default defineConfig({
         find: "@patchhivehq/product-shell/auth",
         replacement: fileURLToPath(new URL("../../../packages/product-shell/src/auth.js", import.meta.url)),
       },
+      {
+        find: "@patchhivehq/ai-models/model-discovery",
+        replacement: fileURLToPath(new URL("../../../packages/ai-models/src/useProviderModelDiscovery.js", import.meta.url)),
+      },
     ],
   },
 });

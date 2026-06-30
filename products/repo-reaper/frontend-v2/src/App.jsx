@@ -13,6 +13,7 @@ import {
   radarWindowFromTimestamp,
   usePersistentProductTab,
 } from "@patchhivehq/ui-v2";
+import { useProviderModelDiscovery } from "@patchhivehq/ai-models/model-discovery";
 import { API } from "./config.js";
 
 const TABS = [
@@ -839,17 +840,30 @@ function checkTone(level) {
   return "green";
 }
 
-function AgentTeamPanel({ agents, config, onSaveAgents, saving }) {
+function AgentTeamPanel({ agents, apiKey, config, onSaveAgents, saving }) {
   const [draft, setDraft] = useState(() => blankAgent(config));
   const [defaults, setDefaults] = useState(() => blankTeamDefaults(config));
   const team = Array.isArray(agents) ? agents : [];
-  const set = (key, value) => setDraft((current) => {
+  const fallbackModels = useMemo(() => config?.providers || undefined, [config?.providers]);
+  const setDefault = (key, value) => setDefaults((current) => {
     if (key === "provider") {
       return { ...current, provider: value, model: PROVIDER_MODELS[value] || current.model };
     }
     return { ...current, [key]: value };
   });
-  const setDefault = (key, value) => setDefaults((current) => {
+  const modelDiscovery = useProviderModelDiscovery({
+    apiBase: API,
+    authToken: apiKey,
+    provider: defaults.provider,
+    model: defaults.model,
+    onModelChange: (nextModel) => setDefault("model", nextModel),
+    providerKey: defaults.api_key,
+    baseUrl: defaults.base_url,
+    fallbackModels,
+    localGatewayConfigured: Boolean(config?.PATCHHIVE_AI_URL || config?.AI_LOCAL_STATUS?.ok || config?.AI_LOCAL_STATUS?.status === "ok"),
+    globalKeyConfigured: Boolean(config?.PROVIDER_API_KEY_SET),
+  });
+  const set = (key, value) => setDraft((current) => {
     if (key === "provider") {
       return { ...current, provider: value, model: PROVIDER_MODELS[value] || current.model };
     }
@@ -890,7 +904,16 @@ function AgentTeamPanel({ agents, config, onSaveAgents, saving }) {
           </label>
           <label className="v2-field">
             Model
-            <input className="v2-input" onChange={(event) => setDefault("model", event.target.value)} value={defaults.model} />
+            <input
+              className="v2-input"
+              disabled={modelDiscovery.loading}
+              list="repo-reaper-provider-models"
+              onChange={(event) => setDefault("model", event.target.value)}
+              value={defaults.model}
+            />
+            <datalist id="repo-reaper-provider-models">
+              {modelDiscovery.models.map((modelId) => <option key={modelId} value={modelId} />)}
+            </datalist>
           </label>
           <label className="v2-field">
             Base URL
@@ -908,11 +931,18 @@ function AgentTeamPanel({ agents, config, onSaveAgents, saving }) {
             Bot user override
             <input className="v2-input" onChange={(event) => setDefault("bot_user", event.target.value)} placeholder="optional bot username" value={defaults.bot_user} />
           </label>
+          <div className="v2-field">
+            Model list
+            <button className="btn" disabled={saving || modelDiscovery.loading || !defaults.provider} onClick={() => modelDiscovery.loadModels({ includeProviderKey: true })} type="button">
+              {modelDiscovery.loading ? "Pulling..." : "Pull models"}
+            </button>
+          </div>
         </div>
         <div className="repo-meta">
           <button className="btn primary" disabled={saving || !defaults.model.trim()} onClick={saveStarterTeam} type="button">Build starter with defaults</button>
           <button className="btn" disabled={saving || !team.length || !defaults.model.trim()} onClick={applyDefaultsToTeam} type="button">Apply defaults to team</button>
           <span className="chip green">one provider setup</span>
+          <span className="feed-meta" style={{ flexBasis: "100%" }}>{modelDiscovery.statusText}</span>
         </div>
         {team.map((agent) => (
           <div className="feed-item" key={agent.id || `${agent.role}-${agent.name}`}>
@@ -967,7 +997,7 @@ function AgentTeamPanel({ agents, config, onSaveAgents, saving }) {
   );
 }
 
-function ChecksSurface({ agents, config, health, history, onClearRun, onRefresh, onSaveAgents, runtime, savingAgents, selectedRun, stream, watchMode }) {
+function ChecksSurface({ agents, apiKey, config, health, history, onClearRun, onRefresh, onSaveAgents, runtime, savingAgents, selectedRun, stream, watchMode }) {
   const checks = runtime.checks || [];
   const warnings = checks.filter((check) => check.level === "warn" || check.level === "error").length;
   const metrics = [
@@ -993,7 +1023,7 @@ function ChecksSurface({ agents, config, health, history, onClearRun, onRefresh,
       {runtime.error && <StatusBanner tone="red">{runtime.error}</StatusBanner>}
       <MetricBand metrics={metrics} />
       <div className="atlas-layout suite-four-layout">
-        <AgentTeamPanel agents={agents} config={config} onSaveAgents={onSaveAgents} saving={savingAgents} />
+        <AgentTeamPanel agents={agents} apiKey={apiKey} config={config} onSaveAgents={onSaveAgents} saving={savingAgents} />
         <Panel eyebrow="Health" title="Backend status" action={<span className={`chip ${health.status === "ok" ? "green" : "amber"}`}>{health.status || "unknown"}</span>}>
           <div className="panelbody repo-list">
             <div className="rowline"><span className="muted">Auth enabled</span><span className={`chip ${health.auth_enabled ? "green" : "amber"}`}>{health.auth_enabled ? "yes" : "no"}</span></div>
@@ -1357,6 +1387,7 @@ export default function App() {
       {activeTab === "checks" && (
         <ChecksSurface
           agents={agents}
+          apiKey={auth.apiKey}
           config={config}
           health={health}
           history={history}

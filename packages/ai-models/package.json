@@ -1,7 +1,7 @@
 {
   "name": "@patchhivehq/ai-models",
   "version": "0.1.0",
-  "description": "Shared AI provider catalogs and model selector components for PatchHive products.",
+  "description": "Shared AI provider catalogs, model discovery hooks, and model selector components for PatchHive products.",
   "type": "module",
   "main": "./src/index.js",
   "files": [
@@ -9,7 +9,8 @@
     "README.md"
   ],
   "exports": {
-    ".": "./src/index.js"
+    ".": "./src/index.js",
+    "./model-discovery": "./src/useProviderModelDiscovery.js"
   },
   "repository": {
     "type": "git",
