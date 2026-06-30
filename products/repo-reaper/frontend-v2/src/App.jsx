@@ -169,6 +169,37 @@ function blankAgent(config, role = "scout") {
   };
 }
 
+function blankTeamDefaults(config) {
+  const provider = defaultAgentProvider(config);
+  return {
+    api_key: "",
+    base_url: "",
+    bot_token: "",
+    bot_user: "",
+    model: PROVIDER_MODELS[provider] || "",
+    provider,
+  };
+}
+
+function applyTeamDefaults(agent, defaults = {}) {
+  const provider = defaults.provider || agent.provider || "openai";
+  const model = String(defaults.model || "").trim() || agent.model || PROVIDER_MODELS[provider] || "";
+  const next = {
+    ...agent,
+    model,
+    provider,
+  };
+  ["api_key", "base_url", "bot_token", "bot_user"].forEach((key) => {
+    const value = String(defaults[key] || "").trim();
+    if (value) next[key] = value;
+  });
+  return next;
+}
+
+function applyTeamDefaultsToAgents(agents, defaults) {
+  return agents.map((agent) => applyTeamDefaults(agent, defaults));
+}
+
 function starterTeam(config) {
   const provider = defaultAgentProvider(config);
   const model = PROVIDER_MODELS[provider] || "";
@@ -810,6 +841,7 @@ function checkTone(level) {
 
 function AgentTeamPanel({ agents, config, onSaveAgents, saving }) {
   const [draft, setDraft] = useState(() => blankAgent(config));
+  const [defaults, setDefaults] = useState(() => blankTeamDefaults(config));
   const team = Array.isArray(agents) ? agents : [];
   const set = (key, value) => setDraft((current) => {
     if (key === "provider") {
@@ -817,10 +849,21 @@ function AgentTeamPanel({ agents, config, onSaveAgents, saving }) {
     }
     return { ...current, [key]: value };
   });
+  const setDefault = (key, value) => setDefaults((current) => {
+    if (key === "provider") {
+      return { ...current, provider: value, model: PROVIDER_MODELS[value] || current.model };
+    }
+    return { ...current, [key]: value };
+  });
   const addAgent = () => {
     if (!draft.name.trim() || !draft.role || !draft.provider || !draft.model.trim()) return;
-    onSaveAgents([...team, { ...draft, id: draft.id || `${draft.role}-${Date.now()}` }]);
+    onSaveAgents([...team, { ...applyTeamDefaults(draft, defaults), id: draft.id || `${draft.role}-${Date.now()}` }]);
     setDraft(blankAgent(config, draft.role));
+  };
+  const saveStarterTeam = () => onSaveAgents(applyTeamDefaultsToAgents(starterTeam(config), defaults));
+  const applyDefaultsToTeam = () => {
+    if (!team.length) return;
+    onSaveAgents(applyTeamDefaultsToAgents(team, defaults));
   };
   return (
     <Panel eyebrow="Team" title="Agent team" action={<span className={`chip ${team.length ? "green" : "amber"}`}>{team.length} agents</span>}>
@@ -828,9 +871,49 @@ function AgentTeamPanel({ agents, config, onSaveAgents, saving }) {
         {!team.length && (
           <div className="empty-v2">
             <strong>No agents configured</strong>
-            <span>RepoReaper keeps agents in memory. Recruit a starter team after restarts before running Dry Stalk or full hunts.</span>
+            <span>Recruit a starter team with shared provider defaults before running Dry Stalk or full hunts.</span>
           </div>
         )}
+        <div className="feed-item">
+          <div>
+            <div className="feed-title">Provider defaults</div>
+            <div className="feed-meta">Enter shared custom provider details once, then apply them to the whole active team.</div>
+          </div>
+          <span className="chip signal">{PROVIDER_LABELS[defaults.provider] || defaults.provider}</span>
+        </div>
+        <div className="form-grid">
+          <label className="v2-field">
+            Provider
+            <select className="v2-input" onChange={(event) => setDefault("provider", event.target.value)} value={defaults.provider}>
+              {Object.entries(PROVIDER_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+          </label>
+          <label className="v2-field">
+            Model
+            <input className="v2-input" onChange={(event) => setDefault("model", event.target.value)} value={defaults.model} />
+          </label>
+          <label className="v2-field">
+            Base URL
+            <input className="v2-input" onChange={(event) => setDefault("base_url", event.target.value)} placeholder="custom OpenAI-compatible endpoint" value={defaults.base_url} />
+          </label>
+          <label className="v2-field">
+            Provider key
+            <input className="v2-input" onChange={(event) => setDefault("api_key", event.target.value)} placeholder="saved encrypted when key is configured" type="password" value={defaults.api_key} />
+          </label>
+          <label className="v2-field">
+            Bot token override
+            <input className="v2-input" onChange={(event) => setDefault("bot_token", event.target.value)} placeholder="optional per-team override" type="password" value={defaults.bot_token} />
+          </label>
+          <label className="v2-field">
+            Bot user override
+            <input className="v2-input" onChange={(event) => setDefault("bot_user", event.target.value)} placeholder="optional bot username" value={defaults.bot_user} />
+          </label>
+        </div>
+        <div className="repo-meta">
+          <button className="btn primary" disabled={saving || !defaults.model.trim()} onClick={saveStarterTeam} type="button">Build starter with defaults</button>
+          <button className="btn" disabled={saving || !team.length || !defaults.model.trim()} onClick={applyDefaultsToTeam} type="button">Apply defaults to team</button>
+          <span className="chip green">one provider setup</span>
+        </div>
         {team.map((agent) => (
           <div className="feed-item" key={agent.id || `${agent.role}-${agent.name}`}>
             <div>
@@ -877,7 +960,6 @@ function AgentTeamPanel({ agents, config, onSaveAgents, saving }) {
           </div>
         </div>
         <div className="repo-meta">
-          <button className="btn" disabled={saving} onClick={() => onSaveAgents(starterTeam(config))} type="button">Use starter team</button>
           {AGENT_ROLES.map((role) => <span className="chip signal" key={role.value}>{role.label}: {role.detail}</span>)}
         </div>
       </div>

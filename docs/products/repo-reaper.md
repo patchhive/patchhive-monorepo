@@ -207,6 +207,9 @@ Current v2 behavior:
 
 - Checks can recruit a starter team and edit the backend's current in-memory
   agent team through `/agents`.
+- Checks includes provider defaults for the active team, so custom
+  OpenAI-compatible base URLs, provider keys, and optional bot overrides can be
+  entered once and applied to every agent instead of pasted into each role.
 - Mission Deck and Dry Stalk are gated until an agent team exists, so the UI no
   longer lets a run fail with a bare `No agents configured` backend error.
 - RepoReaper persists the active team and saved team presets in SQLite.
