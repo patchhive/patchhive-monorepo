@@ -164,10 +164,27 @@ function makeResponsesApiResponse(result, attempts) {
   };
 }
 
-function createErrorPayload(error, attempts = []) {
+function sanitizeProviderError(error) {
+  const message = String(error instanceof Error ? error.message : error || "").toLowerCase();
+  if (message.includes("auth") || message.includes("login") || message.includes("logged in")) {
+    return "provider authentication is unavailable";
+  }
+  if (message.includes("timeout") || message.includes("aborted")) {
+    return "provider request timed out";
+  }
+  if (message.includes("model")) {
+    return "provider model is unavailable";
+  }
+  if (message.includes("prompt")) {
+    return "invalid prompt request";
+  }
+  return "provider request failed";
+}
+
+function createErrorPayload(message, attempts = []) {
   return {
     error: {
-      message: error instanceof Error ? error.message : String(error),
+      message,
       type: "patchhive_gateway_error",
     },
     patchhive: { attempts },
@@ -330,16 +347,12 @@ export function createGateway(config = resolveGatewayConfig()) {
           provider,
           ok: false,
           model,
-          error: error instanceof Error ? error.message : String(error),
+          error: sanitizeProviderError(error),
         });
       }
     }
 
-    const message = attempts.length
-      ? attempts.map(attempt => `${attempt.provider}: ${attempt.error}`).join("; ")
-      : "No providers were configured.";
-
-    throw Object.assign(new Error(`All local AI providers failed. ${message}`), { attempts });
+    throw Object.assign(new Error("All local AI providers failed."), { attempts });
   }
 
   const server = http.createServer(async (req, res) => {
@@ -377,12 +390,12 @@ export function createGateway(config = resolveGatewayConfig()) {
       try {
         body = await readJson(req);
       } catch (error) {
-        writeJson(res, 400, createErrorPayload(new Error("Invalid JSON request body.")));
+        writeJson(res, 400, createErrorPayload("Invalid JSON request body."));
         return;
       }
 
       if (body.stream) {
-        writeJson(res, 400, createErrorPayload(new Error("Streaming is not supported yet by @patchhive/ai-local.")));
+        writeJson(res, 400, createErrorPayload("Streaming is not supported yet by @patchhive/ai-local."));
         return;
       }
 
@@ -400,13 +413,13 @@ export function createGateway(config = resolveGatewayConfig()) {
         writeJson(
           res,
           502,
-          createErrorPayload(error, error?.attempts || []),
+          createErrorPayload("All local AI providers failed.", error?.attempts || []),
         );
       }
       return;
     }
 
-    writeJson(res, 404, createErrorPayload(new Error(`Unknown route: ${req.method} ${url.pathname}`)));
+    writeJson(res, 404, createErrorPayload("Unknown route."));
   });
 
   return {
