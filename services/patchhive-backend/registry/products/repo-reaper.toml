@@ -142,6 +142,11 @@ path = "/api/products/repo-reaper/models/:provider"
 description = "Refresh models for a provider."
 
 [[routes]]
+method = "POST"
+path = "/api/products/repo-reaper/models/:provider/test"
+description = "Test provider connectivity for a selected model."
+
+[[routes]]
 method = "GET"
 path = "/api/products/repo-reaper/agents"
 description = "List RepoReaper agent team."
