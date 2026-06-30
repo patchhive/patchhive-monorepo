@@ -26,6 +26,12 @@ RepoReaper is PatchHive's outbound contribution product. It is a **multi-agent s
 
 RepoReaper is the **only current PatchHive product that writes code and opens pull requests**. It should be the last step in the early suite loop, after SignalHive and TrustGate have made candidate work visible.
 
+RepoReaper's agent team is also the seed implementation of the shared PatchHive
+Squad pattern. Future AI-capable products should reuse the shared Squad
+substrate for provider/model setup, encrypted per-agent secrets, presets,
+readiness, and HiveCore visibility instead of copying RepoReaper's team builder.
+See [Shared Squad architecture](../shared-squad-architecture.md).
+
 ---
 
 ## Core Workflow

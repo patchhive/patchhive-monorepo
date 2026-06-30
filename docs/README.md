@@ -37,6 +37,7 @@ The product documentation set is in [products/](products/).
 - [HiveCore first-stack readiness audit](hivecore-first-stack-readiness.md)
 - [HiveCore suite bootstrap wizard](hivecore-suite-bootstrap-wizard.md)
 - [Suite backend direction](suite-backend-direction.md)
+- [Shared Squad architecture](shared-squad-architecture.md)
 - [Product API contract v1](product-api-contract-v1.md)
 - [GitHub token scopes](github-token-scopes.md)
 - [MaintainerBot operating mode](maintainerbot-operating-mode.md)

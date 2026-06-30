@@ -182,6 +182,7 @@ Rules:
 - Browser code should not call third-party AI providers directly. It may pass a user-entered provider key to the local product backend for one-time model discovery.
 - Keep actual AI request execution in the product backend or a shared Rust crate once 2 or more products need the same backend model-discovery/runtime seam.
 - Custom providers should use OpenAI-compatible chat and model-list APIs and carry an explicit base URL in product config or agent config.
+- RepoReaper's agent team is the seed of a shared PatchHive Squad architecture: product-owned AI roles backed by shared provider/model discovery, model testing, noisy model filtering, encrypted per-agent secret storage, presets, readiness checks, and HiveCore visibility. Do not clone the RepoReaper team builder into future products; extract the common Squad substrate into `patchhive-product-core` when a second AI-capable product needs it. See [docs/shared-squad-architecture.md](/home/coemedia/Documents/code/patchhive/docs/shared-squad-architecture.md).
 
 ## Shared Rust Product Core
 
@@ -196,6 +197,7 @@ Rules:
 - Product backends should use `SqlitePool` from `patchhive-product-core` instead of a single global `Mutex<Connection>` or ad hoc connection opens. Tune globally with `PATCHHIVE_DB_POOL_SIZE` or with a product-specific `<PRODUCT>_DB_POOL_SIZE`.
 - Product backends should define their `crate::auth` module with `define_api_key_auth_module!` in `main.rs` instead of carrying one-file delegation wrappers.
 - Good candidates: auth middleware, SQLite pooling, startup/health helpers, generic ID or envelope helpers, generic named preset storage interfaces.
+- Future Squad candidates: shared AI agent config types, encrypted active-squad and preset storage, redacted browser views, provider/model readiness checks, and HiveCore-facing Squad capability metadata once at least two products need AI roles.
 - Bad candidates until proven generic: GitHub search logic, scoring heuristics, pipelines, route behavior, and product-specific SQLite schemas.
 
 ## Shared GitHub PR Crate
@@ -356,7 +358,7 @@ Key features to preserve:
 
 RepoReaper v2 temporary scope:
 - `products/repo-reaper/frontend-v2/` has a lightweight agent-team setup so Mission Deck and Dry Stalk can be tested honestly through gateway mode.
-- That v2 setup is intentionally not the full old frontend team builder. It can recruit a starter team and edit the active backend team, but deeper provider model discovery, richer per-agent controls, and the full preset-management UX remain deferred.
+- That v2 setup is intentionally not the full old frontend team builder. It can recruit a starter team, edit the active backend team, apply provider defaults, pull and filter provider model lists, and test selected models. Richer per-agent controls and the full preset-management UX remain deferred.
 - RepoReaper persists the active team and team presets in SQLite. Per-agent API keys and bot token overrides are encrypted at rest through `patchhive_product_core::secrets::TokenProtector` when `REAPER_ENCRYPTION_KEY` or `PATCHHIVE_ENCRYPTION_KEY` is set; without one of those keys, those secret fields stay memory-only and are not written to SQLite. Adding an encryption key later migrates existing plaintext active-team and preset secrets on boot.
 - Dry Stalk is still a no-write mode, but it needs at least a Scout agent because issue scoring and dry-run analysis use the AI agent pipeline.
 - Do not remove the old RepoReaper team/preset UI until the v2 replacement and unified-backend/HiveCore setup path cover those workflows.

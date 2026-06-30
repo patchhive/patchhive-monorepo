@@ -171,6 +171,13 @@ Scan actions should stay read-only. Fix actions should be separate mutating capa
 
 See [Suite runs and fix capabilities](suite-runs-and-fix-capabilities.md).
 
+AI-capable products should also converge on a shared Squad setup contract:
+product-owned roles backed by shared provider/model discovery, model testing,
+encrypted per-agent secret storage, presets, readiness checks, and HiveCore
+visibility. RepoReaper is the first implementation, but the shared pieces should
+move into `patchhive-product-core` only as a second product needs AI roles. See
+[Shared Squad architecture](shared-squad-architecture.md).
+
 ## First Frontend To Connect
 
 HiveCore should be the first frontend wired to `patchhive-backend`.
