@@ -937,12 +937,21 @@ function AgentTeamPanel({ agents, apiKey, config, onSaveAgents, saving }) {
               {modelDiscovery.loading ? "Pulling..." : "Pull models"}
             </button>
           </div>
+          <div className="v2-field">
+            Connectivity
+            <button className="btn" disabled={saving || modelDiscovery.testing || !defaults.provider || !defaults.model.trim()} onClick={modelDiscovery.testModel} type="button">
+              {modelDiscovery.testing ? "Testing..." : "Test model"}
+            </button>
+          </div>
         </div>
         <div className="repo-meta">
           <button className="btn primary" disabled={saving || !defaults.model.trim()} onClick={saveStarterTeam} type="button">Build starter with defaults</button>
           <button className="btn" disabled={saving || !team.length || !defaults.model.trim()} onClick={applyDefaultsToTeam} type="button">Apply defaults to team</button>
           <span className="chip green">one provider setup</span>
           <span className="feed-meta" style={{ flexBasis: "100%" }}>{modelDiscovery.statusText}</span>
+          {modelDiscovery.testStatusText && (
+            <span className="feed-meta" style={{ flexBasis: "100%" }}>{modelDiscovery.testStatusText}</span>
+          )}
         </div>
         {team.map((agent) => (
           <div className="feed-item" key={agent.id || `${agent.role}-${agent.name}`}>

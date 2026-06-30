@@ -27,6 +27,7 @@ Products that use `useProviderModelDiscovery` or `AIModelSelector` should expose
 ```text
 GET /models/:provider
 POST /models/:provider
+POST /models/:provider/test
 ```
 
 `GET` should use saved/global credentials and local gateway configuration.
@@ -49,5 +50,19 @@ The endpoint should return:
   "error": ""
 }
 ```
+
+`POST /models/:provider/test` may accept:
+
+```json
+{
+  "api_key": "provider key for one-time connectivity testing",
+  "base_url": "optional OpenAI-compatible or Ollama base URL",
+  "model": "model-id"
+}
+```
+
+It should make a tiny completion request through the product's real provider
+runtime and return an `ok` boolean plus a sanitized `kind` such as `ok`,
+`auth_error`, `rate_limited`, `timeout`, or `provider_error`.
 
 Provider keys should only travel from the browser to the local product backend, not directly from the browser to third-party provider APIs.

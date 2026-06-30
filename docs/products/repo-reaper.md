@@ -213,6 +213,9 @@ Current v2 behavior:
 - Provider defaults can pull the current model list through RepoReaper's
   `/models/:provider` endpoint while keeping manual model entry available for
   custom providers with incomplete model-list support.
+- Provider defaults can also test the selected model through
+  `/models/:provider/test`, which sends a tiny prompt through RepoReaper's real
+  provider runtime and reports auth, rate limit, timeout, or provider errors.
 - Mission Deck and Dry Stalk are gated until an agent team exists, so the UI no
   longer lets a run fail with a bare `No agents configured` backend error.
 - RepoReaper persists the active team and saved team presets in SQLite.

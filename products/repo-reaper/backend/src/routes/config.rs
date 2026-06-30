@@ -1,15 +1,20 @@
 use axum::{
     extract::{Path, State},
-    routing::{delete, get},
+    routing::{delete, get, post},
     Json, Router,
 };
 use chrono::Utc;
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::{collections::HashSet, fs, path::Path as StdPath, time::Duration};
+use std::{
+    collections::HashSet,
+    fs,
+    path::Path as StdPath,
+    time::{Duration, Instant},
+};
 use uuid::Uuid;
 
-use crate::agents::{clear_cooldown, get_cooldowns};
+use crate::agents::{ai_call, clear_cooldown, get_cooldowns, AgentCallParams};
 use crate::db::{
     agents_from_storage_json, agents_to_storage_json, get_conn, get_lifetime_cost,
     save_active_agents, set_setting,
@@ -21,6 +26,7 @@ pub fn router() -> Router<AppState> {
         .route("/config", get(get_config).post(save_config))
         .route("/ai-local/status", get(get_ai_local_status))
         .route("/models/:provider", get(list_models).post(refresh_models))
+        .route("/models/:provider/test", post(test_model))
         .route("/agents", get(list_agents).post(set_team))
         .route("/agents/:id", delete(remove_agent))
         .route("/presets", get(list_presets).post(save_preset))
@@ -288,6 +294,13 @@ struct ModelDiscoveryBody {
     base_url: Option<String>,
 }
 
+#[derive(Deserialize)]
+struct ModelTestBody {
+    api_key: Option<String>,
+    base_url: Option<String>,
+    model: Option<String>,
+}
+
 async fn list_models(State(state): State<AppState>, Path(provider): Path<String>) -> Json<Value> {
     model_discovery_response(&state.http, &provider, None).await
 }
@@ -298,6 +311,70 @@ async fn refresh_models(
     Json(body): Json<ModelDiscoveryBody>,
 ) -> Json<Value> {
     model_discovery_response(&state.http, &provider, Some(body)).await
+}
+
+async fn test_model(
+    State(state): State<AppState>,
+    Path(provider): Path<String>,
+    Json(body): Json<ModelTestBody>,
+) -> Json<Value> {
+    let fallback_models = static_provider_models(&provider);
+    if fallback_models.is_empty() {
+        return Json(json!({
+            "ok": false,
+            "kind": "unsupported_provider",
+            "provider": provider,
+            "message": format!("Unknown provider: {provider}"),
+        }));
+    }
+
+    let model = clean_optional(body.model.as_deref())
+        .or_else(|| fallback_models.first().cloned())
+        .unwrap_or_default();
+    if model.is_empty() {
+        return Json(json!({
+            "ok": false,
+            "kind": "missing_model",
+            "provider": provider,
+            "message": "Choose a model before testing this provider.",
+        }));
+    }
+
+    let api_key = clean_optional(body.api_key.as_deref());
+    let base_url = clean_optional(body.base_url.as_deref());
+    let started = Instant::now();
+    let params = AgentCallParams {
+        provider: provider.as_str(),
+        model: model.as_str(),
+        base_url: base_url.as_deref(),
+        api_key: api_key.as_deref(),
+        system: "You are a connectivity check. Reply with exactly OK.",
+        prompt: "Reply with exactly OK.",
+    };
+
+    match ai_call(&state.http, &params).await {
+        Ok((text, cost)) => Json(json!({
+            "ok": true,
+            "kind": "ok",
+            "provider": provider,
+            "model": model,
+            "latency_ms": started.elapsed().as_millis(),
+            "cost_usd": cost,
+            "sample": text.trim().chars().take(80).collect::<String>(),
+            "message": "Model answered successfully.",
+        })),
+        Err(error) => {
+            let message = error.to_string();
+            Json(json!({
+                "ok": false,
+                "kind": classify_model_test_error(&message),
+                "provider": provider,
+                "model": model,
+                "latency_ms": started.elapsed().as_millis(),
+                "message": message,
+            }))
+        }
+    }
 }
 
 async fn model_discovery_response(
@@ -590,6 +667,30 @@ fn clean_optional(value: Option<&str>) -> Option<String> {
 
 fn clean_env(key: &str) -> Option<String> {
     clean_optional(Some(env(key).as_str()))
+}
+
+fn classify_model_test_error(message: &str) -> &'static str {
+    let lower = message.to_ascii_lowercase();
+    if lower.contains("429")
+        || lower.contains("rate limit")
+        || lower.contains("quota")
+        || lower.contains("cooling down")
+    {
+        return "rate_limited";
+    }
+    if lower.contains("401")
+        || lower.contains("403")
+        || lower.contains("unauthorized")
+        || lower.contains("forbidden")
+        || lower.contains("api key")
+        || lower.contains("authentication")
+    {
+        return "auth_error";
+    }
+    if lower.contains("timeout") || lower.contains("timed out") {
+        return "timeout";
+    }
+    "provider_error"
 }
 
 fn provider_api_key(provider: &str) -> Option<String> {

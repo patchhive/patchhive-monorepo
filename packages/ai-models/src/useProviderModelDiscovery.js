@@ -33,6 +33,19 @@ function buildModelEndpoint(apiBase, modelsPath, provider) {
   return `${String(apiBase || "").replace(/\/$/, "")}${modelsPath}/${encodeURIComponent(provider)}`;
 }
 
+function modelTestStatusCopy(status, testing) {
+  if (testing) return "Testing model...";
+  if (!status?.message) return "";
+  if (status.ok) {
+    const latency = Number.isFinite(Number(status.latency_ms)) ? ` in ${status.latency_ms}ms` : "";
+    return `${status.message}${latency}`;
+  }
+  if (status.kind === "rate_limited") return `Provider rate limited this model test: ${status.message}`;
+  if (status.kind === "auth_error") return `Provider credentials failed: ${status.message}`;
+  if (status.kind === "timeout") return `Provider timed out: ${status.message}`;
+  return status.message;
+}
+
 export function useProviderModelDiscovery({
   apiBase,
   authToken = "",
@@ -54,10 +67,14 @@ export function useProviderModelDiscovery({
   const [liveModels, setLiveModels] = useState({});
   const [modelStatus, setModelStatus] = useState({});
   const [loadingModels, setLoadingModels] = useState({});
+  const [testStatus, setTestStatus] = useState({});
+  const [testingModels, setTestingModels] = useState({});
 
   const models = modelListForProvider(provider, liveModels, mergedFallbackModels);
   const loading = !!loadingModels[provider];
   const status = modelStatus[provider] || {};
+  const testing = !!testingModels[provider];
+  const test = testStatus[provider] || {};
 
   const loadModels = async ({ includeProviderKey = false } = {}) => {
     if (!apiBase || !provider) return;
@@ -107,6 +124,45 @@ export function useProviderModelDiscovery({
     }
   };
 
+  const testModel = async () => {
+    if (!apiBase || !provider || !model) return;
+
+    const key = String(providerKey || "").trim();
+    const base = String(baseUrl || "").trim();
+    setTestingModels((current) => ({ ...current, [provider]: true }));
+
+    try {
+      const response = await fetch(`${buildModelEndpoint(apiBase, modelsPath, provider)}/test`, {
+        method: "POST",
+        headers: {
+          ...(authToken ? { "X-API-Key": authToken } : {}),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ api_key: key, base_url: base, model }),
+      });
+      const data = await response.json().catch(() => ({}));
+      setTestStatus((current) => ({
+        ...current,
+        [provider]: {
+          ...data,
+          ok: Boolean(data.ok),
+          message: data.message || (response.ok ? "Model test finished." : "Model test failed."),
+        },
+      }));
+    } catch (error) {
+      setTestStatus((current) => ({
+        ...current,
+        [provider]: {
+          ok: false,
+          kind: "request_error",
+          message: `Could not test model: ${error.message || error}`,
+        },
+      }));
+    } finally {
+      setTestingModels((current) => ({ ...current, [provider]: false }));
+    }
+  };
+
   useEffect(() => {
     if (!autoLoad) return;
     loadModels({ includeProviderKey: false });
@@ -127,5 +183,9 @@ export function useProviderModelDiscovery({
       localGatewayConfigured,
       globalKeyConfigured,
     ),
+    testModel,
+    testing,
+    testStatus: test,
+    testStatusText: modelTestStatusCopy(test, testing),
   };
 }
