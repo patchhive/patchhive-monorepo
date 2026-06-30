@@ -212,7 +212,9 @@ Current v2 behavior:
   entered once and applied to every agent instead of pasted into each role.
 - Provider defaults can pull the current model list through RepoReaper's
   `/models/:provider` endpoint while keeping manual model entry available for
-  custom providers with incomplete model-list support.
+  custom providers with incomplete model-list support. The shared picker filters
+  obvious non-text models such as embeddings, rerankers, STT/TTS/audio,
+  image/video, moderation, and provider utility entries from noisy catalogs.
 - Provider defaults can also test the selected model through
   `/models/:provider/test`, which sends a tiny prompt through RepoReaper's real
   provider runtime and reports auth, rate limit, timeout, or provider errors.

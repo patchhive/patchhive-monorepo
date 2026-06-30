@@ -953,6 +953,9 @@ function AgentTeamPanel({ agents, apiKey, config, onSaveAgents, saving }) {
           <span className="chip green">one provider setup</span>
           <span className="chip signal">{modelDiscovery.models.length} models</span>
           <span className="feed-meta" style={{ flexBasis: "100%" }}>{modelDiscovery.statusText}</span>
+          {modelDiscovery.filteredStatusText && (
+            <span className="feed-meta" style={{ flexBasis: "100%" }}>{modelDiscovery.filteredStatusText}</span>
+          )}
           {modelDiscovery.testStatusText && (
             <span className="feed-meta" style={{ flexBasis: "100%" }}>{modelDiscovery.testStatusText}</span>
           )}

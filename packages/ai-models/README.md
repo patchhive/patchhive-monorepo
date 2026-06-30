@@ -16,6 +16,9 @@ provider safety rules.
 - `AI_PROVIDERS`: shared provider metadata.
 - `DEFAULT_PROVIDER_MODELS`: conservative fallback model lists.
 - `defaultModelForProvider`: helper for initializing agent/config forms.
+- Pulled model lists are filtered to PatchHive-suitable text/chat models, hiding
+  obvious embeddings, rerankers, STT/TTS/audio, image/video, moderation, and
+  provider utility models from noisy provider catalogs.
 
 Prefer `@patchhivehq/ai-models/model-discovery` for new v2 surfaces so they do
 not inherit old UI components while the suite is migrating.
@@ -66,3 +69,8 @@ runtime and return an `ok` boolean plus a sanitized `kind` such as `ok`,
 `auth_error`, `rate_limited`, `timeout`, or `provider_error`.
 
 Provider keys should only travel from the browser to the local product backend, not directly from the browser to third-party provider APIs.
+
+Products should keep manual model entry available even when the picker filters
+provider catalogs. This lets operators force a valid provider-specific model id
+when a catalog entry is named unusually or when a provider's `/models` endpoint
+is incomplete.

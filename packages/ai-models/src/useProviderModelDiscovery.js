@@ -4,6 +4,7 @@ import {
   DEFAULT_PROVIDER_MODELS,
   modelListForProvider,
 } from "./providerCatalog.js";
+import { filterPatchHiveTextModels } from "./modelFilters.js";
 
 export function normalizeFallbackModels(models) {
   if (!models || typeof models !== "object") return DEFAULT_PROVIDER_MODELS;
@@ -44,6 +45,11 @@ function modelTestStatusCopy(status, testing) {
   if (status.kind === "auth_error") return `Provider credentials failed: ${status.message}`;
   if (status.kind === "timeout") return `Provider timed out: ${status.message}`;
   return status.message;
+}
+
+function filteredModelStatusText(filteredCount) {
+  if (!filteredCount) return "";
+  return `${filteredCount} non-text/provider utility models hidden.`;
 }
 
 export function useProviderModelDiscovery({
@@ -95,16 +101,23 @@ export function useProviderModelDiscovery({
         body: shouldPost ? JSON.stringify({ api_key: key, base_url: base }) : undefined,
       });
       const data = await response.json().catch(() => ({}));
-      const nextModels = Array.isArray(data.models) && data.models.length
+      const rawModels = Array.isArray(data.models) && data.models.length
         ? data.models
         : (mergedFallbackModels[provider] || []);
+      const filtered = filterPatchHiveTextModels(rawModels);
+      const nextModels = filtered.models;
+      const filteredCount = filtered.dropped.length;
 
       setLiveModels((current) => ({ ...current, [provider]: nextModels }));
       setModelStatus((current) => ({
         ...current,
         [provider]: {
           source: data.source || "static",
-          error: data.error || "",
+          error: data.error
+            || (rawModels.length && !nextModels.length
+              ? "No pulled models matched PatchHive text/chat filters. Use manual model entry if needed."
+              : ""),
+          filteredCount,
         },
       }));
 
@@ -183,6 +196,7 @@ export function useProviderModelDiscovery({
       localGatewayConfigured,
       globalKeyConfigured,
     ),
+    filteredStatusText: filteredModelStatusText(status.filteredCount),
     testModel,
     testing,
     testStatus: test,
