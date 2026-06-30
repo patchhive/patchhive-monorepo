@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# CodeQL's Rust extractor gets better call-target resolution when it observes
-# real Cargo builds. PatchHive is intentionally not a single Cargo workspace, so
-# this script checks each standalone Rust package explicitly.
+# PatchHive is intentionally not a single Cargo workspace. Check every
+# standalone Rust package explicitly so CI catches drift across products,
+# services, crates, and local gateway code.
 
 manifests=(
   "crates/patchhive-product-core/Cargo.toml"
