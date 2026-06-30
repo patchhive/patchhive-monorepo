@@ -168,6 +168,8 @@ The shared model-discovery path should remain provider-neutral:
 - Report sanitized `kind` values such as `ok`, `auth_error`, `rate_limited`,
   `timeout`, and `provider_error`.
 - Filter noisy provider catalogs to PatchHive-suitable text/chat models.
+- Do not hide free models by default; expose a free-only narrowing option for
+  catalogs such as OpenRouter where free and paid models are mixed together.
 - Keep manual model entry available for provider catalogs with incomplete or
   unusually named model IDs.
 

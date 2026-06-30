@@ -843,6 +843,7 @@ function checkTone(level) {
 function AgentTeamPanel({ agents, apiKey, config, onSaveAgents, saving }) {
   const [draft, setDraft] = useState(() => blankAgent(config));
   const [defaults, setDefaults] = useState(() => blankTeamDefaults(config));
+  const [freeOnly, setFreeOnly] = useState(false);
   const team = Array.isArray(agents) ? agents : [];
   const fallbackModels = useMemo(() => config?.providers || undefined, [config?.providers]);
   const setDefault = (key, value) => setDefaults((current) => {
@@ -860,6 +861,7 @@ function AgentTeamPanel({ agents, apiKey, config, onSaveAgents, saving }) {
     providerKey: defaults.api_key,
     baseUrl: defaults.base_url,
     fallbackModels,
+    freeOnly,
     localGatewayConfigured: Boolean(config?.PATCHHIVE_AI_URL || config?.AI_LOCAL_STATUS?.ok || config?.AI_LOCAL_STATUS?.status === "ok"),
     globalKeyConfigured: Boolean(config?.PROVIDER_API_KEY_SET),
   });
@@ -940,6 +942,13 @@ function AgentTeamPanel({ agents, apiKey, config, onSaveAgents, saving }) {
               {modelDiscovery.loading ? "Pulling..." : "Pull models"}
             </button>
           </div>
+          <label className="rowline" style={{ alignItems: "flex-start", justifyContent: "flex-start" }}>
+            <input checked={freeOnly} onChange={(event) => setFreeOnly(event.target.checked)} style={{ marginTop: 3 }} type="checkbox" />
+            <span>
+              <span className="repo-name" style={{ display: "block", fontSize: "0.8rem" }}>Free only</span>
+              <span className="feed-meta">Show provider models marked free while keeping manual entry available.</span>
+            </span>
+          </label>
           <div className="v2-field">
             Connectivity
             <button className="btn" disabled={saving || modelDiscovery.testing || !defaults.provider || !defaults.model.trim()} onClick={modelDiscovery.testModel} type="button">
@@ -952,9 +961,13 @@ function AgentTeamPanel({ agents, apiKey, config, onSaveAgents, saving }) {
           <button className="btn" disabled={saving || !team.length || !defaults.model.trim()} onClick={applyDefaultsToTeam} type="button">Apply defaults to team</button>
           <span className="chip green">one provider setup</span>
           <span className="chip signal">{modelDiscovery.models.length} models</span>
+          {freeOnly && <span className="chip amber">free only</span>}
           <span className="feed-meta" style={{ flexBasis: "100%" }}>{modelDiscovery.statusText}</span>
           {modelDiscovery.filteredStatusText && (
             <span className="feed-meta" style={{ flexBasis: "100%" }}>{modelDiscovery.filteredStatusText}</span>
+          )}
+          {modelDiscovery.freeFilteredStatusText && (
+            <span className="feed-meta" style={{ flexBasis: "100%" }}>{modelDiscovery.freeFilteredStatusText}</span>
           )}
           {modelDiscovery.testStatusText && (
             <span className="feed-meta" style={{ flexBasis: "100%" }}>{modelDiscovery.testStatusText}</span>

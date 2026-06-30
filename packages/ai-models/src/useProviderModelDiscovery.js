@@ -61,6 +61,7 @@ export function useProviderModelDiscovery({
   providerKey = "",
   baseUrl = "",
   fallbackModels,
+  freeOnly = false,
   modelsPath = "/models",
   localGatewayConfigured = false,
   globalKeyConfigured = false,
@@ -76,7 +77,12 @@ export function useProviderModelDiscovery({
   const [testStatus, setTestStatus] = useState({});
   const [testingModels, setTestingModels] = useState({});
 
-  const models = modelListForProvider(provider, liveModels, mergedFallbackModels);
+  const rawModels = modelListForProvider(provider, liveModels, mergedFallbackModels);
+  const filteredModels = useMemo(
+    () => filterPatchHiveTextModels(rawModels, { freeOnly }),
+    [freeOnly, rawModels],
+  );
+  const models = filteredModels.models;
   const loading = !!loadingModels[provider];
   const status = modelStatus[provider] || {};
   const testing = !!testingModels[provider];
@@ -104,20 +110,20 @@ export function useProviderModelDiscovery({
       const rawModels = Array.isArray(data.models) && data.models.length
         ? data.models
         : (mergedFallbackModels[provider] || []);
-      const filtered = filterPatchHiveTextModels(rawModels);
+      const filtered = filterPatchHiveTextModels(rawModels, { freeOnly });
       const nextModels = filtered.models;
-      const filteredCount = filtered.dropped.length;
 
-      setLiveModels((current) => ({ ...current, [provider]: nextModels }));
+      setLiveModels((current) => ({ ...current, [provider]: rawModels }));
       setModelStatus((current) => ({
         ...current,
         [provider]: {
           source: data.source || "static",
           error: data.error
             || (rawModels.length && !nextModels.length
-              ? "No pulled models matched PatchHive text/chat filters. Use manual model entry if needed."
+              ? (freeOnly
+                ? "No free models matched PatchHive text/chat filters. Turn off Free only or use manual model entry if needed."
+                : "No pulled models matched PatchHive text/chat filters. Use manual model entry if needed.")
               : ""),
-          filteredCount,
         },
       }));
 
@@ -196,7 +202,11 @@ export function useProviderModelDiscovery({
       localGatewayConfigured,
       globalKeyConfigured,
     ),
-    filteredStatusText: filteredModelStatusText(status.filteredCount),
+    filteredStatusText: filteredModelStatusText(filteredModels.dropped.length),
+    freeFilteredStatusText: freeOnly && filteredModels.freeHidden.length
+      ? `${filteredModels.freeHidden.length} paid/metered models hidden by Free only.`
+      : "",
+    rawModelCount: rawModels.length,
     testModel,
     testing,
     testStatus: test,

@@ -19,6 +19,9 @@ provider safety rules.
 - Pulled model lists are filtered to PatchHive-suitable text/chat models, hiding
   obvious embeddings, rerankers, STT/TTS/audio, image/video, moderation, and
   provider utility models from noisy provider catalogs.
+- Free models are not hidden by default. Products may expose a `freeOnly`
+  picker option to narrow noisy provider catalogs to model IDs marked as free
+  while keeping manual model entry available.
 
 Prefer `@patchhivehq/ai-models/model-discovery` for new v2 surfaces so they do
 not inherit old UI components while the suite is migrating.

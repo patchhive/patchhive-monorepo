@@ -221,6 +221,8 @@ Current v2 behavior:
   custom providers with incomplete model-list support. The shared picker filters
   obvious non-text models such as embeddings, rerankers, STT/TTS/audio,
   image/video, moderation, and provider utility entries from noisy catalogs.
+  Free provider models remain visible by default, and RepoReaper v2 can narrow
+  the picker to free-marked model IDs when the operator enables Free only.
 - Provider defaults can also test the selected model through
   `/models/:provider/test`, which sends a tiny prompt through RepoReaper's real
   provider runtime and reports auth, rate limit, timeout, or provider errors.
