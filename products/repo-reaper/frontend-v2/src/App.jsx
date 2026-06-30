@@ -903,17 +903,20 @@ function AgentTeamPanel({ agents, apiKey, config, onSaveAgents, saving }) {
             </select>
           </label>
           <label className="v2-field">
-            Model
-            <input
+            Model picker
+            <select
               className="v2-input"
-              disabled={modelDiscovery.loading}
-              list="repo-reaper-provider-models"
+              disabled={modelDiscovery.loading || !modelDiscovery.models.length}
               onChange={(event) => setDefault("model", event.target.value)}
-              value={defaults.model}
-            />
-            <datalist id="repo-reaper-provider-models">
-              {modelDiscovery.models.map((modelId) => <option key={modelId} value={modelId} />)}
-            </datalist>
+              value={modelDiscovery.models.includes(defaults.model) ? defaults.model : ""}
+            >
+              {!modelDiscovery.models.includes(defaults.model) && <option value="">Manual model below</option>}
+              {modelDiscovery.models.map((modelId) => <option key={modelId} value={modelId}>{modelId}</option>)}
+            </select>
+          </label>
+          <label className="v2-field">
+            Manual model
+            <input className="v2-input" disabled={modelDiscovery.loading} onChange={(event) => setDefault("model", event.target.value)} placeholder="type any model id" value={defaults.model} />
           </label>
           <label className="v2-field">
             Base URL
@@ -948,6 +951,7 @@ function AgentTeamPanel({ agents, apiKey, config, onSaveAgents, saving }) {
           <button className="btn primary" disabled={saving || !defaults.model.trim()} onClick={saveStarterTeam} type="button">Build starter with defaults</button>
           <button className="btn" disabled={saving || !team.length || !defaults.model.trim()} onClick={applyDefaultsToTeam} type="button">Apply defaults to team</button>
           <span className="chip green">one provider setup</span>
+          <span className="chip signal">{modelDiscovery.models.length} models</span>
           <span className="feed-meta" style={{ flexBasis: "100%" }}>{modelDiscovery.statusText}</span>
           {modelDiscovery.testStatusText && (
             <span className="feed-meta" style={{ flexBasis: "100%" }}>{modelDiscovery.testStatusText}</span>
