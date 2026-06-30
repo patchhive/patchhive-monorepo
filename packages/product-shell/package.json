@@ -2,6 +2,7 @@
   "name": "@patchhivehq/product-shell",
   "version": "0.1.4",
   "description": "Shared frontend shell helpers for PatchHive products.",
+  "license": "MIT",
   "type": "module",
   "main": "./src/index.js",
   "files": [

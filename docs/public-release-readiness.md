@@ -22,6 +22,10 @@ Checks performed:
   documentation examples.
 - Local working copy contains ignored `.env` and SQLite runtime files; these are
   not tracked and are covered by `.gitignore`.
+- `npm audit` reports 0 vulnerabilities after refreshing the root lockfile and
+  moving frontend dev tooling to Vite 8.
+- HiveCore frontend builds successfully on the upgraded Vite toolchain.
+- Suite drift check passes.
 
 Important local note:
 
@@ -36,21 +40,13 @@ Important local note:
   and `secrets/`.
 - Added `SECURITY.md`.
 - Added `CONTRIBUTING.md`.
+- Added top-level MIT `LICENSE`.
+- Added MIT package metadata to shared npm packages, Rust services, product
+  backends, and the product starter.
+- Bumped suite frontend dev tooling from Vite 5 to Vite 8 to clear known Vite
+  and esbuild dev-server advisories.
 
 ## Known Public-Release Blockers
-
-### License Decision
-
-There is still no top-level `LICENSE`.
-
-This is intentional for now because the license has product and business
-consequences:
-
-- no license / all rights reserved: source-visible, but not open-source reusable
-- AGPL-3.0: stronger network-service reciprocity
-- Apache-2.0 or MIT: easier external adoption and contribution
-
-Choose before flipping the repository public.
 
 ### GitHub Repository Settings
 
@@ -62,12 +58,19 @@ Before making the repository public:
 - Confirm Actions permissions are not overly broad.
 - Confirm Dependabot/security alerts are enabled if desired.
 
+Current CLI limitation:
+
+- The available GitHub token has push access but not admin access to
+  `patchhive/patchhive2`.
+- Repository-level settings and visibility changes must be completed by an
+  admin in GitHub settings, or by rerunning the relevant `gh api` calls with an
+  admin-capable token.
+
 ### Public Narrative
 
 Before wider announcement:
 
-- Make the README clear that PatchHive is alpha / personal-use-first.
-- Decide whether the monorepo is public source-available or open source.
+- Keep the README clear that PatchHive is alpha / personal-use-first.
 - Keep deployment credentials, private registry config, customer data, and local
   runtime files outside git.
 
@@ -79,6 +82,9 @@ Run from a fresh clone:
 git fsck --full
 rg -l -I -P --hidden --glob '!.git/**' --glob '!**/target/**' --glob '!node_modules/**' 'github_pat_[A-Za-z0-9_]{60,}|ghp_[A-Za-z0-9]{36,}|gho_[A-Za-z0-9]{36,}|ghs_[A-Za-z0-9]{36,}|glpat-[A-Za-z0-9_-]{20,}|sk-[A-Za-z0-9]{48,}|AKIA[0-9A-Z]{16}|-----BEGIN (RSA |OPENSSH |EC |DSA |PRIVATE )?PRIVATE KEY-----'
 find . -path ./.git -prune -o -type f \( -name '.env' -o -name '*.db' -o -name '*.db-shm' -o -name '*.db-wal' -o -name '*.sqlite' -o -name '*.sqlite3' -o -name '*.pem' -o -name '*.key' \) -print
+npm audit
+npm --prefix products/hive-core/frontend run build
+npm run check:suite-drift
 ```
 
 Expected output for the strict secret scan and tracked local-runtime file scan is

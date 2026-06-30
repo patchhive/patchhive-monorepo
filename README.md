@@ -4,6 +4,8 @@ PatchHive is a product suite for software maintenance, review, and autonomous co
 
 This repository is the PatchHive source-of-truth monorepo. New products, shared packages, and shared Rust crates are built here first, then exported into standalone repositories under [`patchhive`](https://github.com/patchhive) when they are ready to stand on their own.
 
+PatchHive is alpha software, built personal-use-first by Jeremy Coe (`@coe0718`). Public source is intended to make the work inspectable, reusable, and easier to collaborate around, but the suite is still changing quickly and should not be treated as a hardened hosted platform.
+
 ## Product Suite
 
 | Product | Repo | Role |
@@ -63,7 +65,7 @@ patchhive/
 ### Prerequisites
 
 - Rust and Cargo
-- Node.js and npm
+- Node.js 20.19+ or 22.12+ and npm
 - Docker and Docker Compose
 
 ### Work on an Existing Product
@@ -145,3 +147,7 @@ GitHub-backed products are designed to work with fine-grained personal access to
 ## Current Status
 
 PatchHive already has real standalone repositories, shared infrastructure, Docker support, exported mirrors, and CI across the suite. The focus now is deepening product quality while keeping shared seams stable enough for future orchestration through HiveCore.
+
+## License
+
+PatchHive is licensed under the [MIT License](LICENSE).

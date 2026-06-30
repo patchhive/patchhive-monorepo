@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "description": "Localhost AI gateway for PatchHive products.",
+  "license": "MIT",
   "type": "module",
   "bin": {
     "patchhive-ai-local": "./src/cli.js"

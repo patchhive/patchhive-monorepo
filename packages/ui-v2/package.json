@@ -3,6 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "description": "Staging package for the PatchHive v2 suite UI.",
+  "license": "MIT",
   "type": "module",
   "main": "./src/index.js",
   "exports": {

@@ -6,7 +6,8 @@ services.
 
 ## Current Contribution Boundary
 
-Until the public license decision is finalized, prefer:
+PatchHive is MIT-licensed, but still alpha and direction-setting. For now,
+prefer:
 
 - bug reports
 - documentation fixes
@@ -14,7 +15,7 @@ Until the public license decision is finalized, prefer:
 - small, focused patches
 - security reports through the private process in `SECURITY.md`
 
-Avoid large feature PRs until the product direction and license are explicit.
+Avoid large feature PRs until the product direction is explicit for that area.
 
 ## Development Rules
 

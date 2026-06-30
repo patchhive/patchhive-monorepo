@@ -2,6 +2,7 @@
   "name": "@patchhivehq/ai-models",
   "version": "0.1.0",
   "description": "Shared AI provider catalogs, model discovery hooks, and model selector components for PatchHive products.",
+  "license": "MIT",
   "type": "module",
   "main": "./src/index.js",
   "files": [
