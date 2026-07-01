@@ -736,6 +736,56 @@ function PrOutcomePanel({ prs }) {
   );
 }
 
+function teamSummary(agents) {
+  const team = Array.isArray(agents) ? agents : [];
+  const providers = [...new Set(team.map((agent) => agent.provider).filter(Boolean))];
+  const models = [...new Set(team.map((agent) => agent.model).filter(Boolean))];
+  return {
+    model: models.length === 1 ? models[0] : models.length ? `${models.length} models` : "none",
+    provider: providers.length === 1 ? providers[0] : providers.length ? "mixed" : "none",
+  };
+}
+
+function TeamPresetPicker({ agents, onLoadPreset, presets, saving }) {
+  const [selectedPresetName, setSelectedPresetName] = useState("");
+  const savedTeams = Array.isArray(presets) ? presets : [];
+  const selectedPreset = savedTeams.find((preset) => preset.name === selectedPresetName) || null;
+  const active = teamSummary(agents);
+
+  return (
+    <Panel eyebrow="Squad" title="Execution team" action={<span className={`chip ${agents?.length ? "green" : "amber"}`}>{agents?.length || 0} active</span>}>
+      <div className="panelbody repo-list">
+        <div className="feed-item">
+          <div>
+            <div className="feed-title">Active team</div>
+            <div className="feed-meta">{active.provider} · {active.model}</div>
+          </div>
+          <span className="chip signal">{savedTeams.length} saved</span>
+        </div>
+        <div className="form-grid compact">
+          <label className="v2-field">
+            Saved team
+            <select className="v2-input" disabled={!savedTeams.length || saving} onChange={(event) => setSelectedPresetName(event.target.value)} value={selectedPresetName}>
+              <option value="">Choose team</option>
+              {savedTeams.map((preset) => <option key={preset.name} value={preset.name}>{preset.name}</option>)}
+            </select>
+          </label>
+          <div className="v2-field">
+            Action
+            <button className="btn" disabled={saving || !selectedPreset} onClick={() => onLoadPreset(selectedPreset)} type="button">Load team</button>
+          </div>
+        </div>
+        {selectedPreset && (
+          <div className="repo-meta">
+            <span className="chip signal">{Array.isArray(selectedPreset.agents) ? selectedPreset.agents.length : 0} agents</span>
+            <span className="chip signal">saved {timeAgo(selectedPreset.created_at)}</span>
+          </div>
+        )}
+      </div>
+    </Panel>
+  );
+}
+
 function MissionDeck({
   agents,
   config,
@@ -746,11 +796,14 @@ function MissionDeck({
   onChangeParams,
   onClearRun,
   onLoadRun,
+  onLoadPreset,
   onRefresh,
   onStartRun,
   params,
+  presets,
   prs,
   rejected,
+  savingAgents,
   selectedRun,
   stream,
   watchMode,
@@ -784,6 +837,7 @@ function MissionDeck({
             </div>
           </div>
           <RunForm disabled={!teamReady || !githubReady(config, health) || !aiReady(config)} disabledReason={disabledReason} error={error} onChange={onChangeParams} onStart={onStartRun} params={params} running={stream.running} title="Start hunt" />
+          <TeamPresetPicker agents={agents} onLoadPreset={onLoadPreset} presets={presets} saving={savingAgents || stream.running} />
           <MetricBand metrics={metrics} />
           <div className="atlas-layout suite-four-layout">
             <Panel eyebrow="Pipeline" title="Autonomous run map" action={<span className={`chip ${stream.running ? "amber" : "signal"}`}>{stream.phase || "standby"}</span>}>
@@ -953,13 +1007,26 @@ function checkTone(level) {
   return "green";
 }
 
-function AgentTeamPanel({ agents, apiKey, config, onSaveAgents, saving }) {
+function AgentTeamPanel({
+  agents,
+  apiKey,
+  config,
+  onDeletePreset,
+  onLoadPreset,
+  onSaveAgents,
+  onSavePreset,
+  presets,
+  saving,
+  savingPresets,
+}) {
   const [draft, setDraft] = useState(() => blankAgent(config));
   const [defaults, setDefaults] = useState(() => blankTeamDefaults(config));
   const [freeOnly, setFreeOnly] = useState(false);
+  const [presetName, setPresetName] = useState("");
   const [showProviderAdvanced, setShowProviderAdvanced] = useState(false);
   const [showManualAgent, setShowManualAgent] = useState(false);
   const team = Array.isArray(agents) ? agents : [];
+  const savedTeams = Array.isArray(presets) ? presets : [];
   const fallbackModels = useMemo(() => config?.providers || undefined, [config?.providers]);
   const setDefault = (key, value) => setDefaults((current) => {
     if (key === "provider") {
@@ -995,6 +1062,12 @@ function AgentTeamPanel({ agents, apiKey, config, onSaveAgents, saving }) {
   const applyDefaultsToTeam = () => {
     if (!team.length) return;
     onSaveAgents(applyTeamDefaultsToAgents(team, defaults));
+  };
+  const savePreset = async () => {
+    const name = presetName.trim();
+    if (!name || !team.length) return;
+    await onSavePreset(name, team);
+    setPresetName("");
   };
   return (
     <Panel eyebrow="Team" title="Agent team" action={<span className={`chip ${team.length ? "green" : "amber"}`}>{team.length} agents</span>}>
@@ -1108,6 +1181,35 @@ function AgentTeamPanel({ agents, apiKey, config, onSaveAgents, saving }) {
             </div>
           </div>
         ))}
+        <div className="feed-item">
+          <div>
+            <div className="feed-title">Saved teams</div>
+            <div className="feed-meta">Store Anthropic, OpenAI, custom, or mixed squads and switch between them.</div>
+          </div>
+          <span className="chip signal">{savedTeams.length} saved</span>
+        </div>
+        <div className="form-grid compact">
+          <label className="v2-field">
+            Team name
+            <input className="v2-input" onChange={(event) => setPresetName(event.target.value)} placeholder="custom-deepseek" value={presetName} />
+          </label>
+          <div className="v2-field">
+            Action
+            <button className="btn" disabled={saving || savingPresets || !presetName.trim() || !team.length} onClick={savePreset} type="button">Save team</button>
+          </div>
+        </div>
+        {savedTeams.map((preset) => (
+          <div className="feed-item" key={preset.name}>
+            <div>
+              <div className="feed-title">{preset.name}</div>
+              <div className="feed-meta">{Array.isArray(preset.agents) ? preset.agents.length : 0} agents · saved {timeAgo(preset.created_at)}</div>
+            </div>
+            <div className="actions">
+              <button className="btn" disabled={saving || savingPresets} onClick={() => onLoadPreset(preset)} type="button">Load</button>
+              <button className="btn" disabled={saving || savingPresets} onClick={() => onDeletePreset(preset.name)} type="button">Delete</button>
+            </div>
+          </div>
+        ))}
         {showManualAgent && (
           <>
             <div className="form-grid compact">
@@ -1156,7 +1258,26 @@ function AgentTeamPanel({ agents, apiKey, config, onSaveAgents, saving }) {
   );
 }
 
-function ChecksSurface({ agents, apiKey, config, health, history, onClearRun, onRefresh, onSaveAgents, runtime, savingAgents, selectedRun, stream, watchMode }) {
+function ChecksSurface({
+  agents,
+  apiKey,
+  config,
+  health,
+  history,
+  onClearRun,
+  onDeletePreset,
+  onLoadPreset,
+  onRefresh,
+  onSaveAgents,
+  onSavePreset,
+  presets,
+  runtime,
+  savingAgents,
+  savingPresets,
+  selectedRun,
+  stream,
+  watchMode,
+}) {
   const checks = runtime.checks || [];
   const warnings = checks.filter((check) => check.level === "warn" || check.level === "error").length;
   const metrics = [
@@ -1182,7 +1303,18 @@ function ChecksSurface({ agents, apiKey, config, health, history, onClearRun, on
       {runtime.error && <StatusBanner tone="red">{runtime.error}</StatusBanner>}
       <MetricBand metrics={metrics} />
       <div className="atlas-layout suite-four-layout">
-        <AgentTeamPanel agents={agents} apiKey={apiKey} config={config} onSaveAgents={onSaveAgents} saving={savingAgents} />
+        <AgentTeamPanel
+          agents={agents}
+          apiKey={apiKey}
+          config={config}
+          onDeletePreset={onDeletePreset}
+          onLoadPreset={onLoadPreset}
+          onSaveAgents={onSaveAgents}
+          onSavePreset={onSavePreset}
+          presets={presets}
+          saving={savingAgents}
+          savingPresets={savingPresets}
+        />
         <Panel eyebrow="Health" title="Backend status" action={<span className={`chip ${health.status === "ok" ? "green" : "amber"}`}>{health.status || "unknown"}</span>}>
           <div className="panelbody repo-list">
             <div className="rowline"><span className="muted">Auth enabled</span><span className={`chip ${health.auth_enabled ? "green" : "amber"}`}>{health.auth_enabled ? "yes" : "no"}</span></div>
@@ -1245,9 +1377,11 @@ export default function App() {
   const [lifetimeCost, setLifetimeCost] = useState(0);
   const [loading, setLoading] = useState(false);
   const [params, setParams] = useState(DEFAULT_PARAMS);
+  const [presets, setPresets] = useState([]);
   const [prs, setPrs] = useState([]);
   const [rejected, setRejected] = useState([]);
   const [savingAgents, setSavingAgents] = useState(false);
+  const [savingPresets, setSavingPresets] = useState(false);
   const [selectedRun, setSelectedRun] = useState(null);
   const [stream, setStream] = useState(createInitialStream);
   const [watchMode, setWatchMode] = useState(false);
@@ -1266,7 +1400,7 @@ export default function App() {
   async function refreshData() {
     if (!ready) return;
     setLoading(true);
-    const [historyResult, agentsResult, configResult, rejectedResult, prsResult, leaderboardResult, watchResult, costResult] = await Promise.allSettled([
+    const [historyResult, agentsResult, configResult, rejectedResult, prsResult, leaderboardResult, watchResult, costResult, presetsResult] = await Promise.allSettled([
       fetchJson("/history", undefined, "RepoReaper could not load history."),
       fetchJson("/agents", undefined, "RepoReaper could not load agents."),
       fetchJson("/config", undefined, "RepoReaper could not load config."),
@@ -1275,6 +1409,7 @@ export default function App() {
       fetchJson("/leaderboard", undefined, "RepoReaper could not load leaderboard."),
       fetchJson("/watch-mode", undefined, "RepoReaper could not load watch mode."),
       fetchJson("/stats/lifetime-cost", undefined, "RepoReaper could not load lifetime cost."),
+      fetchJson("/presets", undefined, "RepoReaper could not load saved teams."),
     ]);
     const historyPayload = historyResult.status === "fulfilled" ? historyResult.value : {};
     setHistory(historyPayload.history || []);
@@ -1285,8 +1420,9 @@ export default function App() {
     setLeaderboard(leaderboardResult.status === "fulfilled" ? leaderboardResult.value?.leaderboard || [] : []);
     setWatchMode(Boolean(watchResult.status === "fulfilled" && watchResult.value?.watch_mode));
     setLifetimeCost(costResult.status === "fulfilled" ? costResult.value?.lifetime_cost_usd || 0 : 0);
+    setPresets(presetsResult.status === "fulfilled" ? presetsResult.value?.presets || [] : []);
     setLoading(false);
-    const failed = [historyResult, agentsResult, configResult, rejectedResult, prsResult, leaderboardResult, watchResult, costResult].find((result) => result.status === "rejected");
+    const failed = [historyResult, agentsResult, configResult, rejectedResult, prsResult, leaderboardResult, watchResult, costResult, presetsResult].find((result) => result.status === "rejected");
     if (failed) {
       setError(failed.reason?.message || "RepoReaper could not load one or more backend resources.");
     }
@@ -1317,6 +1453,54 @@ export default function App() {
       setError(err.message || "RepoReaper could not save the agent team.");
     } finally {
       setSavingAgents(false);
+    }
+  }
+
+  async function saveTeamPreset(name, presetAgents) {
+    setSavingPresets(true);
+    setError("");
+    try {
+      const payload = await fetchJson(
+        "/presets",
+        {
+          body: JSON.stringify({ name, agents: presetAgents }),
+          headers: { "Content-Type": "application/json" },
+          method: "POST",
+        },
+        "RepoReaper could not save that team.",
+      );
+      if (payload.saved === false) {
+        throw new Error("RepoReaper could not save that team.");
+      }
+      await refreshData();
+    } catch (err) {
+      setError(err.message || "RepoReaper could not save that team.");
+    } finally {
+      setSavingPresets(false);
+    }
+  }
+
+  async function loadTeamPreset(preset) {
+    const presetAgents = Array.isArray(preset?.agents) ? preset.agents : [];
+    if (!presetAgents.length) return;
+    await saveAgents(presetAgents);
+  }
+
+  async function deleteTeamPreset(name) {
+    if (!name) return;
+    setSavingPresets(true);
+    setError("");
+    try {
+      await fetchJson(
+        `/presets/${encodeURIComponent(name)}`,
+        { method: "DELETE" },
+        "RepoReaper could not delete that team.",
+      );
+      await refreshData();
+    } catch (err) {
+      setError(err.message || "RepoReaper could not delete that team.");
+    } finally {
+      setSavingPresets(false);
     }
   }
 
@@ -1482,14 +1666,17 @@ export default function App() {
           onChangeParams={setParams}
           onClearRun={clearRun}
           onLoadRun={loadRun}
+          onLoadPreset={loadTeamPreset}
           onRefresh={() => {
             refreshData();
             runtime.refresh();
           }}
           onStartRun={() => startStream("/run", params, setStream, "mission")}
           params={params}
+          presets={presets}
           prs={prs}
           rejected={rejected}
+          savingAgents={savingAgents}
           selectedRun={selectedRun}
           stream={stream}
           watchMode={watchMode}
@@ -1551,13 +1738,18 @@ export default function App() {
           health={health}
           history={history}
           onClearRun={clearRun}
+          onDeletePreset={deleteTeamPreset}
+          onLoadPreset={loadTeamPreset}
           onRefresh={() => {
             refreshData();
             runtime.refresh();
           }}
           onSaveAgents={saveAgents}
+          onSavePreset={saveTeamPreset}
+          presets={presets}
           runtime={runtime}
           savingAgents={savingAgents}
+          savingPresets={savingPresets}
           selectedRun={selectedRun}
           stream={stream}
           watchMode={watchMode}
