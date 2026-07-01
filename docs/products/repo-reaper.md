@@ -15,7 +15,7 @@
 
 RepoReaper is PatchHive's outbound contribution product. It is a **multi-agent system** that:
 
-1. **Discovers** open issues across GitHub repos (filtered by language, stars, labels, and custom allow/deny/opt-out lists)
+1. **Discovers** open issues across GitHub repos, or hunts inside a supplied target repo (filtered by language, stars, labels, and custom allow/deny/opt-out lists)
 2. **Scores** issues for fixability using an AI Scout agent
 3. **Fork + clone** each target repo
 4. **Selects** relevant code via a Judge agent
@@ -45,7 +45,8 @@ See [Shared Squad architecture](../shared-squad-architecture.md).
 ```
 
 ### Phase 1 — Scan (Scout)
-- Queries GitHub search API (`GET /search/repositories`) with language, star minimum, and optional search query
+- If `target_repo` is supplied, reads that exact `owner/repo` and collects matching open issues there
+- If `target_repo` is blank, queries GitHub search API (`GET /search/repositories`) with language, star minimum, and optional search query
 - Applies allowlist / denylist / opt-out filters from the `repo_lists` table
 - For each repo, collects up to 5 open issues matching the configured labels
 - AI-scores each issue (0–100) for fixability
@@ -80,6 +81,7 @@ POST /run
 X-API-Key: rr-...
 
 {
+  "target_repo": "",
   "search_query": "",
   "language": "python",
   "min_stars": 100,
@@ -99,6 +101,7 @@ POST /dry-run
 X-API-Key: rr-...
 
 {
+  "target_repo": "",
   "search_query": "topic:machine-learning language:python stars:>500 is:public",
   "language": "python",
   "min_stars": 500,
@@ -135,6 +138,7 @@ Run endpoints (`/run`, `/dry-run`) return `text/event-stream` with these event t
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
+| `target_repo` | string | `""` | Optional directed repo target in `owner/repo` format. When present, RepoReaper hunts issues only inside that repo. When blank, RepoReaper uses autonomous repo discovery. |
 | `search_query` | string | `""` | GitHub search query override (defaults to `topic:machine-learning language:{lang} stars:>{min_stars} is:public`) |
 | `language` | string | `"python"` | Programming language filter |
 | `min_stars` | u32 | `100` | Minimum repo stars |
@@ -152,6 +156,15 @@ Three list types, stored in the `repo_lists` SQLite table:
 - **allowlist** — only scan these repos (overrides search)
 - **denylist** / **blocklist** — exclude specific repos
 - **opt_out** / **opt-out** / **optout** — respect upstream non-consent
+
+### Directed and Autonomous Modes
+
+RepoReaper supports both operating modes described in [Product operating modes](../product-operating-modes.md):
+
+- **Directed mode:** set `target_repo` to `owner/repo`. RepoReaper reads that repository, collects matching open issues, scores them, and then proceeds through Dry Stalk or the guarded write path.
+- **Autonomous mode:** leave `target_repo` blank. RepoReaper discovers repositories from `search_query`, `language`, `min_stars`, `labels`, and `max_repos`.
+
+Both modes honor allowlist, denylist, and opt-out controls. A malformed `target_repo` stops discovery for that run instead of falling back to broad autonomous search.
 
 ---
 

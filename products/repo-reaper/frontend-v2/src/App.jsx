@@ -36,6 +36,7 @@ const POSITIONS = [
 ];
 
 const DEFAULT_PARAMS = {
+  target_repo: "",
   language: "python",
   min_stars: "50",
   max_repos: "10",
@@ -110,6 +111,7 @@ function splitCsv(value) {
 
 function normalizeRunRequest(params) {
   return {
+    target_repo: params.target_repo || "",
     language: params.language || "python",
     min_stars: Number(params.min_stars) || 50,
     max_repos: Number(params.max_repos) || 10,
@@ -553,6 +555,10 @@ function RunForm({ disabled, disabledReason, error, onChange, onStart, params, r
         }}
       >
         <div className="form-grid">
+          <label className="v2-field">
+            Target repo
+            <input className="v2-input" onChange={(event) => set("target_repo", event.target.value)} placeholder="owner/repo" value={params.target_repo} />
+          </label>
           <label className="v2-field">
             Language
             <input className="v2-input" onChange={(event) => set("language", event.target.value)} value={params.language} />

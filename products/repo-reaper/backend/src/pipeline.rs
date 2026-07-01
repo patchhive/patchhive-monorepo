@@ -39,6 +39,8 @@ pub struct RunRequest {
     #[serde(default)]
     pub search_query: String,
     #[serde(default)]
+    pub target_repo: String,
+    #[serde(default)]
     pub cost_budget_usd: f64,
     #[serde(default = "default_retry_count")]
     pub retry_count: usize,
@@ -68,6 +70,22 @@ fn default_retry_count() -> usize {
 
 fn cfg(k: &str) -> String {
     std::env::var(k).unwrap_or_default()
+}
+
+fn normalized_target_repo(req: &RunRequest) -> Option<String> {
+    let repo = req.target_repo.trim().trim_matches('/');
+    if repo.is_empty() {
+        return None;
+    }
+
+    let mut parts = repo.split('/');
+    let owner = parts.next().unwrap_or_default();
+    let name = parts.next().unwrap_or_default();
+    if owner.is_empty() || name.is_empty() || parts.next().is_some() {
+        return None;
+    }
+
+    Some(format!("{owner}/{name}"))
 }
 
 #[derive(Default)]
@@ -371,6 +389,31 @@ async fn discover(
     opt_out: &HashSet<String>,
     tx: &mpsc::Sender<Result<Event, Infallible>>,
 ) -> (Vec<Value>, Vec<Value>) {
+    if let Some(target_repo) = normalized_target_repo(req) {
+        return discover_target_repo(
+            http,
+            req,
+            scout,
+            &target_repo,
+            allowlist,
+            denylist,
+            opt_out,
+            tx,
+        )
+        .await;
+    }
+
+    if !req.target_repo.trim().is_empty() {
+        let _ = tx
+            .send(alog(
+                scout,
+                "Target repo must use owner/repo format; no autonomous hunt was started",
+                "warn",
+            ))
+            .await;
+        return (Vec::new(), Vec::new());
+    }
+
     let query = if !req.search_query.is_empty() {
         req.search_query.clone()
     } else {
@@ -439,6 +482,107 @@ async fn discover(
             }
         }
     }
+    (repos, all_issues)
+}
+
+async fn discover_target_repo(
+    http: &reqwest::Client,
+    req: &RunRequest,
+    scout: &AgentConfig,
+    target_repo: &str,
+    allowlist: &HashSet<String>,
+    denylist: &HashSet<String>,
+    opt_out: &HashSet<String>,
+    tx: &mpsc::Sender<Result<Event, Infallible>>,
+) -> (Vec<Value>, Vec<Value>) {
+    if !allowlist.is_empty() && !allowlist.contains(target_repo) {
+        let _ = tx
+            .send(alog(
+                scout,
+                &format!("Target repo {target_repo} is not in the allowlist"),
+                "warn",
+            ))
+            .await;
+        return (Vec::new(), Vec::new());
+    }
+    if denylist.contains(target_repo) || opt_out.contains(target_repo) {
+        let _ = tx
+            .send(alog(
+                scout,
+                &format!("Target repo {target_repo} is blocked by repo policy"),
+                "warn",
+            ))
+            .await;
+        return (Vec::new(), Vec::new());
+    }
+
+    let repo = match gh_get(http, &format!("/repos/{target_repo}"), &[], None).await {
+        Ok(repo) => repo,
+        Err(e) => {
+            let _ = tx
+                .send(alog(
+                    scout,
+                    &format!("Target repo {target_repo} could not be read: {e}"),
+                    "warn",
+                ))
+                .await;
+            return (Vec::new(), Vec::new());
+        }
+    };
+    let repos = vec![repo.clone()];
+
+    let _ = tx
+        .send(sse(
+            "repos",
+            json!({"repos": [{
+                "id": repo["id"],
+                "full_name": repo["full_name"],
+                "description": repo["description"],
+                "stars": repo["stargazers_count"],
+                "language": repo["language"],
+                "url": repo["html_url"],
+                "open_issues": repo["open_issues_count"],
+            }]}),
+        ))
+        .await;
+
+    let labels = req.labels.join(",");
+    let per_page = req.max_issues.max(5).min(100).to_string();
+    let mut all_issues = Vec::new();
+    match gh_get(
+        http,
+        &format!("/repos/{target_repo}/issues"),
+        &[
+            ("state", "open"),
+            ("labels", &labels),
+            ("per_page", &per_page),
+        ],
+        None,
+    )
+    .await
+    {
+        Ok(items) => {
+            for iss in items.as_array().into_iter().flatten() {
+                if iss["pull_request"].is_object() {
+                    continue;
+                }
+                all_issues.push(json!({
+                    "id": iss["id"], "number": iss["number"], "title": iss["title"],
+                    "body": iss["body"].as_str().unwrap_or("").chars().take(500).collect::<String>(),
+                    "labels": iss["labels"].as_array().into_iter().flatten().filter_map(|l| l["name"].as_str()).collect::<Vec<_>>(),
+                    "comments": iss["comments"], "created": iss["created_at"],
+                    "url": iss["html_url"], "repo": target_repo, "repo_url": repo["html_url"],
+                    "status": "queued", "fixability_score": 50, "fixability_reason": "",
+                }));
+            }
+        }
+        Err(e) => {
+            let _ = tx
+                .send(alog(scout, &format!("Skipped {target_repo}: {e}"), "warn"))
+                .await;
+        }
+    }
+
     (repos, all_issues)
 }
 
