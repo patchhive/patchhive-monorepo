@@ -19,7 +19,7 @@ export function providerModelStatusCopy(
   globalKeyConfigured,
 ) {
   if (loading) return "Loading models...";
-  if (status?.error) return status.error;
+  if (status?.error) return modelDiscoveryErrorCopy(status.error);
   if (status?.source === "patchhive-ai-local") return "Live models from PatchHive Local AI.";
   if (status?.source === "provider-api") return "Live models from provider API.";
   if (status?.source === "ollama") return "Live models from local Ollama.";
@@ -28,6 +28,39 @@ export function providerModelStatusCopy(
   if (provider === "openai" && localGatewayConfigured) return "Ready to discover models from PatchHive Local AI.";
   if (globalKeyConfigured) return "Ready to discover models with the saved global provider key.";
   return AI_PROVIDERS[provider]?.liveHint || "Using built-in provider model list.";
+}
+
+function redactedProviderError(message) {
+  return String(message || "")
+    .replace(/\b(sk-[A-Za-z0-9_-]{8,})\b/g, "sk-***")
+    .replace(/\b([A-Za-z0-9_-]{12,}\.[A-Za-z0-9_-]{12,}\.[A-Za-z0-9_-]{12,})\b/g, "***")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function modelDiscoveryErrorCopy(message) {
+  const redacted = redactedProviderError(message);
+  const lower = redacted.toLowerCase();
+
+  if (lower.includes("no free models matched") || lower.includes("no pulled models matched")) {
+    return redacted;
+  }
+  if (lower.includes("401") || lower.includes("unauthorized") || lower.includes("invalid_api_key") || lower.includes("incorrect api key")) {
+    return "Model discovery failed: provider key was rejected.";
+  }
+  if (lower.includes("403") || lower.includes("forbidden")) {
+    return "Model discovery failed: provider key does not have access.";
+  }
+  if (lower.includes("429") || lower.includes("rate limit")) {
+    return "Model discovery paused: provider rate limit hit.";
+  }
+  if (lower.includes("timeout") || lower.includes("timed out")) {
+    return "Model discovery timed out.";
+  }
+  if (lower.includes("network") || lower.includes("fetch failed") || lower.includes("could not load models")) {
+    return "Model discovery failed: provider endpoint could not be reached.";
+  }
+  return redacted.length > 180 ? `${redacted.slice(0, 177)}...` : redacted;
 }
 
 function buildModelEndpoint(apiBase, modelsPath, provider) {
