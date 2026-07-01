@@ -742,8 +742,22 @@ function teamSummary(agents) {
   const models = [...new Set(team.map((agent) => agent.model).filter(Boolean))];
   return {
     model: models.length === 1 ? models[0] : models.length ? `${models.length} models` : "none",
-    provider: providers.length === 1 ? providers[0] : providers.length ? "mixed" : "none",
+    provider: providers.length === 1 ? PROVIDER_LABELS[providers[0]] || providers[0] : providers.length ? "mixed" : "none",
   };
+}
+
+function teamSignature(agents) {
+  const team = Array.isArray(agents) ? agents : [];
+  return team
+    .map((agent) => [
+      agent.name,
+      agent.role,
+      agent.provider,
+      agent.model,
+      agent.base_url,
+    ].map((value) => String(value || "").trim().toLowerCase()).join(":"))
+    .sort()
+    .join("|");
 }
 
 function TeamPresetPicker({ agents, onLoadPreset, presets, saving }) {
@@ -751,14 +765,18 @@ function TeamPresetPicker({ agents, onLoadPreset, presets, saving }) {
   const savedTeams = Array.isArray(presets) ? presets : [];
   const selectedPreset = savedTeams.find((preset) => preset.name === selectedPresetName) || null;
   const active = teamSummary(agents);
+  const activeSignature = teamSignature(agents);
+  const activePreset = activeSignature
+    ? savedTeams.find((preset) => teamSignature(preset.agents) === activeSignature)
+    : null;
 
   return (
     <Panel eyebrow="Squad" title="Execution team" action={<span className={`chip ${agents?.length ? "green" : "amber"}`}>{agents?.length || 0} active</span>}>
       <div className="panelbody repo-list">
         <div className="feed-item">
           <div>
-            <div className="feed-title">Active team</div>
-            <div className="feed-meta">{active.provider} · {active.model}</div>
+            <div className="feed-title">{activePreset?.name || "Active team"}</div>
+            <div className="feed-meta">{activePreset ? "Active saved team" : "Current active team"} · {active.provider} · {active.model}</div>
           </div>
           <span className="chip signal">{savedTeams.length} saved</span>
         </div>
