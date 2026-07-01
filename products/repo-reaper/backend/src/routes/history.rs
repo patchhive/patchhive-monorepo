@@ -210,8 +210,32 @@ async fn get_run(Path(run_id): Path<String>, State(_): State<AppState>) -> Json<
         }))).ok()?;
         Some(mapped.flatten().collect())
     }).unwrap_or_default();
+    let dry_stalk: Option<Value> = conn.query_row(
+        "SELECT repos_json, issues_json, report_json, scoring_available, analysis_available FROM dry_stalk_runs WHERE run_id=?",
+        [&run_id],
+        |r| {
+            let repos_raw: String = r.get(0)?;
+            let issues_raw: String = r.get(1)?;
+            let report_raw: Option<String> = r.get(2)?;
+            let repos = serde_json::from_str::<Value>(&repos_raw).unwrap_or_else(|_| json!([]));
+            let issues = serde_json::from_str::<Value>(&issues_raw).unwrap_or_else(|_| json!([]));
+            let report = report_raw
+                .as_deref()
+                .and_then(|raw| serde_json::from_str::<Value>(raw).ok());
+            Ok(json!({
+                "repos": repos,
+                "issues": issues,
+                "report": report,
+                "scoring_available": r.get::<_, i64>(3)? != 0,
+                "analysis_available": r.get::<_, i64>(4)? != 0,
+            }))
+        },
+    ).ok();
     let mut run_obj = run.and_then(|v| v.as_object().cloned()).unwrap_or_default();
     run_obj.insert("attempts".into(), json!(attempts));
+    if let Some(dry_stalk) = dry_stalk {
+        run_obj.insert("dry_stalk".into(), dry_stalk);
+    }
     Json(Value::Object(run_obj))
 }
 

@@ -168,9 +168,11 @@ Both modes honor allowlist, denylist, and opt-out controls. A malformed `target_
 
 Run history keeps these modes visible:
 
+- Dry Stalk creates a saved `dry_run=true` run with candidate and Scout-report evidence.
+- The Dry Stalk tab shows recent no-write previews and can reload their saved candidate queue.
+- The Run History tab is reserved for guarded, write-capable hunts.
 - Saved runs expose `run_style` as `targeted` or `autonomous`.
 - Targeted runs expose `target_repo`.
-- The v2 History tab separates targeted runs from autonomous runs so operators can compare known-repo work against broad discovery work.
 
 ---
 

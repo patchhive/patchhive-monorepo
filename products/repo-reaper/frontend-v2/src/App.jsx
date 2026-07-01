@@ -391,6 +391,14 @@ function runStyle(run) {
 function runTargetLabel(run) {
   return runStyle(run) === "targeted" ? run.target_repo || "target repo" : "discovery hunt";
 }
+function guardedRuns(history) {
+  return (Array.isArray(history) ? history : []).filter((run) => !run.dry_run);
+}
+
+function dryStalkRuns(history) {
+  return (Array.isArray(history) ? history : []).filter((run) => run.dry_run);
+}
+
 
 function buildTopline(health, config, stream, history) {
   const latest = newestRun(history) || {};
@@ -846,8 +854,9 @@ function MissionDeck({
   stream,
   watchMode,
 }) {
-  const rail = useMemo(() => buildRail(health, config, { ...stream, params }, history, selectedRun, watchMode), [health, config, stream, params, history, selectedRun, watchMode]);
-  const metrics = useMemo(() => buildMetrics(health, stream, history, rejected, lifetimeCost, selectedRun), [health, stream, history, rejected, lifetimeCost, selectedRun]);
+  const savedHunts = guardedRuns(history);
+  const rail = useMemo(() => buildRail(health, config, { ...stream, params }, savedHunts, selectedRun, watchMode), [health, config, stream, params, savedHunts, selectedRun, watchMode]);
+  const metrics = useMemo(() => buildMetrics(health, stream, savedHunts, rejected, lifetimeCost, selectedRun), [health, stream, savedHunts, rejected, lifetimeCost, selectedRun]);
   const teamReady = agentsReady(agents, health);
   const disabledReason = !teamReady
     ? "Recruit a RepoReaper agent team in Checks before starting a hunt."
@@ -858,7 +867,7 @@ function MissionDeck({
         : "";
   return (
     <>
-      <SuiteTopline cells={buildTopline(health, config, stream, history)} />
+      <SuiteTopline cells={buildTopline(health, config, stream, savedHunts)} />
       <div className="main-grid">
         <ProductRail sections={rail.sections} stats={rail.stats} />
         <main className="workspace">
@@ -879,7 +888,7 @@ function MissionDeck({
           <MetricBand metrics={metrics} />
           <div className="atlas-layout suite-four-layout">
             <Panel eyebrow="Pipeline" title="Autonomous run map" action={<span className={`chip ${stream.running ? "amber" : "signal"}`}>{stream.phase || "standby"}</span>}>
-              <RunRadar config={config} history={history} stream={stream} />
+              <RunRadar config={config} history={savedHunts} stream={stream} />
             </Panel>
             <CandidatePanel issues={stream.issues} onLoadRun={onLoadRun} selectedRun={selectedRun} />
           </div>
@@ -892,7 +901,8 @@ function MissionDeck({
 }
 
 function DryRunSurface({ agents, config, dry, error, health, history, onChangeParams, onClearRun, onRefresh, onStartDryRun, params, selectedRun, stream, watchMode }) {
-  const rail = useMemo(() => buildRail(health, config, { ...stream, params }, history, selectedRun, watchMode), [health, config, stream, params, history, selectedRun, watchMode]);
+  const savedDryRuns = dryStalkRuns(history);
+  const rail = useMemo(() => buildRail(health, config, { ...stream, params }, savedDryRuns, selectedRun, watchMode), [health, config, stream, params, savedDryRuns, selectedRun, watchMode]);
   const dryIssues = normalizeIssues(dry.issues);
   const teamReady = agentsReady(agents, health);
   const scoringUnavailable = dry.done?.scoring_available === false;
@@ -912,7 +922,7 @@ function DryRunSurface({ agents, config, dry, error, health, history, onChangePa
   ];
   return (
     <>
-      <SuiteTopline cells={buildTopline(health, config, dry, history)} />
+      <SuiteTopline cells={buildTopline(health, config, dry, savedDryRuns)} />
       <div className="main-grid hive-workspace-grid">
         <ProductRail sections={rail.sections} stats={rail.stats} />
         <main className="workspace">
@@ -954,6 +964,7 @@ function DryRunSurface({ agents, config, dry, error, health, history, onChangePa
               </div>
             </Panel>
           </div>
+          <DryStalkHistoryList onLoadRun={onLoadRun} runs={savedDryRuns} selectedRun={selectedRun} />
         </main>
       </div>
     </>
@@ -970,6 +981,35 @@ function SecondaryFrame({ children, config, health, history, selectedRun, stream
         <main className="workspace">{children}</main>
       </div>
     </>
+  );
+}
+
+function DryStalkHistoryList({ onLoadRun, runs, selectedRun }) {
+  return (
+    <Panel eyebrow="History" title="Recent Dry Stalks" action={<span className="chip green">{runs.length} saved</span>}>
+      <div className="panelbody repo-list queue-grid">
+        {runs.length ? runs.map((run) => (
+          <div className="ledger-row" key={run.id}>
+            <div className="rank">{selectedRun?.id === run.id ? "SEL" : asCount(run.total_attempted)}</div>
+            <div>
+              <div className="repo-name">{runTargetLabel(run)}</div>
+              <div className="feed-meta">{run.id} · {asCount(run.total_attempted)} candidates · {formatMoney(run.total_cost_usd)} · {timeAgo(run.started_at)}</div>
+              <div className="repo-meta">
+                <span className={`chip ${statusTone(run.status)}`}>{run.status}</span>
+                <span className="chip signal">{runStyle(run)}</span>
+                <span className="chip green">no write</span>
+              </div>
+            </div>
+            <button className="btn" onClick={() => onLoadRun(run.id)} type="button">Load</button>
+          </div>
+        )) : (
+          <div className="empty-v2">
+            <strong>No Dry Stalks saved</strong>
+            <span>Run Dry Stalk to save no-write candidate previews here.</span>
+          </div>
+        )}
+      </div>
+    </Panel>
   );
 }
 
@@ -1003,10 +1043,11 @@ function RunHistoryList({ emptyText, emptyTitle, onLoadRun, runs, selectedRun, t
 }
 
 function HistorySurface({ config, health, history, loading, onClearRun, onLoadRun, onRefresh, selectedRun, stream, watchMode }) {
-  const targetedRuns = history.filter((run) => runStyle(run) === "targeted");
-  const autonomousRuns = history.filter((run) => runStyle(run) === "autonomous");
+  const savedHunts = guardedRuns(history);
+  const targetedRuns = savedHunts.filter((run) => runStyle(run) === "targeted");
+  const autonomousRuns = savedHunts.filter((run) => runStyle(run) === "autonomous");
   return (
-    <SecondaryFrame config={config} health={health} history={history} selectedRun={selectedRun} stream={stream} watchMode={watchMode}>
+    <SecondaryFrame config={config} health={health} history={savedHunts} selectedRun={selectedRun} stream={stream} watchMode={watchMode}>
       <div className="hero-row">
         <div>
           <div className="eyebrow">// RepoReaper patch queue</div>
@@ -1019,7 +1060,7 @@ function HistorySurface({ config, health, history, loading, onClearRun, onLoadRu
         </div>
       </div>
       <RunHistoryList
-        emptyText="Fill Target repo and start a hunt to create targeted history."
+        emptyText="Fill Target repo and start a guarded hunt to create targeted history."
         emptyTitle="No targeted runs saved"
         onLoadRun={onLoadRun}
         runs={targetedRuns}
@@ -1027,7 +1068,7 @@ function HistorySurface({ config, health, history, loading, onClearRun, onLoadRu
         title="Targeted runs"
       />
       <RunHistoryList
-        emptyText="Leave Target repo blank and start a hunt to create autonomous history."
+        emptyText="Leave Target repo blank and start a guarded hunt to create autonomous history."
         emptyTitle="No autonomous runs saved"
         onLoadRun={onLoadRun}
         runs={autonomousRuns}
@@ -1682,12 +1723,31 @@ export default function App() {
     try {
       const run = await fetchJson(`/history/${id}`, undefined, "RepoReaper could not load that run.");
       setSelectedRun(run);
+      if (run?.dry_run) {
+        const savedDry = run.dry_stalk || {};
+        setDryStream({
+          ...createInitialStream(),
+          done: {
+            analysis_available: savedDry.analysis_available,
+            dry_run: true,
+            scoring_available: savedDry.scoring_available,
+            total_would_reap: asCount(run.total_attempted),
+          },
+          issues: normalizeIssues(savedDry.issues),
+          phase: "saved",
+          report: savedDry.report || null,
+        });
+        setActiveTab("dryrun");
+      }
     } catch (err) {
       setError(err.message || "RepoReaper could not load that run.");
     }
   }
 
   function clearRun() {
+    if (selectedRun?.dry_run) {
+      setDryStream(createInitialStream());
+    }
     setSelectedRun(null);
     setError("");
   }

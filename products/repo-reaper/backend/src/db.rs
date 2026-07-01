@@ -4,6 +4,7 @@ use once_cell::sync::Lazy;
 use patchhive_product_core::secrets::TokenProtector;
 use patchhive_product_core::sqlite::{PooledSqliteConnection, SqlitePool};
 use rusqlite::params;
+use serde_json::Value;
 use std::path::PathBuf;
 
 use crate::state::AgentConfig;
@@ -89,6 +90,15 @@ CREATE TABLE IF NOT EXISTS pr_tracking (
     last_checked TEXT, state TEXT DEFAULT 'open',
     merged INTEGER DEFAULT 0, review_state TEXT,
     PRIMARY KEY(pr_number, repo)
+);
+CREATE TABLE IF NOT EXISTS dry_stalk_runs (
+    run_id TEXT PRIMARY KEY,
+    repos_json TEXT NOT NULL,
+    issues_json TEXT NOT NULL,
+    report_json TEXT,
+    scoring_available INTEGER DEFAULT 0,
+    analysis_available INTEGER DEFAULT 0,
+    FOREIGN KEY(run_id) REFERENCES runs(id)
 );
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY, value TEXT
@@ -276,6 +286,35 @@ pub fn finish_run(
             cost,
             status.as_str(),
             run_id
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn save_dry_stalk_run(
+    run_id: &str,
+    repos: &[Value],
+    issues: &[Value],
+    report: Option<&Value>,
+    scoring_available: bool,
+    analysis_available: bool,
+) -> Result<()> {
+    let conn = get_conn()?;
+    let repos_json = serde_json::to_string(repos).context("failed to encode dry stalk repos")?;
+    let issues_json = serde_json::to_string(issues).context("failed to encode dry stalk issues")?;
+    let report_json = report
+        .map(serde_json::to_string)
+        .transpose()
+        .context("failed to encode dry stalk report")?;
+    conn.execute(
+        "INSERT OR REPLACE INTO dry_stalk_runs(run_id, repos_json, issues_json, report_json, scoring_available, analysis_available) VALUES(?1,?2,?3,?4,?5,?6)",
+        params![
+            run_id,
+            repos_json,
+            issues_json,
+            report_json,
+            scoring_available as i32,
+            analysis_available as i32,
         ],
     )?;
     Ok(())

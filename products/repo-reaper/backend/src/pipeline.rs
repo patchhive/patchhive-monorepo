@@ -15,7 +15,9 @@ use tokio_stream::wrappers::ReceiverStream;
 use uuid::Uuid;
 
 use crate::agents::{agent_dry_run_analysis, agent_score_issues};
-use crate::db::{finish_run, get_conn, get_lifetime_cost, start_run, RunStart, RunStatus};
+use crate::db::{
+    finish_run, get_conn, get_lifetime_cost, save_dry_stalk_run, start_run, RunStart, RunStatus,
+};
 use crate::fix_worker::{
     alog, astatus, fix_one, sse, FixAgentPools, FixIssueJob, FixParams, FixRunContext,
 };
@@ -601,6 +603,14 @@ pub async fn dry_run(
             return;
         };
         let filters = load_filters();
+        let run_id = Uuid::new_v4().to_string()[..12].to_string();
+        let run_cost = Arc::new(AtomicI64::new(0));
+        let run_config_json = serde_json::to_string(&req).unwrap_or_else(|_| "{}".to_string());
+        let _ = start_run(RunStart {
+            run_id: &run_id,
+            config_json: &run_config_json,
+            dry_run: true,
+        });
 
         let _ = tx.send(sse("phase", json!({"phase":"scan"}))).await;
         let _ = tx
@@ -612,9 +622,12 @@ pub async fn dry_run(
             .await;
 
         let (repos, issues, fixable, scoring_available) =
-            collect_targets(&http, &req, &team.scout, &filters, &tx, None).await;
-        let _ = tx.send(sse("issues", json!({"issues": issues}))).await;
+            collect_targets(&http, &req, &team.scout, &filters, &tx, Some(&run_cost)).await;
+        let _ = tx
+            .send(sse("issues", json!({"issues": issues.clone()})))
+            .await;
         let mut analysis_available = false;
+        let mut report = None;
         if scoring_available {
             let _ = tx
                 .send(alog(
@@ -628,10 +641,12 @@ pub async fn dry_run(
                 .await;
 
             match agent_dry_run_analysis(&http, &fixable, &repos, &team.scout).await {
-                Ok((report, _)) => {
+                Ok((next_report, cost)) => {
+                    run_cost.fetch_add((cost * 1_000_000.0) as i64, Ordering::Relaxed);
+                    report = Some(next_report.clone());
                     analysis_available = true;
                     let _ = tx
-                        .send(sse("dry_run_report", json!({"report": report})))
+                        .send(sse("dry_run_report", json!({"report": next_report})))
                         .await;
                 }
                 Err(e) => {
@@ -656,6 +671,16 @@ pub async fn dry_run(
                 ))
                 .await;
         }
+        let rc = run_cost.load(Ordering::Relaxed) as f64 / 1_000_000.0;
+        let _ = save_dry_stalk_run(
+            &run_id,
+            &repos,
+            &issues,
+            report.as_ref(),
+            scoring_available,
+            analysis_available,
+        );
+        let _ = finish_run(&run_id, 0, fixable.len() as i64, rc, RunStatus::Done);
 
         let _ = tx
             .send(sse(
@@ -664,7 +689,11 @@ pub async fn dry_run(
                     "analysis_available": analysis_available,
                     "dry_run": true,
                     "scoring_available": scoring_available,
-                    "total_would_reap": fixable.len()
+                    "total_fixed": 0,
+                    "total_attempted": fixable.len(),
+                    "total_would_reap": fixable.len(),
+                    "run_id": run_id,
+                    "cost": rc
                 }),
             ))
             .await;
