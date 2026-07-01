@@ -266,6 +266,75 @@ function dryFailureCopy(dry) {
   };
 }
 
+function recommendationTone(value) {
+  const normalized = String(value || "").toLowerCase();
+  if (normalized.includes("safe") || normalized.includes("attempt")) return "green";
+  if (normalized.includes("skip")) return "red";
+  return "amber";
+}
+
+function successBandTone(value) {
+  const normalized = String(value || "").toLowerCase();
+  if (normalized === "high") return "green";
+  if (normalized === "low") return "amber";
+  return "signal";
+}
+
+function DryScoutReport({ report }) {
+  const structured = report && typeof report === "object" && !Array.isArray(report);
+  if (!structured) {
+    return (
+      <div className="feed-item">
+        <div>
+          <div className="feed-title">Scout analysis</div>
+          <div className="feed-meta">{String(report || "")}</div>
+        </div>
+        <span className="chip green">safe</span>
+      </div>
+    );
+  }
+
+  const top = report.top_candidate || {};
+  const candidates = Array.isArray(report.candidates) ? report.candidates.slice(0, 3) : [];
+  const recommendation = report.recommendation || "manual review";
+  const band = report.success_band || "unknown";
+
+  return (
+    <>
+      <div className="feed-item">
+        <div>
+          <div className="feed-title">Recommendation</div>
+          <div className="feed-meta">{report.summary || "Scout returned structured dry-run guidance."}</div>
+        </div>
+        <span className={`chip ${recommendationTone(recommendation)}`}>{recommendation}</span>
+      </div>
+      <div className="feed-item">
+        <div>
+          <div className="feed-title">{top.repo || "Top candidate"}</div>
+          <div className="feed-meta">{top.title || top.why || "No top candidate selected."}</div>
+        </div>
+        <span className={`chip ${successBandTone(band)}`}>{band}</span>
+      </div>
+      <div className="feed-item">
+        <div>
+          <div className="feed-title">Risk note</div>
+          <div className="feed-meta">{report.risk || "No extra risk note returned."}</div>
+        </div>
+        <span className="chip amber">{top.score ?? "score"}</span>
+      </div>
+      {candidates.map((candidate, index) => (
+        <div className="feed-item" key={`${candidate.repo || "candidate"}-${candidate.title || index}`}>
+          <div>
+            <div className="feed-title">{candidate.repo || `Candidate ${index + 1}`}</div>
+            <div className="feed-meta">{candidate.reason || candidate.title || "Candidate note unavailable."}</div>
+          </div>
+          <span className={`chip ${recommendationTone(candidate.call)}`}>{candidate.call || candidate.score || "review"}</span>
+        </div>
+      ))}
+    </>
+  );
+}
+
 async function parseJsonResponse(response, fallbackError) {
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -774,13 +843,7 @@ function DryRunSurface({ agents, config, dry, error, health, history, onChangePa
             <Panel eyebrow="Scout report" title="Dry-run analysis" action={<span className={`chip ${dry.report ? "green" : reportUnavailable ? "amber" : "signal"}`}>{dry.report ? "ready" : reportUnavailable ? dryFailure.label : "waiting"}</span>}>
               <div className="panelbody repo-list">
                 {dry.report ? (
-                  <div className="feed-item">
-                    <div>
-                      <div className="feed-title">Scout analysis</div>
-                      <div className="feed-meta">{dry.report}</div>
-                    </div>
-                    <span className="chip green">safe</span>
-                  </div>
+                  <DryScoutReport report={dry.report} />
                 ) : (
                   <div className="empty-v2">
                     <strong>{reportUnavailable ? "Scout analysis unavailable" : "No dry-run report"}</strong>
@@ -1164,7 +1227,7 @@ function createInitialStream() {
     issues: [],
     logs: [],
     phase: "",
-    report: "",
+    report: null,
     runCost: 0,
     running: false,
   };
@@ -1299,7 +1362,7 @@ export default function App() {
         return { ...current, runCost: payload.run_cost || 0 };
       }
       if (event === "dry_run_report") {
-        return { ...current, report: payload.report || "" };
+        return { ...current, report: payload.report || null };
       }
       if (event === "done") {
         return { ...current, done: payload, running: false };

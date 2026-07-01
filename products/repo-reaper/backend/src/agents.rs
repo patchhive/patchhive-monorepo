@@ -467,10 +467,14 @@ pub async fn agent_dry_run_analysis(
     issues: &[Value],
     repos: &[Value],
     agent: &AgentConfig,
-) -> Result<(String, f64)> {
+) -> Result<(Value, f64)> {
     let system = "Senior engineer reviewing GitHub issues for automated patching.\n\
-        Produce a concise report: which issues look most reapable, likely complexity, \
-        expected success rate, potential risks. Be specific and practical.";
+        Reply ONLY with JSON (no markdown, no prose). Use this exact shape:\n\
+        {\"summary\":\"max 18 words\",\"top_candidate\":{\"repo\":\"owner/name\",\"title\":\"issue title\",\"score\":0,\"why\":\"max 18 words\"},\
+        \"success_band\":\"low|medium|high\",\"risk\":\"max 18 words\",\
+        \"recommendation\":\"skip|manual review|dry-run only|safe to attempt\",\
+        \"candidates\":[{\"repo\":\"owner/name\",\"title\":\"issue title\",\"score\":0,\"call\":\"skip|review|attempt\",\"reason\":\"max 14 words\"}]}\n\
+        Keep candidates to the best 3 and stay conservative.";
     let repo_names: Vec<&str> = repos
         .iter()
         .filter_map(|r| r["full_name"].as_str())
@@ -497,7 +501,7 @@ pub async fn agent_dry_run_analysis(
         issue_list.join("\n")
     );
     let (text, cost) = ai_call(http, &call_params(agent, system, &prompt)).await?;
-    Ok((text, cost))
+    Ok((parse_json(&text)?, cost))
 }
 
 pub async fn agent_pr_comment_fix(
