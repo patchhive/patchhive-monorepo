@@ -31,6 +31,10 @@ The product documentation set is in [products/](products/).
 | ReleaseSentry | [products/release-sentry.md](products/release-sentry.md) |
 | HiveCore | [products/hive-core.md](products/hive-core.md) |
 
+## Architecture Notes
+
+- [Product operating modes](product-operating-modes.md): directed targets, autonomous discovery, and how products should expose both without losing PatchHive's outbound identity.
+
 ## Platform Docs
 
 - [Platform guardrails](platform-guardrails.md)
