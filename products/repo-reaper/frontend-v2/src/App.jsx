@@ -776,9 +776,15 @@ function TeamPresetPicker({ agents, onLoadPreset, presets, saving }) {
           </div>
         </div>
         {selectedPreset && (
-          <div className="repo-meta">
-            <span className="chip signal">{Array.isArray(selectedPreset.agents) ? selectedPreset.agents.length : 0} agents</span>
-            <span className="chip signal">saved {timeAgo(selectedPreset.created_at)}</span>
+          <div className="feed-item">
+            <div>
+              <div className="feed-title">{selectedPreset.name}</div>
+              <div className="feed-meta">Selected saved team for the next RepoReaper run.</div>
+            </div>
+            <div className="repo-meta">
+              <span className="chip signal">{Array.isArray(selectedPreset.agents) ? selectedPreset.agents.length : 0} agents</span>
+              <span className="chip signal">saved {timeAgo(selectedPreset.created_at)}</span>
+            </div>
           </div>
         )}
       </div>
