@@ -793,11 +793,11 @@ function TeamPresetPicker({ agents, onLoadPreset, presets, saving }) {
             <button className="btn" disabled={saving || !selectedPreset} onClick={() => onLoadPreset(selectedPreset)} type="button">Load team</button>
           </div>
         </div>
-        {selectedPreset && (
+        {selectedPreset && selectedPreset.name !== activePreset?.name && (
           <div className="feed-item">
             <div>
               <div className="feed-title">{selectedPreset.name}</div>
-              <div className="feed-meta">Selected saved team for the next RepoReaper run.</div>
+              <div className="feed-meta">Preset preview. Load this team to make it active for the next run.</div>
             </div>
             <div className="repo-meta">
               <span className="chip signal">{Array.isArray(selectedPreset.agents) ? selectedPreset.agents.length : 0} agents</span>
