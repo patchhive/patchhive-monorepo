@@ -384,6 +384,14 @@ function issueScore(issue) {
   return asCount(issue.fixability_score ?? issue.score ?? issue.confidence);
 }
 
+function runStyle(run) {
+  return run?.run_style === "targeted" || run?.target_repo ? "targeted" : "autonomous";
+}
+
+function runTargetLabel(run) {
+  return runStyle(run) === "targeted" ? run.target_repo || "target repo" : "discovery hunt";
+}
+
 function buildTopline(health, config, stream, history) {
   const latest = newestRun(history) || {};
   return [
@@ -965,43 +973,67 @@ function SecondaryFrame({ children, config, health, history, selectedRun, stream
   );
 }
 
+function RunHistoryList({ emptyText, emptyTitle, onLoadRun, runs, selectedRun, title }) {
+  return (
+    <Panel eyebrow="Recent" title={title} action={<span className="chip signal">{runs.length} saved</span>}>
+      <div className="panelbody repo-list queue-grid">
+        {runs.length ? runs.map((run) => (
+          <div className="ledger-row" key={run.id}>
+            <div className="rank">{selectedRun?.id === run.id ? "SEL" : asCount(run.total_fixed)}</div>
+            <div>
+              <div className="repo-name">{runTargetLabel(run)}</div>
+              <div className="feed-meta">{run.id} · {asCount(run.total_fixed)} fixed of {asCount(run.total_attempted)} attempted · {formatMoney(run.total_cost_usd)} · {timeAgo(run.started_at)}</div>
+              <div className="repo-meta">
+                <span className={`chip ${statusTone(run.status)}`}>{run.status}</span>
+                <span className="chip signal">{runStyle(run)}</span>
+                <span className="chip signal">{run.attempts?.length || 0} attempts</span>
+              </div>
+            </div>
+            <button className="btn" onClick={() => onLoadRun(run.id)} type="button">Load</button>
+          </div>
+        )) : (
+          <div className="empty-v2">
+            <strong>{emptyTitle}</strong>
+            <span>{emptyText}</span>
+          </div>
+        )}
+      </div>
+    </Panel>
+  );
+}
+
 function HistorySurface({ config, health, history, loading, onClearRun, onLoadRun, onRefresh, selectedRun, stream, watchMode }) {
+  const targetedRuns = history.filter((run) => runStyle(run) === "targeted");
+  const autonomousRuns = history.filter((run) => runStyle(run) === "autonomous");
   return (
     <SecondaryFrame config={config} health={health} history={history} selectedRun={selectedRun} stream={stream} watchMode={watchMode}>
       <div className="hero-row">
         <div>
           <div className="eyebrow">// RepoReaper patch queue</div>
           <h1>Run History</h1>
-          <p className="subline">Saved autonomous runs, attempts, cost, fixes, and held work.</p>
+          <p className="subline">Saved targeted and autonomous runs, attempts, cost, fixes, and held work.</p>
         </div>
         <div className="actions">
           {selectedRun && <button className="btn" onClick={onClearRun} type="button">Clear run</button>}
           <button className="btn" onClick={onRefresh} type="button">{loading ? "Refreshing..." : "Refresh"}</button>
         </div>
       </div>
-      <Panel eyebrow="Recent" title="Autonomous runs" action={<span className="chip signal">{history.length} saved</span>}>
-        <div className="panelbody repo-list queue-grid">
-          {history.length ? history.map((run) => (
-            <div className="ledger-row" key={run.id}>
-              <div className="rank">{selectedRun?.id === run.id ? "SEL" : asCount(run.total_fixed)}</div>
-              <div>
-                <div className="repo-name">{run.id}</div>
-                <div className="feed-meta">{asCount(run.total_fixed)} fixed of {asCount(run.total_attempted)} attempted · {formatMoney(run.total_cost_usd)} · {timeAgo(run.started_at)}</div>
-                <div className="repo-meta">
-                  <span className={`chip ${statusTone(run.status)}`}>{run.status}</span>
-                  <span className="chip signal">{run.attempts?.length || 0} attempts</span>
-                </div>
-              </div>
-              <button className="btn" onClick={() => onLoadRun(run.id)} type="button">Load</button>
-            </div>
-          )) : (
-            <div className="empty-v2">
-              <strong>No runs saved</strong>
-              <span>Start a hunt to create RepoReaper history.</span>
-            </div>
-          )}
-        </div>
-      </Panel>
+      <RunHistoryList
+        emptyText="Fill Target repo and start a hunt to create targeted history."
+        emptyTitle="No targeted runs saved"
+        onLoadRun={onLoadRun}
+        runs={targetedRuns}
+        selectedRun={selectedRun}
+        title="Targeted runs"
+      />
+      <RunHistoryList
+        emptyText="Leave Target repo blank and start a hunt to create autonomous history."
+        emptyTitle="No autonomous runs saved"
+        onLoadRun={onLoadRun}
+        runs={autonomousRuns}
+        selectedRun={selectedRun}
+        title="Autonomous runs"
+      />
       {selectedRun && (
         <HistoryDetailGrid>
           <CandidatePanel issues={stream.issues} onLoadRun={onLoadRun} selectedRun={selectedRun} />

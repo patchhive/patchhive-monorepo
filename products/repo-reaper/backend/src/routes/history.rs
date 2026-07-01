@@ -24,22 +24,44 @@ pub fn router() -> Router<AppState> {
         .route("/github/rate-limit", get(rate_limit_check))
 }
 
+fn run_target_repo(config_json: &str) -> Option<String> {
+    let value: Value = serde_json::from_str(config_json).ok()?;
+    value
+        .get("target_repo")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|target| !target.is_empty())
+        .map(ToOwned::to_owned)
+}
+
 async fn get_runs_contract(State(_): State<AppState>) -> Json<contract::ProductRunsResponse> {
     let Ok(conn) = get_conn() else {
         return Json(contract::runs_from_values("repo-reaper", Vec::new()));
     };
     let runs: Vec<Value> = conn.prepare(
-        "SELECT id, started_at, finished_at, total_fixed, total_attempted, total_cost_usd, status FROM runs ORDER BY started_at DESC LIMIT 30"
+        "SELECT id, started_at, finished_at, total_fixed, total_attempted, total_cost_usd, status, config_json, dry_run FROM runs ORDER BY started_at DESC LIMIT 30"
     ).ok().and_then(|mut s| {
-        let mapped = s.query_map([], |r| Ok(json!({
-            "id": r.get::<_,String>(0)?,
-            "started_at": r.get::<_,String>(1)?,
-            "finished_at": r.get::<_,Option<String>>(2)?,
-            "total_fixed": r.get::<_,i64>(3)?,
-            "total_attempted": r.get::<_,i64>(4)?,
-            "total_cost_usd": r.get::<_,f64>(5)?,
-            "status": r.get::<_,String>(6)?,
-        }))).ok()?;
+        let mapped = s.query_map([], |r| {
+            let config_json = r.get::<_, Option<String>>(7)?.unwrap_or_default();
+            let target_repo = run_target_repo(&config_json);
+            let run_style = if target_repo.is_some() {
+                "targeted"
+            } else {
+                "autonomous"
+            };
+            Ok(json!({
+                "id": r.get::<_,String>(0)?,
+                "started_at": r.get::<_,String>(1)?,
+                "finished_at": r.get::<_,Option<String>>(2)?,
+                "total_fixed": r.get::<_,i64>(3)?,
+                "total_attempted": r.get::<_,i64>(4)?,
+                "total_cost_usd": r.get::<_,f64>(5)?,
+                "status": r.get::<_,String>(6)?,
+                "target_repo": target_repo,
+                "run_style": run_style,
+                "dry_run": r.get::<_, i64>(8)? != 0,
+            }))
+        }).ok()?;
         Some(mapped.flatten().collect())
     }).unwrap_or_default();
 
@@ -51,14 +73,26 @@ async fn get_history(State(_): State<AppState>) -> Json<Value> {
         return Json(json!({"history":[]}));
     };
     let runs: Vec<Value> = conn.prepare(
-        "SELECT id, started_at, finished_at, total_fixed, total_attempted, total_cost_usd, status FROM runs ORDER BY started_at DESC LIMIT 30"
+        "SELECT id, started_at, finished_at, total_fixed, total_attempted, total_cost_usd, status, config_json, dry_run FROM runs ORDER BY started_at DESC LIMIT 30"
     ).ok().and_then(|mut s| {
-        let mapped = s.query_map([], |r| Ok(json!({
-            "id": r.get::<_,String>(0)?, "started_at": r.get::<_,String>(1)?,
-            "finished_at": r.get::<_,Option<String>>(2)?, "total_fixed": r.get::<_,i64>(3)?,
-            "total_attempted": r.get::<_,i64>(4)?, "total_cost_usd": r.get::<_,f64>(5)?,
-            "status": r.get::<_,String>(6)?,
-        }))).ok()?;
+        let mapped = s.query_map([], |r| {
+            let config_json = r.get::<_, Option<String>>(7)?.unwrap_or_default();
+            let target_repo = run_target_repo(&config_json);
+            let run_style = if target_repo.is_some() {
+                "targeted"
+            } else {
+                "autonomous"
+            };
+            Ok(json!({
+                "id": r.get::<_,String>(0)?, "started_at": r.get::<_,String>(1)?,
+                "finished_at": r.get::<_,Option<String>>(2)?, "total_fixed": r.get::<_,i64>(3)?,
+                "total_attempted": r.get::<_,i64>(4)?, "total_cost_usd": r.get::<_,f64>(5)?,
+                "status": r.get::<_,String>(6)?,
+                "target_repo": target_repo,
+                "run_style": run_style,
+                "dry_run": r.get::<_, i64>(8)? != 0,
+            }))
+        }).ok()?;
         Some(mapped.flatten().collect())
     }).unwrap_or_default();
 
@@ -132,8 +166,29 @@ async fn get_run(Path(run_id): Path<String>, State(_): State<AppState>) -> Json<
         return Json(json!({}));
     };
     let run: Option<Value> = conn.query_row(
-        "SELECT id,started_at,finished_at,total_fixed,total_attempted,total_cost_usd,status FROM runs WHERE id=?",
-        [&run_id], |r| Ok(json!({"id":r.get::<_,String>(0)?,"started_at":r.get::<_,String>(1)?,"finished_at":r.get::<_,Option<String>>(2)?,"total_fixed":r.get::<_,i64>(3)?,"total_attempted":r.get::<_,i64>(4)?,"total_cost_usd":r.get::<_,f64>(5)?,"status":r.get::<_,String>(6)?}))
+        "SELECT id,started_at,finished_at,total_fixed,total_attempted,total_cost_usd,status,config_json,dry_run FROM runs WHERE id=?",
+        [&run_id],
+        |r| {
+            let config_json = r.get::<_, Option<String>>(7)?.unwrap_or_default();
+            let target_repo = run_target_repo(&config_json);
+            let run_style = if target_repo.is_some() {
+                "targeted"
+            } else {
+                "autonomous"
+            };
+            Ok(json!({
+                "id":r.get::<_,String>(0)?,
+                "started_at":r.get::<_,String>(1)?,
+                "finished_at":r.get::<_,Option<String>>(2)?,
+                "total_fixed":r.get::<_,i64>(3)?,
+                "total_attempted":r.get::<_,i64>(4)?,
+                "total_cost_usd":r.get::<_,f64>(5)?,
+                "status":r.get::<_,String>(6)?,
+                "target_repo": target_repo,
+                "run_style": run_style,
+                "dry_run": r.get::<_, i64>(8)? != 0,
+            }))
+        }
     ).ok();
     if run.is_none() {
         return Json(json!({"error":"not found"}));

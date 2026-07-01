@@ -29,6 +29,29 @@ Recommended labels:
 
 Avoid making autonomous discovery look like a failure to choose a target. Also avoid making directed mode feel less "PatchHive"; it is the control surface that makes autonomous behavior testable and trustworthy.
 
+## Run History
+
+When a product supports both directed and autonomous runs, its history UI and run APIs should expose the run style.
+
+Minimum metadata:
+
+```json
+{
+  "run_style": "directed | targeted | autonomous",
+  "target_repo": "owner/repo",
+  "discovery_scope": "topic/language/org/schedule summary"
+}
+```
+
+UI expectations:
+
+- Do not label all saved work as "autonomous runs" once directed runs exist.
+- Split history into clear sections when both styles are common, such as `Targeted runs` and `Autonomous runs`.
+- If a single mixed list is more compact, include a visible style chip on every row.
+- Keep selected-run detail panels style-neutral unless the style changes the meaning of the evidence.
+
+This should become the default pattern for every product as autonomous/batch discovery is added.
+
 ## Product Expectations
 
 | Product | Directed mode | Autonomous mode |

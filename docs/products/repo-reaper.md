@@ -166,6 +166,12 @@ RepoReaper supports both operating modes described in [Product operating modes](
 
 Both modes honor allowlist, denylist, and opt-out controls. A malformed `target_repo` stops discovery for that run instead of falling back to broad autonomous search.
 
+Run history keeps these modes visible:
+
+- Saved runs expose `run_style` as `targeted` or `autonomous`.
+- Targeted runs expose `target_repo`.
+- The v2 History tab separates targeted runs from autonomous runs so operators can compare known-repo work against broad discovery work.
+
 ---
 
 ## Outputs
