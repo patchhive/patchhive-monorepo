@@ -147,6 +147,10 @@ function aiReady(config) {
   return Boolean(config?.PROVIDER_API_KEY_SET || config?.PATCHHIVE_AI_URL || config?.AI_LOCAL_STATUS?.ok || config?.AI_LOCAL_STATUS?.status === "ok");
 }
 
+function localGatewayReady(config) {
+  return Boolean(config?.PATCHHIVE_AI_URL || config?.AI_LOCAL_STATUS?.ok || config?.AI_LOCAL_STATUS?.status === "ok");
+}
+
 function agentsReady(agents, health) {
   return Boolean((Array.isArray(agents) && agents.length) || asCount(health?.agents));
 }
@@ -215,6 +219,51 @@ function starterTeam(config) {
     provider,
     role: role.value,
   }));
+}
+
+function agentCredentialStatus(agent, config) {
+  if (String(agent?.api_key || "").trim()) return { label: "key saved", tone: "green" };
+  if (agent?.provider === "openai" && localGatewayReady(config)) return { label: "local gateway", tone: "green" };
+  if (agent?.provider === "ollama") return { label: "local model", tone: "green" };
+  if (config?.PROVIDER_API_KEY_SET) return { label: "global key", tone: "green" };
+  return { label: "key missing", tone: "amber" };
+}
+
+function latestDryFailure(logs = []) {
+  return [...logs].reverse().find((log) => ["warn", "error"].includes(String(log?.type || "").toLowerCase())) || null;
+}
+
+function dryFailureCopy(dry) {
+  const failure = latestDryFailure(dry.logs);
+  const message = String(failure?.msg || "").toLowerCase();
+  if (!message) {
+    return {
+      detail: "Check the active Scout provider key or switch the team to a configured local/OpenAI-compatible gateway.",
+      label: "check provider",
+    };
+  }
+  if (message.includes("no api key") || message.includes("401") || message.includes("unauthorized") || message.includes("authentication")) {
+    return {
+      detail: "The active Scout provider rejected credentials or has no saved key. Test Provider defaults, then save them to the team.",
+      label: "auth check",
+    };
+  }
+  if (message.includes("empty response") || message.includes("non-json") || message.includes("json")) {
+    return {
+      detail: "The model answered, but not in the JSON shape RepoReaper needs for scoring. Try another model or save the tested provider defaults to the Scout.",
+      label: "response check",
+    };
+  }
+  if (message.includes("rate limit") || message.includes("429")) {
+    return {
+      detail: "The active Scout provider hit a rate limit. Wait for cooldown or switch models/providers.",
+      label: "rate limited",
+    };
+  }
+  return {
+    detail: "Check the latest warning below, then test and save Provider defaults to the active team.",
+    label: "check provider",
+  };
 }
 
 async function parseJsonResponse(response, fallbackError) {
@@ -687,6 +736,7 @@ function DryRunSurface({ agents, config, dry, error, health, history, onChangePa
   const teamReady = agentsReady(agents, health);
   const scoringUnavailable = dry.done?.scoring_available === false;
   const reportUnavailable = dry.done?.analysis_available === false && !dry.report;
+  const dryFailure = reportUnavailable ? dryFailureCopy(dry) : null;
   const disabledReason = !teamReady
     ? "Dry Stalk still needs a Scout agent for scoring and analysis. Recruit a team in Checks; no repository writes will run here."
     : !githubReady(config, health)
@@ -695,7 +745,7 @@ function DryRunSurface({ agents, config, dry, error, health, history, onChangePa
   const metrics = [
     { label: "Would target", value: String(dryIssues.length || asCount(dry.done?.total_would_reap)), tone: scoringUnavailable ? "warn" : "sig", sub: scoringUnavailable ? "unscored" : "no writes" },
     { label: "Phase", value: dry.phase || "standby", tone: dry.running ? "warn" : "sig", sub: "dry stalk" },
-    { label: "Report", value: dry.report ? "ready" : reportUnavailable ? "auth needed" : "none", tone: dry.report ? "ok" : reportUnavailable ? "warn" : "sig", sub: "Scout analysis" },
+    { label: "Report", value: dry.report ? "ready" : reportUnavailable ? dryFailure.label : "none", tone: dry.report ? "ok" : reportUnavailable ? "warn" : "sig", sub: "Scout analysis" },
     { label: "Budget", value: "0", tone: "ok", sub: "no patch cost" },
     { label: "Writes", value: "0", tone: "ok", sub: "safe inspection" },
   ];
@@ -721,7 +771,7 @@ function DryRunSurface({ agents, config, dry, error, health, history, onChangePa
           <MetricBand metrics={metrics} />
           <div className="atlas-layout suite-four-layout">
             <CandidatePanel issues={dryIssues} selectedRun={null} />
-            <Panel eyebrow="Scout report" title="Dry-run analysis" action={<span className={`chip ${dry.report ? "green" : reportUnavailable ? "amber" : "signal"}`}>{dry.report ? "ready" : reportUnavailable ? "auth needed" : "waiting"}</span>}>
+            <Panel eyebrow="Scout report" title="Dry-run analysis" action={<span className={`chip ${dry.report ? "green" : reportUnavailable ? "amber" : "signal"}`}>{dry.report ? "ready" : reportUnavailable ? dryFailure.label : "waiting"}</span>}>
               <div className="panelbody repo-list">
                 {dry.report ? (
                   <div className="feed-item">
@@ -734,7 +784,7 @@ function DryRunSurface({ agents, config, dry, error, health, history, onChangePa
                 ) : (
                   <div className="empty-v2">
                     <strong>{reportUnavailable ? "Scout analysis unavailable" : "No dry-run report"}</strong>
-                    <span>{reportUnavailable ? "Check the active agent provider key or switch the team to a configured local/OpenAI-compatible gateway." : "Run Dry Stalk to inspect candidate quality without making changes."}</span>
+                    <span>{reportUnavailable ? dryFailure.detail : "Run Dry Stalk to inspect candidate quality without making changes."}</span>
                   </div>
                 )}
                 {dry.logs?.slice(-4).map((log, index) => (
@@ -964,6 +1014,9 @@ function AgentTeamPanel({ agents, apiKey, config, onSaveAgents, saving }) {
           </label>
           <span className="chip green">one provider setup</span>
           <span className="chip signal">{modelDiscovery.models.length} models</span>
+          {modelDiscovery.testStatus?.ok && team.length > 0 && (
+            <span className="chip amber">save to team before dry stalk</span>
+          )}
           {modelDiscovery.statusText && (
             <span className="feed-meta break-all" style={{ flexBasis: "100%" }}>{modelDiscovery.statusText}</span>
           )}
@@ -983,7 +1036,13 @@ function AgentTeamPanel({ agents, apiKey, config, onSaveAgents, saving }) {
               <div className="feed-title">{agent.name || agent.role}</div>
               <div className="feed-meta">{agent.role || "agent"} · {agent.provider || "provider"} · {agent.model || "model"}</div>
             </div>
-            <button className="btn" disabled={saving} onClick={() => onSaveAgents(team.filter((item) => item.id !== agent.id))} type="button">Remove</button>
+            <div className="actions">
+              {(() => {
+                const credential = agentCredentialStatus(agent, config);
+                return <span className={`chip ${credential.tone}`}>{credential.label}</span>;
+              })()}
+              <button className="btn" disabled={saving} onClick={() => onSaveAgents(team.filter((item) => item.id !== agent.id))} type="button">Remove</button>
+            </div>
           </div>
         ))}
         {showManualAgent && (

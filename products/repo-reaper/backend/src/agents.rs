@@ -43,7 +43,49 @@ fn strip_json_fence(s: &str) -> &str {
 
 pub fn parse_json(text: &str) -> Result<Value> {
     let clean = strip_json_fence(text);
-    serde_json::from_str(clean).map_err(|e| anyhow!("JSON parse error: {e}\nRaw: {text}"))
+    serde_json::from_str(clean).map_err(|e| {
+        if clean.is_empty() {
+            return anyhow!("Provider returned an empty response where JSON was expected");
+        }
+        let preview = clean
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .chars()
+            .take(240)
+            .collect::<String>();
+        anyhow!(
+            "Provider returned non-JSON output where JSON was expected: {e}. Preview: {preview}"
+        )
+    })
+}
+
+fn clean_env(key: &str) -> Option<String> {
+    std::env::var(key)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn provider_api_key(provider: &str) -> Option<String> {
+    let provider_specific = match provider {
+        "openai" => clean_env("OPENAI_API_KEY"),
+        "anthropic" => clean_env("ANTHROPIC_API_KEY"),
+        "gemini" => clean_env("GEMINI_API_KEY").or_else(|| clean_env("GOOGLE_API_KEY")),
+        "groq" => clean_env("GROQ_API_KEY"),
+        "custom" => clean_env("CUSTOM_AI_API_KEY").or_else(|| clean_env("OPENAI_API_KEY")),
+        _ => None,
+    };
+
+    provider_specific.or_else(|| clean_env("PROVIDER_API_KEY"))
+}
+
+fn agent_or_env_api_key(p: &AgentCallParams<'_>) -> Option<String> {
+    p.api_key
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .or_else(|| provider_api_key(p.provider))
 }
 
 // ── Provider cooldowns ─────────────────────────────────────────────────────────
@@ -139,15 +181,7 @@ pub async fn ai_call(http: &Client, p: &AgentCallParams<'_>) -> Result<(String, 
 }
 
 async fn anthropic_call(http: &Client, p: &AgentCallParams<'_>) -> Result<(String, f64)> {
-    let key_owned = p
-        .api_key
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string)
-        .or_else(|| std::env::var("PROVIDER_API_KEY").ok())
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| anyhow!("No API key for anthropic"))?;
+    let key_owned = agent_or_env_api_key(p).ok_or_else(|| anyhow!("No API key for anthropic"))?;
     let key = key_owned.as_str();
     let body = json!({
         "model": p.model,
@@ -177,11 +211,7 @@ async fn anthropic_call(http: &Client, p: &AgentCallParams<'_>) -> Result<(Strin
 }
 
 async fn openai_call(http: &Client, p: &AgentCallParams<'_>, base: &str) -> Result<(String, f64)> {
-    let key = p
-        .api_key
-        .map(|s| s.to_string())
-        .or_else(|| std::env::var("PROVIDER_API_KEY").ok())
-        .filter(|value| !value.trim().is_empty());
+    let key = agent_or_env_api_key(p);
     let body = json!({
         "model": p.model,
         "max_tokens": 2000,
@@ -203,23 +233,30 @@ async fn openai_call(http: &Client, p: &AgentCallParams<'_>, base: &str) -> Resu
         return Err(anyhow!("OpenAI/compat {status}: {txt}"));
     }
     let data: Value = resp.json().await?;
+    if let Some(error) = data.get("error") {
+        let message = error["message"]
+            .as_str()
+            .map(str::to_string)
+            .unwrap_or_else(|| error.to_string());
+        return Err(anyhow!("OpenAI/compat provider error: {message}"));
+    }
     let text = data["choices"][0]["message"]["content"]
         .as_str()
+        .or_else(|| data["choices"][0]["text"].as_str())
+        .or_else(|| data["output_text"].as_str())
         .unwrap_or("")
         .to_string();
+    if text.trim().is_empty() {
+        return Err(anyhow!(
+            "OpenAI/compat provider returned an empty completion for model {}",
+            p.model
+        ));
+    }
     Ok((text, 0.0))
 }
 
 async fn gemini_call(http: &Client, p: &AgentCallParams<'_>) -> Result<(String, f64)> {
-    let key_owned = p
-        .api_key
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string)
-        .or_else(|| std::env::var("PROVIDER_API_KEY").ok())
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| anyhow!("No Gemini key"))?;
+    let key_owned = agent_or_env_api_key(p).ok_or_else(|| anyhow!("No Gemini key"))?;
     let key = key_owned.as_str();
     let url = format!(
         "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent",
