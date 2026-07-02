@@ -119,7 +119,9 @@ async fn get_history(State(_): State<AppState>) -> Json<Value> {
                 ia.finished_at,
                 ia.cost_usd,
                 ia.patch_diff,
-                ia.confidence
+                ia.confidence,
+                ia.error_msg,
+                ia.duration_seconds
              FROM issue_attempts ia
              JOIN recent_runs rr ON rr.id = ia.run_id
              ORDER BY ia.run_id, ia.started_at"
@@ -137,6 +139,7 @@ async fn get_history(State(_): State<AppState>) -> Json<Value> {
                         "smith_agent":r.get::<_,Option<String>>(10)?,"gatekeeper_agent":r.get::<_,String>(11)?,
                         "started_at":r.get::<_,String>(12)?,"finished_at":r.get::<_,Option<String>>(13)?,
                         "cost_usd":r.get::<_,f64>(14)?,"patch_diff":r.get::<_,Option<String>>(15)?,"confidence":r.get::<_,i32>(16)?,
+                        "error_msg":r.get::<_,Option<String>>(17)?,"duration_seconds":r.get::<_,Option<f64>>(18)?,
                     }),
                 ))
             }).ok()?;
@@ -194,19 +197,48 @@ async fn get_run(Path(run_id): Path<String>, State(_): State<AppState>) -> Json<
         return Json(json!({"error":"not found"}));
     }
     let attempts: Vec<Value> = conn.prepare(
-        "SELECT id, issue_number, issue_title, status, skip_reason, pr_url, pr_number, cost_usd, patch_diff, confidence FROM issue_attempts WHERE run_id=? ORDER BY started_at"
+        "SELECT
+            id,
+            issue_number,
+            issue_title,
+            issue_url,
+            status,
+            skip_reason,
+            pr_url,
+            pr_number,
+            reaper_agent,
+            smith_agent,
+            gatekeeper_agent,
+            started_at,
+            finished_at,
+            duration_seconds,
+            cost_usd,
+            patch_diff,
+            error_msg,
+            confidence
+         FROM issue_attempts
+         WHERE run_id=?
+         ORDER BY started_at"
     ).ok().and_then(|mut s| {
         let mapped = s.query_map([&run_id], |r| Ok(json!({
             "id": r.get::<_, String>(0)?,
             "issue_number": r.get::<_, i64>(1)?,
             "issue_title": r.get::<_, String>(2)?,
-            "status": r.get::<_, String>(3)?,
-            "skip_reason": r.get::<_, Option<String>>(4)?,
-            "pr_url": r.get::<_, Option<String>>(5)?,
-            "pr_number": r.get::<_, Option<i64>>(6)?,
-            "cost_usd": r.get::<_, f64>(7)?,
-            "patch_diff": r.get::<_, Option<String>>(8)?,
-            "confidence": r.get::<_, i32>(9)?,
+            "issue_url": r.get::<_, Option<String>>(3)?,
+            "status": r.get::<_, String>(4)?,
+            "skip_reason": r.get::<_, Option<String>>(5)?,
+            "pr_url": r.get::<_, Option<String>>(6)?,
+            "pr_number": r.get::<_, Option<i64>>(7)?,
+            "reaper_agent": r.get::<_, String>(8)?,
+            "smith_agent": r.get::<_, Option<String>>(9)?,
+            "gatekeeper_agent": r.get::<_, String>(10)?,
+            "started_at": r.get::<_, String>(11)?,
+            "finished_at": r.get::<_, Option<String>>(12)?,
+            "duration_seconds": r.get::<_, Option<f64>>(13)?,
+            "cost_usd": r.get::<_, f64>(14)?,
+            "patch_diff": r.get::<_, Option<String>>(15)?,
+            "error_msg": r.get::<_, Option<String>>(16)?,
+            "confidence": r.get::<_, i32>(17)?,
         }))).ok()?;
         Some(mapped.flatten().collect())
     }).unwrap_or_default();

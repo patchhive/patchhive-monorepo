@@ -413,6 +413,95 @@ function runTargetLabel(run) {
   }
   return run?.dry_run ? "discovery preview" : "discovery hunt";
 }
+
+function humanizeReason(value) {
+  return String(value || "")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function formatDuration(seconds) {
+  const value = Number(seconds || 0);
+  if (!Number.isFinite(value) || value <= 0) return "n/a";
+  if (value < 60) return `${Math.round(value)}s`;
+  const minutes = Math.floor(value / 60);
+  const remainder = Math.round(value % 60);
+  return remainder ? `${minutes}m ${remainder}s` : `${minutes}m`;
+}
+
+function diffSeconds(startedAt, finishedAt) {
+  if (!startedAt || !finishedAt) return 0;
+  const started = new Date(startedAt);
+  const finished = new Date(finishedAt);
+  if (Number.isNaN(started.getTime()) || Number.isNaN(finished.getTime())) return 0;
+  return Math.max(0, (finished.getTime() - started.getTime()) / 1000);
+}
+
+function attemptDuration(attempt) {
+  return formatDuration(attempt?.duration_seconds || diffSeconds(attempt?.started_at, attempt?.finished_at));
+}
+
+function runDuration(run) {
+  const attempts = runAttempts(run);
+  const total = attempts.reduce((sum, attempt) => sum + Number(attempt.duration_seconds || 0), 0);
+  return formatDuration(total || diffSeconds(run?.started_at, run?.finished_at));
+}
+
+function attemptReason(attempt) {
+  const skipReason = String(attempt?.skip_reason || "").trim();
+  const error = String(attempt?.error_msg || "").trim();
+  if (attempt?.pr_url) {
+    return `Opened PR #${attempt.pr_number || ""}`.trim();
+  }
+  if (skipReason === "no_changes") {
+    return "No commit-ready diff was produced, so RepoReaper did not open an empty PR.";
+  }
+  if (skipReason) {
+    return `Held: ${humanizeReason(skipReason)}.`;
+  }
+  if (error) {
+    return error;
+  }
+  if (attempt?.status === "fixed") {
+    return "Patch output reached PR delivery.";
+  }
+  if (attempt?.status === "failed" || attempt?.status === "error") {
+    return "Attempt failed before PR delivery.";
+  }
+  if (attempt?.status === "running") {
+    return "Attempt is still moving through the pipeline.";
+  }
+  return "Saved issue attempt.";
+}
+
+function runOutcomeReason(run) {
+  const attempts = runAttempts(run);
+  const fixed = asCount(run?.total_fixed);
+  const attempted = asCount(run?.total_attempted || attempts.length);
+  if (fixed > 0) {
+    return `${fixed} pull request${fixed === 1 ? "" : "s"} reached delivery from ${attempted} attempt${attempted === 1 ? "" : "s"}.`;
+  }
+  const noChangeAttempt = attempts.find((attempt) => attempt.skip_reason === "no_changes");
+  if (noChangeAttempt) {
+    return "No PR was opened because the selected attempt produced no commit-ready diff.";
+  }
+  const erroredAttempt = attempts.find((attempt) => attempt.error_msg);
+  if (erroredAttempt) {
+    return attemptReason(erroredAttempt);
+  }
+  if (attempted > 0) {
+    return `${attempted} attempt${attempted === 1 ? "" : "s"} ran, but none reached PR delivery.`;
+  }
+  return "No issue attempts were saved for this run.";
+}
+
+function runStatusLabel(run) {
+  if (!run) return "ready";
+  if (run.status === "done" && asCount(run.total_fixed) === 0 && asCount(run.total_attempted) > 0) return "held";
+  return run.status || "saved";
+}
+
 function guardedRuns(history) {
   return (Array.isArray(history) ? history : []).filter((run) => !run.dry_run);
 }
@@ -1070,25 +1159,173 @@ function DryStalkHistoryList({ onLoadRun, runs, selectedRun }) {
   );
 }
 
+function selectedRunMetrics(run) {
+  const attempts = runAttempts(run);
+  const fixed = asCount(run?.total_fixed);
+  const attempted = asCount(run?.total_attempted || attempts.length);
+  const prCount = attempts.filter((attempt) => attempt.pr_url || attempt.pr_number).length;
+  return [
+    { label: "Status", value: runStatusLabel(run), tone: metricToneFromStatus(runStatusLabel(run)), sub: runStyle(run) },
+    { label: "Attempts", value: String(attempted), tone: attempted ? "warn" : "sig", sub: `${fixed} fixed` },
+    { label: "PR output", value: String(prCount), tone: prCount ? "ok" : "warn", sub: prCount ? "tracked" : "none" },
+    { label: "Duration", value: runDuration(run), tone: "sig", sub: "saved run" },
+    { label: "Cost", value: formatMoney(run?.total_cost_usd), tone: "sig", sub: timeAgo(run?.started_at) },
+  ];
+}
+
+function SelectedRunDossier({ run }) {
+  const attempts = runAttempts(run);
+  const firstAttempt = attempts[0] || {};
+  const fixed = asCount(run?.total_fixed);
+  const attempted = asCount(run?.total_attempted || attempts.length);
+  return (
+    <Panel eyebrow="Selected" title="Run dossier" action={<span className={`chip ${statusTone(runStatusLabel(run))}`}>{runStatusLabel(run)}</span>}>
+      <div className="panelbody repo-list">
+        <div className="feed-item">
+          <div>
+            <div className="feed-title">{runTargetLabel(run)}</div>
+            <div className="feed-meta break-all">{run?.id || "saved run"} · {runStyle(run)} · started {timeAgo(run?.started_at)}</div>
+          </div>
+          <span className="chip signal">{formatMoney(run?.total_cost_usd)}</span>
+        </div>
+        <div className="feed-item">
+          <div>
+            <div className="feed-title">Outcome</div>
+            <div className="feed-meta break-all">{runOutcomeReason(run)}</div>
+          </div>
+          <span className={`chip ${fixed ? "green" : attempted ? "amber" : "signal"}`}>{fixed}/{attempted}</span>
+        </div>
+        <div className="feed-item">
+          <div>
+            <div className="feed-title">{firstAttempt.issue_title || "No saved issue attempt"}</div>
+            <div className="feed-meta break-all">
+              {firstAttempt.issue_number ? `Issue #${firstAttempt.issue_number}` : "No issue number"} · confidence {firstAttempt.confidence || "n/a"} · {attemptDuration(firstAttempt)}
+            </div>
+          </div>
+          <span className={`chip ${statusTone(firstAttempt.status || runStatusLabel(run))}`}>{firstAttempt.status || "run"}</span>
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
+function HistoryDeliveryPanel({ run }) {
+  const attempts = runAttempts(run);
+  const prs = attempts.filter((attempt) => attempt.pr_url || attempt.pr_number);
+  const skipped = attempts.filter((attempt) => attempt.skip_reason);
+  const failed = attempts.filter((attempt) => attempt.error_msg || ["failed", "error"].includes(String(attempt.status || "").toLowerCase()));
+  const reachedGatekeeper = attempts.some((attempt) => attempt.patch_diff || attempt.pr_url || attempt.status === "fixed");
+  const rows = [
+    {
+      title: "PR delivery",
+      meta: prs.length ? `${prs.length} pull request${prs.length === 1 ? "" : "s"} opened.` : runOutcomeReason(run),
+      label: prs.length ? "opened" : "none",
+      tone: prs.length ? "green" : "amber",
+    },
+    {
+      title: "Attempt disposition",
+      meta: skipped.length ? `${skipped.length} held or skipped attempt${skipped.length === 1 ? "" : "s"} recorded.` : failed.length ? `${failed.length} failed attempt${failed.length === 1 ? "" : "s"} recorded.` : "No held attempts are visible.",
+      label: skipped.length ? "held" : failed.length ? "failed" : "clear",
+      tone: skipped.length || failed.length ? "amber" : "green",
+    },
+    {
+      title: "Gatekeeper reach",
+      meta: reachedGatekeeper ? "At least one attempt produced patch output or PR delivery evidence." : "No commit-ready diff reached validation, so PR creation did not run.",
+      label: reachedGatekeeper ? "reached" : "not reached",
+      tone: reachedGatekeeper ? "green" : "amber",
+    },
+    {
+      title: "Attribution",
+      meta: "Generated pull requests keep PatchHive attribution visible.",
+      label: "required",
+      tone: "signal",
+    },
+  ];
+  return (
+    <Panel eyebrow="Delivery" title="PR and gate posture" action={<span className={`chip ${prs.length ? "green" : "amber"}`}>{prs.length} PRs</span>}>
+      <div className="panelbody repo-list">
+        {rows.map((item) => (
+          <div className="feed-item" key={item.title}>
+            <div>
+              <div className="feed-title">{item.title}</div>
+              <div className="feed-meta break-all">{item.meta}</div>
+            </div>
+            <span className={`chip ${item.tone}`}>{item.label}</span>
+          </div>
+        ))}
+      </div>
+    </Panel>
+  );
+}
+
+function HistoryAttemptTimeline({ run }) {
+  const attempts = runAttempts(run);
+  return (
+    <Panel eyebrow="Attempts" title="Attempt timeline" action={<span className="chip signal">{attempts.length} saved</span>}>
+      <div className="panelbody repo-list queue-grid">
+        {attempts.length ? attempts.map((attempt, index) => (
+          <div className="ledger-row" key={attempt.id || index}>
+            <div className="rank">{attempt.confidence || index + 1}</div>
+            <div>
+              <div className="repo-name">{attempt.issue_title || `Issue #${attempt.issue_number || index + 1}`}</div>
+              <div className="feed-meta break-all">
+                #{attempt.issue_number || "n/a"} · {attempt.id || "attempt"} · {formatMoney(attempt.cost_usd)} · {attemptDuration(attempt)}
+              </div>
+              <div className="feed-meta break-all">{attemptReason(attempt)}</div>
+              <div className="repo-meta">
+                <span className={`chip ${statusTone(attempt.status)}`}>{attempt.status || "attempt"}</span>
+                {attempt.skip_reason && <span className="chip amber">{humanizeReason(attempt.skip_reason)}</span>}
+                {attempt.reaper_agent && <span className="chip signal">reaper {attempt.reaper_agent}</span>}
+                {attempt.gatekeeper_agent && <span className="chip signal">gate {attempt.gatekeeper_agent}</span>}
+              </div>
+            </div>
+            {attempt.pr_url ? (
+              <a className="btn" href={attempt.pr_url} rel="noreferrer" target="_blank">Open PR</a>
+            ) : attempt.issue_url ? (
+              <a className="btn" href={attempt.issue_url} rel="noreferrer" target="_blank">Issue</a>
+            ) : (
+              <span className={`chip ${statusTone(attempt.status)}`}>{attempt.status || "saved"}</span>
+            )}
+          </div>
+        )) : (
+          <div className="empty-v2">
+            <strong>No attempts saved</strong>
+            <span>This run did not persist issue-level attempt detail.</span>
+          </div>
+        )}
+      </div>
+    </Panel>
+  );
+}
+
 function RunHistoryList({ emptyText, emptyTitle, onLoadRun, runs, selectedRun, title }) {
   return (
     <Panel eyebrow="Recent" title={title} action={<span className="chip signal">{runs.length} saved</span>}>
       <div className="panelbody repo-list queue-grid">
-        {runs.length ? runs.map((run) => (
-          <div className="ledger-row" key={run.id}>
-            <div className="rank">{selectedRun?.id === run.id ? "SEL" : asCount(run.total_fixed)}</div>
-            <div>
-              <div className="repo-name">{runTargetLabel(run)}</div>
-              <div className="feed-meta">{run.id} · {asCount(run.total_fixed)} fixed of {asCount(run.total_attempted)} attempted · {formatMoney(run.total_cost_usd)} · {timeAgo(run.started_at)}</div>
-              <div className="repo-meta">
-                <span className={`chip ${statusTone(run.status)}`}>{run.status}</span>
-                <span className="chip signal">{runStyle(run)}</span>
-                <span className="chip signal">{run.attempts?.length || 0} attempts</span>
+        {runs.length ? runs.map((run) => {
+          const attempts = runAttempts(run);
+          const firstAttempt = attempts[0] || {};
+          const fixed = asCount(run.total_fixed);
+          const attempted = asCount(run.total_attempted || attempts.length);
+          const status = runStatusLabel(run);
+          return (
+            <div className="ledger-row" key={run.id}>
+              <div className="rank">{selectedRun?.id === run.id ? "SEL" : fixed}</div>
+              <div>
+                <div className="repo-name">{runTargetLabel(run)}</div>
+                <div className="feed-meta break-all">{run.id} · {fixed} fixed of {attempted} attempted · {formatMoney(run.total_cost_usd)} · {timeAgo(run.started_at)} · {runDuration(run)}</div>
+                <div className="feed-meta break-all">{firstAttempt.issue_title ? `Top attempt: #${firstAttempt.issue_number || "?"} ${firstAttempt.issue_title}` : runOutcomeReason(run)}</div>
+                <div className="repo-meta">
+                  <span className={`chip ${statusTone(status)}`}>{status}</span>
+                  <span className="chip signal">{runStyle(run)}</span>
+                  <span className="chip signal">{attempts.length || attempted} attempts</span>
+                  <span className="chip signal">{formatMoney(run.total_cost_usd)}</span>
+                </div>
               </div>
+              <button className="btn" onClick={() => onLoadRun(run.id)} type="button">Load</button>
             </div>
-            <button className="btn" onClick={() => onLoadRun(run.id)} type="button">Load</button>
-          </div>
-        )) : (
+          );
+        }) : (
           <div className="empty-v2">
             <strong>{emptyTitle}</strong>
             <span>{emptyText}</span>
@@ -1133,10 +1370,14 @@ function HistorySurface({ config, health, history, loading, onClearRun, onLoadRu
         title="Autonomous runs"
       />
       {selectedRun && (
-        <HistoryDetailGrid>
-          <CandidatePanel issues={stream.issues} onLoadRun={onLoadRun} queueLabel={stream.running ? "queued" : "scouted"} selectedRun={selectedRun} />
-          <ValidationPanel selectedRun={selectedRun} stream={stream} />
-        </HistoryDetailGrid>
+        <>
+          <MetricBand metrics={selectedRunMetrics(selectedRun)} />
+          <HistoryDetailGrid>
+            <SelectedRunDossier run={selectedRun} />
+            <HistoryDeliveryPanel run={selectedRun} />
+          </HistoryDetailGrid>
+          <HistoryAttemptTimeline run={selectedRun} />
+        </>
       )}
     </SecondaryFrame>
   );
