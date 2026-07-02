@@ -396,7 +396,10 @@ function runStyle(run) {
 }
 
 function runTargetLabel(run) {
-  return isTargetedRun(run) ? run.target_repo || "target repo" : "discovery hunt";
+  if (isTargetedRun(run)) {
+    return run.target_repo || "target repo";
+  }
+  return run?.dry_run ? "discovery preview" : "discovery hunt";
 }
 function guardedRuns(history) {
   return (Array.isArray(history) ? history : []).filter((run) => !run.dry_run);
@@ -1033,7 +1036,7 @@ function DryStalkHistoryList({ onLoadRun, runs, selectedRun }) {
               <div className="repo-meta">
                 <span className={`chip ${statusTone(run.status)}`}>{run.status}</span>
                 <span className="chip signal">{runStyle(run)}</span>
-                <span className="chip green">no write</span>
+                <span className="chip green">no writes</span>
               </div>
             </div>
             <button className="btn" onClick={() => onLoadRun(run.id)} type="button">Load</button>
