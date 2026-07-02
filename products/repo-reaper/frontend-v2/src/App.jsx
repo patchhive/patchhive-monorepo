@@ -133,6 +133,18 @@ function statusTone(status) {
   return "signal";
 }
 
+function candidateStatus(item, queueLabel = "queued") {
+  const status = String(item?.status || "queued");
+  if (status === "queued" && queueLabel !== "queued") {
+    return queueLabel;
+  }
+  return status;
+}
+
+function candidateStatusTone(status) {
+  return status === "scouted" ? "signal" : statusTone(status);
+}
+
 function metricToneFromStatus(status) {
   const tone = statusTone(status);
   if (tone === "red") return "hot";
@@ -649,6 +661,7 @@ function CandidatePanel({
   emptyTitle = "Recent runs",
   emptyStrong = "No active candidates",
   issues,
+  queueLabel = "queued",
   selectedRun,
   onLoadRun,
 }) {
@@ -669,7 +682,7 @@ function CandidatePanel({
               </div>
               <div className="repo-meta">
                 <span className="chip">rank {String(index + 1).padStart(2, "0")}</span>
-                <span className={`chip ${statusTone(item.status)}`}>{item.status || "queued"}</span>
+                <span className={`chip ${candidateStatusTone(candidateStatus(item, queueLabel))}`}>{candidateStatus(item, queueLabel)}</span>
                 <span className="chip signal">bug</span>
               </div>
             </article>
@@ -712,9 +725,13 @@ function ValidationPanel({ selectedRun, stream }) {
   const attempts = runAttempts(selectedRun);
   const issues = normalizeIssues(stream.issues);
   const source = attempts.length ? attempts : issues;
+  const runActive = Boolean(stream.running || selectedRun?.status === "running");
   const fixed = source.filter((item) => item.status === "fixed" || item.pr_url || item.pr?.url).length;
   const rejected = source.filter((item) => item.status === "rejected" || item.reason).length;
-  const pending = source.filter((item) => ["queued", "running"].includes(String(item.status))).length;
+  const pending = source.filter((item) => {
+    const status = String(item.status);
+    return runActive ? ["queued", "running"].includes(status) : status === "running";
+  }).length;
   const rows = [
     { title: "Patch output", meta: fixed ? `${fixed} fixes have PR output.` : "No successful PR output in the visible run yet.", label: fixed ? "pass" : "wait", tone: fixed ? "green" : "amber" },
     { title: "Smith feedback", meta: rejected ? `${rejected} attempts were rejected or skipped.` : "No Smith rejections in the visible run.", label: rejected ? "logged" : "clear", tone: rejected ? "amber" : "green" },
@@ -921,7 +938,7 @@ function MissionDeck({
             <Panel eyebrow="Pipeline" title="Autonomous run map" action={<span className={`chip ${stream.running ? "amber" : "signal"}`}>{stream.phase || "standby"}</span>}>
               <RunRadar config={config} history={savedHunts} stream={stream} />
             </Panel>
-            <CandidatePanel issues={stream.issues} onLoadRun={onLoadRun} selectedRun={selectedRun} />
+            <CandidatePanel issues={stream.issues} onLoadRun={onLoadRun} queueLabel={stream.running ? "queued" : "scouted"} selectedRun={selectedRun} />
           </div>
           <PrOutcomePanel prs={prs} />
         </main>
@@ -979,6 +996,7 @@ function DryRunSurface({ agents, config, dry, error, health, history, onChangePa
               emptyEyebrow="Scout"
               emptyTitle="Candidate queue"
               issues={dryIssues}
+              queueLabel={dry.running ? "queued" : "scouted"}
               selectedRun={null}
             />
             <Panel eyebrow="Scout report" title="Dry-run analysis" action={<span className={`chip ${dry.report ? "green" : reportUnavailable ? "amber" : "signal"}`}>{dry.report ? "ready" : reportUnavailable ? dryFailure.label : "waiting"}</span>}>
@@ -1116,7 +1134,7 @@ function HistorySurface({ config, health, history, loading, onClearRun, onLoadRu
       />
       {selectedRun && (
         <HistoryDetailGrid>
-          <CandidatePanel issues={stream.issues} onLoadRun={onLoadRun} selectedRun={selectedRun} />
+          <CandidatePanel issues={stream.issues} onLoadRun={onLoadRun} queueLabel={stream.running ? "queued" : "scouted"} selectedRun={selectedRun} />
           <ValidationPanel selectedRun={selectedRun} stream={stream} />
         </HistoryDetailGrid>
       )}
