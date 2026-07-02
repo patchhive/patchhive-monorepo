@@ -639,7 +639,16 @@ function RunForm({ disabled, disabledReason, error, onChange, onStart, params, r
   );
 }
 
-function CandidatePanel({ issues, selectedRun, onLoadRun }) {
+function CandidatePanel({
+  emptyActionLabel = "0 saved",
+  emptyCopy = "Start a hunt or load a saved run to populate the queue.",
+  emptyEyebrow = "History",
+  emptyTitle = "Recent runs",
+  emptyStrong = "No active candidates",
+  issues,
+  selectedRun,
+  onLoadRun,
+}) {
   const visibleIssues = normalizeIssues(issues);
   const attempts = runAttempts(selectedRun);
   if (visibleIssues.length) {
@@ -685,11 +694,11 @@ function CandidatePanel({ issues, selectedRun, onLoadRun }) {
     );
   }
   return (
-    <Panel eyebrow="History" title="Recent runs" action={<span className="chip signal">0 saved</span>}>
+    <Panel eyebrow={emptyEyebrow} title={emptyTitle} action={<span className="chip signal">{emptyActionLabel}</span>}>
       <div className="panelbody repo-list queue-grid">
         <div className="empty-v2">
-          <strong>No active candidates</strong>
-          <span>Start a hunt or load a saved run to populate the queue.</span>
+          <strong>{emptyStrong}</strong>
+          <span>{emptyCopy}</span>
         </div>
       </div>
     </Panel>
@@ -961,7 +970,14 @@ function DryRunSurface({ agents, config, dry, error, health, history, onChangePa
           <RunForm disabled={!teamReady || !githubReady(config, health)} disabledReason={disabledReason} error={error} onChange={onChangeParams} onStart={onStartDryRun} params={params} running={dry.running} title="Run Dry Stalk" />
           <MetricBand metrics={metrics} />
           <div className="atlas-layout suite-four-layout">
-            <CandidatePanel issues={dryIssues} selectedRun={null} />
+            <CandidatePanel
+              emptyActionLabel="0 visible"
+              emptyCopy="Run Dry Stalk to populate the no-write candidate queue."
+              emptyEyebrow="Scout"
+              emptyTitle="Candidate queue"
+              issues={dryIssues}
+              selectedRun={null}
+            />
             <Panel eyebrow="Scout report" title="Dry-run analysis" action={<span className={`chip ${dry.report ? "green" : reportUnavailable ? "amber" : "signal"}`}>{dry.report ? "ready" : reportUnavailable ? dryFailure.label : "waiting"}</span>}>
               <div className="panelbody repo-list">
                 {dry.report ? (
