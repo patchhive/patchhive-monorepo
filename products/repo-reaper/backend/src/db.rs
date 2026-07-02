@@ -108,7 +108,7 @@ CREATE TABLE IF NOT EXISTS settings (
 pub fn get_lifetime_cost() -> f64 {
     let Ok(conn) = get_conn() else { return 0.0 };
     conn.query_row(
-        "SELECT COALESCE(SUM(total_cost_usd), 0.0) FROM runs WHERE status='done'",
+        "SELECT COALESCE(SUM(total_cost_usd), 0.0) FROM runs WHERE status IN ('done', 'partial', 'failed')",
         [],
         |r| r.get::<_, f64>(0),
     )
@@ -245,12 +245,16 @@ pub struct RunStart<'a> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RunStatus {
     Done,
+    Partial,
+    Failed,
 }
 
 impl RunStatus {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Done => "done",
+            Self::Partial => "partial",
+            Self::Failed => "failed",
         }
     }
 }

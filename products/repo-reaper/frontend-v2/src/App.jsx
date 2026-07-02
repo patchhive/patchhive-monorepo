@@ -127,7 +127,7 @@ function normalizeRunRequest(params) {
 function statusTone(status) {
   const value = String(status || "").toLowerCase();
   if (["fixed", "done", "complete", "success", "idle"].includes(value)) return "green";
-  if (["running", "working", "queued", "review", "triage", "scan", "fix"].includes(value)) return "amber";
+  if (["running", "working", "queued", "review", "triage", "scan", "fix", "partial"].includes(value)) return "amber";
   if (["error", "failed", "crashed", "rejected"].includes(value)) return "red";
   if (["skipped", "held"].includes(value)) return "amber";
   return "signal";

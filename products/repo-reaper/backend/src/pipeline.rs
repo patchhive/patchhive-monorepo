@@ -290,23 +290,58 @@ async fn finalize_run_with_summary(
     run_cost: &Arc<AtomicI64>,
     attempted: usize,
 ) {
-    let total_fixed: i64 = {
+    let (total_fixed, failed_attempts): (i64, i64) = {
         let Ok(conn) = get_conn() else {
             return;
         };
-        conn.query_row(
-            "SELECT COUNT(*) FROM issue_attempts WHERE run_id=? AND status='fixed'",
+        conn
+            .query_row(
+            "SELECT
+                COALESCE(SUM(CASE WHEN status='fixed' THEN 1 ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN status IN ('error', 'failed', 'rejected', 'skipped') THEN 1 ELSE 0 END), 0)
+             FROM issue_attempts WHERE run_id=?",
             [run_id],
-            |r| r.get(0),
-        )
-        .unwrap_or(0)
+            |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)),
+        ).unwrap_or((0, 0))
     };
 
     let rc = run_cost.load(Ordering::Relaxed) as f64 / 1_000_000.0;
-    let _ = finish_run(run_id, total_fixed, attempted as i64, rc, RunStatus::Done);
-    let _ = tx.send(sse("phase", json!({"phase":"done"}))).await;
-    let _ = tx.send(sse("log", json!({"msg":format!("Hunt complete — {total_fixed}/{attempted} kills | ${rc:.4}"),"type":"success"}))).await;
-    let _ = tx.send(sse("done", json!({"total_fixed":total_fixed,"total_attempted":attempted,"run_id":run_id,"cost":rc}))).await;
+    let run_status = if attempted == 0 || total_fixed == attempted as i64 {
+        RunStatus::Done
+    } else if total_fixed > 0 {
+        RunStatus::Partial
+    } else {
+        RunStatus::Failed
+    };
+    let _ = finish_run(run_id, total_fixed, attempted as i64, rc, run_status);
+    let status = run_status.as_str();
+    let log_type = match run_status {
+        RunStatus::Done => "success",
+        RunStatus::Partial => "warn",
+        RunStatus::Failed => "error",
+    };
+    let summary = match run_status {
+        RunStatus::Done => format!("Hunt complete — {total_fixed}/{attempted} kills | ${rc:.4}"),
+        RunStatus::Partial => format!("Hunt partial — {total_fixed}/{attempted} kills, {failed_attempts} failed or held | ${rc:.4}"),
+        RunStatus::Failed => format!("Hunt failed — {total_fixed}/{attempted} kills, {failed_attempts} failed or held | ${rc:.4}"),
+    };
+    let _ = tx.send(sse("phase", json!({"phase": status}))).await;
+    let _ = tx
+        .send(sse("log", json!({"msg": summary, "type": log_type})))
+        .await;
+    let _ = tx
+        .send(sse(
+            "done",
+            json!({
+                "failed_attempts": failed_attempts,
+                "status": status,
+                "total_fixed": total_fixed,
+                "total_attempted": attempted,
+                "run_id": run_id,
+                "cost": rc
+            }),
+        ))
+        .await;
 }
 
 async fn run_fix_wave(
