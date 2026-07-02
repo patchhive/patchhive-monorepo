@@ -196,8 +196,9 @@ async fn get_run(Path(run_id): Path<String>, State(_): State<AppState>) -> Json<
     if run.is_none() {
         return Json(json!({"error":"not found"}));
     }
-    let attempts: Vec<Value> = conn.prepare(
-        "SELECT
+    let attempts: Vec<Value> = conn
+        .prepare(
+            "SELECT
             id,
             issue_number,
             issue_title,
@@ -218,30 +219,37 @@ async fn get_run(Path(run_id): Path<String>, State(_): State<AppState>) -> Json<
             confidence
          FROM issue_attempts
          WHERE run_id=?
-         ORDER BY started_at"
-    ).ok().and_then(|mut s| {
-        let mapped = s.query_map([&run_id], |r| Ok(json!({
-            "id": r.get::<_, String>(0)?,
-            "issue_number": r.get::<_, i64>(1)?,
-            "issue_title": r.get::<_, String>(2)?,
-            "issue_url": r.get::<_, Option<String>>(3)?,
-            "status": r.get::<_, String>(4)?,
-            "skip_reason": r.get::<_, Option<String>>(5)?,
-            "pr_url": r.get::<_, Option<String>>(6)?,
-            "pr_number": r.get::<_, Option<i64>>(7)?,
-            "reaper_agent": r.get::<_, String>(8)?,
-            "smith_agent": r.get::<_, Option<String>>(9)?,
-            "gatekeeper_agent": r.get::<_, String>(10)?,
-            "started_at": r.get::<_, String>(11)?,
-            "finished_at": r.get::<_, Option<String>>(12)?,
-            "duration_seconds": r.get::<_, Option<f64>>(13)?,
-            "cost_usd": r.get::<_, f64>(14)?,
-            "patch_diff": r.get::<_, Option<String>>(15)?,
-            "error_msg": r.get::<_, Option<String>>(16)?,
-            "confidence": r.get::<_, i32>(17)?,
-        }))).ok()?;
-        Some(mapped.flatten().collect())
-    }).unwrap_or_default();
+         ORDER BY started_at",
+        )
+        .ok()
+        .and_then(|mut s| {
+            let mapped = s
+                .query_map([&run_id], |r| {
+                    Ok(json!({
+                        "id": r.get::<_, String>(0)?,
+                        "issue_number": r.get::<_, i64>(1)?,
+                        "issue_title": r.get::<_, String>(2)?,
+                        "issue_url": r.get::<_, Option<String>>(3)?,
+                        "status": r.get::<_, String>(4)?,
+                        "skip_reason": r.get::<_, Option<String>>(5)?,
+                        "pr_url": r.get::<_, Option<String>>(6)?,
+                        "pr_number": r.get::<_, Option<i64>>(7)?,
+                        "reaper_agent": r.get::<_, String>(8)?,
+                        "smith_agent": r.get::<_, Option<String>>(9)?,
+                        "gatekeeper_agent": r.get::<_, String>(10)?,
+                        "started_at": r.get::<_, String>(11)?,
+                        "finished_at": r.get::<_, Option<String>>(12)?,
+                        "duration_seconds": r.get::<_, Option<f64>>(13)?,
+                        "cost_usd": r.get::<_, f64>(14)?,
+                        "patch_diff": r.get::<_, Option<String>>(15)?,
+                        "error_msg": r.get::<_, Option<String>>(16)?,
+                        "confidence": r.get::<_, i32>(17)?,
+                    }))
+                })
+                .ok()?;
+            Some(mapped.flatten().collect())
+        })
+        .unwrap_or_default();
     let dry_stalk: Option<Value> = conn.query_row(
         "SELECT repos_json, issues_json, report_json, scoring_available, analysis_available FROM dry_stalk_runs WHERE run_id=?",
         [&run_id],

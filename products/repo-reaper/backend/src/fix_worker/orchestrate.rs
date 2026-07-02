@@ -17,7 +17,8 @@ use super::patch::{apply_patch_with_self_heal, publish_pull_request};
 use super::sse::{alog, astatus, sse_ev};
 use super::types::{
     build_attempt_target, build_issue_scope, cancelled, cfg, cleanup_work_path,
-    finish_error_attempt, finish_skipped_attempt, pick_fix_agents, FixIssueJob, SmithReviewOutcome,
+    finish_error_attempt, finish_skipped_attempt, finish_skipped_attempt_with_error,
+    pick_fix_agents, FixIssueJob, SmithReviewOutcome,
 };
 
 pub async fn fix_one(job: FixIssueJob) {
@@ -214,18 +215,20 @@ pub async fn fix_one(job: FixIssueJob) {
     let (result, patch_cost) = match patch_result {
         Ok(result) => result,
         Err(e) => {
+            let error = e.to_string();
             let _ = tx
                 .send(alog(
                     &agents.reaper,
-                    &format!("Patch generation error: {e}"),
+                    &format!("Patch generation error: {error}"),
                     "error",
                 ))
                 .await;
-            finish_skipped_attempt(
+            finish_skipped_attempt_with_error(
                 &tx,
                 &issue,
                 &attempt_id,
                 "patch_error",
+                Some(&error),
                 cost,
                 None,
                 0,
@@ -299,11 +302,12 @@ pub async fn fix_one(job: FixIssueJob) {
     {
         Ok(result) => result,
         Err(reason) => {
-            finish_skipped_attempt(
+            finish_skipped_attempt_with_error(
                 &tx,
                 &issue,
                 &attempt_id,
-                &reason,
+                "patch_error",
+                Some(&reason),
                 cost,
                 None,
                 0,

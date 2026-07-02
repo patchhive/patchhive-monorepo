@@ -24,12 +24,13 @@ pub async fn apply_patch_with_self_heal(
 ) -> std::result::Result<Value, String> {
     let patch_str = result["patch"].as_str().unwrap_or("").to_string();
     let (mut applied, apply_err) = apply_patch(&scope.work_path, &patch_str).await;
+    let mut final_apply_err = apply_err.trim().to_string();
 
     if !applied {
         let _ = tx
             .send(alog(reaper, "Apply failed — self-healing…", "warn"))
             .await;
-        if let Ok((retry_result, retry_cost)) = agent_patch_retry(
+        match agent_patch_retry(
             http,
             issue["title"].as_str().unwrap_or(""),
             issue["body"].as_str().unwrap_or(""),
@@ -40,26 +41,39 @@ pub async fn apply_patch_with_self_heal(
         )
         .await
         {
-            *cost += retry_cost;
-            if !retry_result["patch"].is_null() {
-                let (ok, err) = apply_patch(
-                    &scope.work_path,
-                    retry_result["patch"].as_str().unwrap_or(""),
-                )
-                .await;
-                if ok {
-                    result = retry_result;
-                    applied = true;
-                    let _ = tx.send(alog(reaper, "Self-healed ✓", "success")).await;
+            Ok((retry_result, retry_cost)) => {
+                *cost += retry_cost;
+                if !retry_result["patch"].is_null() {
+                    let (ok, err) = apply_patch(
+                        &scope.work_path,
+                        retry_result["patch"].as_str().unwrap_or(""),
+                    )
+                    .await;
+                    if ok {
+                        result = retry_result;
+                        applied = true;
+                        final_apply_err.clear();
+                        let _ = tx.send(alog(reaper, "Self-healed ✓", "success")).await;
+                    } else {
+                        final_apply_err = err.trim().to_string();
+                        let _ = tx
+                            .send(alog(
+                                reaper,
+                                &format!("Self-heal apply failed: {err}"),
+                                "warn",
+                            ))
+                            .await;
+                    }
                 } else {
-                    let _ = tx
-                        .send(alog(
-                            reaper,
-                            &format!("Self-heal apply failed: {err}"),
-                            "warn",
-                        ))
-                        .await;
+                    final_apply_err = "self-heal returned no patch".to_string();
                 }
+            }
+            Err(e) => {
+                final_apply_err = if final_apply_err.is_empty() {
+                    format!("self-heal error: {e}")
+                } else {
+                    format!("initial git apply error: {final_apply_err}; self-heal error: {e}")
+                };
             }
         }
     }
@@ -68,7 +82,12 @@ pub async fn apply_patch_with_self_heal(
         let _ = tx
             .send(alog(reaper, "Cannot apply patch — skipping", "error"))
             .await;
-        return Err("apply_failed".into());
+        let reason = if final_apply_err.is_empty() {
+            "git apply failed without stderr".to_string()
+        } else {
+            format!("git apply failed: {final_apply_err}")
+        };
+        return Err(reason);
     }
 
     Ok(result)

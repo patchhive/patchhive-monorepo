@@ -158,6 +158,24 @@ pub async fn finish_skipped_attempt(
     started_at: &std::time::Instant,
     work_path: &PathBuf,
 ) {
+    finish_skipped_attempt_with_error(
+        tx, issue, attempt_id, reason, None, cost, patch_diff, confidence, started_at, work_path,
+    )
+    .await;
+}
+
+pub async fn finish_skipped_attempt_with_error(
+    tx: &Tx,
+    issue: &Value,
+    attempt_id: &str,
+    reason: &str,
+    error_msg: Option<&str>,
+    cost: f64,
+    patch_diff: Option<&str>,
+    confidence: i32,
+    started_at: &std::time::Instant,
+    work_path: &PathBuf,
+) {
     let _ = crate::db::finish_attempt(crate::db::IssueAttemptFinish {
         attempt_id,
         status: crate::db::IssueAttemptStatus::Skipped,
@@ -165,7 +183,7 @@ pub async fn finish_skipped_attempt(
         pr_number: None,
         cost_usd: cost,
         patch_diff,
-        error_msg: None,
+        error_msg,
         skip_reason: Some(reason),
         duration_seconds: Some(started_at.elapsed().as_secs_f64()),
         confidence,
