@@ -4,7 +4,7 @@ name = "RepoReaper"
 role = "autonomous patch and PR execution"
 module_path = "crate::products::repo_reaper"
 route_prefix = "/api/products/repo-reaper"
-migration_stage = "not-started"
+migration_stage = "gateway-ready"
 
 [safety]
 read_only = false
