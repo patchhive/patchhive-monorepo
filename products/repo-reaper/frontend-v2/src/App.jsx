@@ -1453,6 +1453,36 @@ function ChecksSurface({
 }) {
   const checks = runtime.checks || [];
   const warnings = checks.filter((check) => check.level === "warn" || check.level === "error").length;
+  const readinessRail = useMemo(() => ({
+    sections: [
+      {
+        title: "Run modes",
+        items: [
+          { label: "full hunt", active: true, pin: true },
+          { label: "dry stalk", value: "safe" },
+          { label: "watch mode", badge: watchMode ? "on" : "off", badgeTone: watchMode ? "green" : "amber" },
+          { label: "run active", value: health?.run_active ? "yes" : "no" },
+        ],
+      },
+      {
+        title: "Readiness",
+        items: [
+          { label: "agents", active: true, badge: String(agents.length || asCount(health?.agents)), badgeTone: agents.length || health?.agents ? "green" : "amber" },
+          { label: "bot", badge: githubReady(config, health) ? "ready" : "missing", badgeTone: githubReady(config, health) ? "green" : "amber" },
+          { label: "AI ready", badge: aiReady(config) ? "yes" : "no", badgeTone: aiReady(config) ? "green" : "amber" },
+          { label: "startup", badge: warnings ? `${warnings}` : "clear", badgeTone: warnings ? "amber" : "green" },
+        ],
+      },
+    ],
+    stats: {
+      title: "Readiness",
+      items: [
+        { label: "Backend", value: health?.status || "unknown" },
+        { label: "Agents", value: String(agents.length || asCount(health?.agents)), large: true, tone: agents.length || health?.agents ? "green" : "warn" },
+        { label: "Checks", value: warnings ? `${warnings} warnings` : "clear" },
+      ],
+    },
+  }), [agents, config, health, warnings, watchMode]);
   const metrics = [
     { label: "Status", value: health.status || "unknown", tone: health.status === "ok" ? "ok" : "warn", sub: health.version || "backend" },
     { label: "Bot", value: githubReady(config, health) ? "ready" : "missing", tone: githubReady(config, health) ? "ok" : "warn", sub: health.bot || "identity" },
@@ -1461,7 +1491,7 @@ function ChecksSurface({
     { label: "Checks", value: warnings ? String(warnings) : "clear", tone: warnings ? "warn" : "ok", sub: "startup" },
   ];
   return (
-    <SecondaryFrame config={config} health={health} history={history} selectedRun={selectedRun} stream={stream} watchMode={watchMode}>
+    <SecondaryFrame config={config} health={health} history={history} railOverride={readinessRail} selectedRun={selectedRun} stream={stream} watchMode={watchMode}>
       <div className="hero-row">
         <div>
           <div className="eyebrow">// RepoReaper readiness</div>
