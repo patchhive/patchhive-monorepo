@@ -384,12 +384,19 @@ function issueScore(issue) {
   return asCount(issue.fixability_score ?? issue.score ?? issue.confidence);
 }
 
+function isTargetedRun(run) {
+  return run?.run_style === "targeted" || Boolean(run?.target_repo);
+}
+
 function runStyle(run) {
-  return run?.run_style === "targeted" || run?.target_repo ? "targeted" : "autonomous";
+  if (run?.dry_run) {
+    return isTargetedRun(run) ? "targeted dry stalk" : "dry stalk";
+  }
+  return isTargetedRun(run) ? "targeted" : "autonomous";
 }
 
 function runTargetLabel(run) {
-  return runStyle(run) === "targeted" ? run.target_repo || "target repo" : "discovery hunt";
+  return isTargetedRun(run) ? run.target_repo || "target repo" : "discovery hunt";
 }
 function guardedRuns(history) {
   return (Array.isArray(history) ? history : []).filter((run) => !run.dry_run);
@@ -435,7 +442,7 @@ function buildMetrics(health, stream, history, rejected, lifetimeCost, selectedR
 function buildRail(health, config, stream, history, selectedRun, watchMode) {
   const latest = selectedRun || newestRun(history) || {};
   const target = activeTarget(stream, selectedRun, history);
-  const targetRepo = issueRepo(target);
+  const targetRepo = issueRepo(target) || (latest.id ? runTargetLabel(latest) : "");
   const budget = stream.params?.cost_budget_usd || config?.COST_BUDGET_USD || "0";
   return {
     sections: [
@@ -900,9 +907,9 @@ function MissionDeck({
   );
 }
 
-function DryRunSurface({ agents, config, dry, error, health, history, onChangeParams, onClearRun, onLoadRun, onRefresh, onStartDryRun, params, selectedRun, stream, watchMode }) {
+function DryRunSurface({ agents, config, dry, error, health, history, onChangeParams, onClearRun, onLoadRun, onRefresh, onStartDryRun, params, selectedRun, watchMode }) {
   const savedDryRuns = dryStalkRuns(history);
-  const rail = useMemo(() => buildRail(health, config, { ...stream, params }, savedDryRuns, selectedRun, watchMode), [health, config, stream, params, savedDryRuns, selectedRun, watchMode]);
+  const rail = useMemo(() => buildRail(health, config, { ...dry, params }, savedDryRuns, selectedRun, watchMode), [health, config, dry, params, savedDryRuns, selectedRun, watchMode]);
   const dryIssues = normalizeIssues(dry.issues);
   const teamReady = agentsReady(agents, health);
   const scoringUnavailable = dry.done?.scoring_available === false;
@@ -1652,7 +1659,7 @@ export default function App() {
         return { ...current, report: payload.report || null };
       }
       if (event === "done") {
-        return { ...current, done: payload, running: false };
+        return { ...current, done: payload, phase: payload.phase || "done", running: false };
       }
       if (event === "error") {
         return { ...current, logs: [...current.logs.slice(-80), { msg: payload.msg || "Run failed", type: "error" }], running: false };
@@ -1822,7 +1829,6 @@ export default function App() {
           onStartDryRun={() => startStream("/dry-run", dryParams, setDryStream, "dryrun")}
           params={dryParams}
           selectedRun={selectedRun}
-          stream={stream}
           watchMode={watchMode}
         />
       )}
