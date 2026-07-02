@@ -406,6 +406,17 @@ function dryStalkRuns(history) {
   return (Array.isArray(history) ? history : []).filter((run) => run.dry_run);
 }
 
+function streamHasRunData(stream) {
+  return Boolean(
+    stream?.running
+      || stream?.done
+      || stream?.report
+      || stream?.phase
+      || normalizeIssues(stream?.issues).length
+      || (Array.isArray(stream?.logs) && stream.logs.length),
+  );
+}
+
 
 function buildTopline(health, config, stream, history) {
   const latest = newestRun(history) || {};
@@ -864,6 +875,7 @@ function MissionDeck({
   const savedHunts = guardedRuns(history);
   const rail = useMemo(() => buildRail(health, config, { ...stream, params }, savedHunts, selectedRun, watchMode), [health, config, stream, params, savedHunts, selectedRun, watchMode]);
   const metrics = useMemo(() => buildMetrics(health, stream, savedHunts, rejected, lifetimeCost, selectedRun), [health, stream, savedHunts, rejected, lifetimeCost, selectedRun]);
+  const canClearRun = Boolean(selectedRun && !selectedRun.dry_run) || streamHasRunData(stream);
   const teamReady = agentsReady(agents, health);
   const disabledReason = !teamReady
     ? "Recruit a RepoReaper agent team in Checks before starting a hunt."
@@ -886,7 +898,7 @@ function MissionDeck({
             </div>
             <div className="actions">
               <span className={`chip ${githubReady(config, health) ? "green" : "amber"}`}>{githubReady(config, health) ? "bot ready" : "bot missing"}</span>
-              {selectedRun && <button className="btn" onClick={onClearRun} type="button">Clear run</button>}
+              {canClearRun && <button className="btn" onClick={onClearRun} type="button">Clear run</button>}
               <button className="btn" onClick={onRefresh} type="button">Refresh</button>
             </div>
           </div>
@@ -911,6 +923,7 @@ function DryRunSurface({ agents, config, dry, error, health, history, onChangePa
   const savedDryRuns = dryStalkRuns(history);
   const rail = useMemo(() => buildRail(health, config, { ...dry, params }, savedDryRuns, selectedRun, watchMode), [health, config, dry, params, savedDryRuns, selectedRun, watchMode]);
   const dryIssues = normalizeIssues(dry.issues);
+  const canClearRun = Boolean(selectedRun?.dry_run) || streamHasRunData(dry);
   const teamReady = agentsReady(agents, health);
   const scoringUnavailable = dry.done?.scoring_available === false;
   const reportUnavailable = dry.done?.analysis_available === false && !dry.report;
@@ -941,7 +954,7 @@ function DryRunSurface({ agents, config, dry, error, health, history, onChangePa
             </div>
             <div className="actions">
               <span className="chip green">no writes</span>
-              {selectedRun && <button className="btn" onClick={onClearRun} type="button">Clear run</button>}
+              {canClearRun && <button className="btn" onClick={onClearRun} type="button">Clear run</button>}
               <button className="btn" onClick={onRefresh} type="button">Refresh</button>
             </div>
           </div>
@@ -1751,8 +1764,11 @@ export default function App() {
     }
   }
 
-  function clearRun() {
-    if (selectedRun?.dry_run) {
+  function clearRun(scope = "all") {
+    if (scope === "mission" || scope === "all") {
+      setStream(createInitialStream());
+    }
+    if (scope === "dryrun" || scope === "all") {
       setDryStream(createInitialStream());
     }
     setSelectedRun(null);
@@ -1793,7 +1809,7 @@ export default function App() {
           history={history}
           lifetimeCost={lifetimeCost}
           onChangeParams={setParams}
-          onClearRun={clearRun}
+          onClearRun={() => clearRun("mission")}
           onLoadRun={loadRun}
           onLoadPreset={loadTeamPreset}
           onRefresh={() => {
@@ -1820,7 +1836,7 @@ export default function App() {
           health={health}
           history={history}
           onChangeParams={setDryParams}
-          onClearRun={clearRun}
+          onClearRun={() => clearRun("dryrun")}
           onLoadRun={loadRun}
           onRefresh={() => {
             refreshData();
