@@ -716,8 +716,8 @@ function ValidationPanel({ selectedRun, stream }) {
   const rejected = source.filter((item) => item.status === "rejected" || item.reason).length;
   const pending = source.filter((item) => ["queued", "running"].includes(String(item.status))).length;
   const rows = [
-    { title: "Patch output", meta: fixed ? `${fixed} fixes have PR output.` : "No successful PR output for the selected run yet.", label: fixed ? "pass" : "wait", tone: fixed ? "green" : "amber" },
-    { title: "Smith feedback", meta: rejected ? `${rejected} attempts were rejected or skipped.` : "No Smith rejections in the selected run.", label: rejected ? "logged" : "clear", tone: rejected ? "amber" : "green" },
+    { title: "Patch output", meta: fixed ? `${fixed} fixes have PR output.` : "No successful PR output in the visible run yet.", label: fixed ? "pass" : "wait", tone: fixed ? "green" : "amber" },
+    { title: "Smith feedback", meta: rejected ? `${rejected} attempts were rejected or skipped.` : "No Smith rejections in the visible run.", label: rejected ? "logged" : "clear", tone: rejected ? "amber" : "green" },
     { title: "Active work", meta: pending ? `${pending} candidates are still moving.` : "No candidates are currently running.", label: pending ? "active" : "idle", tone: pending ? "amber" : "signal" },
     { title: "Attribution", meta: "Generated pull requests keep PatchHive attribution visible.", label: "required", tone: "signal" },
   ];
