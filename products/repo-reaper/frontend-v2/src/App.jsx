@@ -900,7 +900,7 @@ function MissionDeck({
   );
 }
 
-function DryRunSurface({ agents, config, dry, error, health, history, onChangeParams, onClearRun, onRefresh, onStartDryRun, params, selectedRun, stream, watchMode }) {
+function DryRunSurface({ agents, config, dry, error, health, history, onChangeParams, onClearRun, onLoadRun, onRefresh, onStartDryRun, params, selectedRun, stream, watchMode }) {
   const savedDryRuns = dryStalkRuns(history);
   const rail = useMemo(() => buildRail(health, config, { ...stream, params }, savedDryRuns, selectedRun, watchMode), [health, config, stream, params, savedDryRuns, selectedRun, watchMode]);
   const dryIssues = normalizeIssues(dry.issues);
@@ -1814,6 +1814,7 @@ export default function App() {
           history={history}
           onChangeParams={setDryParams}
           onClearRun={clearRun}
+          onLoadRun={loadRun}
           onRefresh={() => {
             refreshData();
             runtime.refresh();
