@@ -1229,7 +1229,7 @@ function HistoryDeliveryPanel({ run }) {
       tone: skipped.length || failed.length ? "amber" : "green",
     },
     {
-      title: "Gatekeeper reach",
+      title: "Validation reach",
       meta: reachedGatekeeper ? "At least one attempt produced patch output or PR delivery evidence." : "No commit-ready diff reached validation, so PR creation did not run.",
       label: reachedGatekeeper ? "reached" : "not reached",
       tone: reachedGatekeeper ? "green" : "amber",
