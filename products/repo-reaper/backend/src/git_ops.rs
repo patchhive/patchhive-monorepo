@@ -141,6 +141,11 @@ pub async fn git_branch(dest: &Path, branch: &str) -> Result<()> {
     Ok(())
 }
 
+pub async fn has_changes(dest: &Path) -> Result<bool> {
+    let status = runcmd_ok(&["git", "status", "--porcelain"], Some(dest)).await?;
+    Ok(!status.trim().is_empty())
+}
+
 pub async fn git_commit_push(dest: &Path, branch: &str, msg: &str) -> Result<()> {
     runcmd_ok(&["git", "add", "-A"], Some(dest)).await?;
     runcmd_ok(&["git", "commit", "-m", msg], Some(dest)).await?;

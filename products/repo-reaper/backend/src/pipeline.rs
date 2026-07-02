@@ -290,7 +290,7 @@ async fn finalize_run_with_summary(
     run_cost: &Arc<AtomicI64>,
     attempted: usize,
 ) {
-    let (total_fixed, failed_attempts): (i64, i64) = {
+    let (total_fixed, failed_attempts, nonfixed_attempt_cost): (i64, i64, f64) = {
         let Ok(conn) = get_conn() else {
             return;
         };
@@ -298,14 +298,15 @@ async fn finalize_run_with_summary(
             .query_row(
             "SELECT
                 COALESCE(SUM(CASE WHEN status='fixed' THEN 1 ELSE 0 END), 0),
-                COALESCE(SUM(CASE WHEN status IN ('error', 'failed', 'rejected', 'skipped') THEN 1 ELSE 0 END), 0)
+                COALESCE(SUM(CASE WHEN status IN ('error', 'failed', 'rejected', 'skipped') THEN 1 ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN status!='fixed' THEN cost_usd ELSE 0 END), 0.0)
              FROM issue_attempts WHERE run_id=?",
             [run_id],
-            |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)),
-        ).unwrap_or((0, 0))
+            |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?, r.get::<_, f64>(2)?)),
+        ).unwrap_or((0, 0, 0.0))
     };
 
-    let rc = run_cost.load(Ordering::Relaxed) as f64 / 1_000_000.0;
+    let rc = (run_cost.load(Ordering::Relaxed) as f64 / 1_000_000.0) + nonfixed_attempt_cost;
     let run_status = if attempted == 0 || total_fixed == attempted as i64 {
         RunStatus::Done
     } else if total_fixed > 0 {

@@ -316,6 +316,46 @@ pub async fn fix_one(job: FixIssueJob) {
     };
     let _ = tx.send(astatus(&agents.reaper.id, "idle", "")).await;
 
+    match crate::git_ops::has_changes(&scope.work_path).await {
+        Ok(true) => {}
+        Ok(false) => {
+            let _ = tx
+                .send(alog(
+                    &agents.reaper,
+                    "Patch applied but produced no file changes — skipping PR",
+                    "warn",
+                ))
+                .await;
+            finish_skipped_attempt(
+                &tx,
+                &issue,
+                &attempt_id,
+                "no_changes",
+                cost,
+                Some(result["patch"].as_str().unwrap_or("")),
+                confidence,
+                &t_start,
+                &scope.work_path,
+            )
+            .await;
+            return;
+        }
+        Err(e) => {
+            finish_error_attempt(
+                &tx,
+                &issue,
+                &attempt_id,
+                &format!("Could not inspect patch changes: {e}"),
+                cost,
+                confidence,
+                &t_start,
+                &scope.work_path,
+            )
+            .await;
+            return;
+        }
+    }
+
     let mut smith_review = SmithReviewOutcome {
         final_patch: result["patch"].as_str().unwrap_or("").to_string(),
         smith_note: String::new(),
