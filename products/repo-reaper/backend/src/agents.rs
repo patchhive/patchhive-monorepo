@@ -10,6 +10,10 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 
+pub const DEFAULT_MAX_TOKENS: u32 = 2000;
+const PATCH_MAX_TOKENS: u32 = 8000;
+const REVIEW_MAX_TOKENS: u32 = 5000;
+
 // ── Cost table ($/1k tokens: input, output) ───────────────────────────────────
 fn cost_rates(provider: &str, model: &str) -> (f64, f64) {
     match (provider, model) {
@@ -130,6 +134,7 @@ pub struct AgentCallParams<'a> {
     pub api_key: Option<&'a str>,
     pub system: &'a str,
     pub prompt: &'a str,
+    pub max_tokens: u32,
 }
 
 pub async fn ai_call(http: &Client, p: &AgentCallParams<'_>) -> Result<(String, f64)> {
@@ -185,7 +190,7 @@ async fn anthropic_call(http: &Client, p: &AgentCallParams<'_>) -> Result<(Strin
     let key = key_owned.as_str();
     let body = json!({
         "model": p.model,
-        "max_tokens": 2000,
+        "max_tokens": p.max_tokens,
         "system": p.system,
         "messages": [{"role": "user", "content": p.prompt}]
     });
@@ -214,45 +219,99 @@ async fn openai_call(http: &Client, p: &AgentCallParams<'_>, base: &str) -> Resu
     let key = agent_or_env_api_key(p);
     let body = json!({
         "model": p.model,
-        "max_tokens": 2000,
+        "max_tokens": p.max_tokens,
+        "temperature": 0.1,
+        "stream": false,
         "messages": [
             {"role": "system", "content": p.system},
             {"role": "user", "content": p.prompt}
         ]
     });
-    let mut req = http.post(format!("{base}/chat/completions")).json(&body);
-    req = match key.as_deref() {
-        Some(key) => req.bearer_auth(key),
-        None if crate::ai_local::is_local_openai_base(base) => req.bearer_auth("patchhive-local"),
-        None => return Err(anyhow!("No API key")),
-    };
-    let resp = req.send().await?;
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let txt = resp.text().await.unwrap_or_default();
-        return Err(anyhow!("OpenAI/compat {status}: {txt}"));
+
+    let mut last_empty_detail = String::new();
+    for attempt in 0..2 {
+        let mut req = http.post(format!("{base}/chat/completions")).json(&body);
+        req = match key.as_deref() {
+            Some(key) => req.bearer_auth(key),
+            None if crate::ai_local::is_local_openai_base(base) => {
+                req.bearer_auth("patchhive-local")
+            }
+            None => return Err(anyhow!("No API key")),
+        };
+        let resp = req.send().await?;
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let txt = resp.text().await.unwrap_or_default();
+            return Err(anyhow!("OpenAI/compat {status}: {txt}"));
+        }
+        let data: Value = resp.json().await?;
+        if let Some(error) = data.get("error") {
+            let message = error["message"]
+                .as_str()
+                .map(str::to_string)
+                .unwrap_or_else(|| error.to_string());
+            return Err(anyhow!("OpenAI/compat provider error: {message}"));
+        }
+        let text = openai_completion_text(&data);
+        if !text.trim().is_empty() {
+            return Ok((text, 0.0));
+        }
+        last_empty_detail = openai_empty_detail(&data);
+        if attempt == 0 {
+            continue;
+        }
     }
-    let data: Value = resp.json().await?;
-    if let Some(error) = data.get("error") {
-        let message = error["message"]
+
+    Err(anyhow!(
+        "OpenAI/compat provider returned an empty completion for model {} ({last_empty_detail})",
+        p.model
+    ))
+}
+
+fn openai_completion_text(data: &Value) -> String {
+    let choice = &data["choices"][0];
+    text_content(&choice["message"]["content"])
+        .or_else(|| choice["text"].as_str().map(str::to_string))
+        .or_else(|| data["output_text"].as_str().map(str::to_string))
+        .unwrap_or_default()
+}
+
+fn text_content(value: &Value) -> Option<String> {
+    match value {
+        Value::String(text) => Some(text.clone()),
+        Value::Array(parts) => {
+            let text = parts
+                .iter()
+                .filter_map(|part| {
+                    part.as_str()
+                        .map(str::to_string)
+                        .or_else(|| part["text"].as_str().map(str::to_string))
+                        .or_else(|| part["content"].as_str().map(str::to_string))
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            (!text.trim().is_empty()).then_some(text)
+        }
+        Value::Object(_) => value["text"]
             .as_str()
-            .map(str::to_string)
-            .unwrap_or_else(|| error.to_string());
-        return Err(anyhow!("OpenAI/compat provider error: {message}"));
+            .or_else(|| value["content"].as_str())
+            .map(str::to_string),
+        _ => None,
     }
-    let text = data["choices"][0]["message"]["content"]
-        .as_str()
-        .or_else(|| data["choices"][0]["text"].as_str())
-        .or_else(|| data["output_text"].as_str())
-        .unwrap_or("")
-        .to_string();
-    if text.trim().is_empty() {
-        return Err(anyhow!(
-            "OpenAI/compat provider returned an empty completion for model {}",
-            p.model
-        ));
-    }
-    Ok((text, 0.0))
+}
+
+fn openai_empty_detail(data: &Value) -> String {
+    let choice = &data["choices"][0];
+    let finish_reason = choice["finish_reason"].as_str().unwrap_or("unknown");
+    let content_shape = match &choice["message"]["content"] {
+        Value::Null => "null",
+        Value::String(_) => "string",
+        Value::Array(_) => "array",
+        Value::Object(_) => "object",
+        Value::Bool(_) => "bool",
+        Value::Number(_) => "number",
+    };
+    format!("finish_reason={finish_reason}, content_shape={content_shape}")
 }
 
 async fn gemini_call(http: &Client, p: &AgentCallParams<'_>) -> Result<(String, f64)> {
@@ -265,7 +324,7 @@ async fn gemini_call(http: &Client, p: &AgentCallParams<'_>) -> Result<(String, 
     let body = json!({
         "system_instruction": {"parts": [{"text": p.system}]},
         "contents": [{"parts": [{"text": p.prompt}]}],
-        "generationConfig": {"maxOutputTokens": 2000}
+        "generationConfig": {"maxOutputTokens": p.max_tokens}
     });
     let resp = http
         .post(&url)
@@ -291,6 +350,7 @@ async fn ollama_call(http: &Client, p: &AgentCallParams<'_>) -> Result<(String, 
     let body = json!({
         "model": p.model,
         "stream": false,
+        "options": {"num_predict": p.max_tokens},
         "messages": [
             {"role": "system", "content": p.system},
             {"role": "user", "content": p.prompt}
@@ -323,6 +383,15 @@ fn call_params<'a>(
     system: &'a str,
     prompt: &'a str,
 ) -> AgentCallParams<'a> {
+    call_params_with_max(agent, system, prompt, DEFAULT_MAX_TOKENS)
+}
+
+fn call_params_with_max<'a>(
+    agent: &'a AgentConfig,
+    system: &'a str,
+    prompt: &'a str,
+    max_tokens: u32,
+) -> AgentCallParams<'a> {
     AgentCallParams {
         provider: agent.provider.as_str(),
         model: agent.model.as_str(),
@@ -330,6 +399,7 @@ fn call_params<'a>(
         api_key: agent.api_key.as_deref(),
         system,
         prompt,
+        max_tokens,
     }
 }
 
@@ -414,6 +484,8 @@ pub async fn agent_generate_patch(
 ) -> Result<(Value, f64)> {
     let system = "Expert software engineer. Fix the bug described in the issue.\n\
         Additional context (maintainer comments, linked refs) is provided — use it.\n\
+        The patch must be a complete, valid unified diff that `git apply --check` can accept.\n\
+        Include full diff headers (`diff --git`, `---`, `+++`, and hunk headers) and do not truncate hunks.\n\
         Reply ONLY with JSON (no markdown):\n\
         {\"explanation\":\"1-2 sentences\",\"files_changed\":[\"path\"],\"patch\":\"<unified diff>\",\"confidence\":0-100}\n\
         confidence = your honest estimate the patch correctly fixes the root cause (0=guessing, 100=certain).\n\
@@ -422,7 +494,11 @@ pub async fn agent_generate_patch(
         "Issue: {title}\n\n{}\n\nIssue context:\n{ctx}\n\nCode:\n{codebase}",
         &body.chars().take(1500).collect::<String>()
     );
-    let (text, cost) = ai_call(http, &call_params(agent, system, &prompt)).await?;
+    let (text, cost) = ai_call(
+        http,
+        &call_params_with_max(agent, system, &prompt, PATCH_MAX_TOKENS),
+    )
+    .await?;
     Ok((parse_json(&text)?, cost))
 }
 
@@ -436,6 +512,8 @@ pub async fn agent_patch_retry(
     agent: &AgentConfig,
 ) -> Result<(Value, f64)> {
     let system = "Expert software engineer. Previous patch failed — study the error and produce a corrected diff.\n\
+        The corrected patch must be a complete, valid unified diff that `git apply --check` can accept.\n\
+        Include full diff headers (`diff --git`, `---`, `+++`, and hunk headers) and do not truncate hunks.\n\
         Reply ONLY with JSON (no markdown):\n\
         {\"explanation\":\"what changed vs before\",\"files_changed\":[\"path\"],\"patch\":\"<unified diff>\"}\n\
         Set patch to null if you cannot fix it.";
@@ -443,7 +521,11 @@ pub async fn agent_patch_retry(
         "Issue: {title}\n\n{}\n\nPrevious patch (FAILED):\n{prev_patch}\n\nFailure:\n{error_ctx}\n\nCode:\n{codebase}",
         &body.chars().take(1000).collect::<String>()
     );
-    let (text, cost) = ai_call(http, &call_params(agent, system, &prompt)).await?;
+    let (text, cost) = ai_call(
+        http,
+        &call_params_with_max(agent, system, &prompt, PATCH_MAX_TOKENS),
+    )
+    .await?;
     Ok((parse_json(&text)?, cost))
 }
 
@@ -458,7 +540,11 @@ pub async fn agent_smith_patch(
         Reply ONLY with JSON (no markdown):\n\
         {\"approved\":true/false,\"confidence\":0-100,\"feedback\":\"brief\",\"improved_patch\":\"<diff or null>\"}";
     let prompt = format!("Issue: {title}\nFix: {explanation}\nPatch:\n{patch}");
-    let (text, cost) = ai_call(http, &call_params(agent, system, &prompt)).await?;
+    let (text, cost) = ai_call(
+        http,
+        &call_params_with_max(agent, system, &prompt, REVIEW_MAX_TOKENS),
+    )
+    .await?;
     Ok((parse_json(&text)?, cost))
 }
 
@@ -518,6 +604,10 @@ pub async fn agent_pr_comment_fix(
     let prompt = format!(
         "Original issue: {issue_title}\nMaintainer: {maintainer_comment}\nCode:\n{codebase}"
     );
-    let (text, cost) = ai_call(http, &call_params(agent, system, &prompt)).await?;
+    let (text, cost) = ai_call(
+        http,
+        &call_params_with_max(agent, system, &prompt, PATCH_MAX_TOKENS),
+    )
+    .await?;
     Ok((parse_json(&text)?, cost))
 }

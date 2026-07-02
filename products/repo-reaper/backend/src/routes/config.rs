@@ -14,7 +14,7 @@ use std::{
 };
 use uuid::Uuid;
 
-use crate::agents::{ai_call, clear_cooldown, get_cooldowns, AgentCallParams};
+use crate::agents::{ai_call, clear_cooldown, get_cooldowns, AgentCallParams, DEFAULT_MAX_TOKENS};
 use crate::db::{
     agents_from_storage_json, agents_to_storage_json, get_conn, get_lifetime_cost,
     save_active_agents, set_setting,
@@ -350,6 +350,7 @@ async fn test_model(
         api_key: api_key.as_deref(),
         system: "You are a connectivity check. Reply with exactly OK.",
         prompt: "Reply with exactly OK.",
+        max_tokens: DEFAULT_MAX_TOKENS,
     };
 
     match ai_call(&state.http, &params).await {
