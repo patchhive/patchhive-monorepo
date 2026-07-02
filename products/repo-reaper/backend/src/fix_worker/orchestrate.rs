@@ -21,6 +21,31 @@ use super::types::{
     pick_fix_agents, FixIssueJob, SmithReviewOutcome,
 };
 
+fn compact_no_change_detail(test: &crate::git_ops::TestResult) -> String {
+    if test.passed {
+        return "No commit-ready diff remained after patch review and validation.".to_string();
+    }
+
+    let output = test.output.trim();
+    if output.is_empty() {
+        return format!(
+            "No commit-ready diff remained after validation/retry. Last test runner `{}` failed without output.",
+            test.runner
+        );
+    }
+
+    let excerpt = output.chars().take(500).collect::<String>();
+    let suffix = if output.chars().count() > 500 {
+        "..."
+    } else {
+        ""
+    };
+    format!(
+        "No commit-ready diff remained after validation/retry. Last test runner `{}` reported: {excerpt}{suffix}",
+        test.runner
+    )
+}
+
 pub async fn fix_one(job: FixIssueJob) {
     let FixIssueJob {
         issue,
@@ -636,6 +661,48 @@ pub async fn fix_one(job: FixIssueJob) {
         )
         .await;
         return;
+    }
+
+    match crate::git_ops::has_changes(&scope.work_path).await {
+        Ok(true) => {}
+        Ok(false) => {
+            let detail = compact_no_change_detail(&test);
+            let _ = tx
+                .send(alog(
+                    &agents.gatekeeper,
+                    "No commit-ready diff remained after validation - skipping PR",
+                    "warn",
+                ))
+                .await;
+            finish_skipped_attempt_with_error(
+                &tx,
+                &issue,
+                &attempt_id,
+                "no_changes",
+                Some(&detail),
+                cost,
+                Some(&smith_review.final_patch),
+                confidence,
+                &t_start,
+                &scope.work_path,
+            )
+            .await;
+            return;
+        }
+        Err(e) => {
+            finish_error_attempt(
+                &tx,
+                &issue,
+                &attempt_id,
+                &format!("Could not inspect final patch changes: {e}"),
+                cost,
+                confidence,
+                &t_start,
+                &scope.work_path,
+            )
+            .await;
+            return;
+        }
     }
 
     let _ = tx
