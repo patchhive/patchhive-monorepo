@@ -1010,8 +1010,8 @@ function DryRunSurface({ agents, config, dry, error, health, history, onChangePa
   );
 }
 
-function SecondaryFrame({ children, config, health, history, selectedRun, stream, watchMode }) {
-  const rail = useMemo(() => buildRail(health, config, stream, history, selectedRun, watchMode), [health, config, stream, history, selectedRun, watchMode]);
+function SecondaryFrame({ children, config, health, history, railOverride = null, selectedRun, stream, watchMode }) {
+  const rail = useMemo(() => railOverride || buildRail(health, config, stream, history, selectedRun, watchMode), [health, config, stream, history, railOverride, selectedRun, watchMode]);
   return (
     <>
       <SuiteTopline cells={buildTopline(health, config, stream, history)} />
@@ -1125,8 +1125,39 @@ function HistorySurface({ config, health, history, loading, onClearRun, onLoadRu
 }
 
 function PrMonitorSurface({ config, health, history, onClearRun, onRefresh, prs, selectedRun, stream, watchMode }) {
+  const trackedPrs = Array.isArray(prs) ? prs : [];
+  const prRail = useMemo(() => ({
+    sections: [
+      {
+        title: "Run modes",
+        items: [
+          { label: "full hunt", active: true, pin: true },
+          { label: "dry stalk", value: "safe" },
+          { label: "watch mode", badge: watchMode ? "on" : "off", badgeTone: watchMode ? "green" : "amber" },
+          { label: "run active", value: health?.run_active ? "yes" : "no" },
+        ],
+      },
+      {
+        title: "PR monitor",
+        items: [
+          { label: "tracked", badge: String(trackedPrs.length), badgeTone: trackedPrs.length ? "green" : "signal" },
+          { label: "merged", badge: String(trackedPrs.filter((item) => item.merged).length), badgeTone: "green" },
+          { label: "open", badge: String(trackedPrs.filter((item) => item.state === "open").length), badgeTone: "signal" },
+          { label: "closed", badge: String(trackedPrs.filter((item) => item.state === "closed" && !item.merged).length), badgeTone: "amber" },
+        ],
+      },
+    ],
+    stats: {
+      title: "PR posture",
+      items: [
+        { label: "Repository", value: trackedPrs[0]?.repo || "none" },
+        { label: "Tracked PRs", value: String(trackedPrs.length), large: true, tone: trackedPrs.length ? "green" : "signal" },
+        { label: "Last checked", value: trackedPrs[0]?.last_checked ? timeAgo(trackedPrs[0].last_checked) : "none" },
+      ],
+    },
+  }), [health, trackedPrs, watchMode]);
   return (
-    <SecondaryFrame config={config} health={health} history={history} selectedRun={selectedRun} stream={stream} watchMode={watchMode}>
+    <SecondaryFrame config={config} health={health} history={history} railOverride={prRail} selectedRun={selectedRun} stream={stream} watchMode={watchMode}>
       <div className="hero-row">
         <div>
           <div className="eyebrow">// RepoReaper outbound PRs</div>
