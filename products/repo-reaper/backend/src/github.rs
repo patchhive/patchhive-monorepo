@@ -67,8 +67,25 @@ pub async fn gh_post(
         .await?;
     if !resp.status().is_success() {
         let status = resp.status();
+        let accepted_permissions = resp
+            .headers()
+            .get("x-accepted-github-permissions")
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_string);
+        let oauth_scopes = resp
+            .headers()
+            .get("x-oauth-scopes")
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_string);
         let text = resp.text().await.unwrap_or_default();
-        return Err(anyhow!("GitHub POST {path} -> {status}: {text}"));
+        let mut detail = format!("GitHub POST {path} -> {status}: {text}");
+        if let Some(permissions) = accepted_permissions {
+            detail.push_str(&format!("; accepted-permissions={permissions}"));
+        }
+        if let Some(scopes) = oauth_scopes {
+            detail.push_str(&format!("; token-scopes={scopes}"));
+        }
+        return Err(anyhow!(detail));
     }
     Ok(resp.json().await?)
 }
@@ -103,14 +120,27 @@ pub async fn gh_fork(
     let tok = token.map(|s| s.to_string()).unwrap_or_else(bot_token);
     let repo_name = repo.split('/').nth(1).unwrap_or(repo);
 
-    gh_post(
+    let expected = format!("{user}/{repo_name}");
+    let fork_request = gh_post(
         http,
         &format!("/repos/{repo}/forks"),
         &serde_json::json!({}),
         token,
     )
-    .await
-    .ok();
+    .await;
+    let fork_request_full_name = match fork_request {
+        Ok(fork) => fork["full_name"].as_str().map(str::to_string),
+        Err(error) => {
+            if let Ok(fork) = gh_get(http, &format!("/repos/{expected}"), &[], Some(&tok)).await {
+                if fork["full_name"].is_string() {
+                    return Ok(fork);
+                }
+            }
+            return Err(anyhow!(
+                "Fork request failed: {repo}; expected fork {expected}; {error}"
+            ));
+        }
+    };
 
     let mut delay = Duration::from_secs(1);
     for attempt in 0..5 {
@@ -127,7 +157,11 @@ pub async fn gh_fork(
             attempt + 1
         );
     }
-    Err(anyhow!("Fork timed out: {repo}"))
+    let mut detail = format!("Fork timed out: {repo}; expected fork {expected} was not visible");
+    if let Some(full_name) = fork_request_full_name {
+        detail.push_str(&format!("; fork request returned {full_name}"));
+    }
+    Err(anyhow!(detail))
 }
 
 pub async fn gh_check_duplicate(
