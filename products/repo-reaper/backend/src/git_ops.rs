@@ -205,12 +205,10 @@ pub async fn git_reset(dest: &Path) -> Result<()> {
 
 // ── File collection ────────────────────────────────────────────────────────────
 
-const CODE_EXTS: &[&str] = &[
-    ".py", ".js", ".ts", ".go", ".rs", ".java", ".cpp", ".c", ".rb", ".tsx", ".jsx",
-];
-const ALL_EXTS: &[&str] = &[
-    ".py", ".js", ".ts", ".go", ".rs", ".java", ".cpp", ".c", ".rb", ".tsx", ".jsx", ".md",
-    ".yaml", ".toml", ".json", ".txt",
+const CONTEXT_EXTS: &[&str] = &[
+    ".py", ".js", ".ts", ".go", ".rs", ".java", ".cpp", ".c", ".h", ".hpp", ".rb", ".tsx", ".jsx",
+    ".md", ".yaml", ".yml", ".toml", ".json", ".txt", ".ini", ".cfg", ".conf", ".cmake", ".sh",
+    ".bash", ".pipe",
 ];
 const SKIP_DIRS: &[&str] = &[
     "node_modules",
@@ -230,7 +228,7 @@ fn skip_dir(p: &Path) -> bool {
 
 fn collect_repo_structure_sync(repo_dir: &Path) -> String {
     let mut lines = Vec::new();
-    visit_dir(repo_dir, repo_dir, &mut lines, ALL_EXTS, 250);
+    visit_dir(repo_dir, repo_dir, &mut lines, CONTEXT_EXTS, 500);
     lines.join("\n")
 }
 
@@ -371,12 +369,55 @@ fn collect_code_files(dir: &Path) -> Vec<std::path::PathBuf> {
                 .and_then(|e| e.to_str())
                 .map(|e| format!(".{e}"))
                 .unwrap_or_default();
-            if CODE_EXTS.contains(&ext.as_str()) {
+            if CONTEXT_EXTS.contains(&ext.as_str()) {
                 result.push(path);
             }
         }
     }
     result
+}
+
+fn collect_mentioned_files_sync(repo_dir: &Path, text: &str, max_files: usize) -> Vec<String> {
+    let haystack = text.to_ascii_lowercase();
+    let mut files = collect_code_files(repo_dir);
+    files.sort_by_key(|path| path.components().count());
+    let mut matches = Vec::new();
+
+    for path in files {
+        if matches.len() >= max_files {
+            break;
+        }
+        let Some(file_name) = path.file_name().and_then(|value| value.to_str()) else {
+            continue;
+        };
+        let stem = path
+            .file_stem()
+            .and_then(|value| value.to_str())
+            .unwrap_or("");
+        let file_name_lc = file_name.to_ascii_lowercase();
+        let stem_lc = stem.to_ascii_lowercase();
+        if !haystack.contains(&file_name_lc) && (stem_lc.len() < 5 || !haystack.contains(&stem_lc))
+        {
+            continue;
+        }
+        let Ok(rel) = path.strip_prefix(repo_dir) else {
+            continue;
+        };
+        let rel = rel.display().to_string();
+        if !matches.contains(&rel) {
+            matches.push(rel);
+        }
+    }
+
+    matches
+}
+
+pub async fn collect_mentioned_files(repo_dir: &Path, text: &str, max_files: usize) -> Vec<String> {
+    let repo_dir = repo_dir.to_path_buf();
+    let text = text.to_string();
+    tokio::task::spawn_blocking(move || collect_mentioned_files_sync(&repo_dir, &text, max_files))
+        .await
+        .unwrap_or_default()
 }
 
 // ── Patch application ──────────────────────────────────────────────────────────
@@ -684,6 +725,39 @@ mod tests {
 
         let _ = fs::remove_dir_all(&root);
         let _ = fs::remove_file(&outside);
+    }
+
+    #[test]
+    fn collect_mentioned_files_finds_pipeline_configs_by_name_or_stem() {
+        let root =
+            std::env::temp_dir().join(format!("repo-reaper-git-ops-{}", uuid::Uuid::new_v4()));
+        let pipelines = root.join("configs").join("pipelines");
+        fs::create_dir_all(&pipelines).expect("create pipeline dir");
+        fs::write(
+            pipelines.join("measurement_track_fish_in_3d_from_rect_disp.pipe"),
+            "process tracker\n",
+        )
+        .expect("write pipeline");
+        fs::write(
+            pipelines.join("common_stereo_fish_tracker.pipe"),
+            "process common\n",
+        )
+        .expect("write common pipeline");
+
+        let files = super::collect_mentioned_files_sync(
+            &root,
+            "measurement_track_fish_in_3d_from_rect_disp failed; common_stereo_fish_tracker is included",
+            8,
+        );
+
+        assert!(files
+            .iter()
+            .any(|path| path.ends_with("measurement_track_fish_in_3d_from_rect_disp.pipe")));
+        assert!(files
+            .iter()
+            .any(|path| path.ends_with("common_stereo_fish_tracker.pipe")));
+
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[tokio::test]

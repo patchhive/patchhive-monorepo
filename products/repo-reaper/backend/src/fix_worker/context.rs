@@ -6,7 +6,8 @@ use serde_json::Value;
 
 use crate::agents::agent_select_files;
 use crate::git_ops::{
-    collect_files_all, collect_files_selective, collect_repo_structure, git_branch, git_clone,
+    collect_files_all, collect_files_selective, collect_mentioned_files, collect_repo_structure,
+    git_branch, git_clone,
 };
 use crate::github::{gh_comment_issue, gh_fork, gh_get_issue_context};
 
@@ -79,7 +80,24 @@ pub async fn select_code_context(
     scope: &IssueScope,
     judge: Option<&AgentConfig>,
 ) -> (CodeSelection, f64) {
+    let issue_text = format!(
+        "{}\n{}",
+        issue["title"].as_str().unwrap_or(""),
+        issue["body"].as_str().unwrap_or("")
+    );
+    let mentioned_files = collect_mentioned_files(&scope.work_path, &issue_text, 8).await;
+
     let Some(judge) = judge else {
+        if !mentioned_files.is_empty() {
+            return (
+                CodeSelection {
+                    codebase: collect_files_selective(&scope.work_path, &mentioned_files, 80_000)
+                        .await,
+                    selected_files: mentioned_files,
+                },
+                0.0,
+            );
+        }
         return (
             CodeSelection {
                 selected_files: Vec::new(),
@@ -108,7 +126,13 @@ pub async fn select_code_context(
     let _ = tx.send(astatus(&judge.id, "idle", "")).await;
 
     match result {
-        Ok((files, cost)) if !files.is_empty() => {
+        Ok((files, cost)) if !files.is_empty() || !mentioned_files.is_empty() => {
+            let mut files = files;
+            for path in mentioned_files {
+                if !files.contains(&path) {
+                    files.push(path);
+                }
+            }
             let _ = tx
                 .send(alog(
                     judge,
@@ -129,13 +153,29 @@ pub async fn select_code_context(
                 cost,
             )
         }
-        Ok(_) => (
-            CodeSelection {
-                selected_files: Vec::new(),
-                codebase: collect_files_all(&scope.work_path, 60_000).await,
-            },
-            0.0,
-        ),
+        Ok(_) => {
+            if !mentioned_files.is_empty() {
+                return (
+                    CodeSelection {
+                        codebase: collect_files_selective(
+                            &scope.work_path,
+                            &mentioned_files,
+                            80_000,
+                        )
+                        .await,
+                        selected_files: mentioned_files,
+                    },
+                    0.0,
+                );
+            }
+            (
+                CodeSelection {
+                    selected_files: Vec::new(),
+                    codebase: collect_files_all(&scope.work_path, 60_000).await,
+                },
+                0.0,
+            )
+        }
         Err(e) => {
             let _ = tx
                 .send(alog(
@@ -144,6 +184,20 @@ pub async fn select_code_context(
                     "warn",
                 ))
                 .await;
+            if !mentioned_files.is_empty() {
+                return (
+                    CodeSelection {
+                        codebase: collect_files_selective(
+                            &scope.work_path,
+                            &mentioned_files,
+                            80_000,
+                        )
+                        .await,
+                        selected_files: mentioned_files,
+                    },
+                    0.0,
+                );
+            }
             (
                 CodeSelection {
                     selected_files: Vec::new(),
