@@ -479,6 +479,56 @@ function attemptReason(attempt) {
   return "Saved issue attempt.";
 }
 
+function attemptStopPoint(attempt) {
+  const skipReason = String(attempt?.skip_reason || "").trim();
+  const error = String(attempt?.error_msg || "").trim().toLowerCase();
+  const status = String(attempt?.status || "").toLowerCase();
+
+  if (attempt?.pr_url || attempt?.pr_number || status === "fixed") {
+    return { label: "PR delivery", tone: "green", meta: "Pull request output was created." };
+  }
+  if (status === "running") {
+    return { label: "In flight", tone: "signal", meta: "Attempt is still moving through the pipeline." };
+  }
+  if (skipReason === "no_patch") {
+    return { label: "Reaper decision", tone: "amber", meta: "No concrete patch was produced from the available issue context." };
+  }
+  if (skipReason === "patch_error") {
+    return { label: "Patch apply", tone: "amber", meta: "A candidate diff existed, but apply or self-heal failed before validation." };
+  }
+  if (skipReason === "no_changes") {
+    return { label: "Diff check", tone: "amber", meta: "The worktree had no commit-ready changes after generation and retry." };
+  }
+  if (skipReason.startsWith("confidence_")) {
+    return { label: "Smith review", tone: "amber", meta: "Smith held the patch below the configured confidence threshold." };
+  }
+  if (skipReason === "duplicate") {
+    return { label: "Duplicate guard", tone: "amber", meta: "Existing PatchHive branch or PR coverage was detected." };
+  }
+  if (skipReason === "cancelled") {
+    return { label: "Cancelled", tone: "red", meta: "The attempt was stopped before it could finish." };
+  }
+  if (error.includes("fork") || error.includes("pull request") || error.includes("github") || error.includes("branch")) {
+    return { label: "GitHub delivery", tone: "red", meta: "Patch work reached GitHub-facing delivery and failed there." };
+  }
+  if (attempt?.patch_diff) {
+    return { label: "Validation", tone: "amber", meta: "Patch output existed but did not become PR output." };
+  }
+  if (error) {
+    return { label: "Execution", tone: "red", meta: "The attempt hit an execution error before PR delivery." };
+  }
+  return { label: "Pipeline", tone: statusTone(attempt?.status), meta: "No more specific stop point was recorded." };
+}
+
+function attemptPrimaryBlocker(run) {
+  const attempts = runAttempts(run);
+  return attempts.find((attempt) => attempt.error_msg)
+    || attempts.find((attempt) => attempt.skip_reason)
+    || attempts.find((attempt) => !attempt.pr_url && attempt.status !== "fixed")
+    || attempts[0]
+    || null;
+}
+
 function runOutcomeReason(run) {
   const attempts = runAttempts(run);
   const fixed = asCount(run?.total_fixed);
@@ -1256,6 +1306,8 @@ function selectedRunMetrics(run) {
 function SelectedRunDossier({ run }) {
   const attempts = runAttempts(run);
   const firstAttempt = attempts[0] || {};
+  const blocker = attemptPrimaryBlocker(run);
+  const stopPoint = blocker ? attemptStopPoint(blocker) : null;
   const fixed = asCount(run?.total_fixed);
   const attempted = asCount(run?.total_attempted || attempts.length);
   return (
@@ -1284,6 +1336,16 @@ function SelectedRunDossier({ run }) {
           </div>
           <span className={`chip ${statusTone(firstAttempt.status || runStatusLabel(run))}`}>{firstAttempt.status || "run"}</span>
         </div>
+        {blocker && (
+          <div className="feed-item">
+            <div>
+              <div className="feed-title">Primary stop point</div>
+              <div className="feed-meta break-all">{stopPoint.meta}</div>
+              <div className="feed-meta break-all">{attemptReason(blocker)}</div>
+            </div>
+            <span className={`chip ${stopPoint.tone}`}>{stopPoint.label}</span>
+          </div>
+        )}
       </div>
     </Panel>
   );
@@ -1295,12 +1357,20 @@ function HistoryDeliveryPanel({ run }) {
   const skipped = attempts.filter((attempt) => attempt.skip_reason);
   const failed = attempts.filter((attempt) => attempt.error_msg || ["failed", "error"].includes(String(attempt.status || "").toLowerCase()));
   const reachedGatekeeper = attempts.some((attempt) => attempt.patch_diff || attempt.pr_url || attempt.status === "fixed");
+  const blocker = attemptPrimaryBlocker(run);
+  const stopPoint = blocker ? attemptStopPoint(blocker) : null;
   const rows = [
     {
       title: "PR delivery",
       meta: prs.length ? `${prs.length} pull request${prs.length === 1 ? "" : "s"} opened.` : runOutcomeReason(run),
       label: prs.length ? "opened" : "none",
       tone: prs.length ? "green" : "amber",
+    },
+    blocker && {
+      title: "Pipeline detail",
+      meta: `${stopPoint.meta} ${attemptReason(blocker)}`,
+      label: stopPoint.label,
+      tone: stopPoint.tone,
     },
     {
       title: "Attempt disposition",
@@ -1324,7 +1394,7 @@ function HistoryDeliveryPanel({ run }) {
   return (
     <Panel eyebrow="Delivery" title="PR and gate posture" action={<span className={`chip ${prs.length ? "green" : "amber"}`}>{prs.length} PRs</span>}>
       <div className="panelbody repo-list">
-        {rows.map((item) => (
+        {rows.filter(Boolean).map((item) => (
           <div className="feed-item" key={item.title}>
             <div>
               <div className="feed-title">{item.title}</div>
@@ -1343,31 +1413,37 @@ function HistoryAttemptTimeline({ run }) {
   return (
     <Panel eyebrow="Attempts" title="Attempt timeline" action={<span className="chip signal">{attempts.length} saved</span>}>
       <div className="panelbody repo-list queue-grid">
-        {attempts.length ? attempts.map((attempt, index) => (
-          <div className="ledger-row" key={attempt.id || index}>
-            <div className="rank">{attempt.confidence || index + 1}</div>
-            <div>
-              <div className="repo-name">{attempt.issue_title || `Issue #${attempt.issue_number || index + 1}`}</div>
-              <div className="feed-meta break-all">
-                #{attempt.issue_number || "n/a"} · {attempt.id || "attempt"} · {formatMoney(attempt.cost_usd)} · {attemptDuration(attempt)}
+        {attempts.length ? attempts.map((attempt, index) => {
+          const stopPoint = attemptStopPoint(attempt);
+          return (
+            <div className="ledger-row" key={attempt.id || index}>
+              <div className="rank">{attempt.confidence || index + 1}</div>
+              <div>
+                <div className="repo-name">{attempt.issue_title || `Issue #${attempt.issue_number || index + 1}`}</div>
+                <div className="feed-meta break-all">
+                  #{attempt.issue_number || "n/a"} · {attempt.id || "attempt"} · {formatMoney(attempt.cost_usd)} · {attemptDuration(attempt)}
+                </div>
+                <div className="feed-meta break-all">Stop point: {stopPoint.label} - {stopPoint.meta}</div>
+                <div className="feed-meta break-all">{attemptReason(attempt)}</div>
+                <div className="repo-meta">
+                  <span className={`chip ${statusTone(attempt.status)}`}>{attempt.status || "attempt"}</span>
+                  <span className={`chip ${stopPoint.tone}`}>{stopPoint.label}</span>
+                  {attempt.skip_reason && <span className="chip amber">{humanizeReason(attempt.skip_reason)}</span>}
+                  {attempt.reaper_agent && <span className="chip signal">reaper {attempt.reaper_agent}</span>}
+                  {attempt.smith_agent && <span className="chip signal">smith {attempt.smith_agent}</span>}
+                  {attempt.gatekeeper_agent && <span className="chip signal">gate {attempt.gatekeeper_agent}</span>}
+                </div>
               </div>
-              <div className="feed-meta break-all">{attemptReason(attempt)}</div>
-              <div className="repo-meta">
-                <span className={`chip ${statusTone(attempt.status)}`}>{attempt.status || "attempt"}</span>
-                {attempt.skip_reason && <span className="chip amber">{humanizeReason(attempt.skip_reason)}</span>}
-                {attempt.reaper_agent && <span className="chip signal">reaper {attempt.reaper_agent}</span>}
-                {attempt.gatekeeper_agent && <span className="chip signal">gate {attempt.gatekeeper_agent}</span>}
-              </div>
+              {attempt.pr_url ? (
+                <a className="btn" href={attempt.pr_url} rel="noreferrer" target="_blank">Open PR</a>
+              ) : attempt.issue_url ? (
+                <a className="btn" href={attempt.issue_url} rel="noreferrer" target="_blank">Issue</a>
+              ) : (
+                <span className={`chip ${statusTone(attempt.status)}`}>{attempt.status || "saved"}</span>
+              )}
             </div>
-            {attempt.pr_url ? (
-              <a className="btn" href={attempt.pr_url} rel="noreferrer" target="_blank">Open PR</a>
-            ) : attempt.issue_url ? (
-              <a className="btn" href={attempt.issue_url} rel="noreferrer" target="_blank">Issue</a>
-            ) : (
-              <span className={`chip ${statusTone(attempt.status)}`}>{attempt.status || "saved"}</span>
-            )}
-          </div>
-        )) : (
+          );
+        }) : (
           <div className="empty-v2">
             <strong>No attempts saved</strong>
             <span>This run did not persist issue-level attempt detail.</span>

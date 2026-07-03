@@ -265,6 +265,28 @@ Deferred until the RepoReaper unified-backend pass:
 - richer per-agent controls, cooldown visibility, and live agent logs
 - HiveCore-driven setup for RepoReaper agent teams, approvals, and write gates
 
+RepoReaper polish backlog after the first live sandbox PR tests:
+
+- Keep strengthening the History tab as the operator's first diagnostic surface.
+  It should show where each attempt stopped: Judge/context selection, Reaper
+  no-patch decision, patch apply/self-heal, Smith review, validation, GitHub
+  branch/fork/PR delivery, or final PR tracking.
+- Add links from attempts to the GitHub issue status comments and PR comments
+  RepoReaper posted. The current UI links to the issue and PR, but does not
+  persist individual comment URLs.
+- Persist a compact per-run log artifact instead of relying on stdout, live SSE
+  messages, or UI summaries when debugging a failed run later.
+- Surface provider/runtime failures more clearly, including rejected API keys,
+  empty model responses, rate limits, timeouts, and model output that cannot be
+  parsed into a patch.
+- Standardize the suite-wide write/test policy. RepoReaper already treats
+  disabled untrusted tests as "not proven" rather than a failure worth retrying,
+  but future write-capable products need the same distinction between
+  untrusted-disabled, sandboxed-passed, sandboxed-failed, and host-approved test
+  execution.
+- Keep draft PR behavior conservative until HiveCore owns write approvals and
+  MergeKeeper/TrustGate can participate in the final gate.
+
 Do not remove the old RepoReaper team/preset UI until the v2 replacement and the
 unified backend/HiveCore setup path cover those workflows.
 
