@@ -105,10 +105,6 @@ fn public_hold_reason(reason: &str) -> String {
     }
 }
 
-fn issue_status_footer() -> &'static str {
-    "Generated autonomously by **RepoReaper by [PatchHive](https://github.com/patchhive)**. This managed comment is updated instead of posting a new status comment on each retry."
-}
-
 fn issue_comment_attempting(issue: &serde_json::Value, run_id: &str, attempt_id: &str) -> String {
     format!(
         "🔱 **RepoReaper by [PatchHive](https://github.com/patchhive)** is working on this issue.\n\n\
@@ -116,10 +112,8 @@ fn issue_comment_attempting(issue: &serde_json::Value, run_id: &str, attempt_id:
         **Run:** `{run_id}`\n\
         **Attempt:** `{attempt_id}`\n\
         {}\n\n\
-        RepoReaper will open a draft pull request if it produces a commit-ready diff. If it cannot, this comment will be updated with the hold reason.\n\n\
-        {}",
+        RepoReaper will open a draft pull request if it produces a commit-ready diff. If it cannot, a final held/error status will be appended below.",
         issue_fixability_line(issue),
-        issue_status_footer(),
     )
 }
 
@@ -135,11 +129,9 @@ fn issue_comment_held(
         **Run:** `{run_id}`\n\
         **Attempt:** `{attempt_id}`\n\
         {}\n\
-        **Reason:** {}\n\n\
-        {}",
+        **Reason:** {}",
         issue_fixability_line(issue),
         public_hold_reason(reason),
-        issue_status_footer(),
     )
 }
 
@@ -150,10 +142,8 @@ fn issue_comment_error(issue: &serde_json::Value, run_id: &str, attempt_id: &str
         **Run:** `{run_id}`\n\
         **Attempt:** `{attempt_id}`\n\
         {}\n\
-        **Reason:** RepoReaper hit an execution error before PR delivery. The run was stopped instead of opening an unsafe or empty pull request.\n\n\
-        {}",
+        **Reason:** RepoReaper hit an execution error before PR delivery. The run was stopped instead of opening an unsafe or empty pull request.",
         issue_fixability_line(issue),
-        issue_status_footer(),
     )
 }
 
@@ -177,10 +167,8 @@ fn issue_comment_fixed(
         **Run:** `{run_id}`\n\
         **Attempt:** `{attempt_id}`\n\
         {}\n\
-        **Validation:** {test_line}\n\n\
-        {}",
+        **Validation:** {test_line}",
         issue_fixability_line(issue),
-        issue_status_footer(),
     )
 }
 

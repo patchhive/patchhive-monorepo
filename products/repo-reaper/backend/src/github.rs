@@ -266,6 +266,9 @@ fn repo_reaper_issue_marker(repo: &str, number: i64) -> String {
     format!("<!-- patchhive:repo-reaper:{repo}#{number} -->")
 }
 
+const REPO_REAPER_OLD_COMMENT_FOOTER: &str = "Generated autonomously by **RepoReaper by [PatchHive](https://github.com/patchhive)**. This managed comment is updated instead of posting a new status comment on each retry.";
+const REPO_REAPER_COMMENT_FOOTER: &str = "Generated autonomously by **RepoReaper by [PatchHive](https://github.com/patchhive)**. This managed comment records RepoReaper status updates for this issue instead of posting a new comment on each retry.";
+
 fn is_repo_reaper_managed_comment(comment: &Value, marker: &str) -> bool {
     let body = comment["body"].as_str().unwrap_or("");
     if body.contains(marker) {
@@ -273,6 +276,21 @@ fn is_repo_reaper_managed_comment(comment: &Value, marker: &str) -> bool {
     }
     let author = comment["user"]["login"].as_str().unwrap_or("");
     author == "patchhive" && body.contains("RepoReaper") && body.contains("hunting this bug")
+}
+
+fn clean_repo_reaper_comment_entry(body: &str, marker: &str) -> String {
+    body.replace(marker, "")
+        .replace(REPO_REAPER_OLD_COMMENT_FOOTER, "")
+        .replace(REPO_REAPER_COMMENT_FOOTER, "")
+        .trim()
+        .to_string()
+}
+
+fn repo_reaper_managed_comment_body(marker: &str, timeline: &str) -> String {
+    format!(
+        "{marker}\n{}\n\n{REPO_REAPER_COMMENT_FOOTER}",
+        timeline.trim()
+    )
 }
 
 pub async fn gh_upsert_repo_reaper_issue_comment(
@@ -283,11 +301,8 @@ pub async fn gh_upsert_repo_reaper_issue_comment(
     token: Option<&str>,
 ) -> Result<Value> {
     let marker = repo_reaper_issue_marker(repo, number);
-    let managed_body = if body.contains(&marker) {
-        body.to_string()
-    } else {
-        format!("{marker}\n{body}")
-    };
+    let next_entry = clean_repo_reaper_comment_entry(body, &marker);
+    let managed_body = repo_reaper_managed_comment_body(&marker, &next_entry);
     let comments = gh_get(
         http,
         &format!("/repos/{repo}/issues/{number}/comments"),
@@ -305,6 +320,16 @@ pub async fn gh_upsert_repo_reaper_issue_comment(
         let id = existing["id"]
             .as_i64()
             .ok_or_else(|| anyhow!("Existing RepoReaper issue comment was missing an id"))?;
+        let existing_timeline =
+            clean_repo_reaper_comment_entry(existing["body"].as_str().unwrap_or(""), &marker);
+        let next_timeline = if existing_timeline.contains(&next_entry) {
+            existing_timeline
+        } else if existing_timeline.is_empty() {
+            next_entry
+        } else {
+            format!("{existing_timeline}\n\n---\n\n{next_entry}")
+        };
+        let managed_body = repo_reaper_managed_comment_body(&marker, &next_timeline);
         return gh_patch(
             http,
             &format!("/repos/{repo}/issues/comments/{id}"),
