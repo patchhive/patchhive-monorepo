@@ -414,7 +414,7 @@ async fn webhook_pr_comment(state: AppState, repo: &str, issue: Value, comment: 
 
     let _ = gh_post(&state.http, &format!("/repos/{repo}/pulls"), &json!({
         "title": msg,
-        "body": format!("Follow-up fix based on maintainer feedback on #{}.\n\nGenerated autonomously by **RepoReaper by PatchHive**.\n\n**Maintainer:** {}\n\n**What changed:** {}\n\n*RepoReaper by PatchHive*",
+        "body": format!("Follow-up fix based on maintainer feedback on #{}.\n\nGenerated autonomously by **RepoReaper by [PatchHive](https://github.com/patchhive)**.\n\n**Maintainer:** {}\n\n**What changed:** {}\n\n*RepoReaper by [PatchHive](https://github.com/patchhive)*",
             pr_number, comment["body"].as_str().unwrap_or("").chars().take(500).collect::<String>(), result["explanation"].as_str().unwrap_or("")),
         "head": format!("{bot_user}:{branch}"), "base": base_branch, "draft": false,
     }), Some(&bot_token)).await;
@@ -423,7 +423,7 @@ async fn webhook_pr_comment(state: AppState, repo: &str, issue: Value, comment: 
         &state.http,
         repo,
         pr_number,
-        "🔱 RepoReaper opened a follow-up PR based on your feedback. *by PatchHive*",
+        "🔱 RepoReaper opened a follow-up PR based on your feedback. *by [PatchHive](https://github.com/patchhive)*",
         Some(&bot_token),
     )
     .await;

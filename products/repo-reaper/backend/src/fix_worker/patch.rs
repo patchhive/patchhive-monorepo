@@ -159,10 +159,10 @@ pub async fn publish_pull_request(
         {smith_note}\n\n\
         ### Tests\n{}\n\n\
         ---\n\
-        Generated autonomously by **RepoReaper by PatchHive**.\n\
+        Generated autonomously by **RepoReaper by [PatchHive](https://github.com/patchhive)**.\n\
         Closes #{}.\n\n\
         ⚖ Judge: {} · ⚔ Reaper: {} · ⬢ Smith: {} · 🔒 Gatekeeper: {}\n\n\
-        *RepoReaper by PatchHive*",
+        *RepoReaper by [PatchHive](https://github.com/patchhive)*",
         scope.issue_num,
         issue["title"].as_str().unwrap_or(""),
         result["explanation"].as_str().unwrap_or(""),

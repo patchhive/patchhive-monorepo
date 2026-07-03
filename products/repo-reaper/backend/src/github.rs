@@ -90,6 +90,43 @@ pub async fn gh_post(
     Ok(resp.json().await?)
 }
 
+pub async fn gh_patch(
+    http: &Client,
+    path: &str,
+    body: &Value,
+    token: Option<&str>,
+) -> Result<Value> {
+    let resp = http
+        .patch(format!("{GH_API}{path}"))
+        .headers(gh_headers(token))
+        .json(body)
+        .send()
+        .await?;
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let accepted_permissions = resp
+            .headers()
+            .get("x-accepted-github-permissions")
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_string);
+        let oauth_scopes = resp
+            .headers()
+            .get("x-oauth-scopes")
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_string);
+        let text = resp.text().await.unwrap_or_default();
+        let mut detail = format!("GitHub PATCH {path} -> {status}: {text}");
+        if let Some(permissions) = accepted_permissions {
+            detail.push_str(&format!("; accepted-permissions={permissions}"));
+        }
+        if let Some(scopes) = oauth_scopes {
+            detail.push_str(&format!("; token-scopes={scopes}"));
+        }
+        return Err(anyhow!(detail));
+    }
+    Ok(resp.json().await?)
+}
+
 pub async fn gh_delete(http: &Client, path: &str, token: Option<&str>) -> Result<()> {
     let resp = http
         .delete(format!("{GH_API}{path}"))
@@ -223,6 +260,67 @@ pub async fn gh_comment_issue(
         token,
     )
     .await;
+}
+
+fn repo_reaper_issue_marker(repo: &str, number: i64) -> String {
+    format!("<!-- patchhive:repo-reaper:{repo}#{number} -->")
+}
+
+fn is_repo_reaper_managed_comment(comment: &Value, marker: &str) -> bool {
+    let body = comment["body"].as_str().unwrap_or("");
+    if body.contains(marker) {
+        return true;
+    }
+    let author = comment["user"]["login"].as_str().unwrap_or("");
+    author == "patchhive" && body.contains("RepoReaper") && body.contains("hunting this bug")
+}
+
+pub async fn gh_upsert_repo_reaper_issue_comment(
+    http: &Client,
+    repo: &str,
+    number: i64,
+    body: &str,
+    token: Option<&str>,
+) -> Result<Value> {
+    let marker = repo_reaper_issue_marker(repo, number);
+    let managed_body = if body.contains(&marker) {
+        body.to_string()
+    } else {
+        format!("{marker}\n{body}")
+    };
+    let comments = gh_get(
+        http,
+        &format!("/repos/{repo}/issues/{number}/comments"),
+        &[("per_page", "100")],
+        token,
+    )
+    .await?;
+
+    if let Some(existing) = comments
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|comment| is_repo_reaper_managed_comment(comment, &marker))
+    {
+        let id = existing["id"]
+            .as_i64()
+            .ok_or_else(|| anyhow!("Existing RepoReaper issue comment was missing an id"))?;
+        return gh_patch(
+            http,
+            &format!("/repos/{repo}/issues/comments/{id}"),
+            &serde_json::json!({ "body": managed_body }),
+            token,
+        )
+        .await;
+    }
+
+    gh_post(
+        http,
+        &format!("/repos/{repo}/issues/{number}/comments"),
+        &serde_json::json!({ "body": managed_body }),
+        token,
+    )
+    .await
 }
 
 pub async fn gh_get_issue_context(

@@ -9,7 +9,7 @@ use crate::db::{
     finish_attempt, save_rejected_patch, start_attempt, track_pr, update_perf, IssueAttemptFinish,
     IssueAttemptStart, IssueAttemptStatus,
 };
-use crate::github::gh_check_duplicate;
+use crate::github::{gh_check_duplicate, gh_upsert_repo_reaper_issue_comment};
 
 use super::context::{clone_issue_repo, load_enriched_issue_context, select_code_context};
 use super::memory::submit_smith_rejection_candidate;
@@ -18,7 +18,7 @@ use super::sse::{alog, astatus, sse_ev};
 use super::types::{
     build_attempt_target, build_issue_scope, cancelled, cfg, cleanup_work_path,
     finish_error_attempt, finish_skipped_attempt, finish_skipped_attempt_with_error,
-    pick_fix_agents, FixIssueJob, SmithReviewOutcome,
+    pick_fix_agents, FixIssueJob, IssueScope, SmithReviewOutcome,
 };
 
 fn compact_no_change_detail(test: &crate::git_ops::TestResult) -> String {
@@ -64,6 +64,155 @@ fn test_log_label(test: &crate::git_ops::TestResult) -> &'static str {
         "failed"
     } else {
         "not run"
+    }
+}
+
+fn truncate_public(value: &str, max_chars: usize) -> String {
+    let trimmed = value.trim();
+    let mut out = trimmed.chars().take(max_chars).collect::<String>();
+    if trimmed.chars().count() > max_chars {
+        out.push_str("...");
+    }
+    out
+}
+
+fn issue_fixability_line(issue: &serde_json::Value) -> String {
+    let score = issue["fixability_score"].as_i64().unwrap_or(50);
+    let reason = issue["fixability_reason"].as_str().unwrap_or("").trim();
+    if reason.is_empty() {
+        format!("**Fixability:** {score}/100")
+    } else {
+        format!(
+            "**Fixability:** {score}/100 - {}",
+            truncate_public(reason, 220)
+        )
+    }
+}
+
+fn public_hold_reason(reason: &str) -> String {
+    if let Some(confidence) = reason.strip_prefix("confidence_") {
+        return format!(
+            "Smith review held the patch at {confidence}% confidence, below the configured release threshold."
+        );
+    }
+    match reason {
+        "cancelled" => "The run was cancelled before RepoReaper could finish this attempt.".to_string(),
+        "duplicate" => "An existing PatchHive branch or pull request already appears to cover this issue.".to_string(),
+        "no_changes" => "RepoReaper did not end with a commit-ready diff, so it did not open an empty pull request.".to_string(),
+        "no_patch" => "RepoReaper could not produce a concrete patch for this issue from the available context.".to_string(),
+        "patch_error" => "RepoReaper generated a candidate patch, but it could not apply cleanly enough to open a pull request.".to_string(),
+        other => format!("RepoReaper held this issue before PR delivery: {other}."),
+    }
+}
+
+fn issue_status_footer() -> &'static str {
+    "Generated autonomously by **RepoReaper by [PatchHive](https://github.com/patchhive)**. This managed comment is updated instead of posting a new status comment on each retry."
+}
+
+fn issue_comment_attempting(issue: &serde_json::Value, run_id: &str, attempt_id: &str) -> String {
+    format!(
+        "🔱 **RepoReaper by [PatchHive](https://github.com/patchhive)** is working on this issue.\n\n\
+        **Status:** attempting fix\n\
+        **Run:** `{run_id}`\n\
+        **Attempt:** `{attempt_id}`\n\
+        {}\n\n\
+        RepoReaper will open a draft pull request if it produces a commit-ready diff. If it cannot, this comment will be updated with the hold reason.\n\n\
+        {}",
+        issue_fixability_line(issue),
+        issue_status_footer(),
+    )
+}
+
+fn issue_comment_held(
+    issue: &serde_json::Value,
+    run_id: &str,
+    attempt_id: &str,
+    reason: &str,
+) -> String {
+    format!(
+        "🔱 **RepoReaper by [PatchHive](https://github.com/patchhive)** checked this issue.\n\n\
+        **Status:** held - no pull request opened\n\
+        **Run:** `{run_id}`\n\
+        **Attempt:** `{attempt_id}`\n\
+        {}\n\
+        **Reason:** {}\n\n\
+        {}",
+        issue_fixability_line(issue),
+        public_hold_reason(reason),
+        issue_status_footer(),
+    )
+}
+
+fn issue_comment_error(issue: &serde_json::Value, run_id: &str, attempt_id: &str) -> String {
+    format!(
+        "🔱 **RepoReaper by [PatchHive](https://github.com/patchhive)** checked this issue.\n\n\
+        **Status:** error - no pull request opened\n\
+        **Run:** `{run_id}`\n\
+        **Attempt:** `{attempt_id}`\n\
+        {}\n\
+        **Reason:** RepoReaper hit an execution error before PR delivery. The run was stopped instead of opening an unsafe or empty pull request.\n\n\
+        {}",
+        issue_fixability_line(issue),
+        issue_status_footer(),
+    )
+}
+
+fn issue_comment_fixed(
+    issue: &serde_json::Value,
+    run_id: &str,
+    attempt_id: &str,
+    pr_number: i64,
+    pr_url: &str,
+    test: &crate::git_ops::TestResult,
+) -> String {
+    let test_line = if test.passed {
+        "Validation tests passed."
+    } else {
+        "Validation tests were not proven safe/passing here, so the pull request was opened as a draft for review."
+    };
+    format!(
+        "🔱 **RepoReaper by [PatchHive](https://github.com/patchhive)** produced a candidate fix for this issue.\n\n\
+        **Status:** draft pull request opened\n\
+        **Pull request:** [#{pr_number}]({pr_url})\n\
+        **Run:** `{run_id}`\n\
+        **Attempt:** `{attempt_id}`\n\
+        {}\n\
+        **Validation:** {test_line}\n\n\
+        {}",
+        issue_fixability_line(issue),
+        issue_status_footer(),
+    )
+}
+
+async fn update_issue_status_comment(
+    http: &reqwest::Client,
+    _issue: &serde_json::Value,
+    scope: &IssueScope,
+    bot_token: &str,
+    body: String,
+) {
+    if bot_token.trim().is_empty() {
+        tracing::warn!(
+            "RepoReaper skipped managed issue comment for {}/{} because bot token is empty",
+            scope.repo,
+            scope.issue_num
+        );
+        return;
+    }
+    if let Err(error) = gh_upsert_repo_reaper_issue_comment(
+        http,
+        &scope.repo,
+        scope.issue_num,
+        &body,
+        Some(bot_token),
+    )
+    .await
+    {
+        tracing::warn!(
+            "RepoReaper managed issue comment update failed for {}/{}: {error:#}",
+            scope.repo,
+            scope.issue_num
+        );
     }
 }
 
@@ -129,6 +278,14 @@ pub async fn fix_one(job: FixIssueJob) {
     )
     .await
     {
+        update_issue_status_comment(
+            &http,
+            &issue,
+            &scope,
+            &bot_token,
+            issue_comment_held(&issue, &params.run_id, &attempt_id, "duplicate"),
+        )
+        .await;
         let _ = tx
             .send(alog(
                 &agents.reaper,
@@ -167,6 +324,14 @@ pub async fn fix_one(job: FixIssueJob) {
         smith_agent: agents.smith.as_ref().map(|smith| smith.name.as_str()),
         gatekeeper_agent: &agents.gatekeeper.name,
     });
+    update_issue_status_comment(
+        &http,
+        &issue,
+        &scope,
+        &bot_token,
+        issue_comment_attempting(&issue, &params.run_id, &attempt_id),
+    )
+    .await;
 
     let issue_ctx = match clone_issue_repo(
         &http,
@@ -181,6 +346,14 @@ pub async fn fix_one(job: FixIssueJob) {
     {
         Ok(context) => context,
         Err(e) => {
+            update_issue_status_comment(
+                &http,
+                &issue,
+                &scope,
+                &bot_token,
+                issue_comment_error(&issue, &params.run_id, &attempt_id),
+            )
+            .await;
             finish_error_attempt(
                 &tx,
                 &issue,
@@ -197,6 +370,14 @@ pub async fn fix_one(job: FixIssueJob) {
     };
 
     if cancelled(&params) {
+        update_issue_status_comment(
+            &http,
+            &issue,
+            &scope,
+            &bot_token,
+            issue_comment_held(&issue, &params.run_id, &attempt_id, "cancelled"),
+        )
+        .await;
         finish_skipped_attempt(
             &tx,
             &issue,
@@ -226,6 +407,14 @@ pub async fn fix_one(job: FixIssueJob) {
     .await;
 
     if cancelled(&params) {
+        update_issue_status_comment(
+            &http,
+            &issue,
+            &scope,
+            &bot_token,
+            issue_comment_held(&issue, &params.run_id, &attempt_id, "cancelled"),
+        )
+        .await;
         finish_skipped_attempt(
             &tx,
             &issue,
@@ -269,6 +458,14 @@ pub async fn fix_one(job: FixIssueJob) {
                     "error",
                 ))
                 .await;
+            update_issue_status_comment(
+                &http,
+                &issue,
+                &scope,
+                &bot_token,
+                issue_comment_held(&issue, &params.run_id, &attempt_id, "patch_error"),
+            )
+            .await;
             finish_skipped_attempt_with_error(
                 &tx,
                 &issue,
@@ -299,6 +496,14 @@ pub async fn fix_one(job: FixIssueJob) {
                 "warn",
             ))
             .await;
+        update_issue_status_comment(
+            &http,
+            &issue,
+            &scope,
+            &bot_token,
+            issue_comment_held(&issue, &params.run_id, &attempt_id, "no_patch"),
+        )
+        .await;
         finish_skipped_attempt(
             &tx,
             &issue,
@@ -348,6 +553,14 @@ pub async fn fix_one(job: FixIssueJob) {
     {
         Ok(result) => result,
         Err(reason) => {
+            update_issue_status_comment(
+                &http,
+                &issue,
+                &scope,
+                &bot_token,
+                issue_comment_held(&issue, &params.run_id, &attempt_id, "patch_error"),
+            )
+            .await;
             finish_skipped_attempt_with_error(
                 &tx,
                 &issue,
@@ -376,6 +589,14 @@ pub async fn fix_one(job: FixIssueJob) {
                     "warn",
                 ))
                 .await;
+            update_issue_status_comment(
+                &http,
+                &issue,
+                &scope,
+                &bot_token,
+                issue_comment_held(&issue, &params.run_id, &attempt_id, "no_changes"),
+            )
+            .await;
             finish_skipped_attempt(
                 &tx,
                 &issue,
@@ -391,6 +612,14 @@ pub async fn fix_one(job: FixIssueJob) {
             return;
         }
         Err(e) => {
+            update_issue_status_comment(
+                &http,
+                &issue,
+                &scope,
+                &bot_token,
+                issue_comment_error(&issue, &params.run_id, &attempt_id),
+            )
+            .await;
             finish_error_attempt(
                 &tx,
                 &issue,
@@ -413,6 +642,14 @@ pub async fn fix_one(job: FixIssueJob) {
 
     if let Some(ref smith) = agents.smith {
         if cancelled(&params) {
+            update_issue_status_comment(
+                &http,
+                &issue,
+                &scope,
+                &bot_token,
+                issue_comment_held(&issue, &params.run_id, &attempt_id, "cancelled"),
+            )
+            .await;
             finish_skipped_attempt(
                 &tx,
                 &issue,
@@ -531,6 +768,14 @@ pub async fn fix_one(job: FixIssueJob) {
                         ))
                         .await;
                     let skip_reason = format!("confidence_{sconf}");
+                    update_issue_status_comment(
+                        &http,
+                        &issue,
+                        &scope,
+                        &bot_token,
+                        issue_comment_held(&issue, &params.run_id, &attempt_id, &skip_reason),
+                    )
+                    .await;
                     let _ = finish_attempt(IssueAttemptFinish {
                         attempt_id: &attempt_id,
                         status: IssueAttemptStatus::Skipped,
@@ -562,6 +807,14 @@ pub async fn fix_one(job: FixIssueJob) {
     }
 
     if cancelled(&params) {
+        update_issue_status_comment(
+            &http,
+            &issue,
+            &scope,
+            &bot_token,
+            issue_comment_held(&issue, &params.run_id, &attempt_id, "cancelled"),
+        )
+        .await;
         finish_skipped_attempt(
             &tx,
             &issue,
@@ -680,6 +933,14 @@ pub async fn fix_one(job: FixIssueJob) {
     }
 
     if cancelled(&params) {
+        update_issue_status_comment(
+            &http,
+            &issue,
+            &scope,
+            &bot_token,
+            issue_comment_held(&issue, &params.run_id, &attempt_id, "cancelled"),
+        )
+        .await;
         finish_skipped_attempt(
             &tx,
             &issue,
@@ -706,6 +967,14 @@ pub async fn fix_one(job: FixIssueJob) {
                     "warn",
                 ))
                 .await;
+            update_issue_status_comment(
+                &http,
+                &issue,
+                &scope,
+                &bot_token,
+                issue_comment_held(&issue, &params.run_id, &attempt_id, "no_changes"),
+            )
+            .await;
             finish_skipped_attempt_with_error(
                 &tx,
                 &issue,
@@ -722,6 +991,14 @@ pub async fn fix_one(job: FixIssueJob) {
             return;
         }
         Err(e) => {
+            update_issue_status_comment(
+                &http,
+                &issue,
+                &scope,
+                &bot_token,
+                issue_comment_error(&issue, &params.run_id, &attempt_id),
+            )
+            .await;
             finish_error_attempt(
                 &tx,
                 &issue,
@@ -760,6 +1037,14 @@ pub async fn fix_one(job: FixIssueJob) {
     {
         Ok(outcome) => outcome,
         Err(e) => {
+            update_issue_status_comment(
+                &http,
+                &issue,
+                &scope,
+                &bot_token,
+                issue_comment_error(&issue, &params.run_id, &attempt_id),
+            )
+            .await;
             finish_error_attempt(
                 &tx,
                 &issue,
@@ -802,6 +1087,21 @@ pub async fn fix_one(job: FixIssueJob) {
         (cost * 1_000_000.0) as i64,
         std::sync::atomic::Ordering::Relaxed,
     );
+    update_issue_status_comment(
+        &http,
+        &issue,
+        &scope,
+        &bot_token,
+        issue_comment_fixed(
+            &issue,
+            &params.run_id,
+            &attempt_id,
+            pr_number,
+            pr["html_url"].as_str().unwrap_or(""),
+            &test,
+        ),
+    )
+    .await;
 
     let _ = tx
         .send(alog(
