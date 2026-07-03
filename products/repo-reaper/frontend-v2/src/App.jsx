@@ -455,10 +455,14 @@ function attemptReason(attempt) {
     return `Opened PR #${attempt.pr_number || ""}`.trim();
   }
   if (skipReason === "no_changes") {
-    return "No commit-ready diff was produced, so RepoReaper did not open an empty PR.";
+    return error
+      ? `No commit-ready diff was produced, so RepoReaper did not open an empty PR. ${error}`
+      : "No commit-ready diff was produced, so RepoReaper did not open an empty PR.";
   }
   if (skipReason) {
-    return `Held: ${humanizeReason(skipReason)}.`;
+    return error
+      ? `Held: ${humanizeReason(skipReason)}. ${error}`
+      : `Held: ${humanizeReason(skipReason)}.`;
   }
   if (error) {
     return error;

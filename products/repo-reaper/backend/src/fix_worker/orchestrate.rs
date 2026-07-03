@@ -489,10 +489,15 @@ pub async fn fix_one(job: FixIssueJob) {
         .map(|patch| patch.trim().is_empty())
         .unwrap_or(true)
     {
+        let explanation = result["explanation"]
+            .as_str()
+            .unwrap_or("")
+            .trim()
+            .to_string();
         let _ = tx
             .send(alog(
                 &agents.reaper,
-                &format!("No patch: {}", result["explanation"].as_str().unwrap_or("")),
+                &format!("No patch: {explanation}"),
                 "warn",
             ))
             .await;
@@ -504,11 +509,16 @@ pub async fn fix_one(job: FixIssueJob) {
             issue_comment_held(&issue, &params.run_id, &attempt_id, "no_patch"),
         )
         .await;
-        finish_skipped_attempt(
+        finish_skipped_attempt_with_error(
             &tx,
             &issue,
             &attempt_id,
             "no_patch",
+            if explanation.is_empty() {
+                None
+            } else {
+                Some(&explanation)
+            },
             cost,
             None,
             0,
