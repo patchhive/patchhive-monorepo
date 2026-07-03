@@ -2,6 +2,7 @@ use anyhow::{anyhow, Result};
 use patchhive_github_pr::{github_token_from_env, GitHubPrClient};
 use reqwest::Client;
 use serde_json::Value;
+use std::collections::BTreeSet;
 use std::time::Duration;
 use tokio::time::sleep;
 
@@ -246,6 +247,105 @@ pub async fn gh_check_duplicate(
     false
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OpenLinkedPr {
+    pub number: i64,
+    pub title: String,
+    pub html_url: String,
+}
+
+impl OpenLinkedPr {
+    pub fn detail(&self) -> String {
+        let mut detail = format!("Existing open linked PR #{}", self.number);
+        if !self.title.trim().is_empty() {
+            detail.push_str(&format!(": {}", self.title.trim()));
+        }
+        if !self.html_url.trim().is_empty() {
+            detail.push_str(&format!(" ({})", self.html_url.trim()));
+        }
+        detail
+    }
+}
+
+fn open_linked_pr_from_issue(issue: &Value) -> Option<OpenLinkedPr> {
+    if !issue["pull_request"].is_object() || issue["state"].as_str() != Some("open") {
+        return None;
+    }
+
+    Some(OpenLinkedPr {
+        number: issue["number"].as_i64()?,
+        title: issue["title"].as_str().unwrap_or("").to_string(),
+        html_url: issue["html_url"].as_str().unwrap_or("").to_string(),
+    })
+}
+
+fn pr_number_from_url(url: &str) -> Option<i64> {
+    let (_, tail) = url.split_once("/pulls/")?;
+    tail.split(|ch: char| !ch.is_ascii_digit())
+        .next()
+        .and_then(|value| value.parse::<i64>().ok())
+}
+
+fn collect_linked_pr_candidates(event: &Value, candidates: &mut BTreeSet<i64>) {
+    for value in [
+        &event["source"]["issue"]["pull_request"]["url"],
+        &event["source"]["issue"]["html_url"],
+        &event["subject"]["url"],
+        &event["subject"]["html_url"],
+        &event["pull_request"]["url"],
+        &event["pull_request"]["html_url"],
+    ] {
+        if let Some(url) = value.as_str() {
+            if let Some(number) = pr_number_from_url(url) {
+                candidates.insert(number);
+            }
+        }
+    }
+}
+
+fn open_linked_pr_from_timeline_event(event: &Value) -> Option<OpenLinkedPr> {
+    open_linked_pr_from_issue(&event["source"]["issue"])
+        .or_else(|| open_linked_pr_from_issue(&event["subject"]))
+        .or_else(|| open_linked_pr_from_issue(&event["pull_request"]))
+}
+
+pub async fn gh_find_open_linked_pr(
+    http: &Client,
+    repo: &str,
+    number: i64,
+    token: Option<&str>,
+) -> Result<Option<OpenLinkedPr>> {
+    let timeline = gh_get(
+        http,
+        &format!("/repos/{repo}/issues/{number}/timeline"),
+        &[("per_page", "100")],
+        token,
+    )
+    .await?;
+
+    let mut candidates = BTreeSet::new();
+    for event in timeline.as_array().into_iter().flatten() {
+        if let Some(pr) = open_linked_pr_from_timeline_event(event) {
+            return Ok(Some(pr));
+        }
+        collect_linked_pr_candidates(event, &mut candidates);
+    }
+
+    let client = pr_client(http, token);
+    for pr_number in candidates {
+        let pr = client.fetch_pull_request(repo, pr_number).await?;
+        if pr.state == "open" {
+            return Ok(Some(OpenLinkedPr {
+                number: pr.number,
+                title: pr.title,
+                html_url: pr.html_url,
+            }));
+        }
+    }
+
+    Ok(None)
+}
+
 pub async fn gh_comment_issue(
     http: &Client,
     repo: &str,
@@ -473,6 +573,59 @@ pub async fn gh_delete_branch(
         token,
     )
     .await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{collect_linked_pr_candidates, open_linked_pr_from_timeline_event};
+    use serde_json::json;
+    use std::collections::BTreeSet;
+
+    #[test]
+    fn timeline_event_reports_open_source_pull_request() {
+        let event = json!({
+            "event": "cross-referenced",
+            "source": {
+                "issue": {
+                    "number": 42,
+                    "title": "fix existing bug",
+                    "state": "open",
+                    "html_url": "https://github.com/acme/project/pull/42",
+                    "pull_request": {
+                        "url": "https://api.github.com/repos/acme/project/pulls/42"
+                    }
+                }
+            }
+        });
+
+        let pr = open_linked_pr_from_timeline_event(&event).expect("open PR should be detected");
+        assert_eq!(pr.number, 42);
+        assert_eq!(pr.title, "fix existing bug");
+        assert_eq!(pr.html_url, "https://github.com/acme/project/pull/42");
+    }
+
+    #[test]
+    fn timeline_event_ignores_closed_source_pull_request_but_collects_candidate() {
+        let event = json!({
+            "event": "cross-referenced",
+            "source": {
+                "issue": {
+                    "number": 42,
+                    "title": "old fix",
+                    "state": "closed",
+                    "html_url": "https://github.com/acme/project/pull/42",
+                    "pull_request": {
+                        "url": "https://api.github.com/repos/acme/project/pulls/42"
+                    }
+                }
+            }
+        });
+        let mut candidates = BTreeSet::new();
+
+        assert!(open_linked_pr_from_timeline_event(&event).is_none());
+        collect_linked_pr_candidates(&event, &mut candidates);
+        assert!(candidates.contains(&42));
+    }
 }
 
 pub async fn gh_default_branch(http: &Client, repo: &str, token: Option<&str>) -> Option<String> {

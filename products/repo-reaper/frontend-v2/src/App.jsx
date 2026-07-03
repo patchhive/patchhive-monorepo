@@ -415,6 +415,11 @@ function runTargetLabel(run) {
 }
 
 function humanizeReason(value) {
+  const labels = {
+    existing_pr: "existing PR",
+    linked_pr_check_failed: "linked PR check failed",
+  };
+  if (labels[value]) return labels[value];
   return String(value || "")
     .replace(/[_-]+/g, " ")
     .replace(/\s+/g, " ")
@@ -504,6 +509,12 @@ function attemptStopPoint(attempt) {
   }
   if (skipReason === "duplicate") {
     return { label: "Duplicate guard", tone: "amber", meta: "Existing PatchHive branch or PR coverage was detected." };
+  }
+  if (skipReason === "existing_pr") {
+    return { label: "Existing PR", tone: "amber", meta: "An open linked pull request already covers this issue." };
+  }
+  if (skipReason === "linked_pr_check_failed") {
+    return { label: "PR guard", tone: "red", meta: "RepoReaper could not verify linked PR state, so it held instead of risking a duplicate PR." };
   }
   if (skipReason === "cancelled") {
     return { label: "Cancelled", tone: "red", meta: "The attempt was stopped before it could finish." };

@@ -199,6 +199,11 @@ Run history keeps these modes visible:
 - **Cost budget**: `COST_BUDGET_USD` caps AI spend per run (0 = uncapped, with a warning)
 - **Concurrency limiting**: Semaphore-based; configurable per run
 - **Only one run at a time**: `runActive` atomic flag prevents concurrent hunts
+- **Existing PR guard**: before starting patch generation, RepoReaper checks the
+  GitHub issue timeline for open pull requests already linked to the issue. If
+  one exists, RepoReaper records a held attempt and does not open a competing PR.
+  If the linked-PR check cannot be verified, RepoReaper holds instead of risking
+  duplicate maintainer noise.
 - **File system confinement**: `collect_files_selective` validates that all paths stay within the repo root; any path that canonicalizes outside is silently skipped
 - **No secrets in output**: API keys are masked in config responses
 - **Temporary work directories**: cleaned up after each attempt

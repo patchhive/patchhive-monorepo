@@ -9,7 +9,9 @@ use crate::db::{
     finish_attempt, save_rejected_patch, start_attempt, track_pr, update_perf, IssueAttemptFinish,
     IssueAttemptStart, IssueAttemptStatus,
 };
-use crate::github::{gh_check_duplicate, gh_upsert_repo_reaper_issue_comment};
+use crate::github::{
+    gh_check_duplicate, gh_find_open_linked_pr, gh_upsert_repo_reaper_issue_comment, OpenLinkedPr,
+};
 
 use super::context::{clone_issue_repo, load_enriched_issue_context, select_code_context};
 use super::memory::submit_smith_rejection_candidate;
@@ -98,11 +100,20 @@ fn public_hold_reason(reason: &str) -> String {
     match reason {
         "cancelled" => "The run was cancelled before RepoReaper could finish this attempt.".to_string(),
         "duplicate" => "An existing PatchHive branch or pull request already appears to cover this issue.".to_string(),
+        "existing_pr" => "An existing open pull request is already linked to this issue, so RepoReaper will not compete with it.".to_string(),
+        "linked_pr_check_failed" => "RepoReaper could not verify whether this issue already has an open linked pull request, so it held the attempt instead of risking a duplicate PR.".to_string(),
         "no_changes" => "RepoReaper did not end with a commit-ready diff, so it did not open an empty pull request.".to_string(),
         "no_patch" => "RepoReaper could not produce a concrete patch for this issue from the available context.".to_string(),
         "patch_error" => "RepoReaper generated a candidate patch, but it could not apply cleanly enough to open a pull request.".to_string(),
         other => format!("RepoReaper held this issue before PR delivery: {other}."),
     }
+}
+
+fn existing_pr_detail(pr: &OpenLinkedPr) -> String {
+    format!(
+        "{}. RepoReaper will not open another pull request for an issue that already has active PR coverage.",
+        pr.detail()
+    )
 }
 
 fn issue_comment_attempting(issue: &serde_json::Value, run_id: &str, attempt_id: &str) -> String {
@@ -256,6 +267,96 @@ pub async fn fix_one(job: FixIssueJob) {
         .bot_user
         .clone()
         .unwrap_or_else(|| cfg("BOT_GITHUB_USER"));
+
+    match gh_find_open_linked_pr(&http, &scope.repo, scope.issue_num, Some(&bot_token)).await {
+        Ok(Some(pr)) => {
+            let detail = existing_pr_detail(&pr);
+            let _ = start_attempt(IssueAttemptStart {
+                attempt_id: &attempt_id,
+                run_id: &params.run_id,
+                target: &attempt_target,
+                reaper_agent: &agents.reaper.name,
+                smith_agent: agents.smith.as_ref().map(|smith| smith.name.as_str()),
+                gatekeeper_agent: &agents.gatekeeper.name,
+            });
+            update_issue_status_comment(
+                &http,
+                &issue,
+                &scope,
+                &bot_token,
+                issue_comment_held(&issue, &params.run_id, &attempt_id, "existing_pr"),
+            )
+            .await;
+            let _ = tx
+                .send(alog(
+                    &agents.reaper,
+                    &format!("[#{}] Existing open linked PR — skipping", scope.issue_num),
+                    "warn",
+                ))
+                .await;
+            finish_skipped_attempt_with_error(
+                &tx,
+                &issue,
+                &attempt_id,
+                "existing_pr",
+                Some(&detail),
+                cost,
+                None,
+                0,
+                &t_start,
+                &scope.work_path,
+            )
+            .await;
+            return;
+        }
+        Ok(None) => {}
+        Err(error) => {
+            let detail =
+                format!("Could not verify linked PR state before attempting a fix: {error}");
+            let _ = start_attempt(IssueAttemptStart {
+                attempt_id: &attempt_id,
+                run_id: &params.run_id,
+                target: &attempt_target,
+                reaper_agent: &agents.reaper.name,
+                smith_agent: agents.smith.as_ref().map(|smith| smith.name.as_str()),
+                gatekeeper_agent: &agents.gatekeeper.name,
+            });
+            update_issue_status_comment(
+                &http,
+                &issue,
+                &scope,
+                &bot_token,
+                issue_comment_held(
+                    &issue,
+                    &params.run_id,
+                    &attempt_id,
+                    "linked_pr_check_failed",
+                ),
+            )
+            .await;
+            let _ = tx
+                .send(alog(
+                    &agents.reaper,
+                    &format!("[#{}] Linked PR check failed — skipping", scope.issue_num),
+                    "warn",
+                ))
+                .await;
+            finish_skipped_attempt_with_error(
+                &tx,
+                &issue,
+                &attempt_id,
+                "linked_pr_check_failed",
+                Some(&detail),
+                cost,
+                None,
+                0,
+                &t_start,
+                &scope.work_path,
+            )
+            .await;
+            return;
+        }
+    }
 
     if gh_check_duplicate(
         &http,
