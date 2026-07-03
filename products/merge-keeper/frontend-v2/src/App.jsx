@@ -44,6 +44,11 @@ function asCount(value) {
   return Number.isFinite(number) ? number : 0;
 }
 
+function countLabel(count, singular, plural = `${singular}s`) {
+  const value = asCount(count);
+  return `${value} ${value === 1 ? singular : plural}`;
+}
+
 function timeAgo(value) {
   if (!value) {
     return "never";
@@ -500,8 +505,10 @@ function buildRadarItems(assessment, history, { includeSupportSignals = true } =
 function buildRadarFeed(assessment, history, health) {
   if (assessment) {
     const report = assessment.github_report;
+    const blockerCount = assessment.blockers?.length || 0;
+    const warningCount = assessment.warnings?.length || 0;
     return [
-      { text: `${assessment.blockers?.length || 0} blockers and ${assessment.warnings?.length || 0} warnings are active.`, tone: assessment.blockers?.length ? "red" : assessment.warnings?.length ? "amber" : "green" },
+      { text: `${countLabel(blockerCount, "blocker")} and ${countLabel(warningCount, "warning")} are active.`, tone: blockerCount ? "red" : warningCount ? "amber" : "green" },
       { text: report?.message || "GitHub reporting is optional for this call.", tone: reportTone(report) },
       { text: "ReviewBee, TrustGate, and RepoMemory integrations strengthen the final call when configured.", tone: "signal" },
     ];
