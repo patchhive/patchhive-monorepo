@@ -112,7 +112,7 @@ fn issue_comment_attempting(issue: &serde_json::Value, run_id: &str, attempt_id:
         **Run:** `{run_id}`\n\
         **Attempt:** `{attempt_id}`\n\
         {}\n\n\
-        RepoReaper will open a draft pull request if it produces a commit-ready diff. If it cannot, a final held/error status will be appended below.",
+        RepoReaper will open a draft pull request if it produces a commit-ready diff. If it cannot, a separate outcome comment will explain why.",
         issue_fixability_line(issue),
     )
 }
