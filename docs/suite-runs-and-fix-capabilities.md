@@ -52,6 +52,53 @@ Recommended vocabulary:
 
 Normal product screens should keep scan and fix controls visually distinct. A button that says "Scan repo" should never mutate code. A button that says "Create refactor PR", "Apply dependency update", or "Fix eligible finding" can mutate, but only after the approval and guardrail path is visible.
 
+## Suite Schedules
+
+Scheduling is part of the suite-run model.
+
+The v1 product surfaces proved that schedules matter, but v2 should avoid
+duplicating schedule builders in every product. HiveCore should provide the
+schedule board and `patchhive-backend` should own schedule storage, due-claiming,
+dispatch, and audit events.
+
+A suite schedule is a saved trigger for a product-owned action:
+
+- read-only scan schedules can run automatically when policy allows
+- mutating fix schedules should normally queue approval before dispatch
+- each scheduled execution creates a normal product run and a suite event
+- schedule history should link to the exact product run detail
+- missed, skipped, blocked, or failed scheduled executions should be visible
+
+Products should advertise which actions are scheduleable through capability
+metadata. Scheduleability does not bypass product safety boundaries; it only
+means the suite backend can trigger that action on a cadence.
+
+Recommended schedule action metadata:
+
+```json
+{
+  "id": "run_scan",
+  "label": "Run scan",
+  "scheduleable": true,
+  "read_only": true,
+  "mutates_repo": false,
+  "requires_approval": false,
+  "default_cadences": ["daily", "weekly"],
+  "required_scopes": ["github:metadata:read"]
+}
+```
+
+Recommended execution rules:
+
+- Manual runs and scheduled runs share the same run ID format.
+- Scheduled runs should include `trigger: "schedule"` and `schedule_id`.
+- A disabled product, unhealthy product, missing credential, denylist hit, or
+  approval requirement should create a skipped/blocked event, not a silent no-op.
+- HiveCore should let the operator pause all schedules, pause a product's
+  schedules, or pause one schedule.
+- Product-local schedule endpoints may remain while gateway mode exists, but new
+  v2 schedule UX should use suite schedules.
+
 ## Product Roles
 
 Products should keep their specialist identity inside the suite run.
@@ -165,6 +212,7 @@ The long-term backend should own:
 - dispatch logs
 - product availability and health checks
 - shared credentials and scopes
+- suite schedules and schedule execution events
 - suite-wide rate limits and PR caps
 
 Products should own:

@@ -141,7 +141,7 @@ HiveCore owns the operator cockpit:
 - suite-wide run history
 - credential status and rotation workflows
 - cross-product handoffs
-- schedules and orchestration controls
+- suite-wide schedules and orchestration controls
 
 The backend owns the authority:
 
@@ -150,6 +150,7 @@ The backend owns the authority:
 - product registry
 - product route mounting
 - product run dispatch
+- schedule claiming and dispatch
 - SQLite storage
 - rate limits
 - audit events
@@ -220,6 +221,63 @@ Shared suite APIs should live outside product namespaces:
 ```
 
 Product frontends should not need to know whether a request is handled by an in-process product module or by temporary gateway proxying.
+
+## Suite Scheduling
+
+Scheduling should be a suite-level capability in v2, not a separate schedule UI
+rebuilt inside every product.
+
+SignalHive and RepoReaper already prove that product-local schedules are useful,
+but the long-term owner should be the unified backend with HiveCore as the
+operator surface:
+
+- HiveCore shows schedules, cadence, next run, last run, owner product, target
+  scope, enabled state, and recent failures.
+- `patchhive-backend` stores suite schedule records, claims due schedules, and
+  dispatches the product-owned action through the same capability contract used
+  for manual runs.
+- Products advertise scheduleable actions in their manifests or capabilities,
+  including whether the action is read-only, mutating, requires approval, opens
+  PRs, or needs specific credentials.
+- A scheduled execution creates the same product run record and suite event
+  trail as a manual click. The UI should never have a separate "scheduled run"
+  history that cannot be inspected like a normal run.
+- Product-local schedule endpoints can remain during gateway mode for backward
+  compatibility, but new v2 schedule UX should point at `/api/schedules`.
+
+Minimum suite schedule fields:
+
+```json
+{
+  "id": "sched_01K4Y92A3B1M3A9JX9Y3R5J0A",
+  "name": "daily-maintenance-scan",
+  "product": "signal-hive",
+  "action_id": "run_scan",
+  "cadence": "daily",
+  "cron": "0 6 * * *",
+  "timezone": "America/Indiana/Indianapolis",
+  "enabled": true,
+  "target_scope": {
+    "mode": "discovery",
+    "query": "bug triage, maintenance",
+    "language": "rust"
+  },
+  "approval_policy": "read_only_auto",
+  "next_run_at": "2026-07-04T10:00:00Z",
+  "last_run_id": "run_01K4Y91P8V3M0M7XJZQ8Q4V4FP"
+}
+```
+
+Scheduling defaults:
+
+- read-only scan schedules may run automatically when credentials and allowlist
+  rules are valid
+- mutating schedules should create approval-needed dispatches unless the suite
+  policy explicitly permits an automated fix lane
+- missed schedules should be visible as events instead of silently skipped
+- schedules should be pausable suite-wide and per product
+- schedules should respect global PR caps, rate limits, allowlists, denylists,
+  opt-outs, and product health
 
 ## Product Registry Manifests
 

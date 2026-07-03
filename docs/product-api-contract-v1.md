@@ -128,6 +128,11 @@ SSE and other event streams should expose a consistent payload shape:
 ## Webhook / Async Callback Rules
 
 - Webhooks and scheduled jobs should create the same `run_id` style as manual runs.
+- Scheduled jobs should include trigger metadata such as `trigger: "schedule"`,
+  `schedule_id`, and the schedule owner product so HiveCore can trace them.
+- Product-local schedule endpoints can remain during gateway migration, but v2
+  schedule creation should converge on suite-level `/api/schedules` records that
+  dispatch product-owned actions.
 - Async callbacks should be idempotent when possible.
 - State changes should be inspectable later through a normal history or runs endpoint.
 - HiveCore should be able to poll or subscribe without product-specific translation glue.
