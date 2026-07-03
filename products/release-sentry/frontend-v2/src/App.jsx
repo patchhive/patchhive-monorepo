@@ -548,7 +548,7 @@ function checkTone(level) {
   return "green";
 }
 
-function ChecksSurface({ history, onClearRun, overview, runtime, run }) {
+function ChecksSurface({ history, overview, runtime, run }) {
   const health = runtime.health || {};
   const checks = runtime.checks || [];
   const warnings = checks.filter((check) => check.level === "warn" || check.level === "error").length;
@@ -568,7 +568,6 @@ function ChecksSurface({ history, onClearRun, overview, runtime, run }) {
           <p className="subline">Backend health, GitHub release permissions, saved run counts, and startup checks.</p>
         </div>
         <div className="actions">
-          {run && <button className="btn" onClick={onClearRun} type="button">Clear run</button>}
           <button className="btn" onClick={runtime.refresh} type="button">{runtime.loading ? "Refreshing..." : "Refresh"}</button>
         </div>
       </div>
@@ -771,7 +770,7 @@ export default function App() {
           run={run}
         />
       )}
-      {activeTab === "checks" && <ChecksSurface history={history} onClearRun={clearRun} overview={overview} runtime={runtime} run={run} />}
+      {activeTab === "checks" && <ChecksSurface history={history} overview={overview} runtime={runtime} run={run} />}
     </ProductV2Shell>
   );
 }
