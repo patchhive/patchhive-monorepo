@@ -129,7 +129,14 @@ pub async fn publish_pull_request(
             .collect::<String>(),
         scope.issue_num,
     );
-    git_commit_push(&scope.work_path, &scope.branch, &commit_msg).await?;
+    git_commit_push(
+        &scope.work_path,
+        &scope.branch,
+        &commit_msg,
+        Some(bot_user),
+        Some(bot_token),
+    )
+    .await?;
 
     let files_changed: Vec<String> = result["files_changed"]
         .as_array()

@@ -61,6 +61,20 @@ async fn runcmd_ok(args: &[&str], cwd: Option<&Path>) -> Result<String> {
     Ok(String::from_utf8_lossy(&out.stdout).to_string())
 }
 
+async fn runcmd_ok_with_env(
+    args: &[&str],
+    cwd: Option<&Path>,
+    envs: &[(&str, &str)],
+) -> Result<String> {
+    let out = runcmd_with_env(args, cwd, envs).await?;
+    if !out.status.success() {
+        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+        let stdout = String::from_utf8_lossy(&out.stdout).to_string();
+        return Err(anyhow!("{stderr}{stdout}"));
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).to_string())
+}
+
 fn shell_single_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\"'\"'"))
 }
@@ -109,6 +123,8 @@ pub async fn git_clone(
     let clone = runcmd_with_env(
         &[
             "git",
+            "-c",
+            "credential.helper=",
             "clone",
             "--depth=10",
             fork_url,
@@ -146,11 +162,40 @@ pub async fn has_changes(dest: &Path) -> Result<bool> {
     Ok(!status.trim().is_empty())
 }
 
-pub async fn git_commit_push(dest: &Path, branch: &str, msg: &str) -> Result<()> {
+pub async fn git_commit_push(
+    dest: &Path,
+    branch: &str,
+    msg: &str,
+    bot_user: Option<&str>,
+    bot_token: Option<&str>,
+) -> Result<()> {
+    let user = bot_user
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| env_str("BOT_GITHUB_USER"));
+    let token = bot_token
+        .map(|s| s.to_string())
+        .filter(|value| !value.trim().is_empty())
+        .or_else(github_token_from_env)
+        .unwrap_or_default();
+    let askpass_user = if user.trim().is_empty() {
+        "x-access-token"
+    } else {
+        user.as_str()
+    };
+    let (auth_dir, askpass_path) = write_askpass_script(askpass_user, &token)?;
     runcmd_ok(&["git", "add", "-A"], Some(dest)).await?;
     runcmd_ok(&["git", "commit", "-m", msg], Some(dest)).await?;
-    runcmd_ok(&["git", "push", "origin", branch], Some(dest)).await?;
-    Ok(())
+    let push = runcmd_ok_with_env(
+        &["git", "-c", "credential.helper=", "push", "origin", branch],
+        Some(dest),
+        &[
+            ("GIT_ASKPASS", askpass_path.to_str().unwrap_or("")),
+            ("GIT_TERMINAL_PROMPT", "0"),
+        ],
+    )
+    .await;
+    let _ = std::fs::remove_dir_all(&auth_dir);
+    push.map(|_| ())
 }
 
 pub async fn git_reset(dest: &Path) -> Result<()> {

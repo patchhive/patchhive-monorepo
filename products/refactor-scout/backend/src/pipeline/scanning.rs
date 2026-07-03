@@ -195,6 +195,8 @@ async fn clone_github_repo(target: &GitHubRepoTarget, destination: &Path) -> Res
     let timeout_secs = clone_timeout_secs();
     let mut command = Command::new("git");
     command
+        .arg("-c")
+        .arg("credential.helper=")
         .arg("clone")
         .arg("--depth")
         .arg("1")

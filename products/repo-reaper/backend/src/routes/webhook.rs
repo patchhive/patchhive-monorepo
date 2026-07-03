@@ -395,7 +395,10 @@ async fn webhook_pr_comment(state: AppState, repo: &str, issue: Value, comment: 
         "fix: follow-up based on maintainer feedback (re #{})",
         pr_number
     );
-    if git_commit_push(&work_dir, &branch, &msg).await.is_err() {
+    if git_commit_push(&work_dir, &branch, &msg, Some(&bot_user), Some(&bot_token))
+        .await
+        .is_err()
+    {
         return;
     }
 

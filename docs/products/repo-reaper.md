@@ -59,7 +59,7 @@ See [Shared Squad architecture](../shared-squad-architecture.md).
 ### Phase 3 — Fix (Reaper / Judge / Smith / Gatekeeper)
 - For each issue, concurrently (limited by a semaphore of `concurrency`):
   1. **Fork** the upstream repo via GitHub API
-  2. **Clone** (depth=10) using `GIT_ASKPASS` with the bot token
+  2. **Clone** (depth=10) using `GIT_ASKPASS` with the bot token and no ambient Git credential helper
   3. **Branch** (`reaper/issue-{N}`)
   4. **Comment** on the issue announcing the hunt
   5. **Judge** selects relevant files by analysing the repo structure
@@ -67,7 +67,7 @@ See [Shared Squad architecture](../shared-squad-architecture.md).
   7. **Self-heal**: if `git apply --check` fails, the Reaper retries with the error context
   8. **Smith** reviews the patch — if confidence < `MIN_REVIEW_CONFIDENCE`, the patch is rejected (and optionally queued as a FailGuard candidate in RepoMemory)
   9. **Gatekeeper** runs tests in a sandboxed Docker container (pytest, cargo, go, npm) with up to `retry_count` retries
-  10. **Gatekeeper** commits + pushes the branch and opens a PR (draft if tests fail, full PR if they pass)
+  10. **Gatekeeper** commits + pushes the branch with the explicit bot token and opens a PR (draft if tests are not run or fail, full PR if they pass)
 
 ### Phase 4 — Finalize
 - Records the run summary: total fixed, attempted, cost

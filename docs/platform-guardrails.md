@@ -67,7 +67,22 @@ See:
 - [Product API Contract v1](/home/coemedia/Documents/code/patchhive/docs/product-api-contract-v1.md)
 - [Suite runs and fix capabilities](/home/coemedia/Documents/code/patchhive/docs/suite-runs-and-fix-capabilities.md)
 
-## 4. Implementation Notes
+## 4. Git Credential Isolation
+
+PatchHive products must not inherit a developer machine's ambient Git credentials.
+
+Any product that runs `git clone`, `git fetch`, `git push`, or similar Git-over-HTTPS operations should:
+
+- pass credentials explicitly for that operation when credentials are required
+- use `GIT_ASKPASS` or an equivalent non-interactive credential path instead of relying on global Git credential helpers
+- set `GIT_TERMINAL_PROMPT=0` so backend workers never hang waiting for a shell prompt
+- run Git commands with `-c credential.helper=` when the operation must not use cached desktop credentials
+- keep tokens out of command-line arguments, logs, PR bodies, SSE events, and saved run history
+- report the authenticated identity mismatch clearly when a bot token cannot push to the expected fork
+
+RepoReaper is the first write-capable product to enforce this because it opens outbound PRs. RefactorScout applies the same isolation to temporary read-only GitHub clones so local credentials are not accidentally consulted during public repo scans.
+
+## 5. Implementation Notes
 
 Current status:
 
