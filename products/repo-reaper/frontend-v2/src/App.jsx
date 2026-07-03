@@ -521,6 +521,32 @@ function streamHasRunData(stream) {
   );
 }
 
+function clearQueryParam(name) {
+  if (typeof window === "undefined") {
+    return;
+  }
+  const nextParams = new URLSearchParams(window.location.search);
+  if (!nextParams.has(name)) {
+    return;
+  }
+  nextParams.delete(name);
+  const query = nextParams.toString();
+  window.history.replaceState(
+    null,
+    "",
+    `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash || ""}`,
+  );
+}
+
+function runStreamCost(stream, latest = {}) {
+  if (stream?.done?.cost != null) {
+    return stream.done.cost;
+  }
+  if (streamHasRunData(stream) && stream?.runCost != null) {
+    return stream.runCost;
+  }
+  return latest.total_cost_usd;
+}
 
 function buildTopline(health, config, stream, history) {
   const latest = newestRun(history) || {};
@@ -550,7 +576,7 @@ function buildMetrics(health, stream, history, rejected, lifetimeCost, selectedR
     { label: "Patch confidence", value: avgConfidence ? String(avgConfidence) : "-", tone: avgConfidence >= 70 ? "ok" : avgConfidence ? "warn" : "sig", sub: "visible attempts" },
     { label: "Validation", value: attempted ? `${fixed}/${attempted}` : "0/0", tone: fixed ? "ok" : attempted ? "warn" : "sig", sub: "PR attempts" },
     { label: "Rejected", value: String((rejected || []).length), tone: rejected?.length ? "warn" : "ok", sub: "Smith feedback" },
-    { label: "Run cost", value: formatMoney(stream.runCost || latest.total_cost_usd), tone: "sig", sub: `${formatMoney(lifetimeCost || health?.lifetime_cost)} lifetime` },
+    { label: "Run cost", value: formatMoney(runStreamCost(stream, latest)), tone: "sig", sub: `${formatMoney(lifetimeCost || health?.lifetime_cost)} lifetime` },
   ];
 }
 
@@ -585,15 +611,60 @@ function buildRail(health, config, stream, history, selectedRun, watchMode) {
       items: [
         { label: "Repository", value: targetRepo || latest.id || "none" },
         { label: "Run confidence", value: issueScore(target) ? `${issueScore(target)}%` : latest.status || "ready", large: true, tone: issueScore(target) >= 70 ? "green" : metricToneFromStatus(latest.status) },
-        { label: "Cost", value: formatMoney(stream.runCost || latest.total_cost_usd) },
+        { label: "Cost", value: formatMoney(runStreamCost(stream, latest)) },
       ],
     },
   };
 }
 
-function buildRunRadarItems(history) {
+function buildLiveRunRadarItem(stream) {
+  if (!streamHasRunData(stream)) {
+    return null;
+  }
+  const issues = normalizeIssues(stream.issues);
+  const fixedFromIssues = issues.filter((item) => item.status === "fixed" || item.pr_url || item.pr?.url).length;
+  const fixed = asCount(stream.done?.total_fixed ?? fixedFromIssues);
+  const attempted = asCount(stream.done?.total_attempted ?? issues.length);
+  const status = stream.done?.status || (stream.running ? "running" : stream.phase || "visible");
+  const cost = runStreamCost(stream);
+  const lastLog = Array.isArray(stream.logs) && stream.logs.length
+    ? stream.logs[stream.logs.length - 1]?.msg || stream.logs[stream.logs.length - 1]?.message
+    : "";
+  const tone = status === "success" || status === "done"
+    ? "green"
+    : status === "error" || status === "failed"
+      ? "red"
+      : status === "warn" || status === "partial" || status === "running"
+        ? "amber"
+        : "signal";
+  const id = stream.done?.run_id || (stream.running ? "repo-reaper-live-run" : "repo-reaper-visible-run");
+  return {
+    detail: stream.done?.run_id || "Active RepoReaper hunt",
+    gain: status,
+    gainMeta: attempted ? `${fixed}/${attempted} fixed` : stream.running ? "scanning" : "visible run",
+    id,
+    label: stream.done?.run_id ? stream.done.run_id.slice(0, 6).toUpperCase() : "LIVE",
+    minWindow: 7,
+    position: POSITIONS[0],
+    stats: [
+      { label: "Status", value: status },
+      { label: "Fixed", value: String(fixed) },
+      { label: "Attempted", value: String(attempted) },
+      { label: "Cost", value: formatMoney(cost) },
+      { label: "Age", value: "now" },
+    ],
+    summary: lastLog || (attempted ? `${fixed} fixed of ${attempted} attempted in the visible RepoReaper run.` : "RepoReaper is preparing the visible run."),
+    title: stream.done?.run_id || "Live RepoReaper run",
+    tone,
+    vector: stream.running ? "live run" : "latest run",
+    vectorTone: tone === "red" || tone === "amber" ? "warn" : "",
+  };
+}
+
+function buildRunRadarItems(history, stream) {
+  const liveItem = buildLiveRunRadarItem(stream);
   if (!history.length) {
-    return [{
+    return liveItem ? [liveItem] : [{
       detail: "No autonomous run yet",
       gain: "standby",
       gainMeta: "guarded writes",
@@ -613,7 +684,7 @@ function buildRunRadarItems(history) {
       vector: "READY",
     }];
   }
-  return history.map((run, index) => {
+  const savedItems = history.map((run, index) => {
     const minWindow = radarWindowFromTimestamp(run.started_at || run.created_at);
     if (!minWindow) {
       return null;
@@ -643,6 +714,7 @@ function buildRunRadarItems(history) {
       vectorTone: tone === "red" || tone === "amber" ? "warn" : "",
     };
   }).filter(Boolean);
+  return liveItem ? [liveItem, ...savedItems.filter((item) => item.id !== liveItem.id)] : savedItems;
 }
 
 function buildRadarFeed(stream, history, config) {
@@ -665,7 +737,10 @@ function StatusBanner({ tone = "signal", children }) {
 }
 
 function RunRadar({ config, history, stream }) {
-  const items = useMemo(() => buildRunRadarItems(history), [history]);
+  const latestRunId = history[0]?.id || "empty";
+  const visibleRunId = stream.done?.run_id || (stream.running ? "live" : latestRunId);
+  const radarKey = `${visibleRunId}:${latestRunId}`;
+  const items = useMemo(() => buildRunRadarItems(history, stream), [history, stream]);
   const feed = useMemo(() => buildRadarFeed(stream, history, config), [stream, history, config]);
   return (
     <SuiteRadar
@@ -675,6 +750,7 @@ function RunRadar({ config, history, stream }) {
       gainLabel="Status"
       itemQueryParam="run"
       items={items}
+      key={radarKey}
       signalLabel={history.length ? "runs" : "standby"}
       vectorLabel="Selected run"
     />
@@ -2025,6 +2101,10 @@ export default function App() {
     const controller = new AbortController();
     abortRef.current = controller;
     setError("");
+    setSelectedRun(null);
+    if (nextTab === "mission") {
+      clearQueryParam("run");
+    }
     setter({ ...createInitialStream(), running: true, phase: "scan" });
     setActiveTab(nextTab);
     try {
@@ -2106,6 +2186,7 @@ export default function App() {
   function clearRun(scope = "all") {
     if (scope === "mission" || scope === "all") {
       setStream(createInitialStream());
+      clearQueryParam("run");
     }
     if (scope === "dryrun" || scope === "all") {
       setDryStream(createInitialStream());
