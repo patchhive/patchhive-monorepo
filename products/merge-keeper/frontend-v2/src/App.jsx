@@ -501,9 +501,9 @@ function buildRadarFeed(assessment, history, health) {
   if (assessment) {
     const report = assessment.github_report;
     return [
-      { text: assessment.summary || "MergeKeeper completed the readiness assessment.", tone: readinessTone(assessment.readiness) },
       { text: `${assessment.blockers?.length || 0} blockers and ${assessment.warnings?.length || 0} warnings are active.`, tone: assessment.blockers?.length ? "red" : assessment.warnings?.length ? "amber" : "green" },
       { text: report?.message || "GitHub reporting is optional for this call.", tone: reportTone(report) },
+      { text: "ReviewBee, TrustGate, and RepoMemory integrations strengthen the final call when configured.", tone: "signal" },
     ];
   }
   return [
