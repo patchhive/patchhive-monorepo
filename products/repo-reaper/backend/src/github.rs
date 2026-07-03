@@ -290,7 +290,7 @@ fn repo_reaper_issue_marker(
 
 const REPO_REAPER_OLD_COMMENT_FOOTER: &str = "Generated autonomously by **RepoReaper by [PatchHive](https://github.com/patchhive)**. This managed comment is updated instead of posting a new status comment on each retry.";
 const REPO_REAPER_TIMELINE_COMMENT_FOOTER: &str = "Generated autonomously by **RepoReaper by [PatchHive](https://github.com/patchhive)**. This managed comment records RepoReaper status updates for this issue instead of posting a new comment on each retry.";
-const REPO_REAPER_COMMENT_FOOTER: &str = "Generated autonomously by **RepoReaper by [PatchHive](https://github.com/patchhive)**. RepoReaper uses one working comment and one outcome comment per run attempt.";
+const REPO_REAPER_COMMENT_FOOTER: &str = "Generated autonomously by **RepoReaper by [PatchHive](https://github.com/patchhive)**. RepoReaper posts progress and outcome updates separately so maintainers can follow the run.";
 
 fn is_repo_reaper_managed_comment(comment: &Value, marker: &str, stage: &str) -> bool {
     let body = comment["body"].as_str().unwrap_or("");
