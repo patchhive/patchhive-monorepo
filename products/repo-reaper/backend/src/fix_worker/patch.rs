@@ -11,6 +11,20 @@ use crate::state::AgentConfig;
 use super::sse::alog;
 use super::types::{FixAgents, IssueScope, Tx};
 
+fn pr_test_status(test: &crate::git_ops::TestResult) -> &'static str {
+    if test.passed {
+        return "✅ Passed";
+    }
+
+    match test.runner.as_str() {
+        "disabled" => "⚠️ Not run — untrusted test execution is disabled (draft PR)",
+        "host-disabled" => "⚠️ Not run — host test execution is disabled (draft PR)",
+        "invalid" => "⚠️ Not run — test runner configuration is invalid (draft PR)",
+        "none" => "⚠️ Not run — no supported test runner was found (draft PR)",
+        _ => "⚠️ Failed (draft PR)",
+    }
+}
+
 pub async fn apply_patch_with_self_heal(
     http: &reqwest::Client,
     tx: &Tx,
@@ -147,11 +161,7 @@ pub async fn publish_pull_request(
         result["explanation"].as_str().unwrap_or(""),
         issue["fixability_score"].as_i64().unwrap_or(50),
         issue["fixability_reason"].as_str().unwrap_or(""),
-        if test.passed {
-            "✅ Passed"
-        } else {
-            "⚠️ Failed (draft PR)"
-        },
+        pr_test_status(test),
         scope.issue_num,
         agents
             .judge

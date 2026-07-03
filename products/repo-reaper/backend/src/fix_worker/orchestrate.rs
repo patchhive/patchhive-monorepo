@@ -46,6 +46,27 @@ fn compact_no_change_detail(test: &crate::git_ops::TestResult) -> String {
     )
 }
 
+fn should_retry_test_failure(test: &crate::git_ops::TestResult) -> bool {
+    if test.passed {
+        return false;
+    }
+
+    !matches!(
+        test.runner.as_str(),
+        "disabled" | "host-disabled" | "invalid" | "none"
+    )
+}
+
+fn test_log_label(test: &crate::git_ops::TestResult) -> &'static str {
+    if test.passed {
+        "passed"
+    } else if should_retry_test_failure(test) {
+        "failed"
+    } else {
+        "not run"
+    }
+}
+
 pub async fn fix_one(job: FixIssueJob) {
     let FixIssueJob {
         issue,
@@ -567,17 +588,28 @@ pub async fn fix_one(job: FixIssueJob) {
     let _ = tx
         .send(alog(
             &agents.gatekeeper,
-            &format!(
-                "Tests via {} {}",
-                test.runner,
-                if test.passed { "passed ✓" } else { "failed" }
-            ),
-            if test.passed { "success" } else { "warn" },
+            &format!("Tests via {} {}", test.runner, test_log_label(&test)),
+            if test.passed {
+                "success"
+            } else if should_retry_test_failure(&test) {
+                "warn"
+            } else {
+                "info"
+            },
         ))
         .await;
 
     for retry in 0..params.retry_count {
-        if test.passed {
+        if !should_retry_test_failure(&test) {
+            if !test.passed && retry == 0 {
+                let _ = tx
+                    .send(alog(
+                        &agents.gatekeeper,
+                        "Validation did not run tests in a trusted sandbox - preserving patch for draft PR",
+                        "info",
+                    ))
+                    .await;
+            }
             break;
         }
         let _ = tx
