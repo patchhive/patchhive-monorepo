@@ -151,11 +151,11 @@ function buildRail(run, history, overview, health) {
         ],
       },
       {
-        title: "Checks",
+        title: "Gate checks",
         items: [
           { label: "CI health", active: true, badge: `${asCount(metrics.workflow_successes)}/${asCount(metrics.workflow_runs)}`, badgeTone: metrics.workflow_failures ? "red" : "green" },
-          { label: "blocked", badge: String(asCount(metrics.blocked)), badgeTone: "red" },
-          { label: "warned", badge: String(asCount(metrics.warned)), badgeTone: "amber" },
+          { label: "gate blocks", badge: String(asCount(metrics.blocked)), badgeTone: "red" },
+          { label: "warnings", badge: String(asCount(metrics.warned)), badgeTone: "amber" },
           { label: "saved runs", badge: String(history.length), badgeTone: "signal" },
         ],
       },
