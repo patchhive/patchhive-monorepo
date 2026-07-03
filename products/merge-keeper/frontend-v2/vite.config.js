@@ -13,6 +13,7 @@ export default defineConfig({
     },
   },
   resolve: {
+    dedupe: ["react", "react-dom"],
     alias: [
       {
         find: "@patchhivehq/ui-v2/styles.css",
