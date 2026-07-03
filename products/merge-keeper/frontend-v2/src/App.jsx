@@ -695,7 +695,11 @@ function SidePanels({ assessment, health }) {
           <div className="rowline"><span className="muted">Report</span><span className={`chip ${reportTone(report)}`}>{report?.state || "local"}</span></div>
           <div className="rowline"><span className="muted">Webhook</span><span className={`chip ${health?.github?.webhook_secret_configured ? "green" : "amber"}`}>{health?.github?.webhook_secret_configured ? "ready" : "optional"}</span></div>
           {assessment?.pr_url && <button className="btn" onClick={() => window.open(assessment.pr_url, "_blank", "noreferrer")} type="button">Open PR</button>}
-          {report?.check_url && <button className="btn" onClick={() => window.open(report.check_url, "_blank", "noreferrer")} type="button">Open report</button>}
+          {report?.comment_url && <button className="btn" onClick={() => window.open(report.comment_url, "_blank", "noreferrer")} type="button">Open comment</button>}
+          {report?.check_url && <button className="btn" onClick={() => window.open(report.check_url, "_blank", "noreferrer")} type="button">Open check</button>}
+          {report?.report_markdown && navigator?.clipboard && (
+            <button className="btn" onClick={() => navigator.clipboard.writeText(report.report_markdown)} type="button">Copy report</button>
+          )}
         </div>
       </Panel>
     </aside>

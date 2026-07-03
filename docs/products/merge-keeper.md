@@ -94,6 +94,67 @@ tested. Once product-mode packaging runs the shared backend image with only
 MergeKeeper enabled, the old separate backend service can be moved to legacy or
 removed.
 
+### UI v1 to v2 Parity Audit
+
+Audited on 2026-07-03 against:
+
+- `products/merge-keeper/frontend/src/App.jsx`
+- `products/merge-keeper/frontend/src/panels/KeeperPanel.jsx`
+- `products/merge-keeper/frontend/src/panels/HistoryPanel.jsx`
+- `products/merge-keeper/frontend/src/panels/ChecksPanel.jsx`
+- `products/merge-keeper/frontend-v2/src/App.jsx`
+
+The v2 MergeKeeper surface must keep these v1 workflows before the old UI can
+be removed:
+
+- API-key login and first-key generation.
+- Directed PR assessment by `owner/repo` and PR number.
+- Optional GitHub report publishing toggle.
+- Readiness outcome with blockers, warnings, summary, and evidence.
+- Merge metrics for approvals, requested changes, failing checks, pending
+  checks, actionable/open review threads, changed files, additions, and
+  deletions.
+- PR identity and direct open-link behavior.
+- GitHub artifact posture, including maintained comment link, check/report link,
+  report state/details, and copyable report markdown.
+- ReviewBee, TrustGate, and RepoMemory context when configured, with clear local
+  fallback when they are not configured.
+- Overview/history counts for stored runs, repos seen, ready calls, hold calls,
+  and blocked calls.
+- History list, selected-run loading, and full selected-run detail.
+- Health/startup checks for backend status, DB path, auth, GitHub readiness,
+  webhook configuration, report publishing, startup warnings, and integrations.
+
+Current v2 parity status:
+
+- **Covered**: readiness assessment, local/publish mode, approval policy toggle,
+  history list, selected-run detail, radar visualization, blockers/warnings,
+  suite input posture, health/startup checks, and clear selected-assessment
+  behavior.
+- **Improved from v1**: loading a history row stays in the history context and
+  renders the selected radar/detail below it instead of always kicking the user
+  back to the main page.
+- **Intentional v2 change**: `publish_report` defaults off in the v2 form during
+  local gateway/unified-backend testing. Operators can still enable it per run.
+  The API default remains documented separately.
+- **Replaced surface**: the old dedicated Setup tab is covered by v2 auth,
+  readiness, and Checks surfaces rather than a standalone setup wizard.
+- **Deferred polish**: v1 had a dedicated latest-reviewer-state badge strip and
+  an inline rendered report preview. V2 currently summarizes reviewer pressure
+  in metrics and exposes report links/copy actions. Bring back a compact
+  reviewer-state strip or expandable report preview only if live use shows they
+  save meaningful time.
+
+Before deleting the old MergeKeeper UI, run one final browser pass that covers:
+
+1. A ready PR with `require_approval=false`.
+2. A blocked PR with failing checks.
+3. A saved history load.
+4. A `publish_report=true` run with enough token scope to create/update the
+   maintained PR comment and check/status artifact.
+5. The Checks tab with GitHub, webhook, report publish, DB, and integration
+   states visible.
+
 ## Configuration
 
 | Variable | Purpose |

@@ -74,6 +74,19 @@ Minimum UI expectations:
   approval requirements beside the run action.
 - Opt-out should always win visually and behaviorally.
 
+## V1 Audit Log
+
+Each product needs at least one old-UI parity pass before its old frontend is
+legacy or removed. Record the audited files, workflows that v2 covers, any
+intentional v2 changes, and deferred polish in the product docs.
+
+- **MergeKeeper** audited on 2026-07-03. See
+  `docs/products/merge-keeper.md#ui-v1-to-v2-parity-audit`. V2 covers directed
+  PR assessment, publish toggles, readiness evidence, history loading, health
+  checks, integrations, and GitHub artifact links/copy actions. Deferred polish:
+  compact reviewer-state strip and optional inline report preview if live use
+  proves they are worth the extra density.
+
 After every product has moved to v2, choose one cleanup path:
 
 - move the old UI code into a clearly named legacy location if it still has
