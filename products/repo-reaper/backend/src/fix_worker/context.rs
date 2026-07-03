@@ -9,7 +9,7 @@ use crate::git_ops::{
     collect_files_all, collect_files_selective, collect_mentioned_files, collect_repo_structure,
     git_branch, git_clone,
 };
-use crate::github::{gh_comment_issue, gh_fork, gh_get_issue_context};
+use crate::github::{gh_fork, gh_get_issue_context};
 
 use super::memory::build_repo_memory_block;
 use super::sse::{alog, astatus};
@@ -19,7 +19,7 @@ use crate::state::AgentConfig;
 pub async fn clone_issue_repo(
     http: &reqwest::Client,
     tx: &Tx,
-    issue: &Value,
+    _issue: &Value,
     scope: &IssueScope,
     reaper: &AgentConfig,
     bot_token: &str,
@@ -53,23 +53,6 @@ pub async fn clone_issue_repo(
     git_branch(&scope.work_path, &scope.branch).await?;
 
     let issue_ctx = gh_get_issue_context(http, &scope.repo, scope.issue_num, Some(bot_token)).await;
-    gh_comment_issue(
-        http,
-        &scope.repo,
-        scope.issue_num,
-        &format!(
-            "🔱 **RepoReaper** is hunting this bug.\n\n> Fixability score: **{}/100**{}\n\nA pull request will be opened shortly.\n\n*by PatchHive*",
-            issue["fixability_score"].as_i64().unwrap_or(50),
-            issue["fixability_reason"]
-                .as_str()
-                .filter(|value| !value.is_empty())
-                .map(|reason| format!(" — {reason}"))
-                .unwrap_or_default()
-        ),
-        Some(bot_token),
-    )
-    .await;
-
     Ok(issue_ctx)
 }
 
