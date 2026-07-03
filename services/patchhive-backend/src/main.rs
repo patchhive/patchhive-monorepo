@@ -2,6 +2,7 @@ mod config;
 mod db;
 mod gateway;
 mod models;
+mod products;
 mod registry;
 mod routes;
 mod state;
@@ -22,12 +23,12 @@ async fn main() -> Result<()> {
 
     let config = Config::from_env()?;
     let bind_addr = config.bind_addr;
+    products::init_enabled_products(&config).await?;
     let state = Arc::new(AppState::new(config)?);
 
     let app = Router::new()
-        .merge(routes::router())
-        .layer(CorsLayer::permissive())
-        .with_state(state);
+        .merge(routes::router(state))
+        .layer(CorsLayer::permissive());
 
     let listener = tokio::net::TcpListener::bind(bind_addr).await?;
     info!(%bind_addr, "patchhive-backend listening");

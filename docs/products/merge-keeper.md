@@ -58,6 +58,7 @@ Defaults:
 - Frontend: `http://localhost:5178`
 - Frontend v2 prototype: `http://localhost:5197`
 - Backend: `http://localhost:8050`
+- Suite backend route: `http://localhost:8100/api/products/merge-keeper`
 - Database: `merge-keeper.db` (configurable via `MERGE_KEEPER_DB_PATH`)
 
 Split local workflow:
@@ -72,6 +73,26 @@ npm install && npm run dev
 cd ../frontend-v2
 npm install && npm run dev
 ```
+
+### Unified Backend Mode
+
+MergeKeeper is the first product engine mounted in-process inside
+`services/patchhive-backend`. In suite mode, the v2 frontend should talk to the
+unified backend route instead of a separate MergeKeeper backend service:
+
+```bash
+PATCHHIVE_PRODUCTS=merge-keeper \
+PATCHHIVE_BIND_ADDR=127.0.0.1:8100 \
+cargo run --manifest-path services/patchhive-backend/Cargo.toml
+
+npm --prefix products/merge-keeper/frontend-v2 run dev
+```
+
+The standalone backend at `products/merge-keeper/backend` remains as a
+compatibility wrapper around the same product module while the migration is
+tested. Once product-mode packaging runs the shared backend image with only
+MergeKeeper enabled, the old separate backend service can be moved to legacy or
+removed.
 
 ## Configuration
 
@@ -101,7 +122,8 @@ npm install && npm run dev
 
 ```
 backend/src/
-├── main.rs              # Router definition, server bootstrap
+├── lib.rs               # Product module mounted by the standalone and suite backends
+├── main.rs              # Standalone compatibility server bootstrap
 ├── models.rs            # Request/response types (AssessmentRequest, MergeAssessment, etc.)
 ├── db.rs                # SQLite persistence (merge_runs table)
 ├── github.rs            # GitHub API client, PR context fetching, report publishing

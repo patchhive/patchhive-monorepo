@@ -55,6 +55,7 @@ pub struct ProductResponse {
 #[serde(rename_all = "kebab-case")]
 pub enum ProductStatus {
     Disabled,
+    Online,
     GatewayPending,
     EnginePending,
 }

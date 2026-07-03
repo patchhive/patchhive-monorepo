@@ -193,7 +193,7 @@ That does not mean HiveCore owns the product engines first. It means the first u
 - event log
 - gateway dispatch to existing product backends
 
-Once HiveCore can see and control the suite through the unified backend, product frontends can follow the same API base one by one. SignalHive should still be the first product engine moved into the backend because it is read-only and central to the suite story.
+Once HiveCore can see and control the suite through the unified backend, product frontends can follow the same API base one by one. MergeKeeper is the first in-process product-engine proof because its PR-readiness loop is small enough to mount cleanly while still exercising auth, history, GitHub reads, and optional external write/report scopes. SignalHive remains the first read-only reconnaissance engine that should move fully in-process after the gateway bridge has proven the shape.
 
 ## API Shape
 

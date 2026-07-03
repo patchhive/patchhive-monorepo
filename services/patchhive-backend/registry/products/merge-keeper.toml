@@ -4,7 +4,7 @@ name = "MergeKeeper"
 role = "merge readiness assessment"
 module_path = "crate::products::merge_keeper"
 route_prefix = "/api/products/merge-keeper"
-migration_stage = "not-started"
+migration_stage = "integrated"
 
 [safety]
 read_only = false
@@ -12,10 +12,6 @@ writes_external_state = true
 requires_operator_approval = true
 credential_scopes = ["github:pull_requests:read", "github:checks:read", "github:checks:write", "github:statuses:write", "github:issues:write"]
 evidence_required = ["PR URL", "review state", "check state", "mergeability state"]
-
-[gateway]
-default_url = "http://127.0.0.1:8050"
-env_var = "MERGE_KEEPER_GATEWAY_URL"
 
 [health]
 endpoint = "/api/products/merge-keeper/health"

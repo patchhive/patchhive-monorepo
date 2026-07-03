@@ -108,7 +108,11 @@ impl ProductManifest {
             role: self.role.clone(),
             module_path: self.module_path.clone(),
             enabled,
-            status: product_status(enabled, gateway.configured),
+            status: product_status(
+                enabled,
+                gateway.configured,
+                matches!(self.migration_stage(), MigrationStage::Integrated),
+            ),
             migration_stage: self.migration_stage(),
             route_prefix: self.route_prefix.clone(),
             capabilities: self
@@ -131,7 +135,12 @@ impl ProductManifest {
                 icon: self.code.clone(),
                 title: self.name.clone(),
                 role: self.role.clone(),
-                status: runtime_status(&self.key, enabled, self.gateway_target_url().is_some()),
+                status: runtime_status(
+                    &self.key,
+                    enabled,
+                    self.gateway_target_url().is_some(),
+                    matches!(self.migration_stage(), MigrationStage::Integrated),
+                ),
                 api_url: self.route_prefix.clone(),
                 enabled,
                 service_token_configured: false,
@@ -140,6 +149,7 @@ impl ProductManifest {
                     &self.key,
                     enabled,
                     self.gateway_target_url().is_some(),
+                    matches!(self.migration_stage(), MigrationStage::Integrated),
                 ),
             },
             pairing_ready: false,
@@ -158,7 +168,11 @@ impl ProductManifest {
             key: self.key.clone(),
             name: self.name.clone(),
             enabled,
-            status: product_status(enabled, self.gateway_target_url().is_some()),
+            status: product_status(
+                enabled,
+                self.gateway_target_url().is_some(),
+                matches!(self.migration_stage(), MigrationStage::Integrated),
+            ),
             migration_stage: self.migration_stage(),
             message: if enabled {
                 format!(
@@ -209,9 +223,11 @@ impl GatewayConfig {
     }
 }
 
-pub fn product_status(enabled: bool, gateway_configured: bool) -> ProductStatus {
+pub fn product_status(enabled: bool, gateway_configured: bool, integrated: bool) -> ProductStatus {
     if !enabled {
         ProductStatus::Disabled
+    } else if integrated {
+        ProductStatus::Online
     } else if gateway_configured {
         ProductStatus::GatewayPending
     } else {
@@ -219,10 +235,15 @@ pub fn product_status(enabled: bool, gateway_configured: bool) -> ProductStatus 
     }
 }
 
-pub fn runtime_status(key: &str, enabled: bool, gateway_configured: bool) -> &'static str {
+pub fn runtime_status(
+    key: &str,
+    enabled: bool,
+    gateway_configured: bool,
+    integrated: bool,
+) -> &'static str {
     if !enabled {
         "disabled"
-    } else if key == "hive-core" {
+    } else if key == "hive-core" || integrated {
         "online"
     } else if gateway_configured {
         "gateway-pending"
@@ -231,8 +252,13 @@ pub fn runtime_status(key: &str, enabled: bool, gateway_configured: bool) -> &'s
     }
 }
 
-pub fn contract_drift_count(key: &str, enabled: bool, gateway_configured: bool) -> usize {
-    if enabled && key != "hive-core" && !gateway_configured {
+pub fn contract_drift_count(
+    key: &str,
+    enabled: bool,
+    gateway_configured: bool,
+    integrated: bool,
+) -> usize {
+    if enabled && key != "hive-core" && !gateway_configured && !integrated {
         1
     } else {
         0

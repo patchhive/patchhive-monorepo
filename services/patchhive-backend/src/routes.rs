@@ -15,11 +15,12 @@ use crate::{
         AuthStatusResponse, ErrorResponse, HealthResponse, ProductResponse, SessionResponse,
         SetupResponse,
     },
+    products,
     state::AppState,
 };
 
-pub fn router() -> Router<Arc<AppState>> {
-    Router::new()
+pub fn router(state: Arc<AppState>) -> Router {
+    let suite_routes = Router::new()
         .route("/", get(root))
         .route("/health", get(health))
         .route("/api/health", get(health))
@@ -35,6 +36,14 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/api/setup/first-stack/pair", post(pair_first_stack))
         .route("/api/runs", get(runs))
         .route("/api/events", get(events))
+        .with_state(state);
+
+    Router::new()
+        .nest(
+            "/api/products/merge-keeper",
+            products::merge_keeper_router(),
+        )
+        .merge(suite_routes)
 }
 
 async fn root() -> Json<HealthResponse> {

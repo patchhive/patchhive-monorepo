@@ -57,7 +57,10 @@ Routes:
 - `GET /api/runs`
 - `GET /api/events`
 
-Product run routes are not active yet. Existing product backends remain the source of truth until each product engine is moved into this runtime or temporarily connected through gateway routes.
+MergeKeeper is mounted as the first in-process product engine under
+`/api/products/merge-keeper/*`. Other products still use their existing backend
+engines until they are moved into this runtime or temporarily connected through
+gateway routes.
 
 ## Product Registry
 
@@ -113,8 +116,23 @@ path = "/api/products/signal-hive/scan"
 description = "Start a maintenance signal scan."
 ```
 
-Product modules are not mounted in-process yet, but the manifest contract now
-drives gateway dispatch and is the shape future in-process mounting should use.
+MergeKeeper is mounted in-process from its product backend library. The manifest
+contract also drives gateway dispatch and is the shape future in-process
+mounting should use.
+
+Run the suite backend with only MergeKeeper enabled:
+
+```bash
+PATCHHIVE_PRODUCTS=merge-keeper cargo run
+```
+
+MergeKeeper product routes are served directly by the unified backend:
+
+```text
+GET  /api/products/merge-keeper/health
+POST /api/products/merge-keeper/assess/github/pr
+GET  /api/products/merge-keeper/runs
+```
 
 ## Gateway Dispatch
 
