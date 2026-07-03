@@ -57,10 +57,11 @@ Routes:
 - `GET /api/runs`
 - `GET /api/events`
 
-MergeKeeper is mounted as the first in-process product engine under
-`/api/products/merge-keeper/*`. Other products still use their existing backend
-engines until they are moved into this runtime or temporarily connected through
-gateway routes.
+MergeKeeper and ReleaseSentry are mounted as the first in-process product
+engines under `/api/products/merge-keeper/*` and
+`/api/products/release-sentry/*`. Other products still use their existing
+backend engines until they are moved into this runtime or temporarily connected
+through gateway routes.
 
 ## Product Registry
 
@@ -116,9 +117,9 @@ path = "/api/products/signal-hive/scan"
 description = "Start a maintenance signal scan."
 ```
 
-MergeKeeper is mounted in-process from its product backend library. The manifest
-contract also drives gateway dispatch and is the shape future in-process
-mounting should use.
+MergeKeeper and ReleaseSentry are mounted in-process from their product backend
+libraries. The manifest contract also drives gateway dispatch and is the shape
+future in-process mounting should use.
 
 Run the suite backend with only MergeKeeper enabled:
 
@@ -132,6 +133,20 @@ MergeKeeper product routes are served directly by the unified backend:
 GET  /api/products/merge-keeper/health
 POST /api/products/merge-keeper/assess/github/pr
 GET  /api/products/merge-keeper/runs
+```
+
+Run the suite backend with only ReleaseSentry enabled:
+
+```bash
+PATCHHIVE_PRODUCTS=release-sentry cargo run
+```
+
+ReleaseSentry product routes are served directly by the unified backend:
+
+```text
+GET  /api/products/release-sentry/health
+POST /api/products/release-sentry/check/github/release
+GET  /api/products/release-sentry/runs
 ```
 
 ## Gateway Dispatch

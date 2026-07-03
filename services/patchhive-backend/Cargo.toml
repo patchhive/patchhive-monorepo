@@ -16,6 +16,7 @@ axum = { version = "0.7", features = ["macros"] }
 chrono = { version = "0.4", features = ["serde"] }
 dotenvy = "0.15"
 merge-keeper = { path = "../../products/merge-keeper/backend" }
+release-sentry = { path = "../../products/release-sentry/backend" }
 rusqlite = { version = "0.31", features = ["bundled"] }
 reqwest = { version = "0.12", default-features = false }
 serde = { version = "1", features = ["derive"] }

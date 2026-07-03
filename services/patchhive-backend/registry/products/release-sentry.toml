@@ -4,16 +4,12 @@ name = "ReleaseSentry"
 role = "release readiness evidence"
 module_path = "crate::products::release_sentry"
 route_prefix = "/api/products/release-sentry"
-migration_stage = "not-started"
+migration_stage = "integrated"
 
 [safety]
 read_only = true
 credential_scopes = ["github:repo:read", "github:actions:read", "github:releases:read"]
 evidence_required = ["release target", "CI state", "blocker summary"]
-
-[gateway]
-default_url = "http://127.0.0.1:8120"
-env_var = "RELEASE_SENTRY_GATEWAY_URL"
 
 [health]
 endpoint = "/api/products/release-sentry/health"

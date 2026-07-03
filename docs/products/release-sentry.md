@@ -2,7 +2,11 @@
 
 ReleaseSentry checks whether a repo, product, or release candidate is actually ready to ship. It is PatchHive's release-readiness layer — the place where CI health, version and changelog drift, release blockers, and deployment surface evidence become a clear `ready`, `watch`, or `hold` decision.
 
-ReleaseSentry is a **standalone backend service** with its own frontend, SQLite database, GitHub API integration, and a dedicated exported repo at [`patchhive/release-sentry`](https://github.com/patchhive/release-sentry).
+ReleaseSentry can run as a standalone product during the transition, but the
+monorepo source now also exports it as an in-process product module for the
+shared `patchhive-backend` runtime. The dedicated exported repo at
+[`patchhive/release-sentry`](https://github.com/patchhive/release-sentry)
+should be treated as a mirror, not a second source of truth.
 
 ---
 
@@ -208,6 +212,35 @@ score = 100 - (blocked × 25) - (warned × 8)
 - **Partial failures are non-fatal.** If a GitHub API call fails (e.g., releases, tags, CI), the check becomes a `warn` with the error message in evidence, and the remaining checks complete normally. The error is added to the `warnings` array.
 - **Changelog check** is `warn` (not `block`) when missing — a missing changelog entry shouldn't block but should be flagged.
 - **Tag check** passes if no target tag is specified. If a target tag is provided but not found, the check warns.
+
+---
+
+## Unified Backend Mode
+
+ReleaseSentry is the second product engine mounted in-process inside
+`services/patchhive-backend`, after MergeKeeper. In suite mode, the v2 frontend
+should talk to the unified backend route instead of a separate ReleaseSentry
+backend service:
+
+```bash
+PATCHHIVE_PRODUCTS=release-sentry \
+PATCHHIVE_BIND_ADDR=127.0.0.1:8100 \
+cargo run --manifest-path services/patchhive-backend/Cargo.toml
+
+npm --prefix products/release-sentry/frontend-v2 run dev
+```
+
+The v2 default API base is:
+
+```text
+http://127.0.0.1:8100/api/products/release-sentry
+```
+
+The standalone backend at `products/release-sentry/backend` remains as a
+compatibility wrapper around the same product module while the migration is
+tested. Once product-mode packaging runs the shared backend image with only
+ReleaseSentry enabled, the old separate backend service can be moved to legacy
+or removed.
 
 ---
 

@@ -55,6 +55,7 @@ docker compose up --build
 Frontend: `http://localhost:5184`
 Frontend v2 prototype: `http://localhost:5202`
 Backend: `http://localhost:8120`
+Suite backend route: `http://localhost:8100/api/products/release-sentry`
 
 ### Split Backend and Frontend
 
@@ -71,6 +72,22 @@ direction is still being tested:
 ```bash
 cd frontend-v2 && npm install && npm run dev
 ```
+
+### Unified Backend Mode
+
+ReleaseSentry's backend logic is exported as a product module and can run
+inside `services/patchhive-backend` without a separate product backend process:
+
+```bash
+PATCHHIVE_PRODUCTS=release-sentry \
+PATCHHIVE_BIND_ADDR=127.0.0.1:8100 \
+cargo run --manifest-path services/patchhive-backend/Cargo.toml
+
+npm --prefix products/release-sentry/frontend-v2 run dev
+```
+
+The standalone backend remains available as a compatibility wrapper while the
+suite backend migration is tested.
 
 ## Local Notes
 
