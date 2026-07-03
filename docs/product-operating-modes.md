@@ -17,6 +17,34 @@ Products should prefer this behavior:
 4. Scan/read actions stay read-only by default.
 5. Fix/write actions stay separate, explicit, and approval-aware.
 
+## Scope Policy Controls
+
+Autonomous mode is only trustworthy when scope controls are visible and
+enforced. Any product that discovers repos or work items should expose the
+policy posture that shaped the run:
+
+- allowlist count and active matches
+- denylist/blocklist count and active matches
+- opt-out count and active matches
+- saved scope name or inline discovery scope
+- repo caps, owner/org caps, and PR caps when relevant
+
+Directed mode still uses these controls. A directed target that matches
+`opt_out` or `denylist` should be blocked with a clear explanation. A directed
+target outside a configured allowlist should be blocked unless the operator
+explicitly changes policy.
+
+Run history should record the policy result, not just the target:
+
+```json
+{
+  "run_style": "targeted",
+  "target_repo": "owner/repo",
+  "policy_result": "allowed | blocked | opt_out",
+  "policy_scope": "saved-scope-name or inline summary"
+}
+```
+
 ## UI Language
 
 Recommended labels:

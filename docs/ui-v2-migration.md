@@ -38,6 +38,42 @@ RepoReaper unified-backend pass. Its active team and preset secret fields are
 already encrypted at rest when a RepoReaper or suite encryption key is
 configured.
 
+## Required V1 Parity
+
+The old product UIs included safety and scope controls that cannot disappear in
+v2. Before old UI code is moved to legacy or removed, v2 must cover the
+operator workflows that keep autonomous discovery and outbound contribution
+bounded.
+
+Required v2 controls:
+
+- repo allowlist management
+- repo denylist/blocklist management
+- durable opt-out management
+- saved target scopes for discovery runs
+- schedule visibility and pause/resume controls
+- per-run policy readouts showing which allowlist, denylist, opt-out, schedule,
+  or saved scope shaped the run
+- clear empty states when a product cannot run because no target, saved scope,
+  or allowlist is configured
+
+These controls should become suite-level surfaces in HiveCore and
+`patchhive-backend`, not cloned one-off tables in every product. During gateway
+mode, product-local endpoints can remain as adapters, but v2 UI should make the
+policy posture visible wherever a product can discover repos, clone repos, open
+PRs, publish comments, or dispatch scheduled work.
+
+Minimum UI expectations:
+
+- Directed forms should show the concrete target and the active policy status.
+- Autonomous forms should show the discovery scope, repo caps, and active
+  allow/deny/opt-out counts before the run starts.
+- History rows should identify whether a run was directed, targeted, scheduled,
+  or autonomous.
+- Write-capable products should surface PR caps, confidence thresholds, and
+  approval requirements beside the run action.
+- Opt-out should always win visually and behaviorally.
+
 After every product has moved to v2, choose one cleanup path:
 
 - move the old UI code into a clearly named legacy location if it still has

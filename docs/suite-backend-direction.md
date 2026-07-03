@@ -279,6 +279,43 @@ Scheduling defaults:
 - schedules should respect global PR caps, rate limits, allowlists, denylists,
   opt-outs, and product health
 
+## Suite Scope Policy
+
+Allowlists, denylists, opt-outs, and saved discovery scopes should become
+suite-level policy owned by `patchhive-backend` and surfaced by HiveCore. They
+are not merely SignalHive or RepoReaper settings.
+
+The old product UIs proved these controls are necessary before autonomous
+behavior feels trustworthy. In the unified backend shape, they should move
+toward shared records that every product can consult before discovery, cloning,
+commenting, PR creation, schedule dispatch, or other external effects.
+
+Required policy concepts:
+
+- `allowlist`: when present, autonomous discovery may only act inside this set
+  after stronger exclusions are applied
+- `denylist` / `blocklist`: never discover, score, clone, patch, comment on, or
+  open PRs against matching repos
+- `opt_out`: strongest exclusion; durable across the suite and visible in every
+  relevant product surface
+- saved scope: named topic/org/language/repo filters that can power manual,
+  autonomous, or scheduled runs
+- policy audit: each run should record which policy entries and saved scope
+  constrained it
+
+Precedence:
+
+1. opt-out
+2. denylist/blocklist
+3. allowlist
+4. saved scope
+5. default product discovery
+
+New v2 UI should expose policy status before a run starts and in run history
+after the run completes. Product-local repo-list endpoints may remain during
+gateway mode, but the long-term API should be suite-owned so HiveCore can pause
+or constrain the whole system without editing twelve product databases.
+
 ## Product Registry Manifests
 
 The unified backend should treat product registration as a manifest-driven plugin
