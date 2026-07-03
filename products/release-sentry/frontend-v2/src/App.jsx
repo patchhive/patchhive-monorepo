@@ -119,7 +119,7 @@ function buildMetrics(run, overview, health) {
     return [
       { label: "Readiness", value: String(asCount(run.score)), tone: metricTone(run.decision), sub: run.decision || "decision" },
       { label: "CI pass", value: `${asCount(metrics.workflow_successes)}`, tone: metricTone(metrics.workflow_failures ? "hold" : metrics.workflow_pending ? "watch" : "ready"), sub: `of ${asCount(metrics.workflow_runs)} runs` },
-      { label: "Blockers", value: String(asCount(metrics.blocked || metrics.release_blockers)), tone: metricTone(metrics.blocked || metrics.release_blockers ? "hold" : "ready"), sub: "release pressure" },
+      { label: "Gate blocks", value: String(asCount(metrics.blocked)), tone: metricTone(metrics.blocked ? "hold" : "ready"), sub: "blocked checks" },
       { label: "Warnings", value: String(asCount(metrics.warned)), tone: metricTone(metrics.warned ? "watch" : "ready"), sub: "watch items" },
       { label: "Evidence", value: String(asCount(metrics.checks)), tone: "sig", sub: `${asCount(metrics.passed)} passed` },
     ];
