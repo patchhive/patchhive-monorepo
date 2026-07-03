@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 const DEFAULT_RADAR_WINDOWS = {
   7: { label: "7 day live pass", readoutLabel: "7 day window", outer: "7d", mid: "3d", inner: "24h" },
@@ -609,6 +609,7 @@ export function SuiteRadar({
   gainLabel = "Signal gain",
   itemQueryParam = "radar",
   items,
+  selectionResetKey = "",
   signalLabel = "signals",
   vectorLabel = "Sweep vector",
   windows = DEFAULT_RADAR_WINDOWS,
@@ -644,6 +645,7 @@ export function SuiteRadar({
     const requested = params.get(itemQueryParam);
     return normalizedItems.find((item) => item.id === requested) || normalizedItems[0];
   });
+  const lastSelectionResetKey = useRef(selectionResetKey);
 
   const updateRadarUrl = (item, days) => {
     if (typeof window === "undefined") {
@@ -678,6 +680,18 @@ export function SuiteRadar({
       setSelectedItem(currentItem);
     }
   }, [normalizedItems, selectedItem, visibleItems, windowDays]);
+
+  useEffect(() => {
+    if (!selectionResetKey || lastSelectionResetKey.current === selectionResetKey) {
+      return;
+    }
+    lastSelectionResetKey.current = selectionResetKey;
+    const nextItem = visibleItems[0] || normalizedItems[0];
+    if (nextItem) {
+      setSelectedItem(nextItem);
+      updateRadarUrl(nextItem, windowDays);
+    }
+  }, [normalizedItems, selectionResetKey, visibleItems, windowDays]);
 
   const activeWindow = windows[windowDays] || windows[firstWindow] || DEFAULT_RADAR_WINDOWS[7];
   const visibleEchoes = echoes.filter((echo, index) => (echo.minWindow || defaultMinWindow(index + 3)) <= windowDays);

@@ -524,6 +524,9 @@ function ReadinessMap({ assessment, health, history, includeSupportSignals = tru
     [assessment, history, includeSupportSignals],
   );
   const feed = useMemo(() => buildRadarFeed(assessment, history, health), [assessment, history, health]);
+  const selectionResetKey = assessment
+    ? `assessment:${assessment.id || assessment.pr_number || "current"}`
+    : `history:${history[0]?.id || "empty"}`;
   return (
     <SuiteRadar
       ariaLabel="MergeKeeper readiness radar"
@@ -532,6 +535,7 @@ function ReadinessMap({ assessment, health, history, includeSupportSignals = tru
       gainLabel="State"
       itemQueryParam="merge"
       items={items}
+      selectionResetKey={selectionResetKey}
       signalLabel={assessment ? "signals" : "runs"}
       vectorLabel={assessment ? "Selected signal" : "Selected run"}
     />
