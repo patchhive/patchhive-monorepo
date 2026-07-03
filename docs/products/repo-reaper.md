@@ -271,6 +271,9 @@ RepoReaper polish backlog after the first live sandbox PR tests:
   It should show where each attempt stopped: Judge/context selection, Reaper
   no-patch decision, patch apply/self-heal, Smith review, validation, GitHub
   branch/fork/PR delivery, or final PR tracking.
+- Mirror the most important no-patch, patch-error, and no-changes reasons on
+  the Mission Deck so the operator does not have to open History for the basic
+  answer to "why did this not open a PR?"
 - Add links from attempts to the GitHub issue status comments and PR comments
   RepoReaper posted. The current UI links to the issue and PR, but does not
   persist individual comment URLs.
