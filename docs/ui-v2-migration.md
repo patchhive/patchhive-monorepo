@@ -86,6 +86,13 @@ intentional v2 changes, and deferred polish in the product docs.
   checks, integrations, and GitHub artifact links/copy actions. Deferred polish:
   compact reviewer-state strip and optional inline report preview if live use
   proves they are worth the extra density.
+- **ReleaseSentry** audited on 2026-07-03. See
+  `docs/products/release-sentry.md#ui-v1-to-v2-parity-audit`. V2 covers release
+  intake, ready/watch/hold decisions, release evidence, history loading,
+  selected-run detail, health checks, GitHub readiness, and unified-backend
+  routing. Deferred polish: compact evidence/link expansion for release,
+  workflow, changelog, and repository artifacts before old UI deletion if live
+  testing shows operators need the direct jumps.
 
 After every product has moved to v2, choose one cleanup path:
 
