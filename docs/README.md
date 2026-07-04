@@ -38,6 +38,7 @@ The product documentation set is in [products/](products/).
 ## Platform Docs
 
 - [Platform guardrails](platform-guardrails.md)
+- [Suite stabilization plan](suite-stabilization-plan.md)
 - [HiveCore first-stack readiness audit](hivecore-first-stack-readiness.md)
 - [HiveCore suite bootstrap wizard](hivecore-suite-bootstrap-wizard.md)
 - [Suite backend direction](suite-backend-direction.md)
