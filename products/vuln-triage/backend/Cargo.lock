@@ -924,7 +924,6 @@ dependencies = [
 [[package]]
 name = "patchhive-github-data"
 version = "0.1.0"
-source = "git+https://github.com/patchhive/patchhive-github-data.git?rev=335ebec68a79098ed9eebdde90bff522146d493d#335ebec68a79098ed9eebdde90bff522146d493d"
 dependencies = [
  "anyhow",
  "reqwest",
@@ -935,7 +934,6 @@ dependencies = [
 [[package]]
 name = "patchhive-github-security"
 version = "0.1.0"
-source = "git+https://github.com/patchhive/patchhive-github-security.git?rev=4237fe35bde06b7795f04013dabbfd1034df9556#4237fe35bde06b7795f04013dabbfd1034df9556"
 dependencies = [
  "anyhow",
  "patchhive-github-data",

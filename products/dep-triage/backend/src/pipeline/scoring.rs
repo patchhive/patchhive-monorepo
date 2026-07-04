@@ -249,18 +249,34 @@ pub fn build_summary(
     if metrics.tracked_items == 0 {
         if warnings
             .iter()
-            .any(|warning| dependabot_permission_blocked(warning))
-        {
-            return format!(
-                "DepTriage could not read Dependabot alerts for `{repo}` with the current token. Dependency PRs were checked, but grant Dependabot alert read access for this repository to include security pressure."
-            );
-        }
-        if warnings
-            .iter()
             .any(|warning| dependabot_token_missing(warning))
         {
             return format!(
                 "DepTriage checked dependency PRs for `{repo}`, but skipped Dependabot security alerts because GitHub token access is not configured."
+            );
+        }
+        if warnings
+            .iter()
+            .any(|warning| dependabot_token_invalid(warning))
+        {
+            return format!(
+                "DepTriage could not read GitHub dependency evidence for `{repo}` because the configured token was rejected by GitHub. Check the token value, then rerun the scan."
+            );
+        }
+        if warnings
+            .iter()
+            .any(|warning| dependabot_feature_disabled(warning))
+        {
+            return format!(
+                "DepTriage checked dependency PRs for `{repo}`, but Dependabot alerts are disabled for this repository, so security alert pressure is unavailable."
+            );
+        }
+        if warnings
+            .iter()
+            .any(|warning| dependabot_permission_blocked(warning))
+        {
+            return format!(
+                "DepTriage could not read Dependabot alerts for `{repo}` with the current token. Dependency PRs were checked, but grant Dependabot alert read access for this repository to include security pressure."
             );
         }
         if !warnings.is_empty() {
@@ -295,11 +311,19 @@ pub fn build_summary(
 }
 
 fn dependabot_permission_blocked(warning: &str) -> bool {
-    warning.contains("403 Forbidden") || warning.contains("Resource not accessible")
+    crate::github::github_error_is_permission_blocked(warning)
+}
+
+fn dependabot_feature_disabled(warning: &str) -> bool {
+    crate::github::github_error_is_feature_disabled(warning)
 }
 
 fn dependabot_token_missing(warning: &str) -> bool {
-    warning.contains("BOT_GITHUB_TOKEN is not set") || warning.contains("GITHUB_TOKEN is not set")
+    crate::github::github_error_is_token_missing(warning)
+}
+
+fn dependabot_token_invalid(warning: &str) -> bool {
+    crate::github::github_error_is_token_invalid(warning)
 }
 
 pub fn finalize_item(builder: Builder) -> DependencyTriageItem {

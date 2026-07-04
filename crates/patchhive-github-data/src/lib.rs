@@ -1,4 +1,5 @@
 mod client;
+mod errors;
 pub mod models;
 
 pub use client::{
@@ -7,4 +8,10 @@ pub use client::{
     fetch_workflow_runs, get_json, get_paginated_json, github_token, github_token_configured,
     github_token_required, request_headers, search_repositories, valid_repo, validate_token,
     GH_API,
+};
+pub use errors::{
+    classify_github_api_error, github_error_is_feature_disabled,
+    github_error_is_permission_blocked, github_error_is_token_invalid,
+    github_error_is_token_missing, github_message_from_body, response_preview, GitHubApiError,
+    GitHubApiErrorKind,
 };

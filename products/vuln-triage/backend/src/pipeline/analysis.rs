@@ -114,18 +114,34 @@ fn build_summary(
     if metrics.tracked_findings == 0 {
         if warnings
             .iter()
-            .any(|warning| security_permission_blocked(warning))
-        {
-            return format!(
-                "VulnTriage could not read GitHub security alerts for `{repo}` with the current token. Grant code scanning and/or Dependabot alert read access for this repository, then rerun the scan."
-            );
-        }
-        if warnings
-            .iter()
             .any(|warning| security_token_missing(warning))
         {
             return format!(
                 "VulnTriage could not read GitHub security alerts for `{repo}` because security-feed token access is not configured."
+            );
+        }
+        if warnings
+            .iter()
+            .any(|warning| security_token_invalid(warning))
+        {
+            return format!(
+                "VulnTriage could not read GitHub security alerts for `{repo}` because the configured token was rejected by GitHub. Check the token value, then rerun the scan."
+            );
+        }
+        if warnings
+            .iter()
+            .any(|warning| security_feature_disabled(warning))
+        {
+            return format!(
+                "VulnTriage could not read one or more GitHub security feeds for `{repo}` because the feature is disabled for this repository. Enable code scanning or Dependabot alerts, or use a future public vulnerability fallback."
+            );
+        }
+        if warnings
+            .iter()
+            .any(|warning| security_permission_blocked(warning))
+        {
+            return format!(
+                "VulnTriage could not read GitHub security alerts for `{repo}` with the current token. Grant code scanning and/or Dependabot alert read access for this repository, then rerun the scan."
             );
         }
         if !warnings.is_empty() {
@@ -157,11 +173,19 @@ fn build_summary(
 }
 
 fn security_permission_blocked(warning: &str) -> bool {
-    warning.contains("403 Forbidden") || warning.contains("Resource not accessible")
+    crate::github::github_error_is_permission_blocked(warning)
+}
+
+fn security_feature_disabled(warning: &str) -> bool {
+    crate::github::github_error_is_feature_disabled(warning)
 }
 
 fn security_token_missing(warning: &str) -> bool {
-    warning.contains("BOT_GITHUB_TOKEN is not set") || warning.contains("GITHUB_TOKEN is not set")
+    crate::github::github_error_is_token_missing(warning)
+}
+
+fn security_token_invalid(warning: &str) -> bool {
+    crate::github::github_error_is_token_invalid(warning)
 }
 
 fn code_scanning_to_finding(alert: github::GitHubCodeScanningAlert) -> VulnerabilityFinding {

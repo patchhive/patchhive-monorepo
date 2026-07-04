@@ -11,6 +11,7 @@ use crate::models::{
     GitHubPullFile, GitHubPullRequest, GitHubRepository, GitHubReview, GitHubReviewComment,
     GitHubSearchRepositoriesResponse,
 };
+use crate::{response_preview, GitHubApiError};
 
 pub const GH_API: &str = "https://api.github.com";
 
@@ -23,7 +24,7 @@ pub fn github_token() -> Option<String> {
 }
 
 pub fn github_token_required() -> Result<String> {
-    github_token().ok_or_else(|| anyhow!("BOT_GITHUB_TOKEN is not set"))
+    github_token().ok_or_else(|| anyhow!("[missing_token]: BOT_GITHUB_TOKEN is not set"))
 }
 
 pub fn github_token_configured() -> bool {
@@ -76,7 +77,7 @@ pub async fn get_json<T: DeserializeOwned>(
     let status = response.status();
     if !status.is_success() {
         let body = response.text().await.unwrap_or_default();
-        return Err(anyhow!("GitHub GET {path} -> {status}: {body}"));
+        return Err(GitHubApiError::from_response("GET", path, status, &body).into());
     }
 
     let body = response
@@ -89,15 +90,6 @@ pub async fn get_json<T: DeserializeOwned>(
             response_preview(&body)
         )
     })
-}
-
-fn response_preview(body: &str) -> String {
-    let compact = body.split_whitespace().collect::<Vec<_>>().join(" ");
-    let mut preview = compact.chars().take(240).collect::<String>();
-    if compact.chars().count() > 240 {
-        preview.push_str("...");
-    }
-    preview
 }
 
 pub async fn get_paginated_json<T: DeserializeOwned>(

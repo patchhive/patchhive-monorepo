@@ -32,5 +32,8 @@ pub async fn fetch_dependabot_alerts(
     fetch_shared_dependabot_alerts(client, repo, limit).await
 }
 
-pub use patchhive_github_data::github_token_configured;
+pub use patchhive_github_data::{
+    github_error_is_feature_disabled, github_error_is_permission_blocked,
+    github_error_is_token_invalid, github_error_is_token_missing, github_token_configured,
+};
 pub use patchhive_github_security::validate_token;
