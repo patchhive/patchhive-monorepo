@@ -57,11 +57,11 @@ Routes:
 - `GET /api/runs`
 - `GET /api/events`
 
-MergeKeeper and ReleaseSentry are mounted as the first in-process product
-engines under `/api/products/merge-keeper/*` and
-`/api/products/release-sentry/*`. Other products still use their existing
-backend engines until they are moved into this runtime or temporarily connected
-through gateway routes.
+MergeKeeper, ReleaseSentry, and DepTriage are mounted as the first in-process
+product engines under `/api/products/merge-keeper/*`,
+`/api/products/release-sentry/*`, and `/api/products/dep-triage/*`. Other
+products still use their existing backend engines until they are moved into this
+runtime or temporarily connected through gateway routes.
 
 ## Product Registry
 
@@ -117,9 +117,9 @@ path = "/api/products/signal-hive/scan"
 description = "Start a maintenance signal scan."
 ```
 
-MergeKeeper and ReleaseSentry are mounted in-process from their product backend
-libraries. The manifest contract also drives gateway dispatch and is the shape
-future in-process mounting should use.
+MergeKeeper, ReleaseSentry, and DepTriage are mounted in-process from their
+product backend libraries. The manifest contract also drives gateway dispatch
+and is the shape future in-process mounting should use.
 
 Run the suite backend with only MergeKeeper enabled:
 
@@ -147,6 +147,20 @@ ReleaseSentry product routes are served directly by the unified backend:
 GET  /api/products/release-sentry/health
 POST /api/products/release-sentry/check/github/release
 GET  /api/products/release-sentry/runs
+```
+
+Run the suite backend with only DepTriage enabled:
+
+```bash
+PATCHHIVE_PRODUCTS=dep-triage cargo run
+```
+
+DepTriage product routes are served directly by the unified backend:
+
+```text
+GET  /api/products/dep-triage/health
+POST /api/products/dep-triage/scan/github/dependencies
+GET  /api/products/dep-triage/runs
 ```
 
 ## Gateway Dispatch

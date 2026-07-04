@@ -193,7 +193,18 @@ That does not mean HiveCore owns the product engines first. It means the first u
 - event log
 - gateway dispatch to existing product backends
 
-Once HiveCore can see and control the suite through the unified backend, product frontends can follow the same API base one by one. MergeKeeper is the first in-process product-engine proof because its PR-readiness loop is small enough to mount cleanly while still exercising auth, history, GitHub reads, and optional external write/report scopes. ReleaseSentry is the second in-process product proof because it broadens the read-only GitHub surface to Actions, tags, releases, issues, and changelog contents without introducing mutating product behavior. SignalHive remains the first read-only reconnaissance engine that should move fully in-process after the gateway bridge has proven the shape.
+Once HiveCore can see and control the suite through the unified backend,
+product frontends can follow the same API base one by one. MergeKeeper is the
+first in-process product-engine proof because its PR-readiness loop is small
+enough to mount cleanly while still exercising auth, history, GitHub reads, and
+optional external write/report scopes. ReleaseSentry is the second in-process
+product proof because it broadens the read-only GitHub surface to Actions,
+tags, releases, issues, and changelog contents without introducing mutating
+product behavior. DepTriage is the third in-process product proof because it
+adds dependency PR grouping and Dependabot alert permission edge cases while
+remaining read-only. SignalHive remains the first read-only reconnaissance
+engine that should move fully in-process after the gateway bridge has proven the
+shape.
 
 ## API Shape
 
@@ -206,6 +217,7 @@ Product APIs should be mounted under stable namespaces:
 /api/products/repo-memory/prompt-pack
 /api/products/merge-keeper/assess/github/pr
 /api/products/release-sentry/check/github/release
+/api/products/dep-triage/scan/github/dependencies
 /api/products/flake-sting/scan/github/actions
 ```
 

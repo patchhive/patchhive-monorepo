@@ -10,12 +10,10 @@ pub async fn validate_config(client: &Client) -> Vec<StartupCheck> {
     )));
 
     if crate::auth::auth_enabled() {
-        checks.push(StartupCheck::info(
-            "API-key auth is enabled for this product starter.",
-        ));
+        checks.push(StartupCheck::info("API-key auth is enabled for DepTriage."));
     } else {
         checks.push(StartupCheck::warn(
-            "API-key auth is not enabled yet. Generate a key before exposing this starter beyond local development.",
+            "API-key auth is not enabled yet. Generate a key before exposing DepTriage beyond local development.",
         ));
     }
 

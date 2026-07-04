@@ -15,6 +15,7 @@ anyhow = "1"
 axum = { version = "0.7", features = ["macros"] }
 chrono = { version = "0.4", features = ["serde"] }
 dotenvy = "0.15"
+dep-triage = { path = "../../products/dep-triage/backend" }
 merge-keeper = { path = "../../products/merge-keeper/backend" }
 release-sentry = { path = "../../products/release-sentry/backend" }
 rusqlite = { version = "0.31", features = ["bundled"] }

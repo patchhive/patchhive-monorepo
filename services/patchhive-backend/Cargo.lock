@@ -278,6 +278,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "dep-triage"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "chrono",
+ "dotenvy",
+ "once_cell",
+ "patchhive-github-data",
+ "patchhive-github-security",
+ "patchhive-product-core",
+ "reqwest",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tower-http 0.5.2",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
 name = "digest"
 version = "0.10.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -923,6 +946,7 @@ dependencies = [
  "anyhow",
  "axum",
  "chrono",
+ "dep-triage",
  "dotenvy",
  "merge-keeper",
  "release-sentry",
@@ -959,6 +983,17 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+]
+
+[[package]]
+name = "patchhive-github-security"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "patchhive-github-data",
+ "reqwest",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

@@ -9,6 +9,9 @@ pub async fn init_enabled_products(config: &Config) -> Result<()> {
     if config.product_selection.enables("release-sentry") {
         release_sentry::init_runtime().await?;
     }
+    if config.product_selection.enables("dep-triage") {
+        dep_triage::init_runtime().await?;
+    }
     Ok(())
 }
 
@@ -18,4 +21,8 @@ pub fn merge_keeper_router() -> axum::Router {
 
 pub fn release_sentry_router() -> axum::Router {
     release_sentry::router()
+}
+
+pub fn dep_triage_router() -> axum::Router {
+    dep_triage::router()
 }

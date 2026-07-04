@@ -47,6 +47,7 @@ pub fn router(state: Arc<AppState>) -> Router {
             "/api/products/release-sentry",
             products::release_sentry_router(),
         )
+        .nest("/api/products/dep-triage", products::dep_triage_router())
         .merge(suite_routes)
 }
 

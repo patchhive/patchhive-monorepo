@@ -4,7 +4,7 @@ name = "DepTriage"
 role = "dependency update triage"
 module_path = "crate::products::dep_triage"
 route_prefix = "/api/products/dep-triage"
-migration_stage = "not-started"
+migration_stage = "integrated"
 
 [safety]
 read_only = true

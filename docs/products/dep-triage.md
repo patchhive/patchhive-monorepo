@@ -6,7 +6,10 @@
 
 DepTriage turns dependency update noise into a ranked engineering queue. It reads open dependency pull requests, optionally folds in Dependabot alerts, groups activity by package, and recommends `update now`, `watch`, or `ignore for now` — without any AI for the first loop.
 
-DepTriage is a **standalone backend service** with its own frontend, SQLite database, GitHub API integration, and a dedicated exported repo at [`patchhive/deptriage`](https://github.com/patchhive/deptriage).
+DepTriage is mounted in the shared PatchHive backend for suite mode, while the
+standalone backend wrapper remains available during the transition. It still has
+its own frontend, SQLite tables, GitHub API integration, and a dedicated
+exported repo at [`patchhive/deptriage`](https://github.com/patchhive/deptriage).
 
 ---
 
@@ -190,6 +193,35 @@ DepTriage is read-only in the MVP. It does **not**:
 - Rewrite update configuration
 
 Its job is to turn dependency update noise into an explainable queue a human can act on. Future execution should flow through RepoReaper and TrustGate.
+
+---
+
+## Unified Backend Mode
+
+DepTriage is the third product engine mounted in-process inside
+`services/patchhive-backend`, after MergeKeeper and ReleaseSentry. In suite
+mode, the v2 frontend should talk to the unified backend route instead of a
+separate DepTriage backend service:
+
+```bash
+PATCHHIVE_PRODUCTS=dep-triage \
+PATCHHIVE_BIND_ADDR=127.0.0.1:8100 \
+cargo run --manifest-path services/patchhive-backend/Cargo.toml
+
+npm --prefix products/dep-triage/frontend-v2 run dev
+```
+
+The v2 default API base is:
+
+```text
+http://127.0.0.1:8100/api/products/dep-triage
+```
+
+The standalone backend at `products/dep-triage/backend` remains as a
+compatibility wrapper around the same product module while the migration is
+tested. Once product-mode packaging runs the shared backend image with only
+DepTriage enabled, the old separate backend service can be moved to legacy or
+removed.
 
 ---
 
