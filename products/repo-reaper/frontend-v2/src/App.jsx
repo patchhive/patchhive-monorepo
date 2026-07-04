@@ -1925,7 +1925,6 @@ function ChecksSurface({
           <p className="subline">Backend health, bot identity, AI provider readiness, team setup, and startup checks.</p>
         </div>
         <div className="actions">
-          {selectedRun && <button className="btn" onClick={onClearRun} type="button">Clear run</button>}
           <button className="btn" onClick={onRefresh} type="button">{runtime.loading ? "Refreshing..." : "Refresh"}</button>
         </div>
       </div>

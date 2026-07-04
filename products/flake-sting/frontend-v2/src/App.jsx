@@ -655,7 +655,6 @@ function ChecksSurface({ history, onClearScan, overview, runtime, scan }) {
           <p className="subline">Backend health, GitHub Actions access, database state, and startup checks.</p>
         </div>
         <div className="actions">
-          {scan && <button className="btn" onClick={onClearScan} type="button">Clear scan</button>}
           <button className="btn" onClick={runtime.refresh} type="button">{runtime.loading ? "Refreshing..." : "Refresh"}</button>
         </div>
       </div>

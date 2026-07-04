@@ -756,7 +756,6 @@ function ChecksSurface({ history, onClearReview, overview, review, runtime }) {
           <p className="subline">Backend health, GitHub review access, webhook posture, and startup checks before a PR review run.</p>
         </div>
         <div className="actions">
-          {review && <button className="btn" onClick={onClearReview} type="button">Clear review</button>}
           <button className="btn" onClick={runtime.refresh} type="button">{runtime.loading ? "Refreshing..." : "Refresh"}</button>
         </div>
       </div>

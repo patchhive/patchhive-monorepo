@@ -89,7 +89,7 @@ function warningLabel(warning) {
     return "Dependabot alerts were skipped because GitHub token access is not configured.";
   }
   if (value.includes("/dependabot/alerts") && value.includes("Dependabot alerts are disabled")) {
-    return "Dependabot alerts are disabled for this repository, so dependency vulnerability pressure is unavailable.";
+    return "DepTriage tried to read Dependabot alerts, but GitHub says alerts are disabled for this repository. Dependency vulnerability pressure is unavailable until that repo setting is enabled.";
   }
   if (value.includes("/dependabot/alerts") && (value.includes("403 Forbidden") || value.includes("Resource not accessible"))) {
     return "Dependabot alerts could not be read. The token needs Dependabot alert read access for this repository.";
@@ -373,8 +373,8 @@ function ScanForm({ error, form, health, onChange, onRun, running }) {
               type="checkbox"
             />
             <span>
-              <span className="repo-name" style={{ display: "block", fontSize: "0.8rem" }}>Include Dependabot alerts</span>
-              <span className="feed-meta">{alertsReady ? "Adds security urgency from GitHub alerts." : "Add a GitHub token to include alert pressure."}</span>
+              <span className="repo-name" style={{ display: "block", fontSize: "0.8rem" }}>Try Dependabot alerts</span>
+              <span className="feed-meta">{alertsReady ? "Reads GitHub alert evidence when this repository has Dependabot alerts enabled." : "Add a GitHub token to include alert pressure."}</span>
             </span>
           </label>
           <div className="v2-field">
@@ -620,7 +620,6 @@ function ChecksSurface({ history, onClearScan, overview, runtime, scan }) {
           <p className="subline">Backend health, GitHub dependency-read access, database state, and startup checks.</p>
         </div>
         <div className="actions">
-          {scan && <button className="btn" onClick={onClearScan} type="button">Clear scan</button>}
           <button className="btn" onClick={runtime.refresh} type="button">{runtime.loading ? "Refreshing..." : "Refresh"}</button>
         </div>
       </div>

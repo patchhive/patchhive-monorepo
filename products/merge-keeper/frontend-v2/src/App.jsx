@@ -846,7 +846,6 @@ function ChecksSurface({ assessment, history, onClearAssessment, overview, runti
           <p className="subline">Backend health, GitHub access, webhooks, and integration readiness before a merge call.</p>
         </div>
         <div className="actions">
-          {assessment && <button className="btn" onClick={onClearAssessment} type="button">Clear assessment</button>}
           <button className="btn" onClick={runtime.refresh} type="button">{runtime.loading ? "Refreshing..." : "Refresh"}</button>
         </div>
       </div>
