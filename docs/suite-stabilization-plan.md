@@ -91,7 +91,7 @@ Extract now or next:
 - run envelopes, run status vocabulary, and run history summaries
 - suite schedule records and dispatch contracts
 - scope policy: allowlist, denylist, opt-out, saved scopes
-- RepoReaper's Squad substrate once a second product needs AI roles
+- RepoReaper's Squad substrate before a second product implements AI roles
 - GitHub token validation and typed permission errors
 - per-run log artifacts and phase/event persistence
 - shared GitHub token scope descriptions and startup validation messages
