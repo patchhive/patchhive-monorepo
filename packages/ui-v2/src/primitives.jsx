@@ -645,6 +645,8 @@ export function SuiteRadar({
     const requested = params.get(itemQueryParam);
     return normalizedItems.find((item) => item.id === requested) || normalizedItems[0];
   });
+  const latestItemId = normalizedItems[0]?.id || "";
+  const lastLatestItemId = useRef(latestItemId);
   const lastSelectionResetKey = useRef(selectionResetKey);
 
   const updateRadarUrl = (item, days) => {
@@ -680,6 +682,21 @@ export function SuiteRadar({
       setSelectedItem(currentItem);
     }
   }, [normalizedItems, selectedItem, visibleItems, windowDays]);
+
+  useEffect(() => {
+    if (!latestItemId || lastLatestItemId.current === latestItemId) {
+      return;
+    }
+    lastLatestItemId.current = latestItemId;
+    const latestItem = normalizedItems[0];
+    const nextItem = latestItem?.minWindow <= windowDays
+      ? latestItem
+      : visibleItems[0] || latestItem;
+    if (nextItem) {
+      setSelectedItem(nextItem);
+      updateRadarUrl(nextItem, windowDays);
+    }
+  }, [latestItemId, normalizedItems, visibleItems, windowDays]);
 
   useEffect(() => {
     if (!selectionResetKey || lastSelectionResetKey.current === selectionResetKey) {
