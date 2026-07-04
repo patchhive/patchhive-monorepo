@@ -19,6 +19,10 @@ async fn main() -> Result<()> {
     let addr = listen_addr("MERGE_KEEPER_PORT", 8050);
     info!("🪢 MergeKeeper by PatchHive — listening on {addr}");
     let listener = tokio::net::TcpListener::bind(&addr).await?;
-    axum::serve(listener, app).await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .await?;
     Ok(())
 }

@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Context, Result};
 use axum::{
+    extract::ConnectInfo,
     extract::Request,
     http::{HeaderMap, Method, StatusCode},
     middleware::Next,
@@ -13,11 +14,13 @@ use sha2::{Digest, Sha256};
 use std::{
     collections::{HashMap, HashSet},
     fs,
+    net::{IpAddr, SocketAddr},
     path::{Path, PathBuf},
     sync::{Mutex, OnceLock, RwLock},
 };
 
 pub type JsonApiError = (StatusCode, Json<serde_json::Value>);
+pub type ClientConnectInfo = ConnectInfo<SocketAddr>;
 pub const SERVICE_TOKEN_HEADER: &str = "X-PatchHive-Service-Token";
 pub const SUITE_BOOTSTRAP_HEADER: &str = "X-PatchHive-Suite-Secret";
 pub const SERVICE_SCOPE_RUNS_READ: &str = "runs:read";
@@ -511,7 +514,10 @@ pub fn rotate_and_save_service_token(config: &ApiKeyAuthConfig) -> Result<String
     Ok(key)
 }
 
-pub fn bootstrap_request_allowed(headers: &HeaderMap) -> bool {
+pub fn bootstrap_request_allowed_from_peer(
+    headers: &HeaderMap,
+    peer_addr: Option<SocketAddr>,
+) -> bool {
     if matches!(
         std::env::var("PATCHHIVE_ALLOW_REMOTE_BOOTSTRAP")
             .ok()
@@ -521,43 +527,76 @@ pub fn bootstrap_request_allowed(headers: &HeaderMap) -> bool {
         return true;
     }
 
-    let mut saw_browser_local_hint = false;
+    if !browser_local_hints_allowed(headers) {
+        return false;
+    }
 
-    for header in ["origin", "referer"] {
+    if has_forwarded_client(headers) {
+        return forwarded_client_is_local(headers, peer_addr);
+    }
+
+    peer_addr
+        .map(|addr| local_client_ip(addr.ip()))
+        .unwrap_or(false)
+}
+
+pub fn bootstrap_request_allowed(headers: &HeaderMap) -> bool {
+    bootstrap_request_allowed_from_peer(headers, None)
+}
+
+fn browser_local_hints_allowed(headers: &HeaderMap) -> bool {
+    for header in ["origin", "referer", "host"] {
         if let Some(value) = headers.get(header).and_then(|value| value.to_str().ok()) {
             if !local_endpoint(value) {
                 return false;
             }
-            saw_browser_local_hint = true;
         }
     }
 
-    if saw_browser_local_hint {
-        return true;
-    }
+    true
+}
 
+fn has_forwarded_client(headers: &HeaderMap) -> bool {
+    headers.contains_key("x-forwarded-for")
+}
+
+fn forwarded_client_is_local(headers: &HeaderMap, peer_addr: Option<SocketAddr>) -> bool {
     if let Some(value) = headers
         .get("x-forwarded-for")
         .and_then(|value| value.to_str().ok())
     {
-        // Only trust x-forwarded-for when explicitly behind a trusted proxy.
-        if !matches!(
+        // Trust forwarded client identity only from an explicit trusted proxy
+        // configuration or from a same-host PatchHive suite gateway.
+        let trusted_proxy = matches!(
             std::env::var("PATCHHIVE_TRUST_PROXY").ok().as_deref(),
             Some("1" | "true" | "TRUE" | "yes" | "on")
-        ) {
+        );
+        let local_proxy = peer_addr
+            .map(|addr| local_client_ip(addr.ip()))
+            .unwrap_or(false);
+        if !trusted_proxy && !local_proxy {
             return false;
         }
         let client = value.split(',').next().unwrap_or("").trim();
-        if !matches!(client, "" | "127.0.0.1" | "::1" | "[::1]") {
-            return false;
-        }
+        return parse_client_ip(client)
+            .map(local_client_ip)
+            .unwrap_or(false);
     }
 
-    headers
-        .get("host")
-        .and_then(|value| value.to_str().ok())
-        .map(local_endpoint)
-        .unwrap_or(false)
+    false
+}
+
+fn parse_client_ip(value: &str) -> Option<IpAddr> {
+    let client = value.trim().trim_start_matches('[').trim_end_matches(']');
+    client.parse::<IpAddr>().ok()
+}
+
+fn local_client_ip(ip: IpAddr) -> bool {
+    ip.is_loopback()
+}
+
+pub fn peer_addr_from_connect_info(peer: Option<ClientConnectInfo>) -> Option<SocketAddr> {
+    peer.map(|ConnectInfo(addr)| addr)
 }
 
 fn configured_suite_bootstrap_secret() -> String {
@@ -671,7 +710,11 @@ pub fn service_token_rotation_failed_error(err: &anyhow::Error) -> JsonApiError 
     )
 }
 
-pub fn service_token_generation_allowed(config: &ApiKeyAuthConfig, headers: &HeaderMap) -> bool {
+pub fn service_token_generation_allowed_from_peer(
+    config: &ApiKeyAuthConfig,
+    headers: &HeaderMap,
+    peer_addr: Option<SocketAddr>,
+) -> bool {
     if suite_bootstrap_request_allowed(headers) {
         return true;
     }
@@ -680,12 +723,24 @@ pub fn service_token_generation_allowed(config: &ApiKeyAuthConfig, headers: &Hea
         let token = request_token(headers);
         !token.is_empty() && verify_token(config, token)
     } else {
-        bootstrap_request_allowed(headers)
+        bootstrap_request_allowed_from_peer(headers, peer_addr)
     }
 }
 
+pub fn service_token_generation_allowed(config: &ApiKeyAuthConfig, headers: &HeaderMap) -> bool {
+    service_token_generation_allowed_from_peer(config, headers, None)
+}
+
+pub fn service_token_rotation_allowed_from_peer(
+    config: &ApiKeyAuthConfig,
+    headers: &HeaderMap,
+    peer_addr: Option<SocketAddr>,
+) -> bool {
+    service_token_generation_allowed_from_peer(config, headers, peer_addr)
+}
+
 pub fn service_token_rotation_allowed(config: &ApiKeyAuthConfig, headers: &HeaderMap) -> bool {
-    service_token_generation_allowed(config, headers)
+    service_token_rotation_allowed_from_peer(config, headers, None)
 }
 
 pub fn auth_status_payload(config: &ApiKeyAuthConfig) -> serde_json::Value {
@@ -966,12 +1021,41 @@ macro_rules! define_api_key_auth_module {
                 $crate::auth::bootstrap_request_allowed(headers)
             }
 
+            pub fn bootstrap_request_allowed_from_peer(
+                headers: &::axum::http::HeaderMap,
+                peer_addr: Option<::std::net::SocketAddr>,
+            ) -> bool {
+                $crate::auth::bootstrap_request_allowed_from_peer(headers, peer_addr)
+            }
+
             pub fn service_token_generation_allowed(headers: &::axum::http::HeaderMap) -> bool {
                 $crate::auth::service_token_generation_allowed(&AUTH_CONFIG, headers)
             }
 
+            pub fn service_token_generation_allowed_from_peer(
+                headers: &::axum::http::HeaderMap,
+                peer_addr: Option<::std::net::SocketAddr>,
+            ) -> bool {
+                $crate::auth::service_token_generation_allowed_from_peer(
+                    &AUTH_CONFIG,
+                    headers,
+                    peer_addr,
+                )
+            }
+
             pub fn service_token_rotation_allowed(headers: &::axum::http::HeaderMap) -> bool {
                 $crate::auth::service_token_rotation_allowed(&AUTH_CONFIG, headers)
+            }
+
+            pub fn service_token_rotation_allowed_from_peer(
+                headers: &::axum::http::HeaderMap,
+                peer_addr: Option<::std::net::SocketAddr>,
+            ) -> bool {
+                $crate::auth::service_token_rotation_allowed_from_peer(
+                    &AUTH_CONFIG,
+                    headers,
+                    peer_addr,
+                )
             }
 
             pub async fn auth_middleware(
@@ -1195,12 +1279,58 @@ mod tests {
         let mut local = HeaderMap::new();
         local.insert("host", HeaderValue::from_static("127.0.0.1:8000"));
         local.insert("origin", HeaderValue::from_static("http://localhost:5173"));
-        assert!(bootstrap_request_allowed(&local));
+        let local_peer = "127.0.0.1:53000"
+            .parse::<SocketAddr>()
+            .expect("local socket should parse");
+        assert!(bootstrap_request_allowed_from_peer(
+            &local,
+            Some(local_peer)
+        ));
+        assert!(!bootstrap_request_allowed(&local));
 
         let mut remote = HeaderMap::new();
         remote.insert("host", HeaderValue::from_static("example.com"));
         remote.insert("origin", HeaderValue::from_static("https://example.com"));
-        assert!(!bootstrap_request_allowed(&remote));
+        let remote_peer = "203.0.113.10:53000"
+            .parse::<SocketAddr>()
+            .expect("remote socket should parse");
+        assert!(!bootstrap_request_allowed_from_peer(
+            &remote,
+            Some(remote_peer)
+        ));
+
+        let mut spoofed = HeaderMap::new();
+        spoofed.insert("host", HeaderValue::from_static("127.0.0.1:8000"));
+        spoofed.insert("origin", HeaderValue::from_static("http://localhost:5173"));
+        assert!(!bootstrap_request_allowed_from_peer(
+            &spoofed,
+            Some(remote_peer)
+        ));
+    }
+
+    #[test]
+    fn bootstrap_request_uses_forwarded_client_when_gateway_is_local() {
+        let local_gateway = "127.0.0.1:53000"
+            .parse::<SocketAddr>()
+            .expect("local socket should parse");
+
+        let mut local_client = HeaderMap::new();
+        local_client.insert("host", HeaderValue::from_static("127.0.0.1:8120"));
+        local_client.insert("origin", HeaderValue::from_static("http://localhost:5199"));
+        local_client.insert("x-forwarded-for", HeaderValue::from_static("127.0.0.1"));
+        assert!(bootstrap_request_allowed_from_peer(
+            &local_client,
+            Some(local_gateway)
+        ));
+
+        let mut remote_client = HeaderMap::new();
+        remote_client.insert("host", HeaderValue::from_static("127.0.0.1:8120"));
+        remote_client.insert("origin", HeaderValue::from_static("http://localhost:5199"));
+        remote_client.insert("x-forwarded-for", HeaderValue::from_static("203.0.113.10"));
+        assert!(!bootstrap_request_allowed_from_peer(
+            &remote_client,
+            Some(local_gateway)
+        ));
     }
 
     #[test]

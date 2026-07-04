@@ -14,8 +14,9 @@ use uuid::Uuid;
 use crate::{
     auth::{
         auth_enabled, generate_and_save_key, generate_and_save_service_token,
-        rotate_and_save_service_token, service_auth_enabled, service_token_generation_allowed,
-        service_token_rotation_allowed, verify_token,
+        rotate_and_save_service_token, service_auth_enabled,
+        service_token_generation_allowed_from_peer, service_token_rotation_allowed_from_peer,
+        verify_token,
     },
     db, github,
     github::{GitHubWorkflowJob, GitHubWorkflowRun},
@@ -90,11 +91,13 @@ pub async fn login(Json(body): Json<LoginBody>) -> Result<Json<serde_json::Value
 
 pub async fn gen_key(
     headers: HeaderMap,
+    peer: Option<patchhive_product_core::auth::ClientConnectInfo>,
 ) -> Result<Json<serde_json::Value>, patchhive_product_core::auth::JsonApiError> {
     if auth_enabled() {
         return Err(patchhive_product_core::auth::auth_already_configured_error());
     }
-    if !crate::auth::bootstrap_request_allowed(&headers) {
+    let peer_addr = patchhive_product_core::auth::peer_addr_from_connect_info(peer);
+    if !crate::auth::bootstrap_request_allowed_from_peer(&headers, peer_addr) {
         return Err(patchhive_product_core::auth::bootstrap_localhost_required_error());
     }
     let key = generate_and_save_key()
@@ -106,11 +109,13 @@ pub async fn gen_key(
 
 pub async fn gen_service_token(
     headers: HeaderMap,
+    peer: Option<patchhive_product_core::auth::ClientConnectInfo>,
 ) -> Result<Json<serde_json::Value>, patchhive_product_core::auth::JsonApiError> {
     if service_auth_enabled() {
         return Err(patchhive_product_core::auth::service_auth_already_configured_error());
     }
-    if !service_token_generation_allowed(&headers) {
+    let peer_addr = patchhive_product_core::auth::peer_addr_from_connect_info(peer);
+    if !service_token_generation_allowed_from_peer(&headers, peer_addr) {
         return Err(patchhive_product_core::auth::service_token_generation_forbidden_error());
     }
     let token = generate_and_save_service_token()
@@ -123,11 +128,13 @@ pub async fn gen_service_token(
 
 pub async fn rotate_service_token(
     headers: HeaderMap,
+    peer: Option<patchhive_product_core::auth::ClientConnectInfo>,
 ) -> Result<Json<serde_json::Value>, patchhive_product_core::auth::JsonApiError> {
     if !service_auth_enabled() {
         return Err(patchhive_product_core::auth::service_auth_not_configured_error());
     }
-    if !service_token_rotation_allowed(&headers) {
+    let peer_addr = patchhive_product_core::auth::peer_addr_from_connect_info(peer);
+    if !service_token_rotation_allowed_from_peer(&headers, peer_addr) {
         return Err(patchhive_product_core::auth::service_token_rotation_forbidden_error());
     }
     let token = rotate_and_save_service_token()

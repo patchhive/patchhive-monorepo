@@ -118,7 +118,10 @@ async fn main() {
     let listener = tokio::net::TcpListener::bind(&addr)
         .await
         .unwrap_or_else(|err| panic!("failed to bind RepoMemory to {addr}: {err}"));
-    axum::serve(listener, app)
-        .await
-        .unwrap_or_else(|err| panic!("RepoMemory server failed: {err}"));
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .await
+    .unwrap_or_else(|err| panic!("RepoMemory server failed: {err}"));
 }

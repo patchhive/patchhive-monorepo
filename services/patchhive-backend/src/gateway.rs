@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use axum::{
     body::{to_bytes, Body},
@@ -15,6 +15,7 @@ pub async fn proxy_product_request(
     state: Arc<AppState>,
     product_key: String,
     request: Request<Body>,
+    peer_addr: Option<SocketAddr>,
 ) -> Response {
     let Some(product) = state.registry.find(&product_key) else {
         return json_error(
@@ -114,6 +115,9 @@ pub async fn proxy_product_request(
             continue;
         }
         builder = builder.header(name.as_str(), value.as_bytes());
+    }
+    if let Some(peer_addr) = peer_addr {
+        builder = builder.header("x-forwarded-for", peer_addr.ip().to_string());
     }
 
     let downstream = match builder.send().await {
@@ -257,6 +261,9 @@ fn should_skip_request_header(name: &HeaderName) -> bool {
             | "te"
             | "trailer"
             | "keep-alive"
+            | "forwarded"
+            | "x-forwarded-for"
+            | "x-real-ip"
     )
 }
 

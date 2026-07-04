@@ -19,6 +19,10 @@ async fn main() -> Result<()> {
     let addr = listen_addr("DEP_TRIAGE_PORT", 8070);
     info!("📦 DepTriage by PatchHive — listening on {addr}");
     let listener = tokio::net::TcpListener::bind(&addr).await?;
-    axum::serve(listener, app).await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .await?;
     Ok(())
 }

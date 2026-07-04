@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use axum::{
     body::Body,
-    extract::{Path, State},
+    extract::{ConnectInfo, Path, State},
     http::{Request, StatusCode},
     response::{IntoResponse, Response},
     routing::{any, get, post},
@@ -18,6 +18,7 @@ use crate::{
     products,
     state::AppState,
 };
+use std::net::SocketAddr;
 
 pub fn router(state: Arc<AppState>) -> Router {
     let suite_routes = Router::new()
@@ -108,11 +109,18 @@ async fn products(State(state): State<Arc<AppState>>) -> Json<Vec<ProductRespons
 async fn product_health(
     State(state): State<Arc<AppState>>,
     Path(product_key): Path<String>,
+    peer: Option<ConnectInfo<SocketAddr>>,
     request: Request<Body>,
 ) -> Response {
     match state.registry.find(&product_key) {
         Some(product) if product.gateway_target_url().is_some() => {
-            gateway::proxy_product_request(state, product_key, request).await
+            gateway::proxy_product_request(
+                state,
+                product_key,
+                request,
+                peer.map(|ConnectInfo(addr)| addr),
+            )
+            .await
         }
         Some(product) => {
             Json(product.to_health_response(state.product_enabled(product.key.as_str())))
@@ -132,9 +140,16 @@ async fn product_health(
 async fn product_gateway(
     State(state): State<Arc<AppState>>,
     Path((product_key, _gateway_path)): Path<(String, String)>,
+    peer: Option<ConnectInfo<SocketAddr>>,
     request: Request<Body>,
 ) -> Response {
-    gateway::proxy_product_request(state, product_key, request).await
+    gateway::proxy_product_request(
+        state,
+        product_key,
+        request,
+        peer.map(|ConnectInfo(addr)| addr),
+    )
+    .await
 }
 
 async fn first_stack_status(State(state): State<Arc<AppState>>) -> Json<SetupResponse> {

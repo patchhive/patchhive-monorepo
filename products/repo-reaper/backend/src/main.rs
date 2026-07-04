@@ -48,8 +48,9 @@ use tracing::info;
 
 use crate::auth::{
     auth_enabled, generate_and_save_key, generate_and_save_service_token,
-    rotate_and_save_service_token, service_auth_enabled, service_token_generation_allowed,
-    service_token_rotation_allowed, verify_token,
+    rotate_and_save_service_token, service_auth_enabled,
+    service_token_generation_allowed_from_peer, service_token_rotation_allowed_from_peer,
+    verify_token,
 };
 use crate::state::AppState;
 
@@ -133,9 +134,12 @@ async fn main() {
     let listener = tokio::net::TcpListener::bind(&addr)
         .await
         .unwrap_or_else(|err| panic!("failed to bind RepoReaper to {addr}: {err}"));
-    axum::serve(listener, app)
-        .await
-        .unwrap_or_else(|err| panic!("RepoReaper server failed: {err}"));
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .await
+    .unwrap_or_else(|err| panic!("RepoReaper server failed: {err}"));
 }
 
 async fn auth_status() -> Json<serde_json::Value> {
@@ -161,11 +165,13 @@ async fn login(Json(body): Json<LoginBody>) -> Result<Json<serde_json::Value>, S
 
 async fn gen_key(
     headers: axum::http::HeaderMap,
+    peer: Option<patchhive_product_core::auth::ClientConnectInfo>,
 ) -> Result<Json<serde_json::Value>, patchhive_product_core::auth::JsonApiError> {
     if auth_enabled() {
         return Err(patchhive_product_core::auth::auth_already_configured_error());
     }
-    if !auth::bootstrap_request_allowed(&headers) {
+    let peer_addr = patchhive_product_core::auth::peer_addr_from_connect_info(peer);
+    if !auth::bootstrap_request_allowed_from_peer(&headers, peer_addr) {
         return Err(patchhive_product_core::auth::bootstrap_localhost_required_error());
     }
     let key = generate_and_save_key()
@@ -177,11 +183,13 @@ async fn gen_key(
 
 async fn gen_service_token(
     headers: axum::http::HeaderMap,
+    peer: Option<patchhive_product_core::auth::ClientConnectInfo>,
 ) -> Result<Json<serde_json::Value>, patchhive_product_core::auth::JsonApiError> {
     if service_auth_enabled() {
         return Err(patchhive_product_core::auth::service_auth_already_configured_error());
     }
-    if !service_token_generation_allowed(&headers) {
+    let peer_addr = patchhive_product_core::auth::peer_addr_from_connect_info(peer);
+    if !service_token_generation_allowed_from_peer(&headers, peer_addr) {
         return Err(patchhive_product_core::auth::service_token_generation_forbidden_error());
     }
     let token = generate_and_save_service_token()
@@ -194,11 +202,13 @@ async fn gen_service_token(
 
 async fn rotate_service_token(
     headers: axum::http::HeaderMap,
+    peer: Option<patchhive_product_core::auth::ClientConnectInfo>,
 ) -> Result<Json<serde_json::Value>, patchhive_product_core::auth::JsonApiError> {
     if !service_auth_enabled() {
         return Err(patchhive_product_core::auth::service_auth_not_configured_error());
     }
-    if !service_token_rotation_allowed(&headers) {
+    let peer_addr = patchhive_product_core::auth::peer_addr_from_connect_info(peer);
+    if !service_token_rotation_allowed_from_peer(&headers, peer_addr) {
         return Err(patchhive_product_core::auth::service_token_rotation_forbidden_error());
     }
     let token = rotate_and_save_service_token()
