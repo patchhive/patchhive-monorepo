@@ -223,6 +223,14 @@ tested. Once product-mode packaging runs the shared backend image with only
 DepTriage enabled, the old separate backend service can be moved to legacy or
 removed.
 
+Local launch caveat: `DEP_TRIAGE_SERVICE_TOKEN_HASH` can contain a scoped
+service-token JSON record. If the unified backend is started by shell-sourcing
+`products/dep-triage/.env`, unquoted JSON can be flattened by the shell and
+treated as a legacy token string. API-key login still works for browser testing,
+but HiveCore service-token pairing should use a properly quoted/exported value,
+the product wrapper's `dotenvy` loading path, or a regenerated scoped service
+token before depending on service dispatch.
+
 ---
 
 ## API Endpoints
@@ -248,6 +256,9 @@ removed.
 
 - **API key authentication** is optional. Enabled by setting `DEP_TRIAGE_API_KEY_HASH`.
 - **Service token auth** for HiveCore dispatch. Enabled by setting `DEP_TRIAGE_SERVICE_TOKEN_HASH`. Dispatch path: `/scan/github/dependencies`.
+- **Service-token env format:** quote JSON service-token records when exporting
+  them through a shell. Unquoted JSON may be parsed as a legacy string during
+  local unified-backend tests.
 - Public paths: `/health`, `/auth/*`, `/capabilities`, `/startup/checks`.
 - Key generation limited to localhost bootstrap.
 - Unauthorized message: `"Unauthorized — provide X-API-Key or X-PatchHive-Service-Token."`

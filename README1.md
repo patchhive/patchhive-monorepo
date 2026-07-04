@@ -5,121 +5,83 @@
 </p>
 
 <p align="center">
-  <b>Autonomous software maintenance that stays visible, reviewable, and trustworthy.</b>
+  <strong>Autonomous software maintenance that stays visible, reviewable, and clearly attributed.</strong>
 </p>
 
-PatchHive is a software maintenance platform for teams that want codebase upkeep to become visible, reviewable, and progressively automated.
+PatchHive is a software maintenance platform for finding, prioritizing, and eventually fixing maintenance work across repositories.
 
-It is not another interactive coding assistant. PatchHive is built around autonomous, outbound contribution: it finds maintenance work, evaluates risk, remembers repo-specific lessons, and can open clearly attributed pull requests when the operator allows it.
+It is not another chat-first coding assistant. PatchHive is built around autonomous, outbound contribution: the operator chooses broad scopes and safety settings, products discover useful work, evidence stays visible, and write actions happen only through constrained, reviewable paths.
 
-## What PatchHive Does
+When PatchHive opens a pull request or comments on an issue, it should be obvious what happened, why it happened, and that the work came from PatchHive.
 
-PatchHive turns maintenance from a pile of scattered signals into an operating loop:
+## What PatchHive Is Built To Do
 
-1. Detect maintenance pressure before it becomes urgent.
-2. Review risk before automation touches code.
-3. Remember conventions, failures, and reviewer feedback across runs.
-4. Generate patches only after the signal and trust layers are in place.
-5. Coordinate the suite through one control plane without making products dependent on it.
+PatchHive turns maintenance into an operating loop:
 
-Every product remains standalone. HiveCore brings them together into one interface.
+1. Find maintenance pressure before it becomes urgent.
+2. Rank the work that actually deserves attention.
+3. Check risk before automation touches code.
+4. Remember repo-specific conventions and painful failures.
+5. Open clearly attributed pull requests only when the evidence supports it.
+6. Coordinate the suite from one control plane without making every product dependent on it.
+
+The goal is not to make automation look human. The goal is to make automation useful enough, transparent enough, and constrained enough that maintainers can judge it on the work.
 
 ## Product Suite
 
 | Product | Role |
 | --- | --- |
-| SignalHive | Finds stale work, duplicate issues, recurring bug patterns, TODO/FIXME hotspots, and maintenance drag. |
-| TrustGate | Reviews diffs against repo-specific safety rules and returns `safe`, `warn`, or `block`. |
-| RepoMemory | Stores durable repo conventions, review feedback, hotspot history, and failure lessons. |
-| FailGuard | Cross-cutting RepoMemory capability that turns bad outcomes into future guardrails. |
-| RepoReaper | Finds fixable issues, generates patches, validates them, and opens attributed pull requests. |
-| ReviewBee | Converts PR review threads into an actionable follow-up checklist. |
-| MergeKeeper | Decides whether a PR is actually ready to merge, blocked, or on hold. |
-| FlakeSting | Detects flaky CI behavior and explains why the signal is unstable. |
-| DepTriage | Ranks dependency update noise by urgency and practical impact. |
-| VulnTriage | Turns security alerts into an engineering queue with clear next steps. |
-| RefactorScout | Surfaces conservative, high-value refactor opportunities. |
-| HiveCore | Centralizes suite visibility, shared defaults, run history, and product launch control. |
+| **SignalHive** | Finds stale work, duplicate issues, recurring bug patterns, TODO/FIXME hotspots, and maintenance drag. |
+| **ReviewBee** | Converts PR review threads into a concrete follow-up checklist. |
+| **TrustGate** | Reviews diffs against repo-specific safety rules and returns `safe`, `warn`, or `block`. |
+| **RepoMemory** | Stores durable repo conventions, review feedback, hotspot history, and failure lessons. |
+| **MergeKeeper** | Decides whether a PR is ready, blocked, or on hold. |
+| **FlakeSting** | Detects flaky CI behavior and explains why the signal is unstable. |
+| **DepTriage** | Ranks dependency update noise by urgency and practical impact. |
+| **VulnTriage** | Turns security alerts into an engineering queue with clear next steps. |
+| **RefactorScout** | Surfaces conservative, high-value refactor opportunities. |
+| **ReleaseSentry** | Checks release readiness from CI, tags, changelog, blocker issues, and release evidence. |
+| **RepoReaper** | Finds fixable issues, generates patches, validates them, and opens attributed pull requests. |
+| **HiveCore** | The suite cockpit for health, launch control, shared defaults, run history, and product handoffs. |
 
-## How The System Fits
+## How The Pieces Fit
 
-| Layer | Products | What They Contribute |
+| Layer | Products | Purpose |
 | --- | --- | --- |
-| Discovery and signals | SignalHive, FlakeSting, DepTriage, VulnTriage, RefactorScout, ReviewBee | Surface maintenance pressure from issues, CI, dependencies, security alerts, refactor candidates, and PR review threads. |
-| Trust and memory | TrustGate, RepoMemory, FailGuard, MergeKeeper | Evaluate risk, preserve repo-specific lessons, convert bad outcomes into guardrails, and decide whether PRs are truly merge-ready. |
+| Discovery and signals | SignalHive, ReviewBee, FlakeSting, DepTriage, VulnTriage, RefactorScout, ReleaseSentry | Surface maintenance pressure from issues, PRs, CI, dependencies, security alerts, release state, and code structure. |
+| Trust and memory | TrustGate, RepoMemory, MergeKeeper, FailGuard | Evaluate risk, preserve repo-specific lessons, convert bad outcomes into guardrails, and decide when PRs are truly ready. |
 | Autonomous action | RepoReaper | Turns trusted candidate work into validated patches and clearly attributed pull requests. |
-| Suite control plane | HiveCore | Brings standalone products into one operating interface for health, launch control, shared defaults, run history, and product handoffs. |
+| Control plane | HiveCore | Makes the suite legible in one place and coordinates shared defaults, status, history, and handoffs. |
 
-PatchHive matures automation in that order: visibility first, trust and memory second, autonomous write actions after that foundation exists. HiveCore coordinates the suite, but every product remains independently runnable and useful on its own.
+PatchHive matures automation in that order: visibility first, trust and memory second, autonomous write actions after the foundation exists.
 
-## Why It Is Different
+## Attribution And Trust
 
-PatchHive is designed for radical delegation, not chat-driven pairing.
+PatchHive contributions should be direct about their origin.
 
-- Operators choose broad topics, languages, auth, and safety settings.
-- Products discover candidate repos, issues, PRs, and risks on their own.
-- Autonomous PRs should come from the PatchHive GitHub identity.
-- PR bodies disclose that the work was generated by PatchHive.
-- Trust is earned through visible output, reviewable evidence, and consistent history.
+- Autonomous PRs come from the PatchHive GitHub identity.
+- PR bodies and issue comments identify the product that acted.
+- Evidence, confidence, validation posture, and failure reasons should stay visible.
+- Maintainers should be able to inspect PatchHive's history and decide whether the work is worth trusting.
 
-The goal is not to pretend automation is human. The goal is to make automation constrained, legible, and useful enough that maintainers can judge it on the work.
+Transparency is part of the product, not a disclaimer bolted on afterward.
 
-## Current Focus
+## Current Status
 
-PatchHive already has the core product suite, shared Rust crates, shared frontend shell, Docker support, exported standalone mirrors, and HiveCore control-plane wiring.
+PatchHive is in active alpha and is being built for real operator use first. The suite already includes product backends, v2 frontend surfaces, shared Rust crates, shared UI packages, standalone product mirrors, and a unified backend migration in progress.
 
-The active path is:
+Current engineering focus:
 
-1. Bring up SignalHive, TrustGate, and RepoReaper together.
-2. Use HiveCore to monitor health, capabilities, run history, and contract drift.
-3. Exercise the first real handoff path: SignalHive finds work, TrustGate evaluates risk, RepoReaper acts only when the gate is clear.
-4. Feed rejected or painful outcomes back into RepoMemory through FailGuard.
-
-## Local Development
-
-Run HiveCore as the suite control plane:
-
-```bash
-cd products/hive-core
-cp .env.example .env
-docker compose up --build
-```
-
-HiveCore defaults:
-
-- Frontend: `http://localhost:5183`
-- Backend: `http://localhost:8100`
-
-Most products can also run independently:
-
-```bash
-cd products/<product>
-cp .env.example .env
-docker compose up --build
-```
-
-For split local development:
-
-```bash
-cd products/<product>/backend
-cargo run
-
-cd ../frontend
-npm install
-npm run dev
-```
-
-Backends bind to `0.0.0.0` by default for Docker compatibility. For loopback-only local runs, set:
-
-```bash
-PATCHHIVE_BIND_ADDR=127.0.0.1
-```
+- Move product engines into the shared PatchHive backend one at a time.
+- Keep every product independently runnable while the suite converges.
+- Harden HiveCore into the control plane for status, shared settings, schedules, and product handoffs.
+- Continue testing real read-only scans and guarded write actions before expanding autonomy.
 
 ## Repository Model
 
-PatchHive is monorepo-first. Products and shared foundations are built here, then exported to standalone mirrors under the `patchhive` GitHub organization.
+PatchHive is developed monorepo-first. Products and shared foundations are built together, then exported to standalone mirrors under this organization so each product can also be inspected and run on its own.
 
-The standalone repos make each product easier to inspect, run, and adopt, but the monorepo remains the source of truth.
+The monorepo remains the source of truth. Standalone repos are product-facing mirrors.
 
 ## Core Principles
 
@@ -128,8 +90,15 @@ The standalone repos make each product easier to inspect, run, and adopt, but th
 - Repo-specific memory should improve future decisions.
 - Outbound contribution should be clearly attributed.
 - Safety gates should come before autonomous write actions.
-- Trust should be earned through signal quality, not hype.
+- Trust should be earned through signal quality and consistent history.
 
-## Status
+## For Maintainers
 
-PatchHive is in active alpha. It is being built for real operator use first; broader adoption comes after the system proves it can produce useful, reviewable maintenance work consistently.
+If PatchHive opens a PR or comments on an issue in your repository, treat it like any other automated contribution:
+
+- Read the linked issue, PR body, and generated explanation.
+- Check whether tests were run or whether the PR is intentionally draft.
+- Review the diff like you would review work from any external contributor.
+- Close or request changes if the work is not useful.
+
+PatchHive is designed to make that review possible without pretending the work came from a human.

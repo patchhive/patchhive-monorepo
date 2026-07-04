@@ -163,6 +163,13 @@ POST /api/products/dep-triage/scan/github/dependencies
 GET  /api/products/dep-triage/runs
 ```
 
+When launching the suite backend with product `.env` files, avoid shell-sourcing
+unquoted JSON service-token records such as `*_SERVICE_TOKEN_HASH={...}`.
+Shell parsing can flatten the JSON and make product-core treat the value as a
+legacy token string. API-key login is unaffected, but HiveCore service-token
+pairing should use quoted exports, product wrapper `dotenvy` loading, or freshly
+rotated scoped service tokens.
+
 ## Gateway Dispatch
 
 Gateway dispatch lets the unified backend expose stable suite URLs while the
