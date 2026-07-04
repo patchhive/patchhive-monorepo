@@ -57,11 +57,11 @@ const PRODUCT_ACCENTS = {
     accentGlowRgb: "255 155 82",
   },
   "dep-triage": {
-    accent: "#8aa62c",
-    accentDim: "#586d1b",
-    accentRgb: "138 166 44",
-    accentGlow: "#c8db62",
-    accentGlowRgb: "200 219 98",
+    accent: "#5f7cff",
+    accentDim: "#38458f",
+    accentRgb: "95 124 255",
+    accentGlow: "#9aacff",
+    accentGlowRgb: "154 172 255",
   },
   "vuln-triage": {
     accent: "#d6406a",
