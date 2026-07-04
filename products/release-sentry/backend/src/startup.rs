@@ -1,4 +1,7 @@
-use patchhive_product_core::startup::StartupCheck;
+use patchhive_product_core::{
+    github_permissions::GitHubPermissionProfile,
+    startup::{StartupCheck, StartupCheckLevel},
+};
 
 pub async fn validate_config(client: &reqwest::Client) -> Vec<StartupCheck> {
     let mut checks = Vec::new();
@@ -22,19 +25,16 @@ pub async fn validate_config(client: &reqwest::Client) -> Vec<StartupCheck> {
         "ReleaseSentry starts read-only: release readiness should collect evidence before it gates publishing or deploys.",
     ));
 
+    let github_profile = GitHubPermissionProfile::ReleaseRead;
     if crate::github::github_token_configured() {
         match crate::github::validate_token(client).await {
-            Ok(_) => checks.push(StartupCheck::info(
-                "GitHub token detected. ReleaseSentry can read private repos, Actions history, issues, tags, releases, and changelog files.",
-            )),
-            Err(err) => checks.push(StartupCheck::warn(format!(
-                "GitHub token is configured, but validation failed: {err}"
-            ))),
+            Ok(_) => checks.push(github_profile.ready_check()),
+            Err(err) => checks.push(
+                github_profile.validation_failed_check(err.to_string(), StartupCheckLevel::Warn),
+            ),
         }
     } else {
-        checks.push(StartupCheck::warn(
-            "BOT_GITHUB_TOKEN is not configured. Public GitHub release checks may work, but rate limits and private repos will be limited.",
-        ));
+        checks.push(github_profile.missing_check(StartupCheckLevel::Warn));
     }
 
     checks

@@ -1,4 +1,7 @@
-use patchhive_product_core::startup::StartupCheck;
+use patchhive_product_core::{
+    github_permissions::GitHubPermissionProfile,
+    startup::{StartupCheck, StartupCheckLevel},
+};
 use reqwest::Client;
 
 pub async fn validate_config(client: &Client) -> Vec<StartupCheck> {
@@ -17,13 +20,11 @@ pub async fn validate_config(client: &Client) -> Vec<StartupCheck> {
         ));
     }
 
+    let github_profile = GitHubPermissionProfile::DependencyTriage;
     match crate::github::validate_token(client).await {
-        Ok(_) => checks.push(StartupCheck::info(
-            "GitHub token is configured. DepTriage can read dependency PRs and security alerts with healthy rate limits.",
-        )),
-        Err(_) => checks.push(StartupCheck::warn(
-            "BOT_GITHUB_TOKEN or GITHUB_TOKEN is not configured. Public dependency PR scans may still work, but Dependabot alerts and rate limits will be weaker.",
-        )),
+        Ok(_) => checks.push(github_profile.ready_check()),
+        Err(err) => checks
+            .push(github_profile.validation_failed_check(err.to_string(), StartupCheckLevel::Warn)),
     }
 
     checks.push(StartupCheck::info(

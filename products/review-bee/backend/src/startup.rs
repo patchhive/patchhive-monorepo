@@ -1,4 +1,7 @@
-use patchhive_product_core::startup::StartupCheck;
+use patchhive_product_core::{
+    github_permissions::GitHubPermissionProfile,
+    startup::{StartupCheck, StartupCheckLevel},
+};
 
 pub async fn validate_config() -> Vec<StartupCheck> {
     let mut checks = Vec::new();
@@ -16,14 +19,11 @@ pub async fn validate_config() -> Vec<StartupCheck> {
         ));
     }
 
+    let github_profile = GitHubPermissionProfile::PrReview;
     if crate::github::github_token_configured() {
-        checks.push(StartupCheck::info(
-            "GitHub token detected. ReviewBee can fetch PR reviews and maintain a PR comment when requested.",
-        ));
+        checks.push(github_profile.ready_check());
     } else {
-        checks.push(StartupCheck::error(
-            "BOT_GITHUB_TOKEN or GITHUB_TOKEN is required for GitHub-backed review analysis.",
-        ));
+        checks.push(github_profile.missing_check(StartupCheckLevel::Error));
     }
 
     if crate::github::webhook_secret_configured() {

@@ -1,4 +1,7 @@
-use patchhive_product_core::startup::StartupCheck;
+use patchhive_product_core::{
+    github_permissions::GitHubPermissionProfile,
+    startup::{StartupCheck, StartupCheckLevel},
+};
 
 pub async fn validate_config() -> Vec<StartupCheck> {
     let mut checks = Vec::new();
@@ -18,14 +21,11 @@ pub async fn validate_config() -> Vec<StartupCheck> {
         ));
     }
 
+    let github_profile = GitHubPermissionProfile::ActionsRead;
     if crate::github::github_token_configured() {
-        checks.push(StartupCheck::info(
-            "GitHub token detected. FlakeSting can read workflow runs and jobs with healthier rate limits.",
-        ));
+        checks.push(github_profile.ready_check());
     } else {
-        checks.push(StartupCheck::warn(
-            "BOT_GITHUB_TOKEN or GITHUB_TOKEN is not configured. Public-repo scans may still work, but GitHub rate limits will be much tighter.",
-        ));
+        checks.push(github_profile.missing_check(StartupCheckLevel::Warn));
     }
 
     checks.push(StartupCheck::info(

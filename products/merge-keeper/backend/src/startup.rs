@@ -1,4 +1,7 @@
-use patchhive_product_core::startup::StartupCheck;
+use patchhive_product_core::{
+    github_permissions::GitHubPermissionProfile,
+    startup::{StartupCheck, StartupCheckLevel},
+};
 
 pub async fn validate_config() -> Vec<StartupCheck> {
     let mut checks = Vec::new();
@@ -18,14 +21,11 @@ pub async fn validate_config() -> Vec<StartupCheck> {
         ));
     }
 
+    let github_profile = GitHubPermissionProfile::MergeReadiness;
     if crate::github::github_token_configured() {
-        checks.push(StartupCheck::info(
-            "GitHub token detected. MergeKeeper can read PR state, review pressure, check health, and publish merge-readiness artifacts.",
-        ));
+        checks.push(github_profile.ready_check());
     } else {
-        checks.push(StartupCheck::error(
-            "BOT_GITHUB_TOKEN or GITHUB_TOKEN is required for GitHub-backed merge readiness checks and GitHub report publishing.",
-        ));
+        checks.push(github_profile.missing_check(StartupCheckLevel::Error));
     }
 
     checks.push(StartupCheck::info(
