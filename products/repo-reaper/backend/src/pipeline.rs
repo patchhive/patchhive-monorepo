@@ -2,9 +2,11 @@ use axum::{
     extract::State,
     response::sse::{Event, KeepAlive, Sse},
 };
+use patchhive_product_core::scope_policy::{
+    normalize_repo_name, RepoScopeDecision, RepoScopePolicy,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::collections::HashSet;
 use std::convert::Infallible;
 use std::sync::{
     atomic::{AtomicBool, AtomicI64, Ordering},
@@ -75,26 +77,7 @@ fn cfg(k: &str) -> String {
 }
 
 fn normalized_target_repo(req: &RunRequest) -> Option<String> {
-    let repo = req.target_repo.trim().trim_matches('/');
-    if repo.is_empty() {
-        return None;
-    }
-
-    let mut parts = repo.split('/');
-    let owner = parts.next().unwrap_or_default();
-    let name = parts.next().unwrap_or_default();
-    if owner.is_empty() || name.is_empty() || parts.next().is_some() {
-        return None;
-    }
-
-    Some(format!("{owner}/{name}"))
-}
-
-#[derive(Default)]
-struct RepoFilters {
-    allowlist: HashSet<String>,
-    denylist: HashSet<String>,
-    opt_out: HashSet<String>,
+    normalize_repo_name(&req.target_repo)
 }
 
 struct RunTeam {
@@ -105,7 +88,7 @@ struct RunTeam {
     gatekeepers: Vec<AgentConfig>,
 }
 
-fn load_filters() -> RepoFilters {
+fn load_filters() -> RepoScopePolicy {
     let Ok(conn) = get_conn() else {
         return Default::default();
     };
@@ -117,27 +100,7 @@ fn load_filters() -> RepoFilters {
             Some(mapped.flatten().collect())
         })
         .unwrap_or_default();
-    let allowlist: HashSet<_> = rows
-        .iter()
-        .filter(|(_, t)| t == "allowlist")
-        .map(|(r, _)| r.clone())
-        .collect();
-    let denylist: HashSet<_> = rows
-        .iter()
-        .filter(|(_, t)| t == "denylist" || t == "blocklist")
-        .map(|(r, _)| r.clone())
-        .collect();
-    let opt_out: HashSet<_> = rows
-        .iter()
-        .filter(|(_, t)| t == "opt_out")
-        .map(|(r, _)| r.clone())
-        .collect();
-
-    RepoFilters {
-        allowlist,
-        denylist,
-        opt_out,
-    }
+    RepoScopePolicy::from_entries(rows)
 }
 
 fn select_run_team(
@@ -235,20 +198,11 @@ async fn collect_targets(
     http: &reqwest::Client,
     req: &RunRequest,
     scout: &AgentConfig,
-    filters: &RepoFilters,
+    filters: &RepoScopePolicy,
     tx: &mpsc::Sender<Result<Event, Infallible>>,
     run_cost: Option<&Arc<AtomicI64>>,
 ) -> (Vec<Value>, Vec<Value>, Vec<Value>, bool) {
-    let (repos, mut issues) = discover(
-        http,
-        req,
-        scout,
-        &filters.allowlist,
-        &filters.denylist,
-        &filters.opt_out,
-        tx,
-    )
-    .await;
+    let (repos, mut issues) = discover(http, req, scout, filters, tx).await;
 
     let scoring_available = score_discovered_issues(http, &mut issues, scout, tx, run_cost).await;
     let fixable = issues
@@ -422,23 +376,11 @@ async fn discover(
     http: &reqwest::Client,
     req: &RunRequest,
     scout: &AgentConfig,
-    allowlist: &HashSet<String>,
-    denylist: &HashSet<String>,
-    opt_out: &HashSet<String>,
+    filters: &RepoScopePolicy,
     tx: &mpsc::Sender<Result<Event, Infallible>>,
 ) -> (Vec<Value>, Vec<Value>) {
     if let Some(target_repo) = normalized_target_repo(req) {
-        return discover_target_repo(
-            http,
-            req,
-            scout,
-            &target_repo,
-            allowlist,
-            denylist,
-            opt_out,
-            tx,
-        )
-        .await;
+        return discover_target_repo(http, req, scout, &target_repo, filters, tx).await;
     }
 
     if !req.target_repo.trim().is_empty() {
@@ -464,15 +406,7 @@ async fn discover(
     let mut repos = search_repos(http, &query, req.max_repos)
         .await
         .unwrap_or_default();
-    if !allowlist.is_empty() {
-        repos.retain(|r| allowlist.contains(r["full_name"].as_str().unwrap_or("")));
-    }
-    if !denylist.is_empty() {
-        repos.retain(|r| !denylist.contains(r["full_name"].as_str().unwrap_or("")));
-    }
-    if !opt_out.is_empty() {
-        repos.retain(|r| !opt_out.contains(r["full_name"].as_str().unwrap_or("")));
-    }
+    repos.retain(|repo| filters.allows(repo["full_name"].as_str().unwrap_or("")));
 
     let _ = tx
         .send(sse(
@@ -528,30 +462,17 @@ async fn discover_target_repo(
     req: &RunRequest,
     scout: &AgentConfig,
     target_repo: &str,
-    allowlist: &HashSet<String>,
-    denylist: &HashSet<String>,
-    opt_out: &HashSet<String>,
+    filters: &RepoScopePolicy,
     tx: &mpsc::Sender<Result<Event, Infallible>>,
 ) -> (Vec<Value>, Vec<Value>) {
-    if !allowlist.is_empty() && !allowlist.contains(target_repo) {
-        let _ = tx
-            .send(alog(
-                scout,
-                &format!("Target repo {target_repo} is not in the allowlist"),
-                "warn",
-            ))
-            .await;
-        return (Vec::new(), Vec::new());
-    }
-    if denylist.contains(target_repo) || opt_out.contains(target_repo) {
-        let _ = tx
-            .send(alog(
-                scout,
-                &format!("Target repo {target_repo} is blocked by repo policy"),
-                "warn",
-            ))
-            .await;
-        return (Vec::new(), Vec::new());
+    match filters.decision(target_repo) {
+        RepoScopeDecision::Allowed => {}
+        decision => {
+            let _ = tx
+                .send(alog(scout, &decision.message(target_repo), "warn"))
+                .await;
+            return (Vec::new(), Vec::new());
+        }
     }
 
     let repo = match gh_get(http, &format!("/repos/{target_repo}"), &[], None).await {

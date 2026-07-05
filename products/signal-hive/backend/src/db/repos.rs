@@ -1,5 +1,8 @@
 use anyhow::Result;
 use chrono::Utc;
+use patchhive_product_core::scope_policy::{
+    normalize_repo_name as normalize_scope_repo_name, RepoListType, RepoScopePolicy,
+};
 use rusqlite::params;
 use std::collections::HashSet;
 
@@ -18,26 +21,11 @@ pub fn scan_count() -> u32 {
 }
 
 pub fn normalize_repo_list_type(value: &str) -> Option<&'static str> {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "allowlist" => Some("allowlist"),
-        "denylist" | "blocklist" => Some("denylist"),
-        "opt_out" | "opt-out" | "optout" => Some("opt_out"),
-        _ => None,
-    }
+    RepoListType::parse(value).map(RepoListType::as_str)
 }
 
 pub fn normalize_repo_name(value: &str) -> Option<String> {
-    let mut parts = value
-        .trim()
-        .split('/')
-        .map(|part| part.trim().to_ascii_lowercase())
-        .filter(|part| !part.is_empty());
-    let owner = parts.next()?;
-    let repo = parts.next()?;
-    if parts.next().is_some() {
-        return None;
-    }
-    Some(format!("{owner}/{repo}"))
+    normalize_scope_repo_name(value)
 }
 
 pub fn list_repo_lists() -> Result<Vec<RepoListItem>> {
@@ -80,22 +68,11 @@ pub fn delete_repo_list(repo: &str) -> Result<()> {
 
 pub fn repo_list_sets() -> Result<(HashSet<String>, HashSet<String>, HashSet<String>)> {
     let rows = list_repo_lists()?;
-    let allow = rows
-        .iter()
-        .filter(|row| row.list_type == "allowlist")
-        .map(|row| row.repo.clone())
-        .collect();
-    let deny = rows
-        .iter()
-        .filter(|row| row.list_type == "denylist")
-        .map(|row| row.repo.clone())
-        .collect();
-    let opt_out = rows
-        .iter()
-        .filter(|row| row.list_type == "opt_out")
-        .map(|row| row.repo.clone())
-        .collect();
-    Ok((allow, deny, opt_out))
+    let policy = RepoScopePolicy::from_entries(
+        rows.iter()
+            .map(|row| (row.repo.as_str(), row.list_type.as_str())),
+    );
+    Ok((policy.allowlist, policy.denylist, policy.opt_out))
 }
 
 pub fn list_scan_presets() -> Result<Vec<ScanPreset>> {

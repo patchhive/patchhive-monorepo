@@ -4,6 +4,7 @@ use axum::{
     Json, Router,
 };
 use chrono::Utc;
+use patchhive_product_core::scope_policy::{normalize_repo_name, RepoListType};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::{
@@ -180,15 +181,6 @@ fn persist_env_updates(path: &StdPath, updates: &[(String, String)]) -> std::io:
         content.push('\n');
     }
     fs::write(path, content)
-}
-
-fn normalize_repo_list_type(value: &str) -> Option<&'static str> {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "allowlist" => Some("allowlist"),
-        "denylist" | "blocklist" => Some("denylist"),
-        "opt_out" | "opt-out" | "optout" => Some("opt_out"),
-        _ => None,
-    }
 }
 
 async fn get_config(State(state): State<AppState>) -> Json<Value> {
@@ -828,7 +820,9 @@ async fn get_repo_lists() -> Json<Value> {
                     let list_type = r.get::<_, String>(1)?;
                     Ok(json!({
                         "repo": r.get::<_, String>(0)?,
-                        "list_type": normalize_repo_list_type(&list_type).unwrap_or("denylist"),
+                        "list_type": RepoListType::parse(&list_type)
+                            .unwrap_or(RepoListType::Denylist)
+                            .as_str(),
                         "added_at": r.get::<_, String>(2)?,
                     }))
                 })
@@ -849,12 +843,15 @@ async fn add_repo(Json(body): Json<RepoListUpdate>) -> Json<Value> {
     let Ok(conn) = get_conn() else {
         return Json(json!({"ok":false}));
     };
-    let Some(list_type) = normalize_repo_list_type(&body.list_type) else {
+    let Some(repo) = normalize_repo_name(&body.repo) else {
+        return Json(json!({"ok": false, "error": "invalid repo"}));
+    };
+    let Some(list_type) = RepoListType::parse(&body.list_type) else {
         return Json(json!({"ok": false, "error": "invalid list_type"}));
     };
     let _ = conn.execute(
         "INSERT OR REPLACE INTO repo_lists(repo, list_type, added_at) VALUES(?1,?2,?3)",
-        rusqlite::params![body.repo, list_type, Utc::now().to_rfc3339()],
+        rusqlite::params![repo, list_type.as_str(), Utc::now().to_rfc3339()],
     );
     Json(json!({"ok": true}))
 }
@@ -862,6 +859,9 @@ async fn add_repo(Json(body): Json<RepoListUpdate>) -> Json<Value> {
 async fn remove_repo(Path(repo): Path<String>) -> Json<Value> {
     let Ok(conn) = get_conn() else {
         return Json(json!({"ok":false}));
+    };
+    let Some(repo) = normalize_repo_name(&repo) else {
+        return Json(json!({"ok": false, "error": "invalid repo"}));
     };
     let _ = conn.execute("DELETE FROM repo_lists WHERE repo=?1", [&repo]);
     Json(json!({"ok": true}))

@@ -3,6 +3,7 @@ use patchhive_github_data::{
     code_search_count, fetch_issues, fetch_repository, search_repositories,
     validate_token as validate_shared_token,
 };
+use patchhive_product_core::scope_policy::repo_scope_decision;
 use reqwest::Client;
 use std::collections::HashSet;
 use tracing::warn;
@@ -27,11 +28,7 @@ fn repo_allowed(
     denylist: &HashSet<String>,
     opt_out: &HashSet<String>,
 ) -> bool {
-    let name = full_name.to_ascii_lowercase();
-    if opt_out.contains(&name) || denylist.contains(&name) {
-        return false;
-    }
-    allowlist.is_empty() || allowlist.contains(&name)
+    repo_scope_decision(full_name, allowlist, denylist, opt_out).is_allowed()
 }
 
 pub async fn fetch_repo(client: &Client, full_name: &str) -> Result<SearchRepo> {
