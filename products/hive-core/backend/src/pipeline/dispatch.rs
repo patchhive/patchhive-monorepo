@@ -243,48 +243,7 @@ pub(super) fn dispatch_service_token_issue(
 }
 
 pub(super) fn parse_dispatch_input(raw: Value) -> DispatchActionInput {
-    let Some(object) = raw.as_object() else {
-        return DispatchActionInput {
-            payload: raw,
-            ..DispatchActionInput::default()
-        };
-    };
-
-    let has_wrapper_keys = object.contains_key("payload")
-        || object.contains_key("path_params")
-        || object.contains_key("query");
-    if !has_wrapper_keys {
-        return DispatchActionInput {
-            payload: raw,
-            ..DispatchActionInput::default()
-        };
-    }
-
-    DispatchActionInput {
-        payload: object.get("payload").cloned().unwrap_or(Value::Null),
-        path_params: string_map_from_value(object.get("path_params")),
-        query: string_map_from_value(object.get("query")),
-    }
-}
-
-pub(super) fn string_map_from_value(value: Option<&Value>) -> HashMap<String, String> {
-    value
-        .and_then(Value::as_object)
-        .map(|object| {
-            object
-                .iter()
-                .map(|(key, value)| {
-                    (
-                        key.clone(),
-                        value
-                            .as_str()
-                            .map(ToOwned::to_owned)
-                            .unwrap_or_else(|| value.to_string()),
-                    )
-                })
-                .collect()
-        })
-        .unwrap_or_default()
+    contract::parse_dispatch_input(raw)
 }
 
 pub(super) fn fill_path_template(

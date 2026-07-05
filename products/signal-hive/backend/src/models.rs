@@ -1,4 +1,8 @@
+use patchhive_product_core::contract::{
+    cadence_from_hours, interval_cron_label, DispatchActionInput, SuiteScheduleRecord,
+};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 pub use patchhive_github_data::models::{GitHubIssue, GitHubRepository as SearchRepo};
 
@@ -191,6 +195,39 @@ pub struct ScanSchedule {
     pub last_scan_id: Option<String>,
     pub last_status: String,
     pub last_error: Option<String>,
+}
+
+impl ScanSchedule {
+    pub fn to_suite_schedule_record(&self) -> SuiteScheduleRecord {
+        let target_scope = serde_json::to_value(&self.params).unwrap_or(Value::Null);
+        let mut dispatch = DispatchActionInput {
+            payload: target_scope.clone(),
+            ..DispatchActionInput::default()
+        };
+        dispatch
+            .path_params
+            .insert("name".into(), self.name.clone());
+
+        let mut record = SuiteScheduleRecord::new(
+            format!("signal-hive:{}", self.name),
+            self.name.clone(),
+            "signal-hive",
+            "scan",
+        );
+        record.cadence = cadence_from_hours(self.cadence_hours);
+        record.cron = interval_cron_label(self.cadence_hours);
+        record.timezone = "UTC".into();
+        record.enabled = self.enabled;
+        record.target_scope = target_scope;
+        record.approval_policy = "read_only_auto".into();
+        record.next_run_at = self.next_run_at.clone();
+        record.last_run_id = self.last_scan_id.clone();
+        record.last_run_at = self.last_run_at.clone();
+        record.last_status = self.last_status.clone();
+        record.last_error = self.last_error.clone();
+        record.dispatch = dispatch;
+        record
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

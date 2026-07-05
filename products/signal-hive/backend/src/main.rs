@@ -257,8 +257,14 @@ async fn scan_presets() -> Json<serde_json::Value> {
 }
 
 async fn scan_schedules() -> Json<serde_json::Value> {
+    let schedules = db::list_scan_schedules().unwrap_or_default();
+    let suite_schedules = schedules
+        .iter()
+        .map(crate::models::ScanSchedule::to_suite_schedule_record)
+        .collect::<Vec<_>>();
     Json(json!({
-        "schedules": db::list_scan_schedules().unwrap_or_default(),
+        "schedules": schedules,
+        "suite_schedules": suite_schedules,
     }))
 }
 

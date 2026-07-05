@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -75,6 +77,81 @@ pub struct ProductRunSummary {
     pub updated_at: String,
     pub detail_path: String,
     pub raw: Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct DispatchActionInput {
+    #[serde(default)]
+    pub payload: Value,
+    #[serde(default)]
+    pub path_params: HashMap<String, String>,
+    #[serde(default)]
+    pub query: HashMap<String, String>,
+}
+
+impl Default for DispatchActionInput {
+    fn default() -> Self {
+        Self {
+            payload: Value::Null,
+            path_params: HashMap::new(),
+            query: HashMap::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SuiteScheduleRecord {
+    pub schema_version: String,
+    pub id: String,
+    pub name: String,
+    pub product: String,
+    pub action_id: String,
+    pub cadence: String,
+    pub cron: String,
+    pub timezone: String,
+    pub enabled: bool,
+    pub target_scope: Value,
+    pub approval_policy: String,
+    pub next_run_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_run_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_run_at: Option<String>,
+    #[serde(default)]
+    pub last_status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_error: Option<String>,
+    #[serde(default)]
+    pub dispatch: DispatchActionInput,
+}
+
+impl SuiteScheduleRecord {
+    pub fn new(
+        id: impl Into<String>,
+        name: impl Into<String>,
+        product: impl Into<String>,
+        action_id: impl Into<String>,
+    ) -> Self {
+        Self {
+            schema_version: CONTRACT_SCHEMA_VERSION.into(),
+            id: id.into(),
+            name: name.into(),
+            product: product.into(),
+            action_id: action_id.into(),
+            cadence: "manual".into(),
+            cron: String::new(),
+            timezone: "UTC".into(),
+            enabled: false,
+            target_scope: Value::Null,
+            approval_policy: "read_only_auto".into(),
+            next_run_at: String::new(),
+            last_run_id: None,
+            last_run_at: None,
+            last_status: "idle".into(),
+            last_error: None,
+            dispatch: DispatchActionInput::default(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -218,6 +295,44 @@ pub fn link(
     }
 }
 
+pub fn parse_dispatch_input(raw: Value) -> DispatchActionInput {
+    let Some(object) = raw.as_object() else {
+        return DispatchActionInput {
+            payload: raw,
+            ..DispatchActionInput::default()
+        };
+    };
+
+    let has_wrapper_keys = object.contains_key("payload")
+        || object.contains_key("path_params")
+        || object.contains_key("query");
+    if !has_wrapper_keys {
+        return DispatchActionInput {
+            payload: raw,
+            ..DispatchActionInput::default()
+        };
+    }
+
+    DispatchActionInput {
+        payload: object.get("payload").cloned().unwrap_or(Value::Null),
+        path_params: string_map_from_value(object.get("path_params")),
+        query: string_map_from_value(object.get("query")),
+    }
+}
+
+pub fn cadence_from_hours(hours: u32) -> String {
+    match hours.max(1) {
+        1 => "hourly".into(),
+        24 => "daily".into(),
+        168 => "weekly".into(),
+        value => format!("every_{value}h"),
+    }
+}
+
+pub fn interval_cron_label(hours: u32) -> String {
+    format!("interval:{}h", hours.max(1))
+}
+
 pub fn runs_from_history<T: Serialize>(
     product_slug: impl Into<String>,
     history_items: Vec<T>,
@@ -318,6 +433,26 @@ fn first_string(raw: &Value, keys: &[&str]) -> Option<String> {
     })
 }
 
+fn string_map_from_value(value: Option<&Value>) -> HashMap<String, String> {
+    value
+        .and_then(Value::as_object)
+        .map(|object| {
+            object
+                .iter()
+                .map(|(key, value)| {
+                    (
+                        key.clone(),
+                        value
+                            .as_str()
+                            .map(ToOwned::to_owned)
+                            .unwrap_or_else(|| value.to_string()),
+                    )
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 fn numeric_summary(raw: &Value) -> Option<String> {
     let object = raw.as_object()?;
     let parts = object
@@ -345,7 +480,10 @@ fn numeric_summary(raw: &Value) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{action, capabilities, runs_from_values, RunLifecycleStatus};
+    use super::{
+        action, cadence_from_hours, capabilities, interval_cron_label, parse_dispatch_input,
+        runs_from_values, RunLifecycleStatus, SuiteScheduleRecord,
+    };
     use serde_json::json;
 
     #[test]
@@ -372,6 +510,54 @@ mod tests {
             caps.actions[0].required_scopes,
             vec![crate::auth::SERVICE_SCOPE_ACTIONS_DISPATCH.to_string()]
         );
+    }
+
+    #[test]
+    fn dispatch_input_accepts_wrapped_payloads() {
+        let input = parse_dispatch_input(json!({
+            "path_params": { "name": "daily" },
+            "query": { "dry": true, "limit": 3 },
+            "payload": { "repo": "patchhive/example" }
+        }));
+
+        assert_eq!(input.path_params["name"], "daily");
+        assert_eq!(input.query["dry"], "true");
+        assert_eq!(input.query["limit"], "3");
+        assert_eq!(input.payload["repo"], "patchhive/example");
+    }
+
+    #[test]
+    fn dispatch_input_treats_plain_objects_as_payloads() {
+        let input = parse_dispatch_input(json!({ "repo": "patchhive/example" }));
+
+        assert_eq!(input.payload["repo"], "patchhive/example");
+        assert!(input.path_params.is_empty());
+        assert!(input.query.is_empty());
+    }
+
+    #[test]
+    fn suite_schedule_record_uses_contract_defaults() {
+        let schedule = SuiteScheduleRecord::new(
+            "sched_daily",
+            "daily-maintenance-scan",
+            "signal-hive",
+            "scan",
+        );
+
+        assert_eq!(schedule.schema_version, "patchhive.product.contract.v1");
+        assert_eq!(schedule.product, "signal-hive");
+        assert_eq!(schedule.approval_policy, "read_only_auto");
+        assert_eq!(schedule.last_status, "idle");
+        assert_eq!(schedule.dispatch.payload, serde_json::Value::Null);
+    }
+
+    #[test]
+    fn schedule_interval_helpers_describe_product_local_cadence() {
+        assert_eq!(cadence_from_hours(1), "hourly");
+        assert_eq!(cadence_from_hours(24), "daily");
+        assert_eq!(cadence_from_hours(168), "weekly");
+        assert_eq!(cadence_from_hours(6), "every_6h");
+        assert_eq!(interval_cron_label(6), "interval:6h");
     }
 
     #[test]

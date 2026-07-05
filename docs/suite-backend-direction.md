@@ -257,6 +257,9 @@ operator surface:
   history that cannot be inspected like a normal run.
 - Product-local schedule endpoints can remain during gateway mode for backward
   compatibility, but new v2 schedule UX should point at `/api/schedules`.
+- Shared Rust schedule and dispatch request contracts live in
+  `patchhive-product-core::contract`; product-local schedules should expose a
+  suite-shaped compatibility view while their storage remains product-owned.
 
 Minimum suite schedule fields:
 

@@ -109,12 +109,7 @@ pub struct ProductProbeSnapshot {
     pub recent_runs: Vec<patchhive_product_core::contract::ProductRunSummary>,
 }
 
-#[derive(Debug, Default)]
-pub struct DispatchActionInput {
-    pub payload: Value,
-    pub path_params: HashMap<String, String>,
-    pub query: HashMap<String, String>,
-}
+pub type DispatchActionInput = patchhive_product_core::contract::DispatchActionInput;
 
 pub fn resolved_auth_mode(
     definition: &crate::state::ProductDefinition,
