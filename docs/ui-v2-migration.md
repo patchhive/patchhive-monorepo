@@ -131,7 +131,7 @@ cross-product handoffs rather than another single-product radar board.
 | DepTriage | `products/dep-triage/frontend-v2` | v2 active; v1 moved to `frontend-legacy` |
 | VulnTriage | `products/vuln-triage/frontend-v2` | React prototype active |
 | RefactorScout | `products/refactor-scout/frontend-v2` | React prototype active |
-| ReleaseSentry | `products/release-sentry/frontend-v2` | React prototype active |
+| ReleaseSentry | `products/release-sentry/frontend-v2` | v2 active; v1 moved to `frontend-legacy` |
 | HiveCore | `products/hive-core/frontend-v2` | Control-plane demo active |
 
 ## Promotion Checklist

@@ -53,7 +53,6 @@ docker compose up --build
 ```
 
 Frontend: `http://localhost:5184`
-Frontend v2 prototype: `http://localhost:5202`
 Backend: `http://localhost:8120`
 Suite backend route: `http://localhost:8100/api/products/release-sentry`
 
@@ -63,14 +62,15 @@ Suite backend route: `http://localhost:8100/api/products/release-sentry`
 cp .env.example .env
 
 cd backend && cargo run
-cd ../frontend && npm install && npm run dev
+cd ../frontend-v2 && npm install && npm run dev
 ```
 
-The UI v2 prototype is isolated from the production frontend while the suite
-direction is still being tested:
+The old v1 frontend is preserved for reference in `frontend-legacy/` after the
+v2 parity audit. Use it only when comparing behavior before deleting legacy UI
+code:
 
 ```bash
-cd frontend-v2 && npm install && npm run dev
+cd frontend-legacy && npm install && npm run dev
 ```
 
 ### Unified Backend Mode
@@ -91,7 +91,9 @@ suite backend migration is tested.
 
 ## Local Notes
 
-- The frontend uses `@patchhivehq/ui` and `@patchhivehq/product-shell`.
+- The active frontend lives in `frontend-v2/`; the old v1 UI is preserved in
+  `frontend-legacy/` only as parity reference material.
+- The frontend uses `@patchhivehq/ui-v2` primitives and the shared product shell.
 - The backend stores release readiness history in SQLite at `RELEASE_SENTRY_DB_PATH`.
 - GitHub-backed checks should use a fine-grained token with Metadata (read), Contents (read), Actions (read), Issues (read), and Deployments/Releases read access where available.
 - Keep repository access public-only unless release readiness for private repos is explicitly enabled.
