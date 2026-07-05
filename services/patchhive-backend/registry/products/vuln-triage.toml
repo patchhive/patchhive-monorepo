@@ -4,7 +4,7 @@ name = "VulnTriage"
 role = "security finding triage"
 module_path = "crate::products::vuln_triage"
 route_prefix = "/api/products/vuln-triage"
-migration_stage = "not-started"
+migration_stage = "integrated"
 
 [safety]
 read_only = true

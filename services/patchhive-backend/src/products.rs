@@ -12,6 +12,9 @@ pub async fn init_enabled_products(config: &Config) -> Result<()> {
     if config.product_selection.enables("dep-triage") {
         dep_triage::init_runtime().await?;
     }
+    if config.product_selection.enables("vuln-triage") {
+        vuln_triage::init_runtime().await?;
+    }
     Ok(())
 }
 
@@ -25,4 +28,8 @@ pub fn release_sentry_router() -> axum::Router {
 
 pub fn dep_triage_router() -> axum::Router {
     dep_triage::router()
+}
+
+pub fn vuln_triage_router() -> axum::Router {
+    vuln_triage::router()
 }

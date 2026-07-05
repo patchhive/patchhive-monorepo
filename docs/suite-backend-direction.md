@@ -202,9 +202,11 @@ product proof because it broadens the read-only GitHub surface to Actions,
 tags, releases, issues, and changelog contents without introducing mutating
 product behavior. DepTriage is the third in-process product proof because it
 adds dependency PR grouping and Dependabot alert permission edge cases while
-remaining read-only. SignalHive remains the first read-only reconnaissance
-engine that should move fully in-process after the gateway bridge has proven the
-shape.
+remaining read-only. VulnTriage is the fourth in-process product proof because
+it exercises GitHub security-feed permissions, disabled-alert messaging, and
+security-read startup posture without adding mutation. SignalHive remains the
+first read-only reconnaissance engine that should move fully in-process after
+the gateway bridge has proven the shape.
 
 ## API Shape
 

@@ -57,11 +57,12 @@ Routes:
 - `GET /api/runs`
 - `GET /api/events`
 
-MergeKeeper, ReleaseSentry, and DepTriage are mounted as the first in-process
+MergeKeeper, ReleaseSentry, DepTriage, and VulnTriage are mounted as in-process
 product engines under `/api/products/merge-keeper/*`,
-`/api/products/release-sentry/*`, and `/api/products/dep-triage/*`. Other
-products still use their existing backend engines until they are moved into this
-runtime or temporarily connected through gateway routes.
+`/api/products/release-sentry/*`, `/api/products/dep-triage/*`, and
+`/api/products/vuln-triage/*`. Other products still use their existing backend
+engines until they are moved into this runtime or temporarily connected through
+gateway routes.
 
 ## Product Registry
 
@@ -117,9 +118,9 @@ path = "/api/products/signal-hive/scan"
 description = "Start a maintenance signal scan."
 ```
 
-MergeKeeper, ReleaseSentry, and DepTriage are mounted in-process from their
-product backend libraries. The manifest contract also drives gateway dispatch
-and is the shape future in-process mounting should use.
+MergeKeeper, ReleaseSentry, DepTriage, and VulnTriage are mounted in-process
+from their product backend libraries. The manifest contract also drives gateway
+dispatch and is the shape future in-process mounting should use.
 
 Run the suite backend with only MergeKeeper enabled:
 
@@ -161,6 +162,20 @@ DepTriage product routes are served directly by the unified backend:
 GET  /api/products/dep-triage/health
 POST /api/products/dep-triage/scan/github/dependencies
 GET  /api/products/dep-triage/runs
+```
+
+Run the suite backend with only VulnTriage enabled:
+
+```bash
+PATCHHIVE_PRODUCTS=vuln-triage cargo run
+```
+
+VulnTriage product routes are served directly by the unified backend:
+
+```text
+GET  /api/products/vuln-triage/health
+POST /api/products/vuln-triage/scan/github/findings
+GET  /api/products/vuln-triage/runs
 ```
 
 When launching the suite backend with product `.env` files, avoid shell-sourcing

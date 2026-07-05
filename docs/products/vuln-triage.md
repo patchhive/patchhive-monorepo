@@ -85,6 +85,7 @@ Defaults:
 - **Frontend** (production): `http://localhost:5181`
 - **Frontend v2 prototype**: `http://localhost:5200`
 - **Backend**: `http://localhost:8110`
+- **Suite backend route**: `http://localhost:8100/api/products/vuln-triage`
 
 Backend: `http://localhost:8110`
 Frontend: `http://localhost:5181`
@@ -104,6 +105,32 @@ The UI v2 prototype is isolated while the suite direction is still being tested:
 ```bash
 cd frontend-v2 && npm install && npm run dev
 ```
+
+### Unified Backend Mode
+
+VulnTriage is mounted in-process inside `services/patchhive-backend`. In suite
+mode, the v2 frontend should talk to the unified backend route instead of a
+separate VulnTriage backend service:
+
+```bash
+PATCHHIVE_PRODUCTS=vuln-triage \
+PATCHHIVE_BIND_ADDR=127.0.0.1:8100 \
+cargo run --manifest-path services/patchhive-backend/Cargo.toml
+
+npm --prefix products/vuln-triage/frontend-v2 run dev
+```
+
+The v2 default API base is:
+
+```text
+http://127.0.0.1:8100/api/products/vuln-triage
+```
+
+The standalone backend at `products/vuln-triage/backend` remains as a
+compatibility wrapper around the same product module while the migration is
+tested. Once product-mode packaging runs the shared backend image with only
+VulnTriage enabled, the old separate backend service can be moved to legacy or
+removed.
 
 ### Prerequisites
 
