@@ -26,7 +26,8 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
                 "/smoke",
                 "Verify SignalHive is ready for HiveCore dispatch without running a live GitHub scan.",
                 false,
-            ),
+            )
+            .read_only(true),
             contract::action(
                 "scan",
                 "Run signal scan",
@@ -34,7 +35,10 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
                 "/scan",
                 "Discover maintenance signals across repositories from configured topics and languages.",
                 true,
-            ),
+            )
+            .read_only(true)
+            .scheduleable(true)
+            .credential_requirements(["github:repo:read", "github:issues:read", "github:code:read"]),
             contract::action(
                 "run_schedule_now",
                 "Run saved schedule",
@@ -42,7 +46,10 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
                 "/schedules/{name}/run",
                 "Trigger a saved SignalHive scan schedule immediately.",
                 true,
-            ),
+            )
+            .read_only(true)
+            .scheduleable(true)
+            .credential_requirements(["github:repo:read", "github:issues:read", "github:code:read"]),
         ],
         vec![
             contract::link("history", "History", "/history"),

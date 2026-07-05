@@ -47,7 +47,10 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
             "/scan/github/actions",
             "Detect flaky workflow and test behavior from GitHub Actions history.",
             true,
-        )],
+        )
+        .read_only(true)
+        .scheduleable(true)
+        .credential_requirements(["github:actions:read"])],
         vec![
             contract::link("overview", "Overview", "/overview"),
             contract::link("history", "History", "/history"),

@@ -550,7 +550,10 @@ pub(super) fn local_hive_core_probe() -> ProductProbeSnapshot {
         "/settings",
         "Persist suite-wide defaults and per-product launch/API overrides.",
         false,
-    )];
+    )
+    .mutating(true)
+    .requires_approval(true)
+    .credential_requirements(["suite:control"])];
     let recent_runs = contract::runs_from_values("hive-core", hive_core_action_run_values(6)).runs;
     ProductProbeSnapshot {
         health: ProductHealthSnapshot {

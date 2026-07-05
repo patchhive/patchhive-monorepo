@@ -105,6 +105,14 @@ pub(super) async fn dispatch_product_action(
         ));
     }
 
+    if action.requires_approval || action.opens_pr {
+        return Err(api_error(
+            StatusCode::FORBIDDEN,
+            "approval_required",
+            "HiveCore does not dispatch approval-gated or pull-request-opening actions until the suite approval flow exists.",
+        ));
+    }
+
     if auth.service_token_configured() && !action.required_scopes.is_empty() {
         let auth_status = fetch_product_auth_status(&state.client, &api_url)
             .await

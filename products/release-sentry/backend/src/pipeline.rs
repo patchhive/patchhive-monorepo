@@ -43,7 +43,15 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
             "/check/github/release",
             "Gather release readiness evidence from GitHub releases, tags, changelog, blockers, and CI runs.",
             true,
-        )],
+        )
+        .read_only(true)
+        .scheduleable(true)
+        .credential_requirements([
+            "github:repo:read",
+            "github:actions:read",
+            "github:releases:read",
+            "github:issues:read",
+        ])],
         vec![
             contract::link("overview", "Overview", "/overview"),
             contract::link("history", "History", "/history"),

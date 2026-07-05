@@ -47,8 +47,20 @@ pub struct ProductAction {
     pub description: String,
     pub starts_run: bool,
     pub destructive: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub read_only: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub mutating: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub requires_approval: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub scheduleable: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub opens_pr: bool,
     #[serde(default)]
     pub required_scopes: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub credential_requirements: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -151,6 +163,42 @@ impl SuiteScheduleRecord {
             last_error: None,
             dispatch: DispatchActionInput::default(),
         }
+    }
+}
+
+impl ProductAction {
+    pub fn read_only(mut self, value: bool) -> Self {
+        self.read_only = value;
+        self
+    }
+
+    pub fn mutating(mut self, value: bool) -> Self {
+        self.mutating = value;
+        self
+    }
+
+    pub fn requires_approval(mut self, value: bool) -> Self {
+        self.requires_approval = value;
+        self
+    }
+
+    pub fn scheduleable(mut self, value: bool) -> Self {
+        self.scheduleable = value;
+        self
+    }
+
+    pub fn opens_pr(mut self, value: bool) -> Self {
+        self.opens_pr = value;
+        self
+    }
+
+    pub fn credential_requirements<I, S>(mut self, values: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.credential_requirements = values.into_iter().map(Into::into).collect();
+        self
     }
 }
 
@@ -279,8 +327,18 @@ pub fn action(
         description: description.into(),
         starts_run,
         destructive: false,
+        read_only: false,
+        mutating: false,
+        requires_approval: false,
+        scheduleable: false,
+        opens_pr: false,
         required_scopes: vec![crate::auth::SERVICE_SCOPE_ACTIONS_DISPATCH.into()],
+        credential_requirements: vec![],
     }
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 pub fn link(
@@ -510,6 +568,9 @@ mod tests {
             caps.actions[0].required_scopes,
             vec![crate::auth::SERVICE_SCOPE_ACTIONS_DISPATCH.to_string()]
         );
+        assert!(!caps.actions[0].read_only);
+        assert!(!caps.actions[0].mutating);
+        assert!(caps.actions[0].credential_requirements.is_empty());
     }
 
     #[test]

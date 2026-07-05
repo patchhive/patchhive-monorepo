@@ -81,10 +81,11 @@ Recommended schedule action metadata:
   "label": "Run scan",
   "scheduleable": true,
   "read_only": true,
-  "mutates_repo": false,
+  "mutating": false,
   "requires_approval": false,
   "default_cadences": ["daily", "weekly"],
-  "required_scopes": ["github:metadata:read"]
+  "credential_requirements": ["github:metadata:read"],
+  "required_scopes": ["actions:dispatch"]
 }
 ```
 

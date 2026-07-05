@@ -44,7 +44,10 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
                 "/assess/github/pr",
                 "Evaluate whether a GitHub pull request is merge-ready, blocked, or on hold.",
                 true,
-            ),
+            )
+            .read_only(true)
+            .scheduleable(true)
+            .credential_requirements(["github:pull_requests:read", "github:checks:read"]),
             contract::action(
                 "github_webhook",
                 "Receive GitHub webhook",
@@ -52,7 +55,9 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
                 "/webhooks/github",
                 "Process a signed GitHub pull request webhook for readiness updates.",
                 true,
-            ),
+            )
+            .read_only(true)
+            .credential_requirements(["github:pull_requests:read", "github:checks:read"]),
         ],
         vec![
             contract::link("overview", "Overview", "/overview"),

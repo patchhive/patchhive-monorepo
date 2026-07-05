@@ -31,7 +31,9 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
                 "/review",
                 "Review a submitted diff against repo-specific safety and policy rules.",
                 true,
-            ),
+            )
+            .read_only(true)
+            .scheduleable(true),
             contract::action(
                 "review_github_pr",
                 "Review GitHub PR",
@@ -39,7 +41,9 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
                 "/review/github/pr",
                 "Review a GitHub pull request diff against TrustGate rules.",
                 true,
-            ),
+            )
+            .scheduleable(true)
+            .credential_requirements(["github:pull_requests:read", "github:checks:write"]),
             contract::action(
                 "github_webhook",
                 "Receive GitHub webhook",
@@ -47,7 +51,8 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
                 "/webhooks/github",
                 "Process a signed GitHub pull request webhook for diff review.",
                 true,
-            ),
+            )
+            .credential_requirements(["github:pull_requests:read", "github:checks:write"]),
         ],
         vec![
             contract::link("history", "History", "/history"),

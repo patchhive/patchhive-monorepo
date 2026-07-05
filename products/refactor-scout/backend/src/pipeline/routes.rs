@@ -43,7 +43,10 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
             "/scan/local",
             "Surface safe refactor opportunities from an allowed local path or public GitHub repository.",
             true,
-        )],
+        )
+        .read_only(true)
+        .scheduleable(true)
+        .credential_requirements(["local:filesystem:read", "github:public-repo:clone"])],
         vec![
             contract::link("overview", "Overview", "/overview"),
             contract::link("history", "History", "/history"),

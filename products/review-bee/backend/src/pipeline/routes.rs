@@ -44,7 +44,9 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
                 "/review/github/pr",
                 "Turn a GitHub pull request review thread history into an actionable checklist.",
                 true,
-            ),
+            )
+            .scheduleable(true)
+            .credential_requirements(["github:pull_requests:read", "github:issues:write"]),
             contract::action(
                 "github_webhook",
                 "Receive GitHub webhook",
@@ -52,7 +54,8 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
                 "/webhooks/github",
                 "Process a signed GitHub pull request review webhook.",
                 true,
-            ),
+            )
+            .credential_requirements(["github:pull_requests:read", "github:issues:write"]),
         ],
         vec![
             contract::link("overview", "Overview", "/overview"),

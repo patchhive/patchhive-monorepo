@@ -258,7 +258,15 @@ async fn capabilities() -> Json<contract::ProductCapabilities> {
                 "/run",
                 "Find candidate issues, generate fixes, validate them, and open pull requests.",
                 true,
-            ),
+            )
+            .mutating(true)
+            .requires_approval(true)
+            .opens_pr(true)
+            .credential_requirements([
+                "github:contents:write",
+                "github:pull_requests:write",
+                "provider:ai",
+            ]),
             contract::action(
                 "dry_run",
                 "Run dry stalk",
@@ -266,7 +274,10 @@ async fn capabilities() -> Json<contract::ProductCapabilities> {
                 "/dry-run",
                 "Discover and score candidate work without writing patches or opening pull requests.",
                 true,
-            ),
+            )
+            .read_only(true)
+            .scheduleable(true)
+            .credential_requirements(["github:issues:read", "provider:ai"]),
         ],
         vec![
             contract::link("history", "History", "/history"),

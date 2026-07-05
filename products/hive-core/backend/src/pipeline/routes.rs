@@ -132,7 +132,10 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
             "/settings",
             "Persist suite-wide defaults and per-product launch/API overrides.",
             false,
-        )],
+        )
+        .mutating(true)
+        .requires_approval(true)
+        .credential_requirements(["suite:control"])],
         vec![
             contract::link("overview", "Overview", "/overview"),
             contract::link("products", "Products", "/products"),

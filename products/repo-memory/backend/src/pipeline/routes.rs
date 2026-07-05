@@ -68,7 +68,14 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
                 "/ingest",
                 "Build durable repo memory from GitHub history and review feedback.",
                 true,
-            ),
+            )
+            .read_only(true)
+            .scheduleable(true)
+            .credential_requirements([
+                "github:repo:read",
+                "github:pull_requests:read",
+                "github:issues:read",
+            ]),
             contract::action(
                 "context",
                 "Fetch repo context",
@@ -76,7 +83,8 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
                 "/context",
                 "Return reusable repo-specific context for another PatchHive product or agent.",
                 false,
-            ),
+            )
+            .read_only(true),
             contract::action(
                 "capture_failguard_lesson",
                 "Capture FailGuard lesson",
@@ -84,7 +92,9 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
                 "/failguard/lessons",
                 "Turn a painful outcome into a curated failure-pattern policy memory.",
                 true,
-            ),
+            )
+            .mutating(true)
+            .requires_approval(true),
             contract::action(
                 "suggest_failguard_candidate",
                 "Suggest FailGuard candidate",
@@ -92,7 +102,8 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
                 "/failguard/candidates",
                 "Queue a bad outcome for operator review before it becomes durable memory.",
                 false,
-            ),
+            )
+            .mutating(true),
         ],
         vec![
             contract::link("overview", "Overview", "/overview"),

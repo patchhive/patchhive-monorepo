@@ -372,7 +372,13 @@ mod tests {
             description: String::new(),
             starts_run: true,
             destructive: false,
+            read_only: false,
+            mutating: false,
+            requires_approval: false,
+            scheduleable: false,
+            opens_pr: false,
             required_scopes: vec!["actions:dispatch".into()],
+            credential_requirements: vec![],
         };
         let auth_status = ProductAuthStatusBody {
             service_auth_enabled: true,
@@ -397,7 +403,13 @@ mod tests {
             description: String::new(),
             starts_run: true,
             destructive: false,
+            read_only: false,
+            mutating: false,
+            requires_approval: false,
+            scheduleable: false,
+            opens_pr: false,
             required_scopes: vec!["actions:dispatch".into()],
+            credential_requirements: vec![],
         };
         let auth_status = ProductAuthStatusBody {
             service_auth_enabled: true,

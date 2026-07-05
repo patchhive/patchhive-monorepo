@@ -192,6 +192,11 @@ Products should model scan and fix work as different actions.
 - Fix actions mutate code, repository state, CI settings, release state, or GitHub objects and must advertise that through capability metadata.
 - Any product that naturally owns a fix type should eventually expose an explicit fix action for it.
 - Products that do not naturally own fixes should still participate in suite runs as signal, memory, policy, or validation providers.
+- `read_only`, `mutating`, `requires_approval`, `scheduleable`, and
+  `opens_pr` are optional booleans. Missing values are treated as `false`.
+- `credential_requirements` describes the operator credentials an action needs,
+  while `required_scopes` describes the product service-token scopes HiveCore
+  must hold to dispatch the action.
 
 Recommended fix action fields:
 
@@ -204,12 +209,15 @@ Recommended fix action fields:
   "description": "Create a small refactor PR for a selected lead.",
   "starts_run": true,
   "destructive": true,
-  "mutates_repo": true,
+  "mutating": true,
   "opens_pr": true,
   "requires_approval": true,
-  "required_scopes": [
+  "credential_requirements": [
     "github:contents:write",
     "github:pull_requests:write"
+  ],
+  "required_scopes": [
+    "actions:dispatch"
   ],
   "quality_gates": [
     "tests",
