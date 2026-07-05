@@ -1,11 +1,11 @@
-use patchhive_product_core::startup::StartupCheck;
+use patchhive_product_core::{sqlite::db_path_message, startup::StartupCheck};
 
 pub async fn validate_config() -> Vec<StartupCheck> {
     let mut checks = Vec::new();
 
-    checks.push(StartupCheck::info(format!(
-        "TrustGate DB path: {}",
-        crate::db::db_path()
+    checks.push(StartupCheck::info(db_path_message(
+        "TrustGate",
+        crate::db::db_path(),
     )));
 
     if crate::auth::auth_enabled() {

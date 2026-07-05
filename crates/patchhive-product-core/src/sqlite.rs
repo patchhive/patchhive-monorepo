@@ -1,5 +1,6 @@
-use rusqlite::{Connection, Error, Result};
+use rusqlite::{ffi::ErrorCode, Connection, Error, Result};
 use std::{
+    fmt,
     path::{Path, PathBuf},
     sync::{Condvar, Mutex},
     time::Duration,
@@ -27,6 +28,45 @@ pub struct SqlitePool {
 pub struct PooledSqliteConnection<'a> {
     pool: &'a SqlitePool,
     conn: Option<Connection>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SqliteOperatorIssue {
+    Busy,
+    Locked,
+    CannotOpen,
+    PermissionDenied,
+    ReadOnly,
+    DiskFull,
+    IoFailure,
+    Corrupt,
+    NotDatabase,
+    SchemaChanged,
+    Unknown,
+}
+
+impl SqliteOperatorIssue {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Busy => "busy",
+            Self::Locked => "locked",
+            Self::CannotOpen => "cannot_open",
+            Self::PermissionDenied => "permission_denied",
+            Self::ReadOnly => "read_only",
+            Self::DiskFull => "disk_full",
+            Self::IoFailure => "io_failure",
+            Self::Corrupt => "corrupt",
+            Self::NotDatabase => "not_database",
+            Self::SchemaChanged => "schema_changed",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
+impl fmt::Display for SqliteOperatorIssue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
 }
 
 impl SqlitePool {
@@ -67,6 +107,22 @@ impl SqlitePool {
 
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    pub fn operator_error_message(&self, err: &Error) -> String {
+        operator_error_message(&self.label, &self.path, err)
+    }
+
+    pub fn db_path_message(&self) -> String {
+        db_path_message(&self.label, &self.path)
+    }
+
+    pub fn backup_guidance(&self) -> String {
+        backup_guidance(&self.label, &self.path)
+    }
+
+    pub fn migration_guidance(&self) -> String {
+        migration_guidance(&self.label, &self.path)
     }
 
     pub fn get(&self) -> Result<PooledSqliteConnection<'_>> {
@@ -122,6 +178,90 @@ impl SqlitePool {
     }
 }
 
+pub fn classify_error(err: &Error) -> SqliteOperatorIssue {
+    match err.sqlite_error_code() {
+        Some(ErrorCode::DatabaseBusy) => SqliteOperatorIssue::Busy,
+        Some(ErrorCode::DatabaseLocked) => SqliteOperatorIssue::Locked,
+        Some(ErrorCode::CannotOpen) => SqliteOperatorIssue::CannotOpen,
+        Some(ErrorCode::PermissionDenied) => SqliteOperatorIssue::PermissionDenied,
+        Some(ErrorCode::ReadOnly) => SqliteOperatorIssue::ReadOnly,
+        Some(ErrorCode::DiskFull) => SqliteOperatorIssue::DiskFull,
+        Some(ErrorCode::SystemIoFailure) => SqliteOperatorIssue::IoFailure,
+        Some(ErrorCode::DatabaseCorrupt) => SqliteOperatorIssue::Corrupt,
+        Some(ErrorCode::NotADatabase) => SqliteOperatorIssue::NotDatabase,
+        Some(ErrorCode::SchemaChanged) => SqliteOperatorIssue::SchemaChanged,
+        _ => SqliteOperatorIssue::Unknown,
+    }
+}
+
+pub fn operator_error_message(
+    label: impl AsRef<str>,
+    path: impl AsRef<Path>,
+    err: &Error,
+) -> String {
+    let label = label.as_ref();
+    let path = path.as_ref();
+    let issue = classify_error(err);
+    let detail = err.to_string();
+    match issue {
+        SqliteOperatorIssue::Busy | SqliteOperatorIssue::Locked => format!(
+            "{label} SQLite database is {issue} at {}. Another process is holding a write lock; let active runs finish, close duplicate dev servers, or restart the product if the lock is stale. SQLite detail: {detail}",
+            path.display()
+        ),
+        SqliteOperatorIssue::CannotOpen
+        | SqliteOperatorIssue::PermissionDenied
+        | SqliteOperatorIssue::ReadOnly => format!(
+            "{label} cannot write its SQLite database at {}. Check that the directory exists and the current user owns the database, -wal, and -shm files. SQLite detail: {detail}",
+            path.display()
+        ),
+        SqliteOperatorIssue::DiskFull | SqliteOperatorIssue::IoFailure => format!(
+            "{label} hit a disk or filesystem problem while using SQLite at {}. Check free space, mount health, and container volume permissions before rerunning. SQLite detail: {detail}",
+            path.display()
+        ),
+        SqliteOperatorIssue::Corrupt | SqliteOperatorIssue::NotDatabase => format!(
+            "{label} SQLite database at {} looks corrupt or is not a SQLite file. Stop the product, copy the database plus -wal/-shm files for inspection, then restore from backup or rebuild the local cache. SQLite detail: {detail}",
+            path.display()
+        ),
+        SqliteOperatorIssue::SchemaChanged => format!(
+            "{label} saw a SQLite schema change while using {}. Let startup migrations finish before running product actions. SQLite detail: {detail}",
+            path.display()
+        ),
+        SqliteOperatorIssue::Unknown => format!(
+            "{label} SQLite database error at {}: {detail}",
+            path.display()
+        ),
+    }
+}
+
+pub fn db_path_message(label: impl AsRef<str>, path: impl AsRef<Path>) -> String {
+    let label = label.as_ref();
+    let path = path.as_ref();
+    format!(
+        "{label} SQLite database: {}. Back up this file with any matching -wal and -shm files before manual migrations or cleanup.",
+        path.display()
+    )
+}
+
+pub fn backup_guidance(label: impl AsRef<str>, path: impl AsRef<Path>) -> String {
+    let label = label.as_ref();
+    let path = path.as_ref();
+    format!(
+        "Before changing {label} storage, stop the product and copy {}, {}-wal, and {}-shm when those companion files exist.",
+        path.display(),
+        path.display(),
+        path.display()
+    )
+}
+
+pub fn migration_guidance(label: impl AsRef<str>, path: impl AsRef<Path>) -> String {
+    let label = label.as_ref();
+    let path = path.as_ref();
+    format!(
+        "Run {label} SQLite migrations during startup with one product process active. If migration fails, preserve {} plus -wal/-shm files before retrying.",
+        path.display()
+    )
+}
+
 impl Drop for PooledSqliteConnection<'_> {
     fn drop(&mut self) {
         let Some(conn) = self.conn.take() else {
@@ -170,7 +310,11 @@ fn read_pool_size(env_var: &str) -> Option<usize> {
 
 #[cfg(test)]
 mod tests {
-    use super::SqlitePool;
+    use super::{
+        backup_guidance, classify_error, db_path_message, operator_error_message,
+        SqliteOperatorIssue, SqlitePool,
+    };
+    use rusqlite::{ffi::ErrorCode, Error};
 
     #[test]
     fn returns_connections_to_the_pool() {
@@ -197,5 +341,32 @@ mod tests {
         assert_eq!(count, 1);
 
         let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn classifies_busy_errors_for_operator_copy() {
+        let err = Error::SqliteFailure(
+            rusqlite::ffi::Error {
+                code: ErrorCode::DatabaseBusy,
+                extended_code: 5,
+            },
+            Some("database is locked".into()),
+        );
+
+        assert_eq!(classify_error(&err), SqliteOperatorIssue::Busy);
+        let message = operator_error_message("DepTriage", "dep-triage.db", &err);
+        assert!(message.contains("DepTriage SQLite database is busy"));
+        assert!(message.contains("duplicate dev servers"));
+    }
+
+    #[test]
+    fn database_path_message_includes_backup_guidance() {
+        let message = db_path_message("SignalHive", "signal-hive.db");
+        assert!(message.contains("SignalHive SQLite database: signal-hive.db"));
+        assert!(message.contains("-wal"));
+        assert!(message.contains("-shm"));
+
+        let backup = backup_guidance("SignalHive", "signal-hive.db");
+        assert!(backup.contains("signal-hive.db-wal"));
     }
 }

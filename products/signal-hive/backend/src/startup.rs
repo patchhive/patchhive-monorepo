@@ -1,5 +1,5 @@
 use crate::github;
-use patchhive_product_core::startup::StartupCheck;
+use patchhive_product_core::{sqlite::db_path_message, startup::StartupCheck};
 
 pub async fn validate_config(client: &reqwest::Client) -> Vec<StartupCheck> {
     let mut checks = Vec::new();
@@ -20,9 +20,9 @@ pub async fn validate_config(client: &reqwest::Client) -> Vec<StartupCheck> {
         }
     }
 
-    checks.push(StartupCheck::info(format!(
-        "SignalHive DB path: {}",
-        crate::db::db_path()
+    checks.push(StartupCheck::info(db_path_message(
+        "SignalHive",
+        crate::db::db_path(),
     )));
     checks.push(StartupCheck::info(
         "SignalHive is read-only: it scans repos and issues but does not open PRs or write code.",

@@ -1,5 +1,6 @@
 use once_cell::sync::OnceCell;
 use patchhive_product_core::secrets::TokenProtector;
+use patchhive_product_core::sqlite::db_path_message;
 use patchhive_product_core::startup::{StartupCheck, StartupCheckLevel};
 
 static STARTUP_CHECKS: OnceCell<Vec<StartupCheck>> = OnceCell::new();
@@ -15,9 +16,9 @@ pub fn startup_checks() -> Vec<StartupCheck> {
 pub async fn validate_config() -> Vec<StartupCheck> {
     let mut checks = Vec::new();
 
-    checks.push(StartupCheck::info(format!(
-        "HiveCore DB path: {}",
-        crate::db::db_path()
+    checks.push(StartupCheck::info(db_path_message(
+        "HiveCore",
+        crate::db::db_path(),
     )));
 
     if crate::auth::auth_enabled() {

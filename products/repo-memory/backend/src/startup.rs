@@ -1,12 +1,12 @@
-use patchhive_product_core::startup::StartupCheck;
+use patchhive_product_core::{sqlite::db_path_message, startup::StartupCheck};
 use reqwest::Client;
 
 pub async fn validate_config(client: &Client) -> Vec<StartupCheck> {
     let mut checks = Vec::new();
 
-    checks.push(StartupCheck::info(format!(
-        "RepoMemory DB path: {}",
-        crate::db::db_path()
+    checks.push(StartupCheck::info(db_path_message(
+        "RepoMemory",
+        crate::db::db_path(),
     )));
 
     if crate::auth::auth_enabled() {

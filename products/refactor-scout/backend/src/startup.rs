@@ -1,13 +1,13 @@
-use patchhive_product_core::startup::StartupCheck;
+use patchhive_product_core::{sqlite::db_path_message, startup::StartupCheck};
 
 use crate::state::{allowed_roots_env_example, AppState};
 
 pub async fn validate_config(state: &AppState) -> Vec<StartupCheck> {
     let mut checks = Vec::new();
 
-    checks.push(StartupCheck::info(format!(
-        "RefactorScout DB path: {}",
-        crate::db::db_path()
+    checks.push(StartupCheck::info(db_path_message(
+        "RefactorScout",
+        crate::db::db_path(),
     )));
 
     if crate::auth::auth_enabled() {
