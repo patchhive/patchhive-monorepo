@@ -33,6 +33,12 @@ const POSITIONS = [
   { left: "42%", top: "76%" },
 ];
 
+const RADAR_WINDOWS = {
+  7: { label: "7 day live pass", readoutLabel: "7 day window", outer: "7d", mid: "3d", inner: "24h" },
+  14: { label: "14 day history pass", readoutLabel: "14 day window", outer: "14d", mid: "7d", inner: "3d" },
+  30: { label: "30 day deep sweep", readoutLabel: "30 day window", outer: "30d", mid: "14d", inner: "7d" },
+};
+
 const DEFAULT_FORM = {
   repo: "",
   include_code_scanning: true,
@@ -292,6 +298,14 @@ function buildRadarFeed(scan, history, health) {
   ];
 }
 
+function historyRadarWindows(historyCount) {
+  if (!historyCount) return RADAR_WINDOWS;
+  const count = `${historyCount} saved`;
+  return Object.fromEntries(
+    Object.entries(RADAR_WINDOWS).map(([days, window]) => [days, { ...window, count }]),
+  );
+}
+
 function StatusBanner({ tone = "signal", children }) {
   if (!children) return null;
   return <div className={`status-banner ${tone}`}>{children}</div>;
@@ -301,6 +315,8 @@ function VulnerabilityMap({ health, history, scan }) {
   const items = useMemo(() => buildRadarItems(scan, history), [scan, history]);
   const feed = useMemo(() => buildRadarFeed(scan, history, health), [scan, history, health]);
   const hasFindings = Boolean(scan?.findings?.length);
+  const savedScanCount = hasFindings ? 0 : history.length;
+  const windows = useMemo(() => historyRadarWindows(savedScanCount), [savedScanCount]);
   return (
     <SuiteRadar
       ariaLabel="VulnTriage vulnerability pressure radar"
@@ -309,8 +325,9 @@ function VulnerabilityMap({ health, history, scan }) {
       gainLabel={hasFindings ? "Decision" : "Scan state"}
       itemQueryParam="finding"
       items={items}
-      signalLabel={hasFindings ? "findings" : "scans"}
+      signalLabel={hasFindings ? "findings" : "saved scans"}
       vectorLabel={hasFindings ? "Selected finding" : "Selected scan"}
+      windows={windows}
     />
   );
 }
@@ -506,7 +523,7 @@ function TriageSurface({
           <ScanForm error={error} form={form} health={health} onChange={onChangeForm} onRun={onRunScan} running={running} />
           <MetricBand metrics={metrics} />
           <div className="atlas-layout suite-four-layout">
-            <Panel eyebrow="Triage" title="Finding map" action={<span className="chip signal">finding radar</span>}>
+            <Panel eyebrow="Triage" title="Scan map" action={<span className="chip signal">scan radar</span>}>
               <VulnerabilityMap health={health} history={history} scan={null} />
             </Panel>
             <FixQueuePanel history={history} onLoadScan={onLoadScan} scan={scan} />
@@ -532,6 +549,7 @@ function SecondaryFrame({ children, health, history, overview, scan }) {
 }
 
 function HistorySurface({ activeScanId, health, history, loading, onClearScan, onLoadScan, onRefresh, overview, scan }) {
+  const selectedHasFindings = Boolean(scan?.findings?.length);
   return (
     <SecondaryFrame health={health} history={history} overview={overview} scan={scan}>
       <div className="hero-row">
@@ -572,7 +590,11 @@ function HistorySurface({ activeScanId, health, history, loading, onClearScan, o
       </Panel>
       {scan && (
         <HistoryDetailGrid>
-          <Panel eyebrow="Triage" title="Selected finding map" action={<span className="chip signal">finding radar</span>}>
+          <Panel
+            eyebrow="Triage"
+            title={selectedHasFindings ? "Selected finding map" : "Selected scan map"}
+            action={<span className="chip signal">{selectedHasFindings ? "finding radar" : "scan radar"}</span>}
+          >
             <VulnerabilityMap health={health} history={history} scan={scan} />
           </Panel>
           <FixQueuePanel history={history} onLoadScan={onLoadScan} scan={scan} />
