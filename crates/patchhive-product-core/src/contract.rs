@@ -118,6 +118,26 @@ impl RunLifecycleStatus {
         }
     }
 
+    pub fn from_runtime_status(value: &str) -> Option<Self> {
+        let normalized = value.trim().to_ascii_lowercase().replace([' ', '-'], "_");
+        match normalized.as_str() {
+            "queued" | "pending" | "scheduled" => Some(Self::Queued),
+            "running" | "active" | "working" | "in_progress" | "processing" | "dispatching" => {
+                Some(Self::Running)
+            }
+            "completed" | "complete" | "done" | "saved" | "success" | "succeeded" | "partial" => {
+                Some(Self::Completed)
+            }
+            "failed" | "failure" | "error" | "crashed" | "timeout" | "timed_out" => {
+                Some(Self::Failed)
+            }
+            "cancelled" | "canceled" => Some(Self::Cancelled),
+            "held" | "hold" | "blocked" => Some(Self::Held),
+            "skipped" | "skip" => Some(Self::Skipped),
+            _ => None,
+        }
+    }
+
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Standby => "standby",
@@ -247,6 +267,10 @@ fn run_summary_from_value(raw: &Value) -> ProductRunSummary {
     )
     .map(|value| RunLifecycleStatus::from_status(&value))
     .filter(|status| *status != RunLifecycleStatus::Unknown)
+    .or_else(|| {
+        first_string(raw, &["status"])
+            .and_then(|value| RunLifecycleStatus::from_runtime_status(&value))
+    })
     .unwrap_or(RunLifecycleStatus::Completed);
     let status = first_string(raw, &["status", "recommendation", "readiness"])
         .unwrap_or_else(|| "completed".into());
@@ -386,6 +410,53 @@ mod tests {
         );
 
         assert_eq!(runs.runs[0].status, "blocked");
+        assert_eq!(runs.runs[0].lifecycle_status, RunLifecycleStatus::Completed);
+    }
+
+    #[test]
+    fn run_lifecycle_status_infers_runtime_status_when_lifecycle_is_missing() {
+        let runs = runs_from_values(
+            "repo-reaper",
+            vec![
+                json!({
+                    "id": "run_active",
+                    "target_repo": "patchhive/example",
+                    "status": "running",
+                    "started_at": "2026-04-21T10:00:00Z"
+                }),
+                json!({
+                    "id": "run_failed",
+                    "target_repo": "patchhive/example",
+                    "status": "crashed",
+                    "started_at": "2026-04-21T10:00:00Z"
+                }),
+                json!({
+                    "id": "run_partial",
+                    "target_repo": "patchhive/example",
+                    "status": "partial",
+                    "started_at": "2026-04-21T10:00:00Z"
+                }),
+            ],
+        );
+
+        assert_eq!(runs.runs[0].lifecycle_status, RunLifecycleStatus::Running);
+        assert_eq!(runs.runs[1].lifecycle_status, RunLifecycleStatus::Failed);
+        assert_eq!(runs.runs[2].lifecycle_status, RunLifecycleStatus::Completed);
+    }
+
+    #[test]
+    fn run_lifecycle_status_does_not_treat_ready_decisions_as_standby_runs() {
+        let runs = runs_from_values(
+            "merge-keeper",
+            vec![json!({
+                "id": "run_ready",
+                "repo": "patchhive/example",
+                "status": "ready",
+                "created_at": "2026-04-21T10:00:00Z"
+            })],
+        );
+
+        assert_eq!(runs.runs[0].status, "ready");
         assert_eq!(runs.runs[0].lifecycle_status, RunLifecycleStatus::Completed);
     }
 
