@@ -237,10 +237,10 @@ token before depending on service dispatch.
 
 Audited on 2026-07-05:
 
-- `products/dep-triage/frontend/src/App.jsx`
-- `products/dep-triage/frontend/src/panels/TriagePanel.jsx`
-- `products/dep-triage/frontend/src/panels/HistoryPanel.jsx`
-- `products/dep-triage/frontend/src/panels/ChecksPanel.jsx`
+- `products/dep-triage/frontend-legacy/src/App.jsx`
+- `products/dep-triage/frontend-legacy/src/panels/TriagePanel.jsx`
+- `products/dep-triage/frontend-legacy/src/panels/HistoryPanel.jsx`
+- `products/dep-triage/frontend-legacy/src/panels/ChecksPanel.jsx`
 - `products/dep-triage/frontend-v2/src/App.jsx`
 
 V2 covers the old directed repository scan loop, PR limit, optional Dependabot
@@ -479,9 +479,9 @@ dep-triage/
 │           ├── scoring.rs      ── Scan orchestration, grouping, scoring, recommendations, persistence
 │           └── utils.rs        ── Version parsing, ecosystem inference, manifest detection,
 │                                   severity ranking, stale-day calculation, repo validation
-├── frontend/                   ── DepTriage UI (Vite, port 5180)
-├── frontend-v2/                ── UI v2 prototype (port 5203)
-├── docker-compose.yml          ── Docker deployment (backend, frontend, frontend-v2)
+├── frontend-v2/                ── Active DepTriage v2 UI (Vite dev port 5203)
+├── frontend-legacy/            ── Audited v1 UI kept for reference before deletion
+├── docker-compose.yml          ── Docker deployment (backend, active v2 frontend, optional legacy UI profile)
 ├── .env.example                ── Configuration template
 └── README.md                   ── Product README
 ```
@@ -663,7 +663,7 @@ cd products/dep-triage/backend
 cp ../.env.example .env
 cargo run
 
-cd ../frontend
+cd ../frontend-v2
 npm install
 npm run dev
 ```
@@ -679,7 +679,8 @@ Frontend: `http://localhost:5180`
 
 ### Docker
 
-The `docker-compose.yml` runs three services:
+The `docker-compose.yml` runs the backend and active v2 frontend by default.
+The audited v1 frontend is available only through the `legacy-ui` profile:
 
 ```yaml
 services:
@@ -690,10 +691,10 @@ services:
       - DEP_TRIAGE_DB_PATH=/data/dep-triage.db
       - DEP_TRIAGE_PORT=8000
 
-  frontend:        # image: ghcr.io/patchhive/deptriage-frontend
+  frontend:        # image: patchhive/deptriage-frontend-v2
     ports: ["5180:8080"]
 
-  frontend-v2:     # image: patchhive/deptriage-frontend-v2
+  frontend-legacy: # profile: legacy-ui
     ports: ["5203:8080"]
 ```
 

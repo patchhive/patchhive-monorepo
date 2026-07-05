@@ -56,10 +56,16 @@ check_frontend_dependencies() {
   local label="$2"
   local expected_ui="^$(patchhive_version_from_package_json "$ROOT_DIR/packages/ui/package.json")"
   local expected_shell="^$(patchhive_version_from_package_json "$ROOT_DIR/packages/product-shell/package.json")"
-  local actual_ui actual_shell
+  local actual_ui actual_ui_v2 actual_shell
 
   actual_ui="$(json_field "$package_json" "dependencies.@patchhivehq/ui")"
+  actual_ui_v2="$(json_field "$package_json" "dependencies.@patchhivehq/ui-v2")"
   actual_shell="$(json_field "$package_json" "dependencies.@patchhivehq/product-shell")"
+
+  if [[ -n "$actual_ui_v2" ]]; then
+    [[ -n "$actual_shell" ]] || fail "$label uses @patchhivehq/ui-v2 but is missing @patchhivehq/product-shell"
+    return
+  fi
 
   [[ "$actual_ui" == "$expected_ui" ]] || fail "$label uses @patchhivehq/ui ${actual_ui:-<missing>}, expected ${expected_ui}"
   [[ "$actual_shell" == "$expected_shell" ]] || fail "$label uses @patchhivehq/product-shell ${actual_shell:-<missing>}, expected ${expected_shell}"
@@ -111,6 +117,13 @@ check_product() {
   local doc_path="docs/products/$product.md"
   local readme_path="$product_dir/README.md"
   local workflow_path="$product_dir/.github/workflows/ci.yml"
+  local frontend_dir="$product_dir/frontend"
+  local frontend_kind="v1"
+
+  if [[ ! -f "$frontend_dir/package.json" && -f "$product_dir/frontend-v2/package.json" ]]; then
+    frontend_dir="$product_dir/frontend-v2"
+    frontend_kind="v2"
+  fi
 
   require_dir "$product_dir"
   require_file "$readme_path"
@@ -119,8 +132,8 @@ check_product() {
   require_file "$product_dir/docker-compose.yml"
   require_file "$product_dir/backend/Cargo.toml"
   require_file "$product_dir/backend/Dockerfile"
-  require_file "$product_dir/frontend/package.json"
-  require_file "$product_dir/frontend/Dockerfile"
+  require_file "$frontend_dir/package.json"
+  require_file "$frontend_dir/Dockerfile"
   require_file "$workflow_path"
 
   require_contains "$readme_path" "# ${title} by PatchHive" "product title"
@@ -139,15 +152,23 @@ check_product() {
   require_contains "docs/products/README.md" "${product}.md" "product docs index entry for ${product}"
   require_contains "packages/ui/src/theme.js" "\"${product}\":" "theme key ${product}"
 
-  if command -v rg >/dev/null 2>&1; then
-    if ! rg -q "applyTheme\\([\"']${product}[\"']" "$product_dir/frontend/src"; then
+  if [[ "$frontend_kind" == "v2" ]]; then
+    if command -v rg >/dev/null 2>&1; then
+      if ! rg -q "productKey=[\"']${product}[\"']" "$frontend_dir/src"; then
+        fail "$product frontend-v2 does not declare productKey ${product}"
+      fi
+    elif ! grep -R -Eq "productKey=[\"']${product}[\"']" "$frontend_dir/src"; then
+      fail "$product frontend-v2 does not declare productKey ${product}"
+    fi
+  elif command -v rg >/dev/null 2>&1; then
+    if ! rg -q "applyTheme\\([\"']${product}[\"']" "$frontend_dir/src"; then
       fail "$product frontend does not apply theme ${product}"
     fi
-  elif ! grep -R -Eq "applyTheme\\([\"']${product}[\"']" "$product_dir/frontend/src"; then
+  elif ! grep -R -Eq "applyTheme\\([\"']${product}[\"']" "$frontend_dir/src"; then
     fail "$product frontend does not apply theme ${product}"
   fi
 
-  check_frontend_dependencies "$product_dir/frontend/package.json" "$product"
+  check_frontend_dependencies "$frontend_dir/package.json" "$product"
 
   require_contains "$workflow_path" "FORCE_JAVASCRIPT_ACTIONS_TO_NODE24" "Node 24 action shim"
   require_contains "$workflow_path" "uses: actions/checkout@v5" "checkout v5"

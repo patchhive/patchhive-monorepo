@@ -20,13 +20,16 @@ and evidence-first presentation.
 - `products/<product>/frontend-v2/` is the place for product-specific v2
   prototypes.
 - `products/<product>/frontend/` remains the current production frontend until
-  that product is intentionally ported.
+  that product is intentionally ported. After a parity audit, move the old UI to
+  `products/<product>/frontend-legacy/` and make the v2 frontend the active
+  frontend for local and Docker runs.
 
 ## Old UI Code
 
 Do not mix v2 work into the old UI code while the direction is still being
-settled. The old UI should remain available for normal product development and
-local runs.
+settled. Before a product passes parity, the old UI should remain available for
+normal product development and local runs. After parity, keep it only as
+`frontend-legacy/` reference material until deletion.
 
 During gateway testing, a v2 product may carry a lightweight replacement for an
 old configuration surface when that is enough to test the live workflow. Any
@@ -125,7 +128,7 @@ cross-product handoffs rather than another single-product radar board.
 | RepoMemory | `products/repo-memory/frontend-v2` | React prototype active |
 | MergeKeeper | `products/merge-keeper/frontend-v2` | React prototype active |
 | FlakeSting | `products/flake-sting/frontend-v2` | React prototype active |
-| DepTriage | `products/dep-triage/frontend-v2` | React prototype active |
+| DepTriage | `products/dep-triage/frontend-v2` | v2 active; v1 moved to `frontend-legacy` |
 | VulnTriage | `products/vuln-triage/frontend-v2` | React prototype active |
 | RefactorScout | `products/refactor-scout/frontend-v2` | React prototype active |
 | ReleaseSentry | `products/release-sentry/frontend-v2` | React prototype active |
