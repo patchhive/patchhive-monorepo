@@ -93,6 +93,13 @@ intentional v2 changes, and deferred polish in the product docs.
   routing. Deferred polish: compact evidence/link expansion for release,
   workflow, changelog, and repository artifacts before old UI deletion if live
   testing shows operators need the direct jumps.
+- **DepTriage** audited on 2026-07-05. See
+  `docs/products/dep-triage.md#ui-v1-to-v2-parity-audit`. V2 covers directed
+  dependency scans, PR limits, optional Dependabot alert reads, update/watch/
+  ignore queues, Markdown summary copy, queue sorting, manifest/reason evidence,
+  PR and alert links, history loading, health checks, startup checks, and
+  unified-backend routing. Deferred polish: suite-owned scope controls and any
+  future approval-gated dependency execution surface.
 
 After every product has moved to v2, choose one cleanup path:
 

@@ -233,6 +233,46 @@ token before depending on service dispatch.
 
 ---
 
+## UI V1 To V2 Parity Audit
+
+Audited on 2026-07-05:
+
+- `products/dep-triage/frontend/src/App.jsx`
+- `products/dep-triage/frontend/src/panels/TriagePanel.jsx`
+- `products/dep-triage/frontend/src/panels/HistoryPanel.jsx`
+- `products/dep-triage/frontend/src/panels/ChecksPanel.jsx`
+- `products/dep-triage/frontend-v2/src/App.jsx`
+
+V2 covers the old directed repository scan loop, PR limit, optional Dependabot
+alert reads, update-now/watch/ignore queue, overview counts, saved scan history,
+history load, backend health, GitHub readiness, database status, and startup
+checks. It also preserves the old queue utilities that operators used during
+testing: Markdown summary copy, queue sorting by risk/recommendation/staleness
+or package name, item reasons, manifest chips, dependency PR links, and
+Dependabot alert links when alert evidence is available.
+
+Intentional v2 changes:
+
+- The old Setup wizard is replaced by the shared v2 login/readiness/checks
+  surface. DepTriage does not need a separate setup workflow beyond GitHub token
+  readiness and first scan guidance.
+- Dependabot alerts are labeled as a best-effort read: the UI says "Try
+  Dependabot alerts" and explains when GitHub reports alerts are disabled for
+  the target repository.
+- The main radar shows saved scans when no scan is loaded, then switches to
+  package-level dependency decisions once a scan is selected or completed.
+
+Deferred polish before old UI deletion:
+
+- Suite-wide scope controls should eventually add allowlist, denylist,
+  opt-out, and saved-scope context around scans. DepTriage stays read-only until
+  HiveCore owns those suite-level controls.
+- If dependency execution becomes product-owned later, add a separate
+  approval-gated action surface instead of folding write behavior into the
+  current read-only scan form.
+
+---
+
 ## API Endpoints
 
 | Method | Path | Auth | Description |

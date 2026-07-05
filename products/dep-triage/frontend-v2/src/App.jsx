@@ -39,6 +39,13 @@ const DEFAULT_FORM = {
   include_alerts: false,
 };
 
+const SORT_OPTIONS = [
+  { value: "risk", label: "Risk first" },
+  { value: "recommendation", label: "Recommendation" },
+  { value: "stale", label: "Stalest first" },
+  { value: "package", label: "Package name" },
+];
+
 function asCount(value) {
   const number = Number(value || 0);
   return Number.isFinite(number) ? number : 0;
@@ -71,6 +78,67 @@ function recommendationTone(recommendation) {
 
 function recommendationLabel(recommendation) {
   return humanizeToken(recommendation, "watch");
+}
+
+function recommendationRank(recommendation) {
+  const value = String(recommendation || "").toLowerCase();
+  if (value.includes("now") || value.includes("fix")) return 3;
+  if (value.includes("watch") || value.includes("batch")) return 2;
+  return 1;
+}
+
+function sortItems(items, sortBy) {
+  return [...items].sort((left, right) => {
+    if (sortBy === "recommendation") {
+      return (
+        recommendationRank(right.recommendation) - recommendationRank(left.recommendation) ||
+        asCount(right.score) - asCount(left.score) ||
+        asCount(right.stale_days) - asCount(left.stale_days)
+      );
+    }
+    if (sortBy === "stale") {
+      return asCount(right.stale_days) - asCount(left.stale_days) || asCount(right.score) - asCount(left.score);
+    }
+    if (sortBy === "package") {
+      return String(left.package_name || left.key || "").localeCompare(String(right.package_name || right.key || "")) ||
+        asCount(right.score) - asCount(left.score);
+    }
+    return (
+      asCount(right.score) - asCount(left.score) ||
+      recommendationRank(right.recommendation) - recommendationRank(left.recommendation) ||
+      asCount(right.stale_days) - asCount(left.stale_days)
+    );
+  });
+}
+
+function buildScanMarkdown(scan) {
+  const metrics = scan?.metrics || {};
+  const lines = [
+    `# DepTriage scan for ${scan?.repo || "repository"}`,
+    "",
+    scanSummary(scan),
+    "",
+    `- Tracked items: ${asCount(metrics.tracked_items)}`,
+    `- Update now: ${asCount(metrics.update_now)}`,
+    `- Watch: ${asCount(metrics.watch)}`,
+    `- Ignore for now: ${asCount(metrics.ignore_for_now)}`,
+    `- Dependency PRs: ${asCount(metrics.dependency_pull_requests)}`,
+    `- Open alerts: ${asCount(metrics.open_alerts)}`,
+  ];
+
+  if (scan?.items?.length) {
+    lines.push("", "## Top queue", "");
+    sortItems(scan.items, "risk").slice(0, 8).forEach((item) => {
+      lines.push(`- [${recommendationLabel(item.recommendation)}] ${item.package_name || item.key} - ${summaryLabel(item.summary || item.reasons?.[0])}`);
+    });
+  }
+
+  if (scan?.warnings?.length) {
+    lines.push("", "## Warnings", "");
+    scan.warnings.forEach((warning) => lines.push(`- ${warningLabel(warning)}`));
+  }
+
+  return lines.join("\n");
 }
 
 function summaryLabel(summary) {
@@ -391,12 +459,40 @@ function ScanForm({ error, form, health, onChange, onRun, running }) {
 }
 
 function UpdateQueuePanel({ history, onLoadScan, scan }) {
+  const [copyState, setCopyState] = useState("");
+  const [sortBy, setSortBy] = useState("risk");
   const items = scan?.items || [];
+  const sortedItems = useMemo(() => sortItems(items, sortBy), [items, sortBy]);
+
+  async function copySummary() {
+    if (!scan || !navigator?.clipboard?.writeText) return;
+    try {
+      await navigator.clipboard.writeText(buildScanMarkdown(scan));
+      setCopyState("Copied");
+      window.setTimeout(() => setCopyState(""), 1800);
+    } catch {
+      setCopyState("Copy failed");
+      window.setTimeout(() => setCopyState(""), 1800);
+    }
+  }
+
   if (scan) {
     return (
-      <Panel eyebrow="Queue" title="Dependency decisions" action={<span className={`chip ${scan.metrics?.update_now ? "red" : "signal"}`}>{asCount(scan.metrics?.update_now)} now</span>}>
+      <Panel
+        eyebrow="Queue"
+        title="Dependency decisions"
+        action={(
+          <div className="actions">
+            <button className="btn" onClick={copySummary} type="button">{copyState || "Copy summary"}</button>
+            <select className="v2-input" onChange={(event) => setSortBy(event.target.value)} style={{ minWidth: 150 }} value={sortBy}>
+              {SORT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+            <span className={`chip ${scan.metrics?.update_now ? "red" : "signal"}`}>{asCount(scan.metrics?.update_now)} now</span>
+          </div>
+        )}
+      >
         <div className="panelbody repo-list queue-grid">
-          {items.length ? items.slice(0, 8).map((item, index) => (
+          {sortedItems.length ? sortedItems.slice(0, 8).map((item, index) => (
             <div className="ledger-row" key={item.key || `${item.package_name}-${index}`}>
               <div className="rank">{String(index + 1).padStart(2, "0")}</div>
               <div>
@@ -406,7 +502,41 @@ function UpdateQueuePanel({ history, onLoadScan, scan }) {
                   <span className={`chip ${recommendationTone(item.recommendation)}`}>{recommendationLabel(item.recommendation)}</span>
                   <span className="chip signal">{humanizeToken(item.ecosystem || item.source, "github")}</span>
                   <span className="chip">{asCount(item.score)} score</span>
+                  <span className="chip">{humanizeToken(item.runtime_impact, "impact")}</span>
+                  <span className="chip">{asCount(item.stale_days)}d stale</span>
                 </div>
+                {(item.manifests || []).length > 0 && (
+                  <div className="repo-meta">
+                    {(item.manifests || []).slice(0, 6).map((manifest) => (
+                      <span className="chip signal" key={manifest}>{manifest}</span>
+                    ))}
+                  </div>
+                )}
+                {(item.reasons || []).length > 0 && (
+                  <div className="feed-meta" style={{ display: "grid", gap: 4, marginTop: 8 }}>
+                    {(item.reasons || []).slice(0, 3).map((reason) => (
+                      <span key={reason}>| {reason}</span>
+                    ))}
+                  </div>
+                )}
+                {(item.pull_requests || []).length > 0 && (
+                  <div className="repo-meta">
+                    {(item.pull_requests || []).slice(0, 4).map((pr) => (
+                      <a className="chip signal" href={pr.html_url} key={pr.number} rel="noreferrer" target="_blank">
+                        PR #{pr.number}
+                      </a>
+                    ))}
+                  </div>
+                )}
+                {(item.alerts || []).length > 0 && (
+                  <div className="repo-meta">
+                    {(item.alerts || []).slice(0, 4).map((alert) => (
+                      <a className={`chip ${alert.severity === "critical" || alert.severity === "high" ? "red" : "amber"}`} href={alert.html_url} key={alert.number} rel="noreferrer" target="_blank">
+                        Alert #{alert.number}
+                      </a>
+                    ))}
+                  </div>
+                )}
               </div>
               <span className={`chip ${recommendationTone(item.recommendation)}`}>{humanizeToken(item.update_kind, "dep")}</span>
             </div>
