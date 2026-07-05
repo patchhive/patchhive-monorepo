@@ -17,8 +17,10 @@ services:
     restart: unless-stopped
 
   frontend:
-    image: "${PATCHHIVE_MERGE_KEEPER_FRONTEND_IMAGE:-ghcr.io/patchhive/mergekeeper-frontend}:${PATCHHIVE_IMAGE_TAG:-main}"
-    build: ./frontend
+    image: "${PATCHHIVE_MERGE_KEEPER_FRONTEND_V2_IMAGE:-ghcr.io/patchhive/mergekeeper-frontend-v2}:${PATCHHIVE_IMAGE_TAG:-main}"
+    build:
+      context: ../..
+      dockerfile: products/merge-keeper/frontend-v2/Dockerfile
     pull_policy: "${PATCHHIVE_IMAGE_PULL_POLICY:-missing}"
     ports:
       - "5178:8080"
@@ -26,11 +28,11 @@ services:
       - backend
     restart: unless-stopped
 
-  frontend-v2:
-    image: "${PATCHHIVE_MERGE_KEEPER_FRONTEND_V2_IMAGE:-ghcr.io/patchhive/mergekeeper-frontend-v2}:${PATCHHIVE_IMAGE_TAG:-main}"
-    build:
-      context: ../..
-      dockerfile: products/merge-keeper/frontend-v2/Dockerfile
+  frontend-legacy:
+    profiles:
+      - legacy-ui
+    image: "${PATCHHIVE_MERGE_KEEPER_FRONTEND_LEGACY_IMAGE:-ghcr.io/patchhive/mergekeeper-frontend-legacy}:${PATCHHIVE_IMAGE_TAG:-main}"
+    build: ./frontend-legacy
     pull_policy: "${PATCHHIVE_IMAGE_PULL_POLICY:-missing}"
     ports:
       - "5197:8080"

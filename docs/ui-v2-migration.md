@@ -126,7 +126,7 @@ cross-product handoffs rather than another single-product radar board.
 | ReviewBee | `products/review-bee/frontend-v2` | React prototype active |
 | TrustGate | `products/trust-gate/frontend-v2` | React prototype active |
 | RepoMemory | `products/repo-memory/frontend-v2` | React prototype active |
-| MergeKeeper | `products/merge-keeper/frontend-v2` | React prototype active |
+| MergeKeeper | `products/merge-keeper/frontend-v2` | v2 active; v1 moved to `frontend-legacy` |
 | FlakeSting | `products/flake-sting/frontend-v2` | React prototype active |
 | DepTriage | `products/dep-triage/frontend-v2` | v2 active; v1 moved to `frontend-legacy` |
 | VulnTriage | `products/vuln-triage/frontend-v2` | React prototype active |

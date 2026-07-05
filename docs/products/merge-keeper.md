@@ -56,7 +56,8 @@ docker compose up --build
 
 Defaults:
 - Frontend: `http://localhost:5178`
-- Frontend v2 prototype: `http://localhost:5197`
+- Legacy frontend reference: `http://localhost:5197` when started with the
+  `legacy-ui` Docker Compose profile
 - Backend: `http://localhost:8050`
 - Suite backend route: `http://localhost:8100/api/products/merge-keeper`
 - Database: `merge-keeper.db` (configurable via `MERGE_KEEPER_DB_PATH`)
@@ -66,10 +67,6 @@ Split local workflow:
 cd products/merge-keeper/backend
 cargo run
 
-cd ../frontend
-npm install && npm run dev
-
-# or for the v2 prototype
 cd ../frontend-v2
 npm install && npm run dev
 ```
@@ -98,10 +95,10 @@ removed.
 
 Audited on 2026-07-03 against:
 
-- `products/merge-keeper/frontend/src/App.jsx`
-- `products/merge-keeper/frontend/src/panels/KeeperPanel.jsx`
-- `products/merge-keeper/frontend/src/panels/HistoryPanel.jsx`
-- `products/merge-keeper/frontend/src/panels/ChecksPanel.jsx`
+- `products/merge-keeper/frontend-legacy/src/App.jsx`
+- `products/merge-keeper/frontend-legacy/src/panels/KeeperPanel.jsx`
+- `products/merge-keeper/frontend-legacy/src/panels/HistoryPanel.jsx`
+- `products/merge-keeper/frontend-legacy/src/panels/ChecksPanel.jsx`
 - `products/merge-keeper/frontend-v2/src/App.jsx`
 
 The v2 MergeKeeper surface must keep these v1 workflows before the old UI can
@@ -131,6 +128,9 @@ Current v2 parity status:
   history list, selected-run detail, radar visualization, blockers/warnings,
   suite input posture, health/startup checks, and clear selected-assessment
   behavior.
+- **Legacy status**: after the final 2026-07-05 recheck, the old UI was moved
+  to `products/merge-keeper/frontend-legacy/`. `frontend-v2/` is the active
+  local and Docker frontend.
 - **Improved from v1**: loading a history row stays in the history context and
   renders the selected radar/detail below it instead of always kicking the user
   back to the main page.
@@ -402,7 +402,9 @@ cp .env.example .env
 docker compose up --build
 ```
 
-The Docker Compose setup starts the backend (port 8050), the frontend (port 5178), and optionally the frontend-v2 prototype (port 5197).
+The Docker Compose setup starts the backend (port 8050) and active v2 frontend
+(port 5178). The old v1 frontend is available only with the `legacy-ui` profile
+on port 5197 while it remains useful as parity reference material.
 
 ### Minimal Standalone
 

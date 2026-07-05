@@ -27,7 +27,6 @@ docker compose up --build
 ```
 
 Frontend: `http://localhost:5178`
-Frontend v2 prototype: `http://localhost:5197`
 Backend: `http://localhost:8050`
 
 ### Split Backend and Frontend
@@ -36,8 +35,15 @@ Backend: `http://localhost:8050`
 cp .env.example .env
 
 cd backend && cargo run
-cd ../frontend && npm install && npm run dev
 cd ../frontend-v2 && npm install && npm run dev
+```
+
+The old v1 frontend is preserved for reference in `frontend-legacy/` after the
+v2 parity audit. Use it only when comparing behavior before deleting legacy UI
+code:
+
+```bash
+cd frontend-legacy && npm install && npm run dev
 ```
 
 ## Important Configuration
@@ -83,4 +89,4 @@ The PatchHive monorepo is the source of truth for MergeKeeper development. The s
 
 ## Local Notes
 
-- The v2 prototype lives in `frontend-v2/` while the suite UI direction is being settled.
+- The active UI lives in `frontend-v2/`. The old v1 UI is preserved in `frontend-legacy/` only as parity reference material.
