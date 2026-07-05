@@ -207,7 +207,8 @@ HiveCore needs structured visibility into runs and failures.
 
 Required observability:
 
-- run phase events persisted in SQLite
+- run phase events persisted in SQLite using the shared
+  `ProductRunEvent` / `ProductRunArtifact` contract
 - product/action/run IDs on every significant log line
 - per-run log artifacts for long-running products
 - gateway/in-process routing visible in backend events
@@ -286,7 +287,8 @@ Acceptance criteria:
 1. Keep CI drift and Rust checks green.
 2. Continue in-process unified backend migration product by product.
 3. Move suite schedules and scope policy into the unified backend.
-4. Add per-run log artifacts and phase events.
+4. Wire per-run log artifact persistence into product DBs using the shared event
+   contract.
 5. Finish token-scope docs, startup permission messages, and secret-state
    warnings for every product.
 6. Build the sandbox integration path for read-only products and RepoReaper

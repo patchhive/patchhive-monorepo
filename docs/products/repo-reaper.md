@@ -283,7 +283,10 @@ RepoReaper polish backlog after the first live sandbox PR tests:
   RepoReaper posted. The current UI links to the issue and PR, but does not
   persist individual comment URLs.
 - Persist a compact per-run log artifact instead of relying on stdout, live SSE
-  messages, or UI summaries when debugging a failed run later.
+  messages, or UI summaries when debugging a failed run later. Use the shared
+  `ProductRunEvent` / `ProductRunArtifact` contract so History can show Judge,
+  Reaper, apply, Smith, validation, branch, fork, PR, and issue-comment events
+  without inventing a RepoReaper-only format.
 - Surface provider/runtime failures more clearly, including rejected API keys,
   empty model responses, rate limits, timeouts, and model output that cannot be
   parsed into a patch.

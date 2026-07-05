@@ -92,6 +92,51 @@ pub struct ProductRunSummary {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ProductRunEventsResponse {
+    pub schema_version: String,
+    pub product_slug: String,
+    pub run_id: String,
+    pub events: Vec<ProductRunEvent>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ProductRunEvent {
+    pub id: String,
+    pub run_id: String,
+    #[serde(default)]
+    pub product_slug: String,
+    #[serde(default)]
+    pub sequence: u64,
+    #[serde(default)]
+    pub phase: String,
+    #[serde(default)]
+    pub level: RunEventLevel,
+    #[serde(default)]
+    pub message: String,
+    #[serde(default)]
+    pub source: String,
+    #[serde(default)]
+    pub actor: String,
+    pub created_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub artifact: Option<ProductRunArtifact>,
+    #[serde(default)]
+    pub raw: Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ProductRunArtifact {
+    pub kind: String,
+    pub label: String,
+    #[serde(default)]
+    pub url: String,
+    #[serde(default)]
+    pub external_id: String,
+    #[serde(default)]
+    pub metadata: Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct DispatchActionInput {
     #[serde(default)]
     pub payload: Value,
@@ -216,6 +261,36 @@ pub enum RunLifecycleStatus {
     Unknown,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RunEventLevel {
+    Trace,
+    Debug,
+    Info,
+    Warn,
+    Error,
+    Success,
+}
+
+impl Default for RunEventLevel {
+    fn default() -> Self {
+        Self::Info
+    }
+}
+
+impl RunEventLevel {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Trace => "trace",
+            Self::Debug => "debug",
+            Self::Info => "info",
+            Self::Warn => "warn",
+            Self::Error => "error",
+            Self::Success => "success",
+        }
+    }
+}
+
 impl Default for RunLifecycleStatus {
     fn default() -> Self {
         Self::Unknown
@@ -275,6 +350,89 @@ impl RunLifecycleStatus {
             Self::Skipped => "skipped",
             Self::Unknown => "unknown",
         }
+    }
+}
+
+impl ProductRunEvent {
+    pub fn new(
+        id: impl Into<String>,
+        run_id: impl Into<String>,
+        phase: impl Into<String>,
+        level: RunEventLevel,
+        message: impl Into<String>,
+        created_at: impl Into<String>,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            run_id: run_id.into(),
+            product_slug: String::new(),
+            sequence: 0,
+            phase: phase.into(),
+            level,
+            message: message.into(),
+            source: String::new(),
+            actor: String::new(),
+            created_at: created_at.into(),
+            artifact: None,
+            raw: Value::Null,
+        }
+    }
+
+    pub fn product_slug(mut self, value: impl Into<String>) -> Self {
+        self.product_slug = value.into();
+        self
+    }
+
+    pub fn sequence(mut self, value: u64) -> Self {
+        self.sequence = value;
+        self
+    }
+
+    pub fn source(mut self, value: impl Into<String>) -> Self {
+        self.source = value.into();
+        self
+    }
+
+    pub fn actor(mut self, value: impl Into<String>) -> Self {
+        self.actor = value.into();
+        self
+    }
+
+    pub fn artifact(mut self, value: ProductRunArtifact) -> Self {
+        self.artifact = Some(value);
+        self
+    }
+
+    pub fn raw(mut self, value: Value) -> Self {
+        self.raw = value;
+        self
+    }
+}
+
+impl ProductRunArtifact {
+    pub fn new(kind: impl Into<String>, label: impl Into<String>) -> Self {
+        Self {
+            kind: kind.into(),
+            label: label.into(),
+            url: String::new(),
+            external_id: String::new(),
+            metadata: Value::Null,
+        }
+    }
+
+    pub fn url(mut self, value: impl Into<String>) -> Self {
+        self.url = value.into();
+        self
+    }
+
+    pub fn external_id(mut self, value: impl Into<String>) -> Self {
+        self.external_id = value.into();
+        self
+    }
+
+    pub fn metadata(mut self, value: Value) -> Self {
+        self.metadata = value;
+        self
     }
 }
 
@@ -426,6 +584,19 @@ pub fn runs_from_values(
     }
 }
 
+pub fn run_events_response(
+    product_slug: impl Into<String>,
+    run_id: impl Into<String>,
+    events: Vec<ProductRunEvent>,
+) -> ProductRunEventsResponse {
+    ProductRunEventsResponse {
+        schema_version: CONTRACT_SCHEMA_VERSION.into(),
+        product_slug: product_slug.into(),
+        run_id: run_id.into(),
+        events,
+    }
+}
+
 fn run_summary_from_value(raw: &Value) -> ProductRunSummary {
     let id = first_string(raw, &["id", "run_id", "scan_id", "review_id"])
         .unwrap_or_else(|| "unknown".into());
@@ -540,7 +711,8 @@ fn numeric_summary(raw: &Value) -> Option<String> {
 mod tests {
     use super::{
         action, cadence_from_hours, capabilities, interval_cron_label, parse_dispatch_input,
-        runs_from_values, RunLifecycleStatus, SuiteScheduleRecord,
+        run_events_response, runs_from_values, ProductRunArtifact, ProductRunEvent, RunEventLevel,
+        RunLifecycleStatus, SuiteScheduleRecord,
     };
     use serde_json::json;
 
@@ -594,6 +766,51 @@ mod tests {
         assert_eq!(input.payload["repo"], "patchhive/example");
         assert!(input.path_params.is_empty());
         assert!(input.query.is_empty());
+    }
+
+    #[test]
+    fn run_event_helpers_preserve_artifact_metadata() {
+        let event = ProductRunEvent::new(
+            "evt_1",
+            "run_1",
+            "submit",
+            RunEventLevel::Success,
+            "Opened draft pull request",
+            "2026-07-04T20:00:00Z",
+        )
+        .product_slug("repo-reaper")
+        .sequence(7)
+        .source("gatekeeper")
+        .actor("PatchHive Gatekeeper")
+        .artifact(
+            ProductRunArtifact::new("pull_request", "Draft PR")
+                .url("https://github.com/patchhive/example/pull/1")
+                .external_id("1")
+                .metadata(json!({ "draft": true })),
+        );
+
+        let response = run_events_response("repo-reaper", "run_1", vec![event]);
+        assert_eq!(response.schema_version, "patchhive.product.contract.v1");
+        assert_eq!(response.events[0].sequence, 7);
+        assert_eq!(response.events[0].level.as_str(), "success");
+        assert_eq!(
+            response.events[0].artifact.as_ref().unwrap().metadata["draft"],
+            true
+        );
+    }
+
+    #[test]
+    fn run_event_deserializes_legacy_level_defaults() {
+        let event: ProductRunEvent = serde_json::from_value(json!({
+            "id": "evt_legacy",
+            "run_id": "run_legacy",
+            "created_at": "2026-07-04T20:00:00Z"
+        }))
+        .expect("legacy event should deserialize");
+
+        assert_eq!(event.level, RunEventLevel::Info);
+        assert_eq!(event.sequence, 0);
+        assert_eq!(event.raw, serde_json::Value::Null);
     }
 
     #[test]

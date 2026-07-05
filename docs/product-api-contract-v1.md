@@ -125,6 +125,51 @@ SSE and other event streams should expose a consistent payload shape:
 }
 ```
 
+## Durable Run Event Artifacts
+
+Live SSE is not enough for long-running products. Products should persist the
+same important phase events they stream so History and HiveCore can explain
+failures without terminal logs.
+
+Shared event fields:
+
+```json
+{
+  "id": "evt_01K4Y92A3B1M3A9JX9Y3R5JH0D",
+  "run_id": "run_01K4Y91P8V3M0M7XJZQ8Q4V4FP",
+  "product_slug": "repo-reaper",
+  "sequence": 7,
+  "phase": "submit",
+  "level": "success",
+  "message": "Opened draft pull request",
+  "source": "gatekeeper",
+  "actor": "PatchHive Gatekeeper",
+  "created_at": "2026-04-07T21:30:05Z",
+  "artifact": {
+    "kind": "pull_request",
+    "label": "Draft PR",
+    "url": "https://github.com/owner/repo/pull/123",
+    "external_id": "123",
+    "metadata": { "draft": true }
+  },
+  "raw": {}
+}
+```
+
+Rules:
+
+- Event `sequence` should be monotonic within a run so the UI can render a
+  stable timeline even when timestamps tie.
+- `level` should use `trace`, `debug`, `info`, `warn`, `error`, or `success`.
+- `phase` should use product-readable values such as `discover`, `triage`,
+  `plan`, `patch`, `apply`, `smith`, `validate`, `fork`, `branch`, `submit`,
+  `publish`, or `cleanup`.
+- `artifact` should link to durable things created or inspected by the run:
+  GitHub issues, PRs, comments, check runs, logs, reports, or generated files.
+- The shared Rust contract lives in
+  `patchhive_product_core::contract::{ProductRunEvent, ProductRunArtifact,
+  ProductRunEventsResponse}`.
+
 ## Webhook / Async Callback Rules
 
 - Webhooks and scheduled jobs should create the same `run_id` style as manual runs.
