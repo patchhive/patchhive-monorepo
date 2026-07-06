@@ -178,6 +178,13 @@ function groupDependencyFindings(findings = []) {
   });
 }
 
+function patchedVersionSummary(group) {
+  const versions = group?.patchedVersions || [];
+  if (!versions.length) return "";
+  if (versions.length === 1) return ` · fixed in ${versions[0]}`;
+  return ` · fixes vary across ${versions.length} advisories`;
+}
+
 function warningLabel(warning) {
   const value = String(warning || "");
   if (value.includes("BOT_GITHUB_TOKEN is not set") || value.includes("GITHUB_TOKEN is not set")) {
@@ -515,7 +522,7 @@ function FixQueuePanel({ history, onLoadScan, scan }) {
     return (
       <Panel
         eyebrow="Queue"
-        title="Security decisions"
+        title="Remediation groups"
         action={<span className="chip red">{asCount(scan.metrics?.fix_now)} fix</span>}
       >
         <div className="panelbody repo-list queue-grid">
@@ -523,21 +530,21 @@ function FixQueuePanel({ history, onLoadScan, scan }) {
             <>
               <div className="feed-meta" style={{ marginBottom: 8 }}>
                 {dependencyGroupCount ? `${dependencyGroupCount} dependency remediation group${dependencyGroupCount === 1 ? "" : "s"}` : "No dependency groups"}
-                {directFindingCount ? ` · ${directFindingCount} direct code finding${directFindingCount === 1 ? "" : "s"}` : ""}
+                {directFindingCount ? ` · ${directFindingCount} code scanning finding${directFindingCount === 1 ? "" : "s"}` : ""}
               </div>
               {groupedFindings.slice(0, 8).map((item, index) => {
                 if (item.type === "dependency-group") {
                   const tone = item.fixNow ? "red" : item.planNext ? "amber" : "green";
                   const top = item.findings[0] || {};
                   const alertCount = item.findings.length;
-                  const patched = item.patchedVersions.length ? ` · patched ${item.patchedVersions.slice(0, 2).join(", ")}` : "";
+                  const patched = patchedVersionSummary(item);
                   return (
                     <div className="ledger-row" key={item.key}>
                       <div className="rank">{String(index + 1).padStart(2, "0")}</div>
                       <div>
                         <div className="repo-name">{item.packageName} / {item.manifest}</div>
                         <div className="feed-meta">
-                          {alertCount} Dependabot alert{alertCount === 1 ? "" : "s"} grouped into one upgrade decision. Top: {top.summary || top.title || "security advisory"}{patched}
+                          {alertCount} Dependabot alert{alertCount === 1 ? "" : "s"} collapsed into one package decision. Top: {top.summary || top.title || "security advisory"}{patched}
                         </div>
                         <div className="repo-meta">
                           <span className={`chip ${tone}`}>{item.fixNow ? "fix now" : item.planNext ? "plan next" : "watch"}</span>
