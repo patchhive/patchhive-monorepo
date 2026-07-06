@@ -86,7 +86,7 @@ pub fn history(limit: usize) -> Vec<HistoryItem> {
     let mut stmt = match conn.prepare(
         r#"
         SELECT id, repo, summary, tracked_findings, fix_now,
-               plan_next, watch_count, created_at
+               plan_next, watch_count, created_at, payload
         FROM vuln_triage_scans
         ORDER BY created_at DESC
         LIMIT ?1
@@ -97,6 +97,10 @@ pub fn history(limit: usize) -> Vec<HistoryItem> {
     };
 
     stmt.query_map([limit as i64], |row| {
+        let payload = row.get::<_, String>(8).unwrap_or_default();
+        let metrics = serde_json::from_str::<VulnScanResult>(&payload)
+            .map(|scan| scan.metrics)
+            .unwrap_or_default();
         Ok(HistoryItem {
             id: row.get(0)?,
             repo: row.get(1)?,
@@ -105,6 +109,10 @@ pub fn history(limit: usize) -> Vec<HistoryItem> {
             fix_now: row.get::<_, i64>(4)? as u32,
             plan_next: row.get::<_, i64>(5)? as u32,
             watch: row.get::<_, i64>(6)? as u32,
+            code_scanning_alerts: metrics.code_scanning_alerts,
+            dependency_alerts: metrics.dependency_alerts,
+            runtime_exposed: metrics.runtime_exposed,
+            owner_scoped: metrics.owner_scoped,
             created_at: row.get(7)?,
         })
     })

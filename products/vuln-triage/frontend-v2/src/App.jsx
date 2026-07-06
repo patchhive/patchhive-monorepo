@@ -253,6 +253,45 @@ function metricTone(value, hotTone = "hot") {
   return asCount(value) ? hotTone : "ok";
 }
 
+function historyMetrics(item = {}) {
+  return {
+    code_scanning_alerts: item.code_scanning_alerts,
+    dependency_alerts: item.dependency_alerts,
+    fix_now: item.fix_now,
+    owner_scoped: item.owner_scoped,
+    plan_next: item.plan_next,
+    runtime_exposed: item.runtime_exposed,
+    tracked_findings: item.tracked_findings,
+    watch: item.watch,
+  };
+}
+
+function activeScanSource(scan, history) {
+  if (scan) {
+    return {
+      created_at: scan.created_at,
+      detailLoaded: true,
+      metrics: scan.metrics || {},
+      repo: scan.repo,
+    };
+  }
+  const latest = history[0] || {};
+  if (latest.id || latest.repo) {
+    return {
+      created_at: latest.created_at,
+      detailLoaded: false,
+      metrics: historyMetrics(latest),
+      repo: latest.repo,
+    };
+  }
+  return {
+    created_at: "",
+    detailLoaded: false,
+    metrics: {},
+    repo: "",
+  };
+}
+
 async function parseJsonResponse(response, fallbackError) {
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -263,14 +302,15 @@ async function parseJsonResponse(response, fallbackError) {
 
 function buildTopline(health, overview, scan, history) {
   const counts = overview?.counts || {};
-  const latest = scan || history[0] || {};
+  const active = activeScanSource(scan, history);
+  const fixNow = active.metrics.fix_now ?? counts.fix_now ?? health?.fix_now_count;
   return [
     { label: "VulnTriage", value: "Security queue", tone: "sig" },
     { label: "System", value: health?.status || "checking", tone: health?.status === "ok" ? "ok" : "warn" },
     { label: "Mode", value: "Read only" },
     { label: "GitHub", value: githubReady(health) ? "Security read" : "token missing", tone: githubReady(health) ? "sig" : "warn" },
-    { label: "Fix now", value: `${asCount(scan?.metrics?.fix_now || counts.fix_now || health?.fix_now_count)} active`, tone: asCount(scan?.metrics?.fix_now || counts.fix_now || health?.fix_now_count) ? "warn" : "ok" },
-    { label: "Last scan", value: latest.created_at ? timeAgo(latest.created_at) : counts.scans ? "loaded" : "none" },
+    { label: "Fix now", value: `${asCount(fixNow)} active`, tone: asCount(fixNow) ? "warn" : "ok" },
+    { label: "Last scan", value: active.created_at ? timeAgo(active.created_at) : counts.scans ? "loaded" : "none" },
   ];
 }
 
@@ -296,24 +336,25 @@ function buildMetrics(scan, overview, health) {
 }
 
 function buildRail(scan, history, overview, health) {
-  const latest = history[0] || {};
+  const active = activeScanSource(scan, history);
+  const metrics = active.metrics || {};
   return {
     sections: [
       {
         title: "Feeds",
         items: [
-          { label: "Code scanning", active: true, badge: String(asCount(scan?.metrics?.code_scanning_alerts)), badgeTone: "signal" },
-          { label: "Dependabot alerts", badge: String(asCount(scan?.metrics?.dependency_alerts)), badgeTone: "amber" },
-          { label: "Owner scoped", badge: String(asCount(scan?.metrics?.owner_scoped)), badgeTone: "signal" },
-          { label: "Runtime exposed", badge: String(asCount(scan?.metrics?.runtime_exposed)), badgeTone: asCount(scan?.metrics?.runtime_exposed) ? "red" : "green" },
+          { label: "Code scanning", active: true, badge: String(asCount(metrics.code_scanning_alerts)), badgeTone: "signal" },
+          { label: "Dependabot alerts", badge: String(asCount(metrics.dependency_alerts)), badgeTone: "amber" },
+          { label: "Owner scoped", badge: String(asCount(metrics.owner_scoped)), badgeTone: "signal" },
+          { label: "Runtime exposed", badge: String(asCount(metrics.runtime_exposed)), badgeTone: asCount(metrics.runtime_exposed) ? "red" : "green" },
         ],
       },
       {
         title: "Buckets",
         items: [
-          { label: "fix now", active: true, badge: String(asCount(scan?.metrics?.fix_now || overview?.counts?.fix_now)), badgeTone: "red" },
-          { label: "plan next", badge: String(asCount(scan?.metrics?.plan_next || overview?.counts?.plan_next)), badgeTone: "amber" },
-          { label: "watch", badge: String(asCount(scan?.metrics?.watch || overview?.counts?.watch)), badgeTone: "green" },
+          { label: "fix now", active: true, badge: String(asCount(metrics.fix_now ?? overview?.counts?.fix_now)), badgeTone: "red" },
+          { label: "plan next", badge: String(asCount(metrics.plan_next ?? overview?.counts?.plan_next)), badgeTone: "amber" },
+          { label: "watch", badge: String(asCount(metrics.watch ?? overview?.counts?.watch)), badgeTone: "green" },
           { label: "saved scans", badge: String(history.length), badgeTone: "signal" },
         ],
       },
@@ -321,9 +362,9 @@ function buildRail(scan, history, overview, health) {
     stats: {
       title: "Active repo",
       items: [
-        { label: "Repository", value: scan?.repo || latest.repo || "none" },
-        { label: "Decision", value: scan?.metrics?.fix_now ? "HOLD" : scan?.metrics?.plan_next ? "PLAN" : "READY", large: true, tone: scan?.metrics?.fix_now ? "hot" : scan?.metrics?.plan_next ? "warn" : "ok" },
-        { label: "Findings", value: String(asCount(scan?.metrics?.tracked_findings || latest.tracked_findings)) },
+        { label: "Repository", value: active.repo || "none" },
+        { label: "Decision", value: metrics.fix_now ? "HOLD" : metrics.plan_next ? "PLAN" : "READY", large: true, tone: metrics.fix_now ? "hot" : metrics.plan_next ? "warn" : "ok" },
+        { label: "Findings", value: String(asCount(metrics.tracked_findings)) },
       ],
     },
   };

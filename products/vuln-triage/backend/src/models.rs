@@ -111,6 +111,14 @@ pub struct HistoryItem {
     #[serde(default)]
     pub watch: u32,
     #[serde(default)]
+    pub code_scanning_alerts: u32,
+    #[serde(default)]
+    pub dependency_alerts: u32,
+    #[serde(default)]
+    pub runtime_exposed: u32,
+    #[serde(default)]
+    pub owner_scoped: u32,
+    #[serde(default)]
     pub created_at: String,
 }
 
