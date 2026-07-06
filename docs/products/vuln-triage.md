@@ -153,7 +153,7 @@ removed.
 | `VULN_TRIAGE_PORT` | Backend HTTP listen port. | No | `8110` |
 | `RUST_LOG` | Rust logging level. | No | `info` |
 
-VulnTriage works best with a fine-grained GitHub token that has matching security-read permissions for the repositories being scanned. Classic tokens need `security_events` scope (and `repo` for private repositories).
+VulnTriage works best with a fine-grained GitHub token that has matching security-read permissions for the repositories being scanned: `Metadata` read, `Code scanning alerts` read, and `Dependabot alerts` read. Classic tokens need `security_events` for security alert reads, or `public_repo` when scanning public repositories only. Avoid broad `repo` unless another workflow needs full private-repository access.
 
 ---
 

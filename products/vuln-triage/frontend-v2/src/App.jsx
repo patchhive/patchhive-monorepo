@@ -45,6 +45,8 @@ const DEFAULT_FORM = {
   include_dependency_alerts: true,
 };
 
+const SECURITY_SCOPE_HINT = "Fine-grained PAT: Metadata read, Code scanning alerts read, Dependabot alerts read. Classic PAT: security_events, or public_repo for public-only scans.";
+
 function asCount(value) {
   const number = Number(value || 0);
   return Number.isFinite(number) ? number : 0;
@@ -86,13 +88,13 @@ function warningLabel(warning) {
     return "Security feeds were skipped because GitHub token access is not configured.";
   }
   if (value.includes("/code-scanning/alerts") && value.includes("403 Forbidden")) {
-    return "Code scanning alerts could not be read. The token needs code scanning alert read access for this repository.";
+    return `Code scanning alerts could not be read. ${SECURITY_SCOPE_HINT}`;
   }
   if (value.includes("/dependabot/alerts") && value.includes("Dependabot alerts are disabled")) {
     return "Dependabot alerts are disabled for this repository, so dependency vulnerability pressure is unavailable.";
   }
   if (value.includes("/dependabot/alerts") && value.includes("403 Forbidden")) {
-    return "Dependabot alerts could not be read. The token needs Dependabot alert read access for this repository.";
+    return `Dependabot alerts could not be read. ${SECURITY_SCOPE_HINT}`;
   }
   return value;
 }
@@ -127,10 +129,10 @@ function scanSummary(scan) {
   const needsSecurityAccess = warnings.some(warningNeedsSecurityAccess);
   const featureDisabled = warnings.some(warningFeatureDisabled);
   if (!hasFindings && needsSecurityAccess && featureDisabled) {
-    return `VulnTriage could not fully read GitHub security alerts for \`${repo}\` because one feed needs token access and another feed is disabled for this repository. Grant the missing security-read scope and enable the disabled feed, then rerun the scan.`;
+    return `VulnTriage could not fully read GitHub security alerts for \`${repo}\` because one feed needs token access and another feed is disabled for this repository. Grant the missing security-feed permission (${SECURITY_SCOPE_HINT}) and enable the disabled feed, then rerun the scan.`;
   }
   if (!hasFindings && needsSecurityAccess) {
-    return `VulnTriage could not read GitHub security alerts for \`${repo}\` with the current token. Grant code scanning and/or Dependabot alert read access for this repository, then rerun the scan.`;
+    return `VulnTriage could not read GitHub security alerts for \`${repo}\` with the current token. Grant security-feed access (${SECURITY_SCOPE_HINT}), then rerun the scan.`;
   }
   if (!hasFindings && warnings.some(warningMissingSecurityToken)) {
     return `VulnTriage could not read GitHub security alerts for \`${repo}\` because security-feed token access is not configured.`;

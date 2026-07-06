@@ -18,6 +18,8 @@ use super::{
     utils::{location_label, push_evidence},
 };
 
+const SECURITY_SCOPE_HINT: &str = "Fine-grained PAT: Metadata read, Code scanning alerts read, Dependabot alerts read. Classic PAT: security_events, or public_repo for public-only scans.";
+
 pub async fn build_scan_result(
     state: &AppState,
     repo: &str,
@@ -137,7 +139,7 @@ fn build_summary(
         }
         if permission_blocked && feature_disabled {
             return format!(
-                "VulnTriage could not fully read GitHub security alerts for `{repo}` because one feed needs token access and another feed is disabled for this repository. Grant the missing security-read scope and enable the disabled feed, then rerun the scan."
+                "VulnTriage could not fully read GitHub security alerts for `{repo}` because one feed needs token access and another feed is disabled for this repository. Grant the missing security-feed permission ({SECURITY_SCOPE_HINT}) and enable the disabled feed, then rerun the scan."
             );
         }
         if feature_disabled {
@@ -147,7 +149,7 @@ fn build_summary(
         }
         if permission_blocked {
             return format!(
-                "VulnTriage could not read GitHub security alerts for `{repo}` with the current token. Grant code scanning and/or Dependabot alert read access for this repository, then rerun the scan."
+                "VulnTriage could not read GitHub security alerts for `{repo}` with the current token. Grant security-feed access ({SECURITY_SCOPE_HINT}), then rerun the scan."
             );
         }
         if !warnings.is_empty() {
@@ -442,6 +444,8 @@ mod tests {
 
         assert!(summary.contains("one feed needs token access"));
         assert!(summary.contains("another feed is disabled"));
+        assert!(summary.contains("Code scanning alerts read"));
+        assert!(summary.contains("Dependabot alerts read"));
         assert!(summary.contains("owner/repo"));
     }
 }

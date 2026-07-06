@@ -22,8 +22,12 @@ For classic personal access tokens, use the smallest equivalent scope:
 
 - Public read-only scans usually need no classic scope beyond public access, but
   `public_repo` raises the rate limit and allows public-repo write operations
-  when a write-capable product explicitly needs them.
-- Private repository reads and writes usually require `repo`.
+  when a write-capable product explicitly needs them. Protected security feeds
+  such as code scanning alerts and Dependabot alerts still need `public_repo`
+  for public-only classic-token access.
+- Private repository reads and writes usually require `repo`; security alert
+  reads should prefer the narrower `security_events` scope when a classic token
+  is unavoidable.
 - Code scanning alert reads may require `security_events`.
 - Workflow file edits require workflow write capability.
 
@@ -65,6 +69,12 @@ be shown as unavailable security evidence, not as "no dependency risk exists."
 - `Resource not accessible by personal access token`: the token does not have
   the needed repository permission, the repo was not selected for the token, or
   the token owner does not have access to that protected data.
+- `Code scanning alerts could not be read`: grant `Code scanning alerts` read on
+  a fine-grained token, or `security_events` on a classic token. For public-only
+  classic-token scans, `public_repo` can be used instead.
+- `Dependabot alerts could not be read`: grant `Dependabot alerts` read on a
+  fine-grained token, or `security_events` on a classic token. For public-only
+  classic-token scans, `public_repo` can be used instead.
 - `Dependabot alerts are disabled for this repository`: the repo does not expose
   Dependabot alert data to this token.
 - Empty results with no warning: the product could read the feed and found no
