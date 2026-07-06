@@ -18,7 +18,7 @@ use super::{
     utils::{location_label, push_evidence},
 };
 
-const SECURITY_SCOPE_HINT: &str = "Fine-grained PAT: Metadata read, Code scanning alerts read, Dependabot alerts read. Classic PAT: security_events, or public_repo for public-only scans.";
+const SECURITY_SCOPE_HINT: &str = "Fine-grained PAT: select this repository and grant Metadata read, Code scanning alerts read, Dependabot alerts read; the token owner must have security-alert access. Classic PAT: security_events, or public_repo for public-only scans.";
 
 pub async fn build_scan_result(
     state: &AppState,

@@ -45,7 +45,7 @@ credentials.
 | MergeKeeper | Metadata read, Pull requests read | Actions read; Issues write or Pull requests write; Commit statuses write or Checks write when publishing is enabled | Reads PR state, reviewer state, mergeability, review pressure, and optionally CI/check evidence. Write access is only for maintained output. |
 | FlakeSting | Metadata read, Actions read | None | Reads workflow runs and workflow jobs to detect pass/fail swings and unstable steps. |
 | DepTriage | Metadata read, Pull requests read | Dependabot alerts read | Reads dependency PRs. Dependabot alert access enriches security urgency, but the product still ranks dependency PRs when alert access is unavailable. |
-| VulnTriage | Metadata read, Code scanning alerts read, Dependabot alerts read | None | Reads GitHub security alert feeds. These feeds can still return `403` if alerts are disabled or the token owner lacks security access. |
+| VulnTriage | Metadata read, Code scanning alerts read, Dependabot alerts read, with the target repository selected | None | Reads GitHub security alert feeds. These feeds can still return `403` if alerts are disabled, the repo was not selected for the token, or the token owner lacks security access. |
 | RefactorScout | No GitHub token for local filesystem scans | Metadata read, Contents read for future GitHub-backed scans | Current MVP scans configured local paths. |
 | ReleaseSentry | Metadata read, Contents read, Actions read, Pull requests read | Code scanning alerts read, Dependabot alerts read, Deployments read, Commit statuses write or Checks write if publishing becomes enabled | Reads release files, tags/check context, PR/release pressure, and optional security/dependency pressure. |
 | RepoReaper | Metadata read, Contents read/write, Pull requests read/write, Issues read | Issues write for issue updates, Actions read for validation context, Workflows read/write only when editing `.github/workflows` | Clones or reads repos, creates branches/commits, opens PRs, and may reference issues. This token should belong to the PatchHive bot identity. |
@@ -69,12 +69,16 @@ be shown as unavailable security evidence, not as "no dependency risk exists."
 - `Resource not accessible by personal access token`: the token does not have
   the needed repository permission, the repo was not selected for the token, or
   the token owner does not have access to that protected data.
-- `Code scanning alerts could not be read`: grant `Code scanning alerts` read on
-  a fine-grained token, or `security_events` on a classic token. For public-only
-  classic-token scans, `public_repo` can be used instead.
-- `Dependabot alerts could not be read`: grant `Dependabot alerts` read on a
-  fine-grained token, or `security_events` on a classic token. For public-only
-  classic-token scans, `public_repo` can be used instead.
+- `Code scanning alerts could not be read`: select the target repository and
+  grant `Code scanning alerts` read on a fine-grained token, or
+  `security_events` on a classic token. The token owner must also be able to see
+  that repository's security alerts. For public-only classic-token scans,
+  `public_repo` can be used instead.
+- `Dependabot alerts could not be read`: select the target repository and grant
+  `Dependabot alerts` read on a fine-grained token, or `security_events` on a
+  classic token. The token owner must also be able to see that repository's
+  security alerts. For public-only classic-token scans, `public_repo` can be
+  used instead.
 - `Dependabot alerts are disabled for this repository`: the repo does not expose
   Dependabot alert data to this token.
 - Empty results with no warning: the product could read the feed and found no

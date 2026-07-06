@@ -144,7 +144,7 @@ removed.
 
 | Variable | Purpose | Required | Default |
 |---|---|---|---|
-| `BOT_GITHUB_TOKEN` | Fine-grained PAT for code scanning and Dependabot alert reads. Recommended scopes: Metadata (read), Code scanning alerts (read), Dependabot alerts (read). | No | — |
+| `BOT_GITHUB_TOKEN` | Fine-grained PAT for code scanning and Dependabot alert reads. Select the target repo and grant Metadata (read), Code scanning alerts (read), and Dependabot alerts (read); the token owner must have security-alert access. | No | — |
 | `GITHUB_TOKEN` | Fallback GitHub token (classic or fine-grained) if `BOT_GITHUB_TOKEN` is not set. | No | — |
 | `VULN_TRIAGE_API_KEY_HASH` | Pre-seeded API-key hash for app authentication. If not set, the first local key can be generated via `POST /auth/generate-key`. | No | — |
 | `VULN_TRIAGE_SERVICE_TOKEN_HASH` | Pre-seeded service-token hash for HiveCore or other PatchHive product callers. | No | — |
@@ -153,7 +153,7 @@ removed.
 | `VULN_TRIAGE_PORT` | Backend HTTP listen port. | No | `8110` |
 | `RUST_LOG` | Rust logging level. | No | `info` |
 
-VulnTriage works best with a fine-grained GitHub token that has matching security-read permissions for the repositories being scanned: `Metadata` read, `Code scanning alerts` read, and `Dependabot alerts` read. Classic tokens need `security_events` for security alert reads, or `public_repo` when scanning public repositories only. Avoid broad `repo` unless another workflow needs full private-repository access.
+VulnTriage works best with a fine-grained GitHub token that has matching security-read permissions for the repositories being scanned: select the target repository, grant `Metadata` read, `Code scanning alerts` read, and `Dependabot alerts` read, and make sure the token owner can access that repository's security alerts. Classic tokens need `security_events` for security alert reads, or `public_repo` when scanning public repositories only. Avoid broad `repo` unless another workflow needs full private-repository access.
 
 ---
 

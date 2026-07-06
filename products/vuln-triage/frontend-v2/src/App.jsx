@@ -45,7 +45,7 @@ const DEFAULT_FORM = {
   include_dependency_alerts: true,
 };
 
-const SECURITY_SCOPE_HINT = "Fine-grained PAT: Metadata read, Code scanning alerts read, Dependabot alerts read. Classic PAT: security_events, or public_repo for public-only scans.";
+const SECURITY_SCOPE_HINT = "Fine-grained PAT: select this repository and grant Metadata read, Code scanning alerts read, Dependabot alerts read; the token owner must have security-alert access. Classic PAT: security_events, or public_repo for public-only scans.";
 
 function asCount(value) {
   const number = Number(value || 0);
