@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Context, Result};
 use reqwest::{
-    header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, USER_AGENT},
+    header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, LINK, USER_AGENT},
     Client,
 };
 use serde::de::DeserializeOwned;
@@ -128,6 +128,109 @@ pub async fn get_paginated_json<T: DeserializeOwned>(
     }
 
     Ok(items)
+}
+
+pub async fn get_cursor_paginated_json<T: DeserializeOwned>(
+    client: &Client,
+    user_agent: &str,
+    path: &str,
+    query: &[(&str, String)],
+    token: Option<&str>,
+    max_items: usize,
+) -> Result<Vec<T>> {
+    if max_items == 0 {
+        return Ok(Vec::new());
+    }
+
+    let mut after: Option<String> = None;
+    let mut items = Vec::new();
+
+    loop {
+        let remaining = max_items.saturating_sub(items.len());
+        if remaining == 0 {
+            break;
+        }
+
+        let page_size = remaining.min(100);
+        let mut page_query = query.to_vec();
+        page_query.push(("per_page", page_size.to_string()));
+        if let Some(cursor) = after.as_deref() {
+            page_query.push(("after", cursor.to_string()));
+        }
+
+        let response = client
+            .get(format!("{GH_API}{path}"))
+            .headers(request_headers(user_agent, token)?)
+            .query(&page_query)
+            .send()
+            .await
+            .with_context(|| format!("GitHub request failed for {path}"))?;
+
+        let status = response.status();
+        let link_header = response
+            .headers()
+            .get(LINK)
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_string);
+        if !status.is_success() {
+            let body = response.text().await.unwrap_or_default();
+            return Err(GitHubApiError::from_response("GET", path, status, &body).into());
+        }
+
+        let body = response
+            .text()
+            .await
+            .with_context(|| format!("Could not read GitHub response body for {path}"))?;
+        let mut page_items: Vec<T> = serde_json::from_str(&body).with_context(|| {
+            format!(
+                "Could not decode GitHub JSON for {path}. Response preview: {}",
+                response_preview(&body)
+            )
+        })?;
+        let page_len = page_items.len();
+        items.append(&mut page_items);
+
+        after = link_header.as_deref().and_then(next_after_cursor);
+        if page_len < page_size || after.is_none() {
+            break;
+        }
+    }
+
+    Ok(items)
+}
+
+fn next_after_cursor(link_header: &str) -> Option<String> {
+    let next_link = link_header
+        .split(',')
+        .map(str::trim)
+        .find(|part| part.contains("rel=\"next\""))?;
+    let start = next_link.find('<')? + 1;
+    let end = next_link[start..].find('>')? + start;
+    let url = &next_link[start..end];
+    let query = url.split_once('?')?.1;
+    query.split('&').find_map(|pair| {
+        let (key, value) = pair.split_once('=')?;
+        (key == "after").then(|| value.to_string())
+    })
+}
+
+#[cfg(test)]
+mod pagination_tests {
+    use super::next_after_cursor;
+
+    #[test]
+    fn extracts_next_after_cursor_from_link_header() {
+        let header = r#"<https://api.github.com/repos/o/r/dependabot/alerts?after=cursor-123&per_page=100>; rel="next", <https://api.github.com/repos/o/r/dependabot/alerts?before=cursor-456&per_page=100>; rel="prev""#;
+
+        assert_eq!(next_after_cursor(header).as_deref(), Some("cursor-123"));
+    }
+
+    #[test]
+    fn returns_none_without_next_link() {
+        let header = r#"<https://api.github.com/repos/o/r/dependabot/alerts?before=cursor-456&per_page=100>; rel="prev""#;
+
+        assert_eq!(next_after_cursor(header), None);
+    }
 }
 
 pub async fn get_paginated_field_json<T: DeserializeOwned>(

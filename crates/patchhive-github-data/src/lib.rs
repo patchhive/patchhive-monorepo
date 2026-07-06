@@ -5,9 +5,9 @@ pub mod models;
 pub use client::{
     code_search_count, fetch_issues, fetch_pull_files, fetch_pull_requests,
     fetch_pull_review_comments, fetch_pull_reviews, fetch_repository, fetch_workflow_jobs,
-    fetch_workflow_runs, get_json, get_paginated_json, github_token, github_token_configured,
-    github_token_required, request_headers, search_repositories, valid_repo, validate_token,
-    GH_API,
+    fetch_workflow_runs, get_cursor_paginated_json, get_json, get_paginated_json, github_token,
+    github_token_configured, github_token_required, request_headers, search_repositories,
+    valid_repo, validate_token, GH_API,
 };
 pub use errors::{
     classify_github_api_error, github_error_is_feature_disabled,

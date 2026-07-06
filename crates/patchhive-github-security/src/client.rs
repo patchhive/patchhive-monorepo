@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
 pub use patchhive_github_data::{
-    get_paginated_json, github_token, github_token_configured, github_token_required, valid_repo,
-    validate_token,
+    get_cursor_paginated_json, get_paginated_json, github_token, github_token_configured,
+    github_token_required, valid_repo, validate_token,
 };
 use reqwest::Client;
 
@@ -42,7 +42,7 @@ pub async fn fetch_dependabot_alerts(
     }
 
     let token = github_token_required()?;
-    get_paginated_json(
+    get_cursor_paginated_json(
         client,
         "patchhive-github-security/0.1",
         &format!("/repos/{repo}/dependabot/alerts"),
