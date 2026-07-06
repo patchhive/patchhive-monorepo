@@ -82,6 +82,102 @@ function recommendationLabel(value) {
   return humanizeToken(value, "watch");
 }
 
+function severityRank(value) {
+  const severity = String(value || "").toLowerCase();
+  if (severity === "critical") return 5;
+  if (severity === "high") return 4;
+  if (severity === "medium" || severity === "moderate") return 3;
+  if (severity === "low") return 2;
+  return severity ? 1 : 0;
+}
+
+function recommendationRank(value) {
+  const recommendation = String(value || "").toLowerCase();
+  if (recommendation.includes("fix") || recommendation.includes("now")) return 3;
+  if (recommendation.includes("plan")) return 2;
+  if (recommendation.includes("watch")) return 1;
+  return 0;
+}
+
+function strongerRecommendation(left, right) {
+  return recommendationRank(left) >= recommendationRank(right) ? left : right;
+}
+
+function strongerSeverity(left, right) {
+  return severityRank(left) >= severityRank(right) ? left : right;
+}
+
+function groupDependencyFindings(findings = []) {
+  const groups = new Map();
+  const directFindings = [];
+
+  for (const finding of findings) {
+    if (finding.source !== "dependency_alert") {
+      directFindings.push({ type: "finding", finding });
+      continue;
+    }
+
+    const packageName = finding.package_name || finding.title || "dependency";
+    const ecosystem = finding.ecosystem || "unknown";
+    const manifest = finding.location || "manifest";
+    const key = `${packageName.toLowerCase()}::${ecosystem.toLowerCase()}::${manifest.toLowerCase()}`;
+    const existing = groups.get(key) || {
+      type: "dependency-group",
+      key,
+      packageName,
+      ecosystem,
+      manifest,
+      findings: [],
+      fixNow: 0,
+      planNext: 0,
+      watch: 0,
+      highestSeverity: finding.severity || "unknown",
+      recommendation: finding.recommendation || "watch",
+      maxScore: 0,
+      runtimeExposed: 0,
+      patchedVersions: new Set(),
+    };
+
+    existing.findings.push(finding);
+    existing.maxScore = Math.max(existing.maxScore, asCount(finding.score));
+    existing.highestSeverity = strongerSeverity(existing.highestSeverity, finding.severity);
+    existing.recommendation = strongerRecommendation(existing.recommendation, finding.recommendation);
+    if (String(finding.recommendation || "").includes("fix")) existing.fixNow += 1;
+    else if (String(finding.recommendation || "").includes("plan")) existing.planNext += 1;
+    else existing.watch += 1;
+    if (String(finding.reachability || "").toLowerCase().includes("runtime")) {
+      existing.runtimeExposed += 1;
+    }
+    for (const evidence of finding.evidence || []) {
+      const match = String(evidence).match(/first patched version\s+(.+)/i);
+      if (match?.[1]) existing.patchedVersions.add(match[1].trim());
+    }
+    groups.set(key, existing);
+  }
+
+  const grouped = Array.from(groups.values()).map((group) => ({
+    ...group,
+    patchedVersions: Array.from(group.patchedVersions),
+    findings: group.findings.sort((left, right) => (
+      asCount(right.score) - asCount(left.score)
+      || severityRank(right.severity) - severityRank(left.severity)
+      || String(left.summary || left.title).localeCompare(String(right.summary || right.title))
+    )),
+  }));
+
+  return [...grouped, ...directFindings].sort((left, right) => {
+    const leftScore = left.type === "dependency-group" ? left.maxScore : asCount(left.finding?.score);
+    const rightScore = right.type === "dependency-group" ? right.maxScore : asCount(right.finding?.score);
+    const leftRecommendation = left.type === "dependency-group" ? left.recommendation : left.finding?.recommendation;
+    const rightRecommendation = right.type === "dependency-group" ? right.recommendation : right.finding?.recommendation;
+    const leftSeverity = left.type === "dependency-group" ? left.highestSeverity : left.finding?.severity;
+    const rightSeverity = right.type === "dependency-group" ? right.highestSeverity : right.finding?.severity;
+    return recommendationRank(rightRecommendation) - recommendationRank(leftRecommendation)
+      || rightScore - leftScore
+      || severityRank(rightSeverity) - severityRank(leftSeverity);
+  });
+}
+
 function warningLabel(warning) {
   const value = String(warning || "");
   if (value.includes("BOT_GITHUB_TOKEN is not set") || value.includes("GITHUB_TOKEN is not set")) {
@@ -413,24 +509,70 @@ function ScanForm({ error, form, health, onChange, onRun, running }) {
 
 function FixQueuePanel({ history, onLoadScan, scan }) {
   if (scan) {
+    const groupedFindings = groupDependencyFindings(scan.findings || []);
+    const dependencyGroupCount = groupedFindings.filter((item) => item.type === "dependency-group").length;
+    const directFindingCount = groupedFindings.filter((item) => item.type === "finding").length;
     return (
-      <Panel eyebrow="Queue" title="Security decisions" action={<span className="chip red">{asCount(scan.metrics?.fix_now)} fix</span>}>
+      <Panel
+        eyebrow="Queue"
+        title="Security decisions"
+        action={<span className="chip red">{asCount(scan.metrics?.fix_now)} fix</span>}
+      >
         <div className="panelbody repo-list queue-grid">
-          {scan.findings?.length ? scan.findings.slice(0, 8).map((finding, index) => (
-            <div className="ledger-row" key={finding.key || index}>
-              <div className="rank">{String(index + 1).padStart(2, "0")}</div>
-              <div>
-                <div className="repo-name">{finding.title || finding.package_name || finding.key}</div>
-                <div className="feed-meta">{finding.summary || finding.next_action || finding.location}</div>
-                <div className="repo-meta">
-                  <span className={`chip ${findingTone(finding)}`}>{recommendationLabel(finding.recommendation)}</span>
-                  <span className="chip signal">{humanizeToken(finding.severity || finding.source, "security")}</span>
-                  {finding.location && <span className="chip">{finding.location}</span>}
-                </div>
+          {groupedFindings.length ? (
+            <>
+              <div className="feed-meta" style={{ marginBottom: 8 }}>
+                {dependencyGroupCount ? `${dependencyGroupCount} dependency remediation group${dependencyGroupCount === 1 ? "" : "s"}` : "No dependency groups"}
+                {directFindingCount ? ` · ${directFindingCount} direct code finding${directFindingCount === 1 ? "" : "s"}` : ""}
               </div>
-              <span className={`chip ${findingTone(finding)}`}>{asCount(finding.score)}</span>
-            </div>
-          )) : (
+              {groupedFindings.slice(0, 8).map((item, index) => {
+                if (item.type === "dependency-group") {
+                  const tone = item.fixNow ? "red" : item.planNext ? "amber" : "green";
+                  const top = item.findings[0] || {};
+                  const alertCount = item.findings.length;
+                  const patched = item.patchedVersions.length ? ` · patched ${item.patchedVersions.slice(0, 2).join(", ")}` : "";
+                  return (
+                    <div className="ledger-row" key={item.key}>
+                      <div className="rank">{String(index + 1).padStart(2, "0")}</div>
+                      <div>
+                        <div className="repo-name">{item.packageName} / {item.manifest}</div>
+                        <div className="feed-meta">
+                          {alertCount} Dependabot alert{alertCount === 1 ? "" : "s"} grouped into one upgrade decision. Top: {top.summary || top.title || "security advisory"}{patched}
+                        </div>
+                        <div className="repo-meta">
+                          <span className={`chip ${tone}`}>{item.fixNow ? "fix now" : item.planNext ? "plan next" : "watch"}</span>
+                          <span className="chip signal">{humanizeToken(item.highestSeverity, "severity")}</span>
+                          <span className="chip">{item.ecosystem}</span>
+                          <span className="chip">{alertCount} alerts</span>
+                          {item.runtimeExposed ? <span className="chip amber">{item.runtimeExposed} runtime</span> : null}
+                        </div>
+                        <div className="feed-meta" style={{ marginTop: 8 }}>
+                          {item.findings.slice(0, 3).map((finding) => finding.summary || finding.title).join(" · ")}
+                        </div>
+                      </div>
+                      <span className={`chip ${tone}`}>{item.maxScore}</span>
+                    </div>
+                  );
+                }
+                const finding = item.finding;
+                return (
+                  <div className="ledger-row" key={finding.key || index}>
+                    <div className="rank">{String(index + 1).padStart(2, "0")}</div>
+                    <div>
+                      <div className="repo-name">{finding.title || finding.package_name || finding.key}</div>
+                      <div className="feed-meta">{finding.summary || finding.next_action || finding.location}</div>
+                      <div className="repo-meta">
+                        <span className={`chip ${findingTone(finding)}`}>{recommendationLabel(finding.recommendation)}</span>
+                        <span className="chip signal">{humanizeToken(finding.severity || finding.source, "security")}</span>
+                        {finding.location && <span className="chip">{finding.location}</span>}
+                      </div>
+                    </div>
+                    <span className={`chip ${findingTone(finding)}`}>{asCount(finding.score)}</span>
+                  </div>
+                );
+              })}
+            </>
+          ) : (
             <div className="empty-v2">
               <strong>No findings</strong>
               <span>This scan did not return actionable vulnerability findings.</span>
