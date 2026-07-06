@@ -506,6 +506,14 @@ function HistorySurface({ activeRunId, health, history, loading, onClearRun, onL
           <button className="btn" onClick={onRefresh} type="button">{loading ? "Refreshing..." : "Refresh"}</button>
         </div>
       </div>
+      {run && (
+        <HistoryDetailGrid>
+          <Panel eyebrow="Gate" title="Selected readiness map" action={<span className="chip signal">release radar</span>}>
+            <ReleaseMap health={health} history={history} run={run} />
+          </Panel>
+          <GateQueuePanel history={history} onLoadRun={onLoadRun} run={run} />
+        </HistoryDetailGrid>
+      )}
       <Panel eyebrow="Recent" title="Release checks" action={<span className="chip signal">{history.length} saved</span>}>
         <div className="panelbody repo-list queue-grid">
           {history.length ? history.map((item) => (
@@ -530,14 +538,6 @@ function HistorySurface({ activeRunId, health, history, loading, onClearRun, onL
           )}
         </div>
       </Panel>
-      {run && (
-        <HistoryDetailGrid>
-          <Panel eyebrow="Gate" title="Selected readiness map" action={<span className="chip signal">release radar</span>}>
-            <ReleaseMap health={health} history={history} run={run} />
-          </Panel>
-          <GateQueuePanel history={history} onLoadRun={onLoadRun} run={run} />
-        </HistoryDetailGrid>
-      )}
     </SecondaryFrame>
   );
 }

@@ -728,6 +728,20 @@ function HistorySurface({ activeReviewId, health, history, loading, onClearRevie
           <button className="btn" onClick={onRefresh} type="button">{loading ? "Refreshing..." : "Refresh"}</button>
         </div>
       </div>
+      {review && (
+        <HistoryDetailGrid>
+          <Panel eyebrow="Decision" title="Selected decision" action={<span className={`chip ${recommendationTone(review.recommendation)}`}>{review.recommendation}</span>}>
+            <DecisionGauge health={health} history={history} review={review} />
+          </Panel>
+          <RuleHitPanel review={review} />
+        </HistoryDetailGrid>
+      )}
+      {review && (
+        <HistoryDetailGrid>
+          <FileRiskPanel review={review} />
+          <OutputPanel health={health} review={review} />
+        </HistoryDetailGrid>
+      )}
       <Panel eyebrow="History" title="Prior reviews" action={<span className="chip signal">{history.length} saved</span>}>
         <div className="panelbody repo-list queue-grid">
           {history.length ? history.map((item) => (
@@ -753,20 +767,6 @@ function HistorySurface({ activeReviewId, health, history, loading, onClearRevie
           )}
         </div>
       </Panel>
-      {review && (
-        <HistoryDetailGrid>
-          <Panel eyebrow="Decision" title="Selected decision" action={<span className={`chip ${recommendationTone(review.recommendation)}`}>{review.recommendation}</span>}>
-            <DecisionGauge health={health} history={history} review={review} />
-          </Panel>
-          <RuleHitPanel review={review} />
-        </HistoryDetailGrid>
-      )}
-      {review && (
-        <HistoryDetailGrid>
-          <FileRiskPanel review={review} />
-          <OutputPanel health={health} review={review} />
-        </HistoryDetailGrid>
-      )}
     </TabFrame>
   );
 }

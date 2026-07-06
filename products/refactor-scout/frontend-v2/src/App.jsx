@@ -478,6 +478,14 @@ function HistorySurface({ activeScanId, health, history, loading, onClearScan, o
           <button className="btn" onClick={onRefresh} type="button">{loading ? "Refreshing..." : "Refresh"}</button>
         </div>
       </div>
+      {scan && (
+        <HistoryDetailGrid>
+          <Panel eyebrow="Scout" title="Selected opportunity map" action={<span className="chip signal">scout radar</span>}>
+            <RefactorMap health={health} history={history} scan={scan} />
+          </Panel>
+          <LeadQueuePanel history={history} onLoadScan={onLoadScan} scan={scan} />
+        </HistoryDetailGrid>
+      )}
       <Panel eyebrow="Recent" title="Repo scans" action={<span className="chip signal">{history.length} saved</span>}>
         <div className="panelbody repo-list queue-grid">
           {history.length ? history.map((item, index) => (
@@ -503,14 +511,6 @@ function HistorySurface({ activeScanId, health, history, loading, onClearScan, o
           )}
         </div>
       </Panel>
-      {scan && (
-        <HistoryDetailGrid>
-          <Panel eyebrow="Scout" title="Selected opportunity map" action={<span className="chip signal">scout radar</span>}>
-            <RefactorMap health={health} history={history} scan={scan} />
-          </Panel>
-          <LeadQueuePanel history={history} onLoadScan={onLoadScan} scan={scan} />
-        </HistoryDetailGrid>
-      )}
     </SecondaryFrame>
   );
 }

@@ -692,6 +692,14 @@ function HistorySurface({ activeReviewId, health, history, loading, onClearRevie
           <button className="btn" onClick={onRefresh} type="button">{loading ? "Refreshing..." : "Refresh"}</button>
         </div>
       </div>
+      {review && (
+        <HistoryDetailGrid>
+          <Panel eyebrow="Threads" title="Selected thread map" action={<span className="chip signal">review radar</span>}>
+            <ThreadMap health={health} history={history} overview={overview} review={review} />
+          </Panel>
+          <ChecklistPanel history={history} onLoadReview={onLoadReview} review={review} />
+        </HistoryDetailGrid>
+      )}
       <Panel eyebrow="Recent" title="Review runs" action={<span className="chip signal">{history.length} saved</span>}>
         <div className="panelbody repo-list queue-grid">
           {history.length ? history.map((item) => {
@@ -721,14 +729,6 @@ function HistorySurface({ activeReviewId, health, history, loading, onClearRevie
           )}
         </div>
       </Panel>
-      {review && (
-        <HistoryDetailGrid>
-          <Panel eyebrow="Threads" title="Selected thread map" action={<span className="chip signal">review radar</span>}>
-            <ThreadMap health={health} history={history} overview={overview} review={review} />
-          </Panel>
-          <ChecklistPanel history={history} onLoadReview={onLoadReview} review={review} />
-        </HistoryDetailGrid>
-      )}
     </TabFrame>
   );
 }

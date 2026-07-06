@@ -1520,6 +1520,16 @@ function HistorySurface({ config, health, history, loading, onClearRun, onLoadRu
           <button className="btn" onClick={onRefresh} type="button">{loading ? "Refreshing..." : "Refresh"}</button>
         </div>
       </div>
+      {selectedRun && (
+        <>
+          <MetricBand metrics={selectedRunMetrics(selectedRun)} />
+          <HistoryDetailGrid>
+            <SelectedRunDossier run={selectedRun} />
+            <HistoryDeliveryPanel run={selectedRun} />
+          </HistoryDetailGrid>
+          <HistoryAttemptTimeline run={selectedRun} />
+        </>
+      )}
       <RunHistoryList
         emptyText="Fill Target repo and start a guarded hunt to create targeted history."
         emptyTitle="No targeted runs saved"
@@ -1536,16 +1546,6 @@ function HistorySurface({ config, health, history, loading, onClearRun, onLoadRu
         selectedRun={selectedRun}
         title="Autonomous runs"
       />
-      {selectedRun && (
-        <>
-          <MetricBand metrics={selectedRunMetrics(selectedRun)} />
-          <HistoryDetailGrid>
-            <SelectedRunDossier run={selectedRun} />
-            <HistoryDeliveryPanel run={selectedRun} />
-          </HistoryDetailGrid>
-          <HistoryAttemptTimeline run={selectedRun} />
-        </>
-      )}
     </SecondaryFrame>
   );
 }

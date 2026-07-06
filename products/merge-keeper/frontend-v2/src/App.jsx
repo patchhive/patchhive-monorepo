@@ -783,6 +783,14 @@ function HistorySurface({ activeAssessmentId, assessment, health, history, loadi
           <button className="btn" onClick={onRefresh} type="button">{loading ? "Refreshing..." : "Refresh"}</button>
         </div>
       </div>
+      {assessment && (
+        <HistoryDetailGrid>
+          <Panel eyebrow="Readiness" title="Selected merge pressure map" action={<span className="chip signal">merge radar</span>}>
+            <ReadinessMap assessment={assessment} health={health} history={history} includeSupportSignals={false} />
+          </Panel>
+          <BlockerPanel assessment={assessment} history={history} onLoadAssessment={onLoadAssessment} />
+        </HistoryDetailGrid>
+      )}
       <Panel eyebrow="Recent" title="Readiness history" action={<span className="chip signal">{history.length} saved</span>}>
         <div className="panelbody repo-list queue-grid">
           {history.length ? history.map((item) => (
@@ -808,14 +816,6 @@ function HistorySurface({ activeAssessmentId, assessment, health, history, loadi
           )}
         </div>
       </Panel>
-      {assessment && (
-        <HistoryDetailGrid>
-          <Panel eyebrow="Readiness" title="Selected merge pressure map" action={<span className="chip signal">merge radar</span>}>
-            <ReadinessMap assessment={assessment} health={health} history={history} includeSupportSignals={false} />
-          </Panel>
-          <BlockerPanel assessment={assessment} history={history} onLoadAssessment={onLoadAssessment} />
-        </HistoryDetailGrid>
-      )}
     </SecondaryFrame>
   );
 }
