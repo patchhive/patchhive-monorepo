@@ -112,34 +112,40 @@ fn build_summary(
     top: Option<&VulnerabilityFinding>,
 ) -> String {
     if metrics.tracked_findings == 0 {
-        if warnings
+        let token_missing = warnings
             .iter()
-            .any(|warning| security_token_missing(warning))
-        {
+            .any(|warning| security_token_missing(warning));
+        let token_invalid = warnings
+            .iter()
+            .any(|warning| security_token_invalid(warning));
+        let feature_disabled = warnings
+            .iter()
+            .any(|warning| security_feature_disabled(warning));
+        let permission_blocked = warnings
+            .iter()
+            .any(|warning| security_permission_blocked(warning));
+
+        if token_missing {
             return format!(
                 "VulnTriage could not read GitHub security alerts for `{repo}` because security-feed token access is not configured."
             );
         }
-        if warnings
-            .iter()
-            .any(|warning| security_token_invalid(warning))
-        {
+        if token_invalid {
             return format!(
                 "VulnTriage could not read GitHub security alerts for `{repo}` because the configured token was rejected by GitHub. Check the token value, then rerun the scan."
             );
         }
-        if warnings
-            .iter()
-            .any(|warning| security_feature_disabled(warning))
-        {
+        if permission_blocked && feature_disabled {
+            return format!(
+                "VulnTriage could not fully read GitHub security alerts for `{repo}` because one feed needs token access and another feed is disabled for this repository. Grant the missing security-read scope and enable the disabled feed, then rerun the scan."
+            );
+        }
+        if feature_disabled {
             return format!(
                 "VulnTriage could not read one or more GitHub security feeds for `{repo}` because the feature is disabled for this repository. Enable code scanning or Dependabot alerts, or use a future public vulnerability fallback."
             );
         }
-        if warnings
-            .iter()
-            .any(|warning| security_permission_blocked(warning))
-        {
+        if permission_blocked {
             return format!(
                 "VulnTriage could not read GitHub security alerts for `{repo}` with the current token. Grant code scanning and/or Dependabot alert read access for this repository, then rerun the scan."
             );
@@ -418,5 +424,24 @@ fn dependency_next_action(alert: &github::GitHubDependabotAlert, owner_hint: &st
             alert.dependency.package.name,
             alert.dependency.manifest_path
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn summary_reports_mixed_permission_and_disabled_security_feeds() {
+        let warnings = vec![
+            "Code scanning alerts could not be read for owner/repo: GitHub GET /repos/owner/repo/code-scanning/alerts -> 403 Forbidden [missing_token_scope]: Resource not accessible by personal access token".to_string(),
+            "Dependency alerts could not be read for owner/repo: GitHub GET /repos/owner/repo/dependabot/alerts -> 403 Forbidden [feature_disabled]: Dependabot alerts are disabled for this repository.".to_string(),
+        ];
+
+        let summary = build_summary("owner/repo", &VulnMetrics::default(), &warnings, None);
+
+        assert!(summary.contains("one feed needs token access"));
+        assert!(summary.contains("another feed is disabled"));
+        assert!(summary.contains("owner/repo"));
     }
 }

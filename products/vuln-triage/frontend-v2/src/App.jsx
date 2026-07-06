@@ -97,9 +97,22 @@ function warningLabel(warning) {
   return value;
 }
 
-function warningBlocksSecurityFeeds(warning) {
+function warningFeatureDisabled(warning) {
   const value = String(warning || "");
-  return value.includes("403 Forbidden") || value.includes("Resource not accessible");
+  const lower = value.toLowerCase();
+  return value.includes("[feature_disabled]")
+    || lower.includes("dependabot alerts are disabled")
+    || lower.includes("code scanning is not enabled");
+}
+
+function warningNeedsSecurityAccess(warning) {
+  const value = String(warning || "");
+  const lower = value.toLowerCase();
+  if (warningFeatureDisabled(value)) return false;
+  return value.includes("[missing_token_scope]")
+    || value.includes("[forbidden]")
+    || lower.includes("403 forbidden")
+    || lower.includes("resource not accessible");
 }
 
 function warningMissingSecurityToken(warning) {
@@ -110,13 +123,22 @@ function warningMissingSecurityToken(warning) {
 function scanSummary(scan) {
   const repo = scan?.repo || "this repository";
   const hasFindings = asCount(scan?.metrics?.tracked_findings) > 0 || Boolean(scan?.findings?.length);
-  if (!hasFindings && scan?.warnings?.some(warningBlocksSecurityFeeds)) {
+  const warnings = scan?.warnings || [];
+  const needsSecurityAccess = warnings.some(warningNeedsSecurityAccess);
+  const featureDisabled = warnings.some(warningFeatureDisabled);
+  if (!hasFindings && needsSecurityAccess && featureDisabled) {
+    return `VulnTriage could not fully read GitHub security alerts for \`${repo}\` because one feed needs token access and another feed is disabled for this repository. Grant the missing security-read scope and enable the disabled feed, then rerun the scan.`;
+  }
+  if (!hasFindings && needsSecurityAccess) {
     return `VulnTriage could not read GitHub security alerts for \`${repo}\` with the current token. Grant code scanning and/or Dependabot alert read access for this repository, then rerun the scan.`;
   }
-  if (!hasFindings && scan?.warnings?.some(warningMissingSecurityToken)) {
+  if (!hasFindings && warnings.some(warningMissingSecurityToken)) {
     return `VulnTriage could not read GitHub security alerts for \`${repo}\` because security-feed token access is not configured.`;
   }
-  if (!hasFindings && scan?.warnings?.length) {
+  if (!hasFindings && featureDisabled) {
+    return `VulnTriage could not read one or more GitHub security feeds for \`${repo}\` because the feature is disabled for this repository. Enable code scanning or Dependabot alerts, or use a future public vulnerability fallback.`;
+  }
+  if (!hasFindings && warnings.length) {
     return `VulnTriage did not receive actionable findings from the readable feeds for \`${repo}\`, but one or more GitHub security feeds could not be read.`;
   }
   return scan?.summary || "Saved VulnTriage scan.";
