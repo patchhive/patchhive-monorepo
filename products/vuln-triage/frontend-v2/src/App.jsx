@@ -185,6 +185,71 @@ function patchedVersionSummary(group) {
   return ` · fixes vary across ${versions.length} advisories`;
 }
 
+function uniqueValues(values = []) {
+  return Array.from(new Set(values.filter(Boolean)));
+}
+
+function findingLinks(findings = []) {
+  const links = [];
+  for (const finding of findings) {
+    if (finding.html_url) {
+      links.push({ href: finding.html_url, label: "GitHub alert" });
+    }
+    for (const reference of finding.references || []) {
+      links.push({ href: reference, label: "Advisory reference" });
+    }
+  }
+  const seen = new Set();
+  return links.filter((link) => {
+    if (!link.href || seen.has(link.href)) return false;
+    seen.add(link.href);
+    return true;
+  });
+}
+
+function buildScanMarkdown(scan) {
+  if (!scan) return "";
+  const lines = [
+    `# VulnTriage scan for ${scan.repo}`,
+    "",
+    scanSummary(scan),
+    "",
+    `- Tracked findings: ${asCount(scan.metrics?.tracked_findings)}`,
+    `- Fix now: ${asCount(scan.metrics?.fix_now)}`,
+    `- Plan next: ${asCount(scan.metrics?.plan_next)}`,
+    `- Watch: ${asCount(scan.metrics?.watch)}`,
+    `- Code scanning alerts: ${asCount(scan.metrics?.code_scanning_alerts)}`,
+    `- Dependabot alerts: ${asCount(scan.metrics?.dependency_alerts)}`,
+    `- Runtime exposed: ${asCount(scan.metrics?.runtime_exposed)}`,
+    `- Owner scoped: ${asCount(scan.metrics?.owner_scoped)}`,
+  ];
+
+  const groupedFindings = groupDependencyFindings(scan.findings || []);
+  if (groupedFindings.length) {
+    lines.push("", "## Top remediation groups", "");
+    groupedFindings.slice(0, 8).forEach((item) => {
+      if (item.type === "dependency-group") {
+        const top = item.findings[0] || {};
+        lines.push(
+          `- [${recommendationLabel(item.recommendation)}] ${item.packageName} / ${item.manifest} — ${item.findings.length} alerts — ${top.summary || top.title || "security advisory"}`,
+        );
+        return;
+      }
+      const finding = item.finding || {};
+      lines.push(
+        `- [${recommendationLabel(finding.recommendation)}] ${finding.title || finding.key} — ${finding.summary || finding.next_action || finding.location || "security finding"}`,
+      );
+    });
+  }
+
+  if (scan.warnings?.length) {
+    lines.push("", "## Warnings", "");
+    scan.warnings.forEach((warning) => lines.push(`- ${warningLabel(warning)}`));
+  }
+
+  return lines.join("\n");
+}
+
 function warningLabel(warning) {
   const value = String(warning || "");
   if (value.includes("BOT_GITHUB_TOKEN is not set") || value.includes("GITHUB_TOKEN is not set")) {
@@ -579,6 +644,9 @@ function FixQueuePanel({ history, onLoadScan, scan }) {
                   const top = item.findings[0] || {};
                   const alertCount = item.findings.length;
                   const patched = patchedVersionSummary(item);
+                  const links = findingLinks(item.findings).slice(0, 3);
+                  const identifiers = uniqueValues(item.findings.flatMap((finding) => finding.identifiers || [])).slice(0, 4);
+                  const evidence = uniqueValues(item.findings.flatMap((finding) => finding.evidence || [])).slice(0, 2);
                   return (
                     <div className="ledger-row" key={item.key}>
                       <div className="rank">{String(index + 1).padStart(2, "0")}</div>
@@ -597,12 +665,32 @@ function FixQueuePanel({ history, onLoadScan, scan }) {
                         <div className="feed-meta" style={{ marginTop: 8 }}>
                           {item.findings.slice(0, 3).map((finding) => finding.summary || finding.title).join(" · ")}
                         </div>
+                        {identifiers.length ? (
+                          <div className="repo-meta" style={{ marginTop: 8 }}>
+                            {identifiers.map((identifier) => <span className="chip" key={identifier}>{identifier}</span>)}
+                          </div>
+                        ) : null}
+                        {evidence.length ? (
+                          <div className="feed-meta" style={{ marginTop: 8 }}>
+                            {evidence.join(" · ")}
+                          </div>
+                        ) : null}
+                        {links.length ? (
+                          <div className="repo-meta" style={{ marginTop: 8 }}>
+                            {links.map((link, linkIndex) => (
+                              <a className="chip signal" href={link.href} key={`${link.href}-${linkIndex}`} rel="noreferrer" target="_blank">
+                                {link.label}
+                              </a>
+                            ))}
+                          </div>
+                        ) : null}
                       </div>
                       <span className={`chip ${tone}`}>{item.maxScore}</span>
                     </div>
                   );
                 }
                 const finding = item.finding;
+                const links = findingLinks([finding]).slice(0, 3);
                 return (
                   <div className="ledger-row" key={finding.key || index}>
                     <div className="rank">{String(index + 1).padStart(2, "0")}</div>
@@ -614,6 +702,30 @@ function FixQueuePanel({ history, onLoadScan, scan }) {
                         <span className="chip signal">{humanizeToken(finding.severity || finding.source, "security")}</span>
                         {finding.location && <span className="chip">{finding.location}</span>}
                       </div>
+                      {finding.next_action ? (
+                        <div className="feed-meta" style={{ marginTop: 8 }}>
+                          Next action: {finding.next_action}
+                        </div>
+                      ) : null}
+                      {finding.identifiers?.length ? (
+                        <div className="repo-meta" style={{ marginTop: 8 }}>
+                          {finding.identifiers.slice(0, 4).map((identifier) => <span className="chip" key={identifier}>{identifier}</span>)}
+                        </div>
+                      ) : null}
+                      {finding.evidence?.length ? (
+                        <div className="feed-meta" style={{ marginTop: 8 }}>
+                          {finding.evidence.slice(0, 2).join(" · ")}
+                        </div>
+                      ) : null}
+                      {links.length ? (
+                        <div className="repo-meta" style={{ marginTop: 8 }}>
+                          {links.map((link, linkIndex) => (
+                            <a className="chip signal" href={link.href} key={`${link.href}-${linkIndex}`} rel="noreferrer" target="_blank">
+                              {link.label}
+                            </a>
+                          ))}
+                        </div>
+                      ) : null}
                     </div>
                     <span className={`chip ${findingTone(finding)}`}>{asCount(finding.score)}</span>
                   </div>
@@ -716,6 +828,20 @@ function TriageSurface({
 }) {
   const rail = useMemo(() => buildRail(scan, history, overview, health), [scan, history, overview, health]);
   const metrics = useMemo(() => buildMetrics(scan, overview, health), [scan, overview, health]);
+  const [copyState, setCopyState] = useState("");
+
+  async function copySummary() {
+    if (!scan || !navigator?.clipboard?.writeText) return;
+    try {
+      await navigator.clipboard.writeText(buildScanMarkdown(scan));
+      setCopyState("Copied");
+    } catch {
+      setCopyState("Copy failed");
+    } finally {
+      window.setTimeout(() => setCopyState(""), 1800);
+    }
+  }
+
   return (
     <>
       <SuiteTopline cells={buildTopline(health, overview, scan, history)} />
@@ -730,6 +856,7 @@ function TriageSurface({
             </div>
             <div className="actions">
               <span className={`chip ${githubReady(health) ? "green" : "amber"}`}>{githubReady(health) ? "github ready" : "token missing"}</span>
+              {scan && <button className="btn" onClick={copySummary} type="button">{copyState || "Copy summary"}</button>}
               {scan && <button className="btn" onClick={onClearScan} type="button">Clear scan</button>}
               <button className="btn" onClick={onRefresh} type="button">Refresh</button>
             </div>

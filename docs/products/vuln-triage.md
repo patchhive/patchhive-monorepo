@@ -82,8 +82,8 @@ docker compose up --build
 ```
 
 Defaults:
-- **Frontend** (production): `http://localhost:5181`
-- **Frontend v2 prototype**: `http://localhost:5200`
+- **Frontend** (active v2): `http://localhost:5181`
+- **Frontend v2 dev server**: `http://localhost:5200`
 - **Backend**: `http://localhost:8110`
 - **Suite backend route**: `http://localhost:8100/api/products/vuln-triage`
 
@@ -97,13 +97,15 @@ cd products/vuln-triage
 cp .env.example .env
 
 cd backend && cargo run
-cd ../frontend && npm install && npm run dev
+cd ../frontend-v2 && npm install && npm run dev
 ```
 
-The UI v2 prototype is isolated while the suite direction is still being tested:
+The old v1 frontend is preserved for reference in `frontend-legacy/` after the
+v2 parity audit. Use it only when comparing behavior before deleting legacy UI
+code:
 
 ```bash
-cd frontend-v2 && npm install && npm run dev
+cd frontend-legacy && npm install && npm run dev
 ```
 
 ### Unified Backend Mode
@@ -131,6 +133,44 @@ compatibility wrapper around the same product module while the migration is
 tested. Once product-mode packaging runs the shared backend image with only
 VulnTriage enabled, the old separate backend service can be moved to legacy or
 removed.
+
+### UI v1 to v2 Parity Audit
+
+Audited on 2026-07-07:
+
+- `products/vuln-triage/frontend-legacy/src/App.jsx`
+- `products/vuln-triage/frontend-legacy/src/panels/TriagePanel.jsx`
+- `products/vuln-triage/frontend-legacy/src/panels/HistoryPanel.jsx`
+- `products/vuln-triage/frontend-legacy/src/panels/ChecksPanel.jsx`
+- `products/vuln-triage/frontend-v2/src/App.jsx`
+
+V2 covers the old directed repository scan loop, code scanning toggle,
+Dependabot alert toggle, GitHub-readiness messaging, scan warnings, fix-now /
+plan-next / watch buckets, runtime and owner-scope evidence, saved scan history,
+history load, backend health, database status, startup checks, and auth
+bootstrap. It also preserves the old operator conveniences that matter during
+live triage: copyable Markdown summary, alert/reference links, identifiers,
+evidence snippets, GitHub permission guidance, and selected-scan history detail.
+
+Intentional v2 changes:
+
+- The old Setup wizard is replaced by the shared v2 login/readiness/checks
+  surface. VulnTriage does not need a separate setup workflow beyond GitHub
+  security-read readiness and first scan guidance.
+- Dependency alerts are grouped into package-level remediation decisions so raw
+  Dependabot noise collapses into practical upgrade work.
+- The main radar shows saved scans when no scan is loaded, then switches to the
+  selected scan's vulnerability findings or scan-level evidence.
+- The old per-finding card wall is replaced by compact remediation rows with
+  links, identifiers, and evidence snippets.
+
+Deferred polish before old UI deletion:
+
+- Suite-wide scope controls should eventually add allowlist, denylist,
+  opt-out, saved-scope, and schedule context around scans. VulnTriage stays
+  read-only until HiveCore owns those suite-level controls.
+- If operators need deep investigation inside VulnTriage, add an expandable
+  finding drawer instead of returning to the old full-card list.
 
 ### Prerequisites
 

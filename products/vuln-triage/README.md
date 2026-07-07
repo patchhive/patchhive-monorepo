@@ -27,7 +27,6 @@ docker compose up --build
 ```
 
 Frontend: `http://localhost:5181`
-Frontend v2 prototype: `http://localhost:5200`
 Backend: `http://localhost:8110`
 Suite backend route: `http://localhost:8100/api/products/vuln-triage`
 
@@ -37,14 +36,15 @@ Suite backend route: `http://localhost:8100/api/products/vuln-triage`
 cp .env.example .env
 
 cd backend && cargo run
-cd ../frontend && npm install && npm run dev
+cd ../frontend-v2 && npm install && npm run dev
 ```
 
-The UI v2 prototype is isolated from the production frontend while the suite
-direction is still being tested:
+The old v1 frontend is preserved for reference in `frontend-legacy/` after the
+v2 parity audit. Use it only when comparing behavior before deleting legacy UI
+code:
 
 ```bash
-cd frontend-v2 && npm install && npm run dev
+cd frontend-legacy && npm install && npm run dev
 ```
 
 ### Unified Backend Mode
@@ -62,6 +62,14 @@ npm --prefix products/vuln-triage/frontend-v2 run dev
 
 The standalone backend remains available as a compatibility wrapper while the
 suite backend migration is tested.
+
+## UI Status
+
+- The active UI lives in `frontend-v2/`.
+- The old v1 UI is preserved in `frontend-legacy/` only as parity reference
+  material.
+- Docker's default `frontend` service builds the v2 UI. The legacy UI is
+  available only through the `legacy-ui` profile.
 
 ## Important Configuration
 

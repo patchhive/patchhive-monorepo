@@ -103,6 +103,14 @@ intentional v2 changes, and deferred polish in the product docs.
   PR and alert links, history loading, health checks, startup checks, and
   unified-backend routing. Deferred polish: suite-owned scope controls and any
   future approval-gated dependency execution surface.
+- **VulnTriage** audited on 2026-07-07. See
+  `docs/products/vuln-triage.md#ui-v1-to-v2-parity-audit`. V2 covers directed
+  security scans, code scanning and Dependabot toggles, permission/degraded-feed
+  messaging, grouped remediation decisions, Markdown summary copy, alert and
+  advisory links, identifiers, evidence snippets, history loading, health
+  checks, startup checks, and unified-backend routing. Deferred polish:
+  suite-owned scope controls and optional expandable finding drawers if
+  operators need deeper investigation inside the product.
 
 After every product has moved to v2, choose one cleanup path:
 
@@ -129,7 +137,7 @@ cross-product handoffs rather than another single-product radar board.
 | MergeKeeper | `products/merge-keeper/frontend-v2` | v2 active; v1 moved to `frontend-legacy` |
 | FlakeSting | `products/flake-sting/frontend-v2` | React prototype active |
 | DepTriage | `products/dep-triage/frontend-v2` | v2 active; v1 moved to `frontend-legacy` |
-| VulnTriage | `products/vuln-triage/frontend-v2` | React prototype active |
+| VulnTriage | `products/vuln-triage/frontend-v2` | v2 active; v1 moved to `frontend-legacy` |
 | RefactorScout | `products/refactor-scout/frontend-v2` | React prototype active |
 | ReleaseSentry | `products/release-sentry/frontend-v2` | v2 active; v1 moved to `frontend-legacy` |
 | HiveCore | `products/hive-core/frontend-v2` | Control-plane demo active |
