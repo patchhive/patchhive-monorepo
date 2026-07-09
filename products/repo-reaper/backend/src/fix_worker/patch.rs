@@ -17,11 +17,11 @@ fn pr_test_status(test: &crate::git_ops::TestResult) -> &'static str {
     }
 
     match test.runner.as_str() {
-        "disabled" => "⚠️ Not run — untrusted test execution is disabled (draft PR)",
-        "host-disabled" => "⚠️ Not run — host test execution is disabled (draft PR)",
-        "invalid" => "⚠️ Not run — test runner configuration is invalid (draft PR)",
-        "none" => "⚠️ Not run — no supported test runner was found (draft PR)",
-        _ => "⚠️ Failed (draft PR)",
+        "disabled" => "⚠️ Not run — untrusted test execution is disabled; review required",
+        "host-disabled" => "⚠️ Not run — host test execution is disabled; review required",
+        "invalid" => "⚠️ Not run — test runner configuration is invalid; review required",
+        "none" => "⚠️ Not run — no supported test runner was found; review required",
+        _ => "⚠️ Failed; review required",
     }
 }
 

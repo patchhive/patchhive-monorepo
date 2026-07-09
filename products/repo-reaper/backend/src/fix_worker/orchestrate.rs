@@ -123,7 +123,7 @@ fn issue_comment_attempting(issue: &serde_json::Value, run_id: &str, attempt_id:
         **Run:** `{run_id}`\n\
         **Attempt:** `{attempt_id}`\n\
         {}\n\n\
-        RepoReaper will open a draft pull request if it produces a commit-ready diff. If it cannot, a separate outcome comment will explain why.",
+        RepoReaper will open a pull request for review if it produces a commit-ready diff. If it cannot, a separate outcome comment will explain why.",
         issue_fixability_line(issue),
     )
 }
@@ -169,11 +169,11 @@ fn issue_comment_fixed(
     let test_line = if test.passed {
         "Validation tests passed."
     } else {
-        "Validation tests were not proven safe/passing here, so the pull request was opened as a draft for review."
+        "Validation tests were not proven safe/passing here, so the pull request requires review."
     };
     format!(
         "🔱 **RepoReaper by [PatchHive](https://github.com/patchhive)** produced a candidate fix for this issue.\n\n\
-        **Status:** draft pull request opened\n\
+        **Status:** pull request opened\n\
         **Pull request:** [#{pr_number}]({pr_url})\n\
         **Run:** `{run_id}`\n\
         **Attempt:** `{attempt_id}`\n\
@@ -957,7 +957,7 @@ pub async fn fix_one(job: FixIssueJob) {
                 let _ = tx
                     .send(alog(
                         &agents.gatekeeper,
-                        "Validation did not run tests in a trusted sandbox - preserving patch for draft PR",
+                        "Validation did not run tests in a trusted sandbox - preserving patch for PR review",
                         "info",
                     ))
                     .await;
