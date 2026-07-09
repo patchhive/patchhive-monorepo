@@ -282,14 +282,44 @@ fn is_testish(text: &str) -> bool {
     .any(|needle| lower.contains(needle))
 }
 
-fn runner_label(job: &GitHubWorkflowJob) -> String {
-    if !job.runner_name.trim().is_empty() {
-        job.runner_name.clone()
-    } else if !job.labels.is_empty() {
-        job.labels.join(", ")
-    } else {
-        "unknown-runner".into()
+fn normalized_runner_label(value: &str) -> Option<String> {
+    let value = value.trim();
+    if value.is_empty() || value.chars().all(|character| character.is_ascii_digit()) {
+        return None;
     }
+
+    let parts = value.split_whitespace().collect::<Vec<_>>();
+    if parts.len() > 2
+        && parts[0].eq_ignore_ascii_case("GitHub")
+        && parts[1].eq_ignore_ascii_case("Actions")
+        && parts[2..]
+            .iter()
+            .all(|part| part.chars().all(|character| character.is_ascii_digit()))
+    {
+        return Some("GitHub Actions".into());
+    }
+
+    Some(value.into())
+}
+
+fn runner_label(job: &GitHubWorkflowJob) -> String {
+    let labels = job
+        .labels
+        .iter()
+        .filter_map(|label| normalized_runner_label(label))
+        .filter(|label| !label.eq_ignore_ascii_case("GitHub Actions"))
+        .collect::<Vec<_>>();
+    let runner = normalized_runner_label(&job.runner_name);
+
+    if matches!(runner.as_deref(), Some(value) if value.eq_ignore_ascii_case("GitHub Actions"))
+        && !labels.is_empty()
+    {
+        return labels.join(", ");
+    }
+
+    runner
+        .or_else(|| (!labels.is_empty()).then(|| labels.join(", ")))
+        .unwrap_or_else(|| "unknown-runner".into())
 }
 
 fn push_evidence(items: &mut Vec<String>, value: String) {
@@ -632,5 +662,16 @@ mod tests {
         let signal = build_signal(bucket).expect("signal");
         assert_eq!(signal.status, "quarantine");
         assert!(signal.score > 0);
+    }
+
+    #[test]
+    fn runner_label_prefers_action_runner_labels_over_opaque_ids() {
+        let job = GitHubWorkflowJob {
+            runner_name: "GitHub Actions 1000002204".into(),
+            labels: vec!["ubuntu-latest".into()],
+            ..GitHubWorkflowJob::default()
+        };
+
+        assert_eq!(runner_label(&job), "ubuntu-latest");
     }
 }

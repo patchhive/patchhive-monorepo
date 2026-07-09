@@ -117,23 +117,41 @@ function buildMetrics(scan, overview, health) {
   ];
 }
 
+function workflowRailItems(scan, history) {
+  const items = scan
+    ? (scan.signals?.length
+      ? scan.signals.map((signal) => ({
+        label: signal.workflow_name || signal.job_name || signal.key,
+        value: signal.status || signal.kind || "watch",
+      }))
+      : [{
+        label: scan.workflow_name || "all matching workflows",
+        value: "clear",
+      }])
+    : history.map((item) => ({
+      label: item.workflow_name || item.repo,
+      value: item.flaky_signals ? "watch" : "clear",
+    }));
+  const seen = new Set();
+
+  return items
+    .filter((item) => {
+      const key = String(item.label || "").trim().toLocaleLowerCase();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 4)
+    .map((item, index) => ({ ...item, active: index === 0 }));
+}
+
 function buildRail(scan, history, overview, health) {
   const latest = history[0] || {};
   return {
     sections: [
       {
-        title: "Workflows",
-        items: scan?.signals?.length
-          ? scan.signals.slice(0, 4).map((signal, index) => ({
-            active: index === 0,
-            label: signal.workflow_name || signal.job_name || signal.key,
-            value: signal.status || signal.kind,
-          }))
-          : history.slice(0, 4).map((item, index) => ({
-            active: index === 0,
-            label: item.workflow_name || item.repo,
-            value: item.flaky_signals ? "watch" : "clear",
-          })),
+        title: scan ? "Workflows" : "Recent workflows",
+        items: workflowRailItems(scan, history),
       },
       {
         title: "Signals",
