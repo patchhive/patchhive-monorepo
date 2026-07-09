@@ -603,6 +603,7 @@ function buildRadarDemoItems() {
 
 export function SuiteRadar({
   ariaLabel = "PatchHive signal radar",
+  countLabel = "",
   detailLabel = "Selected signal",
   echoes = [],
   feed = [],
@@ -721,7 +722,7 @@ export function SuiteRadar({
   return (
     <div className="signal-map" data-window={windowDays}>
       <div className="range-panel">
-        <span className="chip signal">{activeWindow.count || `${visibleItems.length} ${signalLabel}`}</span>
+        <span className="chip signal">{countLabel || activeWindow.count || `${visibleItems.length} ${signalLabel}`}</span>
         <div className="range-switch" aria-label="Radar history window">
           {windowKeys.map((days) => (
             <button

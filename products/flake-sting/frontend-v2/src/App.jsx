@@ -91,7 +91,7 @@ function buildTopline(health, overview, scan, history) {
     { label: "System", value: health?.status || "checking", tone: health?.status === "ok" ? "ok" : "warn" },
     { label: "Mode", value: "Read only" },
     { label: "GitHub", value: githubReady(health) ? "Actions read" : "token missing", tone: githubReady(health) ? "sig" : "warn" },
-    { label: "Flaky", value: String(asCount(scan?.metrics?.flaky_signals || counts.flaky_signals || health?.flaky_signal_count)), tone: "warn" },
+    { label: scan ? "Flaky" : "Saved signals", value: String(asCount(scan?.metrics?.flaky_signals || counts.flaky_signals || health?.flaky_signal_count)), tone: "warn" },
     { label: "Last scan", value: latest.created_at ? timeAgo(latest.created_at) : counts.scans ? "loaded" : "none" },
   ];
 }
@@ -110,8 +110,8 @@ function buildMetrics(scan, overview, health) {
   const counts = overview?.counts || {};
   return [
     { label: "Scans", value: String(asCount(counts.scans || health?.scan_count)), tone: "sig", sub: `${asCount(counts.repos || health?.repo_count)} repos` },
-    { label: "Flaky signals", value: String(asCount(counts.flaky_signals || health?.flaky_signal_count)), tone: metricToneFromSignalCount(counts.flaky_signals || health?.flaky_signal_count), sub: "saved scans" },
-    { label: "Quarantine", value: String(asCount(counts.quarantine_candidates || health?.quarantine_candidate_count)), tone: asCount(counts.quarantine_candidates || health?.quarantine_candidate_count) ? "hot" : "ok", sub: "saved scans" },
+    { label: "Saved signals", value: String(asCount(counts.flaky_signals || health?.flaky_signal_count)), tone: metricToneFromSignalCount(counts.flaky_signals || health?.flaky_signal_count), sub: "across saved scans" },
+    { label: "Saved quarantine", value: String(asCount(counts.quarantine_candidates || health?.quarantine_candidate_count)), tone: asCount(counts.quarantine_candidates || health?.quarantine_candidate_count) ? "hot" : "ok", sub: "across saved scans" },
     { label: "GitHub", value: githubReady(health) ? "READY" : "MISSING", tone: githubReady(health) ? "ok" : "warn", sub: "Actions reads" },
     { label: "History", value: String(asCount(overview?.recent_scans?.length)), tone: "sig", sub: "recent runs" },
   ];
@@ -147,6 +147,9 @@ function workflowRailItems(scan, history) {
 
 function buildRail(scan, history, overview, health) {
   const latest = history[0] || {};
+  const active = scan || latest;
+  const activeMetrics = active.metrics || active;
+  const savedHistory = !scan;
   return {
     sections: [
       {
@@ -156,19 +159,19 @@ function buildRail(scan, history, overview, health) {
       {
         title: "Signals",
         items: [
-          { label: "flaky signals", active: true, badge: String(asCount(scan?.metrics?.flaky_signals || overview?.counts?.flaky_signals)), badgeTone: "amber" },
-          { label: "rerun pressure", badge: String(asCount(scan?.metrics?.rerun_like_runs)), badgeTone: asCount(scan?.metrics?.rerun_like_runs) ? "red" : "green" },
-          { label: "quarantine", badge: String(asCount(scan?.metrics?.quarantine_candidates || overview?.counts?.quarantine_candidates)), badgeTone: asCount(scan?.metrics?.quarantine_candidates || overview?.counts?.quarantine_candidates) ? "red" : "green" },
+          { label: savedHistory ? "saved signals" : "flaky signals", active: true, badge: String(asCount(savedHistory ? overview?.counts?.flaky_signals : activeMetrics.flaky_signals)), badgeTone: "amber" },
+          { label: "rerun pressure", badge: String(asCount(activeMetrics.rerun_like_runs)), badgeTone: asCount(activeMetrics.rerun_like_runs) ? "red" : "green" },
+          { label: savedHistory ? "saved quarantine" : "quarantine", badge: String(asCount(savedHistory ? overview?.counts?.quarantine_candidates : activeMetrics.quarantine_candidates)), badgeTone: asCount(savedHistory ? overview?.counts?.quarantine_candidates : activeMetrics.quarantine_candidates) ? "red" : "green" },
           { label: "saved scans", badge: String(history.length), badgeTone: "signal" },
         ],
       },
     ],
     stats: {
-      title: "Active repo",
+      title: scan ? "Active repo" : "Latest saved repo",
       items: [
-        { label: "Repository", value: scan?.repo || latest.repo || "none" },
-        { label: "CI trust", value: scan?.metrics?.quarantine_candidates ? "QUARANTINE" : scan?.metrics?.flaky_signals ? "WATCH" : "READY", large: true, tone: scan?.metrics?.quarantine_candidates ? "hot" : scan?.metrics?.flaky_signals ? "warn" : "ok" },
-        { label: "Branch", value: scan?.branch || latest.branch || "default" },
+        { label: "Repository", value: active.repo || "none" },
+        { label: "CI trust", value: activeMetrics.quarantine_candidates ? "QUARANTINE" : activeMetrics.flaky_signals ? "WATCH" : "READY", large: true, tone: activeMetrics.quarantine_candidates ? "hot" : activeMetrics.flaky_signals ? "warn" : "ok" },
+        { label: "Branch", value: active.branch || "default" },
       ],
     },
   };
@@ -401,8 +404,9 @@ function InstabilityMap({ health, history, scan }) {
       gainLabel="State"
       itemQueryParam="flake"
       items={items}
+      countLabel={scan ? `${asCount(scan.metrics?.flaky_signals)} ${asCount(scan.metrics?.flaky_signals) === 1 ? "signal" : "signals"}` : ""}
       signalLabel={scan ? "signals" : "scans"}
-      vectorLabel={scan ? "Selected signal" : "Selected scan"}
+      vectorLabel={scan ? "Selected CI context" : "Selected scan"}
     />
   );
 }
@@ -572,7 +576,7 @@ function InstabilitySurface({
           <MetricBand metrics={metrics} />
           <div className="atlas-layout suite-four-layout">
             <Panel eyebrow="Instability" title="CI signal map" action={<span className="chip signal">ci radar</span>}>
-              <InstabilityMap health={health} history={history} scan={null} />
+              <InstabilityMap health={health} history={history} scan={scan} />
             </Panel>
             <FlakyQueuePanel history={history} onLoadScan={onLoadScan} scan={scan} />
           </div>
