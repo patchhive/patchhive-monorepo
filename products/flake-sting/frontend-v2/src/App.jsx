@@ -39,6 +39,13 @@ const DEFAULT_FORM = {
   lookback_runs: "25",
 };
 
+const SORT_OPTIONS = [
+  { value: "risk", label: "Risk first" },
+  { value: "failures", label: "Most failures" },
+  { value: "reruns", label: "Most reruns" },
+  { value: "workflow", label: "Workflow name" },
+];
+
 function asCount(value) {
   const number = Number(value || 0);
   return Number.isFinite(number) ? number : 0;
@@ -73,6 +80,91 @@ function metricToneFromSignalCount(count) {
   if (asCount(count) >= 8) return "hot";
   if (asCount(count) > 0) return "warn";
   return "ok";
+}
+
+function sortSignals(signals, sortBy) {
+  return [...signals].sort((left, right) => {
+    if (sortBy === "failures") {
+      return asCount(right.failure_count) - asCount(left.failure_count) || asCount(right.score) - asCount(left.score);
+    }
+    if (sortBy === "reruns") {
+      return asCount(right.rerun_hits) - asCount(left.rerun_hits) || asCount(right.score) - asCount(left.score);
+    }
+    if (sortBy === "workflow") {
+      return (
+        String(left.workflow_name || "").localeCompare(String(right.workflow_name || "")) ||
+        String(left.job_name || "").localeCompare(String(right.job_name || "")) ||
+        String(left.step_name || "").localeCompare(String(right.step_name || ""))
+      );
+    }
+
+    const leftPriority = left.status === "quarantine" ? 1 : 0;
+    const rightPriority = right.status === "quarantine" ? 1 : 0;
+    return (
+      rightPriority - leftPriority ||
+      asCount(right.score) - asCount(left.score) ||
+      asCount(right.failure_count) - asCount(left.failure_count) ||
+      asCount(right.rerun_hits) - asCount(left.rerun_hits)
+    );
+  });
+}
+
+function buildScanMarkdown(scan) {
+  const metrics = scan?.metrics || {};
+  const lines = [
+    `# FlakeSting scan for ${scan?.repo || "repository"}`,
+    "",
+    scan?.summary || "FlakeSting workflow scan.",
+    "",
+    `- Branch: ${scan?.branch || "all branches"}`,
+    `- Workflow filter: ${scan?.workflow_name || "all workflows"}`,
+    `- Workflow runs: ${asCount(metrics.workflow_runs)}`,
+    `- Failed runs: ${asCount(metrics.failed_runs)}`,
+    `- Rerun-like runs: ${asCount(metrics.rerun_like_runs)}`,
+    `- Flaky signals: ${asCount(metrics.flaky_signals)}`,
+    `- Quarantine candidates: ${asCount(metrics.quarantine_candidates)}`,
+  ];
+
+  if (scan?.trend?.status) {
+    lines.push(
+      "",
+      "## Trend",
+      "",
+      `- Status: ${scan.trend.status}`,
+      `- Signal delta: ${scan.trend.flaky_signal_delta > 0 ? "+" : ""}${asCount(scan.trend.flaky_signal_delta)}`,
+      `- Quarantine delta: ${scan.trend.quarantine_delta > 0 ? "+" : ""}${asCount(scan.trend.quarantine_delta)}`,
+      `- Rerun delta: ${scan.trend.rerun_delta > 0 ? "+" : ""}${asCount(scan.trend.rerun_delta)}`,
+      `- New signals: ${asCount(scan.trend.new_signal_count)}`,
+      `- Cleared signals: ${asCount(scan.trend.cleared_signal_count)}`,
+    );
+  }
+
+  if (scan?.signals?.length) {
+    lines.push("", "## Top signals", "");
+    sortSignals(scan.signals, "risk").slice(0, 8).forEach((signal) => {
+      lines.push(`- [${signal.status || "signal"}] ${signal.step_name || signal.job_name || signal.workflow_name} - ${signal.summary || signal.evidence?.[0] || "No summary available."}`);
+    });
+  }
+
+  return lines.join("\n");
+}
+
+function evidenceUrl(value) {
+  return String(value || "").match(/https?:\/\/\S+/)?.[0]?.replace(/[),.]+$/, "") || "";
+}
+
+function trendTone(status) {
+  if (status === "rising") return "red";
+  if (status === "improving") return "green";
+  if (status === "shifted") return "amber";
+  return "signal";
+}
+
+function signedCount(value) {
+  const count = asCount(Math.abs(value));
+  if (Number(value) > 0) return `+${count}`;
+  if (Number(value) < 0) return `-${count}`;
+  return "0";
 }
 
 async function parseJsonResponse(response, fallbackError) {
@@ -449,12 +541,69 @@ function ScanForm({ error, form, onChange, onRun, running }) {
   );
 }
 
+function TrendPanel({ onLoadScan, scan }) {
+  const trend = scan?.trend;
+  if (!trend) return null;
+
+  const previousScanId = trend.compared_to_scan_id;
+  const newSignals = trend.new_signals || [];
+  const clearedSignals = trend.cleared_signals || [];
+  return (
+    <Panel eyebrow="Trend" title="Change since comparable scan" action={<span className={`chip ${trendTone(trend.status)}`}>{trend.status || "baseline"}</span>}>
+      <div className="panelbody repo-list">
+        <div className="repo-meta">
+          <span className="chip amber">signals {signedCount(trend.flaky_signal_delta)}</span>
+          <span className="chip red">quarantine {signedCount(trend.quarantine_delta)}</span>
+          <span className="chip signal">reruns {signedCount(trend.rerun_delta)}</span>
+          <span className="chip amber">{asCount(trend.new_signal_count)} new</span>
+          <span className="chip green">{asCount(trend.cleared_signal_count)} cleared</span>
+        </div>
+        <div className="feed-meta">{trend.compared_to_created_at ? `Compared with ${timeAgo(trend.compared_to_created_at)}.` : "Baseline saved. A trend appears after the next comparable scan."}</div>
+        {(newSignals.length > 0 || clearedSignals.length > 0) && (
+          <div className="repo-list" style={{ display: "grid", gap: 8 }}>
+            {newSignals.slice(0, 3).map((item, index) => <div className="feed-meta" key={`new-${index}`}>| New: {item}</div>)}
+            {clearedSignals.slice(0, 3).map((item, index) => <div className="feed-meta" key={`cleared-${index}`}>| Cleared: {item}</div>)}
+          </div>
+        )}
+        {previousScanId && <button className="btn" onClick={() => onLoadScan(previousScanId)} type="button">Load previous</button>}
+      </div>
+    </Panel>
+  );
+}
+
 function FlakyQueuePanel({ history, onLoadScan, scan }) {
+  const [copyState, setCopyState] = useState("");
+  const [sortBy, setSortBy] = useState("risk");
+  const signals = useMemo(() => sortSignals(scan?.signals || [], sortBy), [scan, sortBy]);
+
+  async function copySummary() {
+    if (!scan || !navigator?.clipboard?.writeText) return;
+    try {
+      await navigator.clipboard.writeText(buildScanMarkdown(scan));
+      setCopyState("Copied");
+    } catch {
+      setCopyState("Copy failed");
+    }
+    window.setTimeout(() => setCopyState(""), 1800);
+  }
+
   if (scan) {
     return (
-      <Panel eyebrow="Queue" title="Flaky candidates" action={<span className={`chip ${scan.metrics?.quarantine_candidates ? "red" : "amber"}`}>{asCount(scan.metrics?.quarantine_candidates)} quarantine</span>}>
+      <Panel
+        eyebrow="Queue"
+        title="Flaky candidates"
+        action={(
+          <div className="actions">
+            <button className="btn" onClick={copySummary} type="button">{copyState || "Copy summary"}</button>
+            <select aria-label="Sort flaky candidates" className="v2-input" onChange={(event) => setSortBy(event.target.value)} style={{ minWidth: 150 }} value={sortBy}>
+              {SORT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+            <span className={`chip ${scan.metrics?.quarantine_candidates ? "red" : "amber"}`}>{asCount(scan.metrics?.quarantine_candidates)} quarantine</span>
+          </div>
+        )}
+      >
         <div className="panelbody repo-list queue-grid">
-          {scan.signals?.length ? scan.signals.slice(0, 8).map((signal, index) => (
+          {signals.length ? signals.slice(0, 8).map((signal, index) => (
             <div className="ledger-row" key={signal.key || index}>
               <div className="rank">{String(index + 1).padStart(2, "0")}</div>
               <div>
@@ -464,7 +613,13 @@ function FlakyQueuePanel({ history, onLoadScan, scan }) {
                   <span className={`chip ${signalTone(signal)}`}>{signal.status || signal.kind}</span>
                   <span className="chip amber">{asCount(signal.failure_count)} fail</span>
                   <span className="chip green">{asCount(signal.success_count)} pass</span>
+                  {asCount(signal.rerun_hits) > 0 && <span className="chip signal">{asCount(signal.rerun_hits)} rerun</span>}
                 </div>
+                {signal.environment_hints?.length > 0 && <div className="feed-meta">{signal.environment_hints.slice(0, 2).join(" | ")}</div>}
+                {(signal.evidence || []).slice(0, 2).map((line, evidenceIndex) => {
+                  const url = evidenceUrl(line);
+                  return url ? <a className="chip signal" href={url} key={`${signal.key || index}-${evidenceIndex}`} rel="noreferrer" target="_blank">Open run</a> : null;
+                })}
               </div>
               <span className={`chip ${signalTone(signal)}`}>{asCount(signal.score)}</span>
             </div>
@@ -517,7 +672,10 @@ function SidePanels({ health, scan }) {
             <div className="feed-item" key={`${item.signal.key}-${item.text}`}>
               <div>
                 <div className="feed-title">{item.signal.job_name || item.signal.workflow_name}</div>
-                <div className="feed-meta">{item.text}</div>
+                <div className="feed-meta">
+                  {item.text}
+                  {evidenceUrl(item.text) && <> <a href={evidenceUrl(item.text)} rel="noreferrer" target="_blank">Open run</a></>}
+                </div>
               </div>
               <span className={`chip ${signalTone(item.signal)}`}>{item.signal.status || "signal"}</span>
             </div>
@@ -574,6 +732,7 @@ function InstabilitySurface({
           </div>
           <ScanForm error={error} form={form} onChange={onChangeForm} onRun={onRunScan} running={running} />
           <MetricBand metrics={metrics} />
+          <TrendPanel onLoadScan={onLoadScan} scan={scan} />
           <div className="atlas-layout suite-four-layout">
             <Panel eyebrow="Instability" title="CI signal map" action={<span className="chip signal">ci radar</span>}>
               <InstabilityMap health={health} history={history} scan={scan} />
@@ -601,6 +760,12 @@ function SecondaryFrame({ children, health, history, overview, scan }) {
 }
 
 function HistorySurface({ activeScanId, health, history, loading, onClearScan, onLoadScan, onRefresh, overview, scan }) {
+  const [query, setQuery] = useState("");
+  const filteredHistory = history.filter((item) => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return true;
+    return [item.repo, item.workflow_name, item.summary].some((value) => String(value || "").toLowerCase().includes(needle));
+  });
   return (
     <SecondaryFrame health={health} history={history} overview={overview} scan={scan}>
       <div className="hero-row">
@@ -622,9 +787,19 @@ function HistorySurface({ activeScanId, health, history, loading, onClearScan, o
           <FlakyQueuePanel history={history} onLoadScan={onLoadScan} scan={scan} />
         </HistoryDetailGrid>
       )}
-      <Panel eyebrow="Recent" title="Workflow scans" action={<span className="chip signal">{history.length} saved</span>}>
+      {scan && <TrendPanel onLoadScan={onLoadScan} scan={scan} />}
+      <Panel
+        eyebrow="Recent"
+        title="Workflow scans"
+        action={(
+          <div className="actions">
+            <input aria-label="Filter workflow scans" className="v2-input" onChange={(event) => setQuery(event.target.value)} placeholder="repo, workflow, summary" style={{ minWidth: 210 }} value={query} />
+            <span className="chip signal">{filteredHistory.length} shown</span>
+          </div>
+        )}
+      >
         <div className="panelbody repo-list queue-grid">
-          {history.length ? history.map((item, index) => (
+          {filteredHistory.length ? filteredHistory.map((item, index) => (
             <div className="ledger-row" key={item.id}>
               <div className="rank">{item.id === activeScanId ? "SEL" : String(index + 1).padStart(2, "0")}</div>
               <div>
@@ -641,8 +816,8 @@ function HistorySurface({ activeScanId, health, history, loading, onClearScan, o
             </div>
           )) : (
             <div className="empty-v2">
-              <strong>No scans saved</strong>
-              <span>Scan a workflow to create CI trust history.</span>
+              <strong>{history.length ? "No scans match that filter" : "No scans saved"}</strong>
+              <span>{history.length ? "Try a repository, workflow, or summary term." : "Scan a workflow to create CI trust history."}</span>
             </div>
           )}
         </div>

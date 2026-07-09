@@ -111,6 +111,12 @@ intentional v2 changes, and deferred polish in the product docs.
   checks, startup checks, and unified-backend routing. Deferred polish:
   suite-owned scope controls and optional expandable finding drawers if
   operators need deeper investigation inside the product.
+- **FlakeSting** audited on 2026-07-09. See
+  `docs/products/flake-sting.md#ui-v1-to-v2-parity-audit`. V2 covers directed
+  Actions scans, scan metrics, runner/evidence links, sort and Markdown-copy
+  controls, trend comparison, filterable history, selected-scan detail, and
+  checks. The old Setup wizard is intentionally replaced by shared login and
+  readiness surfaces.
 
 After every product has moved to v2, choose one cleanup path:
 

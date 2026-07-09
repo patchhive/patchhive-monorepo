@@ -96,6 +96,36 @@ tested. Once standalone packaging uses the shared backend image with only
 FlakeSting enabled, the separate backend service can be moved to legacy or
 removed.
 
+## UI v1 to v2 Parity Audit
+
+Audited on 2026-07-09 against:
+
+- `products/flake-sting/frontend/src/App.jsx`
+- `products/flake-sting/frontend/src/panels/ScanPanel.jsx`
+- `products/flake-sting/frontend/src/panels/HistoryPanel.jsx`
+- `products/flake-sting/frontend/src/panels/ChecksPanel.jsx`
+- `products/flake-sting/frontend-v2/src/App.jsx`
+
+V2 covers the directed GitHub Actions scan form, branch/workflow/lookback
+controls, health and startup checks, saved scan history, selected-scan loading,
+filterable history, scan metrics, queue sorting, copyable Markdown summaries,
+trend deltas and previous-scan loading, evidence links, runner hints, and
+GitHub-readiness messaging.
+
+Intentional v2 changes:
+
+- The old Setup wizard is covered by the shared v2 login and Checks surfaces;
+  FlakeSting has no separate product configuration workflow beyond GitHub
+  Actions-read readiness and a narrow first scan.
+- Loading a history row stays on the Scan History tab and renders the selected
+  radar, queue, and trend detail above the recent-scan ledger.
+- The old overview card wall is condensed into the metric band, rail, radar,
+  and recent-scan queue.
+
+Before moving v1 to `frontend-legacy/`, run a browser pass that covers a
+quarantine signal with evidence links, a clean scan, trend comparison, history
+filtering/loading, and the Checks tab with GitHub and database state visible.
+
 ---
 
 ## Local Development
