@@ -1294,7 +1294,7 @@ fn credential_requirements(slug: &str) -> Vec<CredentialRequirementDefinition> {
             profile: "actions_reader",
             required: false,
             redact: true,
-            description: "Optional token that improves GitHub Actions workflow and job reads with healthier rate limits. Recommended fine-grained PAT scopes: Metadata (read), Actions (read).",
+            description: "Optional token that improves GitHub Actions workflow and job reads with higher GitHub API rate limits. Recommended fine-grained PAT scopes: Metadata (read), Actions (read).",
         }],
         "dep-triage" => vec![CredentialRequirementDefinition {
             key: "BOT_GITHUB_TOKEN",

@@ -14,7 +14,7 @@ impl GitHubPermissionProfile {
     pub fn ready_message(self) -> &'static str {
         match self {
             Self::ActionsRead => {
-                "GitHub token detected. FlakeSting can read workflow runs and jobs with healthier rate limits."
+                "GitHub token detected. FlakeSting can read workflow runs and jobs with higher GitHub API rate limits."
             }
             Self::DependencyTriage => {
                 "GitHub token is configured. DepTriage can read dependency PRs and Dependabot alerts when this token has access for the target repository."
