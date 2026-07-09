@@ -65,6 +65,14 @@ HiveCore can surface FlakeSting health, capabilities, run history, and CI-trust 
 
 The PatchHive monorepo is the source of truth for FlakeSting development. The standalone [`patchhive/flakesting`](https://github.com/patchhive/flakesting) repository is an exported mirror of this directory.
 
-## Local Notes
+## Unified Backend
 
-- The v2 prototype lives in `frontend-v2/` while the suite UI direction is being settled.
+FlakeSting's product engine is mounted in-process by
+`services/patchhive-backend`. The active v2 UI defaults to:
+
+```text
+http://127.0.0.1:8100/api/products/flake-sting
+```
+
+The standalone backend remains a compatibility wrapper around the same shared
+product module while the migration and packaging work are completed.

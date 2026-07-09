@@ -4,16 +4,12 @@ name = "FlakeSting"
 role = "CI flake detection"
 module_path = "crate::products::flake_sting"
 route_prefix = "/api/products/flake-sting"
-migration_stage = "not-started"
+migration_stage = "integrated"
 
 [safety]
 read_only = true
 credential_scopes = ["github:actions:read"]
 evidence_required = ["repo identity", "workflow run sample", "lookback window"]
-
-[gateway]
-default_url = "http://127.0.0.1:8060"
-env_var = "FLAKE_STING_GATEWAY_URL"
 
 [health]
 endpoint = "/api/products/flake-sting/health"

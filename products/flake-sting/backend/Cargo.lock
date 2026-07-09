@@ -946,7 +946,6 @@ dependencies = [
 [[package]]
 name = "patchhive-github-data"
 version = "0.1.0"
-source = "git+https://github.com/patchhive/patchhive-github-data.git?rev=fd7fabdabeea87d25965c26d59f5bc82d7e9f311#fd7fabdabeea87d25965c26d59f5bc82d7e9f311"
 dependencies = [
  "anyhow",
  "reqwest",

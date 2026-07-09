@@ -135,7 +135,7 @@ cross-product handoffs rather than another single-product radar board.
 | TrustGate | `products/trust-gate/frontend-v2` | React prototype active |
 | RepoMemory | `products/repo-memory/frontend-v2` | React prototype active |
 | MergeKeeper | `products/merge-keeper/frontend-v2` | v2 active; v1 moved to `frontend-legacy` |
-| FlakeSting | `products/flake-sting/frontend-v2` | React prototype active |
+| FlakeSting | `products/flake-sting/frontend-v2` | v2 active; unified backend integrated; v1 retained for parity |
 | DepTriage | `products/dep-triage/frontend-v2` | v2 active; v1 moved to `frontend-legacy` |
 | VulnTriage | `products/vuln-triage/frontend-v2` | v2 active; v1 moved to `frontend-legacy` |
 | RefactorScout | `products/refactor-scout/frontend-v2` | React prototype active |

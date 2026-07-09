@@ -15,6 +15,9 @@ pub async fn init_enabled_products(config: &Config) -> Result<()> {
     if config.product_selection.enables("vuln-triage") {
         vuln_triage::init_runtime().await?;
     }
+    if config.product_selection.enables("flake-sting") {
+        flake_sting::init_runtime().await?;
+    }
     Ok(())
 }
 
@@ -32,4 +35,8 @@ pub fn dep_triage_router() -> axum::Router {
 
 pub fn vuln_triage_router() -> axum::Router {
     vuln_triage::router()
+}
+
+pub fn flake_sting_router() -> axum::Router {
+    flake_sting::router()
 }

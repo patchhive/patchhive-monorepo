@@ -70,6 +70,34 @@ signal with the right level of trust.
 
 ---
 
+## Unified Backend Mode
+
+FlakeSting is mounted in-process inside `services/patchhive-backend`. In suite
+mode, the v2 frontend talks to the unified backend route instead of a separate
+FlakeSting backend service:
+
+```bash
+PATCHHIVE_PRODUCTS=flake-sting \
+PATCHHIVE_BIND_ADDR=127.0.0.1:8100 \
+cargo run --manifest-path services/patchhive-backend/Cargo.toml
+
+npm --prefix products/flake-sting/frontend-v2 run dev
+```
+
+The v2 default API base is:
+
+```text
+http://127.0.0.1:8100/api/products/flake-sting
+```
+
+The standalone backend at `products/flake-sting/backend` remains as a
+compatibility wrapper around the same product module while this migration is
+tested. Once standalone packaging uses the shared backend image with only
+FlakeSting enabled, the separate backend service can be moved to legacy or
+removed.
+
+---
+
 ## Local Development
 
 ### Docker

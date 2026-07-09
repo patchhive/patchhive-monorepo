@@ -16,6 +16,7 @@ axum = { version = "0.7", features = ["macros"] }
 chrono = { version = "0.4", features = ["serde"] }
 dotenvy = "0.15"
 dep-triage = { path = "../../products/dep-triage/backend" }
+flake-sting = { path = "../../products/flake-sting/backend" }
 merge-keeper = { path = "../../products/merge-keeper/backend" }
 release-sentry = { path = "../../products/release-sentry/backend" }
 vuln-triage = { path = "../../products/vuln-triage/backend" }

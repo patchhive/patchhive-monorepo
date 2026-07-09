@@ -150,6 +150,20 @@ POST /api/products/release-sentry/check/github/release
 GET  /api/products/release-sentry/runs
 ```
 
+Run the suite backend with only FlakeSting enabled:
+
+```bash
+PATCHHIVE_PRODUCTS=flake-sting cargo run
+```
+
+FlakeSting product routes are served directly by the unified backend:
+
+```text
+GET  /api/products/flake-sting/health
+POST /api/products/flake-sting/scan/github/actions
+GET  /api/products/flake-sting/runs
+```
+
 Run the suite backend with only DepTriage enabled:
 
 ```bash
