@@ -791,14 +791,13 @@ function HistorySurface({ activeScanId, health, history, loading, onClearScan, o
       <Panel
         eyebrow="Recent"
         title="Workflow scans"
-        action={(
-          <div className="actions">
-            <input aria-label="Filter workflow scans" className="v2-input" onChange={(event) => setQuery(event.target.value)} placeholder="repo, workflow, summary" style={{ minWidth: 210 }} value={query} />
-            <span className="chip signal">{filteredHistory.length} shown</span>
-          </div>
-        )}
+        action={<span className="chip signal">{history.length} saved</span>}
       >
         <div className="panelbody repo-list queue-grid">
+          <label className="v2-field" style={{ maxWidth: 360 }}>
+            Filter scans {query ? `(${filteredHistory.length} shown)` : ""}
+            <input aria-label="Filter workflow scans" className="v2-input" onChange={(event) => setQuery(event.target.value)} placeholder="repo, workflow, summary" value={query} />
+          </label>
           {filteredHistory.length ? filteredHistory.map((item, index) => (
             <div className="ledger-row" key={item.id}>
               <div className="rank">{item.id === activeScanId ? "SEL" : String(index + 1).padStart(2, "0")}</div>
