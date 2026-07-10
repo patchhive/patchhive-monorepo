@@ -3,7 +3,7 @@
 use anyhow::Result as AnyhowResult;
 use serde_json::{json, Value};
 
-use crate::agents::agent_patch_retry;
+use crate::agents::{agent_patch_retry, GeneratedPatchResponse};
 use crate::git_ops::{apply_patch, git_commit_push};
 use crate::github::{gh_default_branch, gh_post};
 use crate::state::AgentConfig;
@@ -33,10 +33,10 @@ pub async fn apply_patch_with_self_heal(
     reaper: &AgentConfig,
     codebase: &str,
     enriched_issue_ctx: &str,
-    mut result: Value,
+    mut result: GeneratedPatchResponse,
     cost: &mut f64,
-) -> std::result::Result<Value, String> {
-    let patch_str = result["patch"].as_str().unwrap_or("").to_string();
+) -> std::result::Result<GeneratedPatchResponse, String> {
+    let patch_str = result.patch.as_deref().unwrap_or("").to_string();
     let (mut applied, apply_err) = apply_patch(&scope.work_path, &patch_str).await;
     let mut final_apply_err = apply_err.trim().to_string();
 
@@ -57,14 +57,12 @@ pub async fn apply_patch_with_self_heal(
         {
             Ok((retry_result, retry_cost)) => {
                 *cost += retry_cost;
-                if !retry_result["patch"].is_null() {
-                    let (ok, err) = apply_patch(
-                        &scope.work_path,
-                        retry_result["patch"].as_str().unwrap_or(""),
-                    )
-                    .await;
+                if let Some(retry_patch) = retry_result.patch.as_deref() {
+                    let (ok, err) = apply_patch(&scope.work_path, retry_patch).await;
                     if ok {
-                        result = retry_result;
+                        result.explanation = retry_result.explanation;
+                        result.files_changed = retry_result.files_changed;
+                        result.patch = retry_result.patch;
                         applied = true;
                         final_apply_err.clear();
                         let _ = tx.send(alog(reaper, "Self-healed ✓", "success")).await;
@@ -114,7 +112,7 @@ pub async fn publish_pull_request(
     agents: &FixAgents,
     bot_token: &str,
     bot_user: &str,
-    result: &Value,
+    result: &GeneratedPatchResponse,
     smith_note: &str,
     confidence: i32,
     test: &crate::git_ops::TestResult,
@@ -138,13 +136,8 @@ pub async fn publish_pull_request(
     )
     .await?;
 
-    let files_changed: Vec<String> = result["files_changed"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(|value| value.as_str().map(|path| path.to_string()))
-        .collect();
-    let files_md = files_changed
+    let files_md = result
+        .files_changed
         .iter()
         .map(|path| format!("- `{path}`"))
         .collect::<Vec<_>>()
@@ -165,7 +158,7 @@ pub async fn publish_pull_request(
         *RepoReaper by [PatchHive](https://github.com/patchhive)*",
         scope.issue_num,
         issue["title"].as_str().unwrap_or(""),
-        result["explanation"].as_str().unwrap_or(""),
+        result.explanation,
         issue["fixability_score"].as_i64().unwrap_or(50),
         issue["fixability_reason"].as_str().unwrap_or(""),
         pr_test_status(test),

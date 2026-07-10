@@ -18,7 +18,8 @@ use uuid::Uuid;
 
 use crate::agents::{agent_dry_run_analysis, agent_score_issues};
 use crate::db::{
-    finish_run, get_conn, get_lifetime_cost, save_dry_stalk_run, start_run, RunStart, RunStatus,
+    finish_run, get_conn, get_lifetime_cost, record_run_artifact, save_dry_stalk_run, start_run,
+    RunArtifactInput, RunStart, RunStatus,
 };
 use crate::fix_worker::{
     alog, astatus, fix_one, sse, FixAgentPools, FixIssueJob, FixParams, FixRunContext,
@@ -74,6 +75,20 @@ fn default_retry_count() -> usize {
 
 fn cfg(k: &str) -> String {
     std::env::var(k).unwrap_or_default()
+}
+
+fn persist_run_phase(run_id: &str, phase: &str, message: &str) {
+    if let Err(error) = record_run_artifact(RunArtifactInput {
+        run_id,
+        attempt_id: None,
+        phase,
+        kind: "run.phase",
+        status: "running",
+        message,
+        metadata: None,
+    }) {
+        tracing::warn!(run_id, phase, "could not persist run phase: {error:#}");
+    }
 }
 
 fn normalized_target_repo(req: &RunRequest) -> Option<String> {
@@ -310,6 +325,7 @@ async fn run_fix_wave(
     cancel_requested: &Arc<AtomicBool>,
     budget: f64,
     min_conf: i32,
+    process_sem: Arc<Semaphore>,
 ) {
     let sem = Arc::new(Semaphore::new(req.concurrency));
     let (done_tx, mut done_rx) = mpsc::channel::<()>(fixable.len());
@@ -322,6 +338,7 @@ async fn run_fix_wave(
             gatekeepers: team.gatekeepers.clone(),
         }),
         sem,
+        process_sem,
         params: FixParams {
             retry_count: req.retry_count,
             min_conf,
@@ -570,6 +587,11 @@ pub async fn dry_run(
         });
 
         let _ = tx.send(sse("phase", json!({"phase":"scan"}))).await;
+        persist_run_phase(
+            &run_id,
+            "discover",
+            "Dry Stalk repository discovery started",
+        );
         let _ = tx
             .send(alog(
                 &team.scout,
@@ -600,6 +622,9 @@ pub async fn dry_run(
             match agent_dry_run_analysis(&http, &fixable, &repos, &team.scout).await {
                 Ok((next_report, cost)) => {
                     run_cost.fetch_add((cost * 1_000_000.0) as i64, Ordering::Relaxed);
+                    let next_report = serde_json::to_value(next_report).unwrap_or_else(|error| {
+                        json!({"error": format!("could not encode typed dry-run report: {error}")})
+                    });
                     report = Some(next_report.clone());
                     analysis_available = true;
                     let _ = tx
@@ -716,12 +741,18 @@ pub async fn execute_run(
     }
 
     let _ = tx.send(sse("phase", json!({"phase":"scan"}))).await;
+    persist_run_phase(
+        &run_id,
+        "discover",
+        "Repository and issue discovery started",
+    );
     let _ = tx.send(astatus(&team.scout.id, "working", "Hunting")).await;
 
     let (repos, all_issues, fixable, _scoring_available) =
         collect_targets(&http, &req, &team.scout, &filters, &tx, Some(&run_cost)).await;
 
     let _ = tx.send(sse("phase", json!({"phase":"triage"}))).await;
+    persist_run_phase(&run_id, "triage", "Candidate issue triage started");
     let _ = tx
         .send(astatus(&team.scout.id, "working", "Judging issues"))
         .await;
@@ -737,6 +768,7 @@ pub async fn execute_run(
     }
 
     let _ = tx.send(sse("phase", json!({"phase":"fix"}))).await;
+    persist_run_phase(&run_id, "patch", "Patch worker wave started");
     run_fix_wave(
         &http,
         &req,
@@ -748,6 +780,7 @@ pub async fn execute_run(
         &cancel_requested,
         budget,
         min_conf,
+        state.process_worker_semaphore.clone(),
     )
     .await;
 

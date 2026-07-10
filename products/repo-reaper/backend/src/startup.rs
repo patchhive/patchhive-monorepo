@@ -1,5 +1,4 @@
 use crate::db::get_conn;
-use patchhive_github_pr::github_token_from_env;
 use patchhive_product_core::{repo_memory::repo_memory_url, startup::StartupCheck};
 use reqwest::Client;
 
@@ -7,12 +6,9 @@ pub async fn validate_config(http: &Client) -> Vec<StartupCheck> {
     let mut results = Vec::new();
     let ai_local_url = crate::ai_local::configured_url();
 
-    let required = [
-        ("BOT_GITHUB_TOKEN", "GitHub PAT (repo + PR scopes)"),
-        ("BOT_GITHUB_USER", "GitHub bot username"),
-    ];
+    let required = [("BOT_GITHUB_USER", "GitHub bot username")];
     for (key, desc) in required {
-        if std::env::var(key).unwrap_or_default().is_empty() {
+        if std::env::var(key).unwrap_or_default().trim().is_empty() {
             results.push(StartupCheck::error(format!(
                 "Missing {key} ({desc}) — set in .env or Config panel"
             )));
@@ -40,11 +36,22 @@ pub async fn validate_config(http: &Client) -> Vec<StartupCheck> {
     }
 
     // Validate GitHub token
-    let token = github_token_from_env().unwrap_or_default();
-    if !token.is_empty() {
+    let raw_token = std::env::var("BOT_GITHUB_TOKEN").unwrap_or_default();
+    let token_input = (!raw_token.is_empty()).then_some(raw_token.as_str());
+    let token = match crate::github::validated_token(token_input) {
+        Ok(Some(token)) => Some(token),
+        Ok(None) => None,
+        Err(error) => {
+            results.push(StartupCheck::error(format!(
+                "BOT_GITHUB_TOKEN is malformed: {error}"
+            )));
+            None
+        }
+    };
+    if let Some(token) = token {
         match http
             .get("https://api.github.com/user")
-            .header("Authorization", format!("Bearer {token}"))
+            .bearer_auth(&token)
             .header("Accept", "application/vnd.github+json")
             .header("User-Agent", "repo-reaper/0.1")
             .send()
@@ -74,6 +81,24 @@ pub async fn validate_config(http: &Client) -> Vec<StartupCheck> {
                 )));
             }
         }
+    } else if raw_token.is_empty() {
+        results.push(StartupCheck::error(
+            "Missing BOT_GITHUB_TOKEN (GitHub PAT with repo and PR scopes) — set it in .env or Config panel",
+        ));
+    }
+
+    match std::env::var("REAPER_MAX_ACTIVE_WORKERS") {
+        Ok(raw) => match raw.trim().parse::<usize>() {
+            Ok(limit) if (1..=128).contains(&limit) => results.push(StartupCheck::ok(format!(
+                "Process-wide patch/test worker capacity is {limit}"
+            ))),
+            _ => results.push(StartupCheck::error(
+                "REAPER_MAX_ACTIVE_WORKERS must be an integer between 1 and 128",
+            )),
+        },
+        Err(_) => results.push(StartupCheck::ok(
+            "Process-wide patch/test worker capacity uses the default of 3",
+        )),
     }
 
     if ai_local_url.is_some() {

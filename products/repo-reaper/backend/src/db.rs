@@ -100,6 +100,20 @@ CREATE TABLE IF NOT EXISTS dry_stalk_runs (
     analysis_available INTEGER DEFAULT 0,
     FOREIGN KEY(run_id) REFERENCES runs(id)
 );
+CREATE TABLE IF NOT EXISTS run_artifacts (
+    sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id TEXT NOT NULL,
+    attempt_id TEXT,
+    phase TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    status TEXT NOT NULL,
+    message TEXT NOT NULL,
+    metadata_json TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(run_id) REFERENCES runs(id)
+);
+CREATE INDEX IF NOT EXISTS idx_run_artifacts_run_sequence
+    ON run_artifacts(run_id, sequence);
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY, value TEXT
 );
@@ -242,6 +256,44 @@ pub struct RunStart<'a> {
     pub dry_run: bool,
 }
 
+pub struct RunArtifactInput<'a> {
+    pub run_id: &'a str,
+    pub attempt_id: Option<&'a str>,
+    pub phase: &'a str,
+    pub kind: &'a str,
+    pub status: &'a str,
+    pub message: &'a str,
+    pub metadata: Option<&'a Value>,
+}
+
+fn insert_run_artifact(conn: &rusqlite::Connection, input: RunArtifactInput<'_>) -> Result<()> {
+    let metadata_json = input
+        .metadata
+        .map(serde_json::to_string)
+        .transpose()
+        .context("failed to encode RepoReaper run artifact metadata")?;
+    conn.execute(
+        "INSERT INTO run_artifacts(run_id,attempt_id,phase,kind,status,message,metadata_json,created_at)
+         VALUES(?1,?2,?3,?4,?5,?6,?7,?8)",
+        params![
+            input.run_id,
+            input.attempt_id,
+            input.phase,
+            input.kind,
+            input.status,
+            input.message,
+            metadata_json,
+            Utc::now().to_rfc3339(),
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn record_run_artifact(input: RunArtifactInput<'_>) -> Result<()> {
+    let conn = get_conn()?;
+    insert_run_artifact(&conn, input)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RunStatus {
     Done,
@@ -270,6 +322,18 @@ pub fn start_run(input: RunStart<'_>) -> Result<()> {
             input.dry_run as i32
         ],
     )?;
+    insert_run_artifact(
+        &conn,
+        RunArtifactInput {
+            run_id: input.run_id,
+            attempt_id: None,
+            phase: "discover",
+            kind: "run.started",
+            status: "started",
+            message: "RepoReaper run started",
+            metadata: None,
+        },
+    )?;
     Ok(())
 }
 
@@ -291,6 +355,23 @@ pub fn finish_run(
             status.as_str(),
             run_id
         ],
+    )?;
+    let metadata = serde_json::json!({
+        "fixed": fixed,
+        "attempted": attempted,
+        "cost_usd": cost,
+    });
+    insert_run_artifact(
+        &conn,
+        RunArtifactInput {
+            run_id,
+            attempt_id: None,
+            phase: "cleanup",
+            kind: "run.finished",
+            status: status.as_str(),
+            message: "RepoReaper run finished",
+            metadata: Some(&metadata),
+        },
     )?;
     Ok(())
 }
@@ -389,6 +470,25 @@ pub fn start_attempt(input: IssueAttemptStart<'_>) -> Result<()> {
             Utc::now().to_rfc3339(),
         ],
     )?;
+    let metadata = serde_json::json!({
+        "repo": input.target.repo,
+        "issue_number": input.target.issue_number,
+        "reaper_agent": input.reaper_agent,
+        "smith_agent": input.smith_agent,
+        "gatekeeper_agent": input.gatekeeper_agent,
+    });
+    insert_run_artifact(
+        &conn,
+        RunArtifactInput {
+            run_id: input.run_id,
+            attempt_id: Some(input.attempt_id),
+            phase: "attempt",
+            kind: "attempt.started",
+            status: "started",
+            message: "Issue attempt started and agents selected",
+            metadata: Some(&metadata),
+        },
+    )?;
     Ok(())
 }
 
@@ -411,6 +511,33 @@ pub fn finish_attempt(input: IssueAttemptFinish<'_>) -> Result<()> {
             input.confidence,
             input.attempt_id,
         ],
+    )?;
+    let run_id: String = conn.query_row(
+        "SELECT run_id FROM issue_attempts WHERE id=?1",
+        [input.attempt_id],
+        |row| row.get(0),
+    )?;
+    let metadata = serde_json::json!({
+        "pr_url": input.pr_url,
+        "pr_number": input.pr_number,
+        "cost_usd": input.cost_usd,
+        "patch_persisted": input.patch_diff.is_some(),
+        "error": input.error_msg,
+        "skip_reason": input.skip_reason,
+        "duration_seconds": input.duration_seconds,
+        "confidence": input.confidence,
+    });
+    insert_run_artifact(
+        &conn,
+        RunArtifactInput {
+            run_id: &run_id,
+            attempt_id: Some(input.attempt_id),
+            phase: "attempt",
+            kind: "attempt.finished",
+            status: input.status.as_str(),
+            message: input.error_msg.unwrap_or("Issue attempt finished"),
+            metadata: Some(&metadata),
+        },
     )?;
     Ok(())
 }
@@ -527,4 +654,50 @@ pub fn set_setting(key: &str, value: &str) -> Result<()> {
         params![key, value],
     )?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{insert_run_artifact, RunArtifactInput, SCHEMA};
+    use rusqlite::Connection;
+    use serde_json::json;
+
+    #[test]
+    fn run_artifacts_are_ordered_and_keep_structured_metadata() {
+        let conn = Connection::open_in_memory().expect("in-memory database");
+        conn.execute_batch(SCHEMA).expect("RepoReaper schema");
+        conn.execute(
+            "INSERT INTO runs(id,started_at,status) VALUES('run_test','now','running')",
+            [],
+        )
+        .expect("seed run");
+        let metadata = json!({"runner": "docker:cargo", "passed": true});
+
+        insert_run_artifact(
+            &conn,
+            RunArtifactInput {
+                run_id: "run_test",
+                attempt_id: Some("attempt_test"),
+                phase: "validate",
+                kind: "test.completed",
+                status: "passed",
+                message: "Validation passed",
+                metadata: Some(&metadata),
+            },
+        )
+        .expect("insert artifact");
+
+        let (sequence, raw): (i64, String) = conn
+            .query_row(
+                "SELECT sequence,metadata_json FROM run_artifacts WHERE run_id='run_test'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("read artifact");
+        assert_eq!(sequence, 1);
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&raw).unwrap(),
+            metadata
+        );
+    }
 }

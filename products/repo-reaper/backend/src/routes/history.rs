@@ -16,6 +16,8 @@ pub fn router() -> Router<AppState> {
         .route("/history/:run_id", get(get_run))
         .route("/runs", get(get_runs_contract))
         .route("/runs/:run_id", get(get_run))
+        .route("/runs/:run_id/events", get(get_run_events))
+        .route("/runs/:run_id/artifacts", get(get_run_artifacts))
         .route("/diff/:run_id/:issue_number", get(get_diff))
         .route("/leaderboard", get(get_leaderboard))
         .route("/rejected", get(get_rejected))
@@ -32,6 +34,75 @@ fn run_target_repo(config_json: &str) -> Option<String> {
         .map(str::trim)
         .filter(|target| !target.is_empty())
         .map(ToOwned::to_owned)
+}
+
+fn load_run_events(run_id: &str) -> Vec<contract::ProductRunEvent> {
+    let Ok(conn) = get_conn() else {
+        return Vec::new();
+    };
+    conn.prepare(
+        "SELECT sequence,attempt_id,phase,kind,status,message,metadata_json,created_at
+         FROM run_artifacts WHERE run_id=?1 ORDER BY sequence",
+    )
+    .ok()
+    .and_then(|mut statement| {
+        let rows = statement
+            .query_map([run_id], |row| {
+                let metadata_raw: Option<String> = row.get(6)?;
+                let metadata = metadata_raw
+                    .as_deref()
+                    .and_then(|raw| serde_json::from_str::<Value>(raw).ok())
+                    .unwrap_or_else(|| json!({}));
+                let sequence = row.get::<_, i64>(0)?.max(0) as u64;
+                let attempt_id = row.get::<_, Option<String>>(1)?;
+                let phase = row.get::<_, String>(2)?;
+                let kind = row.get::<_, String>(3)?;
+                let status = row.get::<_, String>(4)?;
+                let message = row.get::<_, String>(5)?;
+                let created_at = row.get::<_, String>(7)?;
+                let level = match status.as_str() {
+                    "failed" | "error" => contract::RunEventLevel::Error,
+                    "rejected" | "skipped" | "not-verified" | "partial" => {
+                        contract::RunEventLevel::Warn
+                    }
+                    "succeeded" | "success" | "passed" | "fixed" | "done" => {
+                        contract::RunEventLevel::Success
+                    }
+                    _ => contract::RunEventLevel::Info,
+                };
+                let artifact =
+                    contract::ProductRunArtifact::new(&kind, &message).metadata(metadata);
+                Ok(contract::ProductRunEvent::new(
+                    format!("evt_{run_id}_{sequence}"),
+                    run_id,
+                    phase,
+                    level,
+                    message,
+                    created_at,
+                )
+                .product_slug("repo-reaper")
+                .sequence(sequence)
+                .source(kind)
+                .actor("RepoReaper")
+                .artifact(artifact)
+                .raw(json!({"attempt_id": attempt_id, "status": status})))
+            })
+            .ok()?;
+        Some(rows.flatten().collect())
+    })
+    .unwrap_or_default()
+}
+
+async fn get_run_events(Path(run_id): Path<String>) -> Json<contract::ProductRunEventsResponse> {
+    Json(contract::run_events_response(
+        "repo-reaper",
+        &run_id,
+        load_run_events(&run_id),
+    ))
+}
+
+async fn get_run_artifacts(Path(run_id): Path<String>) -> Json<contract::ProductRunEventsResponse> {
+    get_run_events(Path(run_id)).await
 }
 
 async fn get_runs_contract(State(_): State<AppState>) -> Json<contract::ProductRunsResponse> {
@@ -273,6 +344,7 @@ async fn get_run(Path(run_id): Path<String>, State(_): State<AppState>) -> Json<
     ).ok();
     let mut run_obj = run.and_then(|v| v.as_object().cloned()).unwrap_or_default();
     run_obj.insert("attempts".into(), json!(attempts));
+    run_obj.insert("events".into(), json!(load_run_events(&run_id)));
     if let Some(dry_stalk) = dry_stalk {
         run_obj.insert("dry_stalk".into(), dry_stalk);
     }

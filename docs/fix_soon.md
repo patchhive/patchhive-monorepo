@@ -6,11 +6,11 @@ security, and operability findings belong here.
 
 ## High Priority
 
-### RepoReaper patch apply fallback
+### RepoReaper patch apply fallback — completed 2026-07-10
 
-RepoReaper should try a mechanical `git apply --3way` fallback before asking an
-AI agent to self-heal a patch. Current patch failures can be caused by small
-context drift that Git can often resolve without burning provider budget.
+RepoReaper now tries a mechanical `git apply --3way` fallback before asking an
+AI agent to self-heal a patch, resolving small context drift without spending
+provider budget.
 
 Target:
 - `products/repo-reaper/backend/src/git_ops.rs::apply_patch`
@@ -21,23 +21,22 @@ Expected result:
 - If normal apply fails, try `git apply --3way`.
 - Only then fall back to AI self-heal.
 
-### GitHub token validation in RepoReaper
+### GitHub token validation in RepoReaper — completed 2026-07-10
 
-`products/repo-reaper/backend/src/github.rs::gh_headers` builds the
-Authorization header with `unwrap()`. Tokens should be trimmed and validated at
-load/config time, and header construction should return a typed error instead
-of panicking on malformed dynamic input.
+`products/repo-reaper/backend/src/github.rs::gh_headers` now trims and validates
+tokens at startup/request time and returns typed errors instead of panicking on
+malformed dynamic input.
 
 Expected result:
 - Trim token values once.
 - Reject empty/control-character tokens with clear startup or request errors.
 - Avoid `unwrap()` for dynamic Authorization header values.
 
-### Process-wide RepoReaper run and sandbox caps
+### Process-wide RepoReaper run and sandbox caps — completed 2026-07-10
 
-RepoReaper has per-run concurrency controls, but manual runs, webhook-triggered
-runs, and future scheduled runs can stack. Add a process-wide cap for active
-patch/test workers and Docker sandbox usage.
+RepoReaper now combines its per-run concurrency controls with a shared
+process-wide cap for manual, scheduled, webhook, patch/test, and Docker sandbox
+work.
 
 Expected result:
 - One shared process-level semaphore for write/test work.
@@ -47,11 +46,10 @@ Expected result:
 
 ## Medium Priority
 
-### Typed agent response contracts
+### Typed agent response contracts — completed 2026-07-10
 
-Critical RepoReaper agent responses still use broad `serde_json::Value` access.
-Introduce typed `Deserialize` structs for the most important response shapes so
-schema drift becomes visible.
+Critical RepoReaper agent responses now use typed `Deserialize` contracts so
+schema drift becomes visible as an explicit provider error.
 
 Start with:
 - judge file/context selection
@@ -103,12 +101,18 @@ Expected result:
 - Draft PR defaults when validation is not proven.
 - Clear operator controls before host or Docker test execution is allowed.
 
-### Per-run log artifacts
+### Per-run log artifacts — completed 2026-07-10
 
-Long-running products need durable per-run logs that are not dependent on SSE
-streams, stdout, or condensed UI summaries.
+RepoReaper now has durable per-run events that do not depend on SSE streams,
+stdout, or condensed UI summaries.
 
 Expected result:
 - Persist major phases, agent choices, patch/apply/test outcomes, GitHub write
   attempts, and external API errors.
 - Link UI history and run dossiers to those artifacts.
+
+RepoReaper now persists ordered contract-v1 run events and exposes them at
+`GET /runs/:run_id/events`, with `/runs/:run_id/artifacts` retained as an alias.
+The unified backend also has route-level contract tests covering its suite
+endpoints, integrated product registry state, mounted capability routers, and
+shared unknown-product error response.

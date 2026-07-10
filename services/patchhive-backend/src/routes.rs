@@ -172,3 +172,127 @@ async fn runs(State(state): State<Arc<AppState>>) -> Json<Vec<crate::models::Run
 async fn events(State(state): State<Arc<AppState>>) -> Json<Vec<crate::models::SuiteEvent>> {
     Json(state.events())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::router;
+    use crate::{
+        config::{Config, ProductSelection},
+        state::AppState,
+    };
+    use axum::{
+        body::{to_bytes, Body},
+        http::{Request, StatusCode},
+        Router,
+    };
+    use serde_json::Value;
+    use std::{net::SocketAddr, path::PathBuf, sync::Arc};
+    use tower::ServiceExt;
+
+    fn test_app() -> (Router, PathBuf) {
+        let db_path = std::env::temp_dir().join(format!(
+            "patchhive-backend-contract-{}-{}.db",
+            std::process::id(),
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        ));
+        let config = Config {
+            bind_addr: "127.0.0.1:0".parse::<SocketAddr>().expect("test bind addr"),
+            db_path: db_path.clone(),
+            product_selection: ProductSelection::All,
+        };
+        let state = Arc::new(AppState::new(config).expect("test app state"));
+        (router(state), db_path)
+    }
+
+    async fn get_json(app: &Router, uri: &str) -> (StatusCode, Value) {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(uri)
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        let status = response.status();
+        let body = to_bytes(response.into_body(), 2 * 1024 * 1024)
+            .await
+            .expect("response body");
+        let value = serde_json::from_slice(&body).expect("JSON response");
+        (status, value)
+    }
+
+    #[tokio::test]
+    async fn suite_contract_endpoints_return_stable_json_shapes() {
+        let (app, db_path) = test_app();
+        for uri in [
+            "/api/health",
+            "/api/auth/status",
+            "/api/products",
+            "/api/setup/first-stack",
+            "/api/runs",
+            "/api/events",
+        ] {
+            let (status, body) = get_json(&app, uri).await;
+            assert_eq!(status, StatusCode::OK, "{uri}: {body}");
+        }
+
+        let (_, health) = get_json(&app, "/api/health").await;
+        assert_eq!(health["service"], "patchhive-backend");
+        assert_eq!(health["status"], "ok");
+        assert_eq!(health["enabled_products"], 12);
+        drop(app);
+        let _ = std::fs::remove_file(db_path);
+    }
+
+    #[tokio::test]
+    async fn registry_and_mounted_routers_agree_on_integrated_products() {
+        let (app, db_path) = test_app();
+        let (_, products) = get_json(&app, "/api/products").await;
+        let products = products.as_array().expect("product list");
+        let integrated = [
+            "merge-keeper",
+            "release-sentry",
+            "dep-triage",
+            "vuln-triage",
+            "flake-sting",
+        ];
+
+        for key in integrated {
+            let product = products
+                .iter()
+                .find(|product| product["key"] == key)
+                .unwrap_or_else(|| panic!("missing registry entry for {key}"));
+            assert_eq!(product["migration_stage"], "integrated");
+            assert_eq!(product["status"], "online");
+            assert_eq!(product["route_prefix"], format!("/api/products/{key}"));
+
+            let (status, capabilities) =
+                get_json(&app, &format!("/api/products/{key}/capabilities")).await;
+            assert_eq!(status, StatusCode::OK, "{key}: {capabilities}");
+            assert_eq!(capabilities["product_slug"], key);
+            assert_eq!(
+                capabilities["schema_version"],
+                "patchhive.product.contract.v1"
+            );
+        }
+        drop(app);
+        let _ = std::fs::remove_file(db_path);
+    }
+
+    #[tokio::test]
+    async fn unknown_product_uses_the_suite_error_shape() {
+        let (app, db_path) = test_app();
+        let (status, body) = get_json(&app, "/api/products/not-a-product/health").await;
+
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert_eq!(body["error"], "unknown-product");
+        assert!(body["message"]
+            .as_str()
+            .expect("error message")
+            .contains("not-a-product"));
+        drop(app);
+        let _ = std::fs::remove_file(db_path);
+    }
+}

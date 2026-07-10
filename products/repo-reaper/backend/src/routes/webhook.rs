@@ -282,6 +282,7 @@ async fn webhook_single_fix(state: AppState, repo: &str, issue: Value) {
             gatekeepers: gatekeeper_list,
         }),
         sem,
+        process_sem: state.process_worker_semaphore.clone(),
         params: FixParams {
             retry_count,
             min_conf,
@@ -323,6 +324,17 @@ async fn webhook_pr_comment(state: AppState, repo: &str, issue: Value, comment: 
     use crate::git_ops::{apply_patch, collect_files_all, git_branch, git_clone, git_commit_push};
     use crate::github::{gh_comment_issue, gh_fork, gh_post};
 
+    let _process_permit = match state.process_worker_semaphore.clone().try_acquire_owned() {
+        Ok(permit) => permit,
+        Err(tokio::sync::TryAcquireError::NoPermits) => {
+            tracing::info!("RepoReaper follow-up is waiting for process worker capacity");
+            let Ok(permit) = state.process_worker_semaphore.clone().acquire_owned().await else {
+                return;
+            };
+            permit
+        }
+        Err(tokio::sync::TryAcquireError::Closed) => return,
+    };
     let agents_snap = state.agents.read().await.clone();
     let Some(reaper) = agents_snap
         .values()

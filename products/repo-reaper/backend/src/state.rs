@@ -2,7 +2,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{atomic::AtomicBool, Arc};
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, Semaphore};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentConfig {
@@ -39,15 +39,24 @@ pub struct AppState {
     pub agents: AgentMap,
     pub run_active: Arc<AtomicBool>,
     pub watch_mode: Arc<AtomicBool>,
+    pub process_worker_semaphore: Arc<Semaphore>,
+    pub process_worker_limit: usize,
     pub http: Client,
 }
 
 impl AppState {
     pub fn new() -> Self {
+        let process_worker_limit = std::env::var("REAPER_MAX_ACTIVE_WORKERS")
+            .ok()
+            .and_then(|value| value.trim().parse::<usize>().ok())
+            .unwrap_or(3)
+            .clamp(1, 128);
         Self {
             agents: Arc::new(RwLock::new(HashMap::new())),
             run_active: Arc::new(AtomicBool::new(false)),
             watch_mode: Arc::new(AtomicBool::new(false)),
+            process_worker_semaphore: Arc::new(Semaphore::new(process_worker_limit)),
+            process_worker_limit,
             http: Client::builder()
                 .timeout(std::time::Duration::from_secs(120))
                 .build()

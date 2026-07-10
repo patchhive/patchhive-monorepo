@@ -64,6 +64,7 @@ cd ../frontend-v2 && npm install && npm run dev
 | `COST_BUDGET_USD` | Run budget cap. |
 | `MIN_REVIEW_CONFIDENCE` | Minimum Smith confidence before validation and PR delivery. |
 | `RETRY_COUNT` | Patch or validation retry count. |
+| `REAPER_MAX_ACTIVE_WORKERS` | Process-wide cap shared by manual, scheduled, and webhook patch/test workers. Defaults to `3` and is clamped to `1..=128`. |
 | `REAPER_ENABLE_UNTRUSTED_TESTS` | Enables validation commands for untrusted repos. Default is disabled. |
 | `REAPER_TEST_SANDBOX` | Test sandbox mode, usually `docker`. |
 | `REAPER_ALLOW_HOST_TESTS` | Allows host test execution when explicitly enabled. |
@@ -102,6 +103,8 @@ Optional integrations:
 - if tests are enabled, Docker sandboxing is the default
 - host test execution requires both `REAPER_ENABLE_UNTRUSTED_TESTS=true` and `REAPER_ALLOW_HOST_TESTS=true`
 - validation commands time out after `REAPER_TEST_TIMEOUT_SECONDS` seconds, defaulting to `600`
+- patch and test work shares the `REAPER_MAX_ACTIVE_WORKERS` process-wide capacity gate, including webhook follow-ups
+- failed normal patch application tries `git apply --3way` before provider-backed self-healing
 - validation and pull request publication are treated as explicit gates, not incidental side effects
 - FailGuard is cross-cutting: RepoReaper can suggest candidates from Smith rejections, but RepoMemory owns review and promotion
 
@@ -110,6 +113,11 @@ RepoReaper is the only current PatchHive product that writes code and opens pull
 ## HiveCore Fit
 
 HiveCore should treat RepoReaper as a product-owned autonomous action surface. It can show health, capabilities, run history, dispatchable actions, and PR outcomes, but RepoReaper keeps ownership of patch generation, validation, attribution, and pull request delivery.
+
+Run dossiers include durable PatchHive contract v1 events. Read them from
+`GET /runs/:run_id/events`; `GET /runs/:run_id/artifacts` is a compatibility
+alias. Events persist run/attempt lifecycle, agent selection, patch generation,
+application, review, test, and pull-request publication outcomes.
 
 ## Standalone Repository
 

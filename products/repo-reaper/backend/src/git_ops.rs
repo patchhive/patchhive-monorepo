@@ -429,25 +429,45 @@ pub async fn apply_patch(repo_dir: &Path, patch: &str) -> (bool, String) {
     }
     let patch_path = patch_file.to_str().unwrap_or("").to_string();
 
-    let check = runcmd(&["git", "apply", "--check", &patch_path], Some(repo_dir)).await;
-    match check {
-        Ok(out) if out.status.success() => {}
-        Ok(out) => {
-            let _ = std::fs::remove_file(&patch_file);
-            return (false, String::from_utf8_lossy(&out.stderr).to_string());
-        }
-        Err(e) => {
-            let _ = std::fs::remove_file(&patch_file);
-            return (false, e.to_string());
-        }
-    }
+    let check_error = match runcmd(&["git", "apply", "--check", &patch_path], Some(repo_dir)).await
+    {
+        Ok(out) if out.status.success() => None,
+        Ok(out) => Some(String::from_utf8_lossy(&out.stderr).trim().to_string()),
+        Err(error) => Some(error.to_string()),
+    };
 
     let apply = runcmd(&["git", "apply", &patch_path], Some(repo_dir)).await;
+    let normal_error = match apply {
+        Ok(out) if out.status.success() => {
+            let _ = std::fs::remove_file(&patch_file);
+            return (true, String::new());
+        }
+        Ok(out) => String::from_utf8_lossy(&out.stderr).trim().to_string(),
+        Err(error) => error.to_string(),
+    };
+
+    let three_way = runcmd(&["git", "apply", "--3way", &patch_path], Some(repo_dir)).await;
     let _ = std::fs::remove_file(&patch_file);
-    match apply {
+    match three_way {
         Ok(out) if out.status.success() => (true, String::new()),
-        Ok(out) => (false, String::from_utf8_lossy(&out.stderr).to_string()),
-        Err(e) => (false, e.to_string()),
+        result => {
+            // A failed three-way application can leave conflict markers or index
+            // entries behind. RepoReaper works in disposable clones, so restore the
+            // clean branch before an AI retry is allowed to run.
+            let _ = runcmd(&["git", "reset", "--hard", "HEAD"], Some(repo_dir)).await;
+            let _ = runcmd(&["git", "clean", "-fd"], Some(repo_dir)).await;
+            let three_way_error = match result {
+                Ok(out) => String::from_utf8_lossy(&out.stderr).trim().to_string(),
+                Err(error) => error.to_string(),
+            };
+            let check_error = check_error.unwrap_or_else(|| "git apply --check passed".to_string());
+            (
+                false,
+                format!(
+                    "check: {check_error}; normal apply: {normal_error}; three-way apply: {three_way_error}"
+                ),
+            )
+        }
     }
 }
 
@@ -684,8 +704,8 @@ pub async fn run_tests(repo_dir: &Path) -> TestResult {
 
 #[cfg(test)]
 mod tests {
-    use super::{collect_files_selective_sync, run_tests};
-    use std::{env, fs, sync::Mutex};
+    use super::{apply_patch, collect_files_selective_sync, run_tests};
+    use std::{env, fs, process::Command, sync::Mutex};
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());
 
@@ -695,6 +715,63 @@ mod tests {
         } else {
             env::remove_var(key);
         }
+    }
+
+    fn git(root: &std::path::Path, args: &[&str]) -> std::process::Output {
+        Command::new("git")
+            .args(args)
+            .current_dir(root)
+            .output()
+            .expect("run git")
+    }
+
+    #[tokio::test]
+    async fn apply_patch_uses_three_way_fallback_for_context_drift() {
+        let root = std::env::temp_dir().join(format!("repo-reaper-apply-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&root).expect("create repo root");
+        assert!(git(&root, &["init", "-q"]).status.success());
+        assert!(git(&root, &["config", "user.email", "reaper@example.test"])
+            .status
+            .success());
+        assert!(git(&root, &["config", "user.name", "RepoReaper Test"])
+            .status
+            .success());
+        fs::write(
+            root.join("sample.txt"),
+            "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\n",
+        )
+        .expect("write base");
+        assert!(git(&root, &["add", "sample.txt"]).status.success());
+        assert!(git(&root, &["commit", "-qm", "base"]).status.success());
+
+        fs::write(
+            root.join("sample.txt"),
+            "one\ntwo\nthree\nfour\nfive\nSIX\nseven\neight\nnine\nten\n",
+        )
+        .expect("write patch state");
+        let patch = String::from_utf8(git(&root, &["diff", "--binary"]).stdout)
+            .expect("patch should be utf8");
+        assert!(git(&root, &["reset", "--hard", "HEAD"]).status.success());
+
+        fs::write(
+            root.join("sample.txt"),
+            "one\ntwo\nTHREE\nfour\nfive\nsix\nseven\neight\nnine\nten\n",
+        )
+        .expect("write drift");
+        assert!(git(&root, &["add", "sample.txt"]).status.success());
+        assert!(git(&root, &["commit", "-qm", "context drift"])
+            .status
+            .success());
+
+        let (applied, error) = apply_patch(&root, &patch).await;
+        let contents = fs::read_to_string(root.join("sample.txt")).expect("read result");
+
+        assert!(applied, "three-way fallback failed: {error}");
+        assert_eq!(
+            contents,
+            "one\ntwo\nTHREE\nfour\nfive\nSIX\nseven\neight\nnine\nten\n"
+        );
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]
