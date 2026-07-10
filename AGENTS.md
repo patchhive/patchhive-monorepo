@@ -60,6 +60,7 @@ RepoReaper was built first because it descended from Jeremy's earlier GitFix exp
 patchhive/
   packages/
     ui/                     @patchhivehq/ui shared React component library
+    ui-v3/                  @patchhivehq/ui-v3 Lovable-derived specialist product UI
     product-shell/          @patchhivehq/product-shell shared frontend shell/auth helpers
     ai-models/              @patchhivehq/ai-models shared AI provider/model selector UX
     ai-local/               @patchhive/ai-local localhost AI gateway
@@ -103,9 +104,9 @@ Backend:
 
 Frontend:
 - React + Vite
-- No TypeScript in this repo currently
-- Inline CSS only, using CSS variables from `@patchhivehq/ui`
-- No CSS framework
+- Existing production and v2 product frontends use JavaScript and shared CSS variables.
+- UI v3 may use Tailwind utility classes where they are part of the canonical Lovable implementation; do not translate them into a different visual system merely to preserve the older no-framework convention.
+- TypeScript is allowed when extracting code directly from the Lovable UI, but product v3 frontends may remain JSX when that preserves the same rendered result with less deployment churn.
 
 AI provider integration:
 - Direct HTTP via `reqwest`
@@ -157,6 +158,27 @@ Rules:
 - HiveCore does not currently follow the v2 direction, but it should converge before old UI code is legacy or removed.
 - Once every product has moved to v2, old UI code should either move to a clearly named legacy path or be removed.
 - See [docs/ui-v2-migration.md](/home/coemedia/Documents/code/patchhive/docs/ui-v2-migration.md).
+
+## UI v3 Track
+
+Location: `packages/ui-v3/`
+
+UI v3 is the next specialist-product interface. Its canonical visual source is
+`unified-ui-revamp-main/`, the Lovable project. MergeKeeper, ReleaseSentry,
+DepTriage, VulnTriage, and FlakeSting have v3 frontends because their engines
+are mounted in-process by the unified backend. Do not start another product's
+v3 frontend until its unified-backend engine reaches `integrated`.
+
+Rules:
+- Use the actual Lovable component structure, theme tokens, typography, spacing, radii, glass surfaces, shadows, backgrounds, and responsive behavior. Do not approximate it from screenshots or replace it with a static mockup.
+- Every specialist product remains an independent frontend, Docker image, API integration, and workflow. Share only the stable visual shell and primitives through `@patchhivehq/ui-v3`.
+- Product differences belong in product name/icon, accent colors, copy, tabs, data, forms, actions, and workflow-specific panels.
+- Preserve the suite-wide light/dark preference under the `patchhive.theme` localStorage key and apply it before React mounts to prevent a theme flash.
+- Keep current v2 frontends functional until each product's v3 parity audit passes. Do not rewrite v2 in place.
+- Prefer finishing and validating v3 for the current integrated product set before moving another product engine into the unified backend.
+- HiveCore is intentionally outside the specialist-product v3 migration and keeps its control-plane UI.
+- `prototypes/vuln-triage-calm-mockup.html` is reference material only; it is not the v3 source of truth.
+- See [docs/ui-v3-migration.md](/home/coemedia/Documents/code/patchhive/docs/ui-v3-migration.md).
 
 ## Shared Product Shell Package
 

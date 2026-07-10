@@ -1,5 +1,9 @@
 # PatchHive UI v2
 
+> UI v2 remains available for existing radar/atlas product frontends. New
+> specialist-product visual work uses `packages/ui-v3`, derived directly from
+> `unified-ui-revamp-main`. Keep v2 stable during product-by-product migration.
+
 This folder is the staging area for the next suite-wide PatchHive interface.
 It is intentionally separate from `packages/ui` while the direction is still
 being tuned across products.

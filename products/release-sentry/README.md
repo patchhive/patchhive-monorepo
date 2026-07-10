@@ -1,5 +1,8 @@
 # ReleaseSentry by PatchHive
 
+The opt-in Lovable-derived v3 frontend lives in `frontend-v3/` and targets the
+in-process unified-backend route at `/api/products/release-sentry`.
+
 ReleaseSentry checks whether a repo, product, or release candidate is actually ready to ship.
 
 It is the release-readiness layer for PatchHive: not another changelog generator, but the product that gathers the evidence behind a `ready`, `watch`, or `hold` call before humans or HiveCore push a release forward.

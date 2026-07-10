@@ -1,5 +1,10 @@
 # UI v2 Migration
 
+> UI v2 remains the active/legacy migration track for products already using
+> the radar/atlas shell. New specialist-product visual work belongs to UI v3,
+> whose canonical source is `unified-ui-revamp-main/`. Do not extend the v2
+> radar design into a product that is being ported to v3.
+
 PatchHive is moving toward a shared v2 frontend language. The current candidate
 direction is the SignalHive radar/atlas React prototype in
 `products/signal-hive/frontend-v2/`. The original static concept is preserved as

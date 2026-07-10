@@ -39,3 +39,14 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
+
+  frontend-v3:
+    profiles: ["v3-ui"]
+    image: "${PATCHHIVE_MERGE_KEEPER_FRONTEND_V3_IMAGE:-patchhive/mergekeeper-frontend-v3}:${PATCHHIVE_IMAGE_TAG:-local}"
+    build:
+      context: ../..
+      dockerfile: products/merge-keeper/frontend-v3/Dockerfile
+    pull_policy: "${PATCHHIVE_IMAGE_PULL_POLICY:-missing}"
+    ports:
+      - "5301:8080"
+    restart: unless-stopped

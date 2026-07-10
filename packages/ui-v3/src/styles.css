@@ -1,0 +1,103 @@
+:root {
+  --surface: rgba(255, 255, 255, 0.55);
+  --surface-dim: rgba(255, 255, 255, 0.32);
+  --surface-strong: rgba(255, 255, 255, 0.78);
+  --surface-border: rgba(30, 41, 59, 0.14);
+  --surface-border-2: rgba(30, 41, 59, 0.08);
+  --surface-shadow: 0 22px 60px -24px rgba(15, 23, 42, 0.40), inset 0 1px 0 rgba(255, 255, 255, 0.65);
+  --surface-shadow-sm: 0 12px 30px -18px rgba(15, 23, 42, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.45);
+  --page-bg:
+    radial-gradient(1200px 700px at 10% -10%, #d9c9b3 0%, transparent 55%),
+    radial-gradient(900px 600px at 90% 10%, #b8c1cc 0%, transparent 55%),
+    radial-gradient(1000px 700px at 50% 110%, #a7ada9 0%, transparent 55%),
+    linear-gradient(180deg, #eceef1 0%, #dfe3e8 100%);
+  --orb-1: linear-gradient(135deg, #b45309, #7c2d12);
+  --orb-2: linear-gradient(135deg, #475569, #1e293b);
+  --orb-3: linear-gradient(135deg, #6b7c5a, #3f4a37);
+  --text-strong: #0f172a;
+  --text-body: #1f2937;
+  --text-mute: #475569;
+  --text-dim: #64748b;
+  --accent: #b45309;
+  --accent-2: #f59e0b;
+  --accent-3: #78350f;
+  --accent-glow: 0 12px 26px -10px rgba(180, 83, 9, 0.55);
+  font-family: "Geist", ui-sans-serif, system-ui, sans-serif;
+}
+
+.dark {
+  --surface: rgba(148, 163, 184, 0.06);
+  --surface-dim: rgba(148, 163, 184, 0.035);
+  --surface-strong: rgba(148, 163, 184, 0.12);
+  --surface-border: rgba(148, 163, 184, 0.16);
+  --surface-border-2: rgba(148, 163, 184, 0.10);
+  --surface-shadow: 0 22px 60px -22px rgba(0, 0, 0, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --surface-shadow-sm: 0 12px 30px -18px rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  --page-bg:
+    radial-gradient(1200px 700px at 10% -10%, #3b1d05 0%, transparent 55%),
+    radial-gradient(900px 600px at 90% 10%, #0f172a 0%, transparent 55%),
+    radial-gradient(1000px 700px at 50% 110%, #1c1917 0%, transparent 55%),
+    linear-gradient(180deg, #0a0b0d 0%, #050607 100%);
+  --orb-1: linear-gradient(135deg, #b45309, #451a03);
+  --orb-2: linear-gradient(135deg, #334155, #0b1220);
+  --orb-3: linear-gradient(135deg, #4b5340, #1f2517);
+  --text-strong: #f1f5f9;
+  --text-body: #cbd5e1;
+  --text-mute: #94a3b8;
+  --text-dim: #64748b;
+  --accent: #f59e0b;
+  --accent-2: #fbbf24;
+  --accent-3: #b45309;
+  --accent-glow: 0 14px 30px -10px rgba(245, 158, 11, 0.50);
+}
+
+html[data-product="repo-reaper"] { --accent:#c41e3a; --accent-2:#ff637c; --accent-3:#8b1528; --accent-glow:0 12px 26px -10px rgb(196 30 58 / .55); }
+html[data-product="signal-hive"] { --accent:#2a6aaa; --accent-2:#67bbe7; --accent-3:#1a4a7a; --accent-glow:0 12px 26px -10px rgb(42 106 170 / .55); }
+html[data-product="review-bee"] { --accent:#d89f22; --accent-2:#ffd36a; --accent-3:#8f6415; --accent-glow:0 12px 26px -10px rgb(216 159 34 / .55); }
+html[data-product="trust-gate"] { --accent:#8751b8; --accent-2:#c794ff; --accent-3:#553174; --accent-glow:0 12px 26px -10px rgb(135 81 184 / .55); }
+html[data-product="repo-memory"] { --accent:#2a8a4a; --accent-2:#65d98e; --accent-3:#1a5a30; --accent-glow:0 12px 26px -10px rgb(42 138 74 / .55); }
+html[data-product="merge-keeper"] { --accent:#1f9f8f; --accent-2:#62e1d3; --accent-3:#17675e; --accent-glow:0 12px 26px -10px rgb(31 159 143 / .55); }
+html[data-product="flake-sting"] { --accent:#d96b27; --accent-2:#ff9b52; --accent-3:#8b4317; --accent-glow:0 12px 26px -10px rgb(217 107 39 / .55); }
+html[data-product="dep-triage"] { --accent:#5f7cff; --accent-2:#9aacff; --accent-3:#38458f; --accent-glow:0 12px 26px -10px rgb(95 124 255 / .55); }
+html[data-product="refactor-scout"] { --accent:#30a783; --accent-2:#70dfbd; --accent-3:#1d6d55; --accent-glow:0 12px 26px -10px rgb(48 167 131 / .55); }
+html[data-product="release-sentry"] { --accent:#c7a91b; --accent-2:#fff08a; --accent-3:#8a7728; --accent-glow:0 12px 26px -10px rgb(199 169 27 / .55); }
+
+html, body, #root { min-height: 100%; }
+body { margin: 0; }
+button, input, select, textarea { font: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; }
+.font-display { font-family: "Space Grotesk", ui-sans-serif, system-ui, sans-serif; }
+.font-mono { font-family: "JetBrains Mono", ui-monospace, monospace; }
+.surface {
+  position: relative;
+  border-radius: 1rem;
+  border: 1px solid var(--surface-border);
+  background: var(--surface);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  box-shadow: var(--surface-shadow);
+}
+.surface-dim {
+  position: relative;
+  border-radius: 1rem;
+  border: 1px solid var(--surface-border-2);
+  background: var(--surface-dim);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: var(--surface-shadow-sm);
+}
+.surface-inset {
+  border: 1px solid var(--surface-border-2);
+  background: var(--surface-dim);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+.v3-noise {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+}
+@media (prefers-reduced-motion: no-preference) {
+  .theme-transition, .theme-transition * {
+    transition: background-color 320ms ease, background-image 320ms ease, border-color 320ms ease, color 320ms ease, box-shadow 320ms ease, fill 320ms ease, stroke 320ms ease;
+  }
+}

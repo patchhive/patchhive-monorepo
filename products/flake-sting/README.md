@@ -1,5 +1,8 @@
 # FlakeSting by PatchHive
 
+The opt-in Lovable-derived v3 frontend lives in `frontend-v3/` and targets the
+in-process unified-backend route at `/api/products/flake-sting`.
+
 FlakeSting spots flaky CI patterns before unreliable checks erode team trust.
 
 It reads recent GitHub Actions history, looks for fail or pass swings in test-like jobs and steps, and turns that churn into a ranked queue of likely flaky problems so teams can focus on the unstable parts of their delivery pipeline.
