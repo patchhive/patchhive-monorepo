@@ -173,7 +173,9 @@ v3 frontend until its unified-backend engine reaches `integrated`.
 Rules:
 - Use the actual Lovable component structure, theme tokens, typography, spacing, radii, glass surfaces, shadows, backgrounds, and responsive behavior. Do not approximate it from screenshots or replace it with a static mockup.
 - Every specialist product remains an independent frontend, Docker image, API integration, and workflow. Share only the stable visual shell and primitives through `@patchhivehq/ui-v3`.
+- Reuse `@patchhivehq/ui-v3` progressive lists, saved dashboard views, filter/sort controls, and activity timelines across specialist products; products supply their own field and event mappings.
 - Product differences belong in product name/icon, accent colors, copy, tabs, data, forms, actions, and workflow-specific panels.
+- Keep the specialist footer identity aligned with v2: `<Product> by PatchHive`, the product subtitle, and `Autonomous maintenance suite`.
 - Preserve the suite-wide light/dark preference under the `patchhive.theme` localStorage key and apply it before React mounts to prevent a theme flash.
 - Keep current v2 frontends functional until each product's v3 parity audit passes. Do not rewrite v2 in place.
 - Prefer finishing and validating v3 for the current integrated product set before moving another product engine into the unified backend.

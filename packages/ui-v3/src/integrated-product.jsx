@@ -98,7 +98,7 @@ export function ProductLoginScreen({ apiBase, auth, config }) {
   }
 
   return (
-    <ProductShell productKey={config.productKey} footerLeft={`PatchHive · ${config.name}`} footerRight="Secure local session">
+    <ProductShell productKey={config.productKey}>
       <div className="min-h-[calc(100vh-80px)] grid place-items-center px-6 py-20">
         <section className="surface w-full max-w-lg p-8 overflow-hidden">
           <div className="absolute -top-20 -right-16 h-56 w-56 rounded-full opacity-40 blur-2xl" style={{ backgroundImage: "var(--orb-1)" }} />
@@ -253,10 +253,10 @@ export function IntegratedProductApp({ apiBase, auth, config, fetcher }) {
   const hero = config.hero(result, overview);
   const status = config.status(result, overview);
 
-  if (selected) return <ProductShell productKey={config.productKey} footerLeft={`PatchHive · ${config.name}`}><Detail config={config} item={selected} onBack={() => setSelected(null)} /></ProductShell>;
+  if (selected) return <ProductShell productKey={config.productKey}><Detail config={config} item={selected} onBack={() => setSelected(null)} /></ProductShell>;
 
   return (
-    <ProductShell productKey={config.productKey} footerLeft={`PatchHive · ${config.name}`}>
+    <ProductShell productKey={config.productKey}>
       <ProductHeader activeTab={activeTab} githubLabel={health.github_ready || health.github?.token_configured ? "GitHub ready" : "Token missing"} icon={config.icon} onRun={run} onTabChange={setActiveTab} productName={config.name} runDisabled={running} runLabel={running ? config.runningLabel : config.runLabel} subtitle={config.subtitle} tabs={tabs} />
       <div className="mx-auto max-w-[1440px] px-3 sm:px-6 pt-6 sm:pt-10 pb-24">
         {error ? <div className="surface mb-6 px-5 py-4 text-[12px] text-red-800 dark:text-red-300">{error}</div> : null}

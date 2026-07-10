@@ -1,14 +1,24 @@
 import { useEffect } from "react";
 import { Github, Moon, Radio, Sun } from "lucide-react";
 import { usePatchHiveTheme } from "./theme.jsx";
+import { V3_TEXT } from "./tokens.js";
 
 export { PATCHHIVE_THEME_BOOTSTRAP, PATCHHIVE_THEME_KEY, usePatchHiveTheme } from "./theme.jsx";
+export { V3_TEXT } from "./tokens.js";
 
-export const V3_TEXT = {
-  strong: "text-[color:var(--text-strong)]",
-  body: "text-[color:var(--text-body)]",
-  mute: "text-[color:var(--text-mute)]",
-  dim: "text-[color:var(--text-dim)]",
+const PRODUCT_BRANDS = {
+  "repo-reaper": { name: "RepoReaper", subtitle: "patch execution cell" },
+  "signal-hive": { name: "SignalHive", subtitle: "reconnaissance cell" },
+  "review-bee": { name: "ReviewBee", subtitle: "review resolution cell" },
+  "trust-gate": { name: "TrustGate", subtitle: "trust guard cell" },
+  "repo-memory": { name: "RepoMemory", subtitle: "memory comb" },
+  "merge-keeper": { name: "MergeKeeper", subtitle: "comb readiness" },
+  "flake-sting": { name: "FlakeSting", subtitle: "CI sting detector" },
+  "dep-triage": { name: "DepTriage", subtitle: "dependency comb" },
+  "vuln-triage": { name: "VulnTriage", subtitle: "security comb" },
+  "refactor-scout": { name: "RefactorScout", subtitle: "cleanup scout cell" },
+  "release-sentry": { name: "ReleaseSentry", subtitle: "release watch cell" },
+  "hive-core": { name: "HiveCore", subtitle: "control center" },
 };
 
 export function ThemeToggle({ className = "" }) {
@@ -28,7 +38,8 @@ export function ThemeToggle({ className = "" }) {
   );
 }
 
-export function ProductShell({ children, productKey, footerLeft, footerRight }) {
+export function ProductShell({ children, productKey }) {
+  const brand = PRODUCT_BRANDS[productKey] || { name: productKey, subtitle: "maintenance cell" };
   useEffect(() => {
     const root = document.documentElement;
     const previous = root.dataset.product;
@@ -52,9 +63,10 @@ export function ProductShell({ children, productKey, footerLeft, footerRight }) 
       <div aria-hidden className="pointer-events-none fixed inset-0 z-0 opacity-[0.04] v3-noise" />
       <div className="relative z-10">{children}</div>
       <footer className="relative z-10 px-6 pb-8">
-        <div className={`surface-dim mx-auto max-w-[1440px] px-5 py-4 flex justify-between text-[11px] ${V3_TEXT.mute}`}>
-          <span>{footerLeft}</span>
-          <span>{footerRight || "Forged surface · sharp signal"}</span>
+        <div className={`surface-dim mx-auto max-w-[1440px] px-5 py-4 grid gap-1 sm:grid-cols-3 sm:gap-4 text-[11px] ${V3_TEXT.mute}`}>
+          <span className={`font-semibold ${V3_TEXT.strong}`}>{brand.name} by PatchHive</span>
+          <span className="sm:text-center">{brand.subtitle}</span>
+          <span className="sm:text-right">Autonomous maintenance suite</span>
         </div>
       </footer>
     </main>
@@ -142,3 +154,4 @@ export function MetricCard({ label, value, footerLeft, footerRight, tone = "from
 }
 
 export { IntegratedProductApp, ProductLoginScreen } from "./integrated-product.jsx";
+export { ActivityTimeline, DashboardControls, ProgressiveList, useSavedDashboardViews } from "./workspace.jsx";

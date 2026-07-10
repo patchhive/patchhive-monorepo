@@ -47,7 +47,7 @@ const config = {
 export default function App() {
   const auth = useApiKeyAuth({ apiBase: API, storageKey: "merge-keeper_api_key" });
   const fetcher = useMemo(() => createApiFetcher(auth.apiKey), [auth.apiKey]);
-  if (!auth.checked) return <ProductShell productKey={config.productKey} footerLeft="PatchHive · MergeKeeper"><div className={`min-h-screen grid place-items-center ${V3_TEXT.mute}`}>Connecting…</div></ProductShell>;
+  if (!auth.checked) return <ProductShell productKey={config.productKey}><div className={`min-h-screen grid place-items-center ${V3_TEXT.mute}`}>Connecting…</div></ProductShell>;
   if (auth.needsAuth) return <ProductLoginScreen apiBase={API} auth={auth} config={config} />;
   return <IntegratedProductApp apiBase={API} auth={auth} config={config} fetcher={fetcher} />;
 }

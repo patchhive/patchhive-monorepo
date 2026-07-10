@@ -3,24 +3,26 @@ import {
   Activity,
   ArrowLeft,
   ArrowUpRight,
-  CheckCircle2,
   Clock,
   Cpu,
   ExternalLink,
   Github,
   KeyRound,
-  Search,
   ShieldAlert,
   Sparkles,
   Zap,
 } from "lucide-react";
 import { createApiFetcher, useApiKeyAuth } from "@patchhivehq/product-shell/auth";
 import {
+  ActivityTimeline,
+  DashboardControls,
   MetricCard,
   ProductHeader,
   ProductShell,
+  ProgressiveList,
   ThemeToggle,
   V3_TEXT,
+  useSavedDashboardViews,
 } from "@patchhivehq/ui-v3";
 import { API } from "./config.js";
 
@@ -30,6 +32,18 @@ const TABS = [
   { id: "checks", label: "Checks" },
   { id: "sources", label: "Sources" },
 ];
+
+const DASHBOARD_VIEW_KEY = "vuln-triage.v3.dashboard-views";
+const DEFAULT_DASHBOARD_VIEW = {
+  status: "all",
+  priority: "all",
+  owner: "all",
+  severity: "all",
+  sort: "score-desc",
+};
+const TIMELINE_TYPES = ["status", "priority", "owner", "notes"];
+const PRIORITY_RANK = { "fix now": 3, "plan next": 2, watch: 1 };
+const SEVERITY_RANK = { critical: 5, high: 4, medium: 3, moderate: 3, low: 2, unknown: 1 };
 
 const METRIC_TONES = {
   fix_now: "from-orange-700/70 to-red-900/60",
@@ -95,6 +109,32 @@ function recommendation(value) {
   return "watch";
 }
 
+function findingStatus(finding) {
+  return String(finding.status || finding.state || "open").replaceAll("_", " ").toLowerCase();
+}
+
+function findingOwner(finding) {
+  return finding.owner || finding.owner_hint || "repo maintainers";
+}
+
+function findingSeverity(finding) {
+  return String(finding.severity || "unknown").toLowerCase();
+}
+
+function findingActivity(finding) {
+  const at = finding.created_at || new Date().toISOString();
+  const source = String(finding.source || "GitHub").replaceAll("_", " ");
+  const events = [
+    { id: "status", kind: "status", at, actor: source, message: `Status recorded as ${findingStatus(finding)}` },
+    { id: "priority", kind: "priority", at, actor: "VulnTriage", message: `Priority classified as ${recommendation(finding.recommendation)}` },
+    { id: "owner", kind: "owner", at, actor: "VulnTriage", message: `Owner scope routed to ${findingOwner(finding)}` },
+  ];
+  (finding.evidence || []).forEach((message, index) => {
+    events.push({ id: `notes-${index}`, kind: "notes", at, actor: source, message });
+  });
+  return events;
+}
+
 function triageStatus(metrics) {
   if ((metrics.fix_now || 0) > 0) return "act now";
   if ((metrics.plan_next || 0) > 0) return "plan";
@@ -104,6 +144,15 @@ function triageStatus(metrics) {
 
 function runtimeScoped(metrics) {
   return metrics.runtime_scoped ?? metrics.runtime_exposed ?? 0;
+}
+
+function compareFindings(left, right, sort) {
+  if (sort === "score-asc") return Number(left.score || 0) - Number(right.score || 0);
+  if (sort === "severity-desc") return (SEVERITY_RANK[findingSeverity(right)] || 0) - (SEVERITY_RANK[findingSeverity(left)] || 0) || Number(right.score || 0) - Number(left.score || 0);
+  if (sort === "priority-desc") return (PRIORITY_RANK[recommendation(right.recommendation)] || 0) - (PRIORITY_RANK[recommendation(left.recommendation)] || 0) || Number(right.score || 0) - Number(left.score || 0);
+  if (sort === "newest") return new Date(right.created_at || 0).getTime() - new Date(left.created_at || 0).getTime();
+  if (sort === "owner") return findingOwner(left).localeCompare(findingOwner(right)) || Number(right.score || 0) - Number(left.score || 0);
+  return Number(right.score || 0) - Number(left.score || 0);
 }
 
 function LoginScreen({ auth }) {
@@ -146,7 +195,7 @@ function LoginScreen({ auth }) {
   }
 
   return (
-    <ProductShell productKey="vuln-triage" footerLeft="PatchHive · VulnTriage" footerRight="Secure local session">
+    <ProductShell productKey="vuln-triage">
       <div className="min-h-[calc(100vh-80px)] grid place-items-center px-6 py-20">
         <section className="surface w-full max-w-lg p-8 overflow-hidden">
           <div className="absolute -top-20 -right-16 h-56 w-56 rounded-full opacity-40 blur-2xl" style={{ backgroundImage: "var(--orb-1)" }} />
@@ -184,7 +233,7 @@ function LoginScreen({ auth }) {
 
 function LoadingScreen() {
   return (
-    <ProductShell productKey="vuln-triage" footerLeft="PatchHive · VulnTriage">
+    <ProductShell productKey="vuln-triage">
       <div className={`min-h-[calc(100vh-80px)] grid place-items-center text-[13px] ${V3_TEXT.mute}`}>Connecting to VulnTriage…</div>
     </ProductShell>
   );
@@ -222,6 +271,8 @@ function FindingDetail({ finding, onBack }) {
   const severity = String(finding.severity || "low").toLowerCase();
   const rec = recommendation(finding.recommendation);
   const references = [...new Set([finding.html_url, ...(finding.references || [])].filter(Boolean))];
+  const activity = useMemo(() => findingActivity(finding), [finding]);
+
   return (
     <>
       <header className="px-3 sm:px-6 pt-3 sm:pt-6">
@@ -258,6 +309,7 @@ function FindingDetail({ finding, onBack }) {
             <p className={`mt-3 text-[14px] leading-relaxed ${V3_TEXT.body}`}>{finding.next_action || "Review the finding and plan the smallest safe remediation."}</p>
             {finding.evidence?.length ? <ul className={`mt-6 space-y-2 text-[12px] ${V3_TEXT.body}`}>{finding.evidence.map((item) => <li className="surface-inset rounded-xl p-3" key={item}>{item}</li>)}</ul> : null}
           </div>
+          <ActivityTimeline caption="derived from saved GitHub evidence" eventTypes={TIMELINE_TYPES} events={activity} />
         </section>
         <aside className="col-span-12 lg:col-span-4 space-y-6">
           <div className="surface p-6">
@@ -299,11 +351,11 @@ function MainProduct({ auth }) {
   const [history, setHistory] = useState([]);
   const [scan, setScan] = useState(null);
   const [selectedFinding, setSelectedFinding] = useState(null);
-  const [bucket, setBucket] = useState("all");
   const [query, setQuery] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
+  const dashboard = useSavedDashboardViews({ storageKey: DASHBOARD_VIEW_KEY, defaultView: DEFAULT_DASHBOARD_VIEW });
 
   async function refresh({ loadLatest = false } = {}) {
     setError("");
@@ -371,20 +423,30 @@ function MainProduct({ auth }) {
   }
 
   const findings = scan?.findings || [];
+  const ownerOptions = useMemo(() => [...new Set(findings.map(findingOwner))].sort(), [findings]);
   const filtered = useMemo(() => findings.filter((finding) => {
-    if (bucket !== "all" && recommendation(finding.recommendation) !== bucket) return false;
+    if (dashboard.view.status !== "all" && findingStatus(finding) !== dashboard.view.status) return false;
+    if (dashboard.view.priority !== "all" && recommendation(finding.recommendation) !== dashboard.view.priority) return false;
+    if (dashboard.view.owner !== "all" && findingOwner(finding) !== dashboard.view.owner) return false;
+    if (dashboard.view.severity !== "all" && findingSeverity(finding) !== dashboard.view.severity) return false;
     const text = `${findingId(finding)} ${finding.title} ${finding.summary} ${finding.location} ${finding.package_name}`.toLowerCase();
     return !query.trim() || text.includes(query.trim().toLowerCase());
-  }), [bucket, findings, query]);
+  }).sort((left, right) => compareFindings(left, right, dashboard.view.sort)), [dashboard.view, findings, query]);
+  const dashboardFilters = [
+    { key: "status", label: "Status", value: dashboard.view.status, options: [{ value: "all", label: "All" }, ...[...new Set(findings.map(findingStatus))].sort().map((value) => ({ value, label: value }))] },
+    { key: "priority", label: "Priority", value: dashboard.view.priority, options: [{ value: "all", label: "All" }, ...["fix now", "plan next", "watch"].map((value) => ({ value, label: value }))] },
+    { key: "owner", label: "Owner", value: dashboard.view.owner, options: [{ value: "all", label: "All" }, ...ownerOptions.map((value) => ({ value, label: value }))] },
+    { key: "severity", label: "Severity", value: dashboard.view.severity, options: [{ value: "all", label: "All" }, ...["critical", "high", "medium", "moderate", "low"].map((value) => ({ value, label: value }))] },
+  ];
   const metrics = scan?.metrics || {};
   const activeRepo = scan?.repo || form.repo || "No repository selected";
 
   if (selectedFinding) {
-    return <ProductShell productKey="vuln-triage" footerLeft="PatchHive · VulnTriage"><FindingDetail finding={selectedFinding} onBack={() => setSelectedFinding(null)} /></ProductShell>;
+    return <ProductShell productKey="vuln-triage"><FindingDetail finding={selectedFinding} onBack={() => setSelectedFinding(null)} /></ProductShell>;
   }
 
   return (
-    <ProductShell productKey="vuln-triage" footerLeft="PatchHive · VulnTriage">
+    <ProductShell productKey="vuln-triage">
       <ProductHeader
         activeTab={activeTab}
         githubLabel={health.github_ready ? "GitHub ready" : "Token missing"}
@@ -435,14 +497,38 @@ function MainProduct({ auth }) {
             <section className="mt-8 grid grid-cols-12 gap-6">
               <div className="col-span-12 lg:col-span-8 space-y-6">
                 <div className="surface p-5">
-                  <div className="flex flex-col xl:flex-row xl:items-end justify-between gap-3 mb-4">
+                  <div className="mb-4">
                     <div><div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>Findings</div><div className={`font-display text-2xl mt-0.5 tracking-tight ${V3_TEXT.strong}`}>{filtered.length} in view <span className={`${V3_TEXT.dim} font-normal`}>/ {findings.length} tracked</span></div></div>
-                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                      <div className="surface-inset flex items-center gap-2 rounded-full px-3 h-9 w-full sm:w-[240px]"><Search size={13} className={V3_TEXT.dim} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search CVE, file, package…" className={`bg-transparent outline-none text-[12px] w-full ${V3_TEXT.strong} placeholder:text-[color:var(--text-dim)]`} /></div>
-                      <div className="surface-inset flex rounded-full p-1 overflow-x-auto">{["all", "fix now", "plan next", "watch"].map((value) => <button key={value} onClick={() => setBucket(value)} className={`px-3 h-7 rounded-full text-[11px] capitalize transition whitespace-nowrap ${bucket === value ? `bg-white shadow ${V3_TEXT.strong} dark:bg-white/15` : V3_TEXT.mute}`} type="button">{value}</button>)}</div>
-                    </div>
                   </div>
-                  <div className="space-y-2">{loading ? <div className={`py-14 text-center text-[13px] ${V3_TEXT.mute}`}>Loading findings…</div> : filtered.length ? filtered.map((finding) => <FindingRow finding={finding} key={finding.key || findingId(finding)} onOpen={setSelectedFinding} />) : <div className={`py-14 text-center text-[13px] ${V3_TEXT.mute}`}>No findings match this view.</div>}</div>
+                  <DashboardControls
+                    filters={dashboardFilters}
+                    onApplySavedView={dashboard.applyView}
+                    onDeleteSavedView={dashboard.deleteView}
+                    onFilterChange={dashboard.updateView}
+                    onQueryChange={setQuery}
+                    onReset={() => { dashboard.resetView(); setQuery(""); }}
+                    onSaveView={dashboard.saveView}
+                    onSortChange={(value) => dashboard.updateView("sort", value)}
+                    query={query}
+                    savedViews={dashboard.savedViews}
+                    sort={dashboard.view.sort}
+                    sortOptions={[
+                      { value: "score-desc", label: "Score · high first" },
+                      { value: "score-asc", label: "Score · low first" },
+                      { value: "severity-desc", label: "Severity" },
+                      { value: "priority-desc", label: "Priority" },
+                      { value: "newest", label: "Newest" },
+                      { value: "owner", label: "Owner" },
+                    ]}
+                  />
+                  <div className="mt-5">
+                    {loading ? <div className={`py-14 text-center text-[13px] ${V3_TEXT.mute}`}>Loading findings…</div> : <ProgressiveList
+                      empty={<div className={`py-14 text-center text-[13px] ${V3_TEXT.mute}`}>No findings match this view.</div>}
+                      initialCount={6}
+                      items={filtered}
+                      renderItem={(finding) => <FindingRow finding={finding} key={finding.key || findingId(finding)} onOpen={setSelectedFinding} />}
+                    />}
+                  </div>
                 </div>
               </div>
               <aside className="col-span-12 lg:col-span-4 space-y-6">

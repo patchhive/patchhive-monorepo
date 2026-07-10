@@ -20,7 +20,8 @@ workflow state.
 ## Structure
 
 - `packages/ui-v3/` owns shared Lovable-derived tokens, theme behavior, shell,
-  header, surfaces, metric cards, and future reusable controls.
+  header, surfaces, metric cards, progressive lists, dashboard filter/sort and
+  saved-view controls, and filterable activity timelines.
 - `products/<product>/frontend-v3/` owns that product's API integration, routes,
   copy, tabs, forms, actions, evidence, and detail surfaces.
 - Existing v2 frontends remain available until product-specific parity is
@@ -47,6 +48,17 @@ typography scale, spacing system, or theme implementation.
 - Synchronize theme changes across open browser tabs.
 - Apply the root `.dark` class before React starts to avoid a theme flash.
 - The preference is shared across all specialist products.
+
+## Shared Workspace Contract
+
+- Product queues should use the shared progressive list when a long result set
+  would overwhelm the dashboard; the default collapsed count is six.
+- Filter/sort state and named dashboard views use the shared v3 saved-view hook
+  and remain local to the browser unless a future backend contract replaces it.
+- Activity timelines use the shared type filters and jump controls. Products
+  still own the event types and the mapping from product evidence to events.
+- Specialist footers preserve the v2 identity wording: `<Product> by
+  PatchHive`, the product subtitle, and `Autonomous maintenance suite`.
 
 ## Migration Order
 
