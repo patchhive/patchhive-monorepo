@@ -421,6 +421,14 @@ h1 {
   margin-top: 10px;
 }
 
+.railstat .big {
+  overflow-wrap: anywhere;
+  font-size: 1.35rem;
+  letter-spacing: 0.06em;
+  line-height: 1.05;
+  word-break: break-word;
+}
+
 .hero-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
