@@ -100,10 +100,10 @@ removed.
 
 Audited on 2026-07-09 against:
 
-- `products/flake-sting/frontend/src/App.jsx`
-- `products/flake-sting/frontend/src/panels/ScanPanel.jsx`
-- `products/flake-sting/frontend/src/panels/HistoryPanel.jsx`
-- `products/flake-sting/frontend/src/panels/ChecksPanel.jsx`
+- `products/flake-sting/frontend-legacy/src/App.jsx`
+- `products/flake-sting/frontend-legacy/src/panels/ScanPanel.jsx`
+- `products/flake-sting/frontend-legacy/src/panels/HistoryPanel.jsx`
+- `products/flake-sting/frontend-legacy/src/panels/ChecksPanel.jsx`
 - `products/flake-sting/frontend-v2/src/App.jsx`
 
 V2 covers the directed GitHub Actions scan form, branch/workflow/lookback
@@ -122,9 +122,10 @@ Intentional v2 changes:
 - The old overview card wall is condensed into the metric band, rail, radar,
   and recent-scan queue.
 
-Before moving v1 to `frontend-legacy/`, run a browser pass that covers a
-quarantine signal with evidence links, a clean scan, trend comparison, history
-filtering/loading, and the Checks tab with GitHub and database state visible.
+The browser pass completed on 2026-07-09 with a quarantine signal, evidence
+links, trend comparison, history filtering/loading, and Checks-tab GitHub and
+database state verified. The v1 UI now lives in `frontend-legacy/` and is only
+available through the Docker `legacy-ui` profile or direct local reference use.
 
 ---
 
@@ -140,8 +141,8 @@ docker compose up --build
 
 | Service | URL |
 |---------|-----|
-| Frontend (v1) | `http://localhost:5179` |
-| Frontend v2 prototype | `http://localhost:5198` |
+| Frontend (active v2) | `http://localhost:5179` |
+| Frontend v2 dev server | `http://localhost:5198` |
 | Backend | `http://localhost:8060` |
 
 Backend: `http://localhost:8060`
@@ -153,8 +154,15 @@ Frontend: `http://localhost:5179`
 cp .env.example .env
 
 cd backend && cargo run
-cd ../frontend && npm install && npm run dev
 cd ../frontend-v2 && npm install && npm run dev
+```
+
+The old v1 frontend is preserved for reference in `frontend-legacy/` after the
+v2 parity audit. Use it only when comparing behavior before deleting legacy UI
+code:
+
+```bash
+cd frontend-legacy && npm install && npm run dev
 ```
 
 ---
@@ -683,7 +691,8 @@ no Kubernetes liveness/readiness probes, and no metrics export.
 
 ### Docker Compose
 
-The project ships a `docker-compose.yml` with three services:
+The `docker-compose.yml` runs the backend and active v2 frontend by default.
+The audited v1 frontend is available only through the `legacy-ui` profile:
 
 ```yaml
 services:
@@ -700,17 +709,18 @@ services:
     restart: unless-stopped
 
   frontend:
-    image: ghcr.io/patchhive/flakesting-frontend:main
-    build: ./frontend
-    ports: ["5179:8080"]
-    depends_on: [backend]
-    restart: unless-stopped
-
-  frontend-v2:
     image: ghcr.io/patchhive/flakesting-frontend-v2:main
     build:
       context: ../..
       dockerfile: products/flake-sting/frontend-v2/Dockerfile
+    ports: ["5179:8080"]
+    depends_on: [backend]
+    restart: unless-stopped
+
+  frontend-legacy:
+    profiles: [legacy-ui]
+    image: ghcr.io/patchhive/flakesting-frontend-legacy:main
+    build: ./frontend-legacy
     ports: ["5198:8080"]
     depends_on: [backend]
     restart: unless-stopped
@@ -719,8 +729,8 @@ services:
 Images are pulled from `ghcr.io/patchhive/`. Pull policy, image name, and
 tags are configurable via environment variables:
 - `PATCHHIVE_FLAKE_STING_BACKEND_IMAGE`
-- `PATCHHIVE_FLAKE_STING_FRONTEND_IMAGE`
 - `PATCHHIVE_FLAKE_STING_FRONTEND_V2_IMAGE`
+- `PATCHHIVE_FLAKE_STING_FRONTEND_LEGACY_IMAGE`
 - `PATCHHIVE_IMAGE_TAG` (default: `main`)
 - `PATCHHIVE_IMAGE_PULL_POLICY` (default: `missing`)
 - `PATCHHIVE_BACKEND_UID` / `PATCHHIVE_BACKEND_GID` (default: `0`)

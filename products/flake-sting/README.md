@@ -27,7 +27,7 @@ docker compose up --build
 ```
 
 Frontend: `http://localhost:5179`
-Frontend v2 prototype: `http://localhost:5198`
+Frontend v2 dev server: `http://localhost:5198`
 Backend: `http://localhost:8060`
 
 ### Split Backend and Frontend
@@ -36,8 +36,15 @@ Backend: `http://localhost:8060`
 cp .env.example .env
 
 cd backend && cargo run
-cd ../frontend && npm install && npm run dev
 cd ../frontend-v2 && npm install && npm run dev
+```
+
+The old v1 frontend is preserved for reference in `frontend-legacy/` after the
+v2 parity audit. Use it only when comparing behavior before deleting legacy UI
+code:
+
+```bash
+cd frontend-legacy && npm install && npm run dev
 ```
 
 ## Important Configuration

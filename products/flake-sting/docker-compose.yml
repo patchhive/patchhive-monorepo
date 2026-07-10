@@ -17,8 +17,10 @@ services:
     restart: unless-stopped
 
   frontend:
-    image: "${PATCHHIVE_FLAKE_STING_FRONTEND_IMAGE:-ghcr.io/patchhive/flakesting-frontend}:${PATCHHIVE_IMAGE_TAG:-main}"
-    build: ./frontend
+    image: "${PATCHHIVE_FLAKE_STING_FRONTEND_V2_IMAGE:-ghcr.io/patchhive/flakesting-frontend-v2}:${PATCHHIVE_IMAGE_TAG:-main}"
+    build:
+      context: ../..
+      dockerfile: products/flake-sting/frontend-v2/Dockerfile
     pull_policy: "${PATCHHIVE_IMAGE_PULL_POLICY:-missing}"
     ports:
       - "5179:8080"
@@ -26,11 +28,11 @@ services:
       - backend
     restart: unless-stopped
 
-  frontend-v2:
-    image: "${PATCHHIVE_FLAKE_STING_FRONTEND_V2_IMAGE:-ghcr.io/patchhive/flakesting-frontend-v2}:${PATCHHIVE_IMAGE_TAG:-main}"
-    build:
-      context: ../..
-      dockerfile: products/flake-sting/frontend-v2/Dockerfile
+  frontend-legacy:
+    profiles:
+      - legacy-ui
+    image: "${PATCHHIVE_FLAKE_STING_FRONTEND_LEGACY_IMAGE:-ghcr.io/patchhive/flakesting-frontend-legacy}:${PATCHHIVE_IMAGE_TAG:-main}"
+    build: ./frontend-legacy
     pull_policy: "${PATCHHIVE_IMAGE_PULL_POLICY:-missing}"
     ports:
       - "5198:8080"
