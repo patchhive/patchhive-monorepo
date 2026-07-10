@@ -725,9 +725,10 @@ pub async fn run_tests(repo_dir: &Path) -> TestResult {
 mod tests {
     use super::{apply_patch, collect_files_selective_sync, run_tests};
     use patchhive_product_core::validation::TestExecutionStatus;
-    use std::{env, fs, process::Command, sync::Mutex};
+    use std::{env, fs, process::Command};
+    use tokio::sync::Mutex;
 
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
+    static ENV_LOCK: Mutex<()> = Mutex::const_new(());
 
     fn restore_env_var(key: &str, value: Option<String>) {
         if let Some(value) = value {
@@ -859,7 +860,7 @@ mod tests {
 
     #[tokio::test]
     async fn run_tests_requires_separate_host_execution_opt_in() {
-        let _guard = ENV_LOCK.lock().expect("lock test env");
+        let _guard = ENV_LOCK.lock().await;
         let previous_enabled = env::var("REAPER_ENABLE_UNTRUSTED_TESTS").ok();
         let previous_sandbox = env::var("REAPER_TEST_SANDBOX").ok();
         let previous_allow_host = env::var("REAPER_ALLOW_HOST_TESTS").ok();

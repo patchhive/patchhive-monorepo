@@ -7,20 +7,22 @@ use uuid::Uuid;
 use crate::agents::{agent_generate_patch, agent_patch_retry, agent_smith_patch};
 use crate::db::{
     finish_attempt, record_run_artifact, save_rejected_patch, start_attempt, track_pr, update_perf,
-    IssueAttemptFinish, IssueAttemptStart, IssueAttemptStatus, RunArtifactInput,
+    IssueAttemptFinish, IssueAttemptStart, IssueAttemptStatus, RejectedPatchRecord,
+    RunArtifactInput,
 };
 use crate::github::{
     gh_check_duplicate, gh_find_open_linked_pr, gh_upsert_repo_reaper_issue_comment, OpenLinkedPr,
 };
 
 use super::context::{clone_issue_repo, load_enriched_issue_context, select_code_context};
-use super::memory::submit_smith_rejection_candidate;
-use super::patch::{apply_patch_with_self_heal, publish_pull_request};
+use super::memory::{submit_smith_rejection_candidate, SmithRejectionCandidateInput};
+use super::patch::{
+    apply_patch_with_self_heal, publish_pull_request, PatchSelfHealInput, PullRequestPublishInput,
+};
 use super::sse::{alog, astatus, sse_ev};
 use super::types::{
-    build_attempt_target, build_issue_scope, cancelled, cfg, cleanup_work_path,
-    finish_error_attempt, finish_skipped_attempt, finish_skipped_attempt_with_error,
-    pick_fix_agents, FixIssueJob, IssueScope, SmithReviewOutcome,
+    build_attempt_target, build_issue_scope, cancelled, cfg, cleanup_work_path, pick_fix_agents,
+    AttemptFinisher, FixIssueJob, IssueScope, SmithReviewOutcome,
 };
 
 fn artifact(
@@ -297,6 +299,13 @@ pub async fn fix_one(job: FixIssueJob) {
     let attempt_target = build_attempt_target(&issue);
     let attempt_id = Uuid::new_v4().to_string()[..12].to_string();
     let t_start = std::time::Instant::now();
+    let attempt_finisher = AttemptFinisher {
+        tx: &tx,
+        issue: &issue,
+        attempt_id: &attempt_id,
+        started_at: &t_start,
+        work_path: &scope.work_path,
+    };
     let mut cost = 0.0f64;
 
     let bot_token = agents
@@ -338,19 +347,9 @@ pub async fn fix_one(job: FixIssueJob) {
                     "warn",
                 ))
                 .await;
-            finish_skipped_attempt_with_error(
-                &tx,
-                &issue,
-                &attempt_id,
-                "existing_pr",
-                Some(&detail),
-                cost,
-                None,
-                0,
-                &t_start,
-                &scope.work_path,
-            )
-            .await;
+            attempt_finisher
+                .skipped_with_error("existing_pr", Some(&detail), cost, None, 0)
+                .await;
             return;
         }
         Ok(None) => {}
@@ -385,19 +384,9 @@ pub async fn fix_one(job: FixIssueJob) {
                     "warn",
                 ))
                 .await;
-            finish_skipped_attempt_with_error(
-                &tx,
-                &issue,
-                &attempt_id,
-                "linked_pr_check_failed",
-                Some(&detail),
-                cost,
-                None,
-                0,
-                &t_start,
-                &scope.work_path,
-            )
-            .await;
+            attempt_finisher
+                .skipped_with_error("linked_pr_check_failed", Some(&detail), cost, None, 0)
+                .await;
             return;
         }
     }
@@ -487,17 +476,7 @@ pub async fn fix_one(job: FixIssueJob) {
                 issue_comment_error(&issue, &params.run_id, &attempt_id),
             )
             .await;
-            finish_error_attempt(
-                &tx,
-                &issue,
-                &attempt_id,
-                &e.to_string(),
-                cost,
-                0,
-                &t_start,
-                &scope.work_path,
-            )
-            .await;
+            attempt_finisher.error(&e.to_string(), cost, 0).await;
             return;
         }
     };
@@ -511,18 +490,7 @@ pub async fn fix_one(job: FixIssueJob) {
             issue_comment_held(&issue, &params.run_id, &attempt_id, "cancelled"),
         )
         .await;
-        finish_skipped_attempt(
-            &tx,
-            &issue,
-            &attempt_id,
-            "cancelled",
-            cost,
-            None,
-            0,
-            &t_start,
-            &scope.work_path,
-        )
-        .await;
+        attempt_finisher.skipped("cancelled", cost, None, 0).await;
         return;
     }
 
@@ -548,18 +516,7 @@ pub async fn fix_one(job: FixIssueJob) {
             issue_comment_held(&issue, &params.run_id, &attempt_id, "cancelled"),
         )
         .await;
-        finish_skipped_attempt(
-            &tx,
-            &issue,
-            &attempt_id,
-            "cancelled",
-            cost,
-            None,
-            0,
-            &t_start,
-            &scope.work_path,
-        )
-        .await;
+        attempt_finisher.skipped("cancelled", cost, None, 0).await;
         return;
     }
 
@@ -608,19 +565,9 @@ pub async fn fix_one(job: FixIssueJob) {
                 issue_comment_held(&issue, &params.run_id, &attempt_id, "patch_error"),
             )
             .await;
-            finish_skipped_attempt_with_error(
-                &tx,
-                &issue,
-                &attempt_id,
-                "patch_error",
-                Some(&error),
-                cost,
-                None,
-                0,
-                &t_start,
-                &scope.work_path,
-            )
-            .await;
+            attempt_finisher
+                .skipped_with_error("patch_error", Some(&error), cost, None, 0)
+                .await;
             return;
         }
     };
@@ -666,23 +613,19 @@ pub async fn fix_one(job: FixIssueJob) {
             issue_comment_held(&issue, &params.run_id, &attempt_id, "no_patch"),
         )
         .await;
-        finish_skipped_attempt_with_error(
-            &tx,
-            &issue,
-            &attempt_id,
-            "no_patch",
-            if explanation.is_empty() {
-                None
-            } else {
-                Some(&explanation)
-            },
-            cost,
-            None,
-            0,
-            &t_start,
-            &scope.work_path,
-        )
-        .await;
+        attempt_finisher
+            .skipped_with_error(
+                "no_patch",
+                if explanation.is_empty() {
+                    None
+                } else {
+                    Some(&explanation)
+                },
+                cost,
+                None,
+                0,
+            )
+            .await;
         return;
     }
 
@@ -707,12 +650,14 @@ pub async fn fix_one(job: FixIssueJob) {
     let mut result = match apply_patch_with_self_heal(
         &http,
         &tx,
-        &issue,
-        &scope,
-        &agents.reaper,
-        &code_selection.codebase,
-        &enriched_issue_ctx,
-        result,
+        PatchSelfHealInput {
+            issue: &issue,
+            scope: &scope,
+            reaper: &agents.reaper,
+            codebase: &code_selection.codebase,
+            enriched_issue_ctx: &enriched_issue_ctx,
+            result,
+        },
         &mut cost,
     )
     .await
@@ -747,19 +692,9 @@ pub async fn fix_one(job: FixIssueJob) {
                 issue_comment_held(&issue, &params.run_id, &attempt_id, "patch_error"),
             )
             .await;
-            finish_skipped_attempt_with_error(
-                &tx,
-                &issue,
-                &attempt_id,
-                "patch_error",
-                Some(&reason),
-                cost,
-                None,
-                0,
-                &t_start,
-                &scope.work_path,
-            )
-            .await;
+            attempt_finisher
+                .skipped_with_error("patch_error", Some(&reason), cost, None, 0)
+                .await;
             return;
         }
     };
@@ -783,18 +718,9 @@ pub async fn fix_one(job: FixIssueJob) {
                 issue_comment_held(&issue, &params.run_id, &attempt_id, "no_changes"),
             )
             .await;
-            finish_skipped_attempt(
-                &tx,
-                &issue,
-                &attempt_id,
-                "no_changes",
-                cost,
-                result.patch.as_deref(),
-                confidence,
-                &t_start,
-                &scope.work_path,
-            )
-            .await;
+            attempt_finisher
+                .skipped("no_changes", cost, result.patch.as_deref(), confidence)
+                .await;
             return;
         }
         Err(e) => {
@@ -806,17 +732,13 @@ pub async fn fix_one(job: FixIssueJob) {
                 issue_comment_error(&issue, &params.run_id, &attempt_id),
             )
             .await;
-            finish_error_attempt(
-                &tx,
-                &issue,
-                &attempt_id,
-                &format!("Could not inspect patch changes: {e}"),
-                cost,
-                confidence,
-                &t_start,
-                &scope.work_path,
-            )
-            .await;
+            attempt_finisher
+                .error(
+                    &format!("Could not inspect patch changes: {e}"),
+                    cost,
+                    confidence,
+                )
+                .await;
             return;
         }
     }
@@ -836,18 +758,14 @@ pub async fn fix_one(job: FixIssueJob) {
                 issue_comment_held(&issue, &params.run_id, &attempt_id, "cancelled"),
             )
             .await;
-            finish_skipped_attempt(
-                &tx,
-                &issue,
-                &attempt_id,
-                "cancelled",
-                cost,
-                Some(&smith_review.final_patch),
-                confidence,
-                &t_start,
-                &scope.work_path,
-            )
-            .await;
+            attempt_finisher
+                .skipped(
+                    "cancelled",
+                    cost,
+                    Some(&smith_review.final_patch),
+                    confidence,
+                )
+                .await;
             return;
         }
         let _ = tx
@@ -907,27 +825,31 @@ pub async fn fix_one(job: FixIssueJob) {
                             "warn",
                         ))
                         .await;
-                    let _ = save_rejected_patch(
-                        &Uuid::new_v4().to_string()[..12],
-                        &params.run_id,
-                        &scope.repo,
-                        scope.issue_num,
-                        issue["title"].as_str().unwrap_or(""),
-                        &format!("confidence_{sconf}"),
-                        &feedback,
-                        sconf,
-                        &smith_review.final_patch,
-                    );
+                    let rejection_id = Uuid::new_v4().to_string()[..12].to_string();
+                    let rejection_reason = format!("confidence_{sconf}");
+                    let _ = save_rejected_patch(RejectedPatchRecord {
+                        id: &rejection_id,
+                        run_id: &params.run_id,
+                        repo: &scope.repo,
+                        issue_number: scope.issue_num,
+                        issue_title: issue["title"].as_str().unwrap_or(""),
+                        reason: &rejection_reason,
+                        feedback: &feedback,
+                        confidence: sconf,
+                        diff: &smith_review.final_patch,
+                    });
                     match submit_smith_rejection_candidate(
                         &http,
-                        &issue,
-                        &scope,
-                        &code_selection.selected_files,
-                        &smith_review.final_patch,
-                        &feedback,
-                        sconf,
-                        params.min_conf,
-                        &params.run_id,
+                        SmithRejectionCandidateInput {
+                            issue: &issue,
+                            scope: &scope,
+                            selected_files: &code_selection.selected_files,
+                            patch_diff: &smith_review.final_patch,
+                            feedback: &feedback,
+                            smith_confidence: sconf,
+                            min_confidence: params.min_conf,
+                            run_id: &params.run_id,
+                        },
                     )
                     .await
                     {
@@ -1020,18 +942,14 @@ pub async fn fix_one(job: FixIssueJob) {
             issue_comment_held(&issue, &params.run_id, &attempt_id, "cancelled"),
         )
         .await;
-        finish_skipped_attempt(
-            &tx,
-            &issue,
-            &attempt_id,
-            "cancelled",
-            cost,
-            Some(&smith_review.final_patch),
-            confidence,
-            &t_start,
-            &scope.work_path,
-        )
-        .await;
+        attempt_finisher
+            .skipped(
+                "cancelled",
+                cost,
+                Some(&smith_review.final_patch),
+                confidence,
+            )
+            .await;
         return;
     }
 
@@ -1158,18 +1076,14 @@ pub async fn fix_one(job: FixIssueJob) {
             issue_comment_held(&issue, &params.run_id, &attempt_id, "cancelled"),
         )
         .await;
-        finish_skipped_attempt(
-            &tx,
-            &issue,
-            &attempt_id,
-            "cancelled",
-            cost,
-            Some(&smith_review.final_patch),
-            confidence,
-            &t_start,
-            &scope.work_path,
-        )
-        .await;
+        attempt_finisher
+            .skipped(
+                "cancelled",
+                cost,
+                Some(&smith_review.final_patch),
+                confidence,
+            )
+            .await;
         return;
     }
 
@@ -1192,19 +1106,15 @@ pub async fn fix_one(job: FixIssueJob) {
                 issue_comment_held(&issue, &params.run_id, &attempt_id, "no_changes"),
             )
             .await;
-            finish_skipped_attempt_with_error(
-                &tx,
-                &issue,
-                &attempt_id,
-                "no_changes",
-                Some(&detail),
-                cost,
-                Some(&smith_review.final_patch),
-                confidence,
-                &t_start,
-                &scope.work_path,
-            )
-            .await;
+            attempt_finisher
+                .skipped_with_error(
+                    "no_changes",
+                    Some(&detail),
+                    cost,
+                    Some(&smith_review.final_patch),
+                    confidence,
+                )
+                .await;
             return;
         }
         Err(e) => {
@@ -1216,17 +1126,13 @@ pub async fn fix_one(job: FixIssueJob) {
                 issue_comment_error(&issue, &params.run_id, &attempt_id),
             )
             .await;
-            finish_error_attempt(
-                &tx,
-                &issue,
-                &attempt_id,
-                &format!("Could not inspect final patch changes: {e}"),
-                cost,
-                confidence,
-                &t_start,
-                &scope.work_path,
-            )
-            .await;
+            attempt_finisher
+                .error(
+                    &format!("Could not inspect final patch changes: {e}"),
+                    cost,
+                    confidence,
+                )
+                .await;
             return;
         }
     }
@@ -1249,15 +1155,17 @@ pub async fn fix_one(job: FixIssueJob) {
     );
     let (pr, pr_number) = match publish_pull_request(
         &http,
-        &issue,
-        &scope,
-        &agents,
-        &bot_token,
-        &bot_user,
-        &result,
-        &smith_review.smith_note,
-        confidence,
-        &test,
+        PullRequestPublishInput {
+            issue: &issue,
+            scope: &scope,
+            agents: &agents,
+            bot_token: &bot_token,
+            bot_user: &bot_user,
+            result: &result,
+            smith_note: &smith_review.smith_note,
+            confidence,
+            test: &test,
+        },
     )
     .await
     {
@@ -1291,17 +1199,9 @@ pub async fn fix_one(job: FixIssueJob) {
                 issue_comment_error(&issue, &params.run_id, &attempt_id),
             )
             .await;
-            finish_error_attempt(
-                &tx,
-                &issue,
-                &attempt_id,
-                &e.to_string(),
-                cost,
-                confidence,
-                &t_start,
-                &scope.work_path,
-            )
-            .await;
+            attempt_finisher
+                .error(&e.to_string(), cost, confidence)
+                .await;
             return;
         }
     };

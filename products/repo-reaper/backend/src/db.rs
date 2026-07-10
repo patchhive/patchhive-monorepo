@@ -542,22 +542,35 @@ pub fn finish_attempt(input: IssueAttemptFinish<'_>) -> Result<()> {
     Ok(())
 }
 
-pub fn save_rejected_patch(
-    id: &str,
-    run_id: &str,
-    repo: &str,
-    issue_number: i64,
-    issue_title: &str,
-    reason: &str,
-    feedback: &str,
-    confidence: i32,
-    diff: &str,
-) -> Result<()> {
+pub struct RejectedPatchRecord<'a> {
+    pub id: &'a str,
+    pub run_id: &'a str,
+    pub repo: &'a str,
+    pub issue_number: i64,
+    pub issue_title: &'a str,
+    pub reason: &'a str,
+    pub feedback: &'a str,
+    pub confidence: i32,
+    pub diff: &'a str,
+}
+
+pub fn save_rejected_patch(record: RejectedPatchRecord<'_>) -> Result<()> {
     let conn = get_conn()?;
     conn.execute(
         "INSERT INTO rejected_patches(id,run_id,repo,issue_number,issue_title,reason,smith_feedback,confidence,patch_diff,created_at)
          VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
-        params![id, run_id, repo, issue_number, issue_title, reason, feedback, confidence, diff, Utc::now().to_rfc3339()],
+        params![
+            record.id,
+            record.run_id,
+            record.repo,
+            record.issue_number,
+            record.issue_title,
+            record.reason,
+            record.feedback,
+            record.confidence,
+            record.diff,
+            Utc::now().to_rfc3339()
+        ],
     )?;
     Ok(())
 }

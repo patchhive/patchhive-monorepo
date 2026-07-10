@@ -485,7 +485,7 @@ fn call_params_with_max<'a>(
 
 pub async fn agent_score_issues(
     http: &Client,
-    issues: &mut Vec<Value>,
+    issues: &mut [Value],
     agent: &AgentConfig,
 ) -> Result<f64> {
     let system = "Senior engineer triaging GitHub issues for automated fixing.\n\

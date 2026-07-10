@@ -148,83 +148,76 @@ pub async fn cleanup_work_path(work_path: &PathBuf) {
     }
 }
 
-pub async fn finish_skipped_attempt(
-    tx: &Tx,
-    issue: &Value,
-    attempt_id: &str,
-    reason: &str,
-    cost: f64,
-    patch_diff: Option<&str>,
-    confidence: i32,
-    started_at: &std::time::Instant,
-    work_path: &PathBuf,
-) {
-    finish_skipped_attempt_with_error(
-        tx, issue, attempt_id, reason, None, cost, patch_diff, confidence, started_at, work_path,
-    )
-    .await;
+pub struct AttemptFinisher<'a> {
+    pub tx: &'a Tx,
+    pub issue: &'a Value,
+    pub attempt_id: &'a str,
+    pub started_at: &'a std::time::Instant,
+    pub work_path: &'a PathBuf,
 }
 
-pub async fn finish_skipped_attempt_with_error(
-    tx: &Tx,
-    issue: &Value,
-    attempt_id: &str,
-    reason: &str,
-    error_msg: Option<&str>,
-    cost: f64,
-    patch_diff: Option<&str>,
-    confidence: i32,
-    started_at: &std::time::Instant,
-    work_path: &PathBuf,
-) {
-    let _ = crate::db::finish_attempt(crate::db::IssueAttemptFinish {
-        attempt_id,
-        status: crate::db::IssueAttemptStatus::Skipped,
-        pr_url: None,
-        pr_number: None,
-        cost_usd: cost,
-        patch_diff,
-        error_msg,
-        skip_reason: Some(reason),
-        duration_seconds: Some(started_at.elapsed().as_secs_f64()),
-        confidence,
-    });
-    let _ = tx
-        .send(sse_ev(
-            "issue_result",
-            serde_json::json!({"id":issue["id"],"status":"skipped","reason":reason}),
-        ))
-        .await;
-    cleanup_work_path(work_path).await;
-}
+impl AttemptFinisher<'_> {
+    pub async fn skipped(
+        &self,
+        reason: &str,
+        cost: f64,
+        patch_diff: Option<&str>,
+        confidence: i32,
+    ) {
+        self.skipped_with_error(reason, None, cost, patch_diff, confidence)
+            .await;
+    }
 
-pub async fn finish_error_attempt(
-    tx: &Tx,
-    issue: &Value,
-    attempt_id: &str,
-    error: &str,
-    cost: f64,
-    confidence: i32,
-    started_at: &std::time::Instant,
-    work_path: &PathBuf,
-) {
-    let _ = crate::db::finish_attempt(crate::db::IssueAttemptFinish {
-        attempt_id,
-        status: crate::db::IssueAttemptStatus::Error,
-        pr_url: None,
-        pr_number: None,
-        cost_usd: cost,
-        patch_diff: None,
-        error_msg: Some(error),
-        skip_reason: None,
-        duration_seconds: Some(started_at.elapsed().as_secs_f64()),
-        confidence,
-    });
-    let _ = tx
-        .send(sse_ev(
-            "issue_result",
-            serde_json::json!({"id":issue["id"],"status":"error"}),
-        ))
-        .await;
-    cleanup_work_path(work_path).await;
+    pub async fn skipped_with_error(
+        &self,
+        reason: &str,
+        error_msg: Option<&str>,
+        cost: f64,
+        patch_diff: Option<&str>,
+        confidence: i32,
+    ) {
+        let _ = crate::db::finish_attempt(crate::db::IssueAttemptFinish {
+            attempt_id: self.attempt_id,
+            status: crate::db::IssueAttemptStatus::Skipped,
+            pr_url: None,
+            pr_number: None,
+            cost_usd: cost,
+            patch_diff,
+            error_msg,
+            skip_reason: Some(reason),
+            duration_seconds: Some(self.started_at.elapsed().as_secs_f64()),
+            confidence,
+        });
+        let _ = self
+            .tx
+            .send(sse_ev(
+                "issue_result",
+                serde_json::json!({"id":self.issue["id"],"status":"skipped","reason":reason}),
+            ))
+            .await;
+        cleanup_work_path(self.work_path).await;
+    }
+
+    pub async fn error(&self, error: &str, cost: f64, confidence: i32) {
+        let _ = crate::db::finish_attempt(crate::db::IssueAttemptFinish {
+            attempt_id: self.attempt_id,
+            status: crate::db::IssueAttemptStatus::Error,
+            pr_url: None,
+            pr_number: None,
+            cost_usd: cost,
+            patch_diff: None,
+            error_msg: Some(error),
+            skip_reason: None,
+            duration_seconds: Some(self.started_at.elapsed().as_secs_f64()),
+            confidence,
+        });
+        let _ = self
+            .tx
+            .send(sse_ev(
+                "issue_result",
+                serde_json::json!({"id":self.issue["id"],"status":"error"}),
+            ))
+            .await;
+        cleanup_work_path(self.work_path).await;
+    }
 }

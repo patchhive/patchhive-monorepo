@@ -52,18 +52,29 @@ pub fn build_repo_memory_block(context: Option<&RepoMemoryContextResponse>) -> S
     )
 }
 
+pub struct SmithRejectionCandidateInput<'a> {
+    pub issue: &'a Value,
+    pub scope: &'a IssueScope,
+    pub selected_files: &'a [String],
+    pub patch_diff: &'a str,
+    pub feedback: &'a str,
+    pub smith_confidence: i32,
+    pub min_confidence: i32,
+    pub run_id: &'a str,
+}
+
 pub async fn submit_smith_rejection_candidate(
     http: &reqwest::Client,
-    issue: &Value,
-    scope: &IssueScope,
-    selected_files: &[String],
-    patch_diff: &str,
-    feedback: &str,
-    smith_confidence: i32,
-    min_confidence: i32,
-    run_id: &str,
+    input: SmithRejectionCandidateInput<'_>,
 ) -> AnyhowResult<Option<patchhive_product_core::repo_memory::FailGuardCandidateResponse>> {
-    let candidate = build_smith_rejection_candidate(
+    let candidate = build_smith_rejection_candidate(&input);
+    submit_failguard_candidate(http, &candidate).await
+}
+
+fn build_smith_rejection_candidate(
+    input: &SmithRejectionCandidateInput<'_>,
+) -> FailGuardCandidateRequest {
+    let SmithRejectionCandidateInput {
         issue,
         scope,
         selected_files,
@@ -72,20 +83,7 @@ pub async fn submit_smith_rejection_candidate(
         smith_confidence,
         min_confidence,
         run_id,
-    );
-    submit_failguard_candidate(http, &candidate).await
-}
-
-fn build_smith_rejection_candidate(
-    issue: &Value,
-    scope: &IssueScope,
-    selected_files: &[String],
-    patch_diff: &str,
-    feedback: &str,
-    smith_confidence: i32,
-    min_confidence: i32,
-    run_id: &str,
-) -> FailGuardCandidateRequest {
+    } = input;
     let issue_title = issue["title"].as_str().unwrap_or("Untitled issue");
     let issue_url = issue["url"].as_str().unwrap_or("");
     let issue_ref = if issue_url.trim().is_empty() {

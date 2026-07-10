@@ -103,6 +103,19 @@ struct RunTeam {
     gatekeepers: Vec<AgentConfig>,
 }
 
+struct FixWaveInput<'a> {
+    state: &'a AppState,
+    req: &'a RunRequest,
+    tx: &'a mpsc::Sender<Result<Event, Infallible>>,
+    team: &'a RunTeam,
+    fixable: &'a [Value],
+    run_id: &'a str,
+    run_cost: &'a Arc<AtomicI64>,
+    cancel_requested: &'a Arc<AtomicBool>,
+    budget: f64,
+    min_conf: i32,
+}
+
 fn load_filters() -> RepoScopePolicy {
     let Ok(conn) = get_conn() else {
         return Default::default();
@@ -184,7 +197,7 @@ async fn emit_no_agents(tx: &mpsc::Sender<Result<Event, Infallible>>) {
 
 async fn score_discovered_issues(
     http: &reqwest::Client,
-    issues: &mut Vec<Value>,
+    issues: &mut [Value],
     scout: &AgentConfig,
     tx: &mpsc::Sender<Result<Event, Infallible>>,
     run_cost: Option<&Arc<AtomicI64>>,
@@ -314,19 +327,19 @@ async fn finalize_run_with_summary(
         .await;
 }
 
-async fn run_fix_wave(
-    http: &reqwest::Client,
-    req: &RunRequest,
-    tx: &mpsc::Sender<Result<Event, Infallible>>,
-    team: &RunTeam,
-    fixable: &[Value],
-    run_id: &str,
-    run_cost: &Arc<AtomicI64>,
-    cancel_requested: &Arc<AtomicBool>,
-    budget: f64,
-    min_conf: i32,
-    process_sem: Arc<Semaphore>,
-) {
+async fn run_fix_wave(input: FixWaveInput<'_>) {
+    let FixWaveInput {
+        state,
+        req,
+        tx,
+        team,
+        fixable,
+        run_id,
+        run_cost,
+        cancel_requested,
+        budget,
+        min_conf,
+    } = input;
     let sem = Arc::new(Semaphore::new(req.concurrency));
     let (done_tx, mut done_rx) = mpsc::channel::<()>(fixable.len());
     let mut handles = Vec::new();
@@ -338,7 +351,7 @@ async fn run_fix_wave(
             gatekeepers: team.gatekeepers.clone(),
         }),
         sem,
-        process_sem,
+        process_sem: state.process_worker_semaphore.clone(),
         params: FixParams {
             retry_count: req.retry_count,
             min_conf,
@@ -347,7 +360,7 @@ async fn run_fix_wave(
         },
         run_cost: run_cost.clone(),
         tx: tx.clone(),
-        http: http.clone(),
+        http: state.http.clone(),
     };
 
     for (idx, issue) in fixable.iter().enumerate() {
@@ -523,7 +536,7 @@ async fn discover_target_repo(
         .await;
 
     let labels = req.labels.join(",");
-    let per_page = req.max_issues.max(5).min(100).to_string();
+    let per_page = req.max_issues.clamp(5, 100).to_string();
     let mut all_issues = Vec::new();
     match gh_get(
         http,
@@ -769,19 +782,18 @@ pub async fn execute_run(
 
     let _ = tx.send(sse("phase", json!({"phase":"fix"}))).await;
     persist_run_phase(&run_id, "patch", "Patch worker wave started");
-    run_fix_wave(
-        &http,
-        &req,
-        &tx,
-        &team,
-        &fixable,
-        &run_id,
-        &run_cost,
-        &cancel_requested,
+    run_fix_wave(FixWaveInput {
+        state: &state,
+        req: &req,
+        tx: &tx,
+        team: &team,
+        fixable: &fixable,
+        run_id: &run_id,
+        run_cost: &run_cost,
+        cancel_requested: &cancel_requested,
         budget,
         min_conf,
-        state.process_worker_semaphore.clone(),
-    )
+    })
     .await;
 
     finalize_run_with_summary(&tx, &run_id, &run_cost, fixable.len()).await;

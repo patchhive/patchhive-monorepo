@@ -26,17 +26,29 @@ fn pr_test_status(test: &crate::git_ops::TestResult) -> &'static str {
     }
 }
 
+pub struct PatchSelfHealInput<'a> {
+    pub issue: &'a Value,
+    pub scope: &'a IssueScope,
+    pub reaper: &'a AgentConfig,
+    pub codebase: &'a str,
+    pub enriched_issue_ctx: &'a str,
+    pub result: GeneratedPatchResponse,
+}
+
 pub async fn apply_patch_with_self_heal(
     http: &reqwest::Client,
     tx: &Tx,
-    issue: &Value,
-    scope: &IssueScope,
-    reaper: &AgentConfig,
-    codebase: &str,
-    enriched_issue_ctx: &str,
-    mut result: GeneratedPatchResponse,
+    input: PatchSelfHealInput<'_>,
     cost: &mut f64,
 ) -> std::result::Result<GeneratedPatchResponse, String> {
+    let PatchSelfHealInput {
+        issue,
+        scope,
+        reaper,
+        codebase,
+        enriched_issue_ctx,
+        mut result,
+    } = input;
     let patch_str = result.patch.as_deref().unwrap_or("").to_string();
     let (mut applied, apply_err) = apply_patch(&scope.work_path, &patch_str).await;
     let mut final_apply_err = apply_err.trim().to_string();
@@ -106,18 +118,33 @@ pub async fn apply_patch_with_self_heal(
     Ok(result)
 }
 
+pub struct PullRequestPublishInput<'a> {
+    pub issue: &'a Value,
+    pub scope: &'a IssueScope,
+    pub agents: &'a FixAgents,
+    pub bot_token: &'a str,
+    pub bot_user: &'a str,
+    pub result: &'a GeneratedPatchResponse,
+    pub smith_note: &'a str,
+    pub confidence: i32,
+    pub test: &'a crate::git_ops::TestResult,
+}
+
 pub async fn publish_pull_request(
     http: &reqwest::Client,
-    issue: &Value,
-    scope: &IssueScope,
-    agents: &FixAgents,
-    bot_token: &str,
-    bot_user: &str,
-    result: &GeneratedPatchResponse,
-    smith_note: &str,
-    confidence: i32,
-    test: &crate::git_ops::TestResult,
+    input: PullRequestPublishInput<'_>,
 ) -> AnyhowResult<(Value, i64)> {
+    let PullRequestPublishInput {
+        issue,
+        scope,
+        agents,
+        bot_token,
+        bot_user,
+        result,
+        smith_note,
+        confidence,
+        test,
+    } = input;
     let commit_msg = format!(
         "fix: {} (closes #{})",
         issue["title"]
