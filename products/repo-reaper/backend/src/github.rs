@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Result};
 use patchhive_github_pr::{github_token_from_env, GitHubPrClient};
+use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, USER_AGENT};
 use reqwest::Client;
 use serde_json::Value;
 use std::collections::BTreeSet;
@@ -23,16 +24,40 @@ fn pr_client(http: &Client, token: Option<&str>) -> GitHubPrClient {
     )
 }
 
-fn gh_headers(token: Option<&str>) -> reqwest::header::HeaderMap {
-    let mut h = reqwest::header::HeaderMap::new();
-    let tok = token.map(|s| s.to_string()).unwrap_or_else(bot_token);
-    if !tok.is_empty() {
-        h.insert("Authorization", format!("Bearer {tok}").parse().unwrap());
+pub(crate) fn validated_token(token: Option<&str>) -> Result<Option<String>> {
+    let supplied = token.is_some();
+    let raw = token.map(str::to_string).unwrap_or_else(bot_token);
+    let token = raw.trim();
+    if token.is_empty() {
+        if supplied || !raw.is_empty() {
+            return Err(anyhow!("GitHub token cannot be empty or whitespace"));
+        }
+        return Ok(None);
     }
-    h.insert("Accept", "application/vnd.github+json".parse().unwrap());
-    h.insert("X-GitHub-Api-Version", "2022-11-28".parse().unwrap());
-    h.insert("User-Agent", "repo-reaper/0.1".parse().unwrap());
-    h
+    if token.chars().any(char::is_control) {
+        return Err(anyhow!("GitHub token contains invalid control characters"));
+    }
+    Ok(Some(token.to_string()))
+}
+
+fn gh_headers(token: Option<&str>) -> Result<HeaderMap> {
+    let mut headers = HeaderMap::new();
+    if let Some(token) = validated_token(token)? {
+        let value = HeaderValue::from_str(&format!("Bearer {token}")).map_err(|error| {
+            anyhow!("GitHub token is not valid for an Authorization header: {error}")
+        })?;
+        headers.insert(AUTHORIZATION, value);
+    }
+    headers.insert(
+        ACCEPT,
+        HeaderValue::from_static("application/vnd.github+json"),
+    );
+    headers.insert(
+        "X-GitHub-Api-Version",
+        HeaderValue::from_static("2022-11-28"),
+    );
+    headers.insert(USER_AGENT, HeaderValue::from_static("repo-reaper/0.1"));
+    Ok(headers)
 }
 
 pub async fn gh_get(
@@ -43,7 +68,7 @@ pub async fn gh_get(
 ) -> Result<Value> {
     let resp = http
         .get(format!("{GH_API}{path}"))
-        .headers(gh_headers(token))
+        .headers(gh_headers(token)?)
         .query(params)
         .send()
         .await?;
@@ -62,7 +87,7 @@ pub async fn gh_post(
 ) -> Result<Value> {
     let resp = http
         .post(format!("{GH_API}{path}"))
-        .headers(gh_headers(token))
+        .headers(gh_headers(token)?)
         .json(body)
         .send()
         .await?;
@@ -99,7 +124,7 @@ pub async fn gh_patch(
 ) -> Result<Value> {
     let resp = http
         .patch(format!("{GH_API}{path}"))
-        .headers(gh_headers(token))
+        .headers(gh_headers(token)?)
         .json(body)
         .send()
         .await?;
@@ -131,7 +156,7 @@ pub async fn gh_patch(
 pub async fn gh_delete(http: &Client, path: &str, token: Option<&str>) -> Result<()> {
     let resp = http
         .delete(format!("{GH_API}{path}"))
-        .headers(gh_headers(token))
+        .headers(gh_headers(token)?)
         .send()
         .await?;
     let status = resp.status();
@@ -577,9 +602,29 @@ pub async fn gh_delete_branch(
 
 #[cfg(test)]
 mod tests {
-    use super::{collect_linked_pr_candidates, open_linked_pr_from_timeline_event};
+    use super::{
+        collect_linked_pr_candidates, gh_headers, open_linked_pr_from_timeline_event,
+        validated_token,
+    };
     use serde_json::json;
     use std::collections::BTreeSet;
+
+    #[test]
+    fn github_token_is_trimmed_before_header_construction() {
+        let headers = gh_headers(Some("  github-token  ")).expect("valid headers");
+        assert_eq!(
+            headers
+                .get("authorization")
+                .and_then(|value| value.to_str().ok()),
+            Some("Bearer github-token")
+        );
+    }
+
+    #[test]
+    fn github_token_rejects_empty_and_control_characters() {
+        assert!(validated_token(Some("  ")).is_err());
+        assert!(validated_token(Some("token\nvalue")).is_err());
+    }
 
     #[test]
     fn timeline_event_reports_open_source_pull_request() {

@@ -169,6 +169,12 @@ Rules:
 - The shared Rust contract lives in
   `patchhive_product_core::contract::{ProductRunEvent, ProductRunArtifact,
   ProductRunEventsResponse}`.
+- Products should expose ordered durable events at `GET /runs/:run_id/events`.
+  Compatibility artifact routes may return the same `ProductRunEventsResponse`,
+  but new consumers should use the events route.
+- RepoReaper is the first write-capable adopter. Its event stream covers run and
+  attempt lifecycle, agent selection, patch generation/application, Smith review,
+  validation, and GitHub publication outcomes without depending on SSE or stdout.
 
 ## Webhook / Async Callback Rules
 

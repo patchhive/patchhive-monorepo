@@ -5,6 +5,7 @@
 use anyhow::{anyhow, Result};
 use once_cell::sync::Lazy;
 use reqwest::Client;
+use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -62,6 +63,85 @@ pub fn parse_json(text: &str) -> Result<Value> {
             "Provider returned non-JSON output where JSON was expected: {e}. Preview: {preview}"
         )
     })
+}
+
+fn parse_typed_json<T: DeserializeOwned>(text: &str, contract: &str) -> Result<T> {
+    let clean = strip_json_fence(text);
+    serde_json::from_str(clean).map_err(|error| {
+        if clean.is_empty() {
+            return anyhow!("Provider returned an empty response for {contract}");
+        }
+        let preview = clean
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .chars()
+            .take(240)
+            .collect::<String>();
+        anyhow!("Provider response violated the {contract} contract: {error}. Preview: {preview}")
+    })
+}
+
+fn deserialize_nullable_string<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Option::<String>::deserialize(deserializer)
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct GeneratedPatchResponse {
+    pub explanation: String,
+    pub files_changed: Vec<String>,
+    #[serde(deserialize_with = "deserialize_nullable_string")]
+    pub patch: Option<String>,
+    pub confidence: i32,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct PatchRetryResponse {
+    pub explanation: String,
+    pub files_changed: Vec<String>,
+    #[serde(deserialize_with = "deserialize_nullable_string")]
+    pub patch: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct SmithReviewResponse {
+    pub approved: bool,
+    pub confidence: i32,
+    pub feedback: String,
+    #[serde(deserialize_with = "deserialize_nullable_string")]
+    pub improved_patch: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct DryRunTopCandidate {
+    pub repo: String,
+    pub title: String,
+    pub score: i32,
+    pub why: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct DryRunCandidate {
+    pub repo: String,
+    pub title: String,
+    pub score: i32,
+    pub call: String,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct DryRunAnalysisResponse {
+    pub summary: String,
+    pub top_candidate: DryRunTopCandidate,
+    pub success_band: String,
+    pub risk: String,
+    pub recommendation: String,
+    pub candidates: Vec<DryRunCandidate>,
 }
 
 fn clean_env(key: &str) -> Option<String> {
@@ -464,13 +544,12 @@ pub async fn agent_select_files(
         &body.chars().take(1000).collect::<String>()
     );
     let (text, cost) = ai_call(http, &call_params(agent, system, &prompt)).await?;
-    let parsed = parse_json(&text)?;
-    let files = parsed
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(|v| v.as_str().map(|s| s.to_string()))
-        .collect();
+    let files: Vec<String> = parse_typed_json(&text, "judge file selection")?;
+    if files.iter().any(|path| path.trim().is_empty()) {
+        return Err(anyhow!(
+            "Provider response violated the judge file selection contract: paths cannot be empty"
+        ));
+    }
     Ok((files, cost))
 }
 
@@ -481,7 +560,7 @@ pub async fn agent_generate_patch(
     codebase: &str,
     ctx: &str,
     agent: &AgentConfig,
-) -> Result<(Value, f64)> {
+) -> Result<(GeneratedPatchResponse, f64)> {
     let system = "Expert software engineer. Fix the bug described in the issue.\n\
         Additional context (maintainer comments, linked refs) is provided — use it.\n\
         The patch must be a complete, valid unified diff that `git apply --check` can accept.\n\
@@ -499,7 +578,7 @@ pub async fn agent_generate_patch(
         &call_params_with_max(agent, system, &prompt, PATCH_MAX_TOKENS),
     )
     .await?;
-    Ok((parse_json(&text)?, cost))
+    Ok((parse_typed_json(&text, "reaper patch response")?, cost))
 }
 
 pub async fn agent_patch_retry(
@@ -510,7 +589,7 @@ pub async fn agent_patch_retry(
     prev_patch: &str,
     error_ctx: &str,
     agent: &AgentConfig,
-) -> Result<(Value, f64)> {
+) -> Result<(PatchRetryResponse, f64)> {
     let system = "Expert software engineer. Previous patch failed — study the error and produce a corrected diff.\n\
         The corrected patch must be a complete, valid unified diff that `git apply --check` can accept.\n\
         Include full diff headers (`diff --git`, `---`, `+++`, and hunk headers) and do not truncate hunks.\n\
@@ -526,7 +605,7 @@ pub async fn agent_patch_retry(
         &call_params_with_max(agent, system, &prompt, PATCH_MAX_TOKENS),
     )
     .await?;
-    Ok((parse_json(&text)?, cost))
+    Ok((parse_typed_json(&text, "patch retry response")?, cost))
 }
 
 pub async fn agent_smith_patch(
@@ -535,7 +614,7 @@ pub async fn agent_smith_patch(
     patch: &str,
     explanation: &str,
     agent: &AgentConfig,
-) -> Result<(Value, f64)> {
+) -> Result<(SmithReviewResponse, f64)> {
     let system = "Senior code reviewer. Does this patch correctly and safely fix the bug?\n\
         Reply ONLY with JSON (no markdown):\n\
         {\"approved\":true/false,\"confidence\":0-100,\"feedback\":\"brief\",\"improved_patch\":\"<diff or null>\"}";
@@ -545,7 +624,7 @@ pub async fn agent_smith_patch(
         &call_params_with_max(agent, system, &prompt, REVIEW_MAX_TOKENS),
     )
     .await?;
-    Ok((parse_json(&text)?, cost))
+    Ok((parse_typed_json(&text, "smith review response")?, cost))
 }
 
 pub async fn agent_dry_run_analysis(
@@ -553,7 +632,7 @@ pub async fn agent_dry_run_analysis(
     issues: &[Value],
     repos: &[Value],
     agent: &AgentConfig,
-) -> Result<(Value, f64)> {
+) -> Result<(DryRunAnalysisResponse, f64)> {
     let system = "Senior engineer reviewing GitHub issues for automated patching.\n\
         Reply ONLY with JSON (no markdown, no prose). Use this exact shape:\n\
         {\"summary\":\"max 18 words\",\"top_candidate\":{\"repo\":\"owner/name\",\"title\":\"issue title\",\"score\":0,\"why\":\"max 18 words\"},\
@@ -587,7 +666,7 @@ pub async fn agent_dry_run_analysis(
         issue_list.join("\n")
     );
     let (text, cost) = ai_call(http, &call_params(agent, system, &prompt)).await?;
-    Ok((parse_json(&text)?, cost))
+    Ok((parse_typed_json(&text, "dry-run scout analysis")?, cost))
 }
 
 pub async fn agent_pr_comment_fix(
@@ -610,4 +689,69 @@ pub async fn agent_pr_comment_fix(
     )
     .await?;
     Ok((parse_json(&text)?, cost))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        parse_typed_json, DryRunAnalysisResponse, GeneratedPatchResponse, SmithReviewResponse,
+    };
+
+    #[test]
+    fn generated_patch_contract_requires_confidence_and_patch_field() {
+        let missing_confidence =
+            r#"{"explanation":"fix","files_changed":["src/lib.rs"],"patch":"diff"}"#;
+        let missing_patch =
+            r#"{"explanation":"fix","files_changed":["src/lib.rs"],"confidence":80}"#;
+
+        assert!(parse_typed_json::<GeneratedPatchResponse>(
+            missing_confidence,
+            "reaper patch response"
+        )
+        .unwrap_err()
+        .to_string()
+        .contains("missing field `confidence`"));
+        assert!(
+            parse_typed_json::<GeneratedPatchResponse>(missing_patch, "reaper patch response")
+                .unwrap_err()
+                .to_string()
+                .contains("missing field `patch`")
+        );
+    }
+
+    #[test]
+    fn nullable_patch_and_improved_patch_are_valid_typed_outcomes() {
+        let patch: GeneratedPatchResponse = parse_typed_json(
+            r#"{"explanation":"unsafe","files_changed":[],"patch":null,"confidence":12}"#,
+            "reaper patch response",
+        )
+        .expect("nullable generated patch");
+        let review: SmithReviewResponse = parse_typed_json(
+            r#"{"approved":false,"confidence":25,"feedback":"hold","improved_patch":null}"#,
+            "smith review response",
+        )
+        .expect("nullable improved patch");
+
+        assert!(patch.patch.is_none());
+        assert!(review.improved_patch.is_none());
+    }
+
+    #[test]
+    fn dry_run_contract_rejects_incomplete_nested_candidates() {
+        let incomplete = r#"{
+            "summary":"summary",
+            "top_candidate":{"repo":"acme/repo","title":"bug","score":80},
+            "success_band":"high",
+            "risk":"low",
+            "recommendation":"safe to attempt",
+            "candidates":[]
+        }"#;
+
+        assert!(
+            parse_typed_json::<DryRunAnalysisResponse>(incomplete, "dry-run scout analysis")
+                .unwrap_err()
+                .to_string()
+                .contains("missing field `why`")
+        );
+    }
 }

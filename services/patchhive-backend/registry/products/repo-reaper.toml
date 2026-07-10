@@ -103,6 +103,16 @@ description = "Read a RepoReaper run detail."
 
 [[routes]]
 method = "GET"
+path = "/api/products/repo-reaper/runs/:run_id/artifacts"
+description = "Read durable ordered diagnostic artifacts for one RepoReaper run."
+
+[[routes]]
+method = "GET"
+path = "/api/products/repo-reaper/runs/:run_id/events"
+description = "Read PatchHive contract v1 run events for one RepoReaper run."
+
+[[routes]]
+method = "GET"
 path = "/api/products/repo-reaper/history"
 description = "List RepoReaper run history."
 

@@ -6,8 +6,8 @@ use uuid::Uuid;
 
 use crate::agents::{agent_generate_patch, agent_patch_retry, agent_smith_patch};
 use crate::db::{
-    finish_attempt, save_rejected_patch, start_attempt, track_pr, update_perf, IssueAttemptFinish,
-    IssueAttemptStart, IssueAttemptStatus,
+    finish_attempt, record_run_artifact, save_rejected_patch, start_attempt, track_pr, update_perf,
+    IssueAttemptFinish, IssueAttemptStart, IssueAttemptStatus, RunArtifactInput,
 };
 use crate::github::{
     gh_check_duplicate, gh_find_open_linked_pr, gh_upsert_repo_reaper_issue_comment, OpenLinkedPr,
@@ -22,6 +22,33 @@ use super::types::{
     finish_error_attempt, finish_skipped_attempt, finish_skipped_attempt_with_error,
     pick_fix_agents, FixIssueJob, IssueScope, SmithReviewOutcome,
 };
+
+fn artifact(
+    run_id: &str,
+    attempt_id: &str,
+    phase: &str,
+    kind: &str,
+    status: &str,
+    message: &str,
+    metadata: serde_json::Value,
+) {
+    if let Err(error) = record_run_artifact(RunArtifactInput {
+        run_id,
+        attempt_id: Some(attempt_id),
+        phase,
+        kind,
+        status,
+        message,
+        metadata: Some(&metadata),
+    }) {
+        tracing::warn!(
+            run_id,
+            attempt_id,
+            kind,
+            "could not persist run artifact: {error:#}"
+        );
+    }
+}
 
 fn compact_no_change_detail(test: &crate::git_ops::TestResult) -> String {
     if test.passed {
@@ -223,6 +250,7 @@ pub async fn fix_one(job: FixIssueJob) {
     } = job;
     let agents_pool = context.agents;
     let sem = context.sem;
+    let process_sem = context.process_sem;
     let params = context.params;
     let run_cost = context.run_cost;
     let tx = context.tx;
@@ -231,6 +259,30 @@ pub async fn fix_one(job: FixIssueJob) {
     let Ok(_permit) = sem.acquire().await else {
         tracing::warn!("RepoReaper fix worker semaphore closed before issue execution");
         return;
+    };
+    let _process_permit = match process_sem.clone().try_acquire_owned() {
+        Ok(permit) => permit,
+        Err(tokio::sync::TryAcquireError::NoPermits) => {
+            let _ = tx
+                .send(sse_ev(
+                    "capacity",
+                    json!({"status":"waiting","message":"Process worker capacity is full; this issue is queued"}),
+                ))
+                .await;
+            match process_sem.acquire_owned().await {
+                Ok(permit) => permit,
+                Err(_) => {
+                    tracing::warn!(
+                        "RepoReaper process worker semaphore closed before issue execution"
+                    );
+                    return;
+                }
+            }
+        }
+        Err(tokio::sync::TryAcquireError::Closed) => {
+            tracing::warn!("RepoReaper process worker semaphore closed before issue execution");
+            return;
+        }
     };
     if cancelled(&params) {
         return;
@@ -540,6 +592,15 @@ pub async fn fix_one(job: FixIssueJob) {
         Ok(result) => result,
         Err(e) => {
             let error = e.to_string();
+            artifact(
+                &params.run_id,
+                &attempt_id,
+                "patch",
+                "agent.patch.failed",
+                "failed",
+                &error,
+                json!({"agent": agents.reaper.name}),
+            );
             let _ = tx
                 .send(alog(
                     &agents.reaper,
@@ -572,17 +633,32 @@ pub async fn fix_one(job: FixIssueJob) {
         }
     };
     cost += patch_cost;
+    artifact(
+        &params.run_id,
+        &attempt_id,
+        "patch",
+        "agent.patch.generated",
+        if result.patch.is_some() {
+            "succeeded"
+        } else {
+            "skipped"
+        },
+        &result.explanation,
+        json!({
+            "agent": agents.reaper.name,
+            "confidence": result.confidence,
+            "files_changed": result.files_changed,
+            "patch_present": result.patch.is_some(),
+        }),
+    );
 
-    if result["patch"]
-        .as_str()
+    if result
+        .patch
+        .as_deref()
         .map(|patch| patch.trim().is_empty())
         .unwrap_or(true)
     {
-        let explanation = result["explanation"]
-            .as_str()
-            .unwrap_or("")
-            .trim()
-            .to_string();
+        let explanation = result.explanation.trim().to_string();
         let _ = tx
             .send(alog(
                 &agents.reaper,
@@ -618,14 +694,13 @@ pub async fn fix_one(job: FixIssueJob) {
         return;
     }
 
-    let confidence = result["confidence"].as_i64().unwrap_or(50) as i32;
+    let confidence = result.confidence;
     let _ = tx
         .send(alog(
             &agents.reaper,
             &format!(
                 "Patch forged: {} (confidence: {}/100)",
-                result["explanation"].as_str().unwrap_or(""),
-                confidence
+                result.explanation, confidence
             ),
             "success",
         ))
@@ -650,8 +725,28 @@ pub async fn fix_one(job: FixIssueJob) {
     )
     .await
     {
-        Ok(result) => result,
+        Ok(result) => {
+            artifact(
+                &params.run_id,
+                &attempt_id,
+                "apply",
+                "patch.applied",
+                "succeeded",
+                "Generated patch applied to the disposable worktree",
+                json!({"self_heal_available": true}),
+            );
+            result
+        }
         Err(reason) => {
+            artifact(
+                &params.run_id,
+                &attempt_id,
+                "apply",
+                "patch.apply_failed",
+                "failed",
+                &reason,
+                json!({}),
+            );
             update_issue_status_comment(
                 &http,
                 &issue,
@@ -702,7 +797,7 @@ pub async fn fix_one(job: FixIssueJob) {
                 &attempt_id,
                 "no_changes",
                 cost,
-                Some(result["patch"].as_str().unwrap_or("")),
+                result.patch.as_deref(),
                 confidence,
                 &t_start,
                 &scope.work_path,
@@ -735,7 +830,7 @@ pub async fn fix_one(job: FixIssueJob) {
     }
 
     let mut smith_review = SmithReviewOutcome {
-        final_patch: result["patch"].as_str().unwrap_or("").to_string(),
+        final_patch: result.patch.as_deref().unwrap_or("").to_string(),
         smith_note: String::new(),
     };
 
@@ -774,16 +869,25 @@ pub async fn fix_one(job: FixIssueJob) {
             &http,
             issue["title"].as_str().unwrap_or(""),
             &smith_review.final_patch,
-            result["explanation"].as_str().unwrap_or(""),
+            &result.explanation,
             smith,
         )
         .await
         {
             Ok((rev, rc)) => {
                 cost += rc;
-                let sconf = rev["confidence"].as_i64().unwrap_or(50) as i32;
-                let approved = rev["approved"].as_bool().unwrap_or(true);
-                let feedback = rev["feedback"].as_str().unwrap_or("").to_string();
+                let sconf = rev.confidence;
+                let approved = rev.approved;
+                let feedback = rev.feedback;
+                artifact(
+                    &params.run_id,
+                    &attempt_id,
+                    "smith",
+                    "smith.reviewed",
+                    if approved { "succeeded" } else { "rejected" },
+                    &feedback,
+                    json!({"agent": smith.name, "confidence": sconf, "approved": approved}),
+                );
 
                 let _ = tx
                     .send(alog(
@@ -793,8 +897,9 @@ pub async fn fix_one(job: FixIssueJob) {
                     ))
                     .await;
 
-                if let Some(improved_patch) = rev["improved_patch"]
-                    .as_str()
+                if let Some(improved_patch) = rev
+                    .improved_patch
+                    .as_deref()
                     .filter(|value| !value.is_empty())
                 {
                     smith_review.final_patch = improved_patch.to_string();
@@ -893,6 +998,15 @@ pub async fn fix_one(job: FixIssueJob) {
                 }
             }
             Err(e) => {
+                artifact(
+                    &params.run_id,
+                    &attempt_id,
+                    "smith",
+                    "smith.review_failed",
+                    "failed",
+                    &e.to_string(),
+                    json!({"agent": smith.name}),
+                );
                 let _ = tx
                     .send(alog(
                         smith,
@@ -937,6 +1051,21 @@ pub async fn fix_one(job: FixIssueJob) {
         ))
         .await;
     let mut test = crate::git_ops::run_tests(&scope.work_path).await;
+    artifact(
+        &params.run_id,
+        &attempt_id,
+        "validate",
+        "test.initial",
+        if test.passed {
+            "passed"
+        } else if should_retry_test_failure(&test) {
+            "failed"
+        } else {
+            "not-verified"
+        },
+        &test.output,
+        json!({"runner": test.runner, "passed": test.passed}),
+    );
     let _ = tx
         .send(alog(
             &agents.gatekeeper,
@@ -996,13 +1125,14 @@ pub async fn fix_one(job: FixIssueJob) {
         {
             Ok((retry_result, retry_cost)) => {
                 cost += retry_cost;
-                if !retry_result["patch"].is_null() {
-                    let retry_patch = retry_result["patch"].as_str().unwrap_or("").to_string();
+                if let Some(retry_patch) = retry_result.patch {
                     let (applied, _) =
                         crate::git_ops::apply_patch(&scope.work_path, &retry_patch).await;
                     if applied {
-                        smith_review.final_patch = retry_patch;
-                        result = retry_result;
+                        smith_review.final_patch = retry_patch.clone();
+                        result.explanation = retry_result.explanation;
+                        result.files_changed = retry_result.files_changed;
+                        result.patch = Some(retry_patch);
                         test = crate::git_ops::run_tests(&scope.work_path).await;
                         let _ = tx
                             .send(alog(
@@ -1030,6 +1160,22 @@ pub async fn fix_one(job: FixIssueJob) {
         }
         let _ = tx.send(astatus(&agents.reaper.id, "idle", "")).await;
     }
+
+    artifact(
+        &params.run_id,
+        &attempt_id,
+        "validate",
+        "test.completed",
+        if test.passed {
+            "passed"
+        } else if should_retry_test_failure(&test) {
+            "failed"
+        } else {
+            "not-verified"
+        },
+        &test.output,
+        json!({"runner": test.runner, "passed": test.passed}),
+    );
 
     if cancelled(&params) {
         update_issue_status_comment(
@@ -1120,6 +1266,15 @@ pub async fn fix_one(job: FixIssueJob) {
             &format!("PR #{}", scope.issue_num),
         ))
         .await;
+    artifact(
+        &params.run_id,
+        &attempt_id,
+        "submit",
+        "github.pr.requested",
+        "started",
+        "Preparing commit, push, and pull request",
+        json!({"repo": scope.repo, "issue_number": scope.issue_num}),
+    );
     let (pr, pr_number) = match publish_pull_request(
         &http,
         &issue,
@@ -1134,8 +1289,28 @@ pub async fn fix_one(job: FixIssueJob) {
     )
     .await
     {
-        Ok(outcome) => outcome,
+        Ok(outcome) => {
+            artifact(
+                &params.run_id,
+                &attempt_id,
+                "submit",
+                "github.pr.opened",
+                "succeeded",
+                "Pull request opened",
+                json!({"pr_number": outcome.1, "url": outcome.0["html_url"]}),
+            );
+            outcome
+        }
         Err(e) => {
+            artifact(
+                &params.run_id,
+                &attempt_id,
+                "submit",
+                "github.pr.failed",
+                "failed",
+                &e.to_string(),
+                json!({"repo": scope.repo}),
+            );
             update_issue_status_comment(
                 &http,
                 &issue,
@@ -1224,7 +1399,7 @@ pub async fn fix_one(job: FixIssueJob) {
                     "draft": !test.passed,
                     "repo": scope.repo,
                     "title": issue["title"],
-                    "fix": result["explanation"],
+                    "fix": result.explanation,
                     "diff": smith_review.final_patch,
                     "confidence": confidence,
                     "team": {

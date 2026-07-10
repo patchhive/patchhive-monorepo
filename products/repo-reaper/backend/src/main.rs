@@ -221,6 +221,7 @@ async fn rotate_service_token(
 
 async fn health(State(state): State<AppState>) -> Json<serde_json::Value> {
     let agents_count = state.agents.read().await.len();
+    let worker_capacity_available = state.process_worker_semaphore.available_permits();
     let errors = STARTUP_CHECKS
         .get()
         .map(|checks| count_errors(checks))
@@ -233,6 +234,11 @@ async fn health(State(state): State<AppState>) -> Json<serde_json::Value> {
         "bot": std::env::var("BOT_GITHUB_USER").unwrap_or_else(|_| "(not set)".into()),
         "agents": agents_count,
         "run_active": state.run_active.load(std::sync::atomic::Ordering::SeqCst),
+        "worker_capacity": {
+            "limit": state.process_worker_limit,
+            "available": worker_capacity_available,
+            "active": state.process_worker_limit.saturating_sub(worker_capacity_available),
+        },
         "watch_mode": state.watch_mode.load(std::sync::atomic::Ordering::SeqCst),
         "lifetime_cost": db::get_lifetime_cost(),
         "auth_enabled": auth_enabled(),

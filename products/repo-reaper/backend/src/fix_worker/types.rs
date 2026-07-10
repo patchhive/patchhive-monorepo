@@ -35,6 +35,7 @@ pub struct FixAgentPools {
 pub struct FixRunContext {
     pub agents: Arc<FixAgentPools>,
     pub sem: Arc<tokio::sync::Semaphore>,
+    pub process_sem: Arc<tokio::sync::Semaphore>,
     pub params: FixParams,
     pub run_cost: Arc<AtomicI64>,
     pub tx: Tx,
