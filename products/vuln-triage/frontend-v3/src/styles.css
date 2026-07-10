@@ -1,0 +1,6 @@
+@import "tailwindcss" source(none);
+@source "./";
+@source "../../../../packages/ui-v3/src";
+@import "@patchhivehq/ui-v3/styles.css";
+
+@custom-variant dark (&:is(.dark, .dark *));

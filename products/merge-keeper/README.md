@@ -1,5 +1,8 @@
 # MergeKeeper by PatchHive
 
+The opt-in Lovable-derived v3 frontend lives in `frontend-v3/` and targets the
+in-process unified-backend route at `/api/products/merge-keeper`.
+
 MergeKeeper turns pull request merge pressure into a clear readiness call.
 
 It reads a pull request the way a strong reviewer or engineering lead would: what is still blocked, what is risky, what is merely waiting, and what is actually ready? Then it returns a simple state such as `ready`, `hold`, or `blocked` with the reasons behind that decision.

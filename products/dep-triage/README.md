@@ -1,5 +1,8 @@
 # DepTriage by PatchHive
 
+The opt-in Lovable-derived v3 frontend lives in `frontend-v3/` and targets the
+in-process unified-backend route at `/api/products/dep-triage`.
+
 DepTriage tells teams which dependency updates matter now and which ones can wait.
 
 It is PatchHive's dependency-noise filter: a product that reads open dependency pull requests, optionally folds in Dependabot alerts, groups that activity by package, and turns the result into a ranked queue such as `update now`, `watch`, or `ignore for now`.

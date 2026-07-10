@@ -1,0 +1,20 @@
+{
+  "name": "@patchhivehq/ui-v3",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Lovable-derived shared UI for PatchHive specialist products.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./src/index.jsx",
+  "exports": {
+    ".": "./src/index.jsx",
+    "./styles.css": "./src/styles.css",
+    "./theme": "./src/theme.jsx"
+  },
+  "dependencies": {
+    "lucide-react": "^0.575.0"
+  },
+  "peerDependencies": {
+    "react": ">=18"
+  }
+}
