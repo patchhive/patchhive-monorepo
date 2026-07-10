@@ -81,7 +81,7 @@ export function ProductHeader({
             {Icon ? <Icon size={18} /> : null}
           </div>
           <div className="leading-tight">
-            <div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>PatchHive · Suite</div>
+            <div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>PatchHive · {productName}</div>
             <div className={`font-display text-[16px] font-semibold tracking-tight ${V3_TEXT.strong}`}>
               {productName} <span className={`${V3_TEXT.dim} font-normal hidden lg:inline`}>— {subtitle}</span>
             </div>
@@ -130,7 +130,7 @@ export function MetricCard({ label, value, footerLeft, footerRight, tone = "from
       <div className="relative">
         <div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>{label}</div>
         <div className={`mt-3 font-display text-[46px] font-semibold tabular-nums ${V3_TEXT.strong} leading-none`}>
-          {String(value ?? 0).padStart(2, "0")}
+          {String(value ?? 0)}
         </div>
         <div className={`mt-4 flex items-center justify-between text-[11px] ${V3_TEXT.mute}`}>
           <span className="flex items-center gap-1">{Icon ? <Icon size={11} /> : null}{footerLeft}</span>

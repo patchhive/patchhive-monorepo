@@ -111,7 +111,7 @@ pub fn history(limit: usize) -> Vec<HistoryItem> {
             watch: row.get::<_, i64>(6)? as u32,
             code_scanning_alerts: metrics.code_scanning_alerts,
             dependency_alerts: metrics.dependency_alerts,
-            runtime_exposed: metrics.runtime_exposed,
+            runtime_scoped: metrics.runtime_scoped,
             owner_scoped: metrics.owner_scoped,
             created_at: row.get(7)?,
         })

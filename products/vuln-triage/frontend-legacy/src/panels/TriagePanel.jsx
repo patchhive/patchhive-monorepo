@@ -115,7 +115,7 @@ function buildScanMarkdown(scan) {
     `- Watch: ${scan.metrics.watch}`,
     `- Code scanning alerts: ${scan.metrics.code_scanning_alerts}`,
     `- Dependency alerts: ${scan.metrics.dependency_alerts}`,
-    `- Runtime exposed: ${scan.metrics.runtime_exposed}`,
+    `- Runtime scoped (heuristic): ${scan.metrics.runtime_scoped ?? scan.metrics.runtime_exposed ?? 0}`,
     `- Owner scoped: ${scan.metrics.owner_scoped}`,
   ];
 
@@ -259,7 +259,7 @@ export default function TriagePanel({
               <Metric label="Tracked findings" value={scan.metrics.tracked_findings} />
               <Metric label="Code scanning" value={scan.metrics.code_scanning_alerts} color="var(--blue)" />
               <Metric label="Dependency alerts" value={scan.metrics.dependency_alerts} color="var(--gold)" />
-              <Metric label="Runtime exposed" value={scan.metrics.runtime_exposed} color="var(--accent)" />
+              <Metric label="Runtime scoped" value={scan.metrics.runtime_scoped ?? scan.metrics.runtime_exposed ?? 0} color="var(--accent)" />
               <Metric label="Owner scoped" value={scan.metrics.owner_scoped} color="var(--green)" />
             </div>
           </div>

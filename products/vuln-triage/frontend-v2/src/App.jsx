@@ -52,6 +52,10 @@ function asCount(value) {
   return Number.isFinite(number) ? number : 0;
 }
 
+function runtimeScoped(metrics = {}) {
+  return asCount(metrics.runtime_scoped ?? metrics.runtime_exposed);
+}
+
 function timeAgo(value) {
   if (!value) return "never";
   const date = new Date(value);
@@ -220,7 +224,7 @@ function buildScanMarkdown(scan) {
     `- Watch: ${asCount(scan.metrics?.watch)}`,
     `- Code scanning alerts: ${asCount(scan.metrics?.code_scanning_alerts)}`,
     `- Dependabot alerts: ${asCount(scan.metrics?.dependency_alerts)}`,
-    `- Runtime exposed: ${asCount(scan.metrics?.runtime_exposed)}`,
+    `- Runtime scoped (heuristic): ${runtimeScoped(scan.metrics)}`,
     `- Owner scoped: ${asCount(scan.metrics?.owner_scoped)}`,
   ];
 
@@ -325,7 +329,7 @@ function historyMetrics(item = {}) {
     fix_now: item.fix_now,
     owner_scoped: item.owner_scoped,
     plan_next: item.plan_next,
-    runtime_exposed: item.runtime_exposed,
+    runtime_scoped: item.runtime_scoped ?? item.runtime_exposed,
     tracked_findings: item.tracked_findings,
     watch: item.watch,
   };
@@ -386,7 +390,7 @@ function buildMetrics(scan, overview, health) {
       { label: "Fix now", value: String(asCount(metrics.fix_now)), tone: metricTone(metrics.fix_now), sub: "highest urgency" },
       { label: "Plan next", value: String(asCount(metrics.plan_next)), tone: metricTone(metrics.plan_next, "warn"), sub: "owner follow-up" },
       { label: "Watch", value: String(asCount(metrics.watch)), tone: "ok", sub: "low exposure" },
-      { label: "Runtime exposed", value: String(asCount(metrics.runtime_exposed)), tone: metricTone(metrics.runtime_exposed, "warn"), sub: "reachability proxy" },
+      { label: "Runtime scoped", value: String(runtimeScoped(metrics)), tone: metricTone(runtimeScoped(metrics), "warn"), sub: "scope heuristic, not exploit proof" },
       { label: "Tracked", value: String(asCount(metrics.tracked_findings)), tone: "sig", sub: `${asCount(metrics.code_scanning_alerts)} code / ${asCount(metrics.dependency_alerts)} deps` },
     ];
   }
@@ -411,7 +415,7 @@ function buildRail(scan, history, overview, health) {
           { label: "Code scanning", active: true, badge: String(asCount(metrics.code_scanning_alerts)), badgeTone: "signal" },
           { label: "Dependabot alerts", badge: String(asCount(metrics.dependency_alerts)), badgeTone: "amber" },
           { label: "Owner scoped", badge: String(asCount(metrics.owner_scoped)), badgeTone: "signal" },
-          { label: "Runtime exposed", badge: String(asCount(metrics.runtime_exposed)), badgeTone: asCount(metrics.runtime_exposed) ? "red" : "green" },
+          { label: "Runtime scoped", badge: String(runtimeScoped(metrics)), badgeTone: runtimeScoped(metrics) ? "red" : "green" },
         ],
       },
       {
@@ -794,7 +798,7 @@ function SidePanels({ scan }) {
             </div>
           )) : (
             <>
-              <div className="rowline"><span className="muted">Runtime exposed</span><span className={`chip ${scan?.metrics?.runtime_exposed ? "red" : "green"}`}>{asCount(scan?.metrics?.runtime_exposed)} findings</span></div>
+              <div className="rowline"><span className="muted">Runtime scoped</span><span className={`chip ${runtimeScoped(scan?.metrics) ? "red" : "green"}`}>{runtimeScoped(scan?.metrics)} findings</span></div>
               <div className="rowline"><span className="muted">Owner scoped</span><span className="chip signal">{asCount(scan?.metrics?.owner_scoped)} routed</span></div>
               <div className="rowline"><span className="muted">Warnings</span><span className="chip green">clear</span></div>
             </>

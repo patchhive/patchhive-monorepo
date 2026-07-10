@@ -43,7 +43,7 @@ VulnTriage is an opinionated, read-only security triage product. It normalises a
 
 - **Ranked vulnerability queue** sorted by recommendation bucket (fix now > plan next > watch), then by descending score, then by severity.
 - **Per-finding metadata**: severity, composite score, owner hint, reachability classification, CVE/CWE identifiers, evidence, and a human-readable next-action string.
-- **Scan summary and metrics**: totals for `fix_now`, `plan_next`, `watch`, runtime-exposed findings, and owner-scoped findings.
+- **Scan summary and metrics**: totals for `fix_now`, `plan_next`, `watch`, runtime-scoped findings, and owner-scoped findings. Runtime scope is a path/dependency heuristic, not proof of exploitability or public exposure.
 - **Persisted scan history** stored in SQLite for retrieval and comparison.
 - **Capabilities advertisement** for HiveCore and other suite consumers.
 
@@ -235,7 +235,7 @@ main.rs (router + startup)
    - **Recommendation**: score ≥ 70 or critical/high → `fix_now`; score ≥ 42 → `plan_next`; else `watch`.
    - **Sort order**: recommendation rank (fix_now=3 > plan_next=2 > watch=1) → descending score → descending severity → ascending title.
 
-4. **Metric Aggregation** — `VulnMetrics` tallies code scanning vs dependency counts, bucket counts, runtime-exposed findings (reachability in `["public surface", "runtime path", "runtime dependency"]`), and owner-scoped findings (owner_hint != "repo maintainers").
+4. **Metric Aggregation** — `VulnMetrics` tallies code scanning vs dependency counts, bucket counts, runtime-scoped findings (classification in `["public surface", "runtime path", "runtime dependency"]`), and owner-scoped findings (owner_hint != "repo maintainers"). The runtime-scoped count is a prioritization heuristic, not a verified exploit-reachability claim.
 
 5. **Persistence** — The full `VulnScanResult` is serialised to JSON and stored in the `vuln_triage_scans` SQLite table, indexed by `created_at DESC` and `(repo, created_at DESC)`.
 
@@ -300,7 +300,7 @@ All authenticated endpoints require either `X-API-Key` (prefix `vuln-triage-`) o
     "fix_now": 3,
     "plan_next": 5,
     "watch": 4,
-    "runtime_exposed": 6,
+    "runtime_scoped": 6,
     "owner_scoped": 10
   },
   "findings": [

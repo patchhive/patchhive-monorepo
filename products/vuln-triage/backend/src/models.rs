@@ -70,8 +70,8 @@ pub struct VulnMetrics {
     pub plan_next: u32,
     #[serde(default)]
     pub watch: u32,
-    #[serde(default)]
-    pub runtime_exposed: u32,
+    #[serde(default, alias = "runtime_exposed")]
+    pub runtime_scoped: u32,
     #[serde(default)]
     pub owner_scoped: u32,
 }
@@ -114,8 +114,8 @@ pub struct HistoryItem {
     pub code_scanning_alerts: u32,
     #[serde(default)]
     pub dependency_alerts: u32,
-    #[serde(default)]
-    pub runtime_exposed: u32,
+    #[serde(default, alias = "runtime_exposed")]
+    pub runtime_scoped: u32,
     #[serde(default)]
     pub owner_scoped: u32,
     #[serde(default)]
@@ -148,4 +148,20 @@ pub struct OverviewPayload {
     pub counts: OverviewCounts,
     #[serde(default)]
     pub recent_scans: Vec<HistoryItem>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::VulnMetrics;
+
+    #[test]
+    fn runtime_scope_reads_legacy_scans_and_uses_the_precise_contract_name() {
+        let metrics: VulnMetrics = serde_json::from_str(r#"{"runtime_exposed":44}"#)
+            .expect("legacy metrics should deserialize");
+        assert_eq!(metrics.runtime_scoped, 44);
+
+        let json = serde_json::to_value(metrics).expect("metrics should serialize");
+        assert_eq!(json["runtime_scoped"], 44);
+        assert!(json.get("runtime_exposed").is_none());
+    }
 }

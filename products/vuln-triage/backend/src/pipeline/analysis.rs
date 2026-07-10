@@ -97,7 +97,7 @@ fn build_metrics(findings: &[VulnerabilityFinding]) -> VulnMetrics {
             finding.reachability.as_str(),
             "public surface" | "runtime path" | "runtime dependency"
         ) {
-            metrics.runtime_exposed += 1;
+            metrics.runtime_scoped += 1;
         }
         if finding.owner_hint != "repo maintainers" {
             metrics.owner_scoped += 1;

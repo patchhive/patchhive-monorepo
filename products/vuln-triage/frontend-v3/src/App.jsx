@@ -35,7 +35,7 @@ const METRIC_TONES = {
   fix_now: "from-orange-700/70 to-red-900/60",
   plan_next: "from-amber-600/70 to-yellow-800/50",
   watch: "from-slate-500/70 to-slate-800/60",
-  runtime_exposed: "from-stone-500/70 to-stone-800/60",
+  runtime_scoped: "from-stone-500/70 to-stone-800/60",
 };
 
 const RECOMMENDATION_CLASSES = {
@@ -93,6 +93,17 @@ function recommendation(value) {
   if (normalized.includes("fix")) return "fix now";
   if (normalized.includes("plan")) return "plan next";
   return "watch";
+}
+
+function triageStatus(metrics) {
+  if ((metrics.fix_now || 0) > 0) return "act now";
+  if ((metrics.plan_next || 0) > 0) return "plan";
+  if ((metrics.watch || 0) > 0) return "watch";
+  return "clear";
+}
+
+function runtimeScoped(metrics) {
+  return metrics.runtime_scoped ?? metrics.runtime_exposed ?? 0;
 }
 
 function LoginScreen({ auth }) {
@@ -419,7 +430,7 @@ function MainProduct({ auth }) {
               <MetricCard icon={Activity} label="Fix now" value={metrics.fix_now || 0} footerLeft="live" footerRight="highest urgency" tone={METRIC_TONES.fix_now} />
               <MetricCard icon={Activity} label="Plan next" value={metrics.plan_next || 0} footerLeft="live" footerRight="owner follow-up" tone={METRIC_TONES.plan_next} />
               <MetricCard icon={Activity} label="Watch" value={metrics.watch || 0} footerLeft="live" footerRight="low pressure" tone={METRIC_TONES.watch} />
-              <MetricCard icon={Activity} label="Runtime" value={metrics.runtime_exposed || 0} footerLeft="exposed" footerRight="review first" tone={METRIC_TONES.runtime_exposed} />
+              <MetricCard icon={Activity} label="Runtime scoped" value={runtimeScoped(metrics)} footerLeft="heuristic" footerRight="not exploit proof" tone={METRIC_TONES.runtime_scoped} />
             </section>
             <section className="mt-8 grid grid-cols-12 gap-6">
               <div className="col-span-12 lg:col-span-8 space-y-6">
@@ -437,11 +448,11 @@ function MainProduct({ auth }) {
               <aside className="col-span-12 lg:col-span-4 space-y-6">
                 <div className="surface p-5 overflow-hidden">
                   <div className="absolute -top-10 -right-10 h-32 w-32 rounded-full opacity-60 blur-2xl" style={{ backgroundImage: "var(--orb-1)" }} />
-                  <div className="relative"><div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>Active repo</div><div className={`mt-2 font-display text-[22px] font-semibold ${V3_TEXT.strong}`}>{activeRepo}</div><div className={`text-[12px] ${V3_TEXT.mute}`}>GitHub security feeds</div><div className="mt-4 grid grid-cols-3 gap-2 text-center">{[["Tracked", metrics.tracked_findings || 0], ["Owners", metrics.owner_scoped || 0], ["Status", health.status || "unknown"]].map(([label, value]) => <div className="surface-inset rounded-xl p-2" key={label}><div className={`text-[10px] uppercase tracking-wider ${V3_TEXT.mute}`}>{label}</div><div className={`font-display text-[18px] font-semibold tabular-nums ${V3_TEXT.strong}`}>{value}</div></div>)}</div></div>
+                  <div className="relative"><div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>Active repo</div><div className={`mt-2 font-display text-[22px] font-semibold ${V3_TEXT.strong}`}>{activeRepo}</div><div className={`text-[12px] ${V3_TEXT.mute}`}>GitHub security feeds</div><div className="mt-4 grid grid-cols-3 gap-2 text-center">{[["Tracked", metrics.tracked_findings || 0], ["Owners", metrics.owner_scoped || 0], ["Triage", triageStatus(metrics)]].map(([label, value]) => <div className="surface-inset rounded-xl p-2" key={label}><div className={`text-[10px] uppercase tracking-wider ${V3_TEXT.mute}`}>{label}</div><div className={`font-display text-[18px] font-semibold tabular-nums ${V3_TEXT.strong}`}>{value}</div></div>)}</div></div>
                 </div>
                 <div className="surface p-5">
                   <div className="flex items-center justify-between mb-3"><div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>Feeds</div><Zap size={13} style={{ color: "var(--accent-2)" }} /></div>
-                  {[["Code scanning", metrics.code_scanning_alerts || 0, "bg-orange-600"], ["Dependabot", metrics.dependency_alerts || 0, "bg-amber-500"], ["Owner scoped", metrics.owner_scoped || 0, "bg-slate-500"], ["Runtime exposed", metrics.runtime_exposed || 0, "bg-red-700"]].map(([label, value, dot], index) => <div key={label} className={`flex items-center justify-between py-2.5 ${index ? "border-t" : ""}`} style={index ? { borderColor: "var(--surface-border-2)" } : undefined}><span className={`flex items-center gap-2 text-[13px] ${V3_TEXT.body}`}><span className={`h-1.5 w-1.5 rounded-full ${dot}`} />{label}</span><span className={`font-display text-[15px] font-semibold tabular-nums ${V3_TEXT.strong}`}>{value}</span></div>)}
+                  {[["Code scanning", metrics.code_scanning_alerts || 0, "bg-orange-600"], ["Dependabot", metrics.dependency_alerts || 0, "bg-amber-500"], ["Owner scoped", metrics.owner_scoped || 0, "bg-slate-500"], ["Runtime scoped", runtimeScoped(metrics), "bg-red-700"]].map(([label, value, dot], index) => <div key={label} className={`flex items-center justify-between py-2.5 ${index ? "border-t" : ""}`} style={index ? { borderColor: "var(--surface-border-2)" } : undefined}><span className={`flex items-center gap-2 text-[13px] ${V3_TEXT.body}`}><span className={`h-1.5 w-1.5 rounded-full ${dot}`} />{label}</span><span className={`font-display text-[15px] font-semibold tabular-nums ${V3_TEXT.strong}`}>{value}</span></div>)}
                 </div>
                 <div className="surface p-5">
                   <div className="flex items-center justify-between mb-3"><div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>Recent scans</div><Cpu size={13} className={V3_TEXT.mute} /></div>
