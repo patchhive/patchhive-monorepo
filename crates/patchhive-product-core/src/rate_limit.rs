@@ -1,5 +1,5 @@
 use axum::{
-    extract::Request,
+    extract::{ConnectInfo, Request},
     http::{
         header::{AUTHORIZATION, RETRY_AFTER},
         HeaderMap, HeaderValue, Method, StatusCode,
@@ -12,6 +12,7 @@ use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::{
     collections::{HashMap, VecDeque},
+    net::{IpAddr, SocketAddr},
     sync::{Mutex, OnceLock},
     time::{Duration, Instant},
 };
@@ -112,7 +113,11 @@ fn limiter() -> &'static RateLimiter {
 
 pub async fn rate_limit_middleware(req: Request, next: Next) -> Response {
     let sensitive = is_sensitive_request(req.method(), req.uri().path());
-    let identity = request_identity(req.headers());
+    let peer_addr = req
+        .extensions()
+        .get::<ConnectInfo<SocketAddr>>()
+        .map(|ConnectInfo(addr)| *addr);
+    let identity = request_identity(req.headers(), peer_addr);
     let bucket = if sensitive { "sensitive" } else { "standard" };
     let key = format!("{identity}:{bucket}");
 
@@ -154,13 +159,11 @@ fn is_sensitive_request(method: &Method, path: &str) -> bool {
         )
 }
 
-fn request_identity(headers: &HeaderMap) -> String {
+fn request_identity(headers: &HeaderMap, peer_addr: Option<SocketAddr>) -> String {
     header_token(headers)
         .map(|token| format!("api:{}", hash_identity(&token)))
         .unwrap_or_else(|| {
-            // W4: use IP-based identity for anonymous requests to avoid shared buckets.
-            // Only trust x-forwarded-for when explicitly behind a trusted proxy.
-            if let Some(ip) = client_ip(headers) {
+            if let Some(ip) = client_ip(headers, peer_addr, trust_proxy_enabled()) {
                 format!("anon:{}", hash_identity(&ip))
             } else {
                 "anonymous".to_string()
@@ -168,17 +171,32 @@ fn request_identity(headers: &HeaderMap) -> String {
         })
 }
 
-/// Extract the client IP, respecting PATCHHIVE_TRUST_PROXY for x-forwarded-for.
-fn client_ip(headers: &HeaderMap) -> Option<String> {
-    if matches!(
+fn trust_proxy_enabled() -> bool {
+    matches!(
         std::env::var("PATCHHIVE_TRUST_PROXY").ok().as_deref(),
         Some("1" | "true" | "TRUE" | "yes" | "on")
-    ) {
+    )
+}
+
+/// Resolve anonymous identity from the real socket peer. Forwarded identity is
+/// considered only when the deployment explicitly opts into proxy trust.
+fn client_ip(
+    headers: &HeaderMap,
+    peer_addr: Option<SocketAddr>,
+    trust_proxy: bool,
+) -> Option<String> {
+    if trust_proxy {
         if let Some(value) = headers.get("x-forwarded-for").and_then(|v| v.to_str().ok()) {
-            return Some(value.split(',').next()?.trim().to_string());
+            if let Some(ip) = value
+                .split(',')
+                .next()
+                .and_then(|value| value.trim().parse::<IpAddr>().ok())
+            {
+                return Some(ip.to_string());
+            }
         }
     }
-    None
+    peer_addr.map(|addr| addr.ip().to_string())
 }
 
 fn header_token(headers: &HeaderMap) -> Option<String> {
@@ -249,9 +267,35 @@ mod tests {
         let mut headers = HeaderMap::new();
         headers.insert("x-api-key", HeaderValue::from_static("secret-key"));
 
-        let identity = request_identity(&headers);
+        let identity = request_identity(&headers, Some("127.0.0.1:9000".parse().unwrap()));
 
         assert!(identity.starts_with("api:"));
         assert!(!identity.contains("secret-key"));
+    }
+
+    #[test]
+    fn anonymous_identity_uses_the_socket_peer() {
+        let headers = HeaderMap::new();
+        let first = request_identity(&headers, Some("192.0.2.10:4000".parse().unwrap()));
+        let second = request_identity(&headers, Some("192.0.2.11:4000".parse().unwrap()));
+
+        assert!(first.starts_with("anon:"));
+        assert_ne!(first, second);
+    }
+
+    #[test]
+    fn forwarded_identity_is_ignored_without_proxy_opt_in() {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-forwarded-for", HeaderValue::from_static("198.51.100.8"));
+        let peer: SocketAddr = "192.0.2.10:4000".parse().unwrap();
+
+        assert_eq!(
+            client_ip(&headers, Some(peer), false).as_deref(),
+            Some("192.0.2.10")
+        );
+        assert_eq!(
+            client_ip(&headers, Some(peer), true).as_deref(),
+            Some("198.51.100.8")
+        );
     }
 }

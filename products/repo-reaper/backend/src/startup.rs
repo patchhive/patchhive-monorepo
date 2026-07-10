@@ -141,10 +141,23 @@ pub async fn validate_config(http: &Client) -> Vec<StartupCheck> {
         ));
     }
 
-    if crate::db::agent_token_protector().configured() {
-        results.push(StartupCheck::ok(
-            "RepoReaper active-team API keys and bot token overrides can be encrypted at rest.",
-        ));
+    let encryption_secret = ["REAPER_ENCRYPTION_KEY", "PATCHHIVE_ENCRYPTION_KEY"]
+        .iter()
+        .find_map(|name| {
+            std::env::var(name)
+                .ok()
+                .map(|value| ((*name).to_string(), value.trim().to_string()))
+                .filter(|(_, value)| !value.is_empty())
+        });
+    if let Some((name, secret)) = encryption_secret {
+        match patchhive_product_core::secrets::validate_encryption_secret(&secret) {
+            Ok(()) => results.push(StartupCheck::ok(format!(
+                "{name} is configured with sufficient key material; active-team secrets can be encrypted at rest."
+            ))),
+            Err(error) => results.push(StartupCheck::error(format!(
+                "{name} is not safe encryption key material: {error}"
+            ))),
+        }
     } else {
         results.push(StartupCheck::warn(
             "REAPER_ENCRYPTION_KEY or PATCHHIVE_ENCRYPTION_KEY is not set. Active agent teams can persist, but per-agent API keys and bot token overrides remain memory-only and will not survive backend restarts.",

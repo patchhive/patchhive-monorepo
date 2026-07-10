@@ -47,6 +47,10 @@ Operational rules:
 - Products should prefer sending no PR over sending a weak PR.
 - Rate limits should be enforced in the backend, not just the UI.
 - Every product backend should layer `patchhive-product-core` API rate limiting so auth, mutating, and run-triggering routes share the same guardrail.
+- Anonymous rate-limit buckets use the direct socket peer address. Set
+  `PATCHHIVE_TRUST_PROXY=true` only when PatchHive is actually behind a trusted
+  reverse proxy and `X-Forwarded-For` is sanitized by that proxy; otherwise
+  forwarded client headers are ignored.
 - HiveCore should inherit and coordinate these caps, not bypass them.
 
 ## 3. Shared API And Lifecycle Contracts
@@ -83,6 +87,24 @@ Any product that runs `git clone`, `git fetch`, `git push`, or similar Git-over-
 RepoReaper is the first write-capable product to enforce this because it opens outbound PRs. RefactorScout applies the same isolation to temporary read-only GitHub clones so local credentials are not accidentally consulted during public repo scans.
 
 ## 5. Implementation Notes
+
+### Encryption key material
+
+Secrets stored with `TokenProtector` use AES-256-GCM with a fresh random
+96-bit nonce for every encrypted value. Configure encryption with at least 32
+characters of machine-random material; human passwords and example placeholders
+are rejected by startup checks.
+
+Generate a 256-bit key and keep the exact value stable across restarts:
+
+```bash
+openssl rand -hex 32
+```
+
+Use `PATCHHIVE_ENCRYPTION_KEY` as a suite fallback or a product-specific key such
+as `REAPER_ENCRYPTION_KEY` or `HIVECORE_ENCRYPTION_KEY`. Losing or rotating a key
+without first decrypting/re-encrypting stored values makes existing ciphertext
+unreadable. Never commit these values to the repository.
 
 Current status:
 

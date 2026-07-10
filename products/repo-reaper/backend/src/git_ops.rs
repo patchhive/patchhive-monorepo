@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Result};
 use patchhive_github_pr::github_token_from_env;
+use patchhive_product_core::validation::TestExecutionStatus;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -474,9 +475,19 @@ pub async fn apply_patch(repo_dir: &Path, patch: &str) -> (bool, String) {
 // ── Test runner ────────────────────────────────────────────────────────────────
 
 pub struct TestResult {
-    pub passed: bool,
+    pub status: TestExecutionStatus,
     pub output: String,
     pub runner: String,
+}
+
+impl TestResult {
+    pub fn passed(&self) -> bool {
+        self.status.passed()
+    }
+
+    pub fn requires_draft(&self) -> bool {
+        self.status.requires_draft()
+    }
 }
 
 struct RepoTestRunner {
@@ -548,7 +559,7 @@ async fn run_docker_test(repo_dir: &Path, runner: &RepoTestRunner) -> Result<Tes
         Ok(result) => result?,
         Err(_) => {
             return Ok(TestResult {
-                passed: false,
+                status: TestExecutionStatus::Failed,
                 output: format!("Sandboxed test run timed out after {timeout_seconds} seconds."),
                 runner: format!("docker:{}", runner.runner),
             });
@@ -556,7 +567,11 @@ async fn run_docker_test(repo_dir: &Path, runner: &RepoTestRunner) -> Result<Tes
     };
 
     Ok(TestResult {
-        passed: output.status.success(),
+        status: if output.status.success() {
+            TestExecutionStatus::Passed
+        } else {
+            TestExecutionStatus::Failed
+        },
         output: trimmed_test_output(&output.stdout, &output.stderr),
         runner: format!("docker:{}", runner.runner),
     })
@@ -575,14 +590,18 @@ async fn run_host_test(repo_dir: &Path, runner: &RepoTestRunner) -> Result<TestR
         Ok(result) => result?,
         Err(_) => {
             return Ok(TestResult {
-                passed: false,
+                status: TestExecutionStatus::Failed,
                 output: format!("Host test run timed out after {timeout_seconds} seconds."),
                 runner: format!("host:{}", runner.runner),
             });
         }
     };
     Ok(TestResult {
-        passed: output.status.success(),
+        status: if output.status.success() {
+            TestExecutionStatus::Passed
+        } else {
+            TestExecutionStatus::Failed
+        },
         output: trimmed_test_output(&output.stdout, &output.stderr),
         runner: format!("host:{}", runner.runner),
     })
@@ -591,7 +610,7 @@ async fn run_host_test(repo_dir: &Path, runner: &RepoTestRunner) -> Result<TestR
 pub async fn run_tests(repo_dir: &Path) -> TestResult {
     if !env_truthy("REAPER_ENABLE_UNTRUSTED_TESTS") {
         return TestResult {
-            passed: false,
+            status: TestExecutionStatus::Disabled,
             output: "Unsafe test execution is disabled for untrusted repositories. Set REAPER_ENABLE_UNTRUSTED_TESTS=true to opt in.".into(),
             runner: "disabled".into(),
         };
@@ -602,7 +621,7 @@ pub async fn run_tests(repo_dir: &Path) -> TestResult {
         "host" => "host",
         other => {
             return TestResult {
-                passed: false,
+                status: TestExecutionStatus::Skipped,
                 output: format!(
                     "Unknown REAPER_TEST_SANDBOX value `{other}`. Use `docker` or `host`."
                 ),
@@ -613,7 +632,7 @@ pub async fn run_tests(repo_dir: &Path) -> TestResult {
 
     if sandbox == "host" && !env_truthy("REAPER_ALLOW_HOST_TESTS") {
         return TestResult {
-            passed: false,
+            status: TestExecutionStatus::Disabled,
             output: "Host test execution is disabled. Use the Docker sandbox, or set REAPER_ALLOW_HOST_TESTS=true in addition to REAPER_ENABLE_UNTRUSTED_TESTS=true to explicitly accept host execution risk.".into(),
             runner: "host-disabled".into(),
         };
@@ -682,7 +701,7 @@ pub async fn run_tests(repo_dir: &Path) -> TestResult {
 
     if let Some(runner) = attempted_runner {
         return TestResult {
-            passed: false,
+            status: TestExecutionStatus::Skipped,
             output: last_error.unwrap_or_else(|| {
                 format!("Found `{runner}` test runner, but could not execute it.")
             }),
@@ -696,7 +715,7 @@ pub async fn run_tests(repo_dir: &Path) -> TestResult {
         "No supported test runner was found — skipped"
     };
     TestResult {
-        passed: true,
+        status: TestExecutionStatus::Skipped,
         output: output.into(),
         runner: "none".into(),
     }
@@ -705,6 +724,7 @@ pub async fn run_tests(repo_dir: &Path) -> TestResult {
 #[cfg(test)]
 mod tests {
     use super::{apply_patch, collect_files_selective_sync, run_tests};
+    use patchhive_product_core::validation::TestExecutionStatus;
     use std::{env, fs, process::Command, sync::Mutex};
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());
@@ -853,9 +873,16 @@ mod tests {
 
         let result = run_tests(&root).await;
 
-        assert!(!result.passed);
+        assert!(!result.passed());
+        assert_eq!(result.status, TestExecutionStatus::Disabled);
         assert_eq!(result.runner, "host-disabled");
         assert!(result.output.contains("REAPER_ALLOW_HOST_TESTS=true"));
+
+        env::set_var("REAPER_ALLOW_HOST_TESTS", "true");
+        let no_runner = run_tests(&root).await;
+        assert_eq!(no_runner.status, TestExecutionStatus::Skipped);
+        assert!(no_runner.requires_draft());
+        assert_eq!(no_runner.runner, "none");
 
         let _ = fs::remove_dir_all(&root);
         restore_env_var("REAPER_ENABLE_UNTRUSTED_TESTS", previous_enabled);

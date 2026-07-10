@@ -1,10 +1,9 @@
 use aes_gcm::{
-    aead::{Aead, KeyInit},
+    aead::{Aead, AeadCore, KeyInit, OsRng},
     Aes256Gcm, Nonce,
 };
 use anyhow::{anyhow, Context, Result};
 use sha2::{Digest, Sha256};
-use uuid::Uuid;
 
 const ENCRYPTED_SECRET_PREFIX: &str = "enc:v1:";
 
@@ -52,15 +51,14 @@ impl TokenProtector {
 
         let cipher =
             Aes256Gcm::new_from_slice(&key).context("failed to build PatchHive secret cipher")?;
-        let nonce_bytes = Uuid::new_v4().into_bytes();
-        let nonce = Nonce::from_slice(&nonce_bytes[..12]);
+        let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
         let ciphertext = cipher
-            .encrypt(nonce, plaintext.as_bytes())
+            .encrypt(&nonce, plaintext.as_bytes())
             .map_err(|_| anyhow!("failed to encrypt PatchHive secret"))?;
 
         Ok(format!(
             "{ENCRYPTED_SECRET_PREFIX}{}:{}",
-            hex::encode(&nonce_bytes[..12]),
+            hex::encode(nonce),
             hex::encode(ciphertext)
         ))
     }
@@ -110,6 +108,33 @@ impl TokenProtector {
     }
 }
 
+pub fn validate_encryption_secret(secret: &str) -> Result<()> {
+    let secret = secret.trim();
+    if secret.len() < 32 {
+        return Err(anyhow!(
+            "encryption keys must contain at least 32 characters of machine-random material"
+        ));
+    }
+
+    let normalized = secret.to_ascii_lowercase();
+    if [
+        "replace-with",
+        "change-me",
+        "changeme",
+        "password",
+        "example",
+    ]
+    .iter()
+    .any(|marker| normalized.contains(marker))
+    {
+        return Err(anyhow!(
+            "encryption key looks like a placeholder or human password; generate one with `openssl rand -hex 32`"
+        ));
+    }
+
+    Ok(())
+}
+
 fn derive_key(secret: &str) -> [u8; 32] {
     let mut hasher = Sha256::new();
     hasher.update(secret.as_bytes());
@@ -118,7 +143,7 @@ fn derive_key(secret: &str) -> [u8; 32] {
 
 #[cfg(test)]
 mod tests {
-    use super::TokenProtector;
+    use super::{validate_encryption_secret, TokenProtector};
 
     #[test]
     fn token_protector_round_trips_encrypted_values() {
@@ -133,6 +158,33 @@ mod tests {
                 .expect("token should decrypt"),
             "svc_signal"
         );
+    }
+
+    #[test]
+    fn token_protector_uses_a_fresh_random_nonce() {
+        let protector = TokenProtector::from_secret(Some("test-secret"));
+        let first = protector
+            .protect_for_storage("svc_signal")
+            .expect("first encryption");
+        let second = protector
+            .protect_for_storage("svc_signal")
+            .expect("second encryption");
+
+        assert_ne!(first, second);
+        assert_eq!(
+            protector.reveal_from_storage(&first).unwrap(),
+            protector.reveal_from_storage(&second).unwrap()
+        );
+    }
+
+    #[test]
+    fn encryption_secret_validation_rejects_short_and_placeholder_values() {
+        assert!(validate_encryption_secret("short password").is_err());
+        assert!(validate_encryption_secret("replace-with-a-long-random-secret-value").is_err());
+        assert!(validate_encryption_secret(
+            "24df1138bde289be6554bb1bd3ae475a789d59523d8039fd1110b25f25d1f153"
+        )
+        .is_ok());
     }
 
     #[test]

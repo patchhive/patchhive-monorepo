@@ -368,6 +368,7 @@ PATCHHIVE_REPO_MEMORY_API_KEY=...
 | `COST_BUDGET_USD` | ❌ | `0` (uncapped) | Per-run AI cost cap |
 | `MIN_REVIEW_CONFIDENCE` | ❌ | `40` | Min Smith confidence to proceed |
 | `RETRY_COUNT` | ❌ | `2` | Patch/test retries per issue |
+| `REAPER_MAX_ACTIVE_WORKERS` | ❌ | `3` | Process-wide cap shared by manual, scheduled, webhook, patch, and test workers |
 | `WEBHOOK_SECRET` | ❌ | — | GitHub webhook secret |
 | `REAPER_API_KEY_HASH` | ❌ | — | Pre-seeded auth hash (else UI generates) |
 | `REAPER_SERVICE_TOKEN_HASH` | ❌ | — | Service-token hash for HiveCore |
@@ -382,6 +383,11 @@ PATCHHIVE_REPO_MEMORY_API_KEY=...
 | `REAPER_TEST_TIMEOUT_SECONDS` | ❌ | `600` | Test timeout |
 | `PATCHHIVE_REPO_MEMORY_URL` | ❌ | — | RepoMemory API endpoint |
 | `PATCHHIVE_REPO_MEMORY_API_KEY` | ❌ | — | RepoMemory API key |
+
+Generate `REAPER_ENCRYPTION_KEY` or `PATCHHIVE_ENCRYPTION_KEY` with
+`openssl rand -hex 32`. Startup checks reject short values and obvious
+placeholders; retain the same key across restarts so persisted agent credentials
+remain readable.
 
 ---
 

@@ -12,16 +12,17 @@ use super::sse::alog;
 use super::types::{FixAgents, IssueScope, Tx};
 
 fn pr_test_status(test: &crate::git_ops::TestResult) -> &'static str {
-    if test.passed {
-        return "✅ Passed";
-    }
-
-    match test.runner.as_str() {
-        "disabled" => "⚠️ Not run — untrusted test execution is disabled; review required",
-        "host-disabled" => "⚠️ Not run — host test execution is disabled; review required",
-        "invalid" => "⚠️ Not run — test runner configuration is invalid; review required",
-        "none" => "⚠️ Not run — no supported test runner was found; review required",
-        _ => "⚠️ Failed; review required",
+    match test.status {
+        patchhive_product_core::validation::TestExecutionStatus::Passed => "✅ Passed",
+        patchhive_product_core::validation::TestExecutionStatus::Failed => {
+            "⚠️ Failed; review required"
+        }
+        patchhive_product_core::validation::TestExecutionStatus::Disabled => {
+            "⚠️ Not verified — test execution is disabled; review required"
+        }
+        patchhive_product_core::validation::TestExecutionStatus::Skipped => {
+            "⚠️ Not verified — tests were skipped or unavailable; review required"
+        }
     }
 }
 
@@ -188,7 +189,7 @@ pub async fn publish_pull_request(
             "body": pr_body,
             "head": format!("{bot_user}:{}", scope.branch),
             "base": base_branch,
-            "draft": !test.passed,
+            "draft": test.requires_draft(),
         }),
         Some(bot_token),
     )

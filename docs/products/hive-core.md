@@ -215,6 +215,10 @@ All errors are wrapped in the `ApiEnvelope` format:
 | `BOT_GITHUB_TOKEN` | — | Optional GitHub fine-grained PAT for future control-plane GitHub reads. Metadata (read) scope is sufficient |
 | `RUST_LOG` | `info` | Logging level |
 
+Generate `HIVECORE_ENCRYPTION_KEY` with `openssl rand -hex 32`. Startup checks
+reject short values and obvious placeholders; retain the same key across
+restarts so existing encrypted service tokens remain readable.
+
 To reuse the same password across SignalHive, TrustGate, RepoReaper, and HiveCore, run `./scripts/set-suite-api-key.sh --stack first` from the monorepo root before starting the stack. For every PatchHive product, run `./scripts/set-suite-api-key.sh`.
 
 ---

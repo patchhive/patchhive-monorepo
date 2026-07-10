@@ -247,7 +247,7 @@ impl ProductAction {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum RunLifecycleStatus {
     Standby,
@@ -258,24 +258,20 @@ pub enum RunLifecycleStatus {
     Cancelled,
     Held,
     Skipped,
+    #[default]
     Unknown,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum RunEventLevel {
     Trace,
     Debug,
+    #[default]
     Info,
     Warn,
     Error,
     Success,
-}
-
-impl Default for RunEventLevel {
-    fn default() -> Self {
-        Self::Info
-    }
 }
 
 impl RunEventLevel {
@@ -288,12 +284,6 @@ impl RunEventLevel {
             Self::Error => "error",
             Self::Success => "success",
         }
-    }
-}
-
-impl Default for RunLifecycleStatus {
-    fn default() -> Self {
-        Self::Unknown
     }
 }
 

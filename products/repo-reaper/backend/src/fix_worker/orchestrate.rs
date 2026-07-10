@@ -51,7 +51,7 @@ fn artifact(
 }
 
 fn compact_no_change_detail(test: &crate::git_ops::TestResult) -> String {
-    if test.passed {
+    if test.passed() {
         return "No commit-ready diff remained after patch review and validation.".to_string();
     }
 
@@ -76,23 +76,15 @@ fn compact_no_change_detail(test: &crate::git_ops::TestResult) -> String {
 }
 
 fn should_retry_test_failure(test: &crate::git_ops::TestResult) -> bool {
-    if test.passed {
-        return false;
-    }
-
-    !matches!(
-        test.runner.as_str(),
-        "disabled" | "host-disabled" | "invalid" | "none"
-    )
+    test.status.should_retry()
 }
 
 fn test_log_label(test: &crate::git_ops::TestResult) -> &'static str {
-    if test.passed {
-        "passed"
-    } else if should_retry_test_failure(test) {
-        "failed"
-    } else {
-        "not run"
+    match test.status {
+        patchhive_product_core::validation::TestExecutionStatus::Passed => "passed",
+        patchhive_product_core::validation::TestExecutionStatus::Failed => "failed",
+        patchhive_product_core::validation::TestExecutionStatus::Disabled => "disabled",
+        patchhive_product_core::validation::TestExecutionStatus::Skipped => "skipped",
     }
 }
 
@@ -193,7 +185,7 @@ fn issue_comment_fixed(
     pr_url: &str,
     test: &crate::git_ops::TestResult,
 ) -> String {
-    let test_line = if test.passed {
+    let test_line = if test.passed() {
         "Validation tests passed."
     } else {
         "Validation tests were not proven safe/passing here, so the pull request requires review."
@@ -1056,21 +1048,15 @@ pub async fn fix_one(job: FixIssueJob) {
         &attempt_id,
         "validate",
         "test.initial",
-        if test.passed {
-            "passed"
-        } else if should_retry_test_failure(&test) {
-            "failed"
-        } else {
-            "not-verified"
-        },
+        test.status.as_str(),
         &test.output,
-        json!({"runner": test.runner, "passed": test.passed}),
+        json!({"runner": test.runner, "status": test.status.as_str()}),
     );
     let _ = tx
         .send(alog(
             &agents.gatekeeper,
             &format!("Tests via {} {}", test.runner, test_log_label(&test)),
-            if test.passed {
+            if test.passed() {
                 "success"
             } else if should_retry_test_failure(&test) {
                 "warn"
@@ -1082,7 +1068,7 @@ pub async fn fix_one(job: FixIssueJob) {
 
     for retry in 0..params.retry_count {
         if !should_retry_test_failure(&test) {
-            if !test.passed && retry == 0 {
+            if !test.passed() && retry == 0 {
                 let _ = tx
                     .send(alog(
                         &agents.gatekeeper,
@@ -1137,16 +1123,8 @@ pub async fn fix_one(job: FixIssueJob) {
                         let _ = tx
                             .send(alog(
                                 &agents.reaper,
-                                &format!(
-                                    "Retry {}: {}",
-                                    retry + 1,
-                                    if test.passed {
-                                        "passed ✓"
-                                    } else {
-                                        "still failing"
-                                    }
-                                ),
-                                if test.passed { "success" } else { "warn" },
+                                &format!("Retry {}: {}", retry + 1, test_log_label(&test)),
+                                if test.passed() { "success" } else { "warn" },
                             ))
                             .await;
                     }
@@ -1166,15 +1144,9 @@ pub async fn fix_one(job: FixIssueJob) {
         &attempt_id,
         "validate",
         "test.completed",
-        if test.passed {
-            "passed"
-        } else if should_retry_test_failure(&test) {
-            "failed"
-        } else {
-            "not-verified"
-        },
+        test.status.as_str(),
         &test.output,
-        json!({"runner": test.runner, "passed": test.passed}),
+        json!({"runner": test.runner, "status": test.status.as_str()}),
     );
 
     if cancelled(&params) {
@@ -1396,7 +1368,7 @@ pub async fn fix_one(job: FixIssueJob) {
                 "pr": {
                     "number": pr_number,
                     "url": pr["html_url"],
-                    "draft": !test.passed,
+                    "draft": test.requires_draft(),
                     "repo": scope.repo,
                     "title": issue["title"],
                     "fix": result.explanation,

@@ -7,3 +7,4 @@ pub mod scope_policy;
 pub mod secrets;
 pub mod sqlite;
 pub mod startup;
+pub mod validation;

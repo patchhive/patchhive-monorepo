@@ -78,6 +78,11 @@ cd ../frontend && npm install && npm run dev
 | `PATCHHIVE_ALLOW_REMOTE_BOOTSTRAP` | Allows first-time key bootstrap from non-localhost clients. Keep unset for local use. |
 | `RUST_LOG` | Rust logging level. |
 
+Generate `HIVECORE_ENCRYPTION_KEY` with `openssl rand -hex 32` and keep it
+stable across restarts. Startup checks reject short values and obvious
+placeholders; changing or losing the key makes existing encrypted service tokens
+unreadable.
+
 To reuse the same password across SignalHive, TrustGate, RepoReaper, and HiveCore, run `./scripts/set-suite-api-key.sh --stack first` from the monorepo root before starting the stack. For every PatchHive product, run `./scripts/set-suite-api-key.sh`. Once the hash is pre-seeded, HiveCore can be used through a subdomain without remote bootstrap.
 
 HiveCore Settings can now provision or rotate a dedicated service token for each product by using a one-time operator API key against that product's `POST /auth/generate-service-token` or `POST /auth/rotate-service-token` route. When `PATCHHIVE_SUITE_BOOTSTRAP_SECRET` is configured across the suite, HiveCore can also do that automatically from the Setup tab without asking for operator credentials again. HiveCore stores only the returned service token, and encrypts it at rest when `HIVECORE_ENCRYPTION_KEY` is configured. Operator login credentials are not persisted. Legacy product API keys still work as an explicit fallback during the transition, but legacy service-token hashes are now limited to `runs:read` until they are rotated into scoped records.

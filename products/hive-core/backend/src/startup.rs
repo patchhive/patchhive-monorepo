@@ -1,5 +1,5 @@
 use once_cell::sync::OnceCell;
-use patchhive_product_core::secrets::TokenProtector;
+use patchhive_product_core::secrets::{validate_encryption_secret, TokenProtector};
 use patchhive_product_core::sqlite::db_path_message;
 use patchhive_product_core::startup::{StartupCheck, StartupCheckLevel};
 
@@ -48,6 +48,19 @@ pub async fn validate_config() -> Vec<StartupCheck> {
 
     let token_stats = crate::db::service_token_storage_stats();
     let protector = TokenProtector::from_env("HIVECORE_ENCRYPTION_KEY");
+    if let Ok(secret) = std::env::var("HIVECORE_ENCRYPTION_KEY") {
+        let secret = secret.trim();
+        if !secret.is_empty() {
+            match validate_encryption_secret(secret) {
+                Ok(()) => checks.push(StartupCheck::ok(
+                    "HIVECORE_ENCRYPTION_KEY is configured with sufficient machine-random key material.",
+                )),
+                Err(error) => checks.push(StartupCheck::error(format!(
+                    "HIVECORE_ENCRYPTION_KEY is not safe encryption key material: {error}"
+                ))),
+            }
+        }
+    }
     if token_stats.total == 0 {
         checks.push(StartupCheck::info(
             "HiveCore has no saved downstream product service tokens yet.",

@@ -101,6 +101,7 @@ Backend:
 - `axum`, `rusqlite`, `reqwest`, `tokio`, `serde`, `serde_json`, `chrono`, `uuid`, `anyhow`, `tracing`
 - Shared API rate limiting defaults to 300 standard requests/minute and 30 auth or mutating requests/minute; tune with `PATCHHIVE_RATE_LIMIT_MAX`, `PATCHHIVE_RATE_LIMIT_SENSITIVE_MAX`, and `PATCHHIVE_RATE_LIMIT_WINDOW_SECS`.
 - Shared SQLite pools default to 4 connections; tune with `PATCHHIVE_DB_POOL_SIZE` or a product-specific `<PRODUCT>_DB_POOL_SIZE`.
+- Write-capable validation uses `patchhive_product_core::validation::TestExecutionStatus`; only `passed` permits a non-draft autonomous PR.
 
 Frontend:
 - React + Vite
@@ -219,6 +220,7 @@ Rules:
 - Product backends should use `SqlitePool` from `patchhive-product-core` instead of a single global `Mutex<Connection>` or ad hoc connection opens. Tune globally with `PATCHHIVE_DB_POOL_SIZE` or with a product-specific `<PRODUCT>_DB_POOL_SIZE`.
 - Product backends should define their `crate::auth` module with `define_api_key_auth_module!` in `main.rs` instead of carrying one-file delegation wrappers.
 - Good candidates: auth middleware, SQLite pooling, startup/health helpers, generic ID or envelope helpers, generic named preset storage interfaces.
+- Shared `TokenProtector` encryption keys must contain at least 32 characters of machine-random material; generate them with `openssl rand -hex 32` and keep them stable across restarts.
 - Future Squad candidates: shared AI agent config types, encrypted active-squad and preset storage, redacted browser views, provider/model readiness checks, and HiveCore-facing Squad capability metadata once at least two products need AI roles.
 - Bad candidates until proven generic: GitHub search logic, scoring heuristics, pipelines, route behavior, and product-specific SQLite schemas.
 
@@ -402,6 +404,7 @@ Important env vars:
 - `COST_BUDGET_USD`
 - `MIN_REVIEW_CONFIDENCE`
 - `RETRY_COUNT`
+- `REAPER_MAX_ACTIVE_WORKERS`
 - `REAPER_ENABLE_UNTRUSTED_TESTS`
 - `REAPER_TEST_SANDBOX`
 - `REAPER_ALLOW_HOST_TESTS`

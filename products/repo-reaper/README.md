@@ -77,6 +77,11 @@ cd ../frontend-v2 && npm install && npm run dev
 | `REAPER_WORK_DIR` | Local workspace used for cloned repositories and patch attempts. |
 | `REAPER_PORT` | Backend port for split local runs. |
 
+Generate `REAPER_ENCRYPTION_KEY` or the suite-wide
+`PATCHHIVE_ENCRYPTION_KEY` with `openssl rand -hex 32`. Startup checks reject
+short values and obvious placeholders; keep the chosen value stable because
+existing encrypted agent credentials cannot be recovered without it.
+
 To reuse the same password across SignalHive, TrustGate, RepoReaper, and HiveCore, run `./scripts/set-suite-api-key.sh --stack first` from the monorepo root before starting the stack. For every PatchHive product, run `./scripts/set-suite-api-key.sh`. Once the hash is pre-seeded, RepoReaper can be used through a subdomain without remote bootstrap.
 
 To give HiveCore a dedicated machine credential instead of reusing the operator login secret, generate a service token from `POST /auth/generate-service-token` and save that token in HiveCore Settings.
@@ -103,6 +108,8 @@ Optional integrations:
 - if tests are enabled, Docker sandboxing is the default
 - host test execution requires both `REAPER_ENABLE_UNTRUSTED_TESTS=true` and `REAPER_ALLOW_HOST_TESTS=true`
 - validation commands time out after `REAPER_TEST_TIMEOUT_SECONDS` seconds, defaulting to `600`
+- validation uses the shared `disabled` / `skipped` / `failed` / `passed`
+  vocabulary; only `passed` allows RepoReaper to open a non-draft pull request
 - patch and test work shares the `REAPER_MAX_ACTIVE_WORKERS` process-wide capacity gate, including webhook follow-ups
 - failed normal patch application tries `git apply --3way` before provider-backed self-healing
 - validation and pull request publication are treated as explicit gates, not incidental side effects

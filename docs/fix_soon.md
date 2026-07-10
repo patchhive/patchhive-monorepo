@@ -62,23 +62,22 @@ Expected result:
 - Missing required fields become explicit errors.
 - No-patch explanations and patch errors remain persisted in attempt history.
 
-### Anonymous rate limiting by real client address
+### Anonymous rate limiting by real client address — completed 2026-07-10
 
-Shared rate limiting currently has better API-key buckets than anonymous
-identity. Extend the middleware to use the actual socket peer address when no
-token is present, while keeping `X-Forwarded-For` trusted only behind explicit
-trusted-proxy configuration.
+Shared rate limiting now uses the actual socket peer address when no token is
+present. `X-Forwarded-For` remains ignored unless the deployment explicitly
+sets `PATCHHIVE_TRUST_PROXY=true`.
 
 Expected result:
 - Anonymous bootstrap and public endpoints do not share one global bucket.
 - Spoofed forwarding headers are ignored unless the deployment opted into a
   trusted proxy.
 
-### Secret encryption nonce and key guidance
+### Secret encryption nonce and key guidance — completed 2026-07-10
 
-`TokenProtector` should use a direct random 12-byte AES-GCM nonce rather than
-truncating UUID bytes. Encryption keys should be documented and validated as
-machine-random secrets, not human passwords.
+`TokenProtector` now uses a direct random 12-byte AES-GCM nonce. RepoReaper and
+HiveCore startup checks validate encryption-key length and reject obvious human
+passwords or placeholders; operator docs use `openssl rand -hex 32`.
 
 Target:
 - `crates/patchhive-product-core/src/secrets.rs`
@@ -90,11 +89,11 @@ Expected result:
 
 ## Suite Follow-Up
 
-### Suite-wide test execution policy
+### Suite-wide test execution policy — completed 2026-07-10
 
-Products that can write or fix code need a shared test policy. "Tests disabled"
-must mean "not verified" rather than "failed," and draft PR behavior should be
-consistent across products.
+Write-capable products now share `TestExecutionStatus` values for `disabled`,
+`skipped`, `failed`, and `passed`. RepoReaper opens a non-draft PR only for
+`passed`; missing runners and disabled execution are never reported as success.
 
 Expected result:
 - Shared status vocabulary for disabled, skipped, failed, and passed tests.

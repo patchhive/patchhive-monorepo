@@ -874,9 +874,7 @@ fn required_service_scope(
         return None;
     }
 
-    let Some(service) = config.service.as_ref() else {
-        return None;
-    };
+    let service = config.service.as_ref()?;
 
     if service
         .dispatch_paths
@@ -936,7 +934,7 @@ pub async fn auth_middleware(
     let path = request.uri().path().to_string();
     let method = request.method().clone();
 
-    if config.public_paths.iter().any(|public| path == *public) {
+    if config.public_paths.contains(&path) {
         return next.run(request).await;
     }
 

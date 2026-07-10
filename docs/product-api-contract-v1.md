@@ -176,6 +176,22 @@ Rules:
   attempt lifecycle, agent selection, patch generation/application, Smith review,
   validation, and GitHub publication outcomes without depending on SSE or stdout.
 
+## Test Execution Status
+
+Write-capable products use
+`patchhive_product_core::validation::TestExecutionStatus` with exactly four
+states:
+
+- `disabled`: the operator did not authorize test execution;
+- `skipped`: no supported runner was found, configuration was invalid, or the
+  runner could not be started;
+- `failed`: a test command executed and returned failure or timed out;
+- `passed`: a test command executed successfully.
+
+Only `passed` permits a non-draft autonomous pull request. `disabled`, `skipped`,
+and `failed` all mean the change still requires review; only `failed` is eligible
+for patch-and-retest automation.
+
 ## Webhook / Async Callback Rules
 
 - Webhooks and scheduled jobs should create the same `run_id` style as manual runs.
