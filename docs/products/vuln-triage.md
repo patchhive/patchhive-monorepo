@@ -82,8 +82,8 @@ docker compose up --build
 ```
 
 Defaults:
-- **Frontend** (active v2): `http://localhost:5181`
-- **Frontend v2 dev server**: `http://localhost:5200`
+- **Frontend** (canonical UI v3): `http://localhost:5181`
+- **Frontend Vite dev server**: `http://localhost:5300`
 - **Backend**: `http://localhost:8110`
 - **Suite backend route**: `http://localhost:8100/api/products/vuln-triage`
 
@@ -97,21 +97,13 @@ cd products/vuln-triage
 cp .env.example .env
 
 cd backend && cargo run
-cd ../frontend-v2 && npm install && npm run dev
-```
-
-The old v1 frontend is preserved for reference in `frontend-legacy/` after the
-v2 parity audit. Use it only when comparing behavior before deleting legacy UI
-code:
-
-```bash
-cd frontend-legacy && npm install && npm run dev
+cd ../frontend && npm install && VITE_API_URL=/api npm run dev
 ```
 
 ### Unified Backend Mode
 
 VulnTriage is mounted in-process inside `services/patchhive-backend`. In suite
-mode, the v2 frontend should talk to the unified backend route instead of a
+mode, the frontend talks to the unified backend route instead of a
 separate VulnTriage backend service:
 
 ```bash
@@ -119,10 +111,10 @@ PATCHHIVE_PRODUCTS=vuln-triage \
 PATCHHIVE_BIND_ADDR=127.0.0.1:8100 \
 cargo run --manifest-path services/patchhive-backend/Cargo.toml
 
-npm --prefix products/vuln-triage/frontend-v2 run dev
+npm --prefix products/vuln-triage/frontend run dev
 ```
 
-The v2 default API base is:
+The frontend default API base is:
 
 ```text
 http://127.0.0.1:8100/api/products/vuln-triage
@@ -134,43 +126,32 @@ tested. Once product-mode packaging runs the shared backend image with only
 VulnTriage enabled, the old separate backend service can be moved to legacy or
 removed.
 
-### UI v1 to v2 Parity Audit
+### Final UI parity and retirement audit
 
-Audited on 2026-07-07:
+Completed on 2026-07-10 before removing `frontend-legacy/` and `frontend-v2/`.
+The canonical `frontend/` preserves the important workflows from both retired
+implementations:
 
-- `products/vuln-triage/frontend-legacy/src/App.jsx`
-- `products/vuln-triage/frontend-legacy/src/panels/TriagePanel.jsx`
-- `products/vuln-triage/frontend-legacy/src/panels/HistoryPanel.jsx`
-- `products/vuln-triage/frontend-legacy/src/panels/ChecksPanel.jsx`
-- `products/vuln-triage/frontend-v2/src/App.jsx`
+- API-key bootstrap/login, theme persistence, backend health, database status,
+  startup checks, and GitHub-readiness guidance
+- directed repository scans with independent code-scanning and Dependabot
+  toggles
+- scan warnings with actionable security-permission guidance
+- fix-now, plan-next, watch, runtime-scope, owner, severity, and status evidence
+- package/manifest-level dependency remediation groups with individual alert
+  drill-down
+- saved scan history, history load, finding detail, identifiers, evidence, and
+  external GitHub/advisory references
+- copyable Markdown scan summaries
+- progressive six-item queue display, dashboard filtering/sorting, locally
+  saved views, and filterable activity timelines
 
-V2 covers the old directed repository scan loop, code scanning toggle,
-Dependabot alert toggle, GitHub-readiness messaging, scan warnings, fix-now /
-plan-next / watch buckets, runtime and owner-scope evidence, saved scan history,
-history load, backend health, database status, startup checks, and auth
-bootstrap. It also preserves the old operator conveniences that matter during
-live triage: copyable Markdown summary, alert/reference links, identifiers,
-evidence snippets, GitHub permission guidance, and selected-scan history detail.
+The old radar decoration and dedicated Setup wizard were intentionally not
+retained. Setup is covered by shared authentication/readiness surfaces, and the
+new queue provides denser actionable evidence than the decorative radar.
 
-Intentional v2 changes:
-
-- The old Setup wizard is replaced by the shared v2 login/readiness/checks
-  surface. VulnTriage does not need a separate setup workflow beyond GitHub
-  security-read readiness and first scan guidance.
-- Dependency alerts are grouped into package-level remediation decisions so raw
-  Dependabot noise collapses into practical upgrade work.
-- The main radar shows saved scans when no scan is loaded, then switches to the
-  selected scan's vulnerability findings or scan-level evidence.
-- The old per-finding card wall is replaced by compact remediation rows with
-  links, identifiers, and evidence snippets.
-
-Deferred polish before old UI deletion:
-
-- Suite-wide scope controls should eventually add allowlist, denylist,
-  opt-out, saved-scope, and schedule context around scans. VulnTriage stays
-  read-only until HiveCore owns those suite-level controls.
-- If operators need deep investigation inside VulnTriage, add an expandable
-  finding drawer instead of returning to the old full-card list.
+Suite-wide allowlist, denylist, opt-out, saved-scope, and schedule controls
+remain HiveCore responsibilities rather than VulnTriage frontend parity gaps.
 
 ### Prerequisites
 
@@ -449,7 +430,6 @@ The production Docker Compose topology:
 ```
 vuln-triage-backend  → port 8110
 vuln-triage-frontend → port 5181
-vuln-triage-frontend-v2 → port 5200
 ```
 
 ### Standalone Backend

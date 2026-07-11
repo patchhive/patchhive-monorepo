@@ -148,7 +148,7 @@ cross-product handoffs rather than another single-product radar board.
 | MergeKeeper | `products/merge-keeper/frontend-v2` | v2 active; v1 moved to `frontend-legacy` |
 | FlakeSting | `products/flake-sting/frontend-v2` | v2 active; unified backend integrated; v1 moved to `frontend-legacy` |
 | DepTriage | `products/dep-triage/frontend-v2` | v2 active; v1 moved to `frontend-legacy` |
-| VulnTriage | `products/vuln-triage/frontend-v2` | v2 active; v1 moved to `frontend-legacy` |
+| VulnTriage | — | v2 retired after v3 parity; canonical UI is `products/vuln-triage/frontend` |
 | RefactorScout | `products/refactor-scout/frontend-v2` | React prototype active |
 | ReleaseSentry | `products/release-sentry/frontend-v2` | v2 active; v1 moved to `frontend-legacy` |
 | HiveCore | `products/hive-core/frontend-v2` | Control-plane demo active |

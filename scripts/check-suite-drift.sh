@@ -56,14 +56,20 @@ check_frontend_dependencies() {
   local label="$2"
   local expected_ui="^$(patchhive_version_from_package_json "$ROOT_DIR/packages/ui/package.json")"
   local expected_shell="^$(patchhive_version_from_package_json "$ROOT_DIR/packages/product-shell/package.json")"
-  local actual_ui actual_ui_v2 actual_shell
+  local actual_ui actual_ui_v2 actual_ui_v3 actual_shell
 
   actual_ui="$(json_field "$package_json" "dependencies.@patchhivehq/ui")"
   actual_ui_v2="$(json_field "$package_json" "dependencies.@patchhivehq/ui-v2")"
+  actual_ui_v3="$(json_field "$package_json" "dependencies.@patchhivehq/ui-v3")"
   actual_shell="$(json_field "$package_json" "dependencies.@patchhivehq/product-shell")"
 
   if [[ -n "$actual_ui_v2" ]]; then
     [[ -n "$actual_shell" ]] || fail "$label uses @patchhivehq/ui-v2 but is missing @patchhivehq/product-shell"
+    return
+  fi
+
+  if [[ -n "$actual_ui_v3" ]]; then
+    [[ -n "$actual_shell" ]] || fail "$label uses @patchhivehq/ui-v3 but is missing @patchhivehq/product-shell"
     return
   fi
 
@@ -123,6 +129,11 @@ check_product() {
   if [[ ! -f "$frontend_dir/package.json" && -f "$product_dir/frontend-v2/package.json" ]]; then
     frontend_dir="$product_dir/frontend-v2"
     frontend_kind="v2"
+  elif [[ ! -f "$frontend_dir/package.json" && -f "$product_dir/frontend-v3/package.json" ]]; then
+    frontend_dir="$product_dir/frontend-v3"
+    frontend_kind="v3"
+  elif [[ -f "$frontend_dir/package.json" ]] && grep -q '"@patchhivehq/ui-v3"' "$frontend_dir/package.json"; then
+    frontend_kind="v3"
   fi
 
   require_dir "$product_dir"
@@ -152,13 +163,13 @@ check_product() {
   require_contains "docs/products/README.md" "${product}.md" "product docs index entry for ${product}"
   require_contains "packages/ui/src/theme.js" "\"${product}\":" "theme key ${product}"
 
-  if [[ "$frontend_kind" == "v2" ]]; then
+  if [[ "$frontend_kind" == "v2" || "$frontend_kind" == "v3" ]]; then
     if command -v rg >/dev/null 2>&1; then
       if ! rg -q "productKey=[\"']${product}[\"']" "$frontend_dir/src"; then
-        fail "$product frontend-v2 does not declare productKey ${product}"
+        fail "$product frontend-${frontend_kind} does not declare productKey ${product}"
       fi
     elif ! grep -R -Eq "productKey=[\"']${product}[\"']" "$frontend_dir/src"; then
-      fail "$product frontend-v2 does not declare productKey ${product}"
+      fail "$product frontend-${frontend_kind} does not declare productKey ${product}"
     fi
   elif command -v rg >/dev/null 2>&1; then
     if ! rg -q "applyTheme\\([\"']${product}[\"']" "$frontend_dir/src"; then

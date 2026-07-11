@@ -22,9 +22,10 @@ workflow state.
 - `packages/ui-v3/` owns shared Lovable-derived tokens, theme behavior, shell,
   header, surfaces, metric cards, progressive lists, dashboard filter/sort and
   saved-view controls, and filterable activity timelines.
-- `products/<product>/frontend-v3/` owns that product's API integration, routes,
-  copy, tabs, forms, actions, evidence, and detail surfaces.
-- Existing v2 frontends remain available until product-specific parity is
+- `products/<product>/frontend-v3/` owns an in-progress product migration;
+  after parity and promotion, that implementation moves to the canonical
+  `products/<product>/frontend/` path.
+- Existing v2 frontends remain available only until product-specific parity is
   verified and the launch/Docker default is intentionally promoted.
 - HiveCore remains on its separate control-plane interface.
 
@@ -57,6 +58,9 @@ typography scale, spacing system, or theme implementation.
   and remain local to the browser unless a future backend contract replaces it.
 - Activity timelines use the shared type filters and jump controls. Products
   still own the event types and the mapping from product evidence to events.
+- Scan warning surfaces, GitHub permission guidance, and Markdown-copy feedback
+  are shared v3 controls; products supply warning interpretation, required
+  scopes, and report content.
 - Specialist footers preserve the v2 identity wording: `<Product> by
   PatchHive`, the product subtitle, and `Autonomous maintenance suite`.
 
@@ -76,7 +80,7 @@ typography scale, spacing system, or theme implementation.
 | MergeKeeper | `products/merge-keeper/frontend-v3` | Unified-backend v3 workspace implemented |
 | ReleaseSentry | `products/release-sentry/frontend-v3` | Unified-backend v3 workspace implemented |
 | DepTriage | `products/dep-triage/frontend-v3` | Unified-backend v3 workspace implemented |
-| VulnTriage | `products/vuln-triage/frontend-v3` | Reference implementation; unified-backend default configured |
+| VulnTriage | `products/vuln-triage/frontend` | Promoted after final parity audit; v1/v2 removed |
 | FlakeSting | `products/flake-sting/frontend-v3` | Unified-backend v3 workspace implemented |
 | Other specialist products | not created | Wait until their product engine is integrated in-process |
 | HiveCore | not applicable | Intentionally separate |

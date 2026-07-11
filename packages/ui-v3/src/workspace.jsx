@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Activity, Bookmark, ChevronDown, ChevronUp, ListFilter, Search, SlidersHorizontal, Trash2 } from "lucide-react";
+import { Activity, Bookmark, Check, ChevronDown, ChevronUp, Copy, ListFilter, Search, ShieldAlert, SlidersHorizontal, Trash2 } from "lucide-react";
 import { V3_TEXT } from "./tokens.js";
 
 function readStoredJson(key, fallback) {
@@ -113,7 +113,7 @@ export function DashboardControls({
   );
 }
 
-export function ProgressiveList({ empty, initialCount = 6, items, renderItem }) {
+export function ProgressiveList({ empty, initialCount = 6, itemLabel = "findings", items, renderItem }) {
   const [expanded, setExpanded] = useState(false);
   const visible = expanded ? items : items.slice(0, initialCount);
 
@@ -127,7 +127,7 @@ export function ProgressiveList({ empty, initialCount = 6, items, renderItem }) 
       {items.length > initialCount ? <div className="mt-4 flex justify-center">
         <button type="button" onClick={() => setExpanded((value) => !value)} className={`surface-inset flex h-10 items-center gap-2 rounded-full px-5 text-[12px] ${V3_TEXT.body}`}>
           {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-          {expanded ? `Show first ${initialCount}` : `Show all ${items.length} findings`}
+          {expanded ? `Show first ${initialCount}` : `Show all ${items.length} ${itemLabel}`}
         </button>
       </div> : null}
     </>
@@ -177,4 +177,35 @@ export function ActivityTimeline({ caption, eventTypes, events }) {
       </ol>
     </div>
   );
+}
+
+export function ScanWarnings({ formatWarning = (warning) => String(warning), warnings = [] }) {
+  if (!warnings.length) return null;
+  return (
+    <section className="surface mt-6 border border-amber-700/20 p-5 dark:border-amber-300/15">
+      <div className={`flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}><ShieldAlert size={13} className="text-amber-700 dark:text-amber-300" /> Scan warnings</div>
+      <div className="mt-3 space-y-2">{warnings.map((warning, index) => <div className={`surface-inset rounded-xl p-3 text-[12px] leading-relaxed ${V3_TEXT.body}`} key={`${warning}-${index}`}>{formatWarning(warning)}</div>)}</div>
+    </section>
+  );
+}
+
+export function GitHubPermissionGuidance({ children }) {
+  return <div className={`surface-inset mt-5 rounded-xl p-3 text-[11px] leading-relaxed ${V3_TEXT.mute}`}><span className={`font-semibold ${V3_TEXT.body}`}>GitHub access:</span> {children}</div>;
+}
+
+export function CopyMarkdownButton({ content, label = "Copy summary", onError }) {
+  const [copied, setCopied] = useState(false);
+
+  async function copy() {
+    if (!content) return;
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    } catch (error) {
+      onError?.(error);
+    }
+  }
+
+  return <button disabled={!content} onClick={copy} className={`surface-inset flex h-9 items-center gap-2 rounded-full px-3 text-[11px] disabled:opacity-40 ${V3_TEXT.body}`} type="button">{copied ? <Check size={12} /> : <Copy size={12} />}{copied ? "Copied" : label}</button>;
 }

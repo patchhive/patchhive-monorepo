@@ -36,15 +36,7 @@ Suite backend route: `http://localhost:8100/api/products/vuln-triage`
 cp .env.example .env
 
 cd backend && cargo run
-cd ../frontend-v2 && npm install && npm run dev
-```
-
-The old v1 frontend is preserved for reference in `frontend-legacy/` after the
-v2 parity audit. Use it only when comparing behavior before deleting legacy UI
-code:
-
-```bash
-cd frontend-legacy && npm install && npm run dev
+cd ../frontend && npm install && VITE_API_URL=/api npm run dev
 ```
 
 ### Unified Backend Mode
@@ -57,7 +49,7 @@ PATCHHIVE_PRODUCTS=vuln-triage \
 PATCHHIVE_BIND_ADDR=127.0.0.1:8100 \
 cargo run --manifest-path services/patchhive-backend/Cargo.toml
 
-npm --prefix products/vuln-triage/frontend-v2 run dev
+npm --prefix products/vuln-triage/frontend run dev
 ```
 
 The standalone backend remains available as a compatibility wrapper while the
@@ -65,11 +57,9 @@ suite backend migration is tested.
 
 ## UI Status
 
-- The active UI lives in `frontend-v2/`.
-- The old v1 UI is preserved in `frontend-legacy/` only as parity reference
-  material.
-- Docker's default `frontend` service builds the v2 UI. The legacy UI is
-  available only through the `legacy-ui` profile.
+- The canonical UI lives in `frontend/` and uses `@patchhivehq/ui-v3`.
+- The v1 and v2 implementations were removed after the final parity audit.
+- Docker's default `frontend` service builds the canonical UI.
 
 ## Important Configuration
 

@@ -178,6 +178,7 @@ Rules:
 - Keep the specialist footer identity aligned with v2: `<Product> by PatchHive`, the product subtitle, and `Autonomous maintenance suite`.
 - Preserve the suite-wide light/dark preference under the `patchhive.theme` localStorage key and apply it before React mounts to prevent a theme flash.
 - Keep current v2 frontends functional until each product's v3 parity audit passes. Do not rewrite v2 in place.
+- VulnTriage passed its final parity audit on 2026-07-10; its canonical v3 UI lives in `products/vuln-triage/frontend/`, and its v1/v2 trees have been removed.
 - Prefer finishing and validating v3 for the current integrated product set before moving another product engine into the unified backend.
 - HiveCore is intentionally outside the specialist-product v3 migration and keeps its control-plane UI.
 - `prototypes/vuln-triage-calm-mockup.html` is reference material only; it is not the v3 source of truth.

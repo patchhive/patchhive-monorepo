@@ -3,6 +3,8 @@ import {
   Activity,
   ArrowLeft,
   ArrowUpRight,
+  ChevronDown,
+  ChevronUp,
   Clock,
   Cpu,
   ExternalLink,
@@ -15,11 +17,14 @@ import {
 import { createApiFetcher, useApiKeyAuth } from "@patchhivehq/product-shell/auth";
 import {
   ActivityTimeline,
+  CopyMarkdownButton,
   DashboardControls,
+  GitHubPermissionGuidance,
   MetricCard,
   ProductHeader,
   ProductShell,
   ProgressiveList,
+  ScanWarnings,
   ThemeToggle,
   V3_TEXT,
   useSavedDashboardViews,
@@ -40,10 +45,12 @@ const DEFAULT_DASHBOARD_VIEW = {
   owner: "all",
   severity: "all",
   sort: "score-desc",
+  grouping: "dependencies",
 };
 const TIMELINE_TYPES = ["status", "priority", "owner", "notes"];
 const PRIORITY_RANK = { "fix now": 3, "plan next": 2, watch: 1 };
 const SEVERITY_RANK = { critical: 5, high: 4, medium: 3, moderate: 3, low: 2, unknown: 1 };
+const SECURITY_SCOPE_HINT = "Fine-grained PAT: select this repository and grant Metadata read, Code scanning alerts read, and Dependabot alerts read. The token owner must have security-alert access.";
 
 const METRIC_TONES = {
   fix_now: "from-orange-700/70 to-red-900/60",
@@ -102,6 +109,11 @@ function countLabel(value, singular, plural = `${singular}s`) {
   return `${value || 0} ${(value || 0) === 1 ? singular : plural}`;
 }
 
+function asCount(value) {
+  const count = Number(value || 0);
+  return Number.isFinite(count) ? count : 0;
+}
+
 function recommendation(value) {
   const normalized = String(value || "watch").replaceAll("_", " ").toLowerCase();
   if (normalized.includes("fix")) return "fix now";
@@ -153,6 +165,104 @@ function compareFindings(left, right, sort) {
   if (sort === "newest") return new Date(right.created_at || 0).getTime() - new Date(left.created_at || 0).getTime();
   if (sort === "owner") return findingOwner(left).localeCompare(findingOwner(right)) || Number(right.score || 0) - Number(left.score || 0);
   return Number(right.score || 0) - Number(left.score || 0);
+}
+
+function strongerRecommendation(left, right) {
+  return (PRIORITY_RANK[recommendation(left)] || 0) >= (PRIORITY_RANK[recommendation(right)] || 0) ? left : right;
+}
+
+function strongerSeverity(left, right) {
+  return (SEVERITY_RANK[findingSeverity({ severity: left })] || 0) >= (SEVERITY_RANK[findingSeverity({ severity: right })] || 0) ? left : right;
+}
+
+function groupDependencyFindings(findings, sort = "priority-desc") {
+  const groups = new Map();
+  const direct = [];
+  for (const finding of findings) {
+    if (finding.source !== "dependency_alert") {
+      direct.push({ type: "finding", finding });
+      continue;
+    }
+    const packageName = finding.package_name || finding.title || "dependency";
+    const ecosystem = finding.ecosystem || "unknown";
+    const manifest = finding.location || "manifest";
+    const key = `${packageName.toLowerCase()}::${ecosystem.toLowerCase()}::${manifest.toLowerCase()}`;
+    const group = groups.get(key) || {
+      type: "dependency-group",
+      key,
+      packageName,
+      ecosystem,
+      manifest,
+      findings: [],
+      highestSeverity: finding.severity || "unknown",
+      recommendation: finding.recommendation || "watch",
+      maxScore: 0,
+    };
+    group.findings.push(finding);
+    group.maxScore = Math.max(group.maxScore, asCount(finding.score));
+    group.highestSeverity = strongerSeverity(group.highestSeverity, finding.severity);
+    group.recommendation = strongerRecommendation(group.recommendation, finding.recommendation);
+    groups.set(key, group);
+  }
+  return [...groups.values(), ...direct].sort((left, right) => {
+    const leftFinding = left.type === "finding" ? left.finding : { score: left.maxScore, recommendation: left.recommendation, severity: left.highestSeverity };
+    const rightFinding = right.type === "finding" ? right.finding : { score: right.maxScore, recommendation: right.recommendation, severity: right.highestSeverity };
+    return compareFindings(leftFinding, rightFinding, sort);
+  });
+}
+
+function warningLabel(warning) {
+  const value = String(warning || "");
+  const lower = value.toLowerCase();
+  if (value.includes("BOT_GITHUB_TOKEN is not set") || value.includes("GITHUB_TOKEN is not set")) return "Security feeds were skipped because GitHub token access is not configured.";
+  if (value.includes("403 Forbidden") || value.includes("[missing_token_scope]") || value.includes("[forbidden]") || lower.includes("resource not accessible")) return `${value.includes("dependabot") ? "Dependabot" : "Code scanning"} alerts could not be read. ${SECURITY_SCOPE_HINT}`;
+  if (lower.includes("dependabot alerts are disabled")) return "Dependabot alerts are disabled for this repository, so dependency vulnerability pressure is unavailable.";
+  if (lower.includes("code scanning is not enabled")) return "Code scanning is not enabled for this repository, so code-level security findings are unavailable.";
+  return value;
+}
+
+function scanSummary(scan) {
+  if (!scan) return "No scan selected.";
+  const hasFindings = asCount(scan.metrics?.tracked_findings) > 0 || Boolean(scan.findings?.length);
+  if (!hasFindings && scan.warnings?.length) return `VulnTriage did not receive actionable findings for ${scan.repo}, and one or more GitHub security feeds could not be read.`;
+  return scan.summary || `Saved VulnTriage scan for ${scan.repo}.`;
+}
+
+function buildScanMarkdown(scan) {
+  if (!scan) return "";
+  const metrics = scan.metrics || {};
+  const lines = [
+    `# VulnTriage scan for ${scan.repo}`,
+    "",
+    scanSummary(scan),
+    "",
+    `- Tracked findings: ${asCount(metrics.tracked_findings)}`,
+    `- Fix now: ${asCount(metrics.fix_now)}`,
+    `- Plan next: ${asCount(metrics.plan_next)}`,
+    `- Watch: ${asCount(metrics.watch)}`,
+    `- Code scanning alerts: ${asCount(metrics.code_scanning_alerts)}`,
+    `- Dependabot alerts: ${asCount(metrics.dependency_alerts)}`,
+    `- Runtime scoped (heuristic): ${runtimeScoped(metrics)}`,
+    `- Owner scoped: ${asCount(metrics.owner_scoped)}`,
+  ];
+  const groups = groupDependencyFindings(scan.findings || []);
+  if (groups.length) {
+    lines.push("", "## Top remediation groups", "");
+    groups.slice(0, 8).forEach((item) => {
+      if (item.type === "dependency-group") {
+        const top = item.findings[0] || {};
+        lines.push(`- [${recommendation(item.recommendation)}] ${item.packageName} / ${item.manifest} — ${item.findings.length} alerts — ${top.summary || top.title || "security advisory"}`);
+      } else {
+        const finding = item.finding;
+        lines.push(`- [${recommendation(finding.recommendation)}] ${finding.title || findingId(finding)} — ${finding.summary || finding.next_action || finding.location || "security finding"}`);
+      }
+    });
+  }
+  if (scan.warnings?.length) {
+    lines.push("", "## Warnings", "");
+    scan.warnings.forEach((warning) => lines.push(`- ${warningLabel(warning)}`));
+  }
+  return lines.join("\n");
 }
 
 function LoginScreen({ auth }) {
@@ -264,6 +374,36 @@ function FindingRow({ finding, onOpen }) {
         </div>
       </div>
     </button>
+  );
+}
+
+function DependencyGroupRow({ group, onOpen }) {
+  const [expanded, setExpanded] = useState(false);
+  const severity = findingSeverity({ severity: group.highestSeverity });
+  const rec = recommendation(group.recommendation);
+  const owners = [...new Set(group.findings.map(findingOwner))];
+  const runtimeCount = group.findings.filter((finding) => String(finding.reachability || "").toLowerCase().includes("runtime")).length;
+  return (
+    <div className="surface-inset rounded-xl p-4">
+      <button type="button" onClick={() => setExpanded((value) => !value)} className="grid w-full grid-cols-[auto_1fr_auto] items-center gap-4 text-left">
+        <div className={`h-12 w-12 rounded-xl bg-gradient-to-br ${SEVERITY_CLASSES[severity] || SEVERITY_CLASSES.low} grid place-items-center shadow-inner`}>
+          <span className="font-display font-semibold text-[15px] tabular-nums">{group.maxScore.toFixed(1)}</span>
+        </div>
+        <div className="min-w-0">
+          <div className={`text-[10px] uppercase tracking-[0.2em] ${V3_TEXT.mute}`}>Dependabot remediation group · {group.findings.length} alerts</div>
+          <div className={`mt-1 truncate font-display text-[16px] font-medium tracking-tight ${V3_TEXT.strong}`}>{group.packageName} <span className={V3_TEXT.dim}>/ {group.manifest}</span></div>
+          <div className={`mt-1 truncate text-[12px] font-mono ${V3_TEXT.mute}`}>{group.ecosystem} · {owners.length} owner scope{owners.length === 1 ? "" : "s"}{runtimeCount ? ` · ${runtimeCount} runtime scoped` : ""}</div>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className={`hidden sm:inline text-[10px] uppercase tracking-widest px-2.5 py-1 rounded-full border ${RECOMMENDATION_CLASSES[rec]}`}>{rec}</span>
+          {expanded ? <ChevronUp size={14} className={V3_TEXT.dim} /> : <ChevronDown size={14} className={V3_TEXT.dim} />}
+        </div>
+      </button>
+      {expanded ? <div className="mt-4 space-y-2 border-t pt-4" style={{ borderColor: "var(--surface-border-2)" }}>
+        <div className={`pb-1 text-[11px] ${V3_TEXT.mute}`}>Choose an alert to inspect its evidence, references, and remediation details.</div>
+        {group.findings.map((finding) => <FindingRow finding={finding} key={finding.key || findingId(finding)} onOpen={onOpen} />)}
+      </div> : null}
+    </div>
   );
 }
 
@@ -432,11 +572,13 @@ function MainProduct({ auth }) {
     const text = `${findingId(finding)} ${finding.title} ${finding.summary} ${finding.location} ${finding.package_name}`.toLowerCase();
     return !query.trim() || text.includes(query.trim().toLowerCase());
   }).sort((left, right) => compareFindings(left, right, dashboard.view.sort)), [dashboard.view, findings, query]);
+  const queueItems = useMemo(() => dashboard.view.grouping === "dependencies" ? groupDependencyFindings(filtered, dashboard.view.sort) : filtered.map((finding) => ({ type: "finding", finding })), [dashboard.view.grouping, dashboard.view.sort, filtered]);
   const dashboardFilters = [
     { key: "status", label: "Status", value: dashboard.view.status, options: [{ value: "all", label: "All" }, ...[...new Set(findings.map(findingStatus))].sort().map((value) => ({ value, label: value }))] },
     { key: "priority", label: "Priority", value: dashboard.view.priority, options: [{ value: "all", label: "All" }, ...["fix now", "plan next", "watch"].map((value) => ({ value, label: value }))] },
     { key: "owner", label: "Owner", value: dashboard.view.owner, options: [{ value: "all", label: "All" }, ...ownerOptions.map((value) => ({ value, label: value }))] },
     { key: "severity", label: "Severity", value: dashboard.view.severity, options: [{ value: "all", label: "All" }, ...["critical", "high", "medium", "moderate", "low"].map((value) => ({ value, label: value }))] },
+    { key: "grouping", label: "Grouping", value: dashboard.view.grouping, options: [{ value: "dependencies", label: "Dependency groups" }, { value: "individual", label: "Individual alerts" }] },
   ];
   const metrics = scan?.metrics || {};
   const activeRepo = scan?.repo || form.repo || "No repository selected";
@@ -488,6 +630,7 @@ function MainProduct({ auth }) {
                 </div>
               </div>
             </section>
+            <ScanWarnings formatWarning={warningLabel} warnings={scan?.warnings || []} />
             <section className="mt-8 grid grid-cols-2 lg:grid-cols-4 gap-4">
               <MetricCard icon={Activity} label="Fix now" value={metrics.fix_now || 0} footerLeft="live" footerRight="highest urgency" tone={METRIC_TONES.fix_now} />
               <MetricCard icon={Activity} label="Plan next" value={metrics.plan_next || 0} footerLeft="live" footerRight="owner follow-up" tone={METRIC_TONES.plan_next} />
@@ -498,7 +641,13 @@ function MainProduct({ auth }) {
               <div className="col-span-12 lg:col-span-8 space-y-6">
                 <div className="surface p-5">
                   <div className="mb-4">
-                    <div><div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>Findings</div><div className={`font-display text-2xl mt-0.5 tracking-tight ${V3_TEXT.strong}`}>{filtered.length} in view <span className={`${V3_TEXT.dim} font-normal`}>/ {findings.length} tracked</span></div></div>
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                      <div><div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>Findings</div><div className={`font-display text-2xl mt-0.5 tracking-tight ${V3_TEXT.strong}`}>{filtered.length} in view <span className={`${V3_TEXT.dim} font-normal`}>/ {findings.length} tracked</span></div></div>
+                      <div className="flex items-center gap-2">
+                        <CopyMarkdownButton content={buildScanMarkdown(scan)} onError={() => setError("Could not copy the scan summary to the clipboard.")} />
+                        <button onClick={() => scan?.id ? loadScan(scan.id) : refresh({ loadLatest: true })} className={`surface-inset h-9 rounded-full px-3 text-[11px] ${V3_TEXT.body}`} type="button">Refresh</button>
+                      </div>
+                    </div>
                   </div>
                   <DashboardControls
                     filters={dashboardFilters}
@@ -525,8 +674,11 @@ function MainProduct({ auth }) {
                     {loading ? <div className={`py-14 text-center text-[13px] ${V3_TEXT.mute}`}>Loading findings…</div> : <ProgressiveList
                       empty={<div className={`py-14 text-center text-[13px] ${V3_TEXT.mute}`}>No findings match this view.</div>}
                       initialCount={6}
-                      items={filtered}
-                      renderItem={(finding) => <FindingRow finding={finding} key={finding.key || findingId(finding)} onOpen={setSelectedFinding} />}
+                      itemLabel={dashboard.view.grouping === "dependencies" ? "queue items" : "findings"}
+                      items={queueItems}
+                      renderItem={(item) => item.type === "dependency-group"
+                        ? <DependencyGroupRow group={item} key={item.key} onOpen={setSelectedFinding} />
+                        : <FindingRow finding={item.finding} key={item.finding.key || findingId(item.finding)} onOpen={setSelectedFinding} />}
                     />}
                   </div>
                 </div>
@@ -566,7 +718,7 @@ function ChecksTab({ checks, health, onRefresh }) {
 }
 
 function SourcesTab({ form, health, onChange, onRun, repoInput, running }) {
-  return <div className="grid grid-cols-12 gap-6"><section className="surface col-span-8 p-8"><div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>GitHub intake</div><h1 className={`font-display mt-2 text-[42px] tracking-tight font-semibold ${V3_TEXT.strong}`}>Choose a repository.</h1><p className={`mt-3 max-w-xl text-[14px] ${V3_TEXT.body}`}>VulnTriage reads security feeds without changing repository code.</p><div className="mt-7"><label className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`} htmlFor="repo">Repository</label><div className="surface-inset mt-2 rounded-xl h-12 px-4 flex items-center gap-2"><Github size={14} className={V3_TEXT.dim} /><input id="repo" ref={repoInput} value={form.repo} onChange={(event) => onChange((current) => ({ ...current, repo: event.target.value }))} placeholder="owner/repository" className={`bg-transparent outline-none w-full text-[13px] ${V3_TEXT.strong}`} /></div></div><div className="mt-5 grid grid-cols-2 gap-3">{[["include_code_scanning", "Code scanning alerts"], ["include_dependency_alerts", "Dependabot alerts"]].map(([key, label]) => <label className={`surface-inset rounded-xl p-4 flex items-center gap-3 text-[13px] ${V3_TEXT.body}`} key={key}><input checked={form[key]} onChange={(event) => onChange((current) => ({ ...current, [key]: event.target.checked }))} type="checkbox" className="accent-[color:var(--accent-2)]" />{label}</label>)}</div><button disabled={running || !form.repo.trim()} onClick={onRun} className="mt-6 h-11 px-5 rounded-full text-[12px] font-semibold text-white disabled:opacity-50" style={{ backgroundImage: "linear-gradient(90deg, var(--accent), var(--accent-2))", boxShadow: "var(--accent-glow)" }} type="button">{running ? "Scanning…" : "Run security scan"}</button></section><aside className="surface col-span-4 p-6 overflow-hidden"><div className="absolute -top-16 -right-12 h-48 w-48 rounded-full opacity-40 blur-2xl" style={{ backgroundImage: "var(--orb-1)" }} /><div className="relative"><div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>Connection</div><div className={`mt-3 font-display text-[36px] font-semibold ${V3_TEXT.strong}`}>{health.github_ready ? "Ready" : "Needs token"}</div><p className={`mt-3 text-[13px] leading-relaxed ${V3_TEXT.body}`}>{health.github_ready ? "GitHub security feeds are available to this product." : "Configure a GitHub token with security-alert read access before scanning."}</p></div></aside></div>;
+  return <div className="grid grid-cols-12 gap-6"><section className="surface col-span-8 p-8"><div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>GitHub intake</div><h1 className={`font-display mt-2 text-[42px] tracking-tight font-semibold ${V3_TEXT.strong}`}>Choose a repository.</h1><p className={`mt-3 max-w-xl text-[14px] ${V3_TEXT.body}`}>VulnTriage reads security feeds without changing repository code.</p><div className="mt-7"><label className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`} htmlFor="repo">Repository</label><div className="surface-inset mt-2 rounded-xl h-12 px-4 flex items-center gap-2"><Github size={14} className={V3_TEXT.dim} /><input id="repo" ref={repoInput} value={form.repo} onChange={(event) => onChange((current) => ({ ...current, repo: event.target.value }))} placeholder="owner/repository" className={`bg-transparent outline-none w-full text-[13px] ${V3_TEXT.strong}`} /></div></div><div className="mt-5 grid grid-cols-2 gap-3">{[["include_code_scanning", "Code scanning alerts"], ["include_dependency_alerts", "Dependabot alerts"]].map(([key, label]) => <label className={`surface-inset rounded-xl p-4 flex items-center gap-3 text-[13px] ${V3_TEXT.body}`} key={key}><input checked={form[key]} onChange={(event) => onChange((current) => ({ ...current, [key]: event.target.checked }))} type="checkbox" className="accent-[color:var(--accent-2)]" />{label}</label>)}</div><button disabled={running || !form.repo.trim()} onClick={onRun} className="mt-6 h-11 px-5 rounded-full text-[12px] font-semibold text-white disabled:opacity-50" style={{ backgroundImage: "linear-gradient(90deg, var(--accent), var(--accent-2))", boxShadow: "var(--accent-glow)" }} type="button">{running ? "Scanning…" : "Run security scan"}</button></section><aside className="surface col-span-4 p-6 overflow-hidden"><div className="absolute -top-16 -right-12 h-48 w-48 rounded-full opacity-40 blur-2xl" style={{ backgroundImage: "var(--orb-1)" }} /><div className="relative"><div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>Connection</div><div className={`mt-3 font-display text-[36px] font-semibold ${V3_TEXT.strong}`}>{health.github_ready ? "Ready" : "Needs token"}</div><p className={`mt-3 text-[13px] leading-relaxed ${V3_TEXT.body}`}>{health.github_ready ? "GitHub security feeds are available to this product." : "Configure a GitHub token with security-alert read access before scanning."}</p><GitHubPermissionGuidance>{SECURITY_SCOPE_HINT}</GitHubPermissionGuidance></div></aside></div>;
 }
 
 export default function App() {
