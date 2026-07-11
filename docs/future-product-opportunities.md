@@ -20,7 +20,7 @@ another product surface.
 | DocMason | Documentation drift and changelog stewardship | Conditional new-product candidate | DocKeeper |
 | SecretShade | Secret leak detection and rotation | Strong new-product candidate | SecretSentry |
 | MergePilot | Merge queue and conflict resolution | Extend existing product | MergeKeeper |
-| AuditMesh | Evidence vault and audit replay | Shared platform capability | HiveCore evidence vault and replay |
+| AuditMesh | Evidence vault and audit replay | Shared platform capability | Shared evidence ledger + HiveCore + FailGuard |
 
 The clearest additions are BuildSentry, a performance-regression product, and
 SecretSentry. DocKeeper also owns useful work, but its changelog responsibilities
@@ -158,14 +158,43 @@ separate silo. Instead, products should emit standardized run events and
 diagnostic artifacts; HiveCore should index and present that evidence through a
 suite-wide vault and replay surface.
 
-RepoMemory can retain durable lessons derived from outcomes, but it should not
-replace immutable run evidence. Evidence replay should reproduce the inputs,
-decisions, versions, policy, and artifacts associated with a run without
-silently repeating its write actions.
+This evidence foundation fits naturally underneath FailGuard, but FailGuard
+should not own the evidence store itself. Evidence is broader than failure:
+successful runs also need provenance, diagnostics, and replayability. The
+responsibilities should remain explicit:
 
-**Decision:** Build this as a shared backend and HiveCore capability, not a
-standalone specialist product. A separately packaged compliance product should
-only be reconsidered if external audit workflows become a real customer need.
+- The **shared backend evidence ledger** keeps immutable run inputs, product and
+  model versions, active policy, decisions, diagnostics, and artifacts.
+- **HiveCore** provides the suite-wide evidence browser and safe replay surface.
+- **FailGuard** consumes that evidence when a bug, outage, rejected change,
+  painful review, revert, or other bad outcome needs reconstruction. It extracts
+  the lesson and proposes a preventative safeguard.
+- **RepoMemory** retains durable repository-specific lessons produced by
+  FailGuard so future products and agents can reuse them.
+- **TrustGate**, **RepoReaper**, and other products consume the resulting
+  safeguards where they can prevent the same failure from recurring.
+
+The intended flow is:
+
+```text
+Product run
+    -> shared evidence ledger
+    -> HiveCore inspection and safe replay
+    -> FailGuard failure analysis
+    -> RepoMemory lessons and product safeguards
+```
+
+RepoMemory must not replace immutable run evidence. Evidence replay should
+reproduce the inputs, decisions, versions, policy, and artifacts associated
+with a run without silently repeating its write actions.
+
+**Decision:** Do not create AuditMesh as a standalone product. Build its
+immutable evidence ledger and safe replay mechanics as shared backend and
+HiveCore infrastructure. Make FailGuard the primary consumer for failure
+reconstruction, lesson extraction, and preventative guardrails, with durable
+lessons flowing into RepoMemory. A separately packaged compliance product
+should only be reconsidered if external audit workflows become a real customer
+need.
 
 ## Recommended Product Boundaries
 
@@ -211,4 +240,3 @@ names only. Before scaffolding a product, confirm that the name:
 - has an available product slug and GitHub repository name;
 - does not imply autonomous write access before the product supports it safely;
 - remains accurate if the initial capability expands.
-
