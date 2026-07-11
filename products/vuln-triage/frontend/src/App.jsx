@@ -20,6 +20,7 @@ import {
   CopyMarkdownButton,
   DashboardControls,
   GitHubPermissionGuidance,
+  HistoryDashboard,
   MetricCard,
   ProductHeader,
   ProductShell,
@@ -39,6 +40,7 @@ const TABS = [
 ];
 
 const DASHBOARD_VIEW_KEY = "vuln-triage.v3.dashboard-views";
+const HISTORY_VIEW_KEY = "vuln-triage.v3.history-views";
 const DEFAULT_DASHBOARD_VIEW = {
   status: "all",
   priority: "all",
@@ -46,6 +48,12 @@ const DEFAULT_DASHBOARD_VIEW = {
   severity: "all",
   sort: "score-desc",
   grouping: "dependencies",
+};
+const DEFAULT_HISTORY_VIEW = {
+  repo: "all",
+  urgency: "all",
+  feed: "all",
+  sort: "newest",
 };
 const TIMELINE_TYPES = ["status", "priority", "owner", "notes"];
 const PRIORITY_RANK = { "fix now": 3, "plan next": 2, watch: 1 };
@@ -492,10 +500,12 @@ function MainProduct({ auth }) {
   const [scan, setScan] = useState(null);
   const [selectedFinding, setSelectedFinding] = useState(null);
   const [query, setQuery] = useState("");
+  const [historyQuery, setHistoryQuery] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const dashboard = useSavedDashboardViews({ storageKey: DASHBOARD_VIEW_KEY, defaultView: DEFAULT_DASHBOARD_VIEW });
+  const historyDashboard = useSavedDashboardViews({ storageKey: HISTORY_VIEW_KEY, defaultView: DEFAULT_HISTORY_VIEW });
 
   async function refresh({ loadLatest = false } = {}) {
     setError("");
@@ -582,6 +592,27 @@ function MainProduct({ auth }) {
   ];
   const metrics = scan?.metrics || {};
   const activeRepo = scan?.repo || form.repo || "No repository selected";
+  const filteredHistory = useMemo(() => history.filter((item) => {
+    if (historyDashboard.view.repo !== "all" && item.repo !== historyDashboard.view.repo) return false;
+    if (historyDashboard.view.urgency === "fix-now" && !asCount(item.fix_now)) return false;
+    if (historyDashboard.view.urgency === "plan-next" && !asCount(item.plan_next)) return false;
+    if (historyDashboard.view.urgency === "watch-only" && (asCount(item.fix_now) || asCount(item.plan_next))) return false;
+    if (historyDashboard.view.feed === "code" && !asCount(item.code_scanning_alerts)) return false;
+    if (historyDashboard.view.feed === "dependencies" && !asCount(item.dependency_alerts)) return false;
+    const text = `${item.id} ${item.repo} ${item.summary}`.toLowerCase();
+    return !historyQuery.trim() || text.includes(historyQuery.trim().toLowerCase());
+  }).sort((left, right) => {
+    if (historyDashboard.view.sort === "oldest") return new Date(left.created_at) - new Date(right.created_at);
+    if (historyDashboard.view.sort === "tracked-desc") return asCount(right.tracked_findings) - asCount(left.tracked_findings) || new Date(right.created_at) - new Date(left.created_at);
+    if (historyDashboard.view.sort === "fix-now-desc") return asCount(right.fix_now) - asCount(left.fix_now) || new Date(right.created_at) - new Date(left.created_at);
+    if (historyDashboard.view.sort === "repo") return left.repo.localeCompare(right.repo) || new Date(right.created_at) - new Date(left.created_at);
+    return new Date(right.created_at) - new Date(left.created_at);
+  }), [history, historyDashboard.view, historyQuery]);
+  const historyFilters = [
+    { key: "repo", label: "Repository", value: historyDashboard.view.repo, options: [{ value: "all", label: "All" }, ...[...new Set(history.map((item) => item.repo).filter(Boolean))].sort().map((repo) => ({ value: repo, label: repo }))] },
+    { key: "urgency", label: "Urgency", value: historyDashboard.view.urgency, options: [{ value: "all", label: "All" }, { value: "fix-now", label: "Has fix now" }, { value: "plan-next", label: "Has plan next" }, { value: "watch-only", label: "Watch only" }] },
+    { key: "feed", label: "Feed", value: historyDashboard.view.feed, options: [{ value: "all", label: "All" }, { value: "code", label: "Code scanning" }, { value: "dependencies", label: "Dependabot" }] },
+  ];
 
   if (selectedFinding) {
     return <ProductShell productKey="vuln-triage"><FindingDetail finding={selectedFinding} onBack={() => setSelectedFinding(null)} /></ProductShell>;
@@ -701,7 +732,7 @@ function MainProduct({ auth }) {
             </section>
           </>
         ) : null}
-        {activeTab === "history" ? <HistoryTab history={history} loadScan={loadScan} /> : null}
+        {activeTab === "history" ? <HistoryTab dashboard={historyDashboard} filters={historyFilters} history={history} items={filteredHistory} loadScan={loadScan} loading={loading} onQueryChange={setHistoryQuery} onRefresh={() => refresh({ loadLatest: false })} query={historyQuery} /> : null}
         {activeTab === "checks" ? <ChecksTab checks={checks} health={health} onRefresh={() => refresh({ loadLatest: false })} /> : null}
         {activeTab === "sources" ? <SourcesTab form={form} health={health} onChange={setForm} onRun={runScan} repoInput={repoInput} running={running} /> : null}
       </div>
@@ -709,8 +740,8 @@ function MainProduct({ auth }) {
   );
 }
 
-function HistoryTab({ history, loadScan }) {
-  return <section className="surface p-6"><div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>Saved evidence</div><h1 className={`font-display mt-2 text-[42px] tracking-tight font-semibold ${V3_TEXT.strong}`}>Scan history.</h1><div className="mt-7 space-y-2">{history.map((item) => <button className="surface-inset rounded-xl p-4 w-full text-left flex items-center justify-between" key={item.id} onClick={() => loadScan(item.id)} type="button"><div><div className={`font-display text-[16px] ${V3_TEXT.strong}`}>{item.repo}</div><div className={`mt-1 text-[11px] ${V3_TEXT.mute}`}>{new Date(item.created_at).toLocaleString()} · {countLabel(item.tracked_findings, "finding")}</div></div><div className="flex gap-2"><span className={`text-[10px] rounded-full border px-2.5 py-1 ${RECOMMENDATION_CLASSES["fix now"]}`}>{item.fix_now || 0} fix now</span><ArrowUpRight size={14} className={V3_TEXT.dim} /></div></button>)}</div></section>;
+function HistoryTab({ dashboard, filters, history, items, loadScan, loading, onQueryChange, onRefresh, query }) {
+  return <HistoryDashboard dashboard={dashboard} emptyLabel="No saved scans match this view." filters={filters} itemLabel="scans" items={items} loading={loading} onQueryChange={onQueryChange} onRefresh={onRefresh} query={query} renderItem={(item) => <button className="surface-inset rounded-xl p-4 w-full text-left flex items-center justify-between gap-4" key={item.id} onClick={() => loadScan(item.id)} type="button"><div className="min-w-0 flex-1"><div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><div className={`font-display text-[16px] ${V3_TEXT.strong}`}>{item.repo}</div><div className="flex shrink-0 flex-wrap gap-2"><span className={`inline-flex min-h-7 items-center justify-center rounded-full border px-2.5 text-[10px] ${RECOMMENDATION_CLASSES["fix now"]}`}>{item.fix_now || 0} fix now</span><span className={`inline-flex min-h-7 items-center justify-center rounded-full border px-2.5 text-[10px] ${RECOMMENDATION_CLASSES["plan next"]}`}>{item.plan_next || 0} plan next</span><span className={`inline-flex min-h-7 items-center justify-center rounded-full border px-2.5 text-[10px] ${RECOMMENDATION_CLASSES.watch}`}>{item.watch || 0} watch</span></div></div>{item.summary ? <div className={`mt-1 line-clamp-2 text-[12px] ${V3_TEXT.body}`}>{item.summary}</div> : null}<div className={`mt-2 flex flex-wrap gap-x-2 gap-y-1 text-[11px] ${V3_TEXT.mute}`}><span>{new Date(item.created_at).toLocaleString()}</span><span>· run {String(item.id || "unknown").slice(0, 8)}</span><span>· {countLabel(item.tracked_findings, "finding")}</span><span>· {asCount(item.code_scanning_alerts)} code / {asCount(item.dependency_alerts)} dependency</span></div></div><ArrowUpRight size={14} className={`${V3_TEXT.dim} shrink-0`} /></button>} searchPlaceholder="Search repository, summary, run ID…" sortOptions={[{ value: "newest", label: "Newest first" }, { value: "oldest", label: "Oldest first" }, { value: "fix-now-desc", label: "Most fix now" }, { value: "tracked-desc", label: "Most findings" }, { value: "repo", label: "Repository" }]} title="Scan history." totalCount={history.length} />;
 }
 
 function ChecksTab({ checks, health, onRefresh }) {

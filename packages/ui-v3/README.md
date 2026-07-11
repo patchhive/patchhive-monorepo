@@ -12,4 +12,7 @@ Rules:
 - Each product remains a separate frontend and supplies its own copy, data,
   routes, controls, and product accent.
 - `patchhive.theme` is suite-wide and persists `light` or `dark` in localStorage.
+- Use the shared history dashboard for saved-run surfaces so refresh, counts,
+  search, filters, sorting, saved views, empty state, and progressive disclosure
+  remain consistent while products supply their own filters and row evidence.
 - HiveCore is not part of the specialist-product v3 migration.

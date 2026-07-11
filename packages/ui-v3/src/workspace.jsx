@@ -135,6 +135,64 @@ export function ProgressiveList({ empty, initialCount = 6, itemLabel = "findings
   );
 }
 
+export function HistoryDashboard({
+  dashboard,
+  emptyLabel = "No saved runs match this view.",
+  eyebrow = "Saved evidence",
+  filters,
+  initialCount = 6,
+  itemLabel = "runs",
+  items,
+  loading,
+  onQueryChange,
+  onRefresh,
+  query,
+  renderItem,
+  searchPlaceholder = "Search repository, summary, run ID…",
+  sortOptions,
+  title = "Run history.",
+  totalCount,
+}) {
+  return (
+    <section className="surface p-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>{eyebrow}</div>
+          <h1 className={`font-display mt-2 text-[42px] tracking-tight font-semibold ${V3_TEXT.strong}`}>{title}</h1>
+          <div className={`mt-1 text-[12px] ${V3_TEXT.mute}`}>{items.length} in view / {totalCount} saved</div>
+        </div>
+        <button className={`surface-inset h-9 rounded-full px-4 text-[11px] ${V3_TEXT.body}`} disabled={loading} onClick={onRefresh} type="button">{loading ? "Refreshing…" : "Refresh history"}</button>
+      </div>
+      <div className="mt-6">
+        <DashboardControls
+          filters={filters}
+          onApplySavedView={dashboard.applyView}
+          onDeleteSavedView={dashboard.deleteView}
+          onFilterChange={dashboard.updateView}
+          onQueryChange={onQueryChange}
+          onReset={() => { dashboard.resetView(); onQueryChange(""); }}
+          onSaveView={dashboard.saveView}
+          onSortChange={(sort) => dashboard.updateView("sort", sort)}
+          query={query}
+          savedViews={dashboard.savedViews}
+          searchPlaceholder={searchPlaceholder}
+          sort={dashboard.view.sort}
+          sortOptions={sortOptions}
+        />
+      </div>
+      <div className="mt-7">
+        <ProgressiveList
+          empty={<div className={`py-14 text-center text-[13px] ${V3_TEXT.mute}`}>{emptyLabel}</div>}
+          initialCount={initialCount}
+          itemLabel={itemLabel}
+          items={items}
+          renderItem={renderItem}
+        />
+      </div>
+    </section>
+  );
+}
+
 export function ActivityTimeline({ caption, eventTypes, events }) {
   const [activeType, setActiveType] = useState("all");
   const visible = activeType === "all" ? events : events.filter((event) => event.kind === activeType);

@@ -140,8 +140,10 @@ implementations:
 - fix-now, plan-next, watch, runtime-scope, owner, severity, and status evidence
 - package/manifest-level dependency remediation groups with individual alert
   drill-down
-- saved scan history, history load, finding detail, identifiers, evidence, and
-  external GitHub/advisory references
+- saved scan history with refresh, search, repository/urgency/feed filters,
+  sorting, saved views, short run identity, six-row progressive disclosure,
+  history load, finding detail, identifiers, evidence, and external
+  GitHub/advisory references
 - copyable Markdown scan summaries
 - progressive six-item queue display, dashboard filtering/sorting, locally
   saved views, and filterable activity timelines
