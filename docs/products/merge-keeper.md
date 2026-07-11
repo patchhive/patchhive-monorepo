@@ -170,7 +170,8 @@ surfaces that v1 or v2 already exposed. The parity implementation now includes:
   and the per-run active-approval policy.
 - Readiness summary, PR identity/link, mergeability, base/head branches, manual
   or webhook trigger context, and the complete merge metric set.
-- Searchable blocker/warning evidence with dedicated detail views.
+- Searchable and filterable blocker/warning evidence with decision/evidence
+  filters, sorting, saved dashboard views, and dedicated detail views.
 - Latest reviewer identities and states.
 - ReviewBee, TrustGate, and RepoMemory summaries, counts, and returned top
   evidence, plus a clear GitHub-only fallback.

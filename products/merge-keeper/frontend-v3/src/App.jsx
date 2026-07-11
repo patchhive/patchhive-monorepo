@@ -41,7 +41,7 @@ function stateTone(state) {
 }
 
 function Chip({ children, tone = "neutral" }) {
-  return <span className={`inline-flex rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-wider ${CHIP_TONES[tone] || CHIP_TONES.neutral}`}>{children}</span>;
+  return <span className={`inline-flex items-center justify-center rounded-full border px-2.5 py-1 text-[10px] leading-none uppercase tracking-wider ${CHIP_TONES[tone] || CHIP_TONES.neutral}`}>{children}</span>;
 }
 
 function Fact({ label, value: factValue }) {
@@ -239,7 +239,35 @@ const config = {
   serialize: (form) => ({ repo: form.repo.trim(), pr_number: Number(form.pr_number), publish_report: Boolean(form.publish_report), require_approval: form.require_approval !== false }),
   formFromResult: (result) => ({ repo: result.repo, pr_number: result.pr_number ? String(result.pr_number) : "", require_approval: result.approval_required !== false }),
   items: (result) => [...(result?.blockers || []).map((item) => ({ ...item, _tone: "hot" })), ...(result?.warnings || []).map((item) => ({ ...item, _tone: "warn" }))],
-  mapItem: (item) => ({ id: item.key || item.label, title: item.label || "Readiness signal", meta: item.severity || "merge evidence", summary: item.detail, evidence: item.evidence || [], score: item._tone === "hot" ? "!" : "?", status: item._tone === "hot" ? "blocker" : "warning", tone: item._tone }),
+  mapItem: (item) => ({ id: item.key || item.label, title: item.label || "Readiness signal", meta: item.severity || "merge evidence", summary: item.detail, evidence: item.evidence || [], score: item._tone === "hot" ? "!" : "?", severity: item.severity || "signal", status: item._tone === "hot" ? "blocker" : "warning", tone: item._tone }),
+  dashboard: {
+    defaultView: { decision: "all", evidence: "all", sort: "priority" },
+    initialCount: 6,
+    itemLabel: "signals",
+    filters: (_items, view) => [
+      { key: "decision", label: "Decision", value: view.decision, options: [{ value: "all", label: "All" }, { value: "blocker", label: "Blockers" }, { value: "warning", label: "Warnings" }] },
+      { key: "evidence", label: "Evidence", value: view.evidence, options: [{ value: "all", label: "All" }, { value: "with", label: "With evidence" }, { value: "without", label: "Without evidence" }] },
+    ],
+    filterItem: (item, view) => {
+      if (view.decision !== "all" && item.status !== view.decision) return false;
+      if (view.evidence === "with" && !item.evidence?.length) return false;
+      if (view.evidence === "without" && item.evidence?.length) return false;
+      return true;
+    },
+    sortItems: (left, right, sort) => {
+      if (sort === "title-asc") return left.title.localeCompare(right.title);
+      if (sort === "title-desc") return right.title.localeCompare(left.title);
+      if (sort === "evidence-desc") return (right.evidence?.length || 0) - (left.evidence?.length || 0) || left.title.localeCompare(right.title);
+      const priority = { blocker: 0, warning: 1 };
+      return (priority[left.status] ?? 2) - (priority[right.status] ?? 2) || left.title.localeCompare(right.title);
+    },
+    sortOptions: [
+      { value: "priority", label: "Decision priority" },
+      { value: "evidence-desc", label: "Most evidence" },
+      { value: "title-asc", label: "Title · A to Z" },
+      { value: "title-desc", label: "Title · Z to A" },
+    ],
+  },
   metrics: (result, overview, health) => {
     const metrics = result?.metrics || {};
     const counts = overview?.counts || {};

@@ -57,6 +57,7 @@ export function DashboardControls({
   onSaveView,
   onSortChange,
   query,
+  searchPlaceholder = "Search CVE, file, package…",
   savedViews,
   sort,
   sortOptions,
@@ -76,7 +77,7 @@ export function DashboardControls({
       <div className="flex flex-col gap-2 xl:flex-row xl:items-center">
         <div className="surface-inset flex h-9 min-w-0 flex-1 items-center gap-2 rounded-full px-3">
           <Search size={13} className={V3_TEXT.dim} />
-          <input value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="Search CVE, file, package…" className={`w-full bg-transparent text-[12px] outline-none ${V3_TEXT.strong} placeholder:text-[color:var(--text-dim)]`} />
+          <input value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder={searchPlaceholder} className={`w-full bg-transparent text-[12px] outline-none ${V3_TEXT.strong} placeholder:text-[color:var(--text-dim)]`} />
         </div>
         <div className="flex items-center gap-2 overflow-x-auto pb-1 xl:pb-0">
           <ListFilter size={13} className={`${V3_TEXT.dim} shrink-0`} />
