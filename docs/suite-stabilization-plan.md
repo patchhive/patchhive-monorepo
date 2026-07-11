@@ -32,8 +32,8 @@ Needed gates:
 - suite drift must stay required on pull requests
 - Rust formatting/checks should include the shared backend and every product
   that can build in the monorepo
-- add `cargo clippy` for shared crates, `services/patchhive-backend`, and active
-  product backends
+- enforce warning-free `cargo clippy --all-targets -- -D warnings` for shared
+  crates, services, and every active product backend
 - add frontend package install/build checks for `packages/*` and active
   `frontend-v2` apps
 - add export validation so a product/service export can be generated cleanly

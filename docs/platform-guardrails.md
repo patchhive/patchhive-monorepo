@@ -86,7 +86,26 @@ Any product that runs `git clone`, `git fetch`, `git push`, or similar Git-over-
 
 RepoReaper is the first write-capable product to enforce this because it opens outbound PRs. RefactorScout applies the same isolation to temporary read-only GitHub clones so local credentials are not accidentally consulted during public repo scans.
 
-## 5. Implementation Notes
+## 5. Warning-Free Quality Gate
+
+PatchHive should not accumulate ignored compiler or tooling warnings. Every
+change must leave the affected code warning-free:
+
+- Rust packages run formatting, tests, and
+  `cargo clippy --all-targets -- -D warnings`.
+- Frontend packages run their strictest configured lint, type, test, and
+  production-build checks.
+- Shared-package changes verify the directly affected product consumers, not
+  only the shared package in isolation.
+- Fix warning causes instead of adding broad suppressions. Any unavoidable,
+  narrowly scoped suppression must explain why it is safe beside the code.
+- Runtime startup, scan, and product-decision warnings remain valid operator
+  evidence; they are distinct from code-quality warnings.
+
+CI should enforce this policy across all standalone Rust packages and active
+frontend packages as the suite verification scripts converge.
+
+## 6. Implementation Notes
 
 ### Encryption key material
 

@@ -96,6 +96,23 @@ patchhive/
 
 ## Tech Stack
 
+### Warning-Free Code Policy
+
+- Do not leave compiler, clippy, linter, type-checker, test, or production-build
+  warnings in the codebase. Fix the underlying issue before considering work
+  complete.
+- Rust verification should include `cargo clippy --all-targets -- -D warnings`
+  for every changed crate or service, in addition to formatting and tests.
+- Frontend work should run the strictest configured lint/type/build checks for
+  the changed package and any shared-package consumers it affects.
+- Do not silence a warning with a broad `allow`, disabled rule, or ignored
+  result merely to make verification green. A narrowly scoped suppression is
+  acceptable only when the warning is demonstrably unavoidable and the reason
+  is documented beside it.
+- Product-domain warnings returned by scans or startup diagnostics are runtime
+  evidence and are not prohibited by this policy; the prohibition applies to
+  warnings produced by the code-quality toolchain.
+
 Backend:
 - Rust
 - `axum`, `rusqlite`, `reqwest`, `tokio`, `serde`, `serde_json`, `chrono`, `uuid`, `anyhow`, `tracing`
