@@ -182,7 +182,9 @@ surfaces that v1 or v2 already exposed. The parity implementation now includes:
 - GitHub artifact state, delivery details, comment/check links, copyable report
   Markdown, and an expandable Markdown preview.
 - Saved-run history with decision, summary, blocker/hold, approval, and failing
-  check context; loaded runs update the shareable `?run=<id>` URL.
+  check context; repository/decision filters, sorting, search, saved views,
+  refresh, short run identity, and six-row progressive disclosure; loaded runs
+  update the shareable `?run=<id>` URL.
 - Startup messages using the backend's actual `msg` field, backend/DB state,
   GitHub token/webhook/public-URL/publish posture, integration state, and
   GitHub permission guidance.

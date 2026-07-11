@@ -301,9 +301,40 @@ const config = {
   status: (result, overview) => ({ label: result?.readiness || "—", detail: result?.summary || "Assess a pull request to begin", progress: result ? "100%" : "8%", stats: [["Blocks", result?.blockers?.length || 0], ["Warnings", result?.warnings?.length || 0], ["Runs", overview?.counts?.runs || 0]] }),
   chips: (result, health) => [result?.repo || "No repository selected", result?.pr_number ? `PR #${result.pr_number}` : "No PR selected", result ? mergePostureLabel(result) : health.github_ready ? "GitHub ready" : "Token missing", result ? result.approval_required === false ? "Approval optional" : "Approval required" : "Local by default"],
   targetSubtitle: (result) => result?.pr_number ? `Pull request #${result.pr_number} · ${result.readiness || "pending"}` : "Pull request readiness",
-  historyTitle: (entry) => `${entry.repo} · PR #${entry.pr_number} · ${entry.readiness || "saved"}`,
+  historyTitle: (entry) => `${entry.repo} · PR #${entry.pr_number}`,
   historySummary: (entry) => entry.summary || entry.pr_title,
   historyMeta: (entry) => `${entry.blockers_count || 0} blockers · ${entry.warnings_count || 0} holds · ${entry.approvals_count || 0} approvals · ${entry.failing_checks_count || 0} failing`,
+  historyIdentity: (entry) => `run ${String(entry.id || "unknown").slice(0, 8)}`,
+  historyBadges: (entry) => [
+    { label: entry.readiness || "saved", tone: entry.readiness === "blocked" ? "hot" : entry.readiness === "hold" ? "warn" : entry.readiness === "ready" ? "ok" : "neutral" },
+    { label: `${entry.blockers_count || 0} block`, tone: entry.blockers_count ? "hot" : "neutral" },
+    { label: `${entry.warnings_count || 0} hold`, tone: entry.warnings_count ? "warn" : "neutral" },
+  ],
+  historyDashboard: {
+    defaultView: { decision: "all", repo: "all", sort: "newest" },
+    initialCount: 6,
+    searchPlaceholder: "Search repository, PR, decision…",
+    filters: (entries, view) => [
+      { key: "decision", label: "Decision", value: view.decision, options: [{ value: "all", label: "All" }, ...[...new Set(entries.map((entry) => entry.readiness).filter(Boolean))].sort().map((decision) => ({ value: decision, label: decision }))] },
+      { key: "repo", label: "Repository", value: view.repo, options: [{ value: "all", label: "All" }, ...[...new Set(entries.map((entry) => entry.repo).filter(Boolean))].sort().map((repo) => ({ value: repo, label: repo }))] },
+    ],
+    filterEntry: (entry, view) => (view.decision === "all" || entry.readiness === view.decision) && (view.repo === "all" || entry.repo === view.repo),
+    sortEntries: (left, right, sort) => {
+      if (sort === "oldest") return new Date(left.created_at) - new Date(right.created_at);
+      if (sort === "repo") return left.repo.localeCompare(right.repo) || Number(left.pr_number) - Number(right.pr_number);
+      if (sort === "decision") {
+        const priority = { blocked: 0, hold: 1, ready: 2 };
+        return (priority[left.readiness] ?? 3) - (priority[right.readiness] ?? 3) || new Date(right.created_at) - new Date(left.created_at);
+      }
+      return new Date(right.created_at) - new Date(left.created_at);
+    },
+    sortOptions: [
+      { value: "newest", label: "Newest first" },
+      { value: "oldest", label: "Oldest first" },
+      { value: "decision", label: "Decision priority" },
+      { value: "repo", label: "Repository" },
+    ],
+  },
   WorkspaceDetails,
   ChecksDetails,
   SourcesDetails,
