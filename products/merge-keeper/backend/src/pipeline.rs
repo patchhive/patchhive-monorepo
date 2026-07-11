@@ -13,7 +13,9 @@ mod tests {
     use super::assessment::{
         apply_repo_memory_signals, apply_trust_gate_signals, current_review_counts,
     };
-    use super::utils::{actionable_text, diff_changed_paths};
+    use super::utils::{
+        actionable_text, diff_changed_paths, mergeability_posture, MergeabilityPosture,
+    };
     use crate::models::{RepoMemoryContextPreview, ReviewerState, TrustGateContext};
 
     #[test]
@@ -71,6 +73,26 @@ diff --git a/tests/lib.test.rs b/tests/lib.test.rs
         assert_eq!(
             diff_changed_paths(diff),
             vec!["src/lib.rs".to_string(), "tests/lib.test.rs".to_string()]
+        );
+    }
+
+    #[test]
+    fn mechanically_mergeable_blocked_state_is_a_policy_hold() {
+        assert_eq!(
+            mergeability_posture(Some(true), "blocked"),
+            MergeabilityPosture::PolicyHold
+        );
+    }
+
+    #[test]
+    fn false_or_dirty_mergeability_is_a_conflict() {
+        assert_eq!(
+            mergeability_posture(Some(false), "blocked"),
+            MergeabilityPosture::Conflict
+        );
+        assert_eq!(
+            mergeability_posture(Some(true), "dirty"),
+            MergeabilityPosture::Conflict
         );
     }
 

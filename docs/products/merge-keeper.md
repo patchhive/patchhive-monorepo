@@ -36,6 +36,10 @@ MergeKeeper is merge-readiness-first. It is the convergence point for GitHub sta
 - **Readiness state**: `ready`, `hold`, or `blocked`.
 - **Blockers**: hard signals that block merge (e.g. merge conflict, failing checks, changes requested, closed/draft PR).
 - **Warnings**: hold-level signals (e.g. no approval, pending checks, open review threads, wide diff, integration findings).
+- **Mergeability interpretation**: GitHub `mergeable=false` or state `dirty`
+  indicates a hard merge conflict. State `blocked` with `mergeable=true` is a
+  branch-protection or repository-policy hold, not a conflict, and therefore
+  contributes a warning unless another hard blocker exists.
 - **Evidence strings**: per-signal supporting detail (e.g. check names, reviewer names, thread excerpts).
 - **Merge metrics**: approvals, changes-requested, comment-reviews, reviewer count, review threads (total/open/actionable), successful/pending/failing checks, changed files, additions, deletions.
 - **Cross-product context**: embedded ReviewBee, TrustGate, RepoMemory previews when available.

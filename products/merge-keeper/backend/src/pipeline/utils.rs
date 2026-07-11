@@ -3,6 +3,14 @@ use serde_json::json;
 
 use crate::models::MergeSignal;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MergeabilityPosture {
+    Clear,
+    Conflict,
+    PolicyHold,
+    Unsettled,
+}
+
 pub type ApiError = (StatusCode, Json<serde_json::Value>);
 
 pub fn api_error(status: StatusCode, error: impl Into<String>) -> ApiError {
@@ -48,6 +56,23 @@ pub fn normalize_mergeable_state(value: &str) -> String {
     } else {
         trimmed.into()
     }
+}
+
+pub fn mergeability_posture(mergeable: Option<bool>, mergeable_state: &str) -> MergeabilityPosture {
+    let state = normalize_mergeable_state(mergeable_state).to_ascii_lowercase();
+    if mergeable == Some(false) || state == "dirty" {
+        return MergeabilityPosture::Conflict;
+    }
+    if state == "blocked" {
+        return MergeabilityPosture::PolicyHold;
+    }
+    if matches!(
+        state.as_str(),
+        "unknown" | "unstable" | "behind" | "has_hooks"
+    ) {
+        return MergeabilityPosture::Unsettled;
+    }
+    MergeabilityPosture::Clear
 }
 
 pub fn actionable_text(text: &str) -> bool {

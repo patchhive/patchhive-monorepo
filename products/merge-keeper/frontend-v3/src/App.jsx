@@ -40,6 +40,20 @@ function stateTone(state) {
   return "neutral";
 }
 
+function mergePolicyTone(result) {
+  const state = String(result?.mergeable_state || "").toLowerCase();
+  if (result?.mergeable === "no" || state === "dirty") return "blocked";
+  if (["blocked", "unknown", "unstable", "behind", "has_hooks"].includes(state)) return "hold";
+  return "ready";
+}
+
+function mergePostureLabel(result) {
+  const state = String(result?.mergeable_state || "").toLowerCase();
+  if (result?.mergeable === "yes" && state === "blocked") return "Merge policy hold";
+  if (state === "dirty" || result?.mergeable === "no") return "Merge conflict";
+  return state ? `Merge ${state}` : "Merge state unknown";
+}
+
 function Chip({ children, tone = "neutral" }) {
   return <span className={`inline-flex items-center justify-center rounded-full border px-2.5 py-1 text-[10px] leading-none uppercase tracking-wider ${CHIP_TONES[tone] || CHIP_TONES.neutral}`}>{children}</span>;
 }
@@ -101,8 +115,8 @@ function WorkspaceDetails({ health, onError, result }) {
           </div>
         </div>
         <div className="mt-5 flex flex-wrap gap-2">
-          <Chip tone={stateTone(result.mergeable_state)}>mergeable: {value(result.mergeable)}</Chip>
-          <Chip tone={stateTone(result.mergeable_state)}>state: {value(result.mergeable_state)}</Chip>
+          <Chip tone={mergePolicyTone(result)}>mergeable: {value(result.mergeable)}</Chip>
+          <Chip tone={mergePolicyTone(result)}>{result.mergeable === "yes" && result.mergeable_state === "blocked" ? "policy" : "state"}: {value(result.mergeable_state)}</Chip>
           <Chip>base: {value(result.base_ref)}</Chip>
           <Chip>head: {value(result.head_ref)}</Chip>
           <Chip tone={result.approval_required === false ? "neutral" : "hold"}>{result.approval_required === false ? "approval optional" : "approval required"}</Chip>
@@ -285,7 +299,7 @@ const config = {
   },
   hero: (result) => result ? { lead: `PR #${result.pr_number}`, middle: "is", highlight: `${result.readiness || "pending"}.` } : { lead: "Merge decisions", middle: "need clear", highlight: "evidence." },
   status: (result, overview) => ({ label: result?.readiness || "—", detail: result?.summary || "Assess a pull request to begin", progress: result ? "100%" : "8%", stats: [["Blocks", result?.blockers?.length || 0], ["Warnings", result?.warnings?.length || 0], ["Runs", overview?.counts?.runs || 0]] }),
-  chips: (result, health) => [result?.repo || "No repository selected", result?.pr_number ? `PR #${result.pr_number}` : "No PR selected", result?.mergeable_state ? `Merge ${result.mergeable_state}` : health.github_ready ? "GitHub ready" : "Token missing", result ? result.approval_required === false ? "Approval optional" : "Approval required" : "Local by default"],
+  chips: (result, health) => [result?.repo || "No repository selected", result?.pr_number ? `PR #${result.pr_number}` : "No PR selected", result ? mergePostureLabel(result) : health.github_ready ? "GitHub ready" : "Token missing", result ? result.approval_required === false ? "Approval optional" : "Approval required" : "Local by default"],
   targetSubtitle: (result) => result?.pr_number ? `Pull request #${result.pr_number} · ${result.readiness || "pending"}` : "Pull request readiness",
   historyTitle: (entry) => `${entry.repo} · PR #${entry.pr_number} · ${entry.readiness || "saved"}`,
   historySummary: (entry) => entry.summary || entry.pr_title,

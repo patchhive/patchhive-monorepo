@@ -22,7 +22,9 @@ use crate::{
     STARTUP_CHECKS,
 };
 
-use super::assessment::{approval_required_default, run_github_pr_assessment};
+use super::assessment::{
+    approval_required_default, run_github_pr_assessment, AssessmentRunRequest,
+};
 use super::utils::{api_error, valid_repo, ApiError};
 
 type JsonResult<T> = Result<Json<T>, ApiError>;
@@ -220,15 +222,17 @@ pub async fn assess_github_pr(
 
     let assessment = run_github_pr_assessment(
         &state,
-        repo.to_string(),
-        request.pr_number,
-        request.publish_report,
-        request
-            .require_approval
-            .unwrap_or_else(approval_required_default),
-        "manual_pr_lookup".into(),
-        "pull_request".into(),
-        "manual".into(),
+        AssessmentRunRequest {
+            repo: repo.to_string(),
+            pr_number: request.pr_number,
+            publish_report: request.publish_report,
+            approval_required: request
+                .require_approval
+                .unwrap_or_else(approval_required_default),
+            trigger: "manual_pr_lookup".into(),
+            event: "pull_request".into(),
+            action: "manual".into(),
+        },
     )
     .await?;
 
@@ -326,13 +330,15 @@ pub async fn github_webhook(
 
     let assessment = run_github_pr_assessment(
         &state,
-        repo,
-        pr_number,
-        true,
-        approval_required_default(),
-        "github_webhook".into(),
-        event.clone(),
-        action.clone(),
+        AssessmentRunRequest {
+            repo,
+            pr_number,
+            publish_report: true,
+            approval_required: approval_required_default(),
+            trigger: "github_webhook".into(),
+            event: event.clone(),
+            action: action.clone(),
+        },
     )
     .await?;
 

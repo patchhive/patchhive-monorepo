@@ -255,113 +255,6 @@ fn cross_product_markdown(assessment: &MergeAssessment) -> String {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{cross_product_markdown, mergeability_needs_refresh};
-    use crate::models::{
-        MergeAssessment, RepoMemoryContextPreview, ReviewBeeContext, TrustGateContext,
-    };
-    use patchhive_github_pr::GitHubPullRequestDetail;
-
-    #[test]
-    fn mergeability_refresh_only_waits_for_unsettled_github_state() {
-        assert!(mergeability_needs_refresh(&GitHubPullRequestDetail {
-            mergeable: None,
-            mergeable_state: "unknown".into(),
-            ..GitHubPullRequestDetail::default()
-        }));
-        assert!(mergeability_needs_refresh(&GitHubPullRequestDetail {
-            mergeable: Some(true),
-            mergeable_state: "".into(),
-            ..GitHubPullRequestDetail::default()
-        }));
-        assert!(!mergeability_needs_refresh(&GitHubPullRequestDetail {
-            mergeable: Some(true),
-            mergeable_state: "clean".into(),
-            ..GitHubPullRequestDetail::default()
-        }));
-        assert!(!mergeability_needs_refresh(&GitHubPullRequestDetail {
-            mergeable: Some(false),
-            mergeable_state: "dirty".into(),
-            ..GitHubPullRequestDetail::default()
-        }));
-    }
-
-    #[test]
-    fn cross_product_markdown_suppresses_zero_value_context_counts() {
-        let markdown = cross_product_markdown(&MergeAssessment {
-            review_bee: Some(ReviewBeeContext {
-                status: "clear".into(),
-                summary: "Review follow-up looks clear.".into(),
-                open_items: 0,
-                actionable_threads: 0,
-                ..ReviewBeeContext::default()
-            }),
-            trust_gate: Some(TrustGateContext {
-                recommendation: "safe".into(),
-                summary: "Patch stays within the current repo rules.".into(),
-                risk_score: 0,
-                blocked_findings: 0,
-                warning_findings: 0,
-                ..TrustGateContext::default()
-            }),
-            repo_memory: Some(RepoMemoryContextPreview {
-                summary: "Repo conventions were loaded for this PR.".into(),
-                policy_entries: 0,
-                pinned_entries: 0,
-                ..RepoMemoryContextPreview::default()
-            }),
-            ..MergeAssessment::default()
-        });
-
-        assert!(markdown.contains("Review follow-up looks clear."));
-        assert!(markdown.contains("Patch stays within the current repo rules."));
-        assert!(markdown.contains("Repo conventions were loaded for this PR."));
-        assert!(!markdown.contains("0 open items"));
-        assert!(!markdown.contains("0 actionable threads"));
-        assert!(!markdown.contains("risk 0"));
-        assert!(!markdown.contains("0 blocked findings"));
-        assert!(!markdown.contains("0 warning findings"));
-        assert!(!markdown.contains("0 policy entries"));
-        assert!(!markdown.contains("0 pinned entries"));
-    }
-
-    #[test]
-    fn cross_product_markdown_keeps_positive_context_counts() {
-        let markdown = cross_product_markdown(&MergeAssessment {
-            review_bee: Some(ReviewBeeContext {
-                status: "attention".into(),
-                summary: "Review feedback still needs follow-up.".into(),
-                open_items: 2,
-                actionable_threads: 1,
-                ..ReviewBeeContext::default()
-            }),
-            trust_gate: Some(TrustGateContext {
-                recommendation: "warn".into(),
-                summary: "A couple of files deserve a closer look.".into(),
-                risk_score: 7,
-                blocked_findings: 0,
-                warning_findings: 2,
-                ..TrustGateContext::default()
-            }),
-            repo_memory: Some(RepoMemoryContextPreview {
-                summary: "RepoMemory found reusable conventions.".into(),
-                policy_entries: 3,
-                pinned_entries: 1,
-                ..RepoMemoryContextPreview::default()
-            }),
-            ..MergeAssessment::default()
-        });
-
-        assert!(markdown.contains("2 open items"));
-        assert!(markdown.contains("1 actionable thread"));
-        assert!(markdown.contains("risk 7"));
-        assert!(markdown.contains("2 warning findings"));
-        assert!(markdown.contains("3 policy entries"));
-        assert!(markdown.contains("1 pinned entry"));
-    }
-}
-
 fn render_comment_markdown(assessment: &MergeAssessment) -> String {
     let details_line = details_url(assessment)
         .map(|url| format!("[Open MergeKeeper details]({url})"))
@@ -595,5 +488,112 @@ pub async fn publish_assessment_outcome(
         comment_url,
         comment_mode,
         report_markdown: markdown,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{cross_product_markdown, mergeability_needs_refresh};
+    use crate::models::{
+        MergeAssessment, RepoMemoryContextPreview, ReviewBeeContext, TrustGateContext,
+    };
+    use patchhive_github_pr::GitHubPullRequestDetail;
+
+    #[test]
+    fn mergeability_refresh_only_waits_for_unsettled_github_state() {
+        assert!(mergeability_needs_refresh(&GitHubPullRequestDetail {
+            mergeable: None,
+            mergeable_state: "unknown".into(),
+            ..GitHubPullRequestDetail::default()
+        }));
+        assert!(mergeability_needs_refresh(&GitHubPullRequestDetail {
+            mergeable: Some(true),
+            mergeable_state: "".into(),
+            ..GitHubPullRequestDetail::default()
+        }));
+        assert!(!mergeability_needs_refresh(&GitHubPullRequestDetail {
+            mergeable: Some(true),
+            mergeable_state: "clean".into(),
+            ..GitHubPullRequestDetail::default()
+        }));
+        assert!(!mergeability_needs_refresh(&GitHubPullRequestDetail {
+            mergeable: Some(false),
+            mergeable_state: "dirty".into(),
+            ..GitHubPullRequestDetail::default()
+        }));
+    }
+
+    #[test]
+    fn cross_product_markdown_suppresses_zero_value_context_counts() {
+        let markdown = cross_product_markdown(&MergeAssessment {
+            review_bee: Some(ReviewBeeContext {
+                status: "clear".into(),
+                summary: "Review follow-up looks clear.".into(),
+                open_items: 0,
+                actionable_threads: 0,
+                ..ReviewBeeContext::default()
+            }),
+            trust_gate: Some(TrustGateContext {
+                recommendation: "safe".into(),
+                summary: "Patch stays within the current repo rules.".into(),
+                risk_score: 0,
+                blocked_findings: 0,
+                warning_findings: 0,
+                ..TrustGateContext::default()
+            }),
+            repo_memory: Some(RepoMemoryContextPreview {
+                summary: "Repo conventions were loaded for this PR.".into(),
+                policy_entries: 0,
+                pinned_entries: 0,
+                ..RepoMemoryContextPreview::default()
+            }),
+            ..MergeAssessment::default()
+        });
+
+        assert!(markdown.contains("Review follow-up looks clear."));
+        assert!(markdown.contains("Patch stays within the current repo rules."));
+        assert!(markdown.contains("Repo conventions were loaded for this PR."));
+        assert!(!markdown.contains("0 open items"));
+        assert!(!markdown.contains("0 actionable threads"));
+        assert!(!markdown.contains("risk 0"));
+        assert!(!markdown.contains("0 blocked findings"));
+        assert!(!markdown.contains("0 warning findings"));
+        assert!(!markdown.contains("0 policy entries"));
+        assert!(!markdown.contains("0 pinned entries"));
+    }
+
+    #[test]
+    fn cross_product_markdown_keeps_positive_context_counts() {
+        let markdown = cross_product_markdown(&MergeAssessment {
+            review_bee: Some(ReviewBeeContext {
+                status: "attention".into(),
+                summary: "Review feedback still needs follow-up.".into(),
+                open_items: 2,
+                actionable_threads: 1,
+                ..ReviewBeeContext::default()
+            }),
+            trust_gate: Some(TrustGateContext {
+                recommendation: "warn".into(),
+                summary: "A couple of files deserve a closer look.".into(),
+                risk_score: 7,
+                blocked_findings: 0,
+                warning_findings: 2,
+                ..TrustGateContext::default()
+            }),
+            repo_memory: Some(RepoMemoryContextPreview {
+                summary: "RepoMemory found reusable conventions.".into(),
+                policy_entries: 3,
+                pinned_entries: 1,
+                ..RepoMemoryContextPreview::default()
+            }),
+            ..MergeAssessment::default()
+        });
+
+        assert!(markdown.contains("2 open items"));
+        assert!(markdown.contains("1 actionable thread"));
+        assert!(markdown.contains("risk 7"));
+        assert!(markdown.contains("2 warning findings"));
+        assert!(markdown.contains("3 policy entries"));
+        assert!(markdown.contains("1 pinned entry"));
     }
 }

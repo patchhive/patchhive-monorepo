@@ -17,24 +17,29 @@ use crate::{
 };
 
 use super::utils::{
-    actionable_text, api_error, diff_changed_paths, make_signal, mergeable_value,
-    normalize_mergeable_state, plural_suffix, truncate, ApiError,
+    actionable_text, api_error, diff_changed_paths, make_signal, mergeability_posture,
+    mergeable_value, normalize_mergeable_state, plural_suffix, truncate, ApiError,
+    MergeabilityPosture,
 };
+
+pub struct AssessmentRunRequest {
+    pub repo: String,
+    pub pr_number: i64,
+    pub publish_report: bool,
+    pub approval_required: bool,
+    pub trigger: String,
+    pub event: String,
+    pub action: String,
+}
 
 pub async fn run_github_pr_assessment(
     state: &AppState,
-    repo: String,
-    pr_number: i64,
-    publish_report: bool,
-    approval_required: bool,
-    trigger: String,
-    event: String,
-    action: String,
+    request: AssessmentRunRequest,
 ) -> Result<MergeAssessment, ApiError> {
-    let context = github::fetch_merge_context(&state.http, &repo, pr_number)
+    let context = github::fetch_merge_context(&state.http, &request.repo, request.pr_number)
         .await
         .map_err(|err| api_error(StatusCode::BAD_GATEWAY, err.to_string()))?;
-    let mut assessment = build_assessment(state, &context, approval_required).await;
+    let mut assessment = build_assessment(state, &context, request.approval_required).await;
     assessment.github = Some(GitHubAssessmentContext {
         repo: context.pr.repo.clone(),
         pr_number: context.pr.number,
@@ -44,11 +49,11 @@ pub async fn run_github_pr_assessment(
         head_repo: context.pr.head_repo.clone(),
         head_ref: context.pr.head_ref.clone(),
         base_ref: context.pr.base_ref.clone(),
-        trigger,
-        event,
-        action,
+        trigger: request.trigger,
+        event: request.event,
+        action: request.action,
     });
-    assessment.github_report = Some(if publish_report {
+    assessment.github_report = Some(if request.publish_report {
         github::publish_assessment_outcome(&state.http, &assessment).await
     } else {
         github::preview_assessment_outcome(
@@ -142,23 +147,26 @@ pub async fn build_assessment(
 
     let mergeable = mergeable_value(context.pr.mergeable);
     let mergeable_state = normalize_mergeable_state(&context.pr.mergeable_state);
-    if context.pr.mergeable == Some(false)
-        || matches!(mergeable_state.as_str(), "dirty" | "blocked")
-    {
-        blockers.push(make_signal(
+    match mergeability_posture(context.pr.mergeable, &mergeable_state) {
+        MergeabilityPosture::Conflict => blockers.push(make_signal(
             "merge-conflict",
             "block",
-            "GitHub says this PR is not mergeable",
+            "PR has a merge conflict",
             format!(
-                "Mergeable state is `{mergeable_state}` and GitHub does not currently consider the PR safely mergeable."
+                "GitHub reports mergeable `{mergeable}` with state `{mergeable_state}`, so the head cannot currently merge cleanly into the base branch."
             ),
             vec![format!("mergeable={mergeable}")],
-        ));
-    } else if matches!(
-        mergeable_state.as_str(),
-        "unknown" | "unstable" | "behind" | "has_hooks"
-    ) {
-        warnings.push(make_signal(
+        )),
+        MergeabilityPosture::PolicyHold => warnings.push(make_signal(
+            "merge-policy-hold",
+            "warn",
+            "GitHub merge policy is holding this PR",
+            format!(
+                "GitHub reports mergeable `{mergeable}` with state `{mergeable_state}`. The diff can merge mechanically, but a branch-protection or repository policy condition is still holding it."
+            ),
+            vec![format!("mergeable={mergeable}")],
+        )),
+        MergeabilityPosture::Unsettled => warnings.push(make_signal(
             "merge-state-uncertain",
             "warn",
             "Mergeability is not settled yet",
@@ -166,7 +174,8 @@ pub async fn build_assessment(
                 "GitHub reports mergeable state `{mergeable_state}`, which usually means a rebase, background check, or branch-protection condition still needs to settle."
             ),
             vec![format!("mergeable={mergeable}")],
-        ));
+        )),
+        MergeabilityPosture::Clear => {}
     }
 
     if metrics.failing_checks > 0 {
