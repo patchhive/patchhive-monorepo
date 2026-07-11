@@ -155,7 +155,8 @@ pub async fn health() -> Json<serde_json::Value> {
         .get()
         .map(|checks| patchhive_product_core::github_permissions::github_token_verified(checks))
         .unwrap_or(false);
-    let report_publish_verified = github::report_publish_verified();
+    let report_publish_verified =
+        github::report_publish_verified() || db::report_publish_verified();
 
     Json(json!({
         "status": if errors > 0 || !db_ok { "degraded" } else { "ok" },

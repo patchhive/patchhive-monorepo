@@ -164,6 +164,14 @@ pub struct GitHubReportOutcome {
     pub report_markdown: String,
 }
 
+impl GitHubReportOutcome {
+    pub fn is_complete_delivery(&self) -> bool {
+        self.delivered
+            && !self.comment_url.trim().is_empty()
+            && (!self.check_url.trim().is_empty() || !self.status_url.trim().is_empty())
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct MergeAssessment {
     #[serde(default)]

@@ -77,7 +77,7 @@ typography scale, spacing system, or theme implementation.
 
 | Product | v3 folder | Status |
 | --- | --- | --- |
-| MergeKeeper | `products/merge-keeper/frontend-v3` | v1/v2 parity implemented and locally verified; awaiting live ready/blocked/publish acceptance and operator sign-off |
+| MergeKeeper | `products/merge-keeper/frontend` | Promoted after live ready, blocked, history, checks, and GitHub-publish acceptance; v1/v2 removed |
 | ReleaseSentry | `products/release-sentry/frontend-v3` | Unified-backend v3 workspace implemented |
 | DepTriage | `products/dep-triage/frontend-v3` | Unified-backend v3 workspace implemented |
 | VulnTriage | `products/vuln-triage/frontend` | Promoted after final parity audit; v1/v2 removed |

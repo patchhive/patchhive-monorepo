@@ -100,7 +100,7 @@ fn default_check_text_template() -> String {
 }
 
 fn default_comment_template() -> String {
-    "## {{emoji}} TrustGate: {{recommendation_upper}}\n\n{{summary}}\n\n### Risk snapshot\n- Risk score: **{{risk_score}}**\n- Files changed: **{{files_changed}}**\n- Additions / deletions: **+{{additions}} / -{{deletions}}**\n- Tests changed: **{{tests_changed}}**\n- Generated files: **{{generated_files}}**\n- Blocking findings: **{{blocked_findings}}**\n- Warning findings: **{{warning_findings}}**\n\n### Findings\n{{findings_markdown}}\n\n### File hotspots\n{{file_hotspots_markdown}}\n\n### Next move\n{{next_move}}\n\n{{details_markdown}}\n\n*TrustGate by PatchHive*".into()
+    "## {{emoji}} TrustGate: {{recommendation_upper}}\n\n{{summary}}\n\n### Risk snapshot\n- Risk score: **{{risk_score}}**\n- Files changed: **{{files_changed}}**\n- Additions / deletions: **+{{additions}} / -{{deletions}}**\n- Tests changed: **{{tests_changed}}**\n- Generated files: **{{generated_files}}**\n- Blocking findings: **{{blocked_findings}}**\n- Warning findings: **{{warning_findings}}**\n\n### Findings\n{{findings_markdown}}\n\n### File hotspots\n{{file_hotspots_markdown}}\n\n### Next move\n{{next_move}}\n\n{{details_markdown}}".into()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

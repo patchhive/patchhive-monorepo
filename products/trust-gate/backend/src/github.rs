@@ -3,6 +3,7 @@ use patchhive_github_pr::{
     env_value, github_token_from_env, GitHubCheckRunRequest, GitHubCommitStatusRequest,
     GitHubManagedCommentResult, GitHubPrClient, GitHubPullRequestDetail,
 };
+use patchhive_product_core::branding::append_product_signature;
 use reqwest::Client;
 
 use crate::{
@@ -277,7 +278,10 @@ fn render_github_report(review: &ReviewResult) -> RenderedGitHubReport {
     let check_title = render_template(&templates.check_title_template, &variables);
     let check_summary = render_template(&templates.check_summary_template, &variables);
     let check_text = render_template(&templates.check_text_template, &variables);
-    let comment_body = render_template(&templates.comment_template, &variables);
+    let comment_body = append_product_signature(
+        &render_template(&templates.comment_template, &variables),
+        "TrustGate",
+    );
 
     RenderedGitHubReport {
         check_title,

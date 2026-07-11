@@ -3,6 +3,7 @@ use patchhive_github_pr::{
     env_value, github_token_from_env, GitHubManagedCommentResult, GitHubPrClient,
     GitHubPullRequestDetail, GitHubPullReview, GitHubPullReviewThread,
 };
+use patchhive_product_core::branding::append_product_signature;
 use reqwest::Client;
 
 use crate::models::{GitHubReportOutcome, ReviewResult};
@@ -147,7 +148,7 @@ fn render_comment_markdown(review: &ReviewResult) -> String {
         )
     };
 
-    format!(
+    let markdown = format!(
         "{COMMENT_MARKER}
 ## {emoji} ReviewBee checklist
 
@@ -188,7 +189,8 @@ fn render_comment_markdown(review: &ReviewResult) -> String {
         prompt_section = prompt_section,
         next_move = next_move(review),
         details_line = details_line,
-    )
+    );
+    append_product_signature(&markdown, "ReviewBee")
 }
 
 pub fn preview_review_outcome(review: &ReviewResult, message: &str) -> GitHubReportOutcome {

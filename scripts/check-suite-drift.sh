@@ -165,10 +165,10 @@ check_product() {
 
   if [[ "$frontend_kind" == "v2" || "$frontend_kind" == "v3" ]]; then
     if command -v rg >/dev/null 2>&1; then
-      if ! rg -q "productKey=[\"']${product}[\"']" "$frontend_dir/src"; then
+      if ! rg -q "productKey[=:][[:space:]]*[\"']${product}[\"']" "$frontend_dir/src"; then
         fail "$product frontend-${frontend_kind} does not declare productKey ${product}"
       fi
-    elif ! grep -R -Eq "productKey=[\"']${product}[\"']" "$frontend_dir/src"; then
+    elif ! grep -R -Eq "productKey[=:][[:space:]]*[\"']${product}[\"']" "$frontend_dir/src"; then
       fail "$product frontend-${frontend_kind} does not declare productKey ${product}"
     fi
   elif command -v rg >/dev/null 2>&1; then
@@ -215,12 +215,26 @@ check_release_docs() {
   require_contains "docs/product-export-workflow.md" "PATCHHIVE_EXPORT_FORCE_WITH_LEASE" "force-with-lease export option"
 }
 
+check_github_message_branding() {
+  require_contains "crates/patchhive-product-core/src/branding.rs" \
+    "https://github.com/patchhive" "shared PatchHive message link"
+  require_contains "products/merge-keeper/backend/src/github.rs" \
+    'append_product_signature(&markdown, "MergeKeeper")' "MergeKeeper GitHub signature"
+  require_contains "products/review-bee/backend/src/github.rs" \
+    'append_product_signature(&markdown, "ReviewBee")' "ReviewBee GitHub signature"
+  require_contains "products/trust-gate/backend/src/github.rs" \
+    '"TrustGate",' "TrustGate GitHub signature"
+  require_contains "products/repo-reaper/backend/src/github.rs" \
+    "RepoReaper by [PatchHive](https://github.com/patchhive)" "RepoReaper GitHub signature"
+}
+
 check_theme_inventory
 for product in "${PATCHHIVE_PRODUCTS[@]}"; do
   check_product "$product"
 done
 check_template
 check_release_docs
+check_github_message_branding
 
 if [[ "$failures" -gt 0 ]]; then
   echo

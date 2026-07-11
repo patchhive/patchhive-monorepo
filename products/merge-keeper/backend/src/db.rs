@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use once_cell::sync::Lazy;
+use patchhive_product_core::branding::append_product_signature;
 use patchhive_product_core::sqlite::{PooledSqliteConnection, SqlitePool};
 use rusqlite::{params, OptionalExtension};
 
@@ -140,7 +141,37 @@ pub fn get_assessment(id: &str) -> Option<MergeAssessment> {
         .optional()
         .ok()
         .flatten()?;
-    serde_json::from_str(&payload).ok()
+    let mut assessment: MergeAssessment = serde_json::from_str(&payload).ok()?;
+    if let Some(report) = assessment.github_report.as_mut() {
+        report.report_markdown = append_product_signature(&report.report_markdown, "MergeKeeper");
+    }
+    Some(assessment)
+}
+
+pub fn report_publish_verified() -> bool {
+    let Ok(conn) = connect() else {
+        return false;
+    };
+    let mut stmt =
+        match conn.prepare("SELECT payload FROM merge_runs ORDER BY created_at DESC LIMIT 100") {
+            Ok(stmt) => stmt,
+            Err(_) => return false,
+        };
+    let rows = match stmt.query_map([], |row| row.get::<_, String>(0)) {
+        Ok(rows) => rows,
+        Err(_) => return false,
+    };
+
+    for payload in rows.flatten() {
+        let verified = serde_json::from_str::<MergeAssessment>(&payload)
+            .ok()
+            .and_then(|assessment| assessment.github_report)
+            .is_some_and(|report| report.is_complete_delivery());
+        if verified {
+            return true;
+        }
+    }
+    false
 }
 
 pub fn overview_counts() -> OverviewCounts {

@@ -42,7 +42,7 @@ credentials.
 | ReviewBee | Metadata read, Pull requests read | Issues write or Pull requests write | Reads PR metadata, reviews, review comments, and review-thread state. Write access is only for maintained PR checklist comments. |
 | TrustGate | None for pasted diffs; Metadata read and Pull requests read for PR diff review | Issues write or Pull requests write; Commit statuses write or Checks write when GitHub reporting is enabled | Pasted diff review is local. GitHub mode reads PR diffs and may publish comments, statuses, or checks. |
 | RepoMemory | Metadata read, Pull requests read, Issues read, Contents read | None | Reads merged PRs, review/comment/file context, closed issues, and lightweight file evidence for durable repo memory. |
-| MergeKeeper | Metadata read, Pull requests read | Actions read; Issues write or Pull requests write; Commit statuses write or Checks write when publishing is enabled | Reads PR state, reviewer state, mergeability, review pressure, and optionally CI/check evidence. Write access is only for maintained output. |
+| MergeKeeper | Metadata read, Pull requests read | Actions read; for PAT publishing use a write-capable bot account and classic `public_repo` (public repos) or `repo` (private repos); use a GitHub App for native check runs | Reads PR state, reviewer state, mergeability, review pressure, and optional CI evidence. A complete publish is a maintained PR comment plus either a check run or commit status. |
 | FlakeSting | Metadata read, Actions read | None | Reads workflow runs and workflow jobs to detect pass/fail swings and unstable steps. |
 | DepTriage | Metadata read, Pull requests read | Dependabot alerts read | Reads dependency PRs. Dependabot alert access enriches security urgency, but the product still ranks dependency PRs when alert access is unavailable. |
 | VulnTriage | Metadata read, Code scanning alerts read, Dependabot alerts read, with the target repository selected | None | Reads GitHub security alert feeds. These feeds can still return `403` if alerts are disabled, the repo was not selected for the token, or the token owner lacks security access. |
@@ -53,13 +53,17 @@ credentials.
 
 ## MergeKeeper Publish Test Token
 
-For a narrow fine-grained PAT publish test, select only the fixture repository
-and grant Metadata read, Pull requests read, Commit statuses read/write, and
-Issues read/write. MergeKeeper first attempts a check run, then falls back to a
-commit status; the fallback lets PAT-based testing succeed without requiring a
-GitHub App. Full report delivery requires both the status signal and maintained
-PR comment. A partial write remains visible as `report_partial` and does not
-verify the publishing path.
+Fine-grained PATs are suitable for analysis when the token's resource owner owns
+or controls the selected repository. They are not a way for the PatchHive bot
+identity to gain write access to an unrelated owner's repository.
+
+For the verified public-repository publishing path, add the PatchHive identity
+as a write collaborator and use that identity's classic PAT with `public_repo`.
+Use `repo` instead for private repositories. MergeKeeper first attempts a check
+run, which GitHub requires to be authenticated through a GitHub App, then falls
+back to a commit status. Full delivery requires both the status signal and the
+maintained PR comment. A partial write remains visible as `report_partial` and
+does not verify the publishing path.
 
 ## DepTriage Test Token
 
@@ -103,5 +107,7 @@ be shown as unavailable security evidence, not as "no dependency risk exists."
   repository permission.
 - PR checklist comments use the issue-comment API, which accepts `Issues` write
   or `Pull requests` write.
+- Creating check runs requires a GitHub App installation token. PAT-based
+  publishers should use a commit status for the status signal.
 - Code scanning alerts use the `Code scanning alerts` repository permission.
 - Dependabot alerts use the `Dependabot alerts` repository permission.

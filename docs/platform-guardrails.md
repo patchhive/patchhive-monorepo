@@ -52,6 +52,12 @@ Operational rules:
   reverse proxy and `X-Forwarded-For` is sanitized by that proxy; otherwise
   forwarded client headers are ignored.
 - HiveCore should inherit and coordinate these caps, not bypass them.
+- Every GitHub-facing PR body, issue comment, PR comment, report, or other
+  maintained message must end with a product signature that links PatchHive:
+  `*ProductName by [PatchHive](https://github.com/patchhive)*`. Use
+  `patchhive_product_core::branding::append_product_signature` for generated
+  Markdown. Product-specific context may precede it, but the attribution must
+  remain visible and clickable.
 
 ## 3. Shared API And Lifecycle Contracts
 

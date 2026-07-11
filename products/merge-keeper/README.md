@@ -1,7 +1,7 @@
 # MergeKeeper by PatchHive
 
-The opt-in Lovable-derived v3 frontend lives in `frontend-v3/` and targets the
-in-process unified-backend route at `/api/products/merge-keeper`.
+The canonical Lovable-derived specialist frontend lives in `frontend/` and
+targets the in-process unified-backend route at `/api/products/merge-keeper`.
 
 MergeKeeper turns pull request merge pressure into a clear readiness call.
 
@@ -38,31 +38,21 @@ Backend: `http://localhost:8050`
 cp .env.example .env
 
 cd backend && cargo run
-cd ../frontend-v2 && npm install && npm run dev
+cd ../frontend && npm install && npm run dev
 ```
 
-The old v1 frontend is preserved for reference in `frontend-legacy/` after the
-v2 parity audit. Use it only when comparing behavior before deleting legacy UI
-code:
-
-```bash
-cd frontend-legacy && npm install && npm run dev
-```
-
-The v3 parity candidate lives in `frontend-v3/`. It combines the required v1
-and v2 workflows in the suite-wide Lovable-derived specialist interface. Keep
-v2 as the active packaged frontend until the live ready, blocked, and explicitly
-authorized GitHub-publish acceptance cases pass and the v3 surface receives
-operator sign-off.
+The v1 and v2 frontends were removed after the v3 parity audit, live ready and
+blocked acceptance runs, and an explicitly authorized GitHub publish test all
+passed on 2026-07-11.
 
 ## Important Configuration
 
 | Variable | Purpose |
 | --- | --- |
-| `BOT_GITHUB_TOKEN` or `GITHUB_TOKEN` | Optional fine-grained PAT for pull request, review, and check reads. Analysis-only scopes: Metadata (read), Pull requests (read), Checks (read), Commit statuses (read). Add Checks (write), Commit statuses (write), and Issues (write) for GitHub publishing. |
+| `BOT_GITHUB_TOKEN` or `GITHUB_TOKEN` | GitHub credential for PR reads and optional publishing. Fine-grained PATs work for selected-repository analysis. PAT-based publishing uses a write-capable PatchHive account plus classic `public_repo` (public repos) or `repo` (private repos) and delivers a commit status plus maintained PR comment. Native check runs require a GitHub App. |
 | `MERGE_KEEPER_GITHUB_WEBHOOK_SECRET` | Optional signed webhook secret for refreshes. |
 | `MERGE_KEEPER_PUBLIC_URL` | Optional public URL for links from GitHub artifacts back to saved runs. |
-| `MERGE_KEEPER_REQUIRE_APPROVAL` | Optional default approval policy. Defaults to `true`; set `false` for repos where a clean/check-passing PR can be ready without review approval. Manual v2 runs can override this per assessment. |
+| `MERGE_KEEPER_REQUIRE_APPROVAL` | Optional default approval policy. Defaults to `true`; set `false` for repos where a clean/check-passing PR can be ready without review approval. Manual runs can override this per assessment. |
 | `PATCHHIVE_REVIEW_BEE_URL` / `PATCHHIVE_REVIEW_BEE_API_KEY` | Optional ReviewBee context. |
 | `PATCHHIVE_TRUST_GATE_URL` / `PATCHHIVE_TRUST_GATE_API_KEY` | Optional TrustGate context. |
 | `PATCHHIVE_REPO_MEMORY_URL` / `PATCHHIVE_REPO_MEMORY_API_KEY` | Optional RepoMemory merge expectations. |
@@ -72,7 +62,10 @@ operator sign-off.
 | `MERGE_KEEPER_PORT` | Backend port for split local runs. |
 | `RUST_LOG` | Rust logging level. |
 
-MergeKeeper works best with a fine-grained GitHub token. Reading pull requests, reviews, and commit health is enough for the base product loop. Maintained comments or check-style output may need extra write permissions.
+Reading pull requests, reviews, and commit health is enough for the base product
+loop. Publishing is always an explicit per-run choice. A successful PAT path
+requires both the commit-status fallback and the maintained PR comment; a
+native check run is available only when MergeKeeper uses a GitHub App token.
 
 ## Integrations
 
@@ -98,4 +91,4 @@ The PatchHive monorepo is the source of truth for MergeKeeper development. The s
 
 ## Local Notes
 
-- The active UI lives in `frontend-v2/`. The old v1 UI is preserved in `frontend-legacy/` only as parity reference material.
+- The canonical UI lives in `frontend/`; retired v1 and v2 implementations are no longer packaged or kept in the tree.

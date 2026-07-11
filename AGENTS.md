@@ -576,7 +576,11 @@ Important env vars:
 ## Git Conventions
 
 - Branch names: `reaper/issue-{number}` for RepoReaper, similar pattern for other products
-- PR bodies should include explicit autonomous attribution and end with `*ProductName by PatchHive*`
+- Every GitHub-facing PR body, issue/PR comment, and maintained report should
+  include explicit attribution and end with
+  `*ProductName by [PatchHive](https://github.com/patchhive)*`. Rust products
+  should use `patchhive_product_core::branding::append_product_signature` for
+  generated Markdown.
 - Commit messages should use `fix: {issue title} (closes #{number})` where applicable
 
 ## Local Development

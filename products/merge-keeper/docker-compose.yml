@@ -17,36 +17,13 @@ services:
     restart: unless-stopped
 
   frontend:
-    image: "${PATCHHIVE_MERGE_KEEPER_FRONTEND_V2_IMAGE:-ghcr.io/patchhive/mergekeeper-frontend-v2}:${PATCHHIVE_IMAGE_TAG:-main}"
+    image: "${PATCHHIVE_MERGE_KEEPER_FRONTEND_IMAGE:-ghcr.io/patchhive/mergekeeper-frontend}:${PATCHHIVE_IMAGE_TAG:-main}"
     build:
       context: ../..
-      dockerfile: products/merge-keeper/frontend-v2/Dockerfile
+      dockerfile: products/merge-keeper/frontend/Dockerfile
     pull_policy: "${PATCHHIVE_IMAGE_PULL_POLICY:-missing}"
     ports:
       - "5178:8080"
     depends_on:
       - backend
-    restart: unless-stopped
-
-  frontend-legacy:
-    profiles:
-      - legacy-ui
-    image: "${PATCHHIVE_MERGE_KEEPER_FRONTEND_LEGACY_IMAGE:-ghcr.io/patchhive/mergekeeper-frontend-legacy}:${PATCHHIVE_IMAGE_TAG:-main}"
-    build: ./frontend-legacy
-    pull_policy: "${PATCHHIVE_IMAGE_PULL_POLICY:-missing}"
-    ports:
-      - "5197:8080"
-    depends_on:
-      - backend
-    restart: unless-stopped
-
-  frontend-v3:
-    profiles: ["v3-ui"]
-    image: "${PATCHHIVE_MERGE_KEEPER_FRONTEND_V3_IMAGE:-patchhive/mergekeeper-frontend-v3}:${PATCHHIVE_IMAGE_TAG:-local}"
-    build:
-      context: ../..
-      dockerfile: products/merge-keeper/frontend-v3/Dockerfile
-    pull_policy: "${PATCHHIVE_IMAGE_PULL_POLICY:-missing}"
-    ports:
-      - "5301:8080"
     restart: unless-stopped

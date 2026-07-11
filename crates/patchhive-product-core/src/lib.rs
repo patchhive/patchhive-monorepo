@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod branding;
 pub mod contract;
 pub mod github_auth;
 pub mod github_permissions;

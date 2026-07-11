@@ -43,7 +43,9 @@ MergeKeeper is merge-readiness-first. It is the convergence point for GitHub sta
 - **Evidence strings**: per-signal supporting detail (e.g. check names, reviewer names, thread excerpts).
 - **Merge metrics**: approvals, changes-requested, comment-reviews, reviewer count, review threads (total/open/actionable), successful/pending/failing checks, changed files, additions, deletions.
 - **Cross-product context**: embedded ReviewBee, TrustGate, RepoMemory previews when available.
-- **GitHub report** (optional): attempt to publish a maintained PR comment + check run (falls back to commit status).
+- **GitHub report** (optional): publish a maintained PR comment plus a status
+  signal. GitHub App tokens can create a check run; PATs use the commit-status
+  fallback.
 - **Persisted history**: full `MergeAssessment` JSON stored in SQLite with indexed lookups.
 
 ## Safety Boundary
@@ -60,8 +62,6 @@ docker compose up --build
 
 Defaults:
 - Frontend: `http://localhost:5178`
-- Legacy frontend reference: `http://localhost:5197` when started with the
-  `legacy-ui` Docker Compose profile
 - Backend: `http://localhost:8050`
 - Suite backend route: `http://localhost:8100/api/products/merge-keeper`
 - Database: `merge-keeper.db` (configurable via `MERGE_KEEPER_DB_PATH`)
@@ -71,14 +71,14 @@ Split local workflow:
 cd products/merge-keeper/backend
 cargo run
 
-cd ../frontend-v2
+cd ../frontend
 npm install && npm run dev
 ```
 
 ### Unified Backend Mode
 
 MergeKeeper is the first product engine mounted in-process inside
-`services/patchhive-backend`. In suite mode, the v2 frontend should talk to the
+`services/patchhive-backend`. In suite mode, the canonical frontend talks to the
 unified backend route instead of a separate MergeKeeper backend service:
 
 ```bash
@@ -86,7 +86,7 @@ PATCHHIVE_PRODUCTS=merge-keeper \
 PATCHHIVE_BIND_ADDR=127.0.0.1:8100 \
 cargo run --manifest-path services/patchhive-backend/Cargo.toml
 
-npm --prefix products/merge-keeper/frontend-v2 run dev
+npm --prefix products/merge-keeper/frontend run dev
 ```
 
 The standalone backend at `products/merge-keeper/backend` remains as a
@@ -95,75 +95,10 @@ tested. Once product-mode packaging runs the shared backend image with only
 MergeKeeper enabled, the old separate backend service can be moved to legacy or
 removed.
 
-### UI v1 to v2 Parity Audit
-
-Audited on 2026-07-03 against:
-
-- `products/merge-keeper/frontend-legacy/src/App.jsx`
-- `products/merge-keeper/frontend-legacy/src/panels/KeeperPanel.jsx`
-- `products/merge-keeper/frontend-legacy/src/panels/HistoryPanel.jsx`
-- `products/merge-keeper/frontend-legacy/src/panels/ChecksPanel.jsx`
-- `products/merge-keeper/frontend-v2/src/App.jsx`
-
-The v2 MergeKeeper surface must keep these v1 workflows before the old UI can
-be removed:
-
-- API-key login and first-key generation.
-- Directed PR assessment by `owner/repo` and PR number.
-- Optional GitHub report publishing toggle.
-- Readiness outcome with blockers, warnings, summary, and evidence.
-- Merge metrics for approvals, requested changes, failing checks, pending
-  checks, actionable/open review threads, changed files, additions, and
-  deletions.
-- PR identity and direct open-link behavior.
-- GitHub artifact posture, including maintained comment link, check/report link,
-  report state/details, and copyable report markdown.
-- ReviewBee, TrustGate, and RepoMemory context when configured, with clear local
-  fallback when they are not configured.
-- Overview/history counts for stored runs, repos seen, ready calls, hold calls,
-  and blocked calls.
-- History list, selected-run loading, and full selected-run detail.
-- Health/startup checks for backend status, DB path, auth, GitHub readiness,
-  webhook configuration, report publishing, startup warnings, and integrations.
-
-Current v2 parity status:
-
-- **Covered**: readiness assessment, local/publish mode, approval policy toggle,
-  history list, selected-run detail, radar visualization, blockers/warnings,
-  suite input posture, health/startup checks, and clear selected-assessment
-  behavior.
-- **Legacy status**: after the final 2026-07-05 recheck, the old UI was moved
-  to `products/merge-keeper/frontend-legacy/`. `frontend-v2/` is the active
-  local and Docker frontend.
-- **Improved from v1**: loading a history row stays in the history context and
-  renders the selected radar/detail below it instead of always kicking the user
-  back to the main page.
-- **Intentional v2 change**: `publish_report` defaults off in the v2 form during
-  local gateway/unified-backend testing. Operators can still enable it per run.
-  The API default remains documented separately.
-- **Replaced surface**: the old dedicated Setup tab is covered by v2 auth,
-  readiness, and Checks surfaces rather than a standalone setup wizard.
-- **Deferred polish**: v1 had a dedicated latest-reviewer-state badge strip and
-  an inline rendered report preview. V2 currently summarizes reviewer pressure
-  in metrics and exposes report links/copy actions. Bring back a compact
-  reviewer-state strip or expandable report preview only if live use shows they
-  save meaningful time.
-
-Before deleting the old MergeKeeper UI, run one final browser pass that covers:
-
-1. A ready PR with `require_approval=false`.
-2. A blocked PR with failing checks.
-3. A saved history load.
-4. A `publish_report=true` run with enough token scope to create/update the
-   maintained PR comment and check/status artifact.
-5. The Checks tab with GitHub, webhook, report publish, DB, and integration
-   states visible.
-
-### UI v1 and v2 to v3 Parity Audit
+### UI v1/v2 to v3 Parity Audit
 
 Re-audited on 2026-07-11 using v1 and v2 together as the behavioral source for
-`products/merge-keeper/frontend-v3/`. The old frontends remain in place until
-the v3 surface receives operator sign-off.
+the canonical `products/merge-keeper/frontend/` implementation.
 
 The audit found that the initial generic v3 workspace omitted several important
 surfaces that v1 or v2 already exposed. The parity implementation now includes:
@@ -190,23 +125,23 @@ surfaces that v1 or v2 already exposed. The parity implementation now includes:
   GitHub permission guidance.
 - The v2 footer identity wording through the shared v3 shell.
 
-Local verification on 2026-07-11 used the newest MergeKeeper product database
-and its saved hold assessment. The authenticated workspace, history-backed run
-loading, deep-link URL, full hold evidence, report controls, Checks surface,
-login surface, and responsive navigation were rendered successfully. The
-MergeKeeper v3 production build and all nine backend tests passed. Shared-shell
-regression builds also passed for ReleaseSentry, FlakeSting, and VulnTriage.
+Final acceptance on 2026-07-11 covered a live blocked PR with failing checks, a
+live ready PR with approval intentionally optional and six passing checks,
+saved-history loading, the Checks/startup surface, and an operator-authorized
+publish run. The publish run delivered both a `mergekeeper/readiness` commit
+status and a maintained PR comment under the PatchHive GitHub identity. The
+native check-run attempt returned GitHub's expected PAT limitation and cleanly
+fell back to the commit status.
 
-The final promotion gate remains intentionally explicit: verify one live ready
-decision, one live blocked decision, and an operator-authorized
-`publish_report=true` delivery before deleting v1/v2 or changing Docker's active
-frontend. The audit did not perform a GitHub write merely to satisfy UI parity.
+The v3 UI received operator sign-off and is now the packaged canonical frontend.
+The retired v1 and v2 source trees and Docker profiles were removed after this
+gate passed.
 
 ## Configuration
 
 | Variable | Purpose |
 |----------|---------|
-| `BOT_GITHUB_TOKEN` | Fine-grained PAT for pull request, review, and check reads. Add Checks (write), Commit statuses (write), and Issues (write) for GitHub publishing. |
+| `BOT_GITHUB_TOKEN` | GitHub credential for PR reads and optional publishing. Fine-grained PATs support selected-repository analysis. PAT publishing requires repository write access plus classic `public_repo` for public repos or `repo` for private repos; native check runs require a GitHub App. |
 | `GITHUB_TOKEN` | Fallback GitHub token. |
 | `MERGE_KEEPER_GITHUB_WEBHOOK_SECRET` | Optional signed webhook secret for auto-refresh on supported PR events. |
 | `MERGE_KEEPER_PUBLIC_URL` | Optional public URL for deep-links from GitHub artifacts back to saved runs. |
@@ -273,7 +208,9 @@ backend/src/
    g. Applies cross-product signals: ReviewBee pressure, TrustGate block/warn, RepoMemory policy expectations.
    h. Readiness is determined: any blocker → `blocked`, any warning (but no blockers) → `hold`, otherwise → `ready`.
 4. **GitHub context attached** — trigger metadata (webhook event/action or manual) saved in assessment.
-5. **Report publish** — optionally publishes a maintained PR comment + check run (falls back to commit status) via `github::publish_assessment_outcome()`.
+5. **Report publish** — optionally publishes a maintained PR comment plus a
+   status signal via `github::publish_assessment_outcome()`. GitHub App tokens
+   can create a check run; PATs fall back to a commit status.
 6. **Persistence** — full `MergeAssessment` JSON stored in SQLite `merge_runs` table with indexed columns for history queries.
 
 ## API Endpoints
@@ -483,7 +420,7 @@ The backend runs on `MERGE_KEEPER_PORT` (default 8050). No external database ser
 |---------|-------|-------|
 | `POST /assess/github/pr` returns `502` | GitHub API error — missing or invalid token, network issue, or PR doesn't exist | Verify `BOT_GITHUB_TOKEN` or `GITHUB_TOKEN` is set and has Metadata (read) + Pull requests (read) scopes. Verify the repo and PR number are correct. |
 | `POST /assess/github/pr` returns `400 "Repository must be in owner/name format"` | `repo` field is not in `owner/repo-name` format | Ensure the `repo` value contains exactly one `/` with non-empty owner and name segments. |
-| GitHub report is not published (`github_report.delivered: false`) | Token missing or lacks write scopes | Check `github_report.details` for the specific failure. Ensure token has Checks (write), Commit statuses (write), and Issues (write). |
+| GitHub report is not published (`github_report.delivered: false`) | Token identity lacks repository write access or its token lacks publishing scope | Check `github_report.details`. For a public-repo PAT path, give the PatchHive identity repository write access and use a classic PAT with `public_repo`; use `repo` for private repos. Native check runs require a GitHub App, but the commit-status fallback is a complete status signal. |
 | Webhook returns `401` | Signature mismatch — `MERGE_KEEPER_GITHUB_WEBHOOK_SECRET` doesn't match the webhook secret configured in GitHub | Compare the webhook secret in GitHub repo settings with the `.env` value. |
 | Webhook returns `503` | `MERGE_KEEPER_GITHUB_WEBHOOK_SECRET` is not configured | Set `MERGE_KEEPER_GITHUB_WEBHOOK_SECRET` in `.env`. |
 | Webhook returns `{"triggered": false}` | The webhook event/action is not in the supported list | Supported events: `pull_request` (opened/reopened/synchronize/ready_for_review/edited/closed), `pull_request_review` (submitted/edited/dismissed), `pull_request_review_comment` (created/edited/deleted), `pull_request_review_thread` (resolved/unresolved), `check_run` (created/completed/rerequested), `check_suite` (completed/rerequested). |

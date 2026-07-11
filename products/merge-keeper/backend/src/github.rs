@@ -4,6 +4,7 @@ use patchhive_github_pr::{
     GitHubCommitStatusRequest, GitHubManagedCommentResult, GitHubPrClient, GitHubPullRequestDetail,
     GitHubPullReview, GitHubPullReviewThread,
 };
+use patchhive_product_core::branding::append_product_signature;
 use reqwest::Client;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::time::{sleep, Duration};
@@ -282,7 +283,7 @@ fn render_comment_markdown(assessment: &MergeAssessment) -> String {
         .unwrap_or_else(|| "MergeKeeper details are local to the current PatchHive host.".into());
     let github = assessment.github.as_ref();
 
-    format!(
+    let markdown = format!(
         "{COMMENT_MARKER}
 ## {emoji} MergeKeeper: {readiness}
 
@@ -335,7 +336,8 @@ fn render_comment_markdown(assessment: &MergeAssessment) -> String {
         cross_product = cross_product_markdown(assessment),
         next_move = next_move(assessment),
         details_line = details_line,
-    )
+    );
+    append_product_signature(&markdown, "MergeKeeper")
 }
 
 pub fn preview_assessment_outcome(
@@ -522,7 +524,8 @@ pub async fn publish_assessment_outcome(
 #[cfg(test)]
 mod tests {
     use super::{
-        cross_product_markdown, mergeability_needs_refresh, report_delivery, ReportDelivery,
+        cross_product_markdown, mergeability_needs_refresh, render_comment_markdown,
+        report_delivery, ReportDelivery,
     };
     use crate::models::{
         MergeAssessment, RepoMemoryContextPreview, ReviewBeeContext, TrustGateContext,
@@ -535,6 +538,35 @@ mod tests {
         assert_eq!(report_delivery(true, false), ReportDelivery::Partial);
         assert_eq!(report_delivery(false, true), ReportDelivery::Partial);
         assert_eq!(report_delivery(false, false), ReportDelivery::Failed);
+    }
+
+    #[test]
+    fn persisted_report_verification_requires_comment_and_status_signal_urls() {
+        use crate::models::GitHubReportOutcome;
+
+        let complete = GitHubReportOutcome {
+            delivered: true,
+            comment_url: "https://github.com/patchhive/example/pull/1#issuecomment-1".into(),
+            status_url: "https://api.github.com/repos/patchhive/example/statuses/abc".into(),
+            ..GitHubReportOutcome::default()
+        };
+        assert!(complete.is_complete_delivery());
+        assert!(!GitHubReportOutcome {
+            status_url: String::new(),
+            ..complete.clone()
+        }
+        .is_complete_delivery());
+        assert!(!GitHubReportOutcome {
+            comment_url: String::new(),
+            ..complete
+        }
+        .is_complete_delivery());
+    }
+
+    #[test]
+    fn report_ends_with_linked_patchhive_signature() {
+        let markdown = render_comment_markdown(&MergeAssessment::default());
+        assert!(markdown.ends_with("*MergeKeeper by [PatchHive](https://github.com/patchhive)*"));
     }
 
     #[test]
