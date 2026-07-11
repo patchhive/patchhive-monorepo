@@ -49,6 +49,12 @@ code:
 cd frontend-legacy && npm install && npm run dev
 ```
 
+The v3 parity candidate lives in `frontend-v3/`. It combines the required v1
+and v2 workflows in the suite-wide Lovable-derived specialist interface. Keep
+v2 as the active packaged frontend until the live ready, blocked, and explicitly
+authorized GitHub-publish acceptance cases pass and the v3 surface receives
+operator sign-off.
+
 ## Important Configuration
 
 | Variable | Purpose |

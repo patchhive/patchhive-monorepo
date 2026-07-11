@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Github, Moon, Radio, Sun } from "lucide-react";
+import { Github, LogOut, Moon, Radio, Sun } from "lucide-react";
 import { usePatchHiveTheme } from "./theme.jsx";
 import { V3_TEXT } from "./tokens.js";
 
@@ -78,6 +78,7 @@ export function ProductHeader({
   githubLabel = "patchhive",
   icon: Icon,
   onRun,
+  onSignOut,
   onTabChange,
   productName,
   runDisabled = false,
@@ -125,8 +126,35 @@ export function ProductHeader({
           >
             <Radio size={13} /> {runLabel}
           </button>
+          {onSignOut ? (
+            <button
+              type="button"
+              onClick={onSignOut}
+              aria-label={`Sign out of ${productName}`}
+              className={`surface-inset hidden h-9 w-9 rounded-full place-items-center hover:brightness-110 sm:grid ${V3_TEXT.mute}`}
+            >
+              <LogOut size={13} />
+            </button>
+          ) : null}
         </div>
       </div>
+      <nav className="surface-inset mx-auto mt-2 flex max-w-[1440px] items-center gap-1 overflow-x-auto rounded-full p-1 md:hidden" aria-label={`${productName} mobile sections`}>
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => onTabChange?.(tab.id)}
+            className={`h-8 shrink-0 rounded-full px-4 text-[12px] transition ${activeTab === tab.id ? `bg-white shadow ${V3_TEXT.strong} dark:bg-white/15` : `${V3_TEXT.mute} hover:opacity-100`}`}
+          >
+            {tab.label}
+          </button>
+        ))}
+        {onSignOut ? (
+          <button type="button" onClick={onSignOut} className={`h-8 shrink-0 rounded-full px-4 text-[12px] ${V3_TEXT.mute}`}>
+            Sign out
+          </button>
+        ) : null}
+      </nav>
     </header>
   );
 }
@@ -144,7 +172,7 @@ export function MetricCard({ label, value, footerLeft, footerRight, tone = "from
         <div className={`mt-3 font-display text-[46px] font-semibold tabular-nums ${V3_TEXT.strong} leading-none`}>
           {String(value ?? 0)}
         </div>
-        <div className={`mt-4 flex items-center justify-between text-[11px] ${V3_TEXT.mute}`}>
+        <div className={`mt-4 flex flex-col items-start gap-1 text-[11px] sm:flex-row sm:items-center sm:justify-between ${V3_TEXT.mute}`}>
           <span className="flex items-center gap-1">{Icon ? <Icon size={11} /> : null}{footerLeft}</span>
           <span>{footerRight}</span>
         </div>

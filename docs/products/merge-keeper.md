@@ -155,6 +155,46 @@ Before deleting the old MergeKeeper UI, run one final browser pass that covers:
 5. The Checks tab with GitHub, webhook, report publish, DB, and integration
    states visible.
 
+### UI v1 and v2 to v3 Parity Audit
+
+Re-audited on 2026-07-11 using v1 and v2 together as the behavioral source for
+`products/merge-keeper/frontend-v3/`. The old frontends remain in place until
+the v3 surface receives operator sign-off.
+
+The audit found that the initial generic v3 workspace omitted several important
+surfaces that v1 or v2 already exposed. The parity implementation now includes:
+
+- API-key login, first-key generation, sign-out, persistent suite theme, and
+  mobile navigation.
+- Directed `owner/repo` and positive PR-number validation, local/publish mode,
+  and the per-run active-approval policy.
+- Readiness summary, PR identity/link, mergeability, base/head branches, manual
+  or webhook trigger context, and the complete merge metric set.
+- Searchable blocker/warning evidence with dedicated detail views.
+- Latest reviewer identities and states.
+- ReviewBee, TrustGate, and RepoMemory summaries, counts, and returned top
+  evidence, plus a clear GitHub-only fallback.
+- GitHub artifact state, delivery details, comment/check links, copyable report
+  Markdown, and an expandable Markdown preview.
+- Saved-run history with decision, summary, blocker/hold, approval, and failing
+  check context; loaded runs update the shareable `?run=<id>` URL.
+- Startup messages using the backend's actual `msg` field, backend/DB state,
+  GitHub token/webhook/public-URL/publish posture, integration state, and
+  GitHub permission guidance.
+- The v2 footer identity wording through the shared v3 shell.
+
+Local verification on 2026-07-11 used the newest MergeKeeper product database
+and its saved hold assessment. The authenticated workspace, history-backed run
+loading, deep-link URL, full hold evidence, report controls, Checks surface,
+login surface, and responsive navigation were rendered successfully. The
+MergeKeeper v3 production build and all nine backend tests passed. Shared-shell
+regression builds also passed for ReleaseSentry, FlakeSting, and VulnTriage.
+
+The final promotion gate remains intentionally explicit: verify one live ready
+decision, one live blocked decision, and an operator-authorized
+`publish_report=true` delivery before deleting v1/v2 or changing Docker's active
+frontend. The audit did not perform a GitHub write merely to satisfy UI parity.
+
 ## Configuration
 
 | Variable | Purpose |

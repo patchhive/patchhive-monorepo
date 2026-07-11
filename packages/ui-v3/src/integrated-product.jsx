@@ -173,6 +173,7 @@ function FormField({ field, form, setForm, inputRef }) {
 export function IntegratedProductApp({ apiBase, auth, config, fetcher }) {
   const storagePrefix = `${config.productKey}.v3`;
   const inputRef = useRef(null);
+  const initialRunId = useRef(typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("run") || "");
   const tabs = [{ id: "workspace", label: config.workspaceLabel }, { id: "history", label: "History" }, { id: "checks", label: "Checks" }, { id: "sources", label: "Sources" }];
   const [activeTab, setActiveTab] = useState(() => localStorage.getItem(`${storagePrefix}.tab`) || "workspace");
   const [form, setForm] = useState(() => ({ ...config.defaultForm, repo: localStorage.getItem(`${storagePrefix}.repo`) || config.defaultForm.repo || "" }));
@@ -202,7 +203,14 @@ export function IntegratedProductApp({ apiBase, auth, config, fetcher }) {
       setChecks(nextChecks.checks || []);
       setOverview(nextOverview);
       setHistory(list);
-      if ((loadLatest || !result) && list[0]?.id) setResult(await readJson(await fetcher(`${apiBase}/history/${encodeURIComponent(list[0].id)}`)));
+      const requestedRunId = initialRunId.current;
+      const resultId = requestedRunId || ((loadLatest || !result) ? list[0]?.id : "");
+      if (resultId) {
+        const loaded = await readJson(await fetcher(`${apiBase}/history/${encodeURIComponent(resultId)}`));
+        setResult(loaded);
+        setForm((current) => ({ ...current, ...config.formFromResult?.(loaded) }));
+        initialRunId.current = "";
+      }
     } catch (err) {
       setError(err.message || `${config.name} could not load.`);
     } finally {
@@ -213,10 +221,18 @@ export function IntegratedProductApp({ apiBase, auth, config, fetcher }) {
   useEffect(() => { refresh(true); }, []);
   useEffect(() => { localStorage.setItem(`${storagePrefix}.tab`, activeTab); }, [activeTab]);
   useEffect(() => { localStorage.setItem(`${storagePrefix}.repo`, form.repo || ""); }, [form.repo]);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    if (result?.id) url.searchParams.set("run", result.id);
+    else url.searchParams.delete("run");
+    window.history.replaceState({}, "", url.toString());
+  }, [result?.id]);
 
   async function run() {
-    if (!form.repo?.trim()) {
-      setError("Enter a repository in owner/name format before running.");
+    const validationError = config.validate?.(form) || (!form.repo?.trim() ? "Enter a repository in owner/name format before running." : "");
+    if (validationError) {
+      setError(validationError);
       setActiveTab("sources");
       setTimeout(() => inputRef.current?.focus(), 0);
       return;
@@ -239,7 +255,10 @@ export function IntegratedProductApp({ apiBase, auth, config, fetcher }) {
 
   async function load(id) {
     try {
-      setResult(await readJson(await fetcher(`${apiBase}/history/${encodeURIComponent(id)}`)));
+      const loaded = await readJson(await fetcher(`${apiBase}/history/${encodeURIComponent(id)}`));
+      setResult(loaded);
+      setSelected(null);
+      setForm((current) => ({ ...current, ...config.formFromResult?.(loaded) }));
       setActiveTab("workspace");
     } catch (err) {
       setError(err.message || "Could not load that run.");
@@ -252,12 +271,15 @@ export function IntegratedProductApp({ apiBase, auth, config, fetcher }) {
   const metrics = config.metrics(result, overview, health);
   const hero = config.hero(result, overview);
   const status = config.status(result, overview);
+  const WorkspaceDetails = config.WorkspaceDetails;
+  const ChecksDetails = config.ChecksDetails;
+  const SourcesDetails = config.SourcesDetails;
 
   if (selected) return <ProductShell productKey={config.productKey}><Detail config={config} item={selected} onBack={() => setSelected(null)} /></ProductShell>;
 
   return (
     <ProductShell productKey={config.productKey}>
-      <ProductHeader activeTab={activeTab} githubLabel={health.github_ready || health.github?.token_configured ? "GitHub ready" : "Token missing"} icon={config.icon} onRun={run} onTabChange={setActiveTab} productName={config.name} runDisabled={running} runLabel={running ? config.runningLabel : config.runLabel} subtitle={config.subtitle} tabs={tabs} />
+      <ProductHeader activeTab={activeTab} githubLabel={health.github_ready || health.github?.token_configured ? "GitHub ready" : "Token missing"} icon={config.icon} onRun={run} onSignOut={auth.logout} onTabChange={setActiveTab} productName={config.name} runDisabled={running} runLabel={running ? config.runningLabel : config.runLabel} subtitle={config.subtitle} tabs={tabs} />
       <div className="mx-auto max-w-[1440px] px-3 sm:px-6 pt-6 sm:pt-10 pb-24">
         {error ? <div className="surface mb-6 px-5 py-4 text-[12px] text-red-800 dark:text-red-300">{error}</div> : null}
         {activeTab === "workspace" ? <>
@@ -267,10 +289,11 @@ export function IntegratedProductApp({ apiBase, auth, config, fetcher }) {
           </section>
           <section className="mt-8 grid grid-cols-2 lg:grid-cols-4 gap-4">{metrics.slice(0, 4).map((metric) => <MetricCard icon={Activity} key={metric.label} {...metric} />)}</section>
           <section className="mt-8 grid grid-cols-12 gap-6"><div className="col-span-12 lg:col-span-8"><div className="surface p-5"><div className="flex flex-col xl:flex-row xl:items-end justify-between gap-3 mb-4"><div><div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>{config.queueLabel}</div><div className={`font-display text-2xl mt-0.5 ${V3_TEXT.strong}`}>{filtered.length} in view <span className={`${V3_TEXT.dim} font-normal`}>/ {items.length} tracked</span></div></div><div className="surface-inset flex items-center gap-2 rounded-full px-3 h-9 w-full sm:w-[260px]"><Search size={13} className={V3_TEXT.dim} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={config.searchPlaceholder} className={`bg-transparent outline-none text-[12px] w-full ${V3_TEXT.strong}`} /></div></div><div className="space-y-2">{loading ? <div className={`py-14 text-center ${V3_TEXT.mute}`}>Loading…</div> : filtered.length ? filtered.map((item) => <ItemRow item={item} key={item.id} onOpen={setSelected} />) : <div className={`py-14 text-center text-[13px] ${V3_TEXT.mute}`}>{config.emptyLabel}</div>}</div></div></div><aside className="col-span-12 lg:col-span-4 space-y-6"><div className="surface p-5 overflow-hidden"><div className="absolute -top-10 -right-10 h-32 w-32 rounded-full opacity-60 blur-2xl" style={{ backgroundImage: "var(--orb-1)" }} /><div className="relative"><div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>Active target</div><div className={`mt-2 font-display text-[22px] font-semibold ${V3_TEXT.strong}`}>{result?.repo || form.repo || "No repository selected"}</div><div className={`text-[12px] ${V3_TEXT.mute}`}>{config.targetSubtitle(result)}</div></div></div><div className="surface p-5"><div className="flex items-center justify-between mb-3"><div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>Evidence</div><Zap size={13} style={{ color: "var(--accent-2)" }} /></div>{metrics.slice(0, 4).map((metric, index) => <div key={metric.label} className={`flex items-center justify-between py-2.5 ${index ? "border-t" : ""}`} style={index ? { borderColor: "var(--surface-border-2)" } : undefined}><span className={`text-[13px] ${V3_TEXT.body}`}>{metric.label}</span><span className={`font-display text-[15px] font-semibold ${V3_TEXT.strong}`}>{metric.value}</span></div>)}</div><div className="surface p-5"><div className="flex items-center justify-between mb-3"><div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>Recent runs</div><Cpu size={13} className={V3_TEXT.mute} /></div>{history.slice(0, 4).map((entry, index) => <button key={entry.id} onClick={() => load(entry.id)} className={`w-full flex items-center justify-between py-2 text-left ${index ? "border-t" : ""}`} style={index ? { borderColor: "var(--surface-border-2)" } : undefined} type="button"><div><div className={`text-[13px] ${V3_TEXT.strong}`}>{config.historyTitle(entry)}</div><div className={`text-[11px] ${V3_TEXT.mute}`}>{timeAgo(entry.created_at)} ago</div></div><ArrowUpRight size={13} className={V3_TEXT.dim} /></button>)}</div></aside></section>
+          {WorkspaceDetails ? <WorkspaceDetails health={health} onError={setError} result={result} /> : null}
         </> : null}
-        {activeTab === "history" ? <section className="surface p-6"><div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>Saved evidence</div><h1 className={`font-display mt-2 text-[42px] font-semibold ${V3_TEXT.strong}`}>Run history.</h1><div className="mt-7 space-y-2">{history.map((entry) => <button className="surface-inset rounded-xl p-4 w-full text-left flex items-center justify-between" key={entry.id} onClick={() => load(entry.id)} type="button"><div><div className={`font-display text-[16px] ${V3_TEXT.strong}`}>{config.historyTitle(entry)}</div><div className={`mt-1 text-[11px] ${V3_TEXT.mute}`}>{new Date(entry.created_at).toLocaleString()}</div></div><ArrowUpRight size={14} className={V3_TEXT.dim} /></button>)}</div></section> : null}
-        {activeTab === "checks" ? <div className="grid grid-cols-12 gap-6"><section className="surface col-span-12 lg:col-span-8 p-6"><div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>Startup evidence</div><h1 className={`font-display mt-2 text-[42px] font-semibold ${V3_TEXT.strong}`}>System checks.</h1><div className="mt-7 space-y-2">{checks.map((check, index) => <div className="surface-inset rounded-xl p-4" key={check.name || index}><div className={`text-[13px] ${V3_TEXT.strong}`}>{check.name || check.label || "Startup check"}</div><div className={`mt-1 text-[12px] ${V3_TEXT.mute}`}>{check.message || check.detail}</div></div>)}</div></section><aside className="surface col-span-12 lg:col-span-4 p-6"><div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>Unified backend</div><div className={`mt-3 font-display text-[46px] font-semibold ${V3_TEXT.strong}`}>{health.status || "unknown"}</div><dl className="mt-6 space-y-3"><SideValue label="Database" value={health.db_ok ? "ready" : "unavailable"} /><SideValue label="GitHub" value={health.github_ready || health.github?.token_configured ? "ready" : "token missing"} /><SideValue label="Runs" value={String(history.length)} /></dl></aside></div> : null}
-        {activeTab === "sources" ? <div className="grid grid-cols-12 gap-6"><section className="surface col-span-12 lg:col-span-8 p-6 sm:p-8"><div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>Product intake</div><h1 className={`font-display mt-2 text-[42px] font-semibold ${V3_TEXT.strong}`}>{config.formTitle}</h1><div className="mt-7 grid grid-cols-1 sm:grid-cols-2 gap-4">{config.fields.map((field) => <FormField field={field} form={form} inputRef={inputRef} key={field.key} setForm={setForm} />)}</div><button disabled={running || !form.repo?.trim()} onClick={run} className="mt-6 h-11 px-5 rounded-full text-[12px] font-semibold text-white disabled:opacity-50" style={{ backgroundImage: "linear-gradient(90deg, var(--accent), var(--accent-2))" }} type="button">{running ? config.runningLabel : config.runLabel}</button></section><aside className="surface col-span-12 lg:col-span-4 p-6"><div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>Connection</div><div className={`mt-3 font-display text-[36px] font-semibold ${V3_TEXT.strong}`}>{health.github_ready || health.github?.token_configured ? "Ready" : "Needs token"}</div><p className={`mt-3 text-[13px] ${V3_TEXT.body}`}>{config.sourceHelp}</p></aside></div> : null}
+        {activeTab === "history" ? <section className="surface p-6"><div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>Saved evidence</div><h1 className={`font-display mt-2 text-[42px] font-semibold ${V3_TEXT.strong}`}>Run history.</h1><div className="mt-7 space-y-2">{history.map((entry) => <button className="surface-inset rounded-xl p-4 w-full text-left flex items-center justify-between gap-4" key={entry.id} onClick={() => load(entry.id)} type="button"><div className="min-w-0"><div className={`font-display text-[16px] ${V3_TEXT.strong}`}>{config.historyTitle(entry)}</div>{config.historySummary?.(entry) ? <div className={`mt-1 truncate text-[12px] ${V3_TEXT.body}`}>{config.historySummary(entry)}</div> : null}<div className={`mt-1 text-[11px] ${V3_TEXT.mute}`}>{new Date(entry.created_at).toLocaleString()}{config.historyMeta?.(entry) ? ` · ${config.historyMeta(entry)}` : ""}</div></div><ArrowUpRight size={14} className={`${V3_TEXT.dim} shrink-0`} /></button>)}</div></section> : null}
+        {activeTab === "checks" ? <><div className="grid grid-cols-12 gap-6"><section className="surface col-span-12 lg:col-span-8 p-6"><div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>Startup evidence</div><h1 className={`font-display mt-2 text-[42px] font-semibold ${V3_TEXT.strong}`}>System checks.</h1><div className="mt-7 space-y-2">{checks.map((check, index) => <div className="surface-inset rounded-xl p-4" key={check.name || check.msg || index}><div className={`flex items-center justify-between gap-3 text-[13px] ${V3_TEXT.strong}`}><span>{check.name || check.label || "Startup check"}</span><span className={`text-[10px] uppercase tracking-widest ${V3_TEXT.mute}`}>{check.level || "info"}</span></div><div className={`mt-1 text-[12px] ${V3_TEXT.mute}`}>{check.message || check.detail || check.msg || "No detail returned."}</div></div>)}</div></section><aside className="surface col-span-12 lg:col-span-4 p-6"><div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>Unified backend</div><div className={`mt-3 font-display text-[46px] font-semibold ${V3_TEXT.strong}`}>{health.status || "unknown"}</div><dl className="mt-6 space-y-3"><SideValue label="Database" value={health.db_ok ? "ready" : "unavailable"} /><SideValue label="GitHub" value={health.github_ready || health.github?.token_configured ? "ready" : "token missing"} /><SideValue label="Runs" value={String(history.length)} /></dl></aside></div>{ChecksDetails ? <ChecksDetails checks={checks} health={health} history={history} /> : null}</> : null}
+        {activeTab === "sources" ? <><div className="grid grid-cols-12 gap-6"><section className="surface col-span-12 lg:col-span-8 p-6 sm:p-8"><div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>Product intake</div><h1 className={`font-display mt-2 text-[42px] font-semibold ${V3_TEXT.strong}`}>{config.formTitle}</h1><div className="mt-7 grid grid-cols-1 sm:grid-cols-2 gap-4">{config.fields.map((field) => <FormField field={field} form={form} inputRef={inputRef} key={field.key} setForm={setForm} />)}</div><button disabled={running || !form.repo?.trim()} onClick={run} className="mt-6 h-11 px-5 rounded-full text-[12px] font-semibold text-white disabled:opacity-50" style={{ backgroundImage: "linear-gradient(90deg, var(--accent), var(--accent-2))" }} type="button">{running ? config.runningLabel : config.runLabel}</button></section><aside className="surface col-span-12 lg:col-span-4 p-6"><div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>Connection</div><div className={`mt-3 font-display text-[36px] font-semibold ${V3_TEXT.strong}`}>{health.github_ready || health.github?.token_configured ? "Ready" : "Needs token"}</div><p className={`mt-3 text-[13px] ${V3_TEXT.body}`}>{config.sourceHelp}</p></aside></div>{SourcesDetails ? <SourcesDetails health={health} /> : null}</> : null}
       </div>
     </ProductShell>
   );
