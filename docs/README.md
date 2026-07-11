@@ -34,6 +34,7 @@ The product documentation set is in [products/](products/).
 ## Architecture Notes
 
 - [Product operating modes](product-operating-modes.md): directed targets, autonomous discovery, and how products should expose both without losing PatchHive's outbound identity.
+- [Future product opportunities](future-product-opportunities.md): overlap analysis, boundaries, working names, and priorities for recovered product concepts.
 
 ## Platform Docs
 
