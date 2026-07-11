@@ -88,7 +88,7 @@ pub async fn validate_config() -> Vec<StartupCheck> {
         ));
     } else {
         checks.push(StartupCheck::info(
-            "Public URL is not configured. MergeKeeper will still publish GitHub artifacts, but deep links back to the app stay local-only.",
+            "Public URL is not configured. GitHub artifacts can still be published when the token has write access, but deep links back to the app stay local-only.",
         ));
     }
 

@@ -20,7 +20,7 @@ impl GitHubPermissionProfile {
                 "GitHub token is configured. DepTriage can read dependency PRs and Dependabot alerts when this token has access for the target repository."
             }
             Self::MergeReadiness => {
-                "GitHub token detected. MergeKeeper can read PR state, review pressure, check health, and publish merge-readiness artifacts."
+                "GitHub token detected. MergeKeeper can read PR state, review pressure, and check health. Publishing can be attempted when the token also has the required write scopes; startup does not verify those scopes."
             }
             Self::PrReview => {
                 "GitHub token detected. ReviewBee can fetch PR reviews and maintain a PR comment when requested."
@@ -127,6 +127,16 @@ mod tests {
         assert!(GitHubPermissionProfile::DependencyTriage
             .recommended_scopes()
             .contains("Dependabot alerts"));
+    }
+
+    #[test]
+    fn merge_readiness_does_not_claim_publish_scope_verification() {
+        let message = GitHubPermissionProfile::MergeReadiness.ready_message();
+
+        assert!(message.contains("startup does not verify those scopes"));
+        assert!(GitHubPermissionProfile::MergeReadiness
+            .recommended_scopes()
+            .contains("Checks (write)"));
     }
 
     #[test]

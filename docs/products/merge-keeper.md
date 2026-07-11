@@ -310,7 +310,9 @@ All non-public endpoints require `X-API-Key` or `X-PatchHive-Service-Token` head
     "token_configured": true,
     "webhook_secret_configured": true,
     "public_url_configured": false,
-    "report_publish_ready": true
+    "report_publish_configured": true,
+    "report_publish_scope_verified": false,
+    "report_publish_ready": false
   },
   "integrations": {
     "review_bee_configured": true,
@@ -323,6 +325,11 @@ All non-public endpoints require `X-API-Key` or `X-PatchHive-Service-Token` head
 Error states:
 - DB failure or config errors > 0 → `status: "degraded"`.
 - Missing GitHub token → `github_ready: false`, `report_publish_ready: false`.
+
+`report_publish_configured` means a token is present. MergeKeeper does not infer
+write permission from token presence, so `report_publish_scope_verified` and
+`report_publish_ready` remain `false` until the publish path performs a real
+permission check. A publish attempt still returns its concrete GitHub result.
 
 ### Authentication
 

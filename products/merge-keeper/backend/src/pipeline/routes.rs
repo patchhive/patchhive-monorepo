@@ -174,7 +174,9 @@ pub async fn health() -> Json<serde_json::Value> {
             "token_configured": github::github_token_configured(),
             "webhook_secret_configured": github::webhook_secret_configured(),
             "public_url_configured": github::public_url_configured(),
-            "report_publish_ready": github::github_token_configured(),
+            "report_publish_configured": github::github_token_configured(),
+            "report_publish_scope_verified": false,
+            "report_publish_ready": false,
         },
         "integrations": {
             "review_bee_configured": crate::integrations::review_bee_configured(),

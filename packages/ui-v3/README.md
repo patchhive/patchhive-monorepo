@@ -15,4 +15,6 @@ Rules:
 - Use the shared history dashboard for saved-run surfaces so refresh, counts,
   search, filters, sorting, saved views, empty state, and progressive disclosure
   remain consistent while products supply their own filters and row evidence.
+- Use the shared startup-check list for checks surfaces so derived labels, status
+  treatment, empty state, and backend-provided evidence remain consistent.
 - HiveCore is not part of the specialist-product v3 migration.

@@ -189,10 +189,10 @@ function ChecksDetails({ health }) {
       <article className="surface p-6">
         <div className={`flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}><GitBranch size={12} /> GitHub publish path</div>
         <div className="mt-5 grid grid-cols-2 gap-3">
-          <Fact label="Token" value={github.token_configured ? "ready" : "missing"} />
+          <Fact label="Token" value={github.token_configured ? "present" : "missing"} />
           <Fact label="Webhook" value={github.webhook_secret_configured ? "ready" : "optional"} />
           <Fact label="Public URL" value={github.public_url_configured ? "ready" : "local only"} />
-          <Fact label="Report publish" value={github.report_publish_ready ? "ready" : "limited"} />
+          <Fact label="Publish scopes" value={github.report_publish_scope_verified ? "verified" : github.report_publish_configured || github.token_configured ? "unverified" : "missing"} />
         </div>
         <GitHubPermissionGuidance>Pull-request and Actions read access powers local decisions. Maintained comments and check/status output require the matching write scopes.</GitHubPermissionGuidance>
       </article>

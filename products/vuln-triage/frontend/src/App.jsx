@@ -26,6 +26,7 @@ import {
   ProductShell,
   ProgressiveList,
   ScanWarnings,
+  StartupCheckList,
   ThemeToggle,
   V3_TEXT,
   useSavedDashboardViews,
@@ -745,7 +746,7 @@ function HistoryTab({ dashboard, filters, history, items, loadScan, loading, onQ
 }
 
 function ChecksTab({ checks, health, onRefresh }) {
-  return <div className="grid grid-cols-12 gap-6"><section className="surface col-span-8 p-6"><div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>Startup evidence</div><h1 className={`font-display mt-2 text-[42px] tracking-tight font-semibold ${V3_TEXT.strong}`}>System checks.</h1><div className="mt-7 space-y-2">{checks.map((check, index) => <div className="surface-inset rounded-xl p-4 flex items-start justify-between gap-4" key={check.name || index}><div><div className={`text-[13px] ${V3_TEXT.strong}`}>{check.name || check.label || "Startup check"}</div><div className={`mt-1 text-[12px] ${V3_TEXT.mute}`}>{check.message || check.detail}</div></div><span className={`text-[10px] uppercase tracking-wider ${check.level === "error" ? "text-red-700 dark:text-red-300" : check.level === "warn" ? "text-amber-700 dark:text-amber-300" : "text-emerald-700 dark:text-emerald-300"}`}>{check.level || "ok"}</span></div>)}</div></section><aside className="surface col-span-4 p-6"><div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>Backend</div><div className={`mt-3 font-display text-[46px] font-semibold ${V3_TEXT.strong}`}>{health.status || "unknown"}</div><dl className="mt-6 space-y-3"><SideValue label="Database" value={health.db_ok ? "ready" : "unavailable"} /><SideValue label="GitHub" value={health.github_ready ? "ready" : "token missing"} /><SideValue label="Saved scans" value={String(health.scan_count || 0)} /></dl><button onClick={onRefresh} className={`surface-inset mt-6 h-10 w-full rounded-full text-[12px] ${V3_TEXT.body}`} type="button">Refresh checks</button></aside></div>;
+  return <div className="grid grid-cols-12 gap-6"><section className="surface col-span-12 lg:col-span-8 p-6"><div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>Startup evidence</div><h1 className={`font-display mt-2 text-[42px] tracking-tight font-semibold ${V3_TEXT.strong}`}>System checks.</h1><div className="mt-7"><StartupCheckList checks={checks} /></div></section><aside className="surface col-span-12 lg:col-span-4 p-6"><div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>Backend</div><div className={`mt-3 font-display text-[46px] font-semibold ${V3_TEXT.strong}`}>{health.status || "unknown"}</div><dl className="mt-6 space-y-3"><SideValue label="Database" value={health.db_ok ? "ready" : "unavailable"} /><SideValue label="GitHub" value={health.github_ready ? "ready" : "token missing"} /><SideValue label="Saved scans" value={String(health.scan_count || 0)} /></dl><button onClick={onRefresh} className={`surface-inset mt-6 h-10 w-full rounded-full text-[12px] ${V3_TEXT.body}`} type="button">Refresh checks</button></aside></div>;
 }
 
 function SourcesTab({ form, health, onChange, onRun, repoInput, running }) {
