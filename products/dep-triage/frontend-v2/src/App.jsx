@@ -65,7 +65,7 @@ function timeAgo(value) {
 }
 
 function githubReady(health) {
-  return Boolean(health?.github_ready || health?.github?.token_configured);
+  return Boolean(health?.github_ready || health?.github?.token_verified);
 }
 
 function recommendationTone(recommendation) {

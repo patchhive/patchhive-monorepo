@@ -6,6 +6,7 @@ use crate::models::{RepoSignal, ScanParams};
 
 use super::scoring::{
     issue_signals, priority_score, summary_from_signals, MarkerCounts, RepoAnalysisDraft,
+    SummarySignalInput,
 };
 
 pub async fn analyze_repo_issue_draft(
@@ -84,16 +85,16 @@ pub fn finalize_repo_signal(draft: RepoAnalysisDraft, marker_counts: MarkerCount
         marker_counts.todo_count,
         marker_counts.fixme_count,
     );
-    let (summary, signals) = summary_from_signals(
-        draft.repo.stargazers_count,
-        draft.repo.open_issues_count,
-        &draft.issue_analysis,
-        marker_counts.todo_count,
-        marker_counts.fixme_count,
-        marker_counts.todo_available,
-        marker_counts.fixme_available,
-        &marker_counts.warnings,
-    );
+    let (summary, signals) = summary_from_signals(SummarySignalInput {
+        stars: draft.repo.stargazers_count,
+        open_issues: draft.repo.open_issues_count,
+        issue_analysis: &draft.issue_analysis,
+        todo_count: marker_counts.todo_count,
+        fixme_count: marker_counts.fixme_count,
+        todo_available: marker_counts.todo_available,
+        fixme_available: marker_counts.fixme_available,
+        repo_warnings: &marker_counts.warnings,
+    });
 
     RepoSignal {
         full_name: draft.repo.full_name,

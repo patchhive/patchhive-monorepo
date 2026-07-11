@@ -176,7 +176,7 @@ function WorkspaceDetails({ health, onError, result }) {
         </section>
       ) : null}
 
-      {!health.github_ready && !health.github?.token_configured ? <GitHubPermissionGuidance>Configure pull-request and Actions read access before live assessment. Publishing additionally needs permission to maintain the PR comment and check or status artifact.</GitHubPermissionGuidance> : null}
+      {!health.github_ready ? <GitHubPermissionGuidance>{health.github?.token_configured ? "GitHub could not verify the configured token. Check the startup evidence before live assessment." : "Configure pull-request and Actions read access before live assessment."} Publishing additionally needs permission to maintain the PR comment and check or status artifact.</GitHubPermissionGuidance> : null}
     </div>
   );
 }
@@ -189,7 +189,7 @@ function ChecksDetails({ health }) {
       <article className="surface p-6">
         <div className={`flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}><GitBranch size={12} /> GitHub publish path</div>
         <div className="mt-5 grid grid-cols-2 gap-3">
-          <Fact label="Token" value={github.token_configured ? "present" : "missing"} />
+          <Fact label="Token" value={github.token_verified ? "verified" : github.token_configured ? "unverified" : "missing"} />
           <Fact label="Webhook" value={github.webhook_secret_configured ? "ready" : "optional"} />
           <Fact label="Public URL" value={github.public_url_configured ? "ready" : "local only"} />
           <Fact label="Publish scopes" value={github.report_publish_scope_verified ? "verified" : github.report_publish_configured || github.token_configured ? "unverified" : "missing"} />
@@ -217,7 +217,7 @@ function SourcesDetails({ health }) {
         <div className="surface-inset rounded-xl p-4"><div className={`font-display text-[16px] ${V3_TEXT.strong}`}>Approval policy</div><p className={`mt-2 text-[11px] leading-relaxed ${V3_TEXT.mute}`}>Require an active approval unless the repository intentionally treats clean checks and mergeability as sufficient.</p></div>
         <div className="surface-inset rounded-xl p-4"><div className={`font-display text-[16px] ${V3_TEXT.strong}`}>Explicit write-back</div><p className={`mt-2 text-[11px] leading-relaxed ${V3_TEXT.mute}`}>Publishing maintains a PR comment and check/status artifact only when enabled for that run.</p></div>
       </div>
-      {!health.github_ready && !health.github?.token_configured ? <GitHubPermissionGuidance>The unified backend is missing a GitHub token. Add the product token before assessing a live pull request.</GitHubPermissionGuidance> : null}
+      {!health.github_ready ? <GitHubPermissionGuidance>{health.github?.token_configured ? "GitHub could not verify the configured token. Check startup evidence before assessing a live pull request." : "The unified backend is missing a GitHub token. Add the product token before assessing a live pull request."}</GitHubPermissionGuidance> : null}
     </section>
   );
 }
@@ -299,7 +299,7 @@ const config = {
   },
   hero: (result) => result ? { lead: `PR #${result.pr_number}`, middle: "is", highlight: `${result.readiness || "pending"}.` } : { lead: "Merge decisions", middle: "need clear", highlight: "evidence." },
   status: (result, overview) => ({ label: result?.readiness || "—", detail: result?.summary || "Assess a pull request to begin", progress: result ? "100%" : "8%", stats: [["Blocks", result?.blockers?.length || 0], ["Warnings", result?.warnings?.length || 0], ["Runs", overview?.counts?.runs || 0]] }),
-  chips: (result, health) => [result?.repo || "No repository selected", result?.pr_number ? `PR #${result.pr_number}` : "No PR selected", result ? mergePostureLabel(result) : health.github_ready ? "GitHub ready" : "Token missing", result ? result.approval_required === false ? "Approval optional" : "Approval required" : "Local by default"],
+  chips: (result, health) => [result?.repo || "No repository selected", result?.pr_number ? `PR #${result.pr_number}` : "No PR selected", result ? mergePostureLabel(result) : health.github_ready ? "GitHub verified" : health.github?.token_configured ? "GitHub unverified" : "Token missing", result ? result.approval_required === false ? "Approval optional" : "Approval required" : "Local by default"],
   targetSubtitle: (result) => result?.pr_number ? `Pull request #${result.pr_number} · ${result.readiness || "pending"}` : "Pull request readiness",
   historyTitle: (entry) => `${entry.repo} · PR #${entry.pr_number}`,
   historySummary: (entry) => entry.summary || entry.pr_title,

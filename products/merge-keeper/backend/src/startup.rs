@@ -1,10 +1,12 @@
 use patchhive_product_core::{
+    github_auth::verify_github_token,
     github_permissions::GitHubPermissionProfile,
     sqlite::db_path_message,
     startup::{StartupCheck, StartupCheckLevel},
 };
+use reqwest::Client;
 
-pub async fn validate_config() -> Vec<StartupCheck> {
+pub async fn validate_config(client: &Client) -> Vec<StartupCheck> {
     let mut checks = Vec::new();
 
     checks.push(StartupCheck::info(db_path_message(
@@ -23,10 +25,11 @@ pub async fn validate_config() -> Vec<StartupCheck> {
     }
 
     let github_profile = GitHubPermissionProfile::MergeReadiness;
-    if crate::github::github_token_configured() {
-        checks.push(github_profile.ready_check());
-    } else {
-        checks.push(github_profile.missing_check(StartupCheckLevel::Error));
+    match verify_github_token(client).await {
+        Ok(_) => checks.push(github_profile.ready_check()),
+        Err(err) => checks.push(
+            github_profile.validation_failed_check(err.to_string(), StartupCheckLevel::Error),
+        ),
     }
 
     checks.push(StartupCheck::info(

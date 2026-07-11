@@ -1,6 +1,12 @@
-use patchhive_product_core::{sqlite::db_path_message, startup::StartupCheck};
+use patchhive_product_core::{
+    github_auth::verify_github_token,
+    github_permissions::GitHubPermissionProfile,
+    sqlite::db_path_message,
+    startup::{StartupCheck, StartupCheckLevel},
+};
+use reqwest::Client;
 
-pub async fn validate_config() -> Vec<StartupCheck> {
+pub async fn validate_config(client: &Client) -> Vec<StartupCheck> {
     let mut checks = Vec::new();
 
     checks.push(StartupCheck::info(db_path_message(
@@ -16,14 +22,11 @@ pub async fn validate_config() -> Vec<StartupCheck> {
         ));
     }
 
-    if crate::github::github_token_configured() {
-        checks.push(StartupCheck::info(
-            "GitHub token is configured. TrustGate can fetch private PR diffs and report results back as a status/check.",
-        ));
-    } else {
-        checks.push(StartupCheck::warn(
-            "BOT_GITHUB_TOKEN is missing. TrustGate can still fetch public PR diffs, but GitHub status/check reporting is disabled.",
-        ));
+    let github_profile = GitHubPermissionProfile::DiffReview;
+    match verify_github_token(client).await {
+        Ok(_) => checks.push(github_profile.ready_check()),
+        Err(err) => checks
+            .push(github_profile.validation_failed_check(err.to_string(), StartupCheckLevel::Warn)),
     }
 
     if crate::github::webhook_secret_configured() {

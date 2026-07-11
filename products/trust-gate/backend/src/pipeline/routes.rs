@@ -118,14 +118,16 @@ pub async fn review_github_pr(
 ) -> Result<Json<ReviewResult>, ApiError> {
     let review = run_github_pr_review(
         &state.http,
-        body.repo,
-        body.pr_number,
-        body.ai_source,
-        body.rules,
-        body.publish_status,
-        "manual_pr_lookup".into(),
-        "pull_request".into(),
-        "manual".into(),
+        super::github::GitHubPrReviewInput {
+            repo: body.repo,
+            pr_number: body.pr_number,
+            ai_source: body.ai_source,
+            rules: body.rules,
+            publish_status: body.publish_status,
+            trigger: "manual_pr_lookup".into(),
+            event: "pull_request".into(),
+            action: "manual".into(),
+        },
     )
     .await?;
     Ok(Json(review))
@@ -187,14 +189,16 @@ pub async fn github_webhook(
 
     let review = run_github_pr_review(
         &state.http,
-        repo,
-        pr_number,
-        "github-webhook".into(),
-        None,
-        true,
-        "github_webhook".into(),
-        event.clone(),
-        action.clone(),
+        super::github::GitHubPrReviewInput {
+            repo,
+            pr_number,
+            ai_source: "github-webhook".into(),
+            rules: None,
+            publish_status: true,
+            trigger: "github_webhook".into(),
+            event: event.clone(),
+            action: action.clone(),
+        },
     )
     .await?;
 

@@ -105,6 +105,12 @@ change must leave the affected code warning-free:
 CI should enforce this policy across all standalone Rust packages and active
 frontend packages as the suite verification scripts converge.
 
+GitHub readiness must be evidence-based across the suite. Token presence is
+configuration, not readiness. Products use the shared authenticated identity
+verification at startup, verify repository/API access during each target run,
+and only claim write readiness after the requested target-specific write
+succeeds. Health and startup contracts must preserve those distinctions.
+
 ## 6. Implementation Notes
 
 ### Encryption key material

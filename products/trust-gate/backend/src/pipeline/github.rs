@@ -12,35 +12,39 @@ use super::review::review_diff;
 use super::rules::resolve_rules;
 use super::types::{api_error, normalize_ai_source, ApiError};
 
+pub struct GitHubPrReviewInput {
+    pub repo: String,
+    pub pr_number: i64,
+    pub ai_source: String,
+    pub rules: Option<RepoRuleSet>,
+    pub publish_status: bool,
+    pub trigger: String,
+    pub event: String,
+    pub action: String,
+}
+
 pub async fn run_github_pr_review(
     client: &reqwest::Client,
-    repo: String,
-    pr_number: i64,
-    ai_source: String,
-    rules: Option<RepoRuleSet>,
-    publish_status: bool,
-    trigger: String,
-    event: String,
-    action: String,
+    input: GitHubPrReviewInput,
 ) -> Result<ReviewResult, ApiError> {
-    let Some(repo) = crate::db::normalize_repo_name(&repo) else {
+    let Some(repo) = crate::db::normalize_repo_name(&input.repo) else {
         return Err(api_error(
             StatusCode::BAD_REQUEST,
             "TrustGate expects repos in owner/repo format.",
         ));
     };
 
-    if pr_number <= 0 {
+    if input.pr_number <= 0 {
         return Err(api_error(
             StatusCode::BAD_REQUEST,
             "TrustGate expects a positive pull request number.",
         ));
     }
 
-    let pr = github::fetch_pull_request(client, &repo, pr_number)
+    let pr = github::fetch_pull_request(client, &repo, input.pr_number)
         .await
         .map_err(|err| api_error(StatusCode::BAD_GATEWAY, err.to_string()))?;
-    let diff = github::fetch_pull_request_diff(client, &repo, pr_number)
+    let diff = github::fetch_pull_request_diff(client, &repo, input.pr_number)
         .await
         .map_err(|err| api_error(StatusCode::BAD_GATEWAY, err.to_string()))?;
 
@@ -51,7 +55,7 @@ pub async fn run_github_pr_review(
         ));
     }
 
-    let rules = resolve_rules(&repo, rules)?;
+    let rules = resolve_rules(&repo, input.rules)?;
     let github_context = GitHubReviewContext {
         repo: repo.clone(),
         head_repo: if pr.head_repo.trim().is_empty() {
@@ -59,29 +63,29 @@ pub async fn run_github_pr_review(
         } else {
             pr.head_repo.clone()
         },
-        pr_number,
+        pr_number: input.pr_number,
         pr_title: pr.title,
         pr_url: pr.html_url,
         head_sha: pr.head_sha,
         head_ref: pr.head_ref,
         base_ref: pr.base_ref,
-        event,
-        action,
-        trigger,
+        event: input.event,
+        action: input.action,
+        trigger: input.trigger,
     };
 
     let mut review = review_diff(
         client,
         &repo,
         &diff,
-        &normalize_ai_source(&ai_source, "github-pr"),
+        &normalize_ai_source(&input.ai_source, "github-pr"),
         rules,
         "github_pr",
         Some(github_context),
     )
     .await;
 
-    review.github_report = Some(if publish_status {
+    review.github_report = Some(if input.publish_status {
         github::publish_review_outcome(client, &review).await
     } else {
         github::preview_review_outcome(

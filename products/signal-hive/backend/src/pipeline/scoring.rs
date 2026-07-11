@@ -250,16 +250,28 @@ pub fn priority_score(
     (round1(total), breakdown)
 }
 
-pub fn summary_from_signals(
-    stars: u32,
-    open_issues: u32,
-    issue_analysis: &IssueAnalysis,
-    todo_count: u32,
-    fixme_count: u32,
-    todo_available: bool,
-    fixme_available: bool,
-    repo_warnings: &[String],
-) -> (String, Vec<String>) {
+pub struct SummarySignalInput<'a> {
+    pub stars: u32,
+    pub open_issues: u32,
+    pub issue_analysis: &'a IssueAnalysis,
+    pub todo_count: u32,
+    pub fixme_count: u32,
+    pub todo_available: bool,
+    pub fixme_available: bool,
+    pub repo_warnings: &'a [String],
+}
+
+pub fn summary_from_signals(input: SummarySignalInput<'_>) -> (String, Vec<String>) {
+    let SummarySignalInput {
+        stars,
+        open_issues,
+        issue_analysis,
+        todo_count,
+        fixme_count,
+        todo_available,
+        fixme_available,
+        repo_warnings,
+    } = input;
     let mut signals = Vec::new();
 
     if let Some(cluster) = issue_analysis.recurring_bug_clusters.first() {

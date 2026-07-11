@@ -227,6 +227,10 @@ async fn health(State(state): State<AppState>) -> Json<serde_json::Value> {
         .map(|checks| count_errors(checks))
         .unwrap_or(0);
     let db_ok = db::health_check();
+    let github_verified = STARTUP_CHECKS
+        .get()
+        .map(|checks| patchhive_product_core::github_permissions::github_token_verified(checks))
+        .unwrap_or(false);
     Json(json!({
         "status": if errors > 0 || !db_ok { "degraded" } else { "ok" },
         "version": "0.1.0",
@@ -245,6 +249,11 @@ async fn health(State(state): State<AppState>) -> Json<serde_json::Value> {
         "config_errors": errors,
         "db_ok": db_ok,
         "db_path": db::db_path(),
+        "github_ready": github_verified,
+        "github": {
+            "token_configured": patchhive_product_core::github_auth::github_token_configured(),
+            "token_verified": github_verified,
+        },
     }))
 }
 

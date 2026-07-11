@@ -10,8 +10,8 @@ use crate::models::{IngestParams, IngestRecord, MemoryEvidence};
 
 // Use shared helpers from parent module
 use super::{
-    build_entry, build_prompt_pack, build_summary, path_bucket, MaintainerProfileBucket,
-    ReviewerProfileBucket, SignalBucket, STOPWORDS,
+    build_entry, build_prompt_pack, build_summary, path_bucket, EntryDraft,
+    MaintainerProfileBucket, ReviewerProfileBucket, SignalBucket, STOPWORDS,
 };
 
 pub fn build_memory_run(
@@ -185,14 +185,16 @@ pub fn build_memory_run(
             entries.push(build_entry(
                 &run_id,
                 &repo,
-                "review_rule",
-                label,
-                format!("{detail_line} Reviewer feedback surfaced this pattern {} times across recent merged PRs.", bucket.frequency),
-                prompt_line,
-                bucket.frequency,
-                tags,
-                bucket.evidence.clone(),
                 &created_at,
+                EntryDraft {
+                    kind: "review_rule",
+                    title: label.into(),
+                    detail: format!("{detail_line} Reviewer feedback surfaced this pattern {} times across recent merged PRs.", bucket.frequency),
+                    prompt_line: prompt_line.into(),
+                    frequency: bucket.frequency,
+                    tags,
+                    evidence: bucket.evidence.clone(),
+                },
             ));
         }
     }
@@ -203,17 +205,19 @@ pub fn build_memory_run(
             entries.push(build_entry(
                 &run_id,
                 &repo,
-                "testing_expectation",
-                "Behavior changes usually ship with tests",
-                format!(
-                    "{} of the last {} merged PRs that touched source files also updated tests. This repo tends to expect test coverage when behavior changes.",
-                    source_with_tests, source_prs
-                ),
-                "When behavior changes or bugs are fixed, update or add tests in the same patch.",
-                source_with_tests,
-                vec!["tests", "merged-pr-pattern"],
-                Vec::new(),
                 &created_at,
+                EntryDraft {
+                    kind: "testing_expectation",
+                    title: "Behavior changes usually ship with tests".into(),
+                    detail: format!(
+                        "{} of the last {} merged PRs that touched source files also updated tests. This repo tends to expect test coverage when behavior changes.",
+                        source_with_tests, source_prs
+                    ),
+                    prompt_line: "When behavior changes or bugs are fixed, update or add tests in the same patch.".into(),
+                    frequency: source_with_tests,
+                    tags: vec!["tests", "merged-pr-pattern"],
+                    evidence: Vec::new(),
+                },
             ));
         }
     }
@@ -228,16 +232,18 @@ pub fn build_memory_run(
         entries.push(build_entry(
             &run_id,
             &repo,
-            "hotspot",
-            format!("Recent fixes cluster in {dir}"),
-            format!(
-                "Recent merged PRs repeatedly touched {dir}. Treat it as a high-context area and read nearby helpers, tests, and conventions before changing it."
-            ),
-            format!("Treat {dir} as a high-context area; read nearby code and tests before editing it."),
-            frequency,
-            vec!["hotspot", "paths"],
-            Vec::new(),
             &created_at,
+            EntryDraft {
+                kind: "hotspot",
+                title: format!("Recent fixes cluster in {dir}"),
+                detail: format!(
+                    "Recent merged PRs repeatedly touched {dir}. Treat it as a high-context area and read nearby helpers, tests, and conventions before changing it."
+                ),
+                prompt_line: format!("Treat {dir} as a high-context area; read nearby code and tests before editing it."),
+                frequency,
+                tags: vec!["hotspot", "paths"],
+                evidence: Vec::new(),
+            },
         ));
     }
 
@@ -257,16 +263,18 @@ pub fn build_memory_run(
         entries.push(build_entry(
             &run_id,
             &repo,
-            "hotspot",
-            format!("{path} attracts repeat review churn"),
-            format!(
-                "Reviewer comments keep landing on {path}. This file or area likely encodes conventions that agents should read before making edits."
-            ),
-            format!("Read {path} carefully before editing; this path attracts repeat review feedback."),
-            bucket.frequency,
-            vec!["review-churn", "paths"],
-            bucket.evidence,
             &created_at,
+            EntryDraft {
+                kind: "hotspot",
+                title: format!("{path} attracts repeat review churn"),
+                detail: format!(
+                    "Reviewer comments keep landing on {path}. This file or area likely encodes conventions that agents should read before making edits."
+                ),
+                prompt_line: format!("Read {path} carefully before editing; this path attracts repeat review feedback."),
+                frequency: bucket.frequency,
+                tags: vec!["review-churn", "paths"],
+                evidence: bucket.evidence,
+            },
         ));
     }
 
@@ -286,16 +294,18 @@ pub fn build_memory_run(
         entries.push(build_entry(
             &run_id,
             &repo,
-            "failure_pattern",
-            format!("Recurring failures mention '{term}'"),
-            format!(
-                "Closed bug reports repeatedly mention {term}. RepoMemory is treating that as a repeated failure pattern worth checking before new patches move forward."
-            ),
-            format!("Re-check {term}-adjacent behavior and edge cases before finalizing a patch."),
-            bucket.frequency,
-            vec!["bugs", "issues", "failure-pattern"],
-            bucket.evidence,
             &created_at,
+            EntryDraft {
+                kind: "failure_pattern",
+                title: format!("Recurring failures mention '{term}'"),
+                detail: format!(
+                    "Closed bug reports repeatedly mention {term}. RepoMemory is treating that as a repeated failure pattern worth checking before new patches move forward."
+                ),
+                prompt_line: format!("Re-check {term}-adjacent behavior and edge cases before finalizing a patch."),
+                frequency: bucket.frequency,
+                tags: vec!["bugs", "issues", "failure-pattern"],
+                evidence: bucket.evidence,
+            },
         ));
     }
 
@@ -334,23 +344,25 @@ pub fn build_memory_run(
         entries.push(build_entry(
             &run_id,
             &repo,
-            "reviewer_profile",
-            format!("Review patterns from @{reviewer}"),
-            format!(
-                "Past feedback from @{reviewer} repeatedly focused on {focus_text} {path_text}. RepoMemory is keeping that signature so future patches can pre-empt the same review friction."
-            ),
-            format!(
-                "Pre-empt the kinds of feedback @{reviewer} often gives around {focus_text} {}.",
-                if paths.is_empty() {
-                    "before you ship changes".into()
-                } else {
-                    format!("when touching {}", paths.join(" and "))
-                }
-            ),
-            profile.total_feedback,
-            vec!["reviewer-profile", "feedback-signature"],
-            profile.evidence,
             &created_at,
+            EntryDraft {
+                kind: "reviewer_profile",
+                title: format!("Review patterns from @{reviewer}"),
+                detail: format!(
+                    "Past feedback from @{reviewer} repeatedly focused on {focus_text} {path_text}. RepoMemory is keeping that signature so future patches can pre-empt the same review friction."
+                ),
+                prompt_line: format!(
+                    "Pre-empt the kinds of feedback @{reviewer} often gives around {focus_text} {}.",
+                    if paths.is_empty() {
+                        "before you ship changes".into()
+                    } else {
+                        format!("when touching {}", paths.join(" and "))
+                    }
+                ),
+                frequency: profile.total_feedback,
+                tags: vec!["reviewer-profile", "feedback-signature"],
+                evidence: profile.evidence,
+            },
         ));
     }
 
@@ -390,18 +402,20 @@ pub fn build_memory_run(
         entries.push(build_entry(
             &run_id,
             &repo,
-            "maintainer_profile",
-            format!("Merged patterns from @{author}"),
-            format!(
-                "Recent merged work from @{author} clusters in {path_text}. {test_text}"
-            ),
-            format!(
-                "When touching {path_text}, match the conventions that recently landed in merged work from @{author}."
-            ),
-            profile.merged_prs,
-            vec!["maintainer-profile", "merged-history"],
-            profile.evidence,
             &created_at,
+            EntryDraft {
+                kind: "maintainer_profile",
+                title: format!("Merged patterns from @{author}"),
+                detail: format!(
+                    "Recent merged work from @{author} clusters in {path_text}. {test_text}"
+                ),
+                prompt_line: format!(
+                    "When touching {path_text}, match the conventions that recently landed in merged work from @{author}."
+                ),
+                frequency: profile.merged_prs,
+                tags: vec!["maintainer-profile", "merged-history"],
+                evidence: profile.evidence,
+            },
         ));
     }
 

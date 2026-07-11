@@ -38,7 +38,7 @@ const config = {
   ]; },
   hero: (result) => result ? { lead: result.target_tag || result.target_version || "Release", middle: "is", highlight: `${result.decision || "pending"}.` } : { lead: "Release candidates", middle: "need a", highlight: "ship call." },
   status: (result, overview) => ({ label: result?.decision || "—", detail: result?.summary || "Check a release candidate to begin", progress: result ? `${result.score || 0}%` : "8%", stats: [["Score", result?.score || 0], ["Checks", result?.metrics?.checks || 0], ["Runs", overview?.counts?.runs || 0]] }),
-  chips: (result, health) => [result?.repo || "No repository selected", result?.branch || "Default branch", health.github_ready ? "GitHub ready" : "Token missing"],
+  chips: (result, health) => [result?.repo || "No repository selected", result?.branch || "Default branch", health.github_ready ? "GitHub verified" : health.github?.token_configured ? "GitHub unverified" : "Token missing"],
   targetSubtitle: (result) => result?.target_tag || result?.target_version || result?.branch || "Release readiness",
   historyTitle: (entry) => `${entry.repo} · ${entry.target_tag || entry.target_version || entry.branch || "release"}`,
 };

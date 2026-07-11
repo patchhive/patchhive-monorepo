@@ -1,4 +1,5 @@
 use patchhive_product_core::{
+    github_auth::verify_github_token,
     github_permissions::GitHubPermissionProfile,
     sqlite::db_path_message,
     startup::{StartupCheck, StartupCheckLevel},
@@ -22,7 +23,7 @@ pub async fn validate_config(client: &Client) -> Vec<StartupCheck> {
     }
 
     let github_profile = GitHubPermissionProfile::DependencyTriage;
-    match crate::github::validate_token(client).await {
+    match verify_github_token(client).await {
         Ok(_) => checks.push(github_profile.ready_check()),
         Err(err) => checks
             .push(github_profile.validation_failed_check(err.to_string(), StartupCheckLevel::Warn)),

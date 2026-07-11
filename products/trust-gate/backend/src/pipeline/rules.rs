@@ -104,9 +104,10 @@ pub fn resolve_rules(repo: &str, incoming: Option<RepoRuleSet>) -> Result<RepoRu
     {
         saved
     } else {
-        let mut defaults = RepoRuleSet::default();
-        defaults.repo = repo.to_string();
-        defaults
+        RepoRuleSet {
+            repo: repo.to_string(),
+            ..RepoRuleSet::default()
+        }
     };
 
     rules.repo = repo.to_string();

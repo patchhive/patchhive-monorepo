@@ -36,7 +36,7 @@ const config = {
   ]; },
   hero: (result) => result ? { lead: `${result.metrics?.flaky_signals || 0} signals`, middle: "need", highlight: "attention." } : { lead: "Unstable checks", middle: "need", highlight: "evidence." },
   status: (result, overview) => ({ label: result?.trend?.status || (result ? "scanned" : "—"), detail: result?.summary || "Scan workflow history to begin", progress: result ? "100%" : "8%", stats: [["Runs", result?.metrics?.workflow_runs || 0], ["Reruns", result?.metrics?.rerun_like_runs || 0], ["Scans", overview?.counts?.scans || 0]] }),
-  chips: (result, health) => [result?.repo || "No repository selected", result?.workflow_name || "All workflows", health.github_ready ? "GitHub ready" : "Token missing"],
+  chips: (result, health) => [result?.repo || "No repository selected", result?.workflow_name || "All workflows", health.github_ready ? "GitHub verified" : health.github?.token_configured ? "GitHub unverified" : "Token missing"],
   targetSubtitle: (result) => result ? [result.branch || "all branches", result.workflow_name || "all workflows"].join(" · ") : "Actions history",
   historyTitle: (entry) => `${entry.repo} · ${entry.workflow_name || entry.branch || "Actions"}`,
 };

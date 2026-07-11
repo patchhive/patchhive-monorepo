@@ -1,7 +1,6 @@
 use anyhow::Result;
 use patchhive_github_data::{
     code_search_count, fetch_issues, fetch_repository, search_repositories,
-    validate_token as validate_shared_token,
 };
 use patchhive_product_core::scope_policy::repo_scope_decision;
 use reqwest::Client;
@@ -16,10 +15,6 @@ pub struct MarkerSearchResult {
     pub available: bool,
     pub rate_limited: bool,
     pub warning: Option<String>,
-}
-
-pub async fn validate_token(client: &Client) -> Result<()> {
-    validate_shared_token(client).await
 }
 
 fn repo_allowed(

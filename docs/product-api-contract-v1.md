@@ -316,6 +316,20 @@ Optional:
 - `POST|PUT /settings/apply`
   Apply HiveCore-provided suite defaults when a product intentionally supports remote settings.
 
+GitHub-enabled products must not equate token presence with readiness. Their
+health response should expose `github.token_configured` separately from
+`github.token_verified`; `github_ready` is true only after GitHub accepts the
+token through an authenticated identity request. The shared GitHub startup
+check uses `code: "github_token"` and a `status` of `verified`, `failed`, or
+`missing` so HiveCore and specialist UIs do not have to infer state from copy.
+
+Identity verification does not prove access to every repository or API family.
+Products verify target-specific read permissions while loading the target and
+record those failures in the run. GitHub write permissions are only considered
+verified after the requested comment, check, status, branch, or pull-request
+write succeeds; token presence and identity verification alone never make a
+publish path ready.
+
 `/capabilities` should follow:
 
 ```json

@@ -17,4 +17,7 @@ Rules:
   remain consistent while products supply their own filters and row evidence.
 - Use the shared startup-check list for checks surfaces so derived labels, status
   treatment, empty state, and backend-provided evidence remain consistent.
+- Render GitHub as verified only when `github_ready` or
+  `github.token_verified` is true. A configured token that failed or could not
+  complete identity verification is unverified, not ready.
 - HiveCore is not part of the specialist-product v3 migration.

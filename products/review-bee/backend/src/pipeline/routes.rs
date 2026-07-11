@@ -147,7 +147,11 @@ pub async fn health() -> Json<serde_json::Value> {
         .unwrap_or(0);
     let db_ok = db::health_check();
     let counts = db::overview_counts();
-    let github_ready = github::github_token_configured();
+    let github_ready = STARTUP_CHECKS
+        .get()
+        .map(|checks| patchhive_product_core::github_permissions::github_token_verified(checks))
+        .unwrap_or(false);
+    let github_configured = github::github_token_configured();
     let webhook_ready = github_ready && github::webhook_secret_configured();
 
     Json(json!({
@@ -164,11 +168,14 @@ pub async fn health() -> Json<serde_json::Value> {
         "open_item_count": counts.open_items,
         "mode": "github-pr-review-checklists",
         "github": {
-            "token_configured": github_ready,
+            "token_configured": github_configured,
+            "token_verified": github_ready,
             "webhook_secret_configured": github::webhook_secret_configured(),
             "public_url_configured": github::public_url_configured(),
             "webhook_ready": webhook_ready,
-            "comment_publish_ready": github_ready,
+            "comment_publish_configured": github_configured,
+            "comment_publish_scope_verified": false,
+            "comment_publish_ready": false,
         }
     }))
 }

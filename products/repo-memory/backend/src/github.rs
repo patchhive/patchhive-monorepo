@@ -4,7 +4,7 @@ use patchhive_github_data::{
     fetch_issues, fetch_pull_files as fetch_shared_pull_files,
     fetch_pull_requests as fetch_shared_pull_requests,
     fetch_pull_review_comments as fetch_shared_pull_review_comments,
-    fetch_pull_reviews as fetch_shared_pull_reviews, validate_token as validate_shared_token,
+    fetch_pull_reviews as fetch_shared_pull_reviews,
 };
 use reqwest::Client;
 
@@ -20,10 +20,6 @@ fn is_recent(date: &str, since_days: u32) -> bool {
     DateTime::parse_from_rfc3339(date)
         .map(|value| value.with_timezone(&Utc) >= cutoff(since_days))
         .unwrap_or(false)
-}
-
-pub async fn validate_token(client: &Client) -> Result<()> {
-    validate_shared_token(client).await
 }
 
 pub async fn fetch_merged_pull_requests(

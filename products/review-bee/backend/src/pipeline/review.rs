@@ -143,8 +143,8 @@ pub fn build_review_result(
     }
 
     let mut checklist = clusters
-        .into_iter()
-        .map(|(_, cluster)| {
+        .into_values()
+        .map(|cluster| {
             let category = cluster.category.clone();
             into_checklist_item(category, cluster)
         })

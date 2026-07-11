@@ -210,17 +210,17 @@ function startupCheckTitle(check) {
 }
 
 function startupLevelClass(level) {
-  if (level === "error") return "border-red-900/30 bg-red-900/10 text-red-800 dark:border-red-400/25 dark:bg-red-500/10 dark:text-red-300";
-  if (level === "warn") return "border-amber-900/30 bg-amber-900/10 text-amber-800 dark:border-amber-400/25 dark:bg-amber-500/10 dark:text-amber-300";
-  if (level === "ok") return "border-emerald-900/30 bg-emerald-900/10 text-emerald-800 dark:border-emerald-400/25 dark:bg-emerald-500/10 dark:text-emerald-300";
+  if (level === "error" || level === "failed") return "border-red-900/30 bg-red-900/10 text-red-800 dark:border-red-400/25 dark:bg-red-500/10 dark:text-red-300";
+  if (level === "warn" || level === "missing") return "border-amber-900/30 bg-amber-900/10 text-amber-800 dark:border-amber-400/25 dark:bg-amber-500/10 dark:text-amber-300";
+  if (level === "ok" || level === "verified") return "border-emerald-900/30 bg-emerald-900/10 text-emerald-800 dark:border-emerald-400/25 dark:bg-emerald-500/10 dark:text-emerald-300";
   return `border-[var(--line)] bg-[var(--surface-soft)] ${V3_TEXT.mute}`;
 }
 
 export function StartupCheckList({ checks = [] }) {
   if (!checks.length) return <div className={`py-14 text-center text-[13px] ${V3_TEXT.mute}`}>No startup checks were returned.</div>;
   return <div className="space-y-2">{checks.map((check, index) => {
-    const level = String(check.level || "info").toLowerCase();
-    return <div className="surface-inset rounded-xl p-4" key={`${startupCheckTitle(check)}-${check.msg || check.message || index}`}><div className="flex items-start justify-between gap-3"><div><div className={`text-[13px] font-semibold ${V3_TEXT.strong}`}>{startupCheckTitle(check)}</div><div className={`mt-1 text-[12px] leading-relaxed ${V3_TEXT.mute}`}>{check.message || check.detail || check.msg || "No detail returned."}</div></div><span className={`inline-flex min-h-7 shrink-0 items-center justify-center rounded-full border px-2.5 text-[10px] uppercase tracking-wider ${startupLevelClass(level)}`}>{level}</span></div></div>;
+    const status = String(check.status || check.level || "info").toLowerCase();
+    return <div className="surface-inset rounded-xl p-4" key={`${startupCheckTitle(check)}-${check.msg || check.message || index}`}><div className="flex items-start justify-between gap-3"><div><div className={`text-[13px] font-semibold ${V3_TEXT.strong}`}>{startupCheckTitle(check)}</div><div className={`mt-1 text-[12px] leading-relaxed ${V3_TEXT.mute}`}>{check.message || check.detail || check.msg || "No detail returned."}</div></div><span className={`inline-flex min-h-7 shrink-0 items-center justify-center rounded-full border px-2.5 text-[10px] uppercase tracking-wider ${startupLevelClass(status)}`}>{status}</span></div></div>;
   })}</div>;
 }
 

@@ -18,7 +18,7 @@ const config = {
     { key: "pr_limit", label: "Pull request limit", type: "number", min: 5 },
     { key: "include_alerts", label: "Include Dependabot alerts", type: "checkbox" },
   ],
-  serialize: (form, health) => ({ repo: form.repo, pr_limit: Number(form.pr_limit) || 25, include_alerts: Boolean(form.include_alerts) && Boolean(health.github_ready || health.github?.token_configured) }),
+  serialize: (form, health) => ({ repo: form.repo, pr_limit: Number(form.pr_limit) || 25, include_alerts: Boolean(form.include_alerts) && Boolean(health.github_ready || health.github?.token_verified) }),
   formFromResult: (result) => ({ repo: result.repo }),
   items: (result) => result?.items || [],
   mapItem: (item) => { const t = itemTone(item.recommendation); return { id: item.key || item.package_name, title: item.package_name || item.key || "Dependency", meta: [item.ecosystem, item.update_kind, item.manifests?.[0]].filter(Boolean).join(" · "), summary: item.summary || item.reasons?.[0], evidence: [...(item.reasons || []), ...(item.evidence || [])], link: item.pull_requests?.[0]?.html_url || item.alerts?.[0]?.html_url, score: item.score || 0, status: String(item.recommendation || "watch").replaceAll("_", " "), tone: t }; },
@@ -35,7 +35,7 @@ const config = {
   ]; },
   hero: (result) => result ? { lead: `${result.metrics?.tracked_items || 0} dependencies`, middle: "need a", highlight: "decision." } : { lead: "Dependency noise", middle: "needs a", highlight: "priority." },
   status: (result, overview) => ({ label: result?.metrics?.update_now ? "act" : result ? "watch" : "—", detail: result?.summary || "Scan a repository to begin", progress: result ? "100%" : "8%", stats: [["Tracked", result?.metrics?.tracked_items || 0], ["Alerts", result?.metrics?.open_alerts || 0], ["Scans", overview?.counts?.scans || 0]] }),
-  chips: (result, health) => [result?.repo || "No repository selected", `${result?.metrics?.dependency_pull_requests || 0} dependency PRs`, health.github_ready ? "GitHub ready" : "Token missing"],
+  chips: (result, health) => [result?.repo || "No repository selected", `${result?.metrics?.dependency_pull_requests || 0} dependency PRs`, health.github_ready ? "GitHub verified" : health.github?.token_configured ? "GitHub unverified" : "Token missing"],
   targetSubtitle: (result) => result ? `${result.metrics?.tracked_items || 0} tracked dependency items` : "Dependency intake",
   historyTitle: (entry) => entry.repo,
 };

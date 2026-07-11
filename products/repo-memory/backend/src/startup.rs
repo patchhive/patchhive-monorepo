@@ -1,4 +1,9 @@
-use patchhive_product_core::{sqlite::db_path_message, startup::StartupCheck};
+use patchhive_product_core::{
+    github_auth::verify_github_token,
+    github_permissions::GitHubPermissionProfile,
+    sqlite::db_path_message,
+    startup::{StartupCheck, StartupCheckLevel},
+};
 use reqwest::Client;
 
 pub async fn validate_config(client: &Client) -> Vec<StartupCheck> {
@@ -19,13 +24,11 @@ pub async fn validate_config(client: &Client) -> Vec<StartupCheck> {
         ));
     }
 
-    match crate::github::validate_token(client).await {
-        Ok(_) => checks.push(StartupCheck::info(
-            "GitHub token is configured. RepoMemory can ingest merged PRs, review feedback, and closed issues.",
-        )),
-        Err(_) => checks.push(StartupCheck::warn(
-            "BOT_GITHUB_TOKEN is missing. RepoMemory can load, but GitHub-backed ingestion is disabled until a token is configured.",
-        )),
+    let github_profile = GitHubPermissionProfile::RepoHistory;
+    match verify_github_token(client).await {
+        Ok(_) => checks.push(github_profile.ready_check()),
+        Err(err) => checks
+            .push(github_profile.validation_failed_check(err.to_string(), StartupCheckLevel::Warn)),
     }
 
     checks.push(StartupCheck::info(

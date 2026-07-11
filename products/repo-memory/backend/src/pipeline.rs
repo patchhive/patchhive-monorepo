@@ -56,7 +56,7 @@ pub use failguard::{
     capture_failguard_lesson, create_failguard_candidate, dismiss_failguard_candidate,
     failguard_candidates, promote_failguard_candidate,
 };
-pub use helpers::{build_entry, build_prompt_pack, build_summary};
+pub use helpers::{build_entry, build_prompt_pack, build_summary, EntryDraft};
 pub use memory_run::truncate;
 pub use routes::{
     auth_status, capabilities, context, curate_memory, gen_key, gen_service_token, health, history,

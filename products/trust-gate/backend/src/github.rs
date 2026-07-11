@@ -75,8 +75,10 @@ fn report_templates_for_repo(repo: &str) -> (ReportTemplateSet, String, String) 
             (templates, "repo".into(), repo.into())
         }
         _ => {
-            let mut templates = ReportTemplateSet::default();
-            templates.repo = repo.into();
+            let templates = ReportTemplateSet {
+                repo: repo.into(),
+                ..ReportTemplateSet::default()
+            };
             (templates, "default".into(), repo.into())
         }
     }

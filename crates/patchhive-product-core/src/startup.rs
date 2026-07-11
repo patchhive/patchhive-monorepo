@@ -19,6 +19,10 @@ pub enum StartupCheckLevel {
 pub struct StartupCheck {
     pub level: StartupCheckLevel,
     pub msg: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub code: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
 }
 
 impl StartupCheck {
@@ -26,6 +30,8 @@ impl StartupCheck {
         Self {
             level: StartupCheckLevel::Ok,
             msg: message.into(),
+            code: None,
+            status: None,
         }
     }
 
@@ -33,6 +39,8 @@ impl StartupCheck {
         Self {
             level: StartupCheckLevel::Info,
             msg: message.into(),
+            code: None,
+            status: None,
         }
     }
 
@@ -40,6 +48,8 @@ impl StartupCheck {
         Self {
             level: StartupCheckLevel::Warn,
             msg: message.into(),
+            code: None,
+            status: None,
         }
     }
 
@@ -47,8 +57,22 @@ impl StartupCheck {
         Self {
             level: StartupCheckLevel::Error,
             msg: message.into(),
+            code: None,
+            status: None,
         }
     }
+
+    pub fn with_identity(mut self, code: impl Into<String>, status: impl Into<String>) -> Self {
+        self.code = Some(code.into());
+        self.status = Some(status.into());
+        self
+    }
+}
+
+pub fn check_has_status(checks: &[StartupCheck], code: &str, status: &str) -> bool {
+    checks
+        .iter()
+        .any(|check| check.code.as_deref() == Some(code) && check.status.as_deref() == Some(status))
 }
 
 pub fn count_errors(checks: &[StartupCheck]) -> usize {

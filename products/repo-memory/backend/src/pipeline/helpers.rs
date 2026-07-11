@@ -4,36 +4,32 @@ use uuid::Uuid;
 
 use crate::models::{stable_memory_ref, IngestSummary, MemoryEntry, MemoryEvidence};
 
-pub fn build_entry(
-    run_id: &str,
-    repo: &str,
-    kind: &str,
-    title: impl Into<String>,
-    detail: impl Into<String>,
-    prompt_line: impl Into<String>,
-    frequency: u32,
-    tags: Vec<&str>,
-    evidence: Vec<MemoryEvidence>,
-    created_at: &str,
-) -> MemoryEntry {
-    let title = title.into();
-    let detail = detail.into();
-    let prompt_line = prompt_line.into();
+pub struct EntryDraft {
+    pub kind: &'static str,
+    pub title: String,
+    pub detail: String,
+    pub prompt_line: String,
+    pub frequency: u32,
+    pub tags: Vec<&'static str>,
+    pub evidence: Vec<MemoryEvidence>,
+}
+
+pub fn build_entry(run_id: &str, repo: &str, created_at: &str, draft: EntryDraft) -> MemoryEntry {
     MemoryEntry {
         id: Uuid::new_v4().to_string(),
-        memory_ref: stable_memory_ref(repo, kind, &title),
+        memory_ref: stable_memory_ref(repo, draft.kind, &draft.title),
         run_id: run_id.to_string(),
         repo: repo.to_string(),
-        kind: kind.to_string(),
-        title,
-        detail,
-        prompt_line,
-        confidence: confidence_for(frequency, evidence.len()),
-        frequency,
+        kind: draft.kind.to_string(),
+        title: draft.title,
+        detail: draft.detail,
+        prompt_line: draft.prompt_line,
+        confidence: confidence_for(draft.frequency, draft.evidence.len()),
+        frequency: draft.frequency,
         disposition: "signal".into(),
         pinned: false,
-        tags: tags.into_iter().map(str::to_string).collect(),
-        evidence,
+        tags: draft.tags.into_iter().map(str::to_string).collect(),
+        evidence: draft.evidence,
         created_at: created_at.to_string(),
     }
 }

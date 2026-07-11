@@ -196,6 +196,10 @@ async fn health(State(_state): State<AppState>) -> Json<serde_json::Value> {
         .map(|checks| count_errors(checks))
         .unwrap_or(0);
     let db_ok = db::health_check();
+    let github_verified = STARTUP_CHECKS
+        .get()
+        .map(|checks| patchhive_product_core::github_permissions::github_token_verified(checks))
+        .unwrap_or(false);
     let repo_lists = db::list_repo_lists().unwrap_or_default();
     let schedules = db::list_scan_schedules().unwrap_or_default();
     let allowlist_count = repo_lists
@@ -226,6 +230,11 @@ async fn health(State(_state): State<AppState>) -> Json<serde_json::Value> {
         "config_errors": errors,
         "db_ok": db_ok,
         "db_path": db::db_path(),
+        "github_ready": github_verified,
+        "github": {
+            "token_configured": patchhive_product_core::github_auth::github_token_configured(),
+            "token_verified": github_verified,
+        },
         "read_only": true,
         "repo_lists": {
             "allowlist": allowlist_count,

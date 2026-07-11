@@ -55,7 +55,7 @@ pub static STARTUP_CHECKS: OnceCell<Vec<StartupCheck>> = OnceCell::new();
 
 pub async fn init_runtime() -> Result<()> {
     db::init_db()?;
-    let checks = startup::validate_config().await;
+    let checks = startup::validate_config(&reqwest::Client::new()).await;
     log_checks(&checks);
     let _ = STARTUP_CHECKS.set(checks);
     Ok(())

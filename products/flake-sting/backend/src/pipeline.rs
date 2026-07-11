@@ -155,6 +155,10 @@ pub async fn health() -> Json<serde_json::Value> {
         .unwrap_or(0);
     let db_ok = db::health_check();
     let counts = db::overview_counts();
+    let github_verified = STARTUP_CHECKS
+        .get()
+        .map(|checks| patchhive_product_core::github_permissions::github_token_verified(checks))
+        .unwrap_or(false);
 
     Json(json!({
         "status": if errors > 0 || !db_ok { "degraded" } else { "ok" },
@@ -164,7 +168,11 @@ pub async fn health() -> Json<serde_json::Value> {
         "config_errors": errors,
         "db_ok": db_ok,
         "db_path": db::db_path(),
-        "github_ready": github::github_token_configured(),
+        "github_ready": github_verified,
+        "github": {
+            "token_configured": github::github_token_configured(),
+            "token_verified": github_verified,
+        },
         "scan_count": counts.scans,
         "repo_count": counts.repos,
         "flaky_signal_count": counts.flaky_signals,
@@ -331,56 +339,60 @@ fn push_evidence(items: &mut Vec<String>, value: String) {
     }
 }
 
-fn record_bucket(
-    buckets: &mut HashMap<String, SignalBucket>,
-    kind: &str,
-    workflow_name: &str,
-    job_name: &str,
-    step_name: &str,
-    conclusion: &str,
-    run: &GitHubWorkflowRun,
-    runner: &str,
-    evidence_url: &str,
-) {
-    let key = format!("{kind}:{workflow_name}:{job_name}:{step_name}");
+struct BucketObservation<'a> {
+    kind: &'a str,
+    workflow_name: &'a str,
+    job_name: &'a str,
+    step_name: &'a str,
+    conclusion: &'a str,
+    run: &'a GitHubWorkflowRun,
+    runner: &'a str,
+    evidence_url: &'a str,
+}
+
+fn record_bucket(buckets: &mut HashMap<String, SignalBucket>, item: BucketObservation<'_>) {
+    let key = format!(
+        "{}:{}:{}:{}",
+        item.kind, item.workflow_name, item.job_name, item.step_name
+    );
     let bucket = buckets.entry(key).or_default();
     if bucket.kind.is_empty() {
-        bucket.kind = kind.into();
-        bucket.workflow_name = workflow_name.into();
-        bucket.job_name = job_name.into();
-        bucket.step_name = step_name.into();
+        bucket.kind = item.kind.into();
+        bucket.workflow_name = item.workflow_name.into();
+        bucket.job_name = item.job_name.into();
+        bucket.step_name = item.step_name.into();
     }
 
-    if is_failure(conclusion) {
+    if is_failure(item.conclusion) {
         bucket.failure_count += 1;
-        *bucket.fail_envs.entry(runner.into()).or_default() += 1;
-    } else if is_success(conclusion) {
+        *bucket.fail_envs.entry(item.runner.into()).or_default() += 1;
+    } else if is_success(item.conclusion) {
         bucket.success_count += 1;
-        *bucket.success_envs.entry(runner.into()).or_default() += 1;
+        *bucket.success_envs.entry(item.runner.into()).or_default() += 1;
     } else {
         return;
     }
 
-    if run.run_attempt > 1 {
+    if item.run.run_attempt > 1 {
         bucket.rerun_hits += 1;
     }
 
     let line = format!(
         "run #{} attempt {} → {} on {}{}{}",
-        run.run_number,
-        run.run_attempt.max(1),
-        if conclusion.trim().is_empty() {
+        item.run.run_number,
+        item.run.run_attempt.max(1),
+        if item.conclusion.trim().is_empty() {
             "unknown"
         } else {
-            conclusion
+            item.conclusion
         },
-        runner,
-        if run.html_url.trim().is_empty() {
+        item.runner,
+        if item.run.html_url.trim().is_empty() {
             ""
         } else {
             " · "
         },
-        evidence_url,
+        item.evidence_url,
     );
     push_evidence(&mut bucket.evidence, line);
 }
@@ -527,14 +539,16 @@ async fn build_scan_result(
                 recorded_step = true;
                 record_bucket(
                     &mut buckets,
-                    "step",
-                    &run.name,
-                    &job.name,
-                    &step.name,
-                    &step.conclusion,
-                    run,
-                    &runner,
-                    &job.html_url,
+                    BucketObservation {
+                        kind: "step",
+                        workflow_name: &run.name,
+                        job_name: &job.name,
+                        step_name: &step.name,
+                        conclusion: &step.conclusion,
+                        run,
+                        runner: &runner,
+                        evidence_url: &job.html_url,
+                    },
                 );
             }
 
@@ -544,14 +558,16 @@ async fn build_scan_result(
             {
                 record_bucket(
                     &mut buckets,
-                    "job",
-                    &run.name,
-                    &job.name,
-                    "",
-                    &job.conclusion,
-                    run,
-                    &runner,
-                    &job.html_url,
+                    BucketObservation {
+                        kind: "job",
+                        workflow_name: &run.name,
+                        job_name: &job.name,
+                        step_name: "",
+                        conclusion: &job.conclusion,
+                        run,
+                        runner: &runner,
+                        evidence_url: &job.html_url,
+                    },
                 );
             }
         }

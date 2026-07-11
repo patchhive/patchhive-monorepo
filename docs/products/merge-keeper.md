@@ -308,6 +308,7 @@ All non-public endpoints require `X-API-Key` or `X-PatchHive-Service-Token` head
   "policy": { "approval_required_default": true },
   "github": {
     "token_configured": true,
+    "token_verified": true,
     "webhook_secret_configured": true,
     "public_url_configured": false,
     "report_publish_configured": true,
@@ -326,10 +327,13 @@ Error states:
 - DB failure or config errors > 0 → `status: "degraded"`.
 - Missing GitHub token → `github_ready: false`, `report_publish_ready: false`.
 
-`report_publish_configured` means a token is present. MergeKeeper does not infer
-write permission from token presence, so `report_publish_scope_verified` and
-`report_publish_ready` remain `false` until the publish path performs a real
-permission check. A publish attempt still returns its concrete GitHub result.
+`github_ready` and `github.token_verified` mean GitHub accepted the token through
+an authenticated identity request. They do not imply access to every target
+repository. `report_publish_configured` means a token is present; MergeKeeper
+does not infer write permission from token presence or identity verification,
+so `report_publish_scope_verified` and `report_publish_ready` remain `false`
+until the publish path performs a real target-specific write. Every publish
+attempt returns its concrete GitHub result.
 
 ### Authentication
 
@@ -430,7 +434,7 @@ The health endpoint provides a single diagnostic snapshot including:
 
 - **Service status**: `"ok"` or `"degraded"` based on config errors and DB health.
 - **Database**: connection check via `SELECT 1`, reports path.
-- **GitHub readiness**: whether a token is configured, webhook secret is set, public URL is set, and whether report publishing is ready.
+- **GitHub readiness**: whether a token is configured and accepted by GitHub, plus separate webhook, public-URL, and unverified publishing posture.
 - **Integration status**: whether ReviewBee, TrustGate, and RepoMemory are each configured.
 - **Assessment counts**: total runs, unique repos, and breakdown by readiness state.
 - **Policy**: current `approval_required_default` value.
@@ -439,7 +443,7 @@ Designed for container orchestration health checks (Docker HEALTHCHECK, K8s prob
 
 ### Startup Checks (`GET /startup/checks`)
 
-Returns detailed info/warn/error-level checks from `startup::validate_config()` including DB path, auth status, GitHub token presence, approval policy, integration URLs, webhook secret, and public URL configuration.
+Returns detailed info/warn/error-level checks from `startup::validate_config()` including DB path, auth status, authenticated GitHub token verification, approval policy, integration URLs, webhook secret, and public URL configuration. The GitHub check also carries the machine-readable `github_token` code and `verified`, `failed`, or `missing` status.
 
 ### Logging
 

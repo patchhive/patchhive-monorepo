@@ -209,7 +209,7 @@ fn code_scanning_to_finding(alert: github::GitHubCodeScanningAlert) -> Vulnerabi
     let owner_hint = owner_hint_for_path(&alert.most_recent_instance.location.path);
     let score = score_code_scanning(
         &severity,
-        &reachability,
+        reachability,
         &alert.most_recent_instance.classifications,
     );
     let recommendation = recommend(score, &severity);

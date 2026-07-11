@@ -130,7 +130,7 @@ function reportTone(report) {
 }
 
 function healthReady(health) {
-  return Boolean(health?.github_ready || health?.github?.token_configured);
+  return Boolean(health?.github_ready || health?.github?.token_verified);
 }
 
 async function parseJsonResponse(response, fallbackError) {

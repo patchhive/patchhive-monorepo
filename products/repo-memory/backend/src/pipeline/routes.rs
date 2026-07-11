@@ -201,6 +201,10 @@ pub async fn health(State(_state): State<AppState>) -> Json<serde_json::Value> {
         .map(|checks| patchhive_product_core::startup::count_errors(checks))
         .unwrap_or(0);
     let db_ok = db::health_check();
+    let github_verified = STARTUP_CHECKS
+        .get()
+        .map(|checks| patchhive_product_core::github_permissions::github_token_verified(checks))
+        .unwrap_or(false);
 
     Json(json!({
         "status": if errors > 0 || !db_ok { "degraded" } else { "ok" },
@@ -211,7 +215,11 @@ pub async fn health(State(_state): State<AppState>) -> Json<serde_json::Value> {
         "db_ok": db_ok,
         "db_path": db::db_path(),
         "counts": db::overview_counts(),
-        "github_ready": std::env::var("BOT_GITHUB_TOKEN").is_ok() || std::env::var("GITHUB_TOKEN").is_ok(),
+        "github_ready": github_verified,
+        "github": {
+            "token_configured": patchhive_product_core::github_auth::github_token_configured(),
+            "token_verified": github_verified,
+        },
         "memory_loop": "merged-prs + review feedback + closed issues",
     }))
 }

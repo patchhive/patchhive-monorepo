@@ -54,7 +54,7 @@ async fn main() {
         std::process::exit(1);
     }
 
-    let checks = startup::validate_config().await;
+    let checks = startup::validate_config(&reqwest::Client::new()).await;
     log_checks(&checks);
     let _ = STARTUP_CHECKS.set(checks);
 

@@ -1,5 +1,10 @@
 use crate::db::get_conn;
-use patchhive_product_core::{repo_memory::repo_memory_url, startup::StartupCheck};
+use patchhive_product_core::{
+    github_auth::verify_github_token,
+    github_permissions::GitHubPermissionProfile,
+    repo_memory::repo_memory_url,
+    startup::{StartupCheck, StartupCheckLevel},
+};
 use reqwest::Client;
 
 pub async fn validate_config(http: &Client) -> Vec<StartupCheck> {
@@ -35,56 +40,12 @@ pub async fn validate_config(http: &Client) -> Vec<StartupCheck> {
         }
     }
 
-    // Validate GitHub token
-    let raw_token = std::env::var("BOT_GITHUB_TOKEN").unwrap_or_default();
-    let token_input = (!raw_token.is_empty()).then_some(raw_token.as_str());
-    let token = match crate::github::validated_token(token_input) {
-        Ok(Some(token)) => Some(token),
-        Ok(None) => None,
-        Err(error) => {
-            results.push(StartupCheck::error(format!(
-                "BOT_GITHUB_TOKEN is malformed: {error}"
-            )));
-            None
-        }
-    };
-    if let Some(token) = token {
-        match http
-            .get("https://api.github.com/user")
-            .bearer_auth(&token)
-            .header("Accept", "application/vnd.github+json")
-            .header("User-Agent", "repo-reaper/0.1")
-            .send()
-            .await
-        {
-            Ok(r) if r.status() == 401 => {
-                results.push(StartupCheck::error(
-                    "BOT_GITHUB_TOKEN is invalid or expired",
-                ));
-            }
-            Ok(r) if r.status().is_success() => {
-                let data: serde_json::Value = r.json().await.unwrap_or_default();
-                let login = data["login"].as_str().unwrap_or("?");
-                results.push(StartupCheck::ok(format!(
-                    "GitHub token valid — authenticated as @{login}"
-                )));
-            }
-            Ok(r) => {
-                results.push(StartupCheck::warn(format!(
-                    "GitHub returned {}",
-                    r.status()
-                )));
-            }
-            Err(e) => {
-                results.push(StartupCheck::warn(format!(
-                    "Could not validate GitHub token: {e}"
-                )));
-            }
-        }
-    } else if raw_token.is_empty() {
-        results.push(StartupCheck::error(
-            "Missing BOT_GITHUB_TOKEN (GitHub PAT with repo and PR scopes) — set it in .env or Config panel",
-        ));
+    let github_profile = GitHubPermissionProfile::AutonomousWrite;
+    match verify_github_token(http).await {
+        Ok(_) => results.push(github_profile.ready_check()),
+        Err(err) => results.push(
+            github_profile.validation_failed_check(err.to_string(), StartupCheckLevel::Error),
+        ),
     }
 
     match std::env::var("REAPER_MAX_ACTIVE_WORKERS") {

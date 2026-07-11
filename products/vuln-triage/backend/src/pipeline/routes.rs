@@ -133,6 +133,10 @@ pub async fn health() -> Json<serde_json::Value> {
         .unwrap_or(0);
     let db_ok = db::health_check();
     let counts = db::overview_counts();
+    let github_verified = STARTUP_CHECKS
+        .get()
+        .map(|checks| patchhive_product_core::github_permissions::github_token_verified(checks))
+        .unwrap_or(false);
 
     Json(json!({
         "status": if errors > 0 || !db_ok { "degraded" } else { "ok" },
@@ -142,7 +146,11 @@ pub async fn health() -> Json<serde_json::Value> {
         "config_errors": errors,
         "db_ok": db_ok,
         "db_path": db::db_path(),
-        "github_ready": github::github_token_configured(),
+        "github_ready": github_verified,
+        "github": {
+            "token_configured": github::github_token_configured(),
+            "token_verified": github_verified,
+        },
         "scan_count": counts.scans,
         "repo_count": counts.repos,
         "tracked_finding_count": counts.tracked_findings,
