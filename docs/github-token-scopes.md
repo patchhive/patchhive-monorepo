@@ -51,6 +51,16 @@ credentials.
 | RepoReaper | Metadata read, Contents read/write, Pull requests read/write, Issues read | Issues write for issue updates, Actions read for validation context, Workflows read/write only when editing `.github/workflows` | Clones or reads repos, creates branches/commits, opens PRs, and may reference issues. This token should belong to the PatchHive bot identity. |
 | HiveCore | No GitHub token for current control-plane reads | Metadata read for future suite-level GitHub checks | HiveCore primarily stores product service tokens and calls product APIs. Product GitHub work should stay behind product-owned backends. |
 
+## MergeKeeper Publish Test Token
+
+For a narrow fine-grained PAT publish test, select only the fixture repository
+and grant Metadata read, Pull requests read, Commit statuses read/write, and
+Issues read/write. MergeKeeper first attempts a check run, then falls back to a
+commit status; the fallback lets PAT-based testing succeed without requiring a
+GitHub App. Full report delivery requires both the status signal and maintained
+PR comment. A partial write remains visible as `report_partial` and does not
+verify the publishing path.
+
 ## DepTriage Test Token
 
 For the DepTriage rerun, use a fine-grained token selected for the target test

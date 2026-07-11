@@ -155,6 +155,7 @@ pub async fn health() -> Json<serde_json::Value> {
         .get()
         .map(|checks| patchhive_product_core::github_permissions::github_token_verified(checks))
         .unwrap_or(false);
+    let report_publish_verified = github::report_publish_verified();
 
     Json(json!({
         "status": if errors > 0 || !db_ok { "degraded" } else { "ok" },
@@ -180,8 +181,8 @@ pub async fn health() -> Json<serde_json::Value> {
             "webhook_secret_configured": github::webhook_secret_configured(),
             "public_url_configured": github::public_url_configured(),
             "report_publish_configured": github::github_token_configured(),
-            "report_publish_scope_verified": false,
-            "report_publish_ready": false,
+            "report_publish_scope_verified": report_publish_verified,
+            "report_publish_ready": github_verified && report_publish_verified,
         },
         "integrations": {
             "review_bee_configured": crate::integrations::review_bee_configured(),

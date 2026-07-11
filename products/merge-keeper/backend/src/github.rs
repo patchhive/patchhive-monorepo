@@ -5,6 +5,7 @@ use patchhive_github_pr::{
     GitHubPullReview, GitHubPullReviewThread,
 };
 use reqwest::Client;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::time::{sleep, Duration};
 
 use crate::models::{GitHubReportOutcome, MergeAssessment};
@@ -14,6 +15,22 @@ const CHECK_RUN_NAME: &str = "MergeKeeper";
 const COMMENT_MARKER: &str = "<!-- patchhive-mergekeeper-report -->";
 const MERGEABLE_REFRESH_ATTEMPTS: usize = 2;
 const MERGEABLE_REFRESH_DELAY_MS: u64 = 900;
+static REPORT_PUBLISH_VERIFIED: AtomicBool = AtomicBool::new(false);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ReportDelivery {
+    Complete,
+    Partial,
+    Failed,
+}
+
+fn report_delivery(signal_delivered: bool, comment_delivered: bool) -> ReportDelivery {
+    match (signal_delivered, comment_delivered) {
+        (true, true) => ReportDelivery::Complete,
+        (true, false) | (false, true) => ReportDelivery::Partial,
+        (false, false) => ReportDelivery::Failed,
+    }
+}
 
 pub struct GitHubMergeContext {
     pub pr: GitHubPullRequestDetail,
@@ -37,6 +54,10 @@ pub fn webhook_secret_configured() -> bool {
 
 pub fn public_url_configured() -> bool {
     env_value(&["MERGE_KEEPER_PUBLIC_URL"]).is_some()
+}
+
+pub fn report_publish_verified() -> bool {
+    REPORT_PUBLISH_VERIFIED.load(Ordering::Relaxed)
 }
 
 fn pr_client(client: &Client) -> GitHubPrClient {
@@ -375,7 +396,8 @@ pub async fn publish_assessment_outcome(
     };
     let mut details = Vec::new();
     let mut method = "none".to_string();
-    let mut delivered = false;
+    let mut signal_delivered = false;
+    let mut comment_delivered = false;
     let mut check_url = String::new();
     let mut status_url = String::new();
     let mut comment_url = String::new();
@@ -409,14 +431,14 @@ pub async fn publish_assessment_outcome(
                 format!("Created GitHub check run: {check_url}")
             });
             method = "check_run".into();
-            delivered = true;
+            signal_delivered = true;
         }
         Err(err) => details.push(format!(
             "Check run failed, falling back to commit status: {err}"
         )),
     }
 
-    if !delivered {
+    if !signal_delivered {
         match gh
             .create_commit_status(
                 target_repo,
@@ -442,7 +464,7 @@ pub async fn publish_assessment_outcome(
                     format!("Created commit status fallback: {status_url}")
                 });
                 method = "commit_status".into();
-                delivered = true;
+                signal_delivered = true;
             }
             Err(err) => details.push(format!("Commit status failed: {err}")),
         }
@@ -463,24 +485,30 @@ pub async fn publish_assessment_outcome(
             } else {
                 format!("{} MergeKeeper PR comment: {html_url}", comment_mode)
             });
-            delivered = true;
+            comment_delivered = true;
         }
         Err(err) => details.push(format!("PR comment upsert failed: {err}")),
+    }
+
+    let delivery = report_delivery(signal_delivered, comment_delivered);
+    let delivered = delivery == ReportDelivery::Complete;
+    if delivered {
+        REPORT_PUBLISH_VERIFIED.store(true, Ordering::Relaxed);
     }
 
     GitHubReportOutcome {
         attempted: true,
         delivered,
         method,
-        state: if delivered {
-            assessment.readiness.clone()
-        } else {
-            "report_failed".into()
+        state: match delivery {
+            ReportDelivery::Complete => assessment.readiness.clone(),
+            ReportDelivery::Partial => "report_partial".into(),
+            ReportDelivery::Failed => "report_failed".into(),
         },
-        message: if delivered {
-            "MergeKeeper published its merge-readiness call back to GitHub with a maintained PR comment and status signal.".into()
-        } else {
-            "MergeKeeper assessed the PR but could not publish the result back to GitHub.".into()
+        message: match delivery {
+            ReportDelivery::Complete => "MergeKeeper published its merge-readiness call back to GitHub with a maintained PR comment and status signal.".into(),
+            ReportDelivery::Partial => "MergeKeeper published only part of its GitHub report. Review the delivery details and token permissions before treating write-back as ready.".into(),
+            ReportDelivery::Failed => "MergeKeeper assessed the PR but could not publish the result back to GitHub.".into(),
         },
         details,
         check_url,
@@ -493,11 +521,21 @@ pub async fn publish_assessment_outcome(
 
 #[cfg(test)]
 mod tests {
-    use super::{cross_product_markdown, mergeability_needs_refresh};
+    use super::{
+        cross_product_markdown, mergeability_needs_refresh, report_delivery, ReportDelivery,
+    };
     use crate::models::{
         MergeAssessment, RepoMemoryContextPreview, ReviewBeeContext, TrustGateContext,
     };
     use patchhive_github_pr::GitHubPullRequestDetail;
+
+    #[test]
+    fn report_delivery_requires_both_status_signal_and_comment() {
+        assert_eq!(report_delivery(true, true), ReportDelivery::Complete);
+        assert_eq!(report_delivery(true, false), ReportDelivery::Partial);
+        assert_eq!(report_delivery(false, true), ReportDelivery::Partial);
+        assert_eq!(report_delivery(false, false), ReportDelivery::Failed);
+    }
 
     #[test]
     fn mergeability_refresh_only_waits_for_unsettled_github_state() {

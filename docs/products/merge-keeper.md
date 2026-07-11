@@ -332,8 +332,10 @@ an authenticated identity request. They do not imply access to every target
 repository. `report_publish_configured` means a token is present; MergeKeeper
 does not infer write permission from token presence or identity verification,
 so `report_publish_scope_verified` and `report_publish_ready` remain `false`
-until the publish path performs a real target-specific write. Every publish
-attempt returns its concrete GitHub result.
+until the publish path successfully writes both a check/status signal and the
+maintained PR comment. A one-artifact success is reported as `report_partial`,
+not delivered. Complete delivery marks the write path verified for the current
+backend process. Every publish attempt returns its concrete GitHub result.
 
 ### Authentication
 
