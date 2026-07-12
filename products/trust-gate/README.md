@@ -30,7 +30,7 @@ Every review returns one of those three recommendations plus the evidence behind
 - review pasted unified diffs or fetch pull request diffs directly from GitHub
 - apply repo-specific rules, starter rule packs, and saved report templates
 - flag risky paths, suspicious patterns, missing tests, and oversized change sets
-- publish the result back into GitHub through checks, statuses, and a maintained pull request comment
+- publish the result back into GitHub through a status signal and maintained pull request comment
 - submit FailGuard candidates to RepoMemory for `warn` and `block` results when RepoMemory is configured
 - save decision history and expose a print-friendly decision view
 
@@ -43,30 +43,17 @@ Every review returns one of those three recommendations plus the evidence behind
 | Frontend preview | `http://localhost:4175` | `http://localhost:8000` | `npm run preview` plus backend running locally |
 | Container internal | `http://frontend:8080` | `http://backend:8000` | Internal service ports inside Docker |
 
-### UI v2 Prototype
+### Canonical UI v3
 
-The suite-wide UI v2 prototype for TrustGate lives in `frontend-v2/`. It uses the shared `packages/ui-v2` shell primitives to validate that the new PatchHive visual language works for safety and review workflows, not just SignalHive's radar/atlas surface.
-
-When using Docker Compose, the v2 prototype is exposed as the `frontend-v2` service on `http://localhost:5193`.
-
-The current production frontend remains in `frontend/` until the full suite has moved to v2 and old UI code is intentionally legacy or removed.
-
-For local v2 development:
-
-```bash
-cd frontend-v2 && npm install && npm run dev
-```
-
-### UI v3 Parity Candidate
-
-TrustGate's unified-backend engine is integrated in-process. The v3 parity
-candidate lives in `frontend-v3/` and preserves pasted-diff review, GitHub PR
-review and publishing, decision evidence, history, rule packs, saved repo
-rules, report templates, startup diagnostics, and print-friendly HTML export.
-The production and v2 frontends remain in place until live parity acceptance.
+TrustGate's canonical Lovable-derived UI lives in `frontend/`. It preserves
+pasted-diff review, GitHub PR review and publishing, decision evidence,
+filterable history and saved views, rule packs, saved repo rules, report
+templates, startup diagnostics, Markdown copy, and print-friendly HTML export.
+The v1 and v2 frontends were removed after final parity acceptance on
+2026-07-12.
 
 ```bash
-cd frontend-v3 && npm install && npm run dev
+cd frontend && npm install && npm run dev
 ```
 
 ## Quick Start
@@ -96,7 +83,7 @@ For split local runs, the backend listens on `8000` by default and the frontend 
 
 | Variable | Purpose |
 | --- | --- |
-| `BOT_GITHUB_TOKEN` | Optional fine-grained PAT for pull request diff reads and GitHub publishing. Analysis-only scopes: Metadata (read), Pull requests (read). Add Checks (write), Commit statuses (write), and Issues (write) for GitHub reporting. |
+| `BOT_GITHUB_TOKEN` | GitHub token for pull-request diff reads and optional publishing. PAT publishing uses a commit status and maintained PR comment; native check runs require a GitHub App installation token. |
 | `TRUST_GITHUB_WEBHOOK_SECRET` | Optional signed webhook secret for pull request refreshes. |
 | `TRUSTGATE_PUBLIC_URL` | Optional public URL for links from GitHub artifacts back to saved decisions. |
 | `PATCHHIVE_REPO_MEMORY_URL` / `PATCHHIVE_REPO_MEMORY_API_KEY` | Optional RepoMemory context and FailGuard candidate destination. |
@@ -110,7 +97,7 @@ To reuse the same password across SignalHive, TrustGate, RepoReaper, and HiveCor
 
 To give HiveCore a dedicated machine credential instead of reusing the operator login secret, generate a service token from `POST /auth/generate-service-token` and save that token in HiveCore Settings.
 
-TrustGate works without GitHub for pasted diff review, but GitHub integration is what makes it operational inside real pull request flow. Direct pull request diff fetches need read access; maintained comments, statuses, or check-style output may require the smallest write permission your environment supports.
+TrustGate works without GitHub for pasted diff review, but GitHub integration is what makes it operational inside real pull request flow. Direct pull request diff fetches need read access. PAT publishing uses commit-status and issue-comment writes; GitHub App installation tokens may publish native check runs instead.
 
 ## Safety Boundary
 

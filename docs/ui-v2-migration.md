@@ -143,7 +143,7 @@ cross-product handoffs rather than another single-product radar board.
 | SignalHive | `products/signal-hive/frontend-v2` | React prototype active |
 | RepoReaper | `products/repo-reaper/frontend-v2` | React prototype active |
 | ReviewBee | `products/review-bee/frontend-v2` | React prototype active |
-| TrustGate | `products/trust-gate/frontend-v2` | React prototype active |
+| TrustGate | — | v2 retired after v3 parity; canonical UI is `products/trust-gate/frontend` |
 | RepoMemory | `products/repo-memory/frontend-v2` | React prototype active |
 | MergeKeeper | — | v2 retired after v3 parity; canonical UI is `products/merge-keeper/frontend` |
 | FlakeSting | — | v2 retired after v3 parity; canonical UI is `products/flake-sting/frontend` |

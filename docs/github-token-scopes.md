@@ -40,7 +40,7 @@ credentials.
 | --- | --- | --- | --- |
 | SignalHive | Metadata read, Issues read, Contents read | None | Repository discovery, issue/backlog reads, and TODO/FIXME code-search evidence. |
 | ReviewBee | Metadata read, Pull requests read | Issues write or Pull requests write | Reads PR metadata, reviews, review comments, and review-thread state. Write access is only for maintained PR checklist comments. |
-| TrustGate | None for pasted diffs; Metadata read and Pull requests read for PR diff review | Issues write or Pull requests write; Commit statuses write or Checks write when GitHub reporting is enabled | Pasted diff review is local. GitHub mode reads PR diffs and may publish comments, statuses, or checks. |
+| TrustGate | None for pasted diffs; Metadata read and Pull requests read for PR diff review | For PAT publishing, use a write-capable bot collaborator and classic `public_repo` (public repos) or `repo` (private repos); use a GitHub App for native check runs | Pasted diff review is local. GitHub mode reads PR diffs and may publish a maintained comment plus either a commit status or check run. |
 | RepoMemory | Metadata read, Pull requests read, Issues read, Contents read | None | Reads merged PRs, review/comment/file context, closed issues, and lightweight file evidence for durable repo memory. |
 | MergeKeeper | Metadata read, Pull requests read | Actions read; for PAT publishing use a write-capable bot account and classic `public_repo` (public repos) or `repo` (private repos); use a GitHub App for native check runs | Reads PR state, reviewer state, mergeability, review pressure, and optional CI evidence. A complete publish is a maintained PR comment plus either a check run or commit status. |
 | FlakeSting | Metadata read, Actions read | None | Reads workflow runs and workflow jobs to detect pass/fail swings and unstable steps. |
@@ -59,11 +59,11 @@ identity to gain write access to an unrelated owner's repository.
 
 For the verified public-repository publishing path, add the PatchHive identity
 as a write collaborator and use that identity's classic PAT with `public_repo`.
-Use `repo` instead for private repositories. MergeKeeper first attempts a check
-run, which GitHub requires to be authenticated through a GitHub App, then falls
-back to a commit status. Full delivery requires both the status signal and the
-maintained PR comment. A partial write remains visible as `report_partial` and
-does not verify the publishing path.
+Use `repo` instead for private repositories. MergeKeeper and TrustGate use a
+commit status directly for PAT publishing and reserve native check runs for
+GitHub App authentication. Full delivery requires both the status signal and
+the maintained PR comment. A partial write remains visible as
+`report_partial` and does not verify the publishing path.
 
 ## DepTriage Test Token
 

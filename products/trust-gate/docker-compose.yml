@@ -18,21 +18,12 @@ services:
 
   frontend:
     image: "${PATCHHIVE_TRUST_GATE_FRONTEND_IMAGE:-ghcr.io/patchhive/trustgate-frontend}:${PATCHHIVE_IMAGE_TAG:-main}"
-    build: ./frontend
+    build:
+      context: ../..
+      dockerfile: products/trust-gate/frontend/Dockerfile
     pull_policy: "${PATCHHIVE_IMAGE_PULL_POLICY:-missing}"
     ports:
       - "5175:8080"
-    depends_on:
-      - backend
-    restart: unless-stopped
-
-  frontend-v2:
-    build:
-      context: ../..
-      dockerfile: products/trust-gate/frontend-v2/Dockerfile
-    pull_policy: never
-    ports:
-      - "5193:8080"
     depends_on:
       - backend
     restart: unless-stopped

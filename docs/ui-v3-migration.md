@@ -83,7 +83,7 @@ typography scale, spacing system, or theme implementation.
 | VulnTriage | `products/vuln-triage/frontend` | Promoted after final parity audit; v1/v2 removed |
 | FlakeSting | `products/flake-sting/frontend` | Promoted after live scan, detail, sampled evidence, trend, history, checks, and sources acceptance; v1/v2 removed |
 | ReviewBee | `products/review-bee/frontend` | Promoted after live unified action, real history, checks, sources, Markdown preview, and safety acceptance; v1/v2 removed |
-| TrustGate | `products/trust-gate/frontend-v3` | Staged for parity acceptance after in-process backend integration; v1/v2 remain canonical until live diff, policy, history, diagnostics, and GitHub-publish checks pass |
+| TrustGate | `products/trust-gate/frontend` | Promoted after pasted and live PR review, policy, history/detail, diagnostics, PAT publishing, responsive layout, and light/dark acceptance; v1/v2 removed |
 | Other specialist products | not created | Wait until their product engine is integrated in-process |
 | HiveCore | not applicable | Intentionally separate |
 

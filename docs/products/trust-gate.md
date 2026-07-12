@@ -32,7 +32,7 @@ FailGuard remains cross-cutting: TrustGate can suggest candidates, but RepoMemor
    - **RepoMemory context** — testing expectations, hotspot history, failure patterns.
 5. Score and classify: any blocking finding → `block`; any warning finding → `warn`; otherwise → `safe`.
 6. Save the full review result to SQLite history.
-7. Publish back to GitHub (when configured): a maintained PR comment, a check run (preferred), and a commit status (fallback).
+7. Publish back to GitHub (when configured): a maintained PR comment plus a status signal—a commit status for PATs or a native check run for GitHub App authentication.
 8. Submit FailGuard candidates to RepoMemory for `warn` and `block` outcomes when RepoMemory is configured.
 
 ---
@@ -101,23 +101,14 @@ docker compose up --build
 Backend: `http://localhost:8020`
 Frontend: `http://localhost:5175`
 
-### UI v2 Prototype
-
-The suite-wide UI v2 prototype lives in `frontend-v2/` using shared `packages/ui-v2` shell primitives. When using Docker Compose, the v2 prototype is exposed as the `frontend-v2` service on `http://localhost:5193`.
-
-For local v2 development:
-
-```bash
-cd frontend-v2 && npm install && npm run dev
-```
-
-### UI v3 Parity Candidate
+### Canonical UI v3
 
 The TrustGate engine is mounted directly by `patchhive-backend` at
-`/api/products/trust-gate`. Its staged Lovable-derived parity candidate lives
-in `frontend-v3/`. The existing production and v2 frontends remain available
-until pasted-diff, live PR, policy persistence, history/detail, diagnostics,
-GitHub publishing, and responsive visual acceptance are complete.
+`/api/products/trust-gate`. Its canonical Lovable-derived frontend lives in
+`frontend/`. Pasted-diff and live PR review, policy persistence, history and
+detail evidence, diagnostics, PAT publishing, saved views, responsive layout,
+and light/dark persistence passed final acceptance on 2026-07-12. The v1 and
+v2 frontend trees were removed after promotion.
 
 ### Split Backend and Frontend
 
@@ -137,7 +128,7 @@ All configuration is via environment variables. The backend reads `.env` automat
 
 | Variable | Required | Default | Purpose |
 |----------|----------|---------|---------|
-| `BOT_GITHUB_TOKEN` | No | — | Fine-grained PAT for PR diff reads and GitHub publishing. Analysis-only scopes: Metadata (read), Pull requests (read). Add Checks (write), Commit statuses (write), Issues (write) for GitHub reporting. |
+| `BOT_GITHUB_TOKEN` | No | — | GitHub token for PR diff reads and optional publishing. PAT publishing uses commit-status and issue-comment writes; a GitHub App installation token is required for native check runs. |
 | `TRUST_GITHUB_WEBHOOK_SECRET` | No | — | Signed webhook secret for pull request events. Required to use `POST /webhooks/github`. |
 | `TRUSTGATE_PUBLIC_URL` | No | — | Public URL for deep-links from GitHub artifacts back to saved TrustGate decisions (`/history/{id}`). |
 | `PATCHHIVE_REPO_MEMORY_URL` | No | — | RepoMemory API base URL for context enrichment and FailGuard candidate submission. |
@@ -452,7 +443,8 @@ HiveCore can surface TrustGate health, capabilities, run history, and contract s
 | `POST /review/github/pr` returns `502` | GitHub token missing or lacks permissions | Verify `BOT_GITHUB_TOKEN` is set and has Metadata:read + Pull requests:read scopes |
 | `POST /webhooks/github` returns `403` | Webhook secret not configured | Set `TRUST_GITHUB_WEBHOOK_SECRET` and match it in GitHub webhook settings |
 | `POST /webhooks/github` returns `401` | HMAC signature mismatch | Verify the webhook secret in `.env` matches the one configured in GitHub |
-| GitHub check run / status not appearing | Missing write scopes or token not set | Add Checks:write, Commit statuses:write, Issues:write to PAT |
+| GitHub status or comment not appearing with a PAT | Missing write access or token not set | Give the PatchHive bot collaborator access and use a classic `public_repo` token for public repositories or `repo` for private repositories |
+| Native GitHub check run not appearing | Publishing uses a PAT | PATs publish commit statuses; install and authenticate a GitHub App only if native check runs are required |
 | `POST /auth/generate-key` returns error | Auth already bootstrapped or request not from localhost | Key generation is one-shot; use `TRUST_API_KEY_HASH` for pre-seeding |
 | Reviews return "no findings" unexpectedly | Rules too permissive or diff is docs-only | Check saved rules for the repo via `GET /rules`; try with inline rules |
 | RepoMemory context not appearing in reviews | `PATCHHIVE_REPO_MEMORY_URL` not set or unreachable | Check the URL and API key; RepoMemory failures are non-fatal (logged as warning) |
@@ -527,6 +519,6 @@ The PatchHive monorepo is the source of truth for TrustGate development. The sta
 - **Mode:** review-first
 - **Database:** SQLite (per-instance, single-file)
 - **Authentication:** API key (`tg-` prefix) and service token (`tg-svc-` prefix) via bcrypt hash
-- **GitHub integration:** Token-based PR diff fetch, check runs, commit statuses, maintained PR comments, signed webhook ingestion
+- **GitHub integration:** Token-based PR diff fetch, PAT commit statuses, GitHub App check runs, maintained PR comments, signed webhook ingestion
 - **RepoMemory integration:** Context enrichment and FailGuard candidate submission
 - **Typical use:** Review and make risk visible before AI-generated or PR-backed diffs advance
