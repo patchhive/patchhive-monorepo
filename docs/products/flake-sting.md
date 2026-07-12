@@ -129,6 +129,36 @@ available through the Docker `legacy-ui` profile or direct local reference use.
 
 ---
 
+## UI v1 and v2 to v3 Parity Audit
+
+Audited and implemented on 2026-07-12 against the legacy and v2 workflow scan,
+history, trend, evidence, and startup surfaces. The v3 frontend now preserves:
+
+- validated repository intake, optional branch/workflow filters, and the
+  server's 5–40 workflow-run lookback boundary;
+- quarantine/suspect signal decisions with progressive disclosure, search,
+  status/kind/workflow filters, risk/failure/rerun/workflow sorting, and saved
+  dashboard views;
+- complete signal facts, runner/environment hints, exact evidence text, and all
+  returned workflow links in dedicated detail views;
+- complete workflow metrics and copyable Markdown summaries with PatchHive
+  attribution;
+- comparable-scan trend status, signed signal/quarantine/rerun deltas, new and
+  cleared signal lists, and direct loading of the prior comparable scan;
+- searchable, filterable, sortable, saved-view history with trend and pressure
+  context plus full scan restoration;
+- verified GitHub Actions-read posture, database/auth/product state, startup
+  evidence, and explicit read-only Sources guidance; and
+- the suite-wide persisted theme and v2 footer identity.
+
+Local verification passed for all five v3 frontend consumers, suite drift, the
+standalone FlakeSting tests and strict Clippy run, and the unified-backend tests
+and strict Clippy run. Promotion remains blocked until the real product
+environment/database is launched and the operator accepts live scan, signal
+detail, trend, history, checks, sources, and responsive behavior.
+
+---
+
 ## Local Development
 
 ### Docker

@@ -81,7 +81,7 @@ typography scale, spacing system, or theme implementation.
 | ReleaseSentry | `products/release-sentry/frontend` | Promoted after live ready/watch/hold, history, checks, and sources acceptance; v1/v2 removed |
 | DepTriage | `products/dep-triage/frontend` | Promoted after live scan, detail, warning, history, checks, and sources acceptance; v1/v2 removed |
 | VulnTriage | `products/vuln-triage/frontend` | Promoted after final parity audit; v1/v2 removed |
-| FlakeSting | `products/flake-sting/frontend-v3` | Unified-backend v3 workspace implemented |
+| FlakeSting | `products/flake-sting/frontend-v3` | V1/v2 parity implemented and warning-free locally; awaiting live scan, detail, trend, history, checks, sources, and responsive acceptance before promotion |
 | Other specialist products | not created | Wait until their product engine is integrated in-process |
 | HiveCore | not applicable | Intentionally separate |
 
