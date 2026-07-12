@@ -19,6 +19,14 @@ fn count_phrase(count: u32, singular: &str, plural: &str) -> String {
     format!("{count} {}", if count == 1 { singular } else { plural })
 }
 
+fn decision_adjusted_score(raw_score: u32, recommendation: &str) -> u32 {
+    match recommendation {
+        "block" => raw_score.max(70),
+        "warn" => raw_score.max(25),
+        _ => raw_score,
+    }
+}
+
 fn credential_prefix_match(line: &str, prefix: &str, minimum_payload: usize) -> bool {
     let lower_line = line.to_ascii_lowercase();
     let lower_prefix = prefix.to_ascii_lowercase();
@@ -503,7 +511,7 @@ pub async fn review_diff(
         "safe"
     };
 
-    let risk_score = clamp_score(
+    let raw_risk_score = clamp_score(
         blocked_findings as usize * 34
             + warning_findings as usize * 11
             + risky_files as usize * 8
@@ -511,6 +519,7 @@ pub async fn review_diff(
             + source_files_changed as usize * 3
             + usize::from(missing_tests) * 12,
     );
+    let risk_score = decision_adjusted_score(raw_risk_score, recommendation);
 
     let summary = match recommendation {
         "block" => format!(
@@ -561,7 +570,9 @@ pub async fn review_diff(
 
 #[cfg(test)]
 mod tests {
-    use super::{blocked_term_matches, count_phrase, suspicious_term_matches};
+    use super::{
+        blocked_term_matches, count_phrase, decision_adjusted_score, suspicious_term_matches,
+    };
 
     #[test]
     fn count_phrase_uses_singular_only_for_one() {
@@ -622,5 +633,14 @@ mod tests {
             "\"token\": \"example-value\"",
             "token"
         ));
+    }
+
+    #[test]
+    fn decision_severity_establishes_score_floors() {
+        assert_eq!(decision_adjusted_score(43, "block"), 70);
+        assert_eq!(decision_adjusted_score(92, "block"), 92);
+        assert_eq!(decision_adjusted_score(11, "warn"), 25);
+        assert_eq!(decision_adjusted_score(40, "warn"), 40);
+        assert_eq!(decision_adjusted_score(9, "safe"), 9);
     }
 }
