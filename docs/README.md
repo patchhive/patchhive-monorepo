@@ -11,6 +11,9 @@ PatchHive is monorepo-first. Product work starts here, then product directories
 are exported into standalone repositories under the `patchhive` GitHub
 organization when they are ready to stand alone.
 
+**New here?** Start at the [Documentation Map](DOCUMENTATION_MAP.md) — the central
+index for every doc in this directory.
+
 ## Product Docs
 
 The product documentation set is in [products/](products/).

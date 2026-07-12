@@ -46,7 +46,7 @@ may appear only in the slot marked below.
 | Product-specific context | ⬜ | One optional section after Core Workflow (Operating Model, Product Boundary, Port Reference, etc.) |
 | `## Quick Start` | ✅ | `### Docker` and `### Split Backend and Frontend` with copy-paste commands + default ports |
 | `## Configuration` | ✅ | Essential config table (the variables an operator must set or is likely to change) + suite auth/bootstrap notes |
-| `## Safety Boundary` | ✅ | Concrete guarantees about what the product will NOT do |
+| `## Safety Boundary` | ✅ | Concrete guarantees about what the product will NOT do. **Must state both** what the product *does* (often a one-line "read-only / review-first" posture) **and** what it explicitly *does not* do (a bullet list of forbidden actions). This is a required, non-negotiable section — see below. |
 | `## HiveCore Fit` | ✅ | How HiveCore surfaces or dispatches this product |
 | `## Standalone Repository` | ✅ | Monorepo source-of-truth note + exported mirror link |
 
@@ -59,11 +59,16 @@ Every README opens its `## Documentation` section with:
 
 - Full product doc: [docs/products/<slug>.md](../../docs/products/<slug>.md)
 - Product docs index: [docs/products/README.md](../../docs/products/README.md)
+```
+
+> The paths above are written **relative to a product README** at
+> `products/<slug>/README.md`. From this template file's own location (`docs/`),
+> the equivalent link is `products/README.md`. Copy the block verbatim into a product
+> README; do not change the `../../` prefix there.
 
 > This README is the getting-started entry point. The full product doc carries the API
 > reference, technical architecture, complete configuration reference, monitoring, deployment,
 > and troubleshooting.
-```
 
 ## "Where to find what" doc-map
 
@@ -111,3 +116,41 @@ Configuration, Technical Architecture, API Endpoints, Monitoring, Deployment, Tr
 Related Products, Current Status). This README template is the lightweight companion: it shares
 `Core Workflow`, `Configuration`, `Safety Boundary`, and `HiveCore Fit` intent but stays
 getting-started scoped and adds the doc-map that connects the two.
+
+## Safety Boundary Standard
+
+`## Safety Boundary` is **mandatory** in every product README and detailed doc. It is the
+section that tells an operator exactly how far the product can reach. A safety boundary is
+incomplete if it only lists negatives — it must also name the product's operating posture.
+
+### Required shape
+
+```markdown
+## Safety Boundary
+
+<ProductName> is **<one-line posture>** — e.g. read-only, review-first, control plane.
+It does not:
+- <forbidden action 1>
+- <forbidden action 2>
+- <forbidden mutation / external side effect>
+```
+
+### Rules
+
+1. **Posture first.** Open with a single sentence naming what the product *is* (read-only,
+   review-first, control plane, context-first). This sets the frame for the negatives.
+2. **Negatives as bullets.** List the concrete things the product will not do — no merging,
+   no code edits, no issue creation, no bypassing auth, no destructive dispatch, etc.
+3. **Validation limits count as boundary.** If the product clamps inputs, restricts
+   filesystem roots, or gates endpoints by auth, state that here (e.g. `repo` must match
+   `owner/name`; scans confined to `ALLOWED_ROOTS`; key generation localhost-only).
+4. **No fictional reassurance.** Only document guarantees the code actually enforces. If a
+   boundary is aspirational, mark it as a goal, not a guarantee.
+5. **Mirror it.** The README `## Safety Boundary` and the detailed doc `## Safety Boundary`
+   must agree. The detailed doc may add depth; the README must not contradict it.
+
+### Why this matters
+
+Safety boundaries are how PatchHive keeps each product a predictable specialist rather than an
+autonomous agent that can surprise an operator. Consistent phrasing makes the boundary scannable
+across all 12 products and makes regressions obvious during review.
