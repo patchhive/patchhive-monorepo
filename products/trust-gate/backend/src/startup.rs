@@ -34,8 +34,8 @@ pub async fn validate_config(client: &Client) -> Vec<StartupCheck> {
             "GitHub webhook secret is configured. Public webhook ingestion is ready.",
         ));
     } else {
-        checks.push(StartupCheck::warn(
-            "TRUST_GITHUB_WEBHOOK_SECRET is not configured. The /webhooks/github endpoint will reject webhook delivery until it is set.",
+        checks.push(StartupCheck::info(
+            "TRUST_GITHUB_WEBHOOK_SECRET is not configured. TrustGate remains available for manual runs; configure the optional secret before sending GitHub webhooks to /webhooks/github.",
         ));
     }
 
