@@ -313,6 +313,50 @@ covers:
 
 ---
 
+## UI v1 and v2 to v3 Parity Audit
+
+Re-audited on 2026-07-11 using the retired-v1 candidate and active v2 frontend
+as the behavioral source for `products/release-sentry/frontend-v3/`.
+
+The initial generic v3 workspace covered the basic release form and decision
+queue, but it did not yet preserve all established ReleaseSentry behavior. The
+parity implementation now includes:
+
+- API-key login, first-key generation, sign-out, persistent suite theme, and
+  responsive specialist-product navigation.
+- Directed release checks with repository, branch, target version, target tag,
+  changelog path, bounded workflow-run limit, and editable blocker-label set.
+- Owner/repository and workflow-limit validation before dispatch.
+- Ready/watch/hold decision, readiness score, summary, all runtime warnings,
+  and the complete release metric set.
+- Searchable and filterable release evidence with status/evidence filters,
+  sorting, saved views, six-row progressive disclosure, and evidence detail.
+- Every returned evidence string and every GitHub artifact link rather than only
+  the first link or a link count.
+- Saved history with decision/repository filters, target-aware search, sorting,
+  saved views, badges, short run identity, selected-run loading, and shareable
+  `?run=<id>` URLs.
+- Shared history behavior that keeps the operator on the History tab while a
+  saved run loads instead of forcing a jump back to the workspace.
+- Startup messages, backend/DB/auth state, verified GitHub identity, saved
+  ready/watch/hold counts, read-only permission guidance, and source safety
+  boundaries.
+- The v2 footer identity wording through the shared v3 shell.
+
+Local verification uses the newest product database at
+`products/release-sentry/release-sentry.db`, which currently contains a real
+`hold` assessment for `vitejs/vite` with CI failures and release-blocker issue
+evidence. Production builds pass for ReleaseSentry and shared-shell regression
+consumers MergeKeeper and VulnTriage. ReleaseSentry backend and unified-backend
+tests and strict clippy checks also pass.
+
+The final promotion gate remains explicit: visually inspect all four tabs, load
+the saved hold run and its evidence links, then verify live `ready`, `watch`,
+and `hold` decisions before deleting v1/v2 or changing Docker's active
+frontend.
+
+---
+
 ## API Endpoints
 
 | Method | Path | Auth | Description |

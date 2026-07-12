@@ -146,6 +146,7 @@ function ItemRow({ item, onOpen }) {
 
 function Detail({ item, config, onBack }) {
   const itemTone = tone(item.tone);
+  const links = item.links?.length ? item.links : item.link ? [{ label: "Open source evidence", url: item.link }] : [];
   return (
     <>
       <header className="px-3 sm:px-6 pt-3 sm:pt-6"><div className="surface mx-auto max-w-[1200px] px-5 min-h-16 flex items-center justify-between"><button onClick={onBack} className={`flex items-center gap-2 text-[12px] ${V3_TEXT.body}`} type="button"><ArrowLeft size={14} /> Back to queue</button><div className={`hidden sm:block text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>PatchHive · Evidence detail</div><ThemeToggle /></div></header>
@@ -154,7 +155,7 @@ function Detail({ item, config, onBack }) {
           <div className="surface p-6 sm:p-8"><div className="flex items-start gap-5"><div className={`h-16 w-16 rounded-2xl bg-gradient-to-br ${SCORE_CLASSES[itemTone]} grid place-items-center shadow-inner shrink-0`}><div className="font-display font-semibold text-[18px]">{item.score ?? "—"}</div></div><div><div className={`text-[10px] uppercase tracking-[0.2em] ${V3_TEXT.mute}`}>{item.id}</div><h1 className={`mt-2 font-display text-[32px] leading-tight tracking-tight font-semibold ${V3_TEXT.strong}`}>{item.title}</h1><div className={`mt-2 text-[13px] font-mono ${V3_TEXT.mute}`}>{item.meta}</div></div></div></div>
           <div className="surface p-6"><div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>Context</div><p className={`mt-3 text-[14px] leading-relaxed ${V3_TEXT.body}`}>{item.summary || "No additional context was returned."}</p>{item.evidence?.length ? <div className="mt-6 space-y-2">{item.evidence.map((value) => <div className={`surface-inset rounded-xl p-3 text-[12px] ${V3_TEXT.body}`} key={value}>{value}</div>)}</div> : null}</div>
         </section>
-        <aside className="col-span-12 lg:col-span-4 space-y-6"><div className="surface p-6"><div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>Decision</div><span className={`mt-4 inline-flex text-[10px] uppercase tracking-widest px-3 py-1.5 rounded-full border ${STATUS_CLASSES[itemTone]}`}>{item.status}</span><dl className="mt-6 space-y-3"><SideValue label="Product" value={config.name} /><SideValue label="Source" value={item.source || "product analysis"} /><SideValue label="Score" value={String(item.score ?? "—")} /></dl></div>{item.link ? <a className={`surface p-5 flex items-center justify-between text-[13px] ${V3_TEXT.body}`} href={item.link} rel="noreferrer" target="_blank">Open source evidence <ExternalLink size={13} /></a> : null}</aside>
+        <aside className="col-span-12 lg:col-span-4 space-y-6"><div className="surface p-6"><div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>Decision</div><span className={`mt-4 inline-flex text-[10px] uppercase tracking-widest px-3 py-1.5 rounded-full border ${STATUS_CLASSES[itemTone]}`}>{item.status}</span><dl className="mt-6 space-y-3"><SideValue label="Product" value={config.name} /><SideValue label="Source" value={item.source || "product analysis"} /><SideValue label="Score" value={String(item.score ?? "—")} /></dl></div>{links.map((link) => <a className={`surface p-5 flex items-center justify-between text-[13px] ${V3_TEXT.body}`} href={link.url} key={`${link.label}-${link.url}`} rel="noreferrer" target="_blank">{link.label || "Open source evidence"} <ExternalLink size={13} /></a>)}</aside>
       </div>
     </>
   );
@@ -174,7 +175,7 @@ function FormField({ field, form, setForm, inputRef }) {
   if (field.type === "checkbox") {
     return <label className={`surface-inset rounded-xl p-4 flex items-center gap-3 text-[13px] ${V3_TEXT.body}`}><input checked={Boolean(form[field.key])} onChange={(event) => setForm((current) => ({ ...current, [field.key]: event.target.checked }))} type="checkbox" className="accent-[color:var(--accent-2)]" />{field.label}</label>;
   }
-  return <label className="block"><span className={`text-[10px] uppercase tracking-[0.2em] ${V3_TEXT.mute}`}>{field.label}</span><div className="surface-inset mt-2 rounded-xl h-12 px-4 flex items-center gap-2">{field.icon === "github" ? <Github size={14} className={V3_TEXT.dim} /> : null}<input ref={field.primary ? inputRef : undefined} value={form[field.key] ?? ""} onChange={(event) => setForm((current) => ({ ...current, [field.key]: event.target.value }))} placeholder={field.placeholder || ""} type={field.type || "text"} min={field.min} className={`bg-transparent outline-none w-full text-[13px] ${V3_TEXT.strong}`} /></div></label>;
+  return <label className="block"><span className={`text-[10px] uppercase tracking-[0.2em] ${V3_TEXT.mute}`}>{field.label}</span><div className="surface-inset mt-2 rounded-xl h-12 px-4 flex items-center gap-2">{field.icon === "github" ? <Github size={14} className={V3_TEXT.dim} /> : null}<input ref={field.primary ? inputRef : undefined} value={form[field.key] ?? ""} onChange={(event) => setForm((current) => ({ ...current, [field.key]: event.target.value }))} placeholder={field.placeholder || ""} type={field.type || "text"} min={field.min} max={field.max} className={`bg-transparent outline-none w-full text-[13px] ${V3_TEXT.strong}`} /></div></label>;
 }
 
 function HistoryRow({ config, entry, onLoad }) {
@@ -281,7 +282,7 @@ export function IntegratedProductApp({ apiBase, auth, config, fetcher }) {
       const next = await readJson(await fetcher(`${apiBase}${config.actionPath}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(config.serialize(form, health)) }));
       setResult(next);
       setSelected(null);
-      setActiveTab("workspace");
+      if (activeTab !== "history") setActiveTab("workspace");
       setForm((current) => ({ ...current, ...config.formFromResult?.(next) }));
       await refresh(false);
     } catch (err) {
@@ -314,7 +315,7 @@ export function IntegratedProductApp({ apiBase, auth, config, fetcher }) {
   const dashboardFilters = config.dashboard?.filters?.(items, dashboard.view) || [];
   const filteredHistory = useMemo(() => {
     const normalizedQuery = historyQuery.trim().toLowerCase();
-    const matchesQuery = (entry) => !normalizedQuery || `${entry.id} ${entry.repo} ${entry.pr_number} ${entry.pr_title} ${entry.readiness} ${entry.summary}`.toLowerCase().includes(normalizedQuery);
+    const matchesQuery = (entry) => !normalizedQuery || `${entry.id} ${entry.repo} ${entry.pr_number} ${entry.pr_title} ${entry.readiness} ${entry.decision} ${entry.branch} ${entry.target_version} ${entry.target_tag} ${entry.summary} ${config.historySearchText?.(entry) || ""}`.toLowerCase().includes(normalizedQuery);
     const next = history.filter((entry) => matchesQuery(entry) && (!config.historyDashboard?.filterEntry || config.historyDashboard.filterEntry(entry, historyDashboard.view)));
     return config.historyDashboard?.sortEntries ? [...next].sort((left, right) => config.historyDashboard.sortEntries(left, right, historyDashboard.view.sort)) : next;
   }, [config, history, historyDashboard.view, historyQuery]);
