@@ -45,6 +45,24 @@ mod tests {
     }
 
     #[test]
+    fn api_inconsistency_does_not_match_naming() {
+        assert_eq!(
+            analysis::classify_category(
+                "ValueErrors bubble up as 500s, which is inconsistent with API surfaces that return 400."
+            )
+            .0,
+            "errors"
+        );
+        assert_eq!(
+            analysis::classify_category(
+                "For unknown task ids, block_task returns False; return 404 instead of 400."
+            )
+            .0,
+            "api"
+        );
+    }
+
+    #[test]
     fn webhook_support_matrix_stays_intentional() {
         assert!(supported_webhook_action("pull_request", "synchronize"));
         assert!(supported_webhook_action("pull_request_review", "submitted"));

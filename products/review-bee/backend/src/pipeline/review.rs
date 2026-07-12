@@ -341,7 +341,7 @@ pub(crate) fn checklist_summary(
         _ => format!("{title} is still blocking clean review closure."),
     });
     parts.push(format!(
-        "{} actionable comment{} across {} open thread{}, {} resolved thread{}",
+        "{} actionable comment{} across {} open thread{}, {} resolved thread{}.",
         comment_count,
         plural_suffix(comment_count),
         open_threads,

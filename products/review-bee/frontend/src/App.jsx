@@ -156,7 +156,7 @@ const config = {
     meta: [item.category, item.path_hints?.join(", ")].filter(Boolean).join(" · "),
     summary: item.summary || item.prompt_hint,
     evidence: (item.evidence || []).map(evidenceText),
-    links: (item.evidence || []).filter((entry) => entry.url).map((entry) => ({ label: entry.path || `@${entry.author_login || "reviewer"}`, url: entry.url })),
+    links: (item.evidence || []).filter((entry) => entry.url).map((entry, index) => ({ label: `Review comment ${index + 1} · ${entry.path || `@${entry.author_login || "reviewer"}`}`, url: entry.url })),
     tags: [...(item.path_hints || []), ...(item.commenter_logins || []).map((reviewer) => `@${reviewer}`)],
     facts: [{ label: "Category", value: value(item.category) }, { label: "Status", value: value(item.status) }, { label: "Open threads", value: item.open_threads || 0 }, { label: "Resolved threads", value: item.resolved_threads || 0 }, { label: "Outdated threads", value: item.outdated_threads || 0 }, { label: "Comments", value: item.comment_count || 0 }, { label: "Reviewers", value: item.commenter_logins?.join(", ") || "—" }],
     source: "GitHub review threads",

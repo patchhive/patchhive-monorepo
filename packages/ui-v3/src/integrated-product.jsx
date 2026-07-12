@@ -251,6 +251,7 @@ export function IntegratedProductApp({ apiBase, auth, config, fetcher }) {
       if (resultId) {
         const loaded = await readJson(await fetcher(`${apiBase}/history/${encodeURIComponent(resultId)}`));
         setResult(loaded);
+        setSelected(null);
         setForm((current) => ({ ...current, ...config.formFromResult?.(loaded) }));
         initialRunId.current = "";
       }

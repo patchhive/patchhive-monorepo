@@ -129,12 +129,30 @@ pub(crate) fn classify_category(text: &str) -> (&'static str, &'static str) {
         ("validation", "Validation")
     } else if contains_any(
         &lower,
+        &["error", "logging", "log ", "fallback", "retry", "panic"],
+    ) {
+        ("errors", "Error handling")
+    } else if contains_any(
+        &lower,
+        &[
+            "api",
+            "contract",
+            "behavior",
+            "return",
+            "response",
+            "interface",
+        ],
+    ) {
+        ("api", "API behavior")
+    } else if contains_any(
+        &lower,
         &[
             "rename",
             "naming",
-            "consistent",
-            "convention",
-            "structure",
+            "naming convention",
+            "consistent naming",
+            "consistent structure",
+            "match the existing structure",
             "pattern",
         ],
     ) {
@@ -151,23 +169,6 @@ pub(crate) fn classify_category(text: &str) -> (&'static str, &'static str) {
         ],
     ) {
         ("cleanup", "Cleanup")
-    } else if contains_any(
-        &lower,
-        &["error", "logging", "log ", "fallback", "retry", "panic"],
-    ) {
-        ("errors", "Error handling")
-    } else if contains_any(
-        &lower,
-        &[
-            "api",
-            "contract",
-            "behavior",
-            "return",
-            "response",
-            "interface",
-        ],
-    ) {
-        ("api", "API behavior")
     } else if contains_any(
         &lower,
         &["slow", "performance", "query", "n+1", "efficient"],
