@@ -19,14 +19,11 @@ async fn main() -> Result<()> {
 
     let addr = listen_addr("FLAKE_STING_PORT", 8060);
     info!("🦂 FlakeSting by PatchHive — listening on {addr}");
-    let listener = tokio::net::TcpListener::bind(&addr)
-        .await
-        .unwrap_or_else(|err| panic!("failed to bind FlakeSting to {addr}: {err}"));
+    let listener = tokio::net::TcpListener::bind(&addr).await?;
     axum::serve(
         listener,
         app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
     )
-    .await
-    .unwrap_or_else(|err| panic!("FlakeSting server failed: {err}"));
+    .await?;
     Ok(())
 }

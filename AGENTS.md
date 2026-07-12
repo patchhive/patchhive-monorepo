@@ -200,6 +200,9 @@ Rules:
 - MergeKeeper and ReleaseSentry passed their final parity audits on 2026-07-11;
   their canonical v3 UIs live in `products/<product>/frontend/`, and their
   v1/v2 trees have been removed.
+- DepTriage and FlakeSting passed their final parity audits on 2026-07-12;
+  their canonical v3 UIs live in `products/<product>/frontend/`, and their
+  v1/v2 trees have been removed.
 - Prefer finishing and validating v3 for the current integrated product set before moving another product engine into the unified backend.
 - HiveCore is intentionally outside the specialist-product v3 migration and keeps its control-plane UI.
 - `prototypes/vuln-triage-calm-mockup.html` is reference material only; it is not the v3 source of truth.

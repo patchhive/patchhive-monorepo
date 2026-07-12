@@ -8,10 +8,6 @@ license = "MIT"
 name = "flake-sting"
 path = "src/main.rs"
 
-[lib]
-name = "flake_sting"
-path = "src/lib.rs"
-
 [dependencies]
 anyhow = "1"
 axum = { version = "0.7", features = ["macros"] }
