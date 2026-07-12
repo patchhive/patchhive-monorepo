@@ -24,6 +24,17 @@ pub fn github_token_configured() -> bool {
     github_token().is_some()
 }
 
+/// Returns whether a token represents GitHub App authentication that may create check runs.
+///
+/// GitHub rejects check-run creation from personal access tokens even when their repository
+/// scopes permit commit statuses and issue comments. Installation and user access tokens issued
+/// to GitHub Apps use the `ghs_` and `ghu_` prefixes respectively. Unknown token formats take the
+/// conservative commit-status path instead of producing a predictable authorization failure.
+pub fn github_token_may_create_check_runs(token: &str) -> bool {
+    let token = token.trim();
+    token.starts_with("ghs_") || token.starts_with("ghu_")
+}
+
 pub async fn verify_github_token(client: &Client) -> Result<GitHubIdentity> {
     let token = github_token()
         .ok_or_else(|| anyhow!("[missing_token]: BOT_GITHUB_TOKEN or GITHUB_TOKEN is not set"))?;
@@ -86,5 +97,16 @@ mod tests {
     #[test]
     fn headers_reject_control_characters() {
         assert!(github_headers("token\nvalue").is_err());
+    }
+
+    #[test]
+    fn only_github_app_tokens_attempt_check_runs() {
+        assert!(github_token_may_create_check_runs("ghs_installation"));
+        assert!(github_token_may_create_check_runs("ghu_user_access"));
+        assert!(!github_token_may_create_check_runs("ghp_classic_pat"));
+        assert!(!github_token_may_create_check_runs(
+            "github_pat_fine_grained"
+        ));
+        assert!(!github_token_may_create_check_runs("unrecognized-token"));
     }
 }

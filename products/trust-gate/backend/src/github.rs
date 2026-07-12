@@ -3,7 +3,9 @@ use patchhive_github_pr::{
     env_value, github_token_from_env, GitHubCheckRunRequest, GitHubCommitStatusRequest,
     GitHubManagedCommentResult, GitHubPrClient, GitHubPullRequestDetail,
 };
-use patchhive_product_core::branding::append_product_signature;
+use patchhive_product_core::{
+    branding::append_product_signature, github_auth::github_token_may_create_check_runs,
+};
 use reqwest::Client;
 
 use crate::{
@@ -371,35 +373,45 @@ pub async fn publish_review_outcome(client: &Client, review: &ReviewResult) -> G
     let mut comment_url = String::new();
     let mut comment_mode = String::new();
 
-    match gh
-        .create_check_run(
-            target_repo,
-            GitHubCheckRunRequest {
-                name: CHECK_RUN_NAME.into(),
-                head_sha: github.head_sha.clone(),
-                conclusion: check_conclusion(review).into(),
-                external_id: review.id.clone(),
-                details_url: details_url(review),
-                title: rendered.check_title.clone(),
-                summary: rendered.check_summary.clone(),
-                text: rendered.check_text.clone(),
-            },
-        )
-        .await
+    if github_token_from_env()
+        .as_deref()
+        .is_some_and(github_token_may_create_check_runs)
     {
-        Ok(result) => {
-            check_url = result.html_url;
-            details.push(if check_url.is_empty() {
-                "Created a GitHub check run.".into()
-            } else {
-                format!("Created GitHub check run: {check_url}")
-            });
-            method = "check_run".into();
-            delivered = true;
+        match gh
+            .create_check_run(
+                target_repo,
+                GitHubCheckRunRequest {
+                    name: CHECK_RUN_NAME.into(),
+                    head_sha: github.head_sha.clone(),
+                    conclusion: check_conclusion(review).into(),
+                    external_id: review.id.clone(),
+                    details_url: details_url(review),
+                    title: rendered.check_title.clone(),
+                    summary: rendered.check_summary.clone(),
+                    text: rendered.check_text.clone(),
+                },
+            )
+            .await
+        {
+            Ok(result) => {
+                check_url = result.html_url;
+                details.push(if check_url.is_empty() {
+                    "Created a GitHub check run.".into()
+                } else {
+                    format!("Created GitHub check run: {check_url}")
+                });
+                method = "check_run".into();
+                delivered = true;
+            }
+            Err(err) => details.push(format!(
+                "Check run failed, falling back to commit status: {err}"
+            )),
         }
-        Err(err) => details.push(format!(
-            "Check run failed, falling back to commit status: {err}"
-        )),
+    } else {
+        details.push(
+            "Using a commit status because GitHub check runs require GitHub App authentication."
+                .into(),
+        );
     }
 
     if !delivered {
@@ -423,9 +435,9 @@ pub async fn publish_review_outcome(client: &Client, review: &ReviewResult) -> G
             Ok(result) => {
                 status_url = result.url;
                 details.push(if status_url.is_empty() {
-                    "Created a commit status fallback.".into()
+                    "Created a commit status.".into()
                 } else {
-                    format!("Created commit status fallback: {status_url}")
+                    format!("Created commit status: {status_url}")
                 });
                 method = "commit_status".into();
                 delivered = true;

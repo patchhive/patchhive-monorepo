@@ -4,7 +4,9 @@ use patchhive_github_pr::{
     GitHubCommitStatusRequest, GitHubManagedCommentResult, GitHubPrClient, GitHubPullRequestDetail,
     GitHubPullReview, GitHubPullReviewThread,
 };
-use patchhive_product_core::branding::append_product_signature;
+use patchhive_product_core::{
+    branding::append_product_signature, github_auth::github_token_may_create_check_runs,
+};
 use reqwest::Client;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::time::{sleep, Duration};
@@ -405,39 +407,49 @@ pub async fn publish_assessment_outcome(
     let mut comment_url = String::new();
     let mut comment_mode = String::new();
 
-    match gh
-        .create_check_run(
-            target_repo,
-            GitHubCheckRunRequest {
-                name: CHECK_RUN_NAME.into(),
-                head_sha: github.head_sha.clone(),
-                conclusion: check_conclusion(assessment).into(),
-                external_id: assessment.id.clone(),
-                details_url: details_url(assessment),
-                title: format!("MergeKeeper: {}", assessment.readiness.to_uppercase()),
-                summary: assessment.summary.clone(),
-                text: format!(
-                    "Blockers:\n{}\n\nHolds:\n{}",
-                    markdown_signals(&assessment.blockers, "No hard blockers."),
-                    markdown_signals(&assessment.warnings, "No hold-level warnings."),
-                ),
-            },
-        )
-        .await
+    if github_token_from_env()
+        .as_deref()
+        .is_some_and(github_token_may_create_check_runs)
     {
-        Ok(result) => {
-            check_url = result.html_url;
-            details.push(if check_url.is_empty() {
-                "Created a GitHub check run.".into()
-            } else {
-                format!("Created GitHub check run: {check_url}")
-            });
-            method = "check_run".into();
-            signal_delivered = true;
+        match gh
+            .create_check_run(
+                target_repo,
+                GitHubCheckRunRequest {
+                    name: CHECK_RUN_NAME.into(),
+                    head_sha: github.head_sha.clone(),
+                    conclusion: check_conclusion(assessment).into(),
+                    external_id: assessment.id.clone(),
+                    details_url: details_url(assessment),
+                    title: format!("MergeKeeper: {}", assessment.readiness.to_uppercase()),
+                    summary: assessment.summary.clone(),
+                    text: format!(
+                        "Blockers:\n{}\n\nHolds:\n{}",
+                        markdown_signals(&assessment.blockers, "No hard blockers."),
+                        markdown_signals(&assessment.warnings, "No hold-level warnings."),
+                    ),
+                },
+            )
+            .await
+        {
+            Ok(result) => {
+                check_url = result.html_url;
+                details.push(if check_url.is_empty() {
+                    "Created a GitHub check run.".into()
+                } else {
+                    format!("Created GitHub check run: {check_url}")
+                });
+                method = "check_run".into();
+                signal_delivered = true;
+            }
+            Err(err) => details.push(format!(
+                "Check run failed, falling back to commit status: {err}"
+            )),
         }
-        Err(err) => details.push(format!(
-            "Check run failed, falling back to commit status: {err}"
-        )),
+    } else {
+        details.push(
+            "Using a commit status because GitHub check runs require GitHub App authentication."
+                .into(),
+        );
     }
 
     if !signal_delivered {
@@ -461,9 +473,9 @@ pub async fn publish_assessment_outcome(
             Ok(result) => {
                 status_url = result.url;
                 details.push(if status_url.is_empty() {
-                    "Created a commit status fallback.".into()
+                    "Created a commit status.".into()
                 } else {
-                    format!("Created commit status fallback: {status_url}")
+                    format!("Created commit status: {status_url}")
                 });
                 method = "commit_status".into();
                 signal_delivered = true;
