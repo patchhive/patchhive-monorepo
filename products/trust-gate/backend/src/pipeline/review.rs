@@ -19,6 +19,37 @@ fn count_phrase(count: u32, singular: &str, plural: &str) -> String {
     format!("{count} {}", if count == 1 { singular } else { plural })
 }
 
+fn credential_prefix_match(line: &str, prefix: &str, minimum_payload: usize) -> bool {
+    let lower_line = line.to_ascii_lowercase();
+    let lower_prefix = prefix.to_ascii_lowercase();
+    lower_line.match_indices(&lower_prefix).any(|(index, _)| {
+        let boundary_ok = index == 0
+            || lower_line[..index]
+                .chars()
+                .next_back()
+                .is_none_or(|character| !character.is_ascii_alphanumeric() && character != '_');
+        if !boundary_ok {
+            return false;
+        }
+        lower_line[index + lower_prefix.len()..]
+            .chars()
+            .take_while(|character| {
+                character.is_ascii_alphanumeric() || matches!(character, '_' | '-')
+            })
+            .count()
+            >= minimum_payload
+    })
+}
+
+fn blocked_term_matches(line: &str, term: &str) -> bool {
+    match term.trim().to_ascii_lowercase().as_str() {
+        "sk-" | "ghp_" | "github_pat_" | "akia" => credential_prefix_match(line, term, 8),
+        _ => line
+            .to_ascii_lowercase()
+            .contains(&term.to_ascii_lowercase()),
+    }
+}
+
 pub async fn review_diff(
     client: &reqwest::Client,
     repo: &str,
@@ -118,7 +149,7 @@ pub async fn review_diff(
             let matches: Vec<_> = patch
                 .added_lines
                 .iter()
-                .filter(|line| line.to_lowercase().contains(&term.to_lowercase()))
+                .filter(|line| blocked_term_matches(line, term))
                 .take(2)
                 .cloned()
                 .collect();
@@ -478,12 +509,39 @@ pub async fn review_diff(
 
 #[cfg(test)]
 mod tests {
-    use super::count_phrase;
+    use super::{blocked_term_matches, count_phrase};
 
     #[test]
     fn count_phrase_uses_singular_only_for_one() {
         assert_eq!(count_phrase(1, "file", "files"), "1 file");
         assert_eq!(count_phrase(0, "file", "files"), "0 files");
         assert_eq!(count_phrase(2, "file", "files"), "2 files");
+    }
+
+    #[test]
+    fn short_secret_prefixes_do_not_match_ordinary_words() {
+        assert!(!blocked_term_matches(
+            "import { TaskPanel } from './task-panel';",
+            "sk-"
+        ));
+        assert!(!blocked_term_matches("const task_id = 'task-123';", "sk-"));
+        assert!(!blocked_term_matches("const makia = true;", "AKIA"));
+    }
+
+    #[test]
+    fn credential_like_values_still_match_blocked_prefixes() {
+        assert!(blocked_term_matches("token = 'sk-proj-1234567890'", "sk-"));
+        assert!(blocked_term_matches(
+            "GITHUB_TOKEN=ghp_1234567890abcdef",
+            "ghp_"
+        ));
+        assert!(blocked_term_matches(
+            "token=github_pat_1234567890abcdef",
+            "github_pat_"
+        ));
+        assert!(blocked_term_matches(
+            "AWS_ACCESS_KEY_ID=AKIA1234567890ABCD",
+            "AKIA"
+        ));
     }
 }
