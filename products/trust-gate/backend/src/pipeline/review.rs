@@ -50,6 +50,58 @@ fn blocked_term_matches(line: &str, term: &str) -> bool {
     }
 }
 
+fn marker_term_matches(line: &str, marker: &str) -> bool {
+    line.match_indices(marker).any(|(index, _)| {
+        let before_ok = index == 0
+            || line[..index]
+                .chars()
+                .next_back()
+                .is_none_or(|character| !character.is_ascii_alphanumeric() && character != '_');
+        let after_index = index + marker.len();
+        let after_ok = after_index == line.len()
+            || line[after_index..]
+                .chars()
+                .next()
+                .is_none_or(|character| !character.is_ascii_alphanumeric() && character != '_');
+        before_ok && after_ok
+    })
+}
+
+fn hardcoded_sensitive_value_matches(line: &str, term: &str) -> bool {
+    let lower = line.to_ascii_lowercase();
+    ['=', ':'].into_iter().any(|delimiter| {
+        let Some((left, right)) = lower.split_once(delimiter) else {
+            return false;
+        };
+        if !left.contains(term) {
+            return false;
+        }
+        let value = right.trim_start();
+        matches!(value.chars().next(), Some('"' | '\'' | '`'))
+            && value
+                .trim_matches(|character| matches!(character, '"' | '\'' | '`' | ' ' | '\t'))
+                .len()
+                >= 3
+    })
+}
+
+fn suspicious_term_matches(line: &str, term: &str) -> bool {
+    match term.trim() {
+        "TODO" | "FIXME" => marker_term_matches(line, term),
+        value
+            if matches!(
+                value.to_ascii_lowercase().as_str(),
+                "token" | "secret" | "password"
+            ) =>
+        {
+            hardcoded_sensitive_value_matches(line, &value.to_ascii_lowercase())
+        }
+        _ => line
+            .to_ascii_lowercase()
+            .contains(&term.to_ascii_lowercase()),
+    }
+}
+
 pub async fn review_diff(
     client: &reqwest::Client,
     repo: &str,
@@ -165,7 +217,7 @@ pub async fn review_diff(
             let matches: Vec<_> = patch
                 .added_lines
                 .iter()
-                .filter(|line| line.to_lowercase().contains(&term.to_lowercase()))
+                .filter(|line| suspicious_term_matches(line, term))
                 .take(2)
                 .cloned()
                 .collect();
@@ -509,7 +561,7 @@ pub async fn review_diff(
 
 #[cfg(test)]
 mod tests {
-    use super::{blocked_term_matches, count_phrase};
+    use super::{blocked_term_matches, count_phrase, suspicious_term_matches};
 
     #[test]
     fn count_phrase_uses_singular_only_for_one() {
@@ -542,6 +594,33 @@ mod tests {
         assert!(blocked_term_matches(
             "AWS_ACCESS_KEY_ID=AKIA1234567890ABCD",
             "AKIA"
+        ));
+    }
+
+    #[test]
+    fn todo_markers_do_not_match_domain_status_values() {
+        assert!(!suspicious_term_matches(
+            "const VISIBLE_STATUSES = ['ready', 'todo', 'blocked'] as const;",
+            "TODO"
+        ));
+        assert!(suspicious_term_matches("// TODO: handle the error", "TODO"));
+        assert!(suspicious_term_matches("# FIXME remove fallback", "FIXME"));
+    }
+
+    #[test]
+    fn sensitive_identifiers_require_hardcoded_values() {
+        assert!(!suspicious_term_matches(
+            "from web_server import _SESSION_TOKEN",
+            "token"
+        ));
+        assert!(!suspicious_term_matches(
+            "client.headers[name] = _SESSION_TOKEN",
+            "token"
+        ));
+        assert!(suspicious_term_matches("password = 'not-safe'", "password"));
+        assert!(suspicious_term_matches(
+            "\"token\": \"example-value\"",
+            "token"
         ));
     }
 }
