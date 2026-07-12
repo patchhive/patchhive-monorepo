@@ -4,6 +4,7 @@ mod routes;
 
 // Re-export all public route handlers for main.rs.
 // External callers use `pipeline::function_name` — this keeps them working.
+pub(crate) use review::normalize_review_result_reviewers;
 pub use routes::{
     auth_status, capabilities, gen_key, gen_service_token, github_webhook, health, history,
     history_detail, login, overview, review_github_pr, rotate_service_token, runs,
@@ -57,5 +58,40 @@ mod tests {
         ));
         assert!(!supported_webhook_action("issues", "opened"));
         assert!(!supported_webhook_action("pull_request", "closed"));
+    }
+
+    #[test]
+    fn reviewer_aliases_collapse_to_one_bot_identity() {
+        let mut review = crate::models::ReviewResult {
+            reviewers: vec![
+                "copilot-pull-request-reviewer".into(),
+                "copilot-pull-request-reviewer[bot]".into(),
+            ],
+            checklist: vec![crate::models::ChecklistItem {
+                commenter_logins: vec![
+                    "copilot-pull-request-reviewer".into(),
+                    "copilot-pull-request-reviewer[bot]".into(),
+                ],
+                evidence: vec![crate::models::ChecklistEvidence {
+                    author_login: "copilot-pull-request-reviewer".into(),
+                    ..crate::models::ChecklistEvidence::default()
+                }],
+                ..crate::models::ChecklistItem::default()
+            }],
+            ..crate::models::ReviewResult::default()
+        };
+
+        review::normalize_review_result_reviewers(&mut review);
+
+        assert_eq!(review.reviewers, vec!["copilot-pull-request-reviewer[bot]"]);
+        assert_eq!(review.metrics.reviewer_count, 1);
+        assert_eq!(
+            review.checklist[0].commenter_logins,
+            vec!["copilot-pull-request-reviewer[bot]"]
+        );
+        assert_eq!(
+            review.checklist[0].evidence[0].author_login,
+            "copilot-pull-request-reviewer[bot]"
+        );
     }
 }

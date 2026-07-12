@@ -191,7 +191,7 @@ const config = {
     const counts = overview?.counts || {};
     return result ? [
       { label: "Open items", value: metrics.open_items || 0, footerLeft: result.status === "quiet" ? "no signal" : "current queue", footerRight: countLabel(metrics.actionable_threads, "actionable thread"), tone: "from-orange-700/70 to-red-900/60" },
-      { label: "Resolved", value: metrics.resolved_items || 0, footerLeft: "prior asks", footerRight: result.status === "quiet" ? "not observed" : "cleared", tone: "from-emerald-700/70 to-teal-900/60" },
+      { label: "Resolved", value: metrics.resolved_items || 0, footerLeft: "prior asks", footerRight: metrics.resolved_items ? "cleared" : "none observed", tone: "from-emerald-700/70 to-teal-900/60" },
       { label: "Reviewers", value: metrics.reviewer_count || 0, footerLeft: countLabel(metrics.review_count, "review"), footerRight: countLabel(metrics.approval_reviews, "approval"), tone: "from-amber-600/70 to-yellow-800/50" },
       { label: "Threads", value: metrics.thread_count || 0, footerLeft: countLabel(metrics.requested_changes_reviews, "change request"), footerRight: countLabel(metrics.comment_reviews, "comment review"), tone: "from-slate-500/70 to-slate-800/60" },
     ] : [

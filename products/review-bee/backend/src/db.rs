@@ -94,7 +94,7 @@ pub fn history(limit: usize) -> Vec<HistoryItem> {
     let mut stmt = match conn.prepare(
         r#"
         SELECT id, repo, pr_number, pr_title, status, summary,
-               action_items, open_items, resolved_items, reviewer_count, created_at
+               action_items, open_items, resolved_items, reviewer_count, created_at, payload
         FROM review_runs
         ORDER BY created_at DESC
         LIMIT ?1
@@ -105,17 +105,36 @@ pub fn history(limit: usize) -> Vec<HistoryItem> {
     };
 
     stmt.query_map([limit as i64], |row| {
+        let stored_status = row.get(4)?;
+        let stored_summary = row.get(5)?;
+        let stored_reviewer_count = row.get::<_, i64>(9)? as u32;
+        let payload = row.get::<_, String>(11)?;
+        let normalized = serde_json::from_str::<ReviewResult>(&payload)
+            .ok()
+            .map(|mut review| {
+                crate::pipeline::normalize_review_result_reviewers(&mut review);
+                review
+            });
         Ok(HistoryItem {
             id: row.get(0)?,
             repo: row.get(1)?,
             pr_number: row.get(2)?,
             pr_title: row.get(3)?,
-            status: row.get(4)?,
-            summary: row.get(5)?,
+            status: normalized
+                .as_ref()
+                .map(|review| review.status.clone())
+                .unwrap_or(stored_status),
+            summary: normalized
+                .as_ref()
+                .map(|review| review.summary.clone())
+                .unwrap_or(stored_summary),
             action_items: row.get::<_, i64>(6)? as u32,
             open_items: row.get::<_, i64>(7)? as u32,
             resolved_items: row.get::<_, i64>(8)? as u32,
-            reviewer_count: row.get::<_, i64>(9)? as u32,
+            reviewer_count: normalized
+                .as_ref()
+                .map(|review| review.metrics.reviewer_count)
+                .unwrap_or(stored_reviewer_count),
             created_at: row.get(10)?,
         })
     })
@@ -134,7 +153,9 @@ pub fn get_review(id: &str) -> Option<ReviewResult> {
         .optional()
         .ok()
         .flatten()?;
-    serde_json::from_str(&payload).ok()
+    let mut review = serde_json::from_str(&payload).ok()?;
+    crate::pipeline::normalize_review_result_reviewers(&mut review);
+    Some(review)
 }
 
 pub fn comment_publish_verified() -> bool {

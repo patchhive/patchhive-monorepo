@@ -10,6 +10,75 @@ use crate::models::{
 
 use super::analysis::*;
 
+fn reviewer_key(login: &str) -> Option<String> {
+    let normalized = login.trim().to_ascii_lowercase();
+    let key = normalized
+        .strip_suffix("[bot]")
+        .unwrap_or(&normalized)
+        .trim();
+    (!key.is_empty()).then(|| key.to_string())
+}
+
+pub(crate) fn normalize_review_result_reviewers(result: &mut ReviewResult) {
+    let mut identities = std::collections::BTreeMap::<String, bool>::new();
+    let mut record = |login: &str| {
+        if let Some(key) = reviewer_key(login) {
+            let is_bot = login.trim().to_ascii_lowercase().ends_with("[bot]");
+            identities
+                .entry(key)
+                .and_modify(|known_bot| *known_bot |= is_bot)
+                .or_insert(is_bot);
+        }
+    };
+
+    result.reviewers.iter().for_each(|login| record(login));
+    for item in &result.checklist {
+        item.commenter_logins.iter().for_each(|login| record(login));
+        item.evidence
+            .iter()
+            .for_each(|evidence| record(&evidence.author_login));
+    }
+
+    let display = |login: &str| {
+        reviewer_key(login).map(|key| {
+            if identities.get(&key).copied().unwrap_or(false) {
+                format!("{key}[bot]")
+            } else {
+                key
+            }
+        })
+    };
+
+    result.reviewers = identities
+        .iter()
+        .map(|(key, is_bot)| {
+            if *is_bot {
+                format!("{key}[bot]")
+            } else {
+                key.clone()
+            }
+        })
+        .collect();
+    for item in &mut result.checklist {
+        item.commenter_logins = item
+            .commenter_logins
+            .iter()
+            .filter_map(|login| display(login))
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        for evidence in &mut item.evidence {
+            if let Some(login) = display(&evidence.author_login) {
+                evidence.author_login = login;
+            }
+        }
+    }
+
+    result.metrics.reviewer_count = result.reviewers.len() as u32;
+    result.status = overall_status(&result.metrics, result.metrics.requested_changes_reviews);
+    result.summary = build_summary(&result.metrics, &result.checklist, &result.status);
+}
+
 #[derive(Default)]
 pub(crate) struct ChecklistCluster {
     pub(crate) category: String,
@@ -185,7 +254,7 @@ pub fn build_review_result(
         .take(4)
         .collect::<Vec<_>>();
 
-    ReviewResult {
+    let mut result = ReviewResult {
         id: Uuid::new_v4().to_string(),
         repo: context.pr.repo.clone(),
         pr_number: context.pr.number,
@@ -211,7 +280,9 @@ pub fn build_review_result(
             trigger,
         }),
         github_report: None,
-    }
+    };
+    normalize_review_result_reviewers(&mut result);
+    result
 }
 
 pub(crate) fn into_checklist_item(category: String, cluster: ChecklistCluster) -> ChecklistItem {
