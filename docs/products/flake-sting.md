@@ -73,7 +73,7 @@ signal with the right level of trust.
 ## Unified Backend Mode
 
 FlakeSting is mounted in-process inside `services/patchhive-backend`. In suite
-mode, the v2 frontend talks to the unified backend route instead of a separate
+mode, the canonical frontend talks to the unified backend route instead of a separate
 FlakeSting backend service:
 
 ```bash
@@ -81,10 +81,10 @@ PATCHHIVE_PRODUCTS=flake-sting \
 PATCHHIVE_BIND_ADDR=127.0.0.1:8100 \
 cargo run --manifest-path services/patchhive-backend/Cargo.toml
 
-npm --prefix products/flake-sting/frontend-v2 run dev
+npm --prefix products/flake-sting/frontend run dev
 ```
 
-The v2 default API base is:
+The canonical frontend default API base is:
 
 ```text
 http://127.0.0.1:8100/api/products/flake-sting
@@ -98,7 +98,8 @@ removed.
 
 ## UI v1 to v2 Parity Audit
 
-Audited on 2026-07-09 against:
+Audited on 2026-07-09 against the following source trees, which were retired
+after the v3 promotion gate passed:
 
 - `products/flake-sting/frontend-legacy/src/App.jsx`
 - `products/flake-sting/frontend-legacy/src/panels/ScanPanel.jsx`
@@ -124,8 +125,8 @@ Intentional v2 changes:
 
 The browser pass completed on 2026-07-09 with a quarantine signal, evidence
 links, trend comparison, history filtering/loading, and Checks-tab GitHub and
-database state verified. The v1 UI now lives in `frontend-legacy/` and is only
-available through the Docker `legacy-ui` profile or direct local reference use.
+database state verified. The v1 UI was moved to `frontend-legacy/` for that
+audit and was retired after the final v3 acceptance pass.
 
 ---
 
@@ -153,9 +154,15 @@ history, trend, evidence, and startup surfaces. The v3 frontend now preserves:
 
 Local verification passed for all five v3 frontend consumers, suite drift, the
 standalone FlakeSting tests and strict Clippy run, and the unified-backend tests
-and strict Clippy run. Promotion remains blocked until the real product
-environment/database is launched and the operator accepts live scan, signal
-detail, trend, history, checks, sources, and responsive behavior.
+and strict Clippy run.
+
+Final acceptance on 2026-07-12 covered a live 25-run Actions scan with one
+score-100 quarantine signal, nine failures and two passes, six representative
+run/outcome evidence links, a steady comparable-scan trend, five saved history
+runs with filter/sort/saved-view controls, verified startup and GitHub Actions
+read state, and the complete read-only Sources boundary. The v3 UI is now the
+packaged canonical `products/flake-sting/frontend/` implementation. The retired
+v1 and v2 source trees and Docker profiles were removed after this gate passed.
 
 ---
 
@@ -171,8 +178,7 @@ docker compose up --build
 
 | Service | URL |
 |---------|-----|
-| Frontend (active v2) | `http://localhost:5179` |
-| Frontend v2 dev server | `http://localhost:5198` |
+| Frontend (canonical v3) | `http://localhost:5179` |
 | Backend | `http://localhost:8060` |
 
 Backend: `http://localhost:8060`
@@ -184,15 +190,7 @@ Frontend: `http://localhost:5179`
 cp .env.example .env
 
 cd backend && cargo run
-cd ../frontend-v2 && npm install && npm run dev
-```
-
-The old v1 frontend is preserved for reference in `frontend-legacy/` after the
-v2 parity audit. Use it only when comparing behavior before deleting legacy UI
-code:
-
-```bash
-cd frontend-legacy && npm install && npm run dev
+cd ../frontend && npm install && npm run dev
 ```
 
 ---
@@ -721,8 +719,7 @@ no Kubernetes liveness/readiness probes, and no metrics export.
 
 ### Docker Compose
 
-The `docker-compose.yml` runs the backend and active v2 frontend by default.
-The audited v1 frontend is available only through the `legacy-ui` profile:
+The `docker-compose.yml` runs the backend and canonical v3 frontend by default:
 
 ```yaml
 services:
@@ -739,19 +736,11 @@ services:
     restart: unless-stopped
 
   frontend:
-    image: ghcr.io/patchhive/flakesting-frontend-v2:main
+    image: ghcr.io/patchhive/flakesting-frontend:main
     build:
       context: ../..
-      dockerfile: products/flake-sting/frontend-v2/Dockerfile
+      dockerfile: products/flake-sting/frontend/Dockerfile
     ports: ["5179:8080"]
-    depends_on: [backend]
-    restart: unless-stopped
-
-  frontend-legacy:
-    profiles: [legacy-ui]
-    image: ghcr.io/patchhive/flakesting-frontend-legacy:main
-    build: ./frontend-legacy
-    ports: ["5198:8080"]
     depends_on: [backend]
     restart: unless-stopped
 ```
@@ -759,8 +748,7 @@ services:
 Images are pulled from `ghcr.io/patchhive/`. Pull policy, image name, and
 tags are configurable via environment variables:
 - `PATCHHIVE_FLAKE_STING_BACKEND_IMAGE`
-- `PATCHHIVE_FLAKE_STING_FRONTEND_V2_IMAGE`
-- `PATCHHIVE_FLAKE_STING_FRONTEND_LEGACY_IMAGE`
+- `PATCHHIVE_FLAKE_STING_FRONTEND_IMAGE`
 - `PATCHHIVE_IMAGE_TAG` (default: `main`)
 - `PATCHHIVE_IMAGE_PULL_POLICY` (default: `missing`)
 - `PATCHHIVE_BACKEND_UID` / `PATCHHIVE_BACKEND_GID` (default: `0`)

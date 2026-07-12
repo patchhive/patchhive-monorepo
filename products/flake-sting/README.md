@@ -6,7 +6,7 @@ test-like jobs and steps, and turns that churn into a ranked queue of likely
 flaky problems so teams can focus on the unstable parts of their delivery
 pipeline.
 
-The opt-in Lovable-derived v3 frontend lives in `frontend-v3/` and targets the
+The canonical Lovable-derived v3 frontend lives in `frontend/` and targets the
 in-process unified-backend route at `/api/products/flake-sting`.
 
 ## Documentation
@@ -48,7 +48,6 @@ docker compose up --build
 ```
 
 Frontend: `http://localhost:5179`
-Frontend v2 dev server: `http://localhost:5198`
 Backend: `http://localhost:8060`
 
 ### Split Backend and Frontend
@@ -57,15 +56,7 @@ Backend: `http://localhost:8060`
 cp .env.example .env
 
 cd backend && cargo run
-cd ../frontend-v2 && npm install && npm run dev
-```
-
-The old v1 frontend is preserved for reference in `frontend-legacy/` after the
-v2 parity audit. Use it only when comparing behavior before deleting legacy UI
-code:
-
-```bash
-cd frontend-legacy && npm install && npm run dev
+cd ../frontend && npm install && npm run dev
 ```
 
 ## Configuration
@@ -87,7 +78,7 @@ it must be supplied on protected calls.
 ## Unified Backend
 
 FlakeSting's product engine is mounted in-process by
-`services/patchhive-backend`. The active v2 UI defaults to:
+`services/patchhive-backend`. The canonical UI defaults to:
 
 ```text
 http://127.0.0.1:8100/api/products/flake-sting
