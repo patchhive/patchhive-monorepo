@@ -1,6 +1,6 @@
 # ReleaseSentry by PatchHive
 
-The opt-in Lovable-derived v3 frontend lives in `frontend-v3/` and targets the
+The canonical Lovable-derived specialist frontend lives in `frontend/` and targets the
 in-process unified-backend route at `/api/products/release-sentry`.
 
 ReleaseSentry checks whether a repo, product, or release candidate is actually ready to ship.
@@ -65,16 +65,11 @@ Suite backend route: `http://localhost:8100/api/products/release-sentry`
 cp .env.example .env
 
 cd backend && cargo run
-cd ../frontend-v2 && npm install && npm run dev
+cd ../frontend && npm install && npm run dev
 ```
 
-The old v1 frontend is preserved for reference in `frontend-legacy/` after the
-v2 parity audit. Use it only when comparing behavior before deleting legacy UI
-code:
-
-```bash
-cd frontend-legacy && npm install && npm run dev
-```
+The v1 and v2 frontends were removed after the v3 parity audit and live
+ready/watch/hold acceptance gate passed on 2026-07-11.
 
 ### Unified Backend Mode
 
@@ -86,7 +81,7 @@ PATCHHIVE_PRODUCTS=release-sentry \
 PATCHHIVE_BIND_ADDR=127.0.0.1:8100 \
 cargo run --manifest-path services/patchhive-backend/Cargo.toml
 
-npm --prefix products/release-sentry/frontend-v2 run dev
+npm --prefix products/release-sentry/frontend run dev
 ```
 
 The standalone backend remains available as a compatibility wrapper while the
@@ -94,9 +89,8 @@ suite backend migration is tested.
 
 ## Local Notes
 
-- The active frontend lives in `frontend-v2/`; the old v1 UI is preserved in
-  `frontend-legacy/` only as parity reference material.
-- The frontend uses `@patchhivehq/ui-v2` primitives and the shared product shell.
+- The canonical frontend lives in `frontend/`; retired v1 and v2 implementations are no longer packaged or kept in the tree.
+- The frontend uses `@patchhivehq/ui-v3` primitives and the shared product shell.
 - The backend stores release readiness history in SQLite at `RELEASE_SENTRY_DB_PATH`.
 - GitHub-backed checks should use a fine-grained token with Metadata (read), Contents (read), Actions (read), Issues (read), and Deployments/Releases read access where available.
 - Keep repository access public-only unless release readiness for private repos is explicitly enabled.

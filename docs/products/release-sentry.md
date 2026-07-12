@@ -219,8 +219,8 @@ score = 100 - (blocked × 25) - (warned × 8)
 ## Unified Backend Mode
 
 ReleaseSentry is the second product engine mounted in-process inside
-`services/patchhive-backend`, after MergeKeeper. In suite mode, the v2 frontend
-should talk to the unified backend route instead of a separate ReleaseSentry
+`services/patchhive-backend`, after MergeKeeper. In suite mode, the canonical frontend
+talks to the unified backend route instead of a separate ReleaseSentry
 backend service:
 
 ```bash
@@ -228,10 +228,10 @@ PATCHHIVE_PRODUCTS=release-sentry \
 PATCHHIVE_BIND_ADDR=127.0.0.1:8100 \
 cargo run --manifest-path services/patchhive-backend/Cargo.toml
 
-npm --prefix products/release-sentry/frontend-v2 run dev
+npm --prefix products/release-sentry/frontend run dev
 ```
 
-The v2 default API base is:
+The canonical frontend API base is:
 
 ```text
 http://127.0.0.1:8100/api/products/release-sentry
@@ -245,79 +245,20 @@ or removed.
 
 ---
 
-## UI v1 to v2 Parity Audit
+## Historical v1 to v2 Audit
 
-Audited on 2026-07-03 against:
-
-- `products/release-sentry/frontend-legacy/src/App.jsx`
-- `products/release-sentry/frontend-legacy/src/panels/OverviewPanel.jsx`
-- `products/release-sentry/frontend-legacy/src/panels/HistoryPanel.jsx`
-- `products/release-sentry/frontend-legacy/src/panels/ChecksPanel.jsx`
-- `products/release-sentry/frontend-v2/src/App.jsx`
-
-The v2 ReleaseSentry surface must keep these v1 workflows before the old UI can
-be removed:
-
-- API-key login and first-key generation.
-- Directed release check by `owner/repo`, branch, target version, target tag,
-  changelog path, workflow run limit, and blocker-label set.
-- Read-only GitHub release intake with clear token-ready/token-missing state.
-- Ready/watch/hold decision, numeric readiness score, summary, warnings, and
-  per-check status.
-- Release metrics for workflow runs, workflow successes, workflow failures,
-  workflow pending count, release blockers, passed checks, warned checks,
-  blocked checks, and evidence count.
-- Release evidence list for repository reachability, release history, tags, CI
-  health, release blockers, changelog coverage, and release surface.
-- Check detail, evidence counts, and GitHub artifact link awareness for release,
-  workflow, repository, and changelog evidence.
-- Overview/history counts for stored checks, repos seen, ready decisions, watch
-  decisions, and hold decisions.
-- History list, selected-run loading, and selected-run check detail.
-- Health/startup checks for backend status, DB path, auth, GitHub readiness,
-  saved run counts, and startup messages.
-
-Current v2 parity status:
-
-- **Covered**: release intake form, gate decision, metric band, release radar,
-  release evidence queue, run history, selected-run detail, Checks tab, health
-  and startup state, and clear selected-run behavior.
-- **Legacy status**: after the final 2026-07-05 recheck, the old UI was moved
-  to `products/release-sentry/frontend-legacy/`. `frontend-v2/` is the active
-  local and Docker frontend.
-- **Improved from v1**: loading a history row stays in the history context and
-  renders the selected release radar/detail below it instead of forcing the
-  operator back to the main gate tab.
-- **Clarified from v1**: v2 labels product-level blocking checks as "gate
-  blocks" so they do not get confused with open GitHub issues that match the
-  release-blocker label set.
-- **Intentional v2 change**: v2 points at the unified backend route by default
-  during this migration (`/api/products/release-sentry`) instead of requiring a
-  separate ReleaseSentry backend process.
-- **Deferred polish**: v1 rendered raw evidence strings and external evidence
-  links directly inside each check card. V2 currently shows check detail,
-  evidence counts, and link counts in the radar/queue. Before deleting the old
-  UI, add compact expandable evidence rows or link chips if operators need to
-  jump straight to the release, workflow run, changelog, or repository artifact
-  from the v2 check detail.
-
-Before deleting the old ReleaseSentry UI, run one final browser pass that
-covers:
-
-1. A ready release candidate with passing CI, tag alignment, and changelog
-   coverage.
-2. A hold release candidate with failing CI or release-blocker issues.
-3. A watch release candidate with warnings but no blocking gate checks.
-4. A saved history load with selected-run radar/detail visible.
-5. The Checks tab with GitHub readiness, DB path, auth state, saved counts, and
-   startup messages visible.
+The 2026-07-03 audit established the behavioral checklist later carried into
+v3: authenticated release intake, configurable release targets and blocker
+labels, ready/watch/hold decisions, complete CI and release metrics, evidence
+links, history detail, and startup/health visibility. The v1 and v2 source trees
+were removed after the final v3 acceptance gate passed.
 
 ---
 
 ## UI v1 and v2 to v3 Parity Audit
 
-Re-audited on 2026-07-11 using the retired-v1 candidate and active v2 frontend
-as the behavioral source for `products/release-sentry/frontend-v3/`.
+Re-audited on 2026-07-11 using v1 and v2 as the behavioral source for the
+canonical `products/release-sentry/frontend/` implementation.
 
 The initial generic v3 workspace covered the basic release form and decision
 queue, but it did not yet preserve all established ReleaseSentry behavior. The
@@ -344,17 +285,13 @@ parity implementation now includes:
   boundaries.
 - The v2 footer identity wording through the shared v3 shell.
 
-Local verification uses the newest product database at
-`products/release-sentry/release-sentry.db`, which currently contains a real
-`hold` assessment for `vitejs/vite` with CI failures and release-blocker issue
-evidence. Production builds pass for ReleaseSentry and shared-shell regression
-consumers MergeKeeper and VulnTriage. ReleaseSentry backend and unified-backend
-tests and strict clippy checks also pass.
-
-The final promotion gate remains explicit: visually inspect all four tabs, load
-the saved hold run and its evidence links, then verify live `ready`, `watch`,
-and `hold` decisions before deleting v1/v2 or changing Docker's active
-frontend.
+Final acceptance on 2026-07-11 covered a live `ready` and `watch` assessment for
+`starship/starship`, a saved `hold` assessment for `vitejs/vite`, full workflow
+accounting including skipped/neutral runs, history filtering and saved views,
+startup/health evidence, verified GitHub identity, the source form and safety
+guidance, and the v2 footer identity. The v3 UI received operator sign-off and
+is now the packaged canonical frontend; the retired v1 and v2 trees and Docker
+profiles were removed.
 
 ---
 
@@ -515,8 +452,7 @@ release-sentry/
 │       ├── startup.rs       ── Config validation checks
 │       ├── state.rs         ── Shared AppState (reqwest Client)
 │       └── auth.rs          ── Generated by patchhive_product_core macro
-├── frontend-v2/             ── Active ReleaseSentry UI
-├── frontend-legacy/         ── Old v1 UI kept temporarily for parity reference
+├── frontend/                ── Canonical ReleaseSentry v3 UI
 ├── docker-compose.yml       ── Docker deployment
 ├── .env.example             ── Configuration template
 └── README.md                ── Product README
@@ -608,7 +544,7 @@ cd products/release-sentry/backend
 cp ../.env.example .env
 cargo run
 
-cd ../frontend-v2
+cd ../frontend
 npm install
 npm run dev
 ```
@@ -617,17 +553,14 @@ npm run dev
 |---|---|
 | Backend | `http://localhost:8120` |
 | Frontend | `http://localhost:5184` |
-| Legacy frontend reference | `http://localhost:5202` when started with the `legacy-ui` Docker Compose profile |
 
 Backend: `http://localhost:8120`
 Frontend: `http://localhost:5184`
 
 ### Docker
 
-The `docker-compose.yml` runs the backend and active v2 frontend by default,
-with SQLite on a mounted volume. The old v1 frontend is available only with the
-`legacy-ui` profile while it remains useful as parity reference material. For
-production:
+The `docker-compose.yml` runs the backend and canonical v3 frontend by default,
+with SQLite on a mounted volume. For production:
 
 1. Set `BOT_GITHUB_TOKEN` with appropriate scopes
 2. Set `RELEASE_SENTRY_API_KEY_HASH` for API auth
@@ -677,8 +610,7 @@ production:
 | History & overview APIs | ✅ Implemented |
 | Auth (API key + service token) | ✅ Implemented |
 | Capabilities advertisement | ✅ Implemented |
-| Frontend UI | ✅ Implemented (v2 active) |
-| Frontend legacy reference | ✅ Preserved in `frontend-legacy/` until old UI deletion |
+| Frontend UI | ✅ Canonical v3 promoted after live parity acceptance |
 | HiveCore integration | ✅ Service token dispatch |
 | Dependency health import (DepTriage) | ❌ Future |
 | Security posture import (VulnTriage) | ❌ Future |
