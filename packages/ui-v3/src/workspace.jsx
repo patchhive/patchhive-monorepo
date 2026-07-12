@@ -195,6 +195,7 @@ export function HistoryDashboard({
 
 function startupCheckTitle(check) {
   if (check.name || check.label) return check.name || check.label;
+  const code = String(check.code || "").toLowerCase();
   const message = String(check.message || check.detail || check.msg || "").toLowerCase();
   if (message.includes("sqlite") || message.includes("database")) return "Database";
   if (message.includes("api-key") || message.includes("auth")) return "Authentication";
@@ -203,9 +204,10 @@ function startupCheckTitle(check) {
   if (message.includes("repomemory")) return "RepoMemory";
   if (message.includes("webhook")) return "GitHub webhook";
   if (message.includes("public url")) return "Public URL";
-  if (message.includes("github token") || message.includes("github access")) return "GitHub access";
+  if (code.includes("github") || message.includes("github token") || message.includes("github access") || message.includes("github accepted")) return "GitHub access";
   if (message.includes("approval policy")) return "Approval policy";
-  if (message.includes("reads ") || message.includes("returns a simple")) return "Product mode";
+  if (message.includes("read-only") || message.includes("read only") || message.includes("does not merge") || message.includes("does not publish")) return "Safety boundary";
+  if (message.includes("reads ") || message.includes("returns a simple") || message.includes("turns ") || message.includes("combines ") || message.includes("detects ") || message.includes("ranks ")) return "Product mode";
   return "Startup configuration";
 }
 
