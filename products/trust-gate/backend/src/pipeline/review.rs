@@ -15,6 +15,10 @@ use super::types::{
     summarize_review_task,
 };
 
+fn count_phrase(count: u32, singular: &str, plural: &str) -> String {
+    format!("{count} {}", if count == 1 { singular } else { plural })
+}
+
 pub async fn review_diff(
     client: &reqwest::Client,
     repo: &str,
@@ -334,8 +338,8 @@ pub async fn review_diff(
             "large_risky_diff", "Large diff with concentrated risk", "block",
             "This patch is both large and concentrated in sensitive areas. TrustGate should not treat it like a normal bounded AI patch.",
             vec![
-                format!("{files_changed} files changed"),
-                format!("{risky_files} risky files"),
+                format!("{} changed", count_phrase(files_changed, "file", "files")),
+                count_phrase(risky_files, "risky file", "risky files"),
                 format!("{additions} additions / {deletions} deletions"),
             ],
         ));
@@ -426,9 +430,20 @@ pub async fn review_diff(
     );
 
     let summary = match recommendation {
-        "block" => format!("Block this diff for now. TrustGate found {blocked_findings} blocking issues and {warning_findings} warnings."),
-        "warn" => format!("Review closely before merge. TrustGate found {warning_findings} warnings across {risky_files} risky files."),
-        _ => format!("This diff looks safe against the current repo rules. {} files changed with no active warnings.", files_changed),
+        "block" => format!(
+            "Block this diff for now. TrustGate found {} and {}.",
+            count_phrase(blocked_findings, "blocking issue", "blocking issues"),
+            count_phrase(warning_findings, "warning", "warnings"),
+        ),
+        "warn" => format!(
+            "Review closely before merge. TrustGate found {} across {}.",
+            count_phrase(warning_findings, "warning", "warnings"),
+            count_phrase(risky_files, "risky file", "risky files"),
+        ),
+        _ => format!(
+            "This diff looks safe against the current repo rules. {} changed with no active warnings.",
+            count_phrase(files_changed, "file", "files"),
+        ),
     };
 
     ReviewResult {
@@ -458,5 +473,17 @@ pub async fn review_diff(
         github: github_context,
         github_report: None,
         repo_memory_context,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::count_phrase;
+
+    #[test]
+    fn count_phrase_uses_singular_only_for_one() {
+        assert_eq!(count_phrase(1, "file", "files"), "1 file");
+        assert_eq!(count_phrase(0, "file", "files"), "0 files");
+        assert_eq!(count_phrase(2, "file", "files"), "2 files");
     }
 }

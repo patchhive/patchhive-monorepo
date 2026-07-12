@@ -282,7 +282,11 @@ export function ScanWarnings({ formatWarning = (warning) => String(warning), war
 }
 
 export function GitHubPermissionGuidance({ children }) {
-  return <div className={`surface-inset mt-5 rounded-xl p-3 text-[11px] leading-relaxed ${V3_TEXT.mute}`}><span className={`font-semibold ${V3_TEXT.body}`}>GitHub access:</span> {children}</div>;
+  return <GuidanceNotice label="GitHub access">{children}</GuidanceNotice>;
+}
+
+export function GuidanceNotice({ children, label }) {
+  return <div className={`surface-inset mt-5 rounded-xl p-3 text-[11px] leading-relaxed ${V3_TEXT.mute}`}><span className={`font-semibold ${V3_TEXT.body}`}>{label}:</span> {children}</div>;
 }
 
 export function CopyMarkdownButton({ content, label = "Copy summary", onError }) {
