@@ -491,6 +491,14 @@ fn check_workflows(runs: &[github::GitHubActionsWorkflowRun], branch: &str) -> R
         .iter()
         .filter(|run| run.conclusion == "success")
         .count();
+    let neutral = runs
+        .iter()
+        .filter(|run| {
+            !run.conclusion.trim().is_empty()
+                && run.conclusion != "success"
+                && !failing_conclusion(&run.conclusion)
+        })
+        .count();
     let status = if failures > 0 {
         "block"
     } else if pending > 0 || successes == 0 {
@@ -523,13 +531,15 @@ fn check_workflows(runs: &[github::GitHubActionsWorkflowRun], branch: &str) -> R
         label: "CI Health".into(),
         status: status.into(),
         detail: format!(
-            "{} successful run{}, {} failed run{}, {} pending run{} across {} recent workflow run{} on `{branch}`.",
+            "{} successful run{}, {} failed run{}, {} pending run{}, {} skipped or neutral run{} across {} recent workflow run{} on `{branch}`.",
             successes,
             plural(successes as u32),
             failures,
             plural(failures as u32),
             pending,
             plural(pending as u32),
+            neutral,
+            plural(neutral as u32),
             runs.len(),
             plural(runs.len() as u32)
         ),
@@ -718,6 +728,8 @@ fn build_metrics(
             metrics.workflow_pending += 1;
         } else if failing_conclusion(&run.conclusion) {
             metrics.workflow_failures += 1;
+        } else {
+            metrics.workflow_neutral += 1;
         }
     }
     metrics.release_blockers = issues
@@ -936,12 +948,17 @@ mod tests {
                 conclusion: "failure".into(),
                 ..GitHubActionsWorkflowRun::default()
             },
+            GitHubActionsWorkflowRun {
+                conclusion: "skipped".into(),
+                ..GitHubActionsWorkflowRun::default()
+            },
         ];
 
         let check = check_workflows(&runs, "main");
 
         assert!(check.detail.contains("2 successful runs"));
         assert!(check.detail.contains("1 failed run"));
+        assert!(check.detail.contains("1 skipped or neutral run"));
         assert!(!check.detail.contains("successs"));
     }
 }

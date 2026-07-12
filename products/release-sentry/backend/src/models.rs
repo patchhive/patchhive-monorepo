@@ -54,6 +54,8 @@ pub struct ReleaseReadinessMetrics {
     #[serde(default)]
     pub workflow_pending: u32,
     #[serde(default)]
+    pub workflow_neutral: u32,
+    #[serde(default)]
     pub release_blockers: u32,
     #[serde(default)]
     pub tags_seen: u32,

@@ -113,6 +113,7 @@ ReleaseSentry Backend
     "workflow_successes": 12,
     "workflow_failures": 1,
     "workflow_pending": 1,
+    "workflow_neutral": 0,
     "release_blockers": 0,
     "tags_seen": 42,
     "releases_seen": 18

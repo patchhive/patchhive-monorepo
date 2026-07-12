@@ -50,6 +50,17 @@ function Fact({ label, value: factValue }) {
   );
 }
 
+function workflowNeutral(metrics = {}) {
+  const derived = Math.max(
+    0,
+    Number(metrics.workflow_runs || 0)
+      - Number(metrics.workflow_successes || 0)
+      - Number(metrics.workflow_failures || 0)
+      - Number(metrics.workflow_pending || 0),
+  );
+  return Number(metrics.workflow_neutral || 0) || derived;
+}
+
 function WorkspaceDetails({ health, result }) {
   if (!result) return null;
   const metrics = result.metrics || {};
@@ -84,7 +95,7 @@ function WorkspaceDetails({ health, result }) {
           <Fact label="Workflow runs" value={metrics.workflow_runs} />
           <Fact label="CI successes" value={metrics.workflow_successes} />
           <Fact label="CI failures" value={metrics.workflow_failures} />
-          <Fact label="CI pending" value={metrics.workflow_pending} />
+          <Fact label="CI pending / neutral" value={`${value(metrics.workflow_pending, "0")} / ${workflowNeutral(metrics)}`} />
           <Fact label="Release blockers" value={metrics.release_blockers} />
           <Fact label="Tags seen" value={metrics.tags_seen} />
           <Fact label="Releases seen" value={metrics.releases_seen} />
@@ -253,7 +264,7 @@ const config = {
     const counts = overview?.counts || {};
     return result ? [
       { label: "Passed", value: metrics.passed || 0, footerLeft: "checks", footerRight: `${metrics.checks || 0} total`, tone: "from-emerald-700/70 to-teal-900/60" },
-      { label: "Warnings", value: metrics.warned || 0, footerLeft: "watch", footerRight: `${metrics.workflow_pending || 0} CI pending`, tone: "from-amber-600/70 to-yellow-800/50" },
+      { label: "Warnings", value: metrics.warned || 0, footerLeft: "watch", footerRight: `${metrics.workflow_pending || 0} pending · ${workflowNeutral(metrics)} neutral`, tone: "from-amber-600/70 to-yellow-800/50" },
       { label: "Blocked", value: metrics.blocked || 0, footerLeft: "gate", footerRight: `${metrics.release_blockers || 0} issue blockers`, tone: "from-orange-700/70 to-red-900/60" },
       { label: "CI failures", value: metrics.workflow_failures || 0, footerLeft: `${metrics.workflow_successes || 0} passing`, footerRight: `${metrics.workflow_runs || 0} runs`, tone: "from-slate-500/70 to-slate-800/60" },
     ] : [
