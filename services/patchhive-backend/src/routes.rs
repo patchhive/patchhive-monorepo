@@ -52,6 +52,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .nest("/api/products/vuln-triage", products::vuln_triage_router())
         .nest("/api/products/flake-sting", products::flake_sting_router())
         .nest("/api/products/review-bee", products::review_bee_router())
+        .nest("/api/products/trust-gate", products::trust_gate_router())
         .merge(suite_routes)
 }
 

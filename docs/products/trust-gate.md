@@ -111,6 +111,14 @@ For local v2 development:
 cd frontend-v2 && npm install && npm run dev
 ```
 
+### UI v3 Parity Candidate
+
+The TrustGate engine is mounted directly by `patchhive-backend` at
+`/api/products/trust-gate`. Its staged Lovable-derived parity candidate lives
+in `frontend-v3/`. The existing production and v2 frontends remain available
+until pasted-diff, live PR, policy persistence, history/detail, diagnostics,
+GitHub publishing, and responsive visual acceptance are complete.
+
 ### Split Backend and Frontend
 
 ```bash

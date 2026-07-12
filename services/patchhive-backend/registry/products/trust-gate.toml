@@ -4,7 +4,7 @@ name = "TrustGate"
 role = "diff policy and risk review"
 module_path = "crate::products::trust_gate"
 route_prefix = "/api/products/trust-gate"
-migration_stage = "not-started"
+migration_stage = "integrated"
 
 [safety]
 read_only = false
@@ -12,10 +12,6 @@ writes_external_state = true
 requires_operator_approval = true
 credential_scopes = ["github:pull_requests:read", "github:checks:write"]
 evidence_required = ["diff", "policy pack", "decision report"]
-
-[gateway]
-default_url = "http://127.0.0.1:8020"
-env_var = "TRUST_GATE_GATEWAY_URL"
 
 [health]
 endpoint = "/api/products/trust-gate/health"
@@ -76,6 +72,11 @@ description = "Read TrustGate startup checks."
 method = "GET"
 path = "/api/products/trust-gate/capabilities"
 description = "Read TrustGate product capabilities."
+
+[[routes]]
+method = "GET"
+path = "/api/products/trust-gate/overview"
+description = "Read TrustGate decision and policy counts."
 
 [[routes]]
 method = "POST"

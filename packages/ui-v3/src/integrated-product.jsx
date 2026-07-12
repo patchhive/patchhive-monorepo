@@ -176,6 +176,12 @@ function FormField({ field, form, setForm, inputRef }) {
   if (field.type === "checkbox") {
     return <label className={`surface-inset rounded-xl p-4 flex items-start gap-3 text-[13px] ${field.disabled ? "opacity-60" : ""} ${V3_TEXT.body}`}><input checked={!field.disabled && Boolean(form[field.key])} disabled={field.disabled} onChange={(event) => setForm((current) => ({ ...current, [field.key]: event.target.checked }))} type="checkbox" className="mt-0.5 accent-[color:var(--accent-2)]" /><span><span className="block">{field.label}</span>{field.help ? <span className={`mt-1 block text-[10px] leading-relaxed ${V3_TEXT.mute}`}>{field.help}</span> : null}</span></label>;
   }
+  if (field.type === "select") {
+    return <label className="block"><span className={`text-[10px] uppercase tracking-[0.2em] ${V3_TEXT.mute}`}>{field.label}</span><div className="surface-inset mt-2 rounded-xl h-12 px-4 flex items-center"><select value={form[field.key] ?? ""} onChange={(event) => setForm((current) => ({ ...current, [field.key]: event.target.value }))} className={`bg-transparent outline-none w-full text-[13px] ${V3_TEXT.strong}`}>{(field.options || []).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div>{field.help ? <span className={`mt-1 block text-[10px] leading-relaxed ${V3_TEXT.mute}`}>{field.help}</span> : null}</label>;
+  }
+  if (field.type === "textarea") {
+    return <label className={field.fullWidth ? "sm:col-span-2" : "block"}><span className={`text-[10px] uppercase tracking-[0.2em] ${V3_TEXT.mute}`}>{field.label}</span><div className="surface-inset mt-2 rounded-xl p-4"><textarea ref={field.primary ? inputRef : undefined} value={form[field.key] ?? ""} onChange={(event) => setForm((current) => ({ ...current, [field.key]: event.target.value }))} placeholder={field.placeholder || ""} rows={field.rows || 10} className={`bg-transparent outline-none w-full resize-y font-mono text-[12px] leading-relaxed ${V3_TEXT.strong}`} /></div>{field.help ? <span className={`mt-1 block text-[10px] leading-relaxed ${V3_TEXT.mute}`}>{field.help}</span> : null}</label>;
+  }
   return <label className="block"><span className={`text-[10px] uppercase tracking-[0.2em] ${V3_TEXT.mute}`}>{field.label}</span><div className="surface-inset mt-2 rounded-xl h-12 px-4 flex items-center gap-2">{field.icon === "github" ? <Github size={14} className={V3_TEXT.dim} /> : null}<input ref={field.primary ? inputRef : undefined} value={form[field.key] ?? ""} onChange={(event) => setForm((current) => ({ ...current, [field.key]: event.target.value }))} placeholder={field.placeholder || ""} type={field.type || "text"} min={field.min} max={field.max} className={`bg-transparent outline-none w-full text-[13px] ${V3_TEXT.strong}`} /></div>{field.help ? <span className={`mt-1 block text-[10px] leading-relaxed ${V3_TEXT.mute}`}>{field.help}</span> : null}</label>;
 }
 
@@ -205,7 +211,7 @@ export function IntegratedProductApp({ apiBase, auth, config, fetcher }) {
   const storagePrefix = `${config.productKey}.v3`;
   const inputRef = useRef(null);
   const initialRunId = useRef(typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("run") || "");
-  const tabs = [{ id: "workspace", label: config.workspaceLabel }, { id: "history", label: "History" }, { id: "checks", label: "Checks" }, { id: "sources", label: "Sources" }];
+  const tabs = [{ id: "workspace", label: config.workspaceLabel }, { id: "history", label: "History" }, ...(config.extraTabs || []).map(({ id, label }) => ({ id, label })), { id: "checks", label: "Checks" }, { id: "sources", label: "Sources" }];
   const [activeTab, setActiveTab] = useState(() => {
     const requested = new URLSearchParams(window.location.search).get("tab");
     return tabs.some((tab) => tab.id === requested) ? requested : localStorage.getItem(`${storagePrefix}.tab`) || "workspace";
@@ -241,7 +247,7 @@ export function IntegratedProductApp({ apiBase, auth, config, fetcher }) {
         readJson(await fetcher(`${apiBase}/overview`)),
         readJson(await fetcher(`${apiBase}/history`)),
       ]);
-      const list = Array.isArray(nextHistory) ? nextHistory : [];
+      const list = config.historyItems ? config.historyItems(nextHistory) : Array.isArray(nextHistory) ? nextHistory : [];
       setHealth(nextHealth);
       setChecks(nextChecks.checks || []);
       setOverview(nextOverview);
@@ -290,7 +296,8 @@ export function IntegratedProductApp({ apiBase, auth, config, fetcher }) {
     setRunning(true);
     setError("");
     try {
-      const next = await readJson(await fetcher(`${apiBase}${config.actionPath}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(config.serialize(form, health)) }));
+      const actionPath = typeof config.actionPath === "function" ? config.actionPath(form, health) : config.actionPath;
+      const next = await readJson(await fetcher(`${apiBase}${actionPath}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(config.serialize(form, health)) }));
       setResult(next);
       setSelected(null);
       if (activeTab !== "history") setActiveTab("workspace");
@@ -337,7 +344,7 @@ export function IntegratedProductApp({ apiBase, auth, config, fetcher }) {
   const WorkspaceDetails = config.WorkspaceDetails;
   const ChecksDetails = config.ChecksDetails;
   const SourcesDetails = config.SourcesDetails;
-  const formFields = typeof config.fields === "function" ? config.fields(health) : config.fields;
+  const formFields = typeof config.fields === "function" ? config.fields(health, form) : config.fields;
 
   if (selected) return <ProductShell productKey={config.productKey}><Detail config={config} item={selected} onBack={() => setSelected(null)} /></ProductShell>;
 
@@ -356,6 +363,7 @@ export function IntegratedProductApp({ apiBase, auth, config, fetcher }) {
           {WorkspaceDetails ? <WorkspaceDetails health={health} onError={setError} onLoad={load} result={result} /> : null}
         </> : null}
         {activeTab === "history" ? <HistoryDashboard dashboard={historyDashboard} filters={historyFilters} initialCount={config.historyDashboard?.initialCount || 6} items={filteredHistory} loading={loading} onQueryChange={setHistoryQuery} onRefresh={() => refresh(false)} query={historyQuery} renderItem={(entry) => <HistoryRow config={config} entry={entry} key={entry.id} onLoad={load} />} searchPlaceholder={config.historyDashboard?.searchPlaceholder || "Search run, repository, PR…"} sortOptions={config.historyDashboard?.sortOptions || [{ value: "newest", label: "Newest first" }]} totalCount={history.length} /> : null}
+        {(config.extraTabs || []).map((tab) => activeTab === tab.id ? <div key={tab.id}>{tab.render({ apiBase, auth, fetcher, form, health, history, loading, onError: setError, onLoad: load, onRefresh: () => refresh(false), result, setForm })}</div> : null)}
         {activeTab === "checks" ? <><div className="grid grid-cols-12 gap-6"><section className="surface col-span-12 lg:col-span-8 p-6"><div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>Startup evidence</div><h1 className={`font-display mt-2 text-[42px] font-semibold ${V3_TEXT.strong}`}>System checks.</h1></div><button className={`surface-inset h-9 rounded-full px-4 text-[11px] ${V3_TEXT.body}`} disabled={loading} onClick={() => refresh(false)} type="button">{loading ? "Refreshing…" : "Refresh checks"}</button></div><div className="mt-7"><StartupCheckList checks={checks} /></div></section><aside className="surface col-span-12 lg:col-span-4 p-6"><div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>Unified backend</div><div className={`mt-3 font-display text-[46px] font-semibold ${V3_TEXT.strong}`}>{health.status || "unknown"}</div><dl className="mt-6 space-y-3"><SideValue label="Database" value={health.db_ok ? "ready" : "unavailable"} /><SideValue label="GitHub" value={githubStatusLabel(health)} /><SideValue label="Runs" value={String(history.length)} /></dl></aside></div>{ChecksDetails ? <ChecksDetails checks={checks} health={health} history={history} /> : null}</> : null}
         {activeTab === "sources" ? <><div className="grid grid-cols-12 gap-6"><section className="surface col-span-12 lg:col-span-8 p-6 sm:p-8"><div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>Product intake</div><h1 className={`font-display mt-2 text-[42px] font-semibold ${V3_TEXT.strong}`}>{config.formTitle}</h1><div className="mt-7 grid grid-cols-1 sm:grid-cols-2 gap-4">{formFields.map((field) => <FormField field={field} form={form} inputRef={inputRef} key={field.key} setForm={setForm} />)}</div><button disabled={running || !form.repo?.trim()} onClick={run} className="mt-6 h-11 px-5 rounded-full text-[12px] font-semibold text-white disabled:opacity-50" style={{ backgroundImage: "linear-gradient(90deg, var(--accent), var(--accent-2))" }} type="button">{running ? config.runningLabel : config.runLabel}</button></section><aside className="surface col-span-12 lg:col-span-4 p-6"><div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>Connection</div><div className={`mt-3 font-display text-[36px] font-semibold ${V3_TEXT.strong}`}>{githubStatusLabel(health, true)}</div><p className={`mt-3 text-[13px] ${V3_TEXT.body}`}>{config.sourceHelp}</p></aside></div>{SourcesDetails ? <SourcesDetails health={health} /> : null}</> : null}
       </div>

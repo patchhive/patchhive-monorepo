@@ -57,6 +57,18 @@ For local v2 development:
 cd frontend-v2 && npm install && npm run dev
 ```
 
+### UI v3 Parity Candidate
+
+TrustGate's unified-backend engine is integrated in-process. The v3 parity
+candidate lives in `frontend-v3/` and preserves pasted-diff review, GitHub PR
+review and publishing, decision evidence, history, rule packs, saved repo
+rules, report templates, startup diagnostics, and print-friendly HTML export.
+The production and v2 frontends remain in place until live parity acceptance.
+
+```bash
+cd frontend-v3 && npm install && npm run dev
+```
+
 ## Quick Start
 
 ### Docker

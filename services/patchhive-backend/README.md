@@ -118,7 +118,7 @@ path = "/api/products/signal-hive/scan"
 description = "Start a maintenance signal scan."
 ```
 
-MergeKeeper, ReleaseSentry, DepTriage, VulnTriage, FlakeSting, and ReviewBee are mounted in-process
+MergeKeeper, ReleaseSentry, DepTriage, VulnTriage, FlakeSting, ReviewBee, and TrustGate are mounted in-process
 from their product backend libraries. The manifest contract also drives gateway
 dispatch and is the shape future in-process mounting should use.
 
@@ -204,6 +204,21 @@ ReviewBee product routes are served directly by the unified backend:
 GET  /api/products/review-bee/health
 POST /api/products/review-bee/review/github/pr
 GET  /api/products/review-bee/runs
+```
+
+Run the suite backend with only TrustGate enabled:
+
+```bash
+PATCHHIVE_PRODUCTS=trust-gate cargo run
+```
+
+TrustGate product routes are served directly by the unified backend:
+
+```text
+GET  /api/products/trust-gate/health
+POST /api/products/trust-gate/review
+POST /api/products/trust-gate/review/github/pr
+GET  /api/products/trust-gate/runs
 ```
 
 When launching the suite backend with product `.env` files, avoid shell-sourcing

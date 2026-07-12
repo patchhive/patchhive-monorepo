@@ -20,6 +20,7 @@ flake-sting = { path = "../../products/flake-sting/backend" }
 merge-keeper = { path = "../../products/merge-keeper/backend" }
 release-sentry = { path = "../../products/release-sentry/backend" }
 review-bee = { path = "../../products/review-bee/backend" }
+trust-gate = { path = "../../products/trust-gate/backend" }
 vuln-triage = { path = "../../products/vuln-triage/backend" }
 rusqlite = { version = "0.31", features = ["bundled"] }
 reqwest = { version = "0.12", default-features = false }

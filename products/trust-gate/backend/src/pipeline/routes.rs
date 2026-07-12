@@ -55,6 +55,7 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
             .credential_requirements(["github:pull_requests:read", "github:checks:write"]),
         ],
         vec![
+            contract::link("overview", "Overview", "/overview"),
             contract::link("history", "History", "/history"),
             contract::link("rules", "Rules", "/rules"),
             contract::link("templates", "Templates", "/templates"),
