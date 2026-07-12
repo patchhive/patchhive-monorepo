@@ -111,9 +111,13 @@ function buildScanMarkdown(scan) {
 }
 
 function itemEvidence(item) {
+  const backendEvidence = (item.evidence || []).filter((entry) => {
+    const text = String(entry);
+    return !/^PR #\d+/i.test(text) && !/^(?:Dependabot )?alert #\d+/i.test(text);
+  });
   return [
     ...(item.reasons || []),
-    ...(item.evidence || []),
+    ...backendEvidence,
     ...(item.changed_paths || []).map((path) => `Changed path: ${path}`),
     ...(item.pull_requests || []).map((pr) => `PR #${pr.number}: ${pr.title}${pr.from_version || pr.to_version ? ` · ${pr.from_version || "?"} → ${pr.to_version || "?"}` : ""}${pr.author ? ` · @${pr.author}` : ""}`),
     ...(item.alerts || []).map((alert) => `Alert #${alert.number} [${alert.severity || "unknown"}]: ${alert.summary}${alert.first_patched_version ? ` · first patched ${alert.first_patched_version}` : ""}`),
@@ -250,7 +254,7 @@ const config = {
       { label: "Recommendation", value: recommendationLabel(item.recommendation) },
       { label: "Update kind", value: value(item.update_kind) },
       { label: "Runtime impact", value: value(item.runtime_impact) },
-      { label: "Staleness", value: `${item.stale_days || 0} days` },
+      { label: "Staleness", value: `${item.stale_days || 0} ${item.stale_days === 1 ? "day" : "days"}` },
       { label: "Pull requests", value: item.pull_requests?.length || 0 },
       { label: "Alerts", value: item.alerts?.length || 0 },
     ],
