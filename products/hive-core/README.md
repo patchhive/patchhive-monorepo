@@ -10,11 +10,26 @@ HiveCore is the PatchHive control plane. The first MVP does three things well:
 
 This is intentionally narrower than full orchestration. HiveCore should earn that role by first making the suite visible, configurable, and operationally legible.
 
-## Product Documentation
+## Documentation
 
-- GitHub-facing product doc: [docs/products/hive-core.md](../../docs/products/hive-core.md)
+- Full product doc: [docs/products/hive-core.md](../../docs/products/hive-core.md)
 - Product docs index: [docs/products/README.md](../../docs/products/README.md)
 - First-stack readiness audit: [docs/hivecore-first-stack-readiness.md](../../docs/hivecore-first-stack-readiness.md)
+
+> This README is the getting-started entry point. The full product doc carries the API reference, technical architecture, complete configuration reference, monitoring, deployment, and troubleshooting.
+
+### Where to find what
+
+| If you need… | See in the full doc |
+| --- | --- |
+| API endpoints and request/response shapes | `#api-endpoints` |
+| Service layout and dependencies | `#technical-architecture` |
+| Every configuration variable | `#configuration` |
+| Health checks and metrics | `#monitoring` |
+| Production deployment steps | `#deployment` |
+| Symptom → cause → fix | `#troubleshooting` |
+| How it relates to other products | `#related-products` |
+| What is / isn't built yet | `#current-status` |
 
 ## Core Workflow
 
@@ -42,7 +57,7 @@ This is intentionally narrower than full orchestration. HiveCore should earn tha
 - per-product service tokens stored server-side for protected `/runs` reads and action dispatch, with optional at-rest encryption via `HIVECORE_ENCRYPTION_KEY`
 - shared PatchHive API-key bootstrap flow
 
-## Run Locally
+## Quick Start
 
 ### Docker
 
@@ -63,7 +78,9 @@ cd backend && cargo run
 cd ../frontend && npm install && npm run dev
 ```
 
-## Important Configuration
+The frontend uses `@patchhivehq/ui` and `@patchhivehq/product-shell`. Generate the first local API key from `http://localhost:5183`.
+
+## Configuration
 
 | Variable | Purpose |
 | --- | --- |
@@ -78,10 +95,7 @@ cd ../frontend && npm install && npm run dev
 | `PATCHHIVE_ALLOW_REMOTE_BOOTSTRAP` | Allows first-time key bootstrap from non-localhost clients. Keep unset for local use. |
 | `RUST_LOG` | Rust logging level. |
 
-Generate `HIVECORE_ENCRYPTION_KEY` with `openssl rand -hex 32` and keep it
-stable across restarts. Startup checks reject short values and obvious
-placeholders; changing or losing the key makes existing encrypted service tokens
-unreadable.
+Generate `HIVECORE_ENCRYPTION_KEY` with `openssl rand -hex 32` and keep it stable across restarts. Startup checks reject short values and obvious placeholders; changing or losing the key makes existing encrypted service tokens unreadable.
 
 To reuse the same password across SignalHive, TrustGate, RepoReaper, and HiveCore, run `./scripts/set-suite-api-key.sh --stack first` from the monorepo root before starting the stack. For every PatchHive product, run `./scripts/set-suite-api-key.sh`. Once the hash is pre-seeded, HiveCore can be used through a subdomain without remote bootstrap.
 
@@ -102,6 +116,7 @@ HiveCore starts with built-in localhost defaults for the current PatchHive suite
 - VulnTriage: frontend `http://localhost:5181`, API `http://localhost:8110`
 - RefactorScout: frontend `http://localhost:5182`, API `http://localhost:8090`
 - HiveCore: frontend `http://localhost:5183`, API `http://localhost:8100`
+- ReleaseSentry: frontend `http://localhost:5184`, API `http://localhost:8120`
 
 If you run products on subdomains or remote hosts, save the new targets in HiveCore's Settings tab. Those overrides persist in the HiveCore SQLite database.
 
@@ -114,11 +129,6 @@ HiveCore is a control plane, not a replacement runtime for products. It does not
 ## HiveCore Fit
 
 HiveCore is the suite fit layer. It brings standalone products into one operator surface for health, launch links, shared defaults, run history, action dispatch, and contract drift. Deeper orchestration should build on shared product APIs, not private implementation shortcuts.
-
-## Local Notes
-
-- The frontend uses `@patchhivehq/ui` and `@patchhivehq/product-shell`.
-- Generate the first local API key from `http://localhost:5183`.
 
 ## Standalone Repository
 

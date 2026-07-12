@@ -1,16 +1,34 @@
 # FlakeSting by PatchHive
 
+FlakeSting spots flaky CI patterns before unreliable checks erode team trust.
+It reads recent GitHub Actions history, looks for fail or pass swings in
+test-like jobs and steps, and turns that churn into a ranked queue of likely
+flaky problems so teams can focus on the unstable parts of their delivery
+pipeline.
+
 The opt-in Lovable-derived v3 frontend lives in `frontend-v3/` and targets the
 in-process unified-backend route at `/api/products/flake-sting`.
 
-FlakeSting spots flaky CI patterns before unreliable checks erode team trust.
+## Documentation
 
-It reads recent GitHub Actions history, looks for fail or pass swings in test-like jobs and steps, and turns that churn into a ranked queue of likely flaky problems so teams can focus on the unstable parts of their delivery pipeline.
-
-## Product Documentation
-
-- GitHub-facing product doc: [docs/products/flake-sting.md](../../docs/products/flake-sting.md)
+- Full product doc: [docs/products/flake-sting.md](../../docs/products/flake-sting.md)
 - Product docs index: [docs/products/README.md](../../docs/products/README.md)
+
+> This README is the getting-started entry point. The full product doc carries the API reference, technical architecture, complete configuration reference, monitoring, deployment, and troubleshooting.
+
+### Where to find what
+
+| If you need… | See in the full doc |
+| --- | --- |
+| API endpoints and request/response shapes | `#api-endpoints` |
+| Unified backend mode and shared module mounting | `#unified-backend-mode` |
+| Service layout and dependencies | `#technical-architecture` |
+| Every configuration variable | `#configuration` |
+| Health checks and metrics | `#monitoring` |
+| Production deployment steps | `#deployment` |
+| Symptom → cause → fix | `#troubleshooting` |
+| How it relates to other products | `#related-products` |
+| What is / isn't built yet | `#current-status` |
 
 ## Core Workflow
 
@@ -20,7 +38,7 @@ It reads recent GitHub Actions history, looks for fail or pass swings in test-li
 - surface runner hints, rerun pressure, and direct evidence links
 - compare each scan to the previous comparable run so teams can see whether flake pressure is rising or improving
 
-## Run Locally
+## Quick Start
 
 ### Docker
 
@@ -50,7 +68,7 @@ code:
 cd frontend-legacy && npm install && npm run dev
 ```
 
-## Important Configuration
+## Configuration
 
 | Variable | Purpose |
 | --- | --- |
@@ -61,19 +79,10 @@ cd frontend-legacy && npm install && npm run dev
 | `FLAKE_STING_PORT` | Backend port for split local runs. |
 | `RUST_LOG` | Rust logging level. |
 
-FlakeSting works best with a fine-grained GitHub token. GitHub Actions read access is the main requirement for the MVP.
-
-## Safety Boundary
-
-FlakeSting is intentionally read-only. It does not rerun workflows, edit CI configuration, mark checks, or suppress failures. It explains where CI signal looks unstable so humans and downstream PatchHive products can treat that signal with the right level of trust.
-
-## HiveCore Fit
-
-HiveCore can surface FlakeSting health, capabilities, run history, and CI-trust pressure. Longer term, MergeKeeper and other products can use FlakeSting output to avoid over-trusting flaky checks.
-
-## Standalone Repository
-
-The PatchHive monorepo is the source of truth for FlakeSting development. The standalone [`patchhive/flakesting`](https://github.com/patchhive/flakesting) repository is an exported mirror of this directory.
+FlakeSting works best with a fine-grained GitHub token. GitHub Actions read
+access is the main requirement for the MVP. When auth is not yet configured, the
+first API key (and service token) can be bootstrapped from localhost; once set,
+it must be supplied on protected calls.
 
 ## Unified Backend
 
@@ -86,3 +95,22 @@ http://127.0.0.1:8100/api/products/flake-sting
 
 The standalone backend remains a compatibility wrapper around the same shared
 product module while the migration and packaging work are completed.
+
+## Safety Boundary
+
+FlakeSting is intentionally read-only. It does not rerun workflows, edit CI
+configuration, mark checks, or suppress failures. It explains where CI signal
+looks unstable so humans and downstream PatchHive products can treat that
+signal with the right level of trust.
+
+## HiveCore Fit
+
+HiveCore can surface FlakeSting health, capabilities, run history, and CI-trust
+pressure. Longer term, MergeKeeper and other products can use FlakeSting output
+to avoid over-trusting flaky checks.
+
+## Standalone Repository
+
+The PatchHive monorepo is the source of truth for FlakeSting development. The
+standalone [`patchhive/flakesting`](https://github.com/patchhive/flakesting)
+repository is an exported mirror of this directory.

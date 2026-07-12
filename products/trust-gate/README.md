@@ -1,13 +1,29 @@
 # TrustGate by PatchHive
 
-TrustGate reviews diffs before they move forward.
+TrustGate reviews diffs before they move forward. It is PatchHive's trust and safety layer: a product that checks AI-generated or pull-request-backed diffs against repo-specific risk rules, then returns a simple recommendation such as `safe`, `warn`, or `block` with the reasons made explicit.
 
-It is PatchHive's trust and safety layer: a product that checks AI-generated or pull-request-backed diffs against repo-specific risk rules, then returns a simple recommendation such as `safe`, `warn`, or `block` with the reasons made explicit.
+Every review returns one of those three recommendations plus the evidence behind it — matched paths, line excerpts, and a 0–100 risk score — so maintainers and downstream automation can decide before a change advances.
 
-## Product Documentation
+## Documentation
 
-- GitHub-facing product doc: [docs/products/trust-gate.md](../../docs/products/trust-gate.md)
+- Full product doc: [docs/products/trust-gate.md](../../docs/products/trust-gate.md)
 - Product docs index: [docs/products/README.md](../../docs/products/README.md)
+
+> This README is the getting-started entry point. The full product doc carries the API reference, technical architecture, complete configuration reference, monitoring, deployment, and troubleshooting.
+
+### Where to find what
+
+| If you need… | See in the full doc |
+| --- | --- |
+| API endpoints and request/response shapes | `#api-endpoints` |
+| Report template variables | `#report-template-variables` |
+| Service layout and dependencies | `#technical-architecture` |
+| Every configuration variable | `#configuration` |
+| Health checks and metrics | `#monitoring` |
+| Production deployment steps | `#deployment` |
+| Symptom → cause → fix | `#troubleshooting` |
+| How it relates to other products | `#related-products` |
+| What is / isn't built yet | `#current-status` |
 
 ## Core Workflow
 
@@ -27,6 +43,22 @@ It is PatchHive's trust and safety layer: a product that checks AI-generated or 
 | Frontend preview | `http://localhost:4175` | `http://localhost:8000` | `npm run preview` plus backend running locally |
 | Container internal | `http://frontend:8080` | `http://backend:8000` | Internal service ports inside Docker |
 
+### UI v2 Prototype
+
+The suite-wide UI v2 prototype for TrustGate lives in `frontend-v2/`. It uses the shared `packages/ui-v2` shell primitives to validate that the new PatchHive visual language works for safety and review workflows, not just SignalHive's radar/atlas surface.
+
+When using Docker Compose, the v2 prototype is exposed as the `frontend-v2` service on `http://localhost:5193`.
+
+The current production frontend remains in `frontend/` until the full suite has moved to v2 and old UI code is intentionally legacy or removed.
+
+For local v2 development:
+
+```bash
+cd frontend-v2 && npm install && npm run dev
+```
+
+## Quick Start
+
 ### Docker
 
 ```bash
@@ -36,25 +68,6 @@ docker compose up --build
 
 Frontend: `http://localhost:5175`
 Backend: `http://localhost:8020`
-
-## UI v2 Prototype
-
-The suite-wide UI v2 prototype for TrustGate lives in `frontend-v2/`. It uses
-the shared `packages/ui-v2` shell primitives to validate that the new PatchHive
-visual language works for safety and review workflows, not just SignalHive's
-radar/atlas surface.
-
-When using Docker Compose, the v2 prototype is exposed as the `frontend-v2`
-service on `http://localhost:5193`.
-
-The current production frontend remains in `frontend/` until the full suite has
-moved to v2 and old UI code is intentionally legacy or removed.
-
-For local v2 development:
-
-```bash
-cd frontend-v2 && npm install && npm run dev
-```
 
 ### Split Backend and Frontend
 
@@ -67,7 +80,7 @@ cd ../frontend && npm install && npm run dev
 
 For split local runs, the backend listens on `8000` by default and the frontend listens on `5175`.
 
-## Important Configuration
+## Configuration
 
 | Variable | Purpose |
 | --- | --- |

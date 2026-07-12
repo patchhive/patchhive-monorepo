@@ -4,10 +4,26 @@ RepoReaper autonomously fixes selected repository issues and opens validated pul
 
 It is PatchHive's outbound contribution product: a multi-agent system that finds promising issues, selects likely code targets, generates patches, reviews and refines those patches, runs validation, and then opens a pull request when the result clears its gates.
 
-## Product Documentation
+## Documentation
 
-- GitHub-facing product doc: [docs/products/repo-reaper.md](../../docs/products/repo-reaper.md)
+- Full product doc: [docs/products/repo-reaper.md](../../docs/products/repo-reaper.md)
 - Product docs index: [docs/products/README.md](../../docs/products/README.md)
+
+> This README is the getting-started entry point. The full product doc carries the API reference, technical architecture, complete configuration reference, monitoring, deployment, and troubleshooting.
+
+### Where to find what
+
+| If you need… | See in the full doc |
+| --- | --- |
+| API endpoints and request/response shapes | `#api-endpoints` |
+| Webhook triggers and scheduled runs | `#webhook-integration` |
+| Service layout and dependencies | `#technical-architecture` |
+| Every configuration variable | `#configuration-environment-variables` |
+| Health checks and metrics | `#monitoring` |
+| Production deployment steps | `#deployment` |
+| Symptom → cause → fix | `#troubleshooting` |
+| How it relates to other products | `#related-products` |
+| What is / isn't built yet | `#current-status` |
 
 ## Core Workflow
 
@@ -29,7 +45,7 @@ It is PatchHive's outbound contribution product: a multi-agent system that finds
 | Smith | Reviews and improves the patch before it moves forward. |
 | Gatekeeper | Runs validation and handles pull request delivery. |
 
-## Run Locally
+## Quick Start
 
 ### Docker
 
@@ -52,7 +68,7 @@ cd ../frontend && npm install && npm run dev
 cd ../frontend-v2 && npm install && npm run dev
 ```
 
-## Important Configuration
+## Configuration
 
 | Variable | Purpose |
 | --- | --- |
@@ -77,10 +93,7 @@ cd ../frontend-v2 && npm install && npm run dev
 | `REAPER_WORK_DIR` | Local workspace used for cloned repositories and patch attempts. |
 | `REAPER_PORT` | Backend port for split local runs. |
 
-Generate `REAPER_ENCRYPTION_KEY` or the suite-wide
-`PATCHHIVE_ENCRYPTION_KEY` with `openssl rand -hex 32`. Startup checks reject
-short values and obvious placeholders; keep the chosen value stable because
-existing encrypted agent credentials cannot be recovered without it.
+Generate `REAPER_ENCRYPTION_KEY` or the suite-wide `PATCHHIVE_ENCRYPTION_KEY` with `openssl rand -hex 32`. Startup checks reject short values and obvious placeholders; keep the chosen value stable because existing encrypted agent credentials cannot be recovered without it.
 
 To reuse the same password across SignalHive, TrustGate, RepoReaper, and HiveCore, run `./scripts/set-suite-api-key.sh --stack first` from the monorepo root before starting the stack. For every PatchHive product, run `./scripts/set-suite-api-key.sh`. Once the hash is pre-seeded, RepoReaper can be used through a subdomain without remote bootstrap.
 
@@ -88,9 +101,7 @@ To give HiveCore a dedicated machine credential instead of reusing the operator 
 
 If you only want to work on public repositories, keep your GitHub token public-only. If you want RepoReaper to clone, push, and open pull requests against specific repositories, grant only the write permissions those repositories actually need.
 
-## AI and Platform Integrations
-
-RepoReaper can run through direct provider APIs or through `@patchhive/ai-local`.
+AI and Platform Integrations: RepoReaper can run through direct provider APIs or through `@patchhive/ai-local`.
 
 ```bash
 PATCHHIVE_AI_URL=http://127.0.0.1:8787/v1
@@ -108,8 +119,7 @@ Optional integrations:
 - if tests are enabled, Docker sandboxing is the default
 - host test execution requires both `REAPER_ENABLE_UNTRUSTED_TESTS=true` and `REAPER_ALLOW_HOST_TESTS=true`
 - validation commands time out after `REAPER_TEST_TIMEOUT_SECONDS` seconds, defaulting to `600`
-- validation uses the shared `disabled` / `skipped` / `failed` / `passed`
-  vocabulary; only `passed` allows RepoReaper to open a non-draft pull request
+- validation uses the shared `disabled` / `skipped` / `failed` / `passed` vocabulary; only `passed` allows RepoReaper to open a non-draft pull request
 - patch and test work shares the `REAPER_MAX_ACTIVE_WORKERS` process-wide capacity gate, including webhook follow-ups
 - failed normal patch application tries `git apply --3way` before provider-backed self-healing
 - validation and pull request publication are treated as explicit gates, not incidental side effects
@@ -121,27 +131,16 @@ RepoReaper is the only current PatchHive product that writes code and opens pull
 
 HiveCore should treat RepoReaper as a product-owned autonomous action surface. It can show health, capabilities, run history, dispatchable actions, and PR outcomes, but RepoReaper keeps ownership of patch generation, validation, attribution, and pull request delivery.
 
-Run dossiers include durable PatchHive contract v1 events. Read them from
-`GET /runs/:run_id/events`; `GET /runs/:run_id/artifacts` is a compatibility
-alias. Events persist run/attempt lifecycle, agent selection, patch generation,
-application, review, test, and pull-request publication outcomes.
+Run dossiers include durable PatchHive contract v1 events. Read them from `GET /runs/:run_id/events`; `GET /runs/:run_id/artifacts` is a compatibility alias. Events persist run/attempt lifecycle, agent selection, patch generation, application, review, test, and pull-request publication outcomes.
 
 ## Standalone Repository
 
 The PatchHive monorepo is the source of truth for RepoReaper development. The standalone [`patchhive/reporeaper`](https://github.com/patchhive/reporeaper) repository is an exported mirror of this directory.
 
-## Local Notes
+Local Notes:
 
 - The v2 prototype lives in `frontend-v2/` while the suite UI direction is being settled.
-- The v2 agent-team setup is intentionally lightweight for gateway testing. It
-  can recruit a starter team and update the current backend team, but the fuller
-  old team builder, full team preset management, and richer provider/model
-  controls are deferred until the RepoReaper unified-backend/HiveCore setup
-  pass.
-- Active teams and team presets persist in SQLite. Per-agent API keys and bot
-  token overrides are encrypted at rest when `REAPER_ENCRYPTION_KEY` or
-  `PATCHHIVE_ENCRYPTION_KEY` is set; without one of those keys, those secret
-  fields stay memory-only and are not written to SQLite. Adding an encryption
-  key later migrates existing plaintext active-team and preset secrets on boot.
+- The v2 agent-team setup is intentionally lightweight for gateway testing. It can recruit a starter team and update the current backend team, but the fuller old team builder, full team preset management, and richer provider/model controls are deferred until the RepoReaper unified-backend/HiveCore setup pass.
+- Active teams and team presets persist in SQLite. Per-agent API keys and bot token overrides are encrypted at rest when `REAPER_ENCRYPTION_KEY` or `PATCHHIVE_ENCRYPTION_KEY` is set; without one of those keys, those secret fields stay memory-only and are not written to SQLite. Adding an encryption key later migrates existing plaintext active-team and preset secrets on boot.
 - Dry Stalk is no-write, but it still needs at least a Scout agent because scoring and dry-run analysis use the AI agent pipeline.
 - Do not remove the old team/preset UI until v2 and the unified backend cover those workflows.

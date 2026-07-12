@@ -1,16 +1,28 @@
 # MergeKeeper by PatchHive
 
-The canonical Lovable-derived specialist frontend lives in `frontend/` and
-targets the in-process unified-backend route at `/api/products/merge-keeper`.
-
-MergeKeeper turns pull request merge pressure into a clear readiness call.
+MergeKeeper turns pull request merge pressure into a clear readiness call. The canonical Lovable-derived specialist frontend lives in `frontend/` and targets the in-process unified-backend route at `/api/products/merge-keeper`.
 
 It reads a pull request the way a strong reviewer or engineering lead would: what is still blocked, what is risky, what is merely waiting, and what is actually ready? Then it returns a simple state such as `ready`, `hold`, or `blocked` with the reasons behind that decision.
 
-## Product Documentation
+## Documentation
 
-- GitHub-facing product doc: [docs/products/merge-keeper.md](../../docs/products/merge-keeper.md)
+- Full product doc: [docs/products/merge-keeper.md](../../docs/products/merge-keeper.md)
 - Product docs index: [docs/products/README.md](../../docs/products/README.md)
+
+> This README is the getting-started entry point. The full product doc carries the API reference, technical architecture, complete configuration reference, monitoring, deployment, and troubleshooting.
+
+### Where to find what
+
+| If you need… | See in the full doc |
+| --- | --- |
+| API endpoints and request/response shapes | `#api-endpoints` |
+| Service layout and dependencies | `#technical-architecture` |
+| Every configuration variable | `#configuration` |
+| Health checks and metrics | `#monitoring` |
+| Production deployment steps | `#deployment` |
+| Symptom → cause → fix | `#troubleshooting` |
+| How it relates to other products | `#related-products` |
+| What is / isn't built yet | `#current-status` |
 
 ## Core Workflow
 
@@ -20,7 +32,7 @@ It reads a pull request the way a strong reviewer or engineering lead would: wha
 - optionally fold in ReviewBee, TrustGate, and RepoMemory context
 - keep the result visible inside GitHub through comments and check-style output
 
-## Run Locally
+## Quick Start
 
 ### Docker
 
@@ -41,11 +53,9 @@ cd backend && cargo run
 cd ../frontend && npm install && npm run dev
 ```
 
-The v1 and v2 frontends were removed after the v3 parity audit, live ready and
-blocked acceptance runs, and an explicitly authorized GitHub publish test all
-passed on 2026-07-11.
+> The v1 and v2 frontends were removed after the v3 parity audit, live ready and blocked acceptance runs, and an explicitly authorized GitHub publish test all passed on 2026-07-11. The canonical UI lives in `frontend/`; retired v1 and v2 implementations are no longer packaged or kept in the tree.
 
-## Important Configuration
+## Configuration
 
 | Variable | Purpose |
 | --- | --- |
@@ -62,10 +72,7 @@ passed on 2026-07-11.
 | `MERGE_KEEPER_PORT` | Backend port for split local runs. |
 | `RUST_LOG` | Rust logging level. |
 
-Reading pull requests, reviews, and commit health is enough for the base product
-loop. Publishing is always an explicit per-run choice. A successful PAT path
-requires both the commit-status fallback and the maintained PR comment; a
-native check run is available only when MergeKeeper uses a GitHub App token.
+Reading pull requests, reviews, and commit health is enough for the base product loop. Publishing is always an explicit per-run choice. A successful PAT path requires both the commit-status fallback and the maintained PR comment; a native check run is available only when MergeKeeper uses a GitHub App token.
 
 ## Integrations
 
@@ -88,7 +95,3 @@ HiveCore can use MergeKeeper as a suite-level readiness signal once product hand
 ## Standalone Repository
 
 The PatchHive monorepo is the source of truth for MergeKeeper development. The standalone [`patchhive/mergekeeper`](https://github.com/patchhive/mergekeeper) repository is an exported mirror of this directory.
-
-## Local Notes
-
-- The canonical UI lives in `frontend/`; retired v1 and v2 implementations are no longer packaged or kept in the tree.

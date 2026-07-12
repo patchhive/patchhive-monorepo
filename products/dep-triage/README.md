@@ -1,16 +1,32 @@
 # DepTriage by PatchHive
 
-The opt-in Lovable-derived v3 frontend lives in `frontend-v3/` and targets the
-in-process unified-backend route at `/api/products/dep-triage`.
+DepTriage is PatchHive's dependency-noise filter. It reads open dependency pull
+requests, optionally folds in Dependabot alerts, groups that activity by package,
+and turns the result into a ranked queue — `update now`, `watch`, or `ignore for
+now`. The opt-in Lovable-derived v3 frontend lives in `frontend-v3/` and targets
+the in-process unified-backend route at `/api/products/dep-triage`.
 
-DepTriage tells teams which dependency updates matter now and which ones can wait.
+## Documentation
 
-It is PatchHive's dependency-noise filter: a product that reads open dependency pull requests, optionally folds in Dependabot alerts, groups that activity by package, and turns the result into a ranked queue such as `update now`, `watch`, or `ignore for now`.
-
-## Product Documentation
-
-- GitHub-facing product doc: [docs/products/dep-triage.md](../../docs/products/dep-triage.md)
+- Full product doc: [docs/products/dep-triage.md](../../docs/products/dep-triage.md)
 - Product docs index: [docs/products/README.md](../../docs/products/README.md)
+
+> This README is the getting-started entry point. The full product doc carries the API
+> reference, technical architecture, complete configuration reference, monitoring, deployment,
+> and troubleshooting.
+
+### Where to find what
+
+| If you need… | See in the full doc |
+| --- | --- |
+| API endpoints and request/response shapes | `#api-endpoints` |
+| Service layout and dependencies | `#technical-architecture` |
+| Every configuration variable | `#configuration` |
+| Health checks and metrics | `#monitoring` |
+| Production deployment steps | `#deployment` |
+| Symptom → cause → fix | `#troubleshooting` |
+| How it relates to other products | `#related-products` |
+| What is / isn't built yet | `#current-status` |
 
 ## Core Workflow
 
@@ -20,7 +36,7 @@ It is PatchHive's dependency-noise filter: a product that reads open dependency 
 - rank each package into a practical action bucket
 - save scan history so teams can compare or revisit earlier triage decisions
 
-## Run Locally
+## Quick Start
 
 ### Docker
 
@@ -50,7 +66,7 @@ code:
 cd frontend-legacy && npm install && npm run dev
 ```
 
-## Important Configuration
+## Configuration
 
 | Variable | Purpose |
 | --- | --- |
@@ -62,6 +78,8 @@ cd frontend-legacy && npm install && npm run dev
 | `RUST_LOG` | Rust logging level. |
 
 DepTriage works best with a fine-grained GitHub token. Reading pull requests is enough for the base product loop. Dependabot alert reads need the matching security permission; without that access, DepTriage still scores dependency pull requests and reports the limitation clearly.
+
+The first API key and service token are bootstrapped locally (generate from the UI, or via the localhost-only `/auth/generate-key` and `/auth/generate-service-token` endpoints). When starting the unified backend by sourcing `products/dep-triage/.env` in a shell, quote any JSON service-token value — unquoted JSON can be flattened by the shell and treated as a legacy token string. HiveCore service-token pairing should use a properly quoted/exported value, the product wrapper's `dotenvy` loading path, or a regenerated scoped service token before depending on service dispatch.
 
 ## Safety Boundary
 

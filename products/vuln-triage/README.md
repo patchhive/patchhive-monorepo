@@ -1,13 +1,26 @@
 # VulnTriage by PatchHive
 
-VulnTriage turns vulnerability noise into a ranked engineering queue.
+VulnTriage turns vulnerability noise into a ranked engineering queue. It reads GitHub code scanning alerts and dependency alerts, then prioritizes those findings by severity, likely impact, owner hint, and next practical action so teams can stop treating every security finding like it deserves the same response.
 
-It reads GitHub code scanning alerts and dependency alerts, then prioritizes those findings by severity, likely impact, owner hint, and next practical action so teams can stop treating every security finding like it deserves the same response.
+## Documentation
 
-## Product Documentation
-
-- GitHub-facing product doc: [docs/products/vuln-triage.md](../../docs/products/vuln-triage.md)
+- Full product doc: [docs/products/vuln-triage.md](../../docs/products/vuln-triage.md)
 - Product docs index: [docs/products/README.md](../../docs/products/README.md)
+
+> This README is the getting-started entry point. The full product doc carries the API reference, technical architecture, complete configuration reference, monitoring, deployment, and troubleshooting.
+
+### Where to find what
+
+| If you need… | See in the full doc |
+| --- | --- |
+| API endpoints and request/response shapes | `#api-endpoints` |
+| Service layout and dependencies | `#technical-architecture` |
+| Every configuration variable | `#configuration` |
+| Health checks and metrics | `#monitoring` |
+| Production deployment steps | `#deployment` |
+| Symptom → cause → fix | `#troubleshooting` |
+| How it relates to other products | `#related-products` |
+| What is / isn't built yet | `#current-status` |
 
 ## Core Workflow
 
@@ -17,7 +30,7 @@ It reads GitHub code scanning alerts and dependency alerts, then prioritizes tho
 - highlight likely ownership and the most useful next step
 - save scan history so earlier snapshots can be reloaded and compared
 
-## Run Locally
+## Quick Start
 
 ### Docker
 
@@ -41,8 +54,7 @@ cd ../frontend && npm install && VITE_API_URL=/api npm run dev
 
 ### Unified Backend Mode
 
-VulnTriage's backend logic is exported as a product module and can run inside
-`services/patchhive-backend` without a separate product backend process:
+VulnTriage's backend logic is exported as a product module and can run inside `services/patchhive-backend` without a separate product backend process:
 
 ```bash
 PATCHHIVE_PRODUCTS=vuln-triage \
@@ -52,16 +64,11 @@ cargo run --manifest-path services/patchhive-backend/Cargo.toml
 npm --prefix products/vuln-triage/frontend run dev
 ```
 
-The standalone backend remains available as a compatibility wrapper while the
-suite backend migration is tested.
+The standalone backend remains available as a compatibility wrapper while the suite backend migration is tested.
 
-## UI Status
+> **UI:** The canonical UI lives in `frontend/` and uses `@patchhivehq/ui-v3`. The v1 and v2 implementations were removed after the final parity audit, and Docker's default `frontend` service builds the canonical UI.
 
-- The canonical UI lives in `frontend/` and uses `@patchhivehq/ui-v3`.
-- The v1 and v2 implementations were removed after the final parity audit.
-- Docker's default `frontend` service builds the canonical UI.
-
-## Important Configuration
+## Configuration
 
 | Variable | Purpose |
 | --- | --- |
@@ -72,7 +79,7 @@ suite backend migration is tested.
 | `VULN_TRIAGE_PORT` | Backend port for split local runs. |
 | `RUST_LOG` | Rust logging level. |
 
-VulnTriage works best with a fine-grained GitHub token that has the matching security read permissions for the repositories being scanned.
+VulnTriage works best with a fine-grained GitHub token that has the matching security read permissions for the repositories being scanned. If `VULN_TRIAGE_API_KEY_HASH` is not set, generate the first local key from the UI (or `POST /auth/generate-key` from localhost). `VULN_TRIAGE_SERVICE_TOKEN_HASH` is the bootstrap credential used by HiveCore for inter-product calls via the `/scan/github/findings` dispatch path.
 
 ## Security Feed Access Boundary
 

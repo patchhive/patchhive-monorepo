@@ -4,10 +4,25 @@ RefactorScout surfaces safe, high-value refactors before code quality drift turn
 
 It is a read-only scouting product inside PatchHive: a product that looks for cleanup work with a favorable safety-to-value ratio so teams can improve structure without bundling those changes into larger feature or bug-fix moments.
 
-## Product Documentation
+## Documentation
 
-- GitHub-facing product doc: [docs/products/refactor-scout.md](../../docs/products/refactor-scout.md)
+- Full product doc: [docs/products/refactor-scout.md](../../docs/products/refactor-scout.md)
 - Product docs index: [docs/products/README.md](../../docs/products/README.md)
+
+> This README is the getting-started entry point. The full product doc carries the API reference, technical architecture, complete configuration reference, monitoring, deployment, and troubleshooting.
+
+### Where to find what
+
+| If you need… | See in the full doc |
+| --- | --- |
+| API endpoints and request/response shapes | `#api-endpoints` |
+| Service layout and dependencies | `#technical-architecture` |
+| Every configuration variable | `#configuration` |
+| Health checks and metrics | `#monitoring` |
+| Production deployment steps | `#deployment` |
+| Symptom → cause → fix | `#troubleshooting` |
+| How it relates to other products | `#related-products` |
+| What is / isn't built yet | `#current-status` |
 
 ## Core Workflow
 
@@ -18,7 +33,7 @@ It is a read-only scouting product inside PatchHive: a product that looks for cl
 - save scan history so recurring cleanup pressure is visible over time
 - copy or reload the ranked queue when it is time to schedule cleanup work
 
-## Run Locally
+## Quick Start
 
 ### Docker
 
@@ -40,14 +55,13 @@ cd backend && cargo run
 cd ../frontend && npm install && npm run dev
 ```
 
-The UI v2 prototype is isolated from the production frontend while the suite
-direction is still being tested:
+The UI v2 prototype is isolated from the production frontend while the suite direction is still being tested:
 
 ```bash
 cd frontend-v2 && npm install && npm run dev
 ```
 
-## Important Configuration
+## Configuration
 
 | Variable | Purpose |
 | --- | --- |
