@@ -53,7 +53,7 @@ signal with the right level of trust.
 |--------|-------------|
 | **Ranked flaky queue** | Signals sorted by score descending, then failure count descending, then workflow/job/step name. |
 | **Signal status** | `"quarantine"` (≥2 fails + ≥2 passes) or `"suspect"` (at least 1 fail + 1 pass, fewer than 2 of each). |
-| **Evidence links** | Per-signal HTML URLs pointing to the failing GitHub job page. |
+| **Evidence links** | Up to six representative per-signal workflow/job URLs, labeled by run and outcome in the UI. Signal failure/pass totals still reflect the complete inspected sample. |
 | **Runner/env hints** | Text hints when failures cluster on specific runners while passes appear elsewhere. |
 | **Rerun pressure** | Count of signal hits that came from workflow rerun attempts. |
 | **Flake trend** | Delta comparison against the previous scan for the same repo+branch+workflow — status is `"rising"`, `"improving"`, `"steady"`, or `"shifted"`. |

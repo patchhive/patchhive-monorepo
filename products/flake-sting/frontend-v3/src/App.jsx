@@ -56,8 +56,15 @@ function signedCount(input) {
 }
 
 function evidenceLinks(signal) {
-  const urls = (signal.evidence || []).flatMap((entry) => String(entry).match(/https?:\/\/[^\s),]+/g) || []);
-  return [...new Set(urls)].map((url, index) => ({ label: urls.length === 1 ? "Open workflow evidence" : `Evidence ${index + 1}`, url }));
+  const links = (signal.evidence || []).flatMap((entry) => {
+    const text = String(entry);
+    const urls = text.match(/https?:\/\/[^\s),]+/g) || [];
+    const run = text.match(/run #(\d+)/i)?.[1];
+    const outcome = text.match(/→\s*([^\s]+)/)?.[1];
+    const label = run ? `Run #${run}${outcome ? ` · ${outcome}` : ""}` : "Open workflow evidence";
+    return urls.map((url) => ({ label, url }));
+  });
+  return [...new Map(links.map((link) => [link.url, link])).values()];
 }
 
 function buildScanMarkdown(scan) {
@@ -119,7 +126,7 @@ function WorkspaceDetails({ health, onError, onLoad, result }) {
       <section className="surface p-5 sm:p-6">
         <div className={`flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}><Workflow size={12} /> Complete workflow metrics</div>
         <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-          <Fact label="Workflow runs" value={metrics.workflow_runs} /><Fact label="Completed" value={metrics.completed_runs} /><Fact label="Successful" value={metrics.successful_runs} /><Fact label="Failed" value={metrics.failed_runs} /><Fact label="Rerun-like" value={metrics.rerun_like_runs} /><Fact label="Flaky signals" value={metrics.flaky_signals} /><Fact label="Quarantine" value={metrics.quarantine_candidates} /><Fact label="Evidence links" value={(result.signals || []).reduce((total, signal) => total + evidenceLinks(signal).length, 0)} />
+          <Fact label="Workflow runs" value={metrics.workflow_runs} /><Fact label="Completed" value={metrics.completed_runs} /><Fact label="Successful" value={metrics.successful_runs} /><Fact label="Failed" value={metrics.failed_runs} /><Fact label="Rerun-like" value={metrics.rerun_like_runs} /><Fact label="Flaky signals" value={metrics.flaky_signals} /><Fact label="Quarantine" value={metrics.quarantine_candidates} /><Fact label="Sample links" value={(result.signals || []).reduce((total, signal) => total + evidenceLinks(signal).length, 0)} />
         </div>
       </section>
 
