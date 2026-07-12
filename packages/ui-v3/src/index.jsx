@@ -88,8 +88,8 @@ export function ProductHeader({
 }) {
   return (
     <header className="px-3 sm:px-6 pt-3 sm:pt-6">
-      <div className="surface mx-auto max-w-[1440px] px-3 sm:px-5 min-h-16 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-3">
+      <div className="surface mx-auto max-w-[1440px] px-3 sm:px-5 min-h-16 flex items-center justify-between gap-2 overflow-hidden">
+        <div className="flex shrink-0 items-center gap-3">
           <div className="h-10 w-10 rounded-xl grid place-items-center text-white" style={{ backgroundImage: "linear-gradient(135deg, var(--accent-2), var(--accent-3))", boxShadow: "var(--accent-glow)" }}>
             {Icon ? <Icon size={18} /> : null}
           </div>
@@ -100,19 +100,19 @@ export function ProductHeader({
             </div>
           </div>
         </div>
-        <nav className="surface-inset hidden md:flex items-center gap-1 rounded-full p-1" aria-label={`${productName} sections`}>
+        <nav className="surface-inset hidden min-w-0 items-center gap-1 overflow-x-auto rounded-full p-1 md:flex" aria-label={`${productName} sections`}>
           {tabs.map((tab) => (
             <button
               key={tab.id}
               type="button"
               onClick={() => onTabChange?.(tab.id)}
-              className={`px-4 h-8 text-[12px] rounded-full transition ${activeTab === tab.id ? `bg-white shadow ${V3_TEXT.strong} dark:bg-white/15` : `${V3_TEXT.mute} hover:opacity-100`}`}
+              className={`h-8 shrink-0 whitespace-nowrap rounded-full px-4 text-[12px] transition ${activeTab === tab.id ? `bg-white shadow ${V3_TEXT.strong} dark:bg-white/15` : `${V3_TEXT.mute} hover:opacity-100`}`}
             >
               {tab.label}
             </button>
           ))}
         </nav>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           <ThemeToggle />
           <div className={`surface-inset h-9 px-3 rounded-full text-[12px] ${V3_TEXT.body} hidden sm:flex items-center gap-2`}>
             <Github size={13} /> <span className="hidden sm:inline">{githubLabel}</span>
@@ -144,7 +144,7 @@ export function ProductHeader({
             key={tab.id}
             type="button"
             onClick={() => onTabChange?.(tab.id)}
-            className={`h-8 shrink-0 rounded-full px-4 text-[12px] transition ${activeTab === tab.id ? `bg-white shadow ${V3_TEXT.strong} dark:bg-white/15` : `${V3_TEXT.mute} hover:opacity-100`}`}
+            className={`h-8 shrink-0 whitespace-nowrap rounded-full px-4 text-[12px] transition ${activeTab === tab.id ? `bg-white shadow ${V3_TEXT.strong} dark:bg-white/15` : `${V3_TEXT.mute} hover:opacity-100`}`}
           >
             {tab.label}
           </button>
