@@ -273,6 +273,36 @@ Deferred polish before old UI deletion:
 
 ---
 
+## UI V1 And V2 To V3 Parity Audit
+
+Audited and implemented on 2026-07-11 against the legacy and v2 scan, history,
+checks, and source workflows. The v3 frontend now preserves the complete
+read-only dependency-triage loop while using the shared specialist shell:
+
+- repository and pull-request-limit validation, plus best-effort Dependabot
+  enrichment that is disabled with guidance until GitHub is verified;
+- update-now, watch, and ignore-for-now queues with progressive expansion,
+  search, recommendation/ecosystem/impact filters, four sort modes, and saved
+  dashboard views;
+- complete per-package evidence including reasons, manifests, changed paths,
+  every dependency PR, every Dependabot alert, update metadata, runtime impact,
+  staleness, and source links;
+- copyable Markdown scan summaries carrying PatchHive attribution, normalized
+  scan warnings, and explicit GitHub security-permission guidance;
+- filterable, sortable, saved-view history with full scan restoration;
+- complete metrics, startup checks, database/auth/GitHub state, and the
+  read-only safety boundary on the Checks and Sources tabs; and
+- the suite-wide persisted light/dark theme and v2 footer identity.
+
+Local verification passed for the DepTriage v3 production build, every current
+v3 shared-package consumer, suite-drift checks, the standalone DepTriage tests
+and strict Clippy run, and the unified-backend tests and strict Clippy run.
+Legacy frontend deletion remains blocked until the real database/environment is
+launched and the operator accepts a live scan, history, checks, sources, detail,
+warning, and responsive-layout pass.
+
+---
+
 ## API Endpoints
 
 | Method | Path | Auth | Description |

@@ -79,7 +79,7 @@ typography scale, spacing system, or theme implementation.
 | --- | --- | --- |
 | MergeKeeper | `products/merge-keeper/frontend` | Promoted after live ready, blocked, history, checks, and GitHub-publish acceptance; v1/v2 removed |
 | ReleaseSentry | `products/release-sentry/frontend` | Promoted after live ready/watch/hold, history, checks, and sources acceptance; v1/v2 removed |
-| DepTriage | `products/dep-triage/frontend-v3` | Unified-backend v3 workspace implemented |
+| DepTriage | `products/dep-triage/frontend-v3` | V1/v2 parity implemented and warning-free locally; awaiting live scan, history, checks, sources, detail, and responsive acceptance before promotion |
 | VulnTriage | `products/vuln-triage/frontend` | Promoted after final parity audit; v1/v2 removed |
 | FlakeSting | `products/flake-sting/frontend-v3` | Unified-backend v3 workspace implemented |
 | Other specialist products | not created | Wait until their product engine is integrated in-process |
