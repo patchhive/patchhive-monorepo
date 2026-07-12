@@ -16,6 +16,7 @@ pub fn normalize_disposition(value: &str) -> &str {
 
 pub fn normalize_candidate_status(value: &str) -> &str {
     match value.trim().to_ascii_lowercase().as_str() {
+        "all" => "all",
         "dismissed" => "dismissed",
         "promoted" => "promoted",
         _ => "open",

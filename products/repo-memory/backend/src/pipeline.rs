@@ -223,6 +223,13 @@ mod tests {
     }
 
     #[test]
+    fn failguard_candidate_status_preserves_all_filter() {
+        assert_eq!(utils::normalize_candidate_status("all"), "all");
+        assert_eq!(utils::normalize_candidate_status("dismissed"), "dismissed");
+        assert_eq!(utils::normalize_candidate_status("unexpected"), "open");
+    }
+
+    #[test]
     fn failguard_lesson_carries_forward_existing_snapshot() {
         let existing = sample_entry(
             "testing_expectation",

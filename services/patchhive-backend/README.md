@@ -118,7 +118,8 @@ path = "/api/products/signal-hive/scan"
 description = "Start a maintenance signal scan."
 ```
 
-MergeKeeper, ReleaseSentry, DepTriage, VulnTriage, FlakeSting, ReviewBee, and TrustGate are mounted in-process
+MergeKeeper, ReleaseSentry, DepTriage, VulnTriage, FlakeSting, ReviewBee,
+TrustGate, and RepoMemory are mounted in-process
 from their product backend libraries. The manifest contract also drives gateway
 dispatch and is the shape future in-process mounting should use.
 
@@ -219,6 +220,22 @@ GET  /api/products/trust-gate/health
 POST /api/products/trust-gate/review
 POST /api/products/trust-gate/review/github/pr
 GET  /api/products/trust-gate/runs
+```
+
+Run the suite backend with only RepoMemory enabled:
+
+```bash
+PATCHHIVE_PRODUCTS=repo-memory cargo run
+```
+
+RepoMemory product routes are served directly by the unified backend:
+
+```text
+GET  /api/products/repo-memory/health
+POST /api/products/repo-memory/ingest
+GET  /api/products/repo-memory/memories
+POST /api/products/repo-memory/context
+GET  /api/products/repo-memory/failguard/candidates
 ```
 
 When launching the suite backend with product `.env` files, avoid shell-sourcing

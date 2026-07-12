@@ -53,6 +53,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .nest("/api/products/flake-sting", products::flake_sting_router())
         .nest("/api/products/review-bee", products::review_bee_router())
         .nest("/api/products/trust-gate", products::trust_gate_router())
+        .nest("/api/products/repo-memory", products::repo_memory_router())
         .merge(suite_routes)
 }
 
@@ -260,6 +261,8 @@ mod tests {
             "vuln-triage",
             "flake-sting",
             "review-bee",
+            "trust-gate",
+            "repo-memory",
         ];
 
         for key in integrated {

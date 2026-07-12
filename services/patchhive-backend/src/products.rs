@@ -24,6 +24,9 @@ pub async fn init_enabled_products(config: &Config) -> Result<()> {
     if config.product_selection.enables("trust-gate") {
         trust_gate::init_runtime().await?;
     }
+    if config.product_selection.enables("repo-memory") {
+        repo_memory::init_runtime().await?;
+    }
     Ok(())
 }
 
@@ -53,4 +56,8 @@ pub fn review_bee_router() -> axum::Router {
 
 pub fn trust_gate_router() -> axum::Router {
     trust_gate::router()
+}
+
+pub fn repo_memory_router() -> axum::Router {
+    repo_memory::router()
 }

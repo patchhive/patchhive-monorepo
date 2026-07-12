@@ -4,18 +4,14 @@ name = "RepoMemory"
 role = "durable repo memory and prompt packs"
 module_path = "crate::products::repo_memory"
 route_prefix = "/api/products/repo-memory"
-migration_stage = "not-started"
+migration_stage = "integrated"
 
 [safety]
 read_only = false
 writes_external_state = false
-requires_operator_approval = false
+requires_operator_approval = true
 credential_scopes = ["github:repo:read", "github:pull_requests:read", "github:issues:read"]
 evidence_required = ["repo identity", "source event", "memory summary"]
-
-[gateway]
-default_url = "http://127.0.0.1:8030"
-env_var = "REPO_MEMORY_GATEWAY_URL"
 
 [health]
 endpoint = "/api/products/repo-memory/health"
@@ -36,6 +32,7 @@ description = "Generate context packs for downstream agents."
 id = "failguard"
 label = "FailGuard"
 description = "Queue and promote lessons from painful outcomes."
+mutating = true
 
 [[routes]]
 method = "GET"

@@ -84,11 +84,12 @@ typography scale, spacing system, or theme implementation.
 | FlakeSting | `products/flake-sting/frontend` | Promoted after live scan, detail, sampled evidence, trend, history, checks, and sources acceptance; v1/v2 removed |
 | ReviewBee | `products/review-bee/frontend` | Promoted after live unified action, real history, checks, sources, Markdown preview, and safety acceptance; v1/v2 removed |
 | TrustGate | `products/trust-gate/frontend` | Promoted after pasted and live PR review, policy, history/detail, diagnostics, PAT publishing, responsive layout, and light/dark acceptance; v1/v2 removed |
+| RepoMemory | `products/repo-memory/frontend-v3` | Staged after in-process integration; v1/v2 remain until ingest, memory curation, context preview, run diff, prompt-pack, FailGuard, history, checks, and sources acceptance |
 | Other specialist products | not created | Wait until their product engine is integrated in-process |
 | HiveCore | not applicable | Intentionally separate |
 
 The integrated set is derived from both the registry manifests and executable
-route mounts. As of 2026-07-12, these seven products have
+route mounts. As of 2026-07-12, these eight products have
 `migration_stage = "integrated"`, are initialized by
 `services/patchhive-backend/src/products.rs`, and are nested directly by
 `services/patchhive-backend/src/routes.rs`. Gateway-ready products are not

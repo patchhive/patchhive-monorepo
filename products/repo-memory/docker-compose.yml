@@ -37,3 +37,14 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
+
+  frontend-v3:
+    build:
+      context: ../..
+      dockerfile: products/repo-memory/frontend-v3/Dockerfile
+    pull_policy: never
+    ports:
+      - "5307:8080"
+    depends_on:
+      - backend
+    restart: unless-stopped

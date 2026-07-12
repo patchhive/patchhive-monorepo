@@ -1145,6 +1145,7 @@ dependencies = [
  "flake-sting",
  "merge-keeper",
  "release-sentry",
+ "repo-memory",
  "reqwest",
  "review-bee",
  "rusqlite",
@@ -1420,6 +1421,28 @@ dependencies = [
  "anyhow",
  "axum",
  "base64",
+ "chrono",
+ "dotenvy",
+ "once_cell",
+ "patchhive-github-data",
+ "patchhive-product-core",
+ "reqwest",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tower-http 0.5.2",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
+name = "repo-memory"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
  "chrono",
  "dotenvy",
  "once_cell",

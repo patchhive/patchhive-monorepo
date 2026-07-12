@@ -207,8 +207,12 @@ it exercises GitHub security-feed permissions, disabled-alert messaging, and
 security-read startup posture without adding mutation. FlakeSting is the fifth
 proof because it adds Actions history, workflow/job evidence, and trend logic.
 ReviewBee is the sixth proof because it adds PR review/thread reads, signed
-webhooks, and explicit maintained-comment publishing. These six engines are
-now integrated; TrustGate is next in the migration ladder below.
+webhooks, and explicit maintained-comment publishing. TrustGate is the seventh
+proof because it adds durable policy state, diff review, GitHub report writes,
+and FailGuard handoff. RepoMemory is the eighth proof because it adds durable
+memory tables, prompt packs, consumer-aware context retrieval, operator
+curation, and the FailGuard candidate review lifecycle. These eight engines
+are now integrated; SignalHive is next in the migration ladder below.
 
 ## API Shape
 
@@ -465,8 +469,9 @@ filesystem work, autonomous mutation, and finally control-plane consolidation:
 12. **HiveCore** — cockpit/control-plane consolidation once enough products are actually unified.
 
 The ladder governs in-process engine migration, not whether HiveCore may use the
-unified backend earlier as a frontend and gateway client. The first six
-products are integrated as of 2026-07-12; TrustGate is next.
+unified backend earlier as a frontend and gateway client. The first eight
+products through RepoMemory are integrated as of 2026-07-12; SignalHive is
+next in the engine-migration ladder.
 
 ## Open Questions
 

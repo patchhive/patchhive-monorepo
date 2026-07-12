@@ -104,6 +104,36 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
                 false,
             )
             .mutating(true),
+            contract::action(
+                "curate_memory",
+                "Curate durable memory",
+                "POST",
+                "/memories/curation",
+                "Pin, soften, or suppress a stored repo memory.",
+                false,
+            )
+            .mutating(true)
+            .requires_approval(true),
+            contract::action(
+                "promote_failguard_candidate",
+                "Promote FailGuard candidate",
+                "POST",
+                "/failguard/candidates/{id}/promote",
+                "Promote an operator-reviewed candidate into durable memory.",
+                true,
+            )
+            .mutating(true)
+            .requires_approval(true),
+            contract::action(
+                "dismiss_failguard_candidate",
+                "Dismiss FailGuard candidate",
+                "POST",
+                "/failguard/candidates/{id}/dismiss",
+                "Dismiss a noisy candidate without adding durable memory.",
+                false,
+            )
+            .mutating(true)
+            .requires_approval(true),
         ],
         vec![
             contract::link("overview", "Overview", "/overview"),
