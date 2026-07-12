@@ -181,5 +181,5 @@ export function MetricCard({ label, value, footerLeft, footerRight, tone = "from
   );
 }
 
-export { IntegratedProductApp, ProductLoginScreen } from "./integrated-product.jsx";
+export { countLabel, IntegratedProductApp, ProductLoginScreen } from "./integrated-product.jsx";
 export { ActivityTimeline, CopyMarkdownButton, DashboardControls, GitHubPermissionGuidance, HistoryDashboard, ProgressiveList, ScanWarnings, StartupCheckList, useSavedDashboardViews } from "./workspace.jsx";

@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { createApiFetcher, useApiKeyAuth } from "@patchhivehq/product-shell/auth";
 import {
+  countLabel,
   GitHubPermissionGuidance,
   IntegratedProductApp,
   ProductLoginScreen,
@@ -136,8 +137,8 @@ function ChecksDetails({ health }) {
         <div className="mt-4 flex flex-wrap gap-2">
           <Chip tone={health.db_ok ? "ok" : "hot"}>database {health.db_ok ? "ready" : "unavailable"}</Chip>
           <Chip tone={health.auth_enabled ? "ok" : "warn"}>auth {health.auth_enabled ? "enabled" : "disabled"}</Chip>
-          <Chip tone="ok">{value(health.run_count, "0")} runs</Chip>
-          <Chip>{value(health.repo_count, "0")} repos</Chip>
+          <Chip tone="ok">{countLabel(health.run_count, "run")}</Chip>
+          <Chip>{countLabel(health.repo_count, "repo")}</Chip>
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
           <Chip tone="ok">{value(health.ready_count, "0")} ready</Chip>
@@ -265,10 +266,10 @@ const config = {
     return result ? [
       { label: "Passed", value: metrics.passed || 0, footerLeft: "checks", footerRight: `${metrics.checks || 0} total`, tone: "from-emerald-700/70 to-teal-900/60" },
       { label: "Warnings", value: metrics.warned || 0, footerLeft: "watch", footerRight: `${metrics.workflow_pending || 0} pending · ${workflowNeutral(metrics)} neutral`, tone: "from-amber-600/70 to-yellow-800/50" },
-      { label: "Blocked", value: metrics.blocked || 0, footerLeft: "gate", footerRight: `${metrics.release_blockers || 0} issue blockers`, tone: "from-orange-700/70 to-red-900/60" },
-      { label: "CI failures", value: metrics.workflow_failures || 0, footerLeft: `${metrics.workflow_successes || 0} passing`, footerRight: `${metrics.workflow_runs || 0} runs`, tone: "from-slate-500/70 to-slate-800/60" },
+      { label: "Blocked", value: metrics.blocked || 0, footerLeft: "gate", footerRight: countLabel(metrics.release_blockers, "issue blocker"), tone: "from-orange-700/70 to-red-900/60" },
+      { label: "CI failures", value: metrics.workflow_failures || 0, footerLeft: `${metrics.workflow_successes || 0} passing`, footerRight: countLabel(metrics.workflow_runs, "run"), tone: "from-slate-500/70 to-slate-800/60" },
     ] : [
-      { label: "Runs", value: counts.runs || health.run_count || 0, footerLeft: "saved", footerRight: `${counts.repos || health.repo_count || 0} repos`, tone: "from-slate-500/70 to-slate-800/60" },
+      { label: "Runs", value: counts.runs || health.run_count || 0, footerLeft: "saved", footerRight: countLabel(counts.repos || health.repo_count, "repo"), tone: "from-slate-500/70 to-slate-800/60" },
       { label: "Ready", value: counts.ready || health.ready_count || 0, footerLeft: "release", footerRight: "ship", tone: "from-emerald-700/70 to-teal-900/60" },
       { label: "Watch", value: counts.watch || health.watch_count || 0, footerLeft: "release", footerRight: "review", tone: "from-amber-600/70 to-yellow-800/50" },
       { label: "Hold", value: counts.hold || health.hold_count || 0, footerLeft: "release", footerRight: "stop", tone: "from-orange-700/70 to-red-900/60" },
@@ -296,8 +297,8 @@ const config = {
   historyIdentity: (entry) => `run ${String(entry.id || "unknown").slice(0, 8)}`,
   historyBadges: (entry) => [
     { label: entry.decision || "saved", tone: decisionTone(entry.decision) },
-    { label: `${entry.metrics?.blocked || 0} block`, tone: entry.metrics?.blocked ? "hot" : "neutral" },
-    { label: `${entry.metrics?.warned || 0} warn`, tone: entry.metrics?.warned ? "warn" : "neutral" },
+    { label: countLabel(entry.metrics?.blocked, "block"), tone: entry.metrics?.blocked ? "hot" : "neutral" },
+    { label: countLabel(entry.metrics?.warned, "warning"), tone: entry.metrics?.warned ? "warn" : "neutral" },
   ],
   historySearchText: (entry) => `${entry.metrics?.workflow_failures || 0} failures ${entry.metrics?.release_blockers || 0} blockers`,
   historyDashboard: {

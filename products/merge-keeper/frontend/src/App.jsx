@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { createApiFetcher, useApiKeyAuth } from "@patchhivehq/product-shell/auth";
 import {
+  countLabel,
   CopyMarkdownButton,
   GitHubPermissionGuidance,
   IntegratedProductApp,
@@ -150,7 +151,7 @@ function WorkspaceDetails({ health, onError, result }) {
 
       <section className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         {result.review_bee ? <ContextCard badge={result.review_bee.status} icon={Users} summary={result.review_bee.summary} title="ReviewBee"><div className="mt-4 flex flex-wrap gap-2"><Chip>{value(result.review_bee.open_items, "0")} open</Chip><Chip>{value(result.review_bee.actionable_threads, "0")} actionable</Chip></div><ItemLines items={result.review_bee.top_items} /></ContextCard> : null}
-        {result.trust_gate ? <ContextCard badge={result.trust_gate.recommendation} icon={ShieldCheck} summary={result.trust_gate.summary} title="TrustGate"><div className="mt-4 flex flex-wrap gap-2"><Chip>{value(result.trust_gate.risk_score, "0")} risk</Chip><Chip tone={result.trust_gate.blocked_findings ? "blocked" : "neutral"}>{value(result.trust_gate.blocked_findings, "0")} blocked</Chip><Chip tone={result.trust_gate.warning_findings ? "hold" : "neutral"}>{value(result.trust_gate.warning_findings, "0")} warnings</Chip></div><ItemLines items={result.trust_gate.top_findings} /></ContextCard> : null}
+        {result.trust_gate ? <ContextCard badge={result.trust_gate.recommendation} icon={ShieldCheck} summary={result.trust_gate.summary} title="TrustGate"><div className="mt-4 flex flex-wrap gap-2"><Chip>{value(result.trust_gate.risk_score, "0")} risk</Chip><Chip tone={result.trust_gate.blocked_findings ? "blocked" : "neutral"}>{value(result.trust_gate.blocked_findings, "0")} blocked</Chip><Chip tone={result.trust_gate.warning_findings ? "hold" : "neutral"}>{countLabel(result.trust_gate.warning_findings, "warning")}</Chip></div><ItemLines items={result.trust_gate.top_findings} /></ContextCard> : null}
         {result.repo_memory ? <ContextCard badge="context" icon={Database} summary={result.repo_memory.summary} title="RepoMemory"><div className="mt-4 flex flex-wrap gap-2"><Chip>{value(result.repo_memory.policy_entries, "0")} policy</Chip><Chip>{value(result.repo_memory.pinned_entries, "0")} pinned</Chip></div><ItemLines items={result.repo_memory.top_entries?.length ? result.repo_memory.top_entries : result.repo_memory.prompt_lines} /></ContextCard> : null}
       </section>
 
@@ -200,7 +201,7 @@ function ChecksDetails({ health }) {
         <div className={`flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}><CircleCheck size={12} /> Product and integration state</div>
         <dl className="mt-5 space-y-3">
           <div className="surface-inset rounded-xl p-3"><dt className={`text-[10px] uppercase tracking-wider ${V3_TEXT.mute}`}>Database path</dt><dd className={`mt-1 break-all text-[12px] ${V3_TEXT.strong}`}>{health.db_path || "unknown"}</dd></div>
-          <div className="flex flex-wrap gap-2"><Chip tone={health.auth_enabled ? "ready" : "hold"}>auth {health.auth_enabled ? "enabled" : "disabled"}</Chip><Chip tone="ready">{value(health.assessment_count, "0")} runs</Chip><Chip>{value(health.repo_count, "0")} repos</Chip></div>
+          <div className="flex flex-wrap gap-2"><Chip tone={health.auth_enabled ? "ready" : "hold"}>auth {health.auth_enabled ? "enabled" : "disabled"}</Chip><Chip tone="ready">{countLabel(health.assessment_count, "run")}</Chip><Chip>{countLabel(health.repo_count, "repo")}</Chip></div>
           <div className="flex flex-wrap gap-2"><Chip tone={integrations.review_bee_configured ? "ready" : "neutral"}>ReviewBee {integrations.review_bee_configured ? "linked" : "off"}</Chip><Chip tone={integrations.trust_gate_configured ? "ready" : "neutral"}>TrustGate {integrations.trust_gate_configured ? "linked" : "off"}</Chip><Chip tone={integrations.repo_memory_configured ? "ready" : "neutral"}>RepoMemory {integrations.repo_memory_configured ? "linked" : "off"}</Chip></div>
         </dl>
       </article>
@@ -286,12 +287,12 @@ const config = {
     const metrics = result?.metrics || {};
     const counts = overview?.counts || {};
     return result ? [
-      { label: "Approvals", value: metrics.approvals || 0, footerLeft: "review state", footerRight: `${metrics.reviewer_count || 0} reviewers`, tone: "from-emerald-700/70 to-teal-900/60" },
-      { label: "Open threads", value: metrics.actionable_open_threads || metrics.open_review_threads || 0, footerLeft: "actionable", footerRight: `${metrics.changes_requested || 0} changes requested`, tone: "from-amber-600/70 to-yellow-800/50" },
+      { label: "Approvals", value: metrics.approvals || 0, footerLeft: "review state", footerRight: countLabel(metrics.reviewer_count, "reviewer"), tone: "from-emerald-700/70 to-teal-900/60" },
+      { label: "Open threads", value: metrics.actionable_open_threads || metrics.open_review_threads || 0, footerLeft: "actionable", footerRight: countLabel(metrics.changes_requested, "change requested", "changes requested"), tone: "from-amber-600/70 to-yellow-800/50" },
       { label: "Failing checks", value: metrics.failing_checks || 0, footerLeft: `${metrics.successful_checks || 0} passing`, footerRight: `${metrics.pending_checks || 0} pending`, tone: "from-orange-700/70 to-red-900/60" },
       { label: "Changed files", value: metrics.changed_files || 0, footerLeft: `+${metrics.additions || 0}`, footerRight: `-${metrics.deletions || 0}`, tone: "from-slate-500/70 to-slate-800/60" },
     ] : [
-      { label: "Runs", value: counts.runs || health.assessment_count || 0, footerLeft: "saved", footerRight: `${counts.repos || 0} repos`, tone: "from-slate-500/70 to-slate-800/60" },
+      { label: "Runs", value: counts.runs || health.assessment_count || 0, footerLeft: "saved", footerRight: countLabel(counts.repos, "repo"), tone: "from-slate-500/70 to-slate-800/60" },
       { label: "Ready", value: counts.ready_runs || 0, footerLeft: "decisions", footerRight: "mergeable", tone: "from-emerald-700/70 to-teal-900/60" },
       { label: "Hold", value: counts.hold_runs || 0, footerLeft: "decisions", footerRight: "attention", tone: "from-amber-600/70 to-yellow-800/50" },
       { label: "Blocked", value: counts.blocked_runs || 0, footerLeft: "decisions", footerRight: "stop", tone: "from-orange-700/70 to-red-900/60" },
@@ -303,12 +304,12 @@ const config = {
   targetSubtitle: (result) => result?.pr_number ? `Pull request #${result.pr_number} · ${result.readiness || "pending"}` : "Pull request readiness",
   historyTitle: (entry) => `${entry.repo} · PR #${entry.pr_number}`,
   historySummary: (entry) => entry.summary || entry.pr_title,
-  historyMeta: (entry) => `${entry.blockers_count || 0} blockers · ${entry.warnings_count || 0} holds · ${entry.approvals_count || 0} approvals · ${entry.failing_checks_count || 0} failing`,
+  historyMeta: (entry) => `${countLabel(entry.blockers_count, "blocker")} · ${countLabel(entry.warnings_count, "hold")} · ${countLabel(entry.approvals_count, "approval")} · ${entry.failing_checks_count || 0} failing`,
   historyIdentity: (entry) => `run ${String(entry.id || "unknown").slice(0, 8)}`,
   historyBadges: (entry) => [
     { label: entry.readiness || "saved", tone: entry.readiness === "blocked" ? "hot" : entry.readiness === "hold" ? "warn" : entry.readiness === "ready" ? "ok" : "neutral" },
-    { label: `${entry.blockers_count || 0} block`, tone: entry.blockers_count ? "hot" : "neutral" },
-    { label: `${entry.warnings_count || 0} hold`, tone: entry.warnings_count ? "warn" : "neutral" },
+    { label: countLabel(entry.blockers_count, "block"), tone: entry.blockers_count ? "hot" : "neutral" },
+    { label: countLabel(entry.warnings_count, "hold"), tone: entry.warnings_count ? "warn" : "neutral" },
   ],
   historyDashboard: {
     defaultView: { decision: "all", repo: "all", sort: "newest" },

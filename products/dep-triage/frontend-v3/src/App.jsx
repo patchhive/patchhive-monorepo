@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { Database, GitBranch, PackageSearch, ShieldCheck, Workflow } from "lucide-react";
 import { createApiFetcher, useApiKeyAuth } from "@patchhivehq/product-shell/auth";
 import {
+  countLabel,
   CopyMarkdownButton,
   GitHubPermissionGuidance,
   IntegratedProductApp,
@@ -187,7 +188,7 @@ function ChecksDetails({ health }) {
       <article className="surface p-6">
         <div className={`flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}><Database size={12} /> Product state</div>
         <div className="surface-inset mt-5 rounded-xl p-3"><div className={`text-[10px] uppercase tracking-wider ${V3_TEXT.mute}`}>Database path</div><div className={`mt-1 break-all text-[12px] ${V3_TEXT.strong}`}>{health.db_path || "unknown"}</div></div>
-        <div className="mt-4 flex flex-wrap gap-2"><Chip tone={health.db_ok ? "ok" : "hot"}>database {health.db_ok ? "ready" : "unavailable"}</Chip><Chip tone={health.auth_enabled ? "ok" : "warn"}>auth {health.auth_enabled ? "enabled" : "disabled"}</Chip><Chip tone="ok">{value(health.scan_count, "0")} scans</Chip><Chip>{value(health.repo_count, "0")} repos</Chip></div>
+        <div className="mt-4 flex flex-wrap gap-2"><Chip tone={health.db_ok ? "ok" : "hot"}>database {health.db_ok ? "ready" : "unavailable"}</Chip><Chip tone={health.auth_enabled ? "ok" : "warn"}>auth {health.auth_enabled ? "enabled" : "disabled"}</Chip><Chip tone="ok">{countLabel(health.scan_count, "scan")}</Chip><Chip>{countLabel(health.repo_count, "repo")}</Chip></div>
         <div className="mt-3 flex flex-wrap gap-2"><Chip tone="hot">{value(health.update_now_count, "0")} now</Chip><Chip tone="warn">{value(health.watch_count, "0")} watch</Chip><Chip tone="ok">{value(health.ignore_count, "0")} ignore</Chip><Chip>{value(health.tracked_item_count, "0")} tracked</Chip></div>
       </article>
     </section>
@@ -297,18 +298,18 @@ const config = {
       { label: "Update now", value: metrics.update_now || 0, footerLeft: "urgent", footerRight: `${metrics.major_updates || 0} major`, tone: "from-orange-700/70 to-red-900/60" },
       { label: "Watch", value: metrics.watch || 0, footerLeft: "monitor", footerRight: "batch later", tone: "from-amber-600/70 to-yellow-800/50" },
       { label: "Safe defers", value: metrics.ignore_for_now || 0, footerLeft: "ignore", footerRight: "low churn", tone: "from-emerald-700/70 to-teal-900/60" },
-      { label: "Runtime", value: metrics.runtime_updates || 0, footerLeft: `${metrics.dependency_pull_requests || 0} dep PRs`, footerRight: `${metrics.open_alerts || 0} alerts`, tone: "from-slate-500/70 to-slate-800/60" },
+      { label: "Runtime", value: metrics.runtime_updates || 0, footerLeft: countLabel(metrics.dependency_pull_requests, "dep PR"), footerRight: countLabel(metrics.open_alerts, "alert"), tone: "from-slate-500/70 to-slate-800/60" },
     ] : [
-      { label: "Scans", value: counts.scans || health.scan_count || 0, footerLeft: "saved", footerRight: `${counts.repos || health.repo_count || 0} repos`, tone: "from-slate-500/70 to-slate-800/60" },
+      { label: "Scans", value: counts.scans || health.scan_count || 0, footerLeft: "saved", footerRight: countLabel(counts.repos || health.repo_count, "repo"), tone: "from-slate-500/70 to-slate-800/60" },
       { label: "Update now", value: counts.update_now || health.update_now_count || 0, footerLeft: "saved", footerRight: "urgent", tone: "from-orange-700/70 to-red-900/60" },
       { label: "Watch", value: counts.watch || health.watch_count || 0, footerLeft: "saved", footerRight: "monitor", tone: "from-amber-600/70 to-yellow-800/50" },
       { label: "Safe defers", value: counts.ignore_for_now || health.ignore_count || 0, footerLeft: "saved", footerRight: "ignore", tone: "from-emerald-700/70 to-teal-900/60" },
     ];
   },
-  hero: (result) => result ? { lead: `${result.metrics?.tracked_items || 0} dependencies`, middle: "need a", highlight: "decision." } : { lead: "Dependency noise", middle: "needs a", highlight: "priority." },
+  hero: (result) => result ? { lead: countLabel(result.metrics?.tracked_items, "dependency", "dependencies"), middle: "need a", highlight: "decision." } : { lead: "Dependency noise", middle: "needs a", highlight: "priority." },
   status: (result, overview) => ({ label: result?.metrics?.update_now ? "act" : result?.metrics?.watch ? "watch" : result ? "defer" : "—", detail: result ? scanSummary(result) : "Scan a repository to begin", progress: result ? "100%" : "8%", stats: [["Tracked", result?.metrics?.tracked_items || 0], ["Alerts", result?.metrics?.open_alerts || 0], ["Scans", overview?.counts?.scans || 0]] }),
-  chips: (result, health) => [result?.repo || "No repository selected", `${result?.metrics?.dependency_pull_requests || 0} dependency PRs`, `${result?.metrics?.open_alerts || 0} alerts`, health.github_ready ? "GitHub verified" : health.github?.token_configured ? "GitHub unverified" : "Token missing"],
-  targetSubtitle: (result) => result ? `${result.metrics?.tracked_items || 0} tracked dependency items` : "Dependency intake",
+  chips: (result, health) => [result?.repo || "No repository selected", countLabel(result?.metrics?.dependency_pull_requests, "dependency PR"), countLabel(result?.metrics?.open_alerts, "alert"), health.github_ready ? "GitHub verified" : health.github?.token_configured ? "GitHub unverified" : "Token missing"],
+  targetSubtitle: (result) => result ? countLabel(result.metrics?.tracked_items, "tracked dependency item") : "Dependency intake",
   historyTitle: (entry) => entry.repo,
   historySummary: (entry) => entry.summary,
   historyMeta: (entry) => `${entry.tracked_items || 0} tracked · ${entry.update_now || 0} now · ${entry.watch || 0} watch · ${entry.ignore_for_now || 0} ignore`,

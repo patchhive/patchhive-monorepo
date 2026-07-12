@@ -52,9 +52,9 @@ function timeAgo(value) {
   return `${Math.floor(hours / 24)}d`;
 }
 
-function countLabel(value, noun) {
+function countLabel(value, noun, plural = `${noun}s`) {
   const count = Number(value || 0);
-  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+  return `${count} ${count === 1 ? noun : plural}`;
 }
 
 function tone(value) {
@@ -147,13 +147,14 @@ function ItemRow({ item, onOpen }) {
 function Detail({ item, config, onBack }) {
   const itemTone = tone(item.tone);
   const links = item.links?.length ? item.links : item.link ? [{ label: "Open source evidence", url: item.link }] : [];
+  const evidence = [...new Set((item.evidence || []).map((entry) => String(entry)))];
   return (
     <>
       <header className="px-3 sm:px-6 pt-3 sm:pt-6"><div className="surface mx-auto max-w-[1200px] px-5 min-h-16 flex items-center justify-between"><button onClick={onBack} className={`flex items-center gap-2 text-[12px] ${V3_TEXT.body}`} type="button"><ArrowLeft size={14} /> Back to queue</button><div className={`hidden sm:block text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>PatchHive · Evidence detail</div><ThemeToggle /></div></header>
       <div className="mx-auto max-w-[1200px] px-3 sm:px-6 pt-8 pb-24 grid grid-cols-12 gap-6">
         <section className="col-span-12 lg:col-span-8 space-y-6">
           <div className="surface p-6 sm:p-8"><div className="flex items-start gap-5"><div className={`h-16 w-16 rounded-2xl bg-gradient-to-br ${SCORE_CLASSES[itemTone]} grid place-items-center shadow-inner shrink-0`}><div className="font-display font-semibold text-[18px]">{item.score ?? "—"}</div></div><div><div className={`text-[10px] uppercase tracking-[0.2em] ${V3_TEXT.mute}`}>{item.id}</div><h1 className={`mt-2 font-display text-[32px] leading-tight tracking-tight font-semibold ${V3_TEXT.strong}`}>{item.title}</h1><div className={`mt-2 text-[13px] font-mono ${V3_TEXT.mute}`}>{item.meta}</div></div></div></div>
-          <div className="surface p-6"><div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>Context</div><p className={`mt-3 text-[14px] leading-relaxed ${V3_TEXT.body}`}>{item.summary || "No additional context was returned."}</p>{item.tags?.length ? <div className="mt-4 flex flex-wrap gap-2">{item.tags.map((tag) => <span className={`surface-inset rounded-full px-2.5 py-1 text-[10px] ${V3_TEXT.body}`} key={tag}>{tag}</span>)}</div> : null}{item.evidence?.length ? <div className="mt-6 space-y-2">{item.evidence.map((value, index) => <div className={`surface-inset rounded-xl p-3 text-[12px] ${V3_TEXT.body}`} key={`${value}-${index}`}>{value}</div>)}</div> : null}</div>
+          <div className="surface p-6"><div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>Context</div><p className={`mt-3 text-[14px] leading-relaxed ${V3_TEXT.body}`}>{item.summary || "No additional context was returned."}</p>{item.tags?.length ? <div className="mt-4 flex flex-wrap gap-2">{item.tags.map((tag) => <span className={`surface-inset rounded-full px-2.5 py-1 text-[10px] ${V3_TEXT.body}`} key={tag}>{tag}</span>)}</div> : null}{evidence.length ? <div className="mt-6 space-y-2">{evidence.map((value, index) => <div className={`surface-inset rounded-xl p-3 text-[12px] ${V3_TEXT.body}`} key={`${value}-${index}`}>{value}</div>)}</div> : null}</div>
         </section>
         <aside className="col-span-12 lg:col-span-4 space-y-6"><div className="surface p-6"><div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>Decision</div><span className={`mt-4 inline-flex text-[10px] uppercase tracking-widest px-3 py-1.5 rounded-full border ${STATUS_CLASSES[itemTone]}`}>{item.status}</span><dl className="mt-6 space-y-3"><SideValue label="Product" value={config.name} /><SideValue label="Source" value={item.source || "product analysis"} /><SideValue label="Score" value={String(item.score ?? "—")} />{(item.facts || []).map((fact) => <SideValue key={fact.label} label={fact.label} value={String(fact.value ?? "—")} />)}</dl></div>{links.map((link) => <a className={`surface p-5 flex items-center justify-between text-[13px] ${V3_TEXT.body}`} href={link.url} key={`${link.label}-${link.url}`} rel="noreferrer" target="_blank">{link.label || "Open source evidence"} <ExternalLink size={13} /></a>)}</aside>
       </div>

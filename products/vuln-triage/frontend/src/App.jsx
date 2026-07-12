@@ -260,7 +260,7 @@ function buildScanMarkdown(scan) {
     groups.slice(0, 8).forEach((item) => {
       if (item.type === "dependency-group") {
         const top = item.findings[0] || {};
-        lines.push(`- [${recommendation(item.recommendation)}] ${item.packageName} / ${item.manifest} — ${item.findings.length} alerts — ${top.summary || top.title || "security advisory"}`);
+        lines.push(`- [${recommendation(item.recommendation)}] ${item.packageName} / ${item.manifest} — ${countLabel(item.findings.length, "alert")} — ${top.summary || top.title || "security advisory"}`);
       } else {
         const finding = item.finding;
         lines.push(`- [${recommendation(finding.recommendation)}] ${finding.title || findingId(finding)} — ${finding.summary || finding.next_action || finding.location || "security finding"}`);
@@ -399,7 +399,7 @@ function DependencyGroupRow({ group, onOpen }) {
           <span className="font-display font-semibold text-[15px] tabular-nums">{group.maxScore.toFixed(1)}</span>
         </div>
         <div className="min-w-0">
-          <div className={`text-[10px] uppercase tracking-[0.2em] ${V3_TEXT.mute}`}>Dependabot remediation group · {group.findings.length} alerts</div>
+          <div className={`text-[10px] uppercase tracking-[0.2em] ${V3_TEXT.mute}`}>Dependabot remediation group · {countLabel(group.findings.length, "alert")}</div>
           <div className={`mt-1 truncate font-display text-[16px] font-medium tracking-tight ${V3_TEXT.strong}`}>{group.packageName} <span className={V3_TEXT.dim}>/ {group.manifest}</span></div>
           <div className={`mt-1 truncate text-[12px] font-mono ${V3_TEXT.mute}`}>{group.ecosystem} · {owners.length} owner scope{owners.length === 1 ? "" : "s"}{runtimeCount ? ` · ${runtimeCount} runtime scoped` : ""}</div>
         </div>
@@ -641,7 +641,7 @@ function MainProduct({ auth }) {
               <div className="surface col-span-12 lg:col-span-8 p-6 sm:p-10">
                 <div className={`flex items-center gap-2 text-[11px] tracking-[0.2em] uppercase ${V3_TEXT.mute}`}><Sparkles size={12} style={{ color: "var(--accent-2)" }} /> Security queue · {activeRepo}</div>
                 <h1 className={`font-display mt-4 text-[44px] sm:text-[68px] leading-[0.95] tracking-[-0.03em] font-semibold ${V3_TEXT.strong}`}>
-                  {findings.length || "No"} findings <br />
+                  {findings.length ? countLabel(findings.length, "finding") : "No findings"} <br />
                   need a decision{" "}<span className="bg-clip-text text-transparent" style={{ backgroundImage: "linear-gradient(90deg, var(--accent), var(--accent-2), #cbd5e1)" }}>today.</span>
                 </h1>
                 <p className={`mt-6 max-w-xl text-[15px] ${V3_TEXT.body} leading-relaxed`}>Reads GitHub code scanning and Dependabot alerts, then sorts them into fix-now, plan-next, and watch—all in one calm, luminous surface.</p>
