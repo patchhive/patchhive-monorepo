@@ -82,11 +82,12 @@ typography scale, spacing system, or theme implementation.
 | DepTriage | `products/dep-triage/frontend` | Promoted after live scan, detail, warning, history, checks, and sources acceptance; v1/v2 removed |
 | VulnTriage | `products/vuln-triage/frontend` | Promoted after final parity audit; v1/v2 removed |
 | FlakeSting | `products/flake-sting/frontend` | Promoted after live scan, detail, sampled evidence, trend, history, checks, and sources acceptance; v1/v2 removed |
+| ReviewBee | `products/review-bee/frontend` | Promoted after live unified action, real history, checks, sources, Markdown preview, and safety acceptance; v1/v2 removed |
 | Other specialist products | not created | Wait until their product engine is integrated in-process |
 | HiveCore | not applicable | Intentionally separate |
 
 The integrated set is derived from both the registry manifests and executable
-route mounts. As of 2026-07-10, these five products have
+route mounts. As of 2026-07-12, these six products have
 `migration_stage = "integrated"`, are initialized by
 `services/patchhive-backend/src/products.rs`, and are nested directly by
 `services/patchhive-backend/src/routes.rs`. Gateway-ready products are not

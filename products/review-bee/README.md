@@ -69,7 +69,6 @@ docker compose up --build
 ```
 
 Frontend: `http://localhost:5177`
-Frontend v2 prototype: `http://localhost:5196`
 Backend: `http://localhost:8040`
 
 ### Split Backend and Frontend
@@ -81,11 +80,10 @@ cp .env.example .env
 
 cargo run --manifest-path backend/Cargo.toml
 npm --prefix frontend install && npm --prefix frontend run dev
-npm --prefix frontend-v2 install && npm --prefix frontend-v2 run dev
 ```
 
-Run the backend command from `products/review-bee` so it loads the product-root `.env`. The v2
-prototype lives in `frontend-v2/` while the suite UI direction is settled.
+Run the backend command from `products/review-bee` so it loads the product-root `.env`.
+The canonical frontend uses the shared PatchHive specialist UI v3 shell.
 
 ## Configuration
 

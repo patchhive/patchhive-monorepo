@@ -4,7 +4,7 @@ name = "ReviewBee"
 role = "PR review feedback checklist"
 module_path = "crate::products::review_bee"
 route_prefix = "/api/products/review-bee"
-migration_stage = "not-started"
+migration_stage = "integrated"
 
 [safety]
 read_only = false
@@ -12,10 +12,6 @@ writes_external_state = true
 requires_operator_approval = true
 credential_scopes = ["github:pull_requests:read", "github:issues:write"]
 evidence_required = ["PR URL", "review thread snapshot", "comment preview"]
-
-[gateway]
-default_url = "http://127.0.0.1:8040"
-env_var = "REVIEW_BEE_GATEWAY_URL"
 
 [health]
 endpoint = "/api/products/review-bee/health"

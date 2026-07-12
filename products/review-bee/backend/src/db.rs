@@ -137,6 +137,29 @@ pub fn get_review(id: &str) -> Option<ReviewResult> {
     serde_json::from_str(&payload).ok()
 }
 
+pub fn comment_publish_verified() -> bool {
+    let Ok(conn) = connect() else {
+        return false;
+    };
+    let mut stmt =
+        match conn.prepare("SELECT payload FROM review_runs ORDER BY created_at DESC LIMIT 100") {
+            Ok(stmt) => stmt,
+            Err(_) => return false,
+        };
+    let rows = match stmt.query_map([], |row| row.get::<_, String>(0)) {
+        Ok(rows) => rows,
+        Err(_) => return false,
+    };
+
+    let verified = rows.flatten().any(|payload| {
+        serde_json::from_str::<ReviewResult>(&payload)
+            .ok()
+            .and_then(|review| review.github_report)
+            .is_some_and(|report| report.delivered && !report.comment_url.trim().is_empty())
+    });
+    verified
+}
+
 pub fn overview_counts() -> OverviewCounts {
     let Ok(conn) = connect() else {
         return OverviewCounts::default();

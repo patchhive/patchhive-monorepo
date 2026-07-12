@@ -206,8 +206,9 @@ remaining read-only. VulnTriage is the fourth in-process product proof because
 it exercises GitHub security-feed permissions, disabled-alert messaging, and
 security-read startup posture without adding mutation. FlakeSting is the fifth
 proof because it adds Actions history, workflow/job evidence, and trend logic.
-These five engines are now integrated. ReviewBee is the next no-proxy engine in
-the migration ladder below.
+ReviewBee is the sixth proof because it adds PR review/thread reads, signed
+webhooks, and explicit maintained-comment publishing. These six engines are
+now integrated; TrustGate is next in the migration ladder below.
 
 ## API Shape
 
@@ -464,8 +465,8 @@ filesystem work, autonomous mutation, and finally control-plane consolidation:
 12. **HiveCore** — cockpit/control-plane consolidation once enough products are actually unified.
 
 The ladder governs in-process engine migration, not whether HiveCore may use the
-unified backend earlier as a frontend and gateway client. The first five
-products are integrated as of 2026-07-12; ReviewBee is next.
+unified backend earlier as a frontend and gateway client. The first six
+products are integrated as of 2026-07-12; TrustGate is next.
 
 ## Open Questions
 

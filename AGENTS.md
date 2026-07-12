@@ -203,6 +203,9 @@ Rules:
 - DepTriage and FlakeSting passed their final parity audits on 2026-07-12;
   their canonical v3 UIs live in `products/<product>/frontend/`, and their
   v1/v2 trees have been removed.
+- ReviewBee passed its final parity audit on 2026-07-12; its canonical v3 UI
+  lives in `products/review-bee/frontend/`, and its v1/v2 trees have been
+  removed.
 - Prefer finishing and validating v3 for the current integrated product set before moving another product engine into the unified backend.
 - HiveCore is intentionally outside the specialist-product v3 migration and keeps its control-plane UI.
 - `prototypes/vuln-triage-calm-mockup.html` is reference material only; it is not the v3 source of truth.

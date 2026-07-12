@@ -25,15 +25,3 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
-
-  frontend-v2:
-    image: "${PATCHHIVE_REVIEW_BEE_FRONTEND_V2_IMAGE:-ghcr.io/patchhive/reviewbee-frontend-v2}:${PATCHHIVE_IMAGE_TAG:-main}"
-    build:
-      context: ../..
-      dockerfile: products/review-bee/frontend-v2/Dockerfile
-    pull_policy: "${PATCHHIVE_IMAGE_PULL_POLICY:-missing}"
-    ports:
-      - "5196:8080"
-    depends_on:
-      - backend
-    restart: unless-stopped

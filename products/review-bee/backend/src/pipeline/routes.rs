@@ -153,6 +153,8 @@ pub async fn health() -> Json<serde_json::Value> {
         .unwrap_or(false);
     let github_configured = github::github_token_configured();
     let webhook_ready = github_ready && github::webhook_secret_configured();
+    let comment_publish_verified =
+        github::comment_publish_verified() || db::comment_publish_verified();
 
     Json(json!({
         "status": if errors > 0 || !db_ok { "degraded" } else { "ok" },
@@ -174,8 +176,8 @@ pub async fn health() -> Json<serde_json::Value> {
             "public_url_configured": github::public_url_configured(),
             "webhook_ready": webhook_ready,
             "comment_publish_configured": github_configured,
-            "comment_publish_scope_verified": false,
-            "comment_publish_ready": false,
+            "comment_publish_scope_verified": comment_publish_verified,
+            "comment_publish_ready": github_ready && comment_publish_verified,
         }
     }))
 }

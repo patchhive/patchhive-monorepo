@@ -18,6 +18,9 @@ pub async fn init_enabled_products(config: &Config) -> Result<()> {
     if config.product_selection.enables("flake-sting") {
         flake_sting::init_runtime().await?;
     }
+    if config.product_selection.enables("review-bee") {
+        review_bee::init_runtime().await?;
+    }
     Ok(())
 }
 
@@ -39,4 +42,8 @@ pub fn vuln_triage_router() -> axum::Router {
 
 pub fn flake_sting_router() -> axum::Router {
     flake_sting::router()
+}
+
+pub fn review_bee_router() -> axum::Router {
+    review_bee::router()
 }

@@ -84,8 +84,7 @@ docker compose up --build
 | Service | URL |
 |---------|-----|
 | Backend | `http://localhost:8040` |
-| Frontend (v1) | `http://localhost:5177` |
-| Frontend v2 prototype | `http://localhost:5196` |
+| Frontend | `http://localhost:5177` |
 
 Backend: `http://localhost:8040`
 Frontend: `http://localhost:5177`
@@ -98,11 +97,8 @@ Run these in separate terminals from `products/review-bee/`:
 # Backend (must run from product root to load .env)
 cargo run --manifest-path backend/Cargo.toml
 
-# Frontend v1
+# Frontend
 npm --prefix frontend install && npm --prefix frontend run dev
-
-# Frontend v2 prototype
-npm --prefix frontend-v2 install && npm --prefix frontend-v2 run dev
 ```
 
 The backend loads the product-root `.env` via `dotenvy::dotenv()`, so run `cargo run` from `products/review-bee/`.
@@ -159,13 +155,15 @@ The following paths are accessible without authentication:
 
 ## Technical Architecture
 
-ReviewBee's backend is a single Rust binary built on Axum with a structured review-analysis pipeline.
+ReviewBee's Axum engine is exposed as a reusable library router for the unified
+backend and as a thin standalone binary for product-local runs.
 
 ### Source layout
 
 | File | Responsibility |
 |------|---------------|
-| `src/main.rs` | Entry point, router definition, middleware stack, server bootstrap |
+| `src/lib.rs` | Auth module, reusable router, middleware stack, and runtime initialization |
+| `src/main.rs` | Thin standalone server bootstrap around the reusable product router |
 | `src/state.rs` | `AppState` — shared `reqwest::Client` with 10s connect / 30s total timeout |
 | `src/db.rs` | SQLite persistence via `patchhive_product_core::sqlite` — init, save, history, detail, overview |
 | `src/models.rs` | All request/response types: `ReviewRequest`, `ReviewResult`, `ChecklistItem`, `ChecklistEvidence`, `ReviewMetrics`, `HistoryItem`, `OverviewPayload`, `GitHubReviewContext`, `GitHubReportOutcome` |
@@ -196,7 +194,7 @@ PR discovery → Review collection → Actionability filter → Category classif
 
 ## API Endpoints
 
-All endpoints are verified against `src/main.rs` — no fabricated paths.
+All endpoints are verified against the reusable router in `src/lib.rs` — no fabricated paths.
 
 ### Health & Status
 
@@ -379,7 +377,9 @@ No Prometheus metrics, Kubernetes probes, or Helm charts are currently provided.
 
 ### Docker
 
-ReviewBee ships a multi-service `docker-compose.yml` in the product root. The backend is a single Rust binary with no external runtime dependencies beyond SQLite.
+ReviewBee ships a multi-service `docker-compose.yml` in the product root. The
+standalone backend binary wraps the same reusable product router mounted by the
+unified backend and has no external runtime dependency beyond SQLite.
 
 ```bash
 cd products/review-bee
@@ -445,7 +445,10 @@ MergeKeeper can eventually use ReviewBee output as one input to merge readiness,
 
 ## Current Status
 
-ReviewBee is an active PatchHive product. It currently analyzes GitHub pull request review state (formal reviews and review threads) using deterministic text heuristics. The v2 frontend prototype lives in `frontend-v2/` while the suite UI direction is being settled.
+ReviewBee is an integrated PatchHive product. It analyzes GitHub pull request
+review state with deterministic text heuristics through the unified backend.
+Its canonical specialist UI v3 frontend lives in `frontend/`; the superseded
+v1/v2 trees were removed after final parity acceptance on 2026-07-12.
 
 ### Known limitations
 

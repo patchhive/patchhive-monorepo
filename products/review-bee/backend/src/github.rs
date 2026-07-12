@@ -5,10 +5,12 @@ use patchhive_github_pr::{
 };
 use patchhive_product_core::branding::append_product_signature;
 use reqwest::Client;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::models::{GitHubReportOutcome, ReviewResult};
 
 const COMMENT_MARKER: &str = "<!-- patchhive-reviewbee-report -->";
+static COMMENT_PUBLISH_VERIFIED: AtomicBool = AtomicBool::new(false);
 
 pub struct GitHubReviewContext {
     pub pr: GitHubPullRequestDetail,
@@ -30,6 +32,10 @@ pub fn webhook_secret_configured() -> bool {
 
 pub fn public_url_configured() -> bool {
     env_value(&["REVIEW_BEE_PUBLIC_URL"]).is_some()
+}
+
+pub fn comment_publish_verified() -> bool {
+    COMMENT_PUBLISH_VERIFIED.load(Ordering::Relaxed)
 }
 
 fn pr_client(client: &Client) -> GitHubPrClient {
@@ -246,6 +252,7 @@ pub async fn publish_review_outcome(client: &Client, review: &ReviewResult) -> G
     {
         Ok(result) => {
             let mode = result.mode.clone();
+            COMMENT_PUBLISH_VERIFIED.store(true, Ordering::Relaxed);
             publish_success(&mode, result, review)
         }
         Err(err) => GitHubReportOutcome {

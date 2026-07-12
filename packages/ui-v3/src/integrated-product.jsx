@@ -206,7 +206,10 @@ export function IntegratedProductApp({ apiBase, auth, config, fetcher }) {
   const inputRef = useRef(null);
   const initialRunId = useRef(typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("run") || "");
   const tabs = [{ id: "workspace", label: config.workspaceLabel }, { id: "history", label: "History" }, { id: "checks", label: "Checks" }, { id: "sources", label: "Sources" }];
-  const [activeTab, setActiveTab] = useState(() => localStorage.getItem(`${storagePrefix}.tab`) || "workspace");
+  const [activeTab, setActiveTab] = useState(() => {
+    const requested = new URLSearchParams(window.location.search).get("tab");
+    return tabs.some((tab) => tab.id === requested) ? requested : localStorage.getItem(`${storagePrefix}.tab`) || "workspace";
+  });
   const [form, setForm] = useState(() => ({ ...config.defaultForm, repo: localStorage.getItem(`${storagePrefix}.repo`) || config.defaultForm.repo || "" }));
   const [health, setHealth] = useState({});
   const [checks, setChecks] = useState([]);
@@ -260,6 +263,12 @@ export function IntegratedProductApp({ apiBase, auth, config, fetcher }) {
 
   useEffect(() => { refresh(true); }, []);
   useEffect(() => { localStorage.setItem(`${storagePrefix}.tab`, activeTab); }, [activeTab]);
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (activeTab === "workspace") url.searchParams.delete("tab");
+    else url.searchParams.set("tab", activeTab);
+    window.history.replaceState({}, "", url.toString());
+  }, [activeTab]);
   useEffect(() => { localStorage.setItem(`${storagePrefix}.repo`, form.repo || ""); }, [form.repo]);
   useEffect(() => {
     if (typeof window === "undefined") return;
