@@ -204,9 +204,10 @@ product behavior. DepTriage is the third in-process product proof because it
 adds dependency PR grouping and Dependabot alert permission edge cases while
 remaining read-only. VulnTriage is the fourth in-process product proof because
 it exercises GitHub security-feed permissions, disabled-alert messaging, and
-security-read startup posture without adding mutation. SignalHive remains the
-first read-only reconnaissance engine that should move fully in-process after
-the gateway bridge has proven the shape.
+security-read startup posture without adding mutation. FlakeSting is the fifth
+proof because it adds Actions history, workflow/job evidence, and trend logic.
+These five engines are now integrated. ReviewBee is the next no-proxy engine in
+the migration ladder below.
 
 ## API Shape
 
@@ -438,23 +439,33 @@ This should be gradual.
 4. Wire HiveCore frontend to the unified backend first for suite auth, product registry, product health, run index, and gateway dispatch.
 5. Add gateway routes so the unified backend can proxy existing product APIs during migration.
 6. Point product v2 frontends at the unified backend after HiveCore proves the control-plane path.
-7. Move SignalHive into the unified backend as the first in-process product engine because it is read-only and already central to the suite story.
-8. Update SignalHive standalone repo packaging to use the shared backend image with only SignalHive enabled.
-9. Repeat product by product, prioritizing read-only products before write-capable products.
-10. Retire old individual product backends only after each product's logic is safely hosted by the unified backend and standalone repo packaging is updated.
+7. Move product engines in-process according to the no-proxy ladder below.
+8. Update each standalone product repository to use the shared backend image with only that product enabled.
+9. Retire old individual product backends only after each product's logic is safely hosted by the unified backend and standalone repo packaging is updated.
+10. Keep HiveCore's control-plane frontend connected throughout the migration, but move its remaining backend behavior last after enough specialist engines share the runtime.
 
-## First Products To Move
+## No-Proxy Product Migration Ladder
 
-Recommended order:
+This order is the suite's working migration sequence. It deliberately grows
+from narrow read paths into security, durable state, discovery, local
+filesystem work, autonomous mutation, and finally control-plane consolidation:
 
-1. SignalHive: read-only reconnaissance, best first proof of the shared runtime.
-2. ReviewBee: PR read path, already useful without write access.
-3. TrustGate: local diff and PR review paths, important for suite safety.
-4. RepoMemory: shared context layer for later handoffs.
-5. MergeKeeper and FlakeSting: readiness and CI trust signals.
-6. DepTriage, VulnTriage, RefactorScout, ReleaseSentry: portfolio signal products.
-7. RepoReaper: write-capable execution should move later after auth, approvals, and safety contracts are solid.
-8. HiveCore backend behavior: fold launcher/control-plane APIs into the shared runtime once the suite backend is stable.
+1. **MergeKeeper** — PR read state, simple decision, low mutation risk.
+2. **ReleaseSentry** — broader GitHub read surface: Actions, tags, releases, issues, and changelog.
+3. **DepTriage** — dependency PRs plus alert-permission edge cases.
+4. **VulnTriage** — security permissions and degraded/fallback messaging.
+5. **FlakeSting** — Actions history, workflow/job evidence, and trend/history logic.
+6. **ReviewBee** — PR review/comment surfaces and maintained-comment behavior when enabled.
+7. **TrustGate** — policy/rule storage, diff review, and FailGuard handoff.
+8. **RepoMemory** — durable memory tables, prompt packs, and FailGuard candidates.
+9. **SignalHive** — discovery/scanning, presets, schedules, repository lists, and larger scan payloads.
+10. **RefactorScout** — local/GitHub repository intake, filesystem safety, and temporary clone lifecycle.
+11. **RepoReaper** — AI squad, secrets, cloning, patching, testing, pull requests, and long-running jobs.
+12. **HiveCore** — cockpit/control-plane consolidation once enough products are actually unified.
+
+The ladder governs in-process engine migration, not whether HiveCore may use the
+unified backend earlier as a frontend and gateway client. The first five
+products are integrated as of 2026-07-12; ReviewBee is next.
 
 ## Open Questions
 
