@@ -242,7 +242,7 @@ const config = {
   historyMeta: (entry) => `${countLabel(entry.flaky_signals, "signal")} · ${countLabel(entry.quarantine_candidates, "quarantine candidate")} · ${entry.trend?.status || "baseline"}`,
   historyIdentity: (entry) => `scan ${String(entry.id || "unknown").slice(0, 8)}`,
   historySearchText: (entry) => `${entry.workflow_name || "all workflows"} ${entry.trend?.status || "baseline"} ${entry.flaky_signals || 0} signals ${entry.quarantine_candidates || 0} quarantine`,
-  historyBadges: (entry) => [{ label: entry.trend?.status || "baseline", tone: trendTone(entry.trend?.status) }, { label: countLabel(entry.flaky_signals, "signal"), tone: entry.flaky_signals ? "warn" : "neutral" }, { label: countLabel(entry.quarantine_candidates, "quarantine"), tone: entry.quarantine_candidates ? "hot" : "neutral" }],
+  historyBadges: (entry) => [{ label: entry.trend?.status || "baseline", tone: trendTone(entry.trend?.status) }, { label: countLabel(entry.flaky_signals, "signal"), tone: entry.flaky_signals ? "warn" : "neutral" }, { label: countLabel(entry.quarantine_candidates, "quarantine candidate"), tone: entry.quarantine_candidates ? "hot" : "neutral" }],
   historyDashboard: {
     defaultView: { trend: "all", repo: "all", workflow: "all", sort: "newest" },
     initialCount: 6,
