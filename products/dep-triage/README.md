@@ -3,7 +3,7 @@
 DepTriage is PatchHive's dependency-noise filter. It reads open dependency pull
 requests, optionally folds in Dependabot alerts, groups that activity by package,
 and turns the result into a ranked queue — `update now`, `watch`, or `ignore for
-now`. The opt-in Lovable-derived v3 frontend lives in `frontend-v3/` and targets
+now`. The canonical Lovable-derived v3 frontend lives in `frontend/` and targets
 the in-process unified-backend route at `/api/products/dep-triage`.
 
 ## Documentation
@@ -46,7 +46,6 @@ docker compose up --build
 ```
 
 Frontend: `http://localhost:5180`
-Frontend v2 dev server: `http://localhost:5203`
 Backend: `http://localhost:8070`
 
 ### Split Backend and Frontend
@@ -55,15 +54,7 @@ Backend: `http://localhost:8070`
 cp .env.example .env
 
 cd backend && cargo run
-cd ../frontend-v2 && npm install && npm run dev
-```
-
-The old v1 frontend is preserved for reference in `frontend-legacy/` after the
-v2 parity audit. Use it only when comparing behavior before deleting legacy UI
-code:
-
-```bash
-cd frontend-legacy && npm install && npm run dev
+cd ../frontend && npm install && npm run dev
 ```
 
 ## Configuration

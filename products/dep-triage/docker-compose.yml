@@ -17,36 +17,13 @@ services:
     restart: unless-stopped
 
   frontend:
-    image: "${PATCHHIVE_DEP_TRIAGE_FRONTEND_V2_IMAGE:-patchhive/deptriage-frontend-v2}:${PATCHHIVE_IMAGE_TAG:-local}"
+    image: "${PATCHHIVE_DEP_TRIAGE_FRONTEND_IMAGE:-ghcr.io/patchhive/deptriage-frontend}:${PATCHHIVE_IMAGE_TAG:-main}"
     build:
       context: ../..
-      dockerfile: products/dep-triage/frontend-v2/Dockerfile
+      dockerfile: products/dep-triage/frontend/Dockerfile
     pull_policy: "${PATCHHIVE_IMAGE_PULL_POLICY:-missing}"
     ports:
       - "5180:8080"
     depends_on:
       - backend
-    restart: unless-stopped
-
-  frontend-legacy:
-    profiles:
-      - legacy-ui
-    image: "${PATCHHIVE_DEP_TRIAGE_FRONTEND_LEGACY_IMAGE:-ghcr.io/patchhive/deptriage-frontend-legacy}:${PATCHHIVE_IMAGE_TAG:-main}"
-    build: ./frontend-legacy
-    pull_policy: "${PATCHHIVE_IMAGE_PULL_POLICY:-missing}"
-    ports:
-      - "5203:8080"
-    depends_on:
-      - backend
-    restart: unless-stopped
-
-  frontend-v3:
-    profiles: ["v3-ui"]
-    image: "${PATCHHIVE_DEP_TRIAGE_FRONTEND_V3_IMAGE:-patchhive/deptriage-frontend-v3}:${PATCHHIVE_IMAGE_TAG:-local}"
-    build:
-      context: ../..
-      dockerfile: products/dep-triage/frontend-v3/Dockerfile
-    pull_policy: "${PATCHHIVE_IMAGE_PULL_POLICY:-missing}"
-    ports:
-      - "5303:8080"
     restart: unless-stopped

@@ -200,7 +200,7 @@ Its job is to turn dependency update noise into an explainable queue a human can
 
 DepTriage is the third product engine mounted in-process inside
 `services/patchhive-backend`, after MergeKeeper and ReleaseSentry. In suite
-mode, the v2 frontend should talk to the unified backend route instead of a
+mode, the canonical frontend talks to the unified backend route instead of a
 separate DepTriage backend service:
 
 ```bash
@@ -208,10 +208,10 @@ PATCHHIVE_PRODUCTS=dep-triage \
 PATCHHIVE_BIND_ADDR=127.0.0.1:8100 \
 cargo run --manifest-path services/patchhive-backend/Cargo.toml
 
-npm --prefix products/dep-triage/frontend-v2 run dev
+npm --prefix products/dep-triage/frontend run dev
 ```
 
-The v2 default API base is:
+The canonical frontend default API base is:
 
 ```text
 http://127.0.0.1:8100/api/products/dep-triage
@@ -235,7 +235,8 @@ token before depending on service dispatch.
 
 ## UI V1 To V2 Parity Audit
 
-Audited on 2026-07-05:
+Audited on 2026-07-05. The source trees listed here were retired after the v3
+promotion gate passed:
 
 - `products/dep-triage/frontend-legacy/src/App.jsx`
 - `products/dep-triage/frontend-legacy/src/panels/TriagePanel.jsx`
@@ -296,10 +297,17 @@ read-only dependency-triage loop while using the shared specialist shell:
 
 Local verification passed for the DepTriage v3 production build, every current
 v3 shared-package consumer, suite-drift checks, the standalone DepTriage tests
-and strict Clippy run, and the unified-backend tests and strict Clippy run.
-Legacy frontend deletion remains blocked until the real database/environment is
-launched and the operator accepts a live scan, history, checks, sources, detail,
-warning, and responsive-layout pass.
+and strict Clippy run, and the unified-backend tests and strict Clippy run. The
+real-data acceptance gate described below is also complete.
+
+Final acceptance on 2026-07-12 covered a live seven-item dependency scan with
+four watch decisions and three safe defers, a detailed Django major-update
+record with its manifest and pull-request evidence, explicit degraded messaging
+for a repository with Dependabot alerts disabled, five saved history runs with
+filter/sort/saved-view controls, verified startup checks, and the complete
+read-only Sources boundary. The v3 UI is now the packaged canonical
+`products/dep-triage/frontend/` implementation. The retired v1 and v2 source
+trees and Docker profiles were removed after this gate passed.
 
 ---
 
