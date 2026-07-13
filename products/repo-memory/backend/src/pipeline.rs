@@ -104,6 +104,81 @@ mod tests {
         }
     }
 
+    fn sample_issue(number: u32, title: &str, body: &str) -> crate::models::GitHubIssue {
+        crate::models::GitHubIssue {
+            number,
+            title: title.into(),
+            body: Some(body.into()),
+            ..crate::models::GitHubIssue::default()
+        }
+    }
+
+    #[test]
+    fn feature_templates_do_not_become_bug_evidence() {
+        let issue = sample_issue(
+            1,
+            "[Feature]: Add another provider",
+            "The proposed response should include better error details.",
+        );
+
+        assert!(!memory_run::looks_bug_like(&issue));
+    }
+
+    #[test]
+    fn strong_failure_language_still_identifies_vague_bug_reports() {
+        let issue = sample_issue(
+            2,
+            "Worker occasionally stops",
+            "The process deadlocks after the second background refresh.",
+        );
+
+        assert!(memory_run::looks_bug_like(&issue));
+    }
+
+    #[test]
+    fn repo_name_and_template_words_do_not_become_failure_memories() {
+        let run = memory_run::build_memory_run(
+            crate::models::IngestParams {
+                repo: "NousResearch/hermes-agent".into(),
+                ..crate::models::IngestParams::default()
+            },
+            Vec::new(),
+            vec![
+                sample_issue(3, "bug: Hermes cannot launch", "Launch fails."),
+                sample_issue(4, "bug: Hermes cannot connect", "Connection fails."),
+            ],
+            0,
+        )
+        .expect("memory run should build");
+
+        assert!(run
+            .entries
+            .iter()
+            .all(|entry| entry.kind != "failure_pattern"));
+    }
+
+    #[test]
+    fn repeated_issue_title_topics_remain_failure_memories() {
+        let run = memory_run::build_memory_run(
+            crate::models::IngestParams {
+                repo: "patchhive/example".into(),
+                ..crate::models::IngestParams::default()
+            },
+            Vec::new(),
+            vec![
+                sample_issue(5, "bug: sandbox exits early", "The worker crashes."),
+                sample_issue(6, "bug: sandbox rejects valid path", "The worker fails."),
+            ],
+            0,
+        )
+        .expect("memory run should build");
+
+        assert!(run
+            .entries
+            .iter()
+            .any(|entry| { entry.kind == "failure_pattern" && entry.title.contains("sandbox") }));
+    }
+
     #[test]
     fn repo_reaper_prefers_maintainer_profiles_when_paths_match() {
         let maintainer = sample_entry(

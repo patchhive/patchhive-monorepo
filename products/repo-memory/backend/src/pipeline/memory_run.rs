@@ -34,6 +34,7 @@ pub fn build_memory_run(
     let mut source_prs = 0u32;
     let mut source_with_tests = 0u32;
     let mut review_feedback_items = 0u32;
+    let repo_tokens = tokenize(&repo);
 
     for bundle in &bundles {
         let mut touched_source = false;
@@ -152,14 +153,13 @@ pub fn build_memory_run(
         if !looks_bug_like(issue) {
             continue;
         }
-        let title_tokens = tokenize(&format!(
-            "{} {}",
-            issue.title,
-            issue.body.clone().unwrap_or_default()
-        ));
+        let title_tokens = tokenize(&issue.title);
 
         for token in title_tokens {
-            if token.len() < 4 || STOPWORDS.contains(&token.as_str()) {
+            if token.len() < 4
+                || STOPWORDS.contains(&token.as_str())
+                || repo_tokens.contains(&token)
+            {
                 continue;
             }
             let bucket = bug_terms.entry(token.clone()).or_default();
@@ -468,10 +468,9 @@ pub fn is_test_file(path: &str) -> bool {
 }
 
 pub fn looks_bug_like(issue: &crate::models::GitHubIssue) -> bool {
-    let lower = format!(
-        "{} {} {}",
+    let title_and_labels = format!(
+        "{} {}",
         issue.title,
-        issue.body.clone().unwrap_or_default(),
         issue
             .labels
             .iter()
@@ -481,8 +480,12 @@ pub fn looks_bug_like(issue: &crate::models::GitHubIssue) -> bool {
     )
     .to_ascii_lowercase();
 
-    contains_any(
-        &lower,
+    let explicitly_feature_like = contains_any(
+        &title_and_labels,
+        &["feature", "enhancement", "proposal", "documentation"],
+    );
+    let explicitly_bug_like = contains_any(
+        &title_and_labels,
         &[
             "bug",
             "regression",
@@ -494,6 +497,34 @@ pub fn looks_bug_like(issue: &crate::models::GitHubIssue) -> bool {
             "broken",
             "error",
             "race",
+            "leak",
+        ],
+    );
+    if explicitly_feature_like && !explicitly_bug_like {
+        return false;
+    }
+    if explicitly_bug_like {
+        return true;
+    }
+
+    let body = issue
+        .body
+        .as_deref()
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+
+    contains_any(
+        &body,
+        &[
+            "regression",
+            "panic",
+            "crash",
+            "timeout",
+            "stack trace",
+            "exception",
+            "race condition",
+            "deadlock",
+            "data loss",
             "leak",
         ],
     )
