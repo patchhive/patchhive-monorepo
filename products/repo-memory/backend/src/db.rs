@@ -3,8 +3,8 @@ use patchhive_product_core::sqlite::{PooledSqliteConnection, SqlitePool};
 use rusqlite::{params, params_from_iter, Connection, OptionalExtension};
 
 use crate::models::{
-    stable_memory_ref, FailGuardCandidate, HistoryItem, IngestRecord, KnownRepo, MemoryEntry,
-    OverviewCounts,
+    stable_memory_ref, FailGuardCandidate, FailGuardGuardrail, FailGuardMatchRecord, HistoryItem,
+    IngestRecord, KnownRepo, MemoryEntry, OverviewCounts,
 };
 
 static DB_POOL: Lazy<SqlitePool> = Lazy::new(|| {
@@ -80,11 +80,44 @@ pub fn init_db() -> rusqlite::Result<()> {
           affected_paths_json TEXT NOT NULL,
           evidence_json TEXT NOT NULL,
           confidence REAL NOT NULL,
+          correlation_key TEXT NOT NULL DEFAULT '',
+          occurrence_count INTEGER NOT NULL DEFAULT 1,
           status TEXT NOT NULL DEFAULT 'open',
           memory_ref TEXT NOT NULL DEFAULT '',
           resolution_note TEXT NOT NULL DEFAULT '',
           created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          last_seen_at TEXT NOT NULL DEFAULT '',
+          recurrence_of TEXT NOT NULL DEFAULT ''
+        );
+
+        CREATE TABLE IF NOT EXISTS failguard_guardrails (
+          id TEXT PRIMARY KEY,
+          repo TEXT NOT NULL,
+          candidate_id TEXT NOT NULL DEFAULT '',
+          memory_ref TEXT NOT NULL,
+          title TEXT NOT NULL,
+          prevention TEXT NOT NULL,
+          affected_paths_json TEXT NOT NULL,
+          suggestions_json TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'active',
+          match_count INTEGER NOT NULL DEFAULT 0,
+          last_matched_at TEXT NOT NULL DEFAULT '',
+          recurrence_count INTEGER NOT NULL DEFAULT 0,
+          last_recurred_at TEXT NOT NULL DEFAULT '',
+          created_at TEXT NOT NULL,
           updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS failguard_matches (
+          id TEXT PRIMARY KEY,
+          guardrail_id TEXT NOT NULL,
+          repo TEXT NOT NULL,
+          consumer TEXT NOT NULL,
+          context_ref TEXT NOT NULL DEFAULT '',
+          matched_paths_json TEXT NOT NULL,
+          matched_terms_json TEXT NOT NULL,
+          created_at TEXT NOT NULL
         );
 
         CREATE INDEX IF NOT EXISTS idx_memory_runs_repo_created
@@ -95,6 +128,10 @@ pub fn init_db() -> rusqlite::Result<()> {
           ON memory_entries (repo, memory_ref);
         CREATE INDEX IF NOT EXISTS idx_failguard_candidates_repo_status
           ON failguard_candidates (repo, status, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_failguard_guardrails_repo_status
+          ON failguard_guardrails (repo, status, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_failguard_matches_guardrail_created
+          ON failguard_matches (guardrail_id, created_at DESC);
         "#,
     )?;
     ensure_column(
@@ -102,6 +139,49 @@ pub fn init_db() -> rusqlite::Result<()> {
         "memory_entries",
         "memory_ref",
         "TEXT NOT NULL DEFAULT ''",
+    )?;
+    ensure_column(
+        &conn,
+        "failguard_candidates",
+        "recurrence_of",
+        "TEXT NOT NULL DEFAULT ''",
+    )?;
+    ensure_column(
+        &conn,
+        "failguard_guardrails",
+        "recurrence_count",
+        "INTEGER NOT NULL DEFAULT 0",
+    )?;
+    ensure_column(
+        &conn,
+        "failguard_guardrails",
+        "last_recurred_at",
+        "TEXT NOT NULL DEFAULT ''",
+    )?;
+    ensure_column(
+        &conn,
+        "failguard_candidates",
+        "correlation_key",
+        "TEXT NOT NULL DEFAULT ''",
+    )?;
+    ensure_column(
+        &conn,
+        "failguard_candidates",
+        "occurrence_count",
+        "INTEGER NOT NULL DEFAULT 1",
+    )?;
+    ensure_column(
+        &conn,
+        "failguard_candidates",
+        "last_seen_at",
+        "TEXT NOT NULL DEFAULT ''",
+    )?;
+    conn.execute(
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_failguard_candidates_correlation
+        ON failguard_candidates (repo, correlation_key, status)
+        "#,
+        [],
     )?;
     backfill_memory_refs(&conn)?;
     conn.execute(
@@ -484,10 +564,11 @@ pub fn save_failguard_candidate(candidate: &FailGuardCandidate) -> rusqlite::Res
         r#"
         INSERT INTO failguard_candidates (
           id, repo, source_type, source_ref, title, outcome, lesson, prevention,
-          affected_paths_json, evidence_json, confidence, status, memory_ref,
-          resolution_note, created_at, updated_at
+          affected_paths_json, evidence_json, confidence, correlation_key, occurrence_count,
+          status, memory_ref, resolution_note, created_at, updated_at, last_seen_at,
+          recurrence_of
         )
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)
         "#,
         params![
             candidate.id,
@@ -501,14 +582,268 @@ pub fn save_failguard_candidate(candidate: &FailGuardCandidate) -> rusqlite::Res
             serde_json::to_string(&candidate.affected_paths).unwrap_or_else(|_| "[]".into()),
             serde_json::to_string(&candidate.evidence).unwrap_or_else(|_| "[]".into()),
             candidate.confidence,
+            candidate.correlation_key,
+            candidate.occurrence_count,
             candidate.status,
             candidate.memory_ref,
             candidate.resolution_note,
             candidate.created_at,
             candidate.updated_at,
+            candidate.last_seen_at,
+            candidate.recurrence_of,
         ],
     )?;
     Ok(())
+}
+
+pub fn find_open_failguard_candidate(
+    repo: &str,
+    correlation_key: &str,
+) -> rusqlite::Result<Option<FailGuardCandidate>> {
+    let conn = connect()?;
+    let mut stmt = conn.prepare(
+        r#"
+        SELECT
+          id, repo, source_type, source_ref, title, outcome, lesson, prevention,
+          affected_paths_json, evidence_json, confidence, correlation_key, occurrence_count,
+          status, memory_ref, resolution_note, created_at, updated_at, last_seen_at,
+          recurrence_of
+        FROM failguard_candidates
+        WHERE repo = ?1 AND correlation_key = ?2 AND status = 'open'
+        ORDER BY updated_at DESC
+        LIMIT 1
+        "#,
+    )?;
+    stmt.query_row(params![repo, correlation_key], decode_failguard_candidate)
+        .optional()
+}
+
+pub fn update_failguard_candidate(candidate: &FailGuardCandidate) -> rusqlite::Result<()> {
+    let conn = connect()?;
+    conn.execute(
+        r#"
+        UPDATE failguard_candidates
+        SET source_ref = ?2,
+            outcome = ?3,
+            lesson = ?4,
+            prevention = ?5,
+            affected_paths_json = ?6,
+            evidence_json = ?7,
+            confidence = ?8,
+            occurrence_count = ?9,
+            updated_at = ?10,
+            last_seen_at = ?11,
+            correlation_key = ?12,
+            recurrence_of = ?13
+        WHERE id = ?1
+        "#,
+        params![
+            candidate.id,
+            candidate.source_ref,
+            candidate.outcome,
+            candidate.lesson,
+            candidate.prevention,
+            serde_json::to_string(&candidate.affected_paths).unwrap_or_else(|_| "[]".into()),
+            serde_json::to_string(&candidate.evidence).unwrap_or_else(|_| "[]".into()),
+            candidate.confidence,
+            candidate.occurrence_count,
+            candidate.updated_at,
+            candidate.last_seen_at,
+            candidate.correlation_key,
+            candidate.recurrence_of,
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn save_failguard_guardrail(guardrail: &FailGuardGuardrail) -> rusqlite::Result<()> {
+    let conn = connect()?;
+    conn.execute(
+        r#"
+        INSERT INTO failguard_guardrails (
+          id, repo, candidate_id, memory_ref, title, prevention, affected_paths_json,
+          suggestions_json, status, match_count, last_matched_at, recurrence_count,
+          last_recurred_at, created_at, updated_at
+        )
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+        ON CONFLICT(id) DO UPDATE SET
+          candidate_id = CASE
+            WHEN excluded.candidate_id = '' THEN failguard_guardrails.candidate_id
+            ELSE excluded.candidate_id
+          END,
+          title = excluded.title,
+          prevention = excluded.prevention,
+          affected_paths_json = excluded.affected_paths_json,
+          suggestions_json = excluded.suggestions_json,
+          status = excluded.status,
+          updated_at = excluded.updated_at
+        "#,
+        params![
+            guardrail.id,
+            guardrail.repo,
+            guardrail.candidate_id,
+            guardrail.memory_ref,
+            guardrail.title,
+            guardrail.prevention,
+            serde_json::to_string(&guardrail.affected_paths).unwrap_or_else(|_| "[]".into()),
+            serde_json::to_string(&guardrail.suggestions).unwrap_or_else(|_| "[]".into()),
+            guardrail.status,
+            guardrail.match_count,
+            guardrail.last_matched_at,
+            guardrail.recurrence_count,
+            guardrail.last_recurred_at,
+            guardrail.created_at,
+            guardrail.updated_at,
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn list_failguard_guardrails(
+    repo: Option<&str>,
+    status: Option<&str>,
+) -> rusqlite::Result<Vec<FailGuardGuardrail>> {
+    let conn = connect()?;
+    let mut sql = String::from(
+        r#"
+        SELECT id, repo, candidate_id, memory_ref, title, prevention,
+               affected_paths_json, suggestions_json, status, match_count,
+               last_matched_at, recurrence_count, last_recurred_at, created_at, updated_at
+        FROM failguard_guardrails
+        WHERE 1=1
+        "#,
+    );
+    let mut values = Vec::new();
+    if let Some(repo) = repo.filter(|value| !value.trim().is_empty()) {
+        sql.push_str(&format!(" AND repo = ?{}", values.len() + 1));
+        values.push(repo.to_string());
+    }
+    if let Some(status) = status.filter(|value| !value.trim().is_empty() && *value != "all") {
+        sql.push_str(&format!(" AND status = ?{}", values.len() + 1));
+        values.push(status.to_string());
+    }
+    sql.push_str(" ORDER BY updated_at DESC");
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map(params_from_iter(values.iter()), decode_failguard_guardrail)?;
+    rows.collect()
+}
+
+pub fn find_promoted_failguard_guardrail(
+    repo: &str,
+    correlation_key: &str,
+) -> rusqlite::Result<Option<String>> {
+    let conn = connect()?;
+    conn.query_row(
+        r#"
+        SELECT g.id
+        FROM failguard_candidates c
+        JOIN failguard_guardrails g ON g.candidate_id = c.id
+        WHERE c.repo = ?1
+          AND c.correlation_key = ?2
+          AND c.status = 'promoted'
+          AND g.status = 'active'
+        ORDER BY c.updated_at DESC
+        LIMIT 1
+        "#,
+        params![repo, correlation_key],
+        |row| row.get(0),
+    )
+    .optional()
+}
+
+pub fn record_failguard_recurrence(guardrail_id: &str, occurred_at: &str) -> rusqlite::Result<()> {
+    let conn = connect()?;
+    conn.execute(
+        r#"
+        UPDATE failguard_guardrails
+        SET recurrence_count = recurrence_count + 1,
+            last_recurred_at = ?2,
+            updated_at = ?2
+        WHERE id = ?1
+        "#,
+        params![guardrail_id, occurred_at],
+    )?;
+    Ok(())
+}
+
+pub fn record_failguard_match(record: &FailGuardMatchRecord) -> rusqlite::Result<()> {
+    let mut conn = connect()?;
+    let tx = conn.transaction()?;
+    tx.execute(
+        r#"
+        INSERT INTO failguard_matches (
+          id, guardrail_id, repo, consumer, context_ref, matched_paths_json,
+          matched_terms_json, created_at
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+        "#,
+        params![
+            record.id,
+            record.guardrail_id,
+            record.repo,
+            record.consumer,
+            record.context_ref,
+            serde_json::to_string(&record.matched_paths).unwrap_or_else(|_| "[]".into()),
+            serde_json::to_string(&record.matched_terms).unwrap_or_else(|_| "[]".into()),
+            record.created_at,
+        ],
+    )?;
+    tx.execute(
+        r#"
+        UPDATE failguard_guardrails
+        SET match_count = match_count + 1,
+            last_matched_at = ?2,
+            updated_at = ?2
+        WHERE id = ?1
+        "#,
+        params![record.guardrail_id, record.created_at],
+    )?;
+    tx.commit()?;
+    Ok(())
+}
+
+pub fn list_failguard_matches(
+    repo: Option<&str>,
+    consumer: Option<&str>,
+    limit: u32,
+) -> rusqlite::Result<Vec<FailGuardMatchRecord>> {
+    let conn = connect()?;
+    let mut sql = String::from(
+        r#"
+        SELECT id, guardrail_id, repo, consumer, context_ref, matched_paths_json,
+               matched_terms_json, created_at
+        FROM failguard_matches
+        WHERE 1=1
+        "#,
+    );
+    let mut values = Vec::new();
+    if let Some(repo) = repo.filter(|value| !value.trim().is_empty()) {
+        sql.push_str(&format!(" AND repo = ?{}", values.len() + 1));
+        values.push(repo.to_string());
+    }
+    if let Some(consumer) = consumer.filter(|value| !value.trim().is_empty()) {
+        sql.push_str(&format!(" AND consumer = ?{}", values.len() + 1));
+        values.push(consumer.to_string());
+    }
+    sql.push_str(&format!(
+        " ORDER BY created_at DESC LIMIT {}",
+        limit.clamp(1, 200)
+    ));
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map(params_from_iter(values.iter()), |row| {
+        let matched_paths_json: String = row.get(5)?;
+        let matched_terms_json: String = row.get(6)?;
+        Ok(FailGuardMatchRecord {
+            id: row.get(0)?,
+            guardrail_id: row.get(1)?,
+            repo: row.get(2)?,
+            consumer: row.get(3)?,
+            context_ref: row.get(4)?,
+            matched_paths: serde_json::from_str(&matched_paths_json).unwrap_or_default(),
+            matched_terms: serde_json::from_str(&matched_terms_json).unwrap_or_default(),
+            created_at: row.get(7)?,
+        })
+    })?;
+    rows.collect()
 }
 
 pub fn list_failguard_candidates(
@@ -520,8 +855,9 @@ pub fn list_failguard_candidates(
         r#"
         SELECT
           id, repo, source_type, source_ref, title, outcome, lesson, prevention,
-          affected_paths_json, evidence_json, confidence, status, memory_ref,
-          resolution_note, created_at, updated_at
+          affected_paths_json, evidence_json, confidence, correlation_key, occurrence_count,
+          status, memory_ref, resolution_note, created_at, updated_at, last_seen_at,
+          recurrence_of
         FROM failguard_candidates
         WHERE 1=1
         "#,
@@ -558,8 +894,9 @@ pub fn get_failguard_candidate(id: &str) -> rusqlite::Result<Option<FailGuardCan
         r#"
         SELECT
           id, repo, source_type, source_ref, title, outcome, lesson, prevention,
-          affected_paths_json, evidence_json, confidence, status, memory_ref,
-          resolution_note, created_at, updated_at
+          affected_paths_json, evidence_json, confidence, correlation_key, occurrence_count,
+          status, memory_ref, resolution_note, created_at, updated_at, last_seen_at,
+          recurrence_of
         FROM failguard_candidates
         WHERE id = ?1
         "#,
@@ -693,10 +1030,36 @@ fn decode_failguard_candidate(row: &rusqlite::Row<'_>) -> rusqlite::Result<FailG
         affected_paths: serde_json::from_str(&affected_paths_json).unwrap_or_default(),
         evidence: serde_json::from_str(&evidence_json).unwrap_or_default(),
         confidence: row.get(10)?,
-        status: row.get(11)?,
-        memory_ref: row.get(12)?,
-        resolution_note: row.get(13)?,
-        created_at: row.get(14)?,
-        updated_at: row.get(15)?,
+        correlation_key: row.get(11)?,
+        occurrence_count: row.get::<_, i64>(12)? as u32,
+        status: row.get(13)?,
+        memory_ref: row.get(14)?,
+        resolution_note: row.get(15)?,
+        created_at: row.get(16)?,
+        updated_at: row.get(17)?,
+        last_seen_at: row.get(18)?,
+        recurrence_of: row.get(19)?,
+    })
+}
+
+fn decode_failguard_guardrail(row: &rusqlite::Row<'_>) -> rusqlite::Result<FailGuardGuardrail> {
+    let affected_paths_json: String = row.get(6)?;
+    let suggestions_json: String = row.get(7)?;
+    Ok(FailGuardGuardrail {
+        id: row.get(0)?,
+        repo: row.get(1)?,
+        candidate_id: row.get(2)?,
+        memory_ref: row.get(3)?,
+        title: row.get(4)?,
+        prevention: row.get(5)?,
+        affected_paths: serde_json::from_str(&affected_paths_json).unwrap_or_default(),
+        suggestions: serde_json::from_str(&suggestions_json).unwrap_or_default(),
+        status: row.get(8)?,
+        match_count: row.get::<_, i64>(9)? as u32,
+        last_matched_at: row.get(10)?,
+        recurrence_count: row.get::<_, i64>(11)? as u32,
+        last_recurred_at: row.get(12)?,
+        created_at: row.get(13)?,
+        updated_at: row.get(14)?,
     })
 }

@@ -39,5 +39,15 @@ pub async fn validate_config(client: &reqwest::Client) -> Vec<StartupCheck> {
         checks.push(github_profile.missing_check(StartupCheckLevel::Warn));
     }
 
+    if patchhive_product_core::repo_memory::repo_memory_url().is_some() {
+        checks.push(StartupCheck::info(
+            "RepoMemory context is configured. ReleaseSentry will include matching promoted FailGuard lessons as release-gate evidence.",
+        ));
+    } else {
+        checks.push(StartupCheck::info(
+            "RepoMemory context is not configured. ReleaseSentry will skip FailGuard release-gate evidence until PATCHHIVE_REPO_MEMORY_URL is set.",
+        ));
+    }
+
     checks
 }

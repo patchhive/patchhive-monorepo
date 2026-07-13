@@ -1,4 +1,6 @@
 use chrono::Utc;
+use patchhive_product_core::repo_memory::{fetch_repo_memory_context, RepoMemoryContextRequest};
+use tracing::warn;
 use uuid::Uuid;
 
 use crate::{
@@ -106,6 +108,62 @@ pub(super) async fn build_release_readiness(
                 ..ReleaseCheck::default()
             }),
     );
+
+    match fetch_repo_memory_context(
+        &state.http,
+        &RepoMemoryContextRequest {
+            repo: repo.clone(),
+            consumer: "release-sentry".into(),
+            changed_paths: Vec::new(),
+            task_summary: format!(
+                "Assess release readiness for {} on {}{}",
+                repo,
+                branch,
+                if target_tag.is_empty() {
+                    String::new()
+                } else {
+                    format!(" targeting {target_tag}")
+                }
+            ),
+            diff_summary: format!(
+                "Release candidate {} on {}",
+                if target_version.is_empty() {
+                    "current".to_string()
+                } else {
+                    target_version.clone()
+                },
+                branch
+            ),
+            limit: 6,
+        },
+    )
+    .await
+    {
+        Ok(Some(context)) if !context.guardrails.is_empty() => checks.push(ReleaseCheck {
+            key: "failguard-guardrails".into(),
+            label: "FailGuard Guardrails".into(),
+            status: "warn".into(),
+            detail: format!(
+                "{} human-promoted failure guardrail{} matched this release scope and {} confirmation before shipping.",
+                context.guardrails.len(),
+                if context.guardrails.len() == 1 { "" } else { "s" },
+                if context.guardrails.len() == 1 {
+                    "needs"
+                } else {
+                    "need"
+                }
+            ),
+            evidence: context
+                .guardrails
+                .iter()
+                .take(6)
+                .map(|guardrail| format!("{}: {}", guardrail.title, guardrail.instruction))
+                .collect(),
+            ..ReleaseCheck::default()
+        }),
+        Ok(_) => {}
+        Err(err) => warn!("RepoMemory FailGuard lookup failed for {repo}: {err}"),
+    }
 
     let metrics = build_metrics(
         &checks,

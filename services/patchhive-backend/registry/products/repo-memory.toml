@@ -115,6 +115,16 @@ path = "/api/products/repo-memory/failguard/candidates"
 description = "List reviewable FailGuard candidates."
 
 [[routes]]
+method = "GET"
+path = "/api/products/repo-memory/failguard/guardrails"
+description = "List compiled FailGuard guardrails and match counts."
+
+[[routes]]
+method = "GET"
+path = "/api/products/repo-memory/failguard/matches"
+description = "List recorded FailGuard guardrail matches for HiveCore and operators."
+
+[[routes]]
 method = "POST"
 path = "/api/products/repo-memory/failguard/candidates"
 description = "Queue a FailGuard candidate for review."

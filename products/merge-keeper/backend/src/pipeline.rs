@@ -137,6 +137,18 @@ diff --git a/tests/lib.test.rs b/tests/lib.test.rs
         apply_repo_memory_signals(
             &mut warnings,
             Some(&RepoMemoryContextPreview {
+                summary: "A promoted guardrail matched.".into(),
+                failguard_warnings: vec!["Avoid the previous auth regression.".into()],
+                ..RepoMemoryContextPreview::default()
+            }),
+        );
+        assert_eq!(warnings.len(), 1);
+        assert_eq!(warnings[0].key, "failguard-guardrail");
+        warnings.clear();
+
+        apply_repo_memory_signals(
+            &mut warnings,
+            Some(&RepoMemoryContextPreview {
                 summary: "Durable repo expectations.".into(),
                 policy_entries: 2,
                 pinned_entries: 0,

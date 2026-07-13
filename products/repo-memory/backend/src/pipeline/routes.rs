@@ -349,6 +349,13 @@ pub async fn context(Json(request): Json<ContextRequest>) -> JsonResult<ContextR
         &request.diff_summary,
         request.limit.max(1) as usize,
     );
+    let guardrails = super::failguard::match_failguard_guardrails(
+        &repo,
+        &consumer,
+        &request.changed_paths,
+        &request.task_summary,
+        &request.diff_summary,
+    )?;
 
     let policy_count = entries
         .iter()
@@ -364,7 +371,14 @@ pub async fn context(Json(request): Json<ContextRequest>) -> JsonResult<ContextR
             "RepoMemory selected {} relevant memories from the latest run for {repo}{}{}.",
             entries.len(),
             if policy_count > 0 {
-                format!(", including {policy_count} policy memories")
+                format!(
+                    ", including {policy_count} policy {}",
+                    if policy_count == 1 {
+                        "memory"
+                    } else {
+                        "memories"
+                    }
+                )
             } else {
                 String::new()
             },
@@ -387,6 +401,7 @@ pub async fn context(Json(request): Json<ContextRequest>) -> JsonResult<ContextR
             .map(|entry| entry.prompt_line.clone())
             .collect(),
         entries,
+        guardrails,
     }))
 }
 

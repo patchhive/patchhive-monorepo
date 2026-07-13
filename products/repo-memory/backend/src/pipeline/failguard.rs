@@ -13,7 +13,9 @@ use crate::{
         stable_memory_ref, FailGuardCandidate, FailGuardCandidateDismissRequest,
         FailGuardCandidateListResponse, FailGuardCandidatePromoteRequest,
         FailGuardCandidatePromoteResponse, FailGuardCandidateRequest, FailGuardCandidateResponse,
-        FailGuardLessonRequest, FailGuardLessonResponse, IngestRecord, MemoryEntry, MemoryEvidence,
+        FailGuardGuardrail, FailGuardGuardrailListResponse, FailGuardGuardrailMatch,
+        FailGuardLessonRequest, FailGuardLessonResponse, FailGuardMatchListResponse,
+        FailGuardMatchRecord, FailGuardSuggestion, IngestRecord, MemoryEntry, MemoryEvidence,
     },
 };
 
@@ -28,6 +30,69 @@ pub async fn capture_failguard_lesson(
     Json(request): Json<FailGuardLessonRequest>,
 ) -> JsonResult<FailGuardLessonResponse> {
     Ok(JsonResponse(save_failguard_lesson(request)?))
+}
+
+pub fn backfill_promoted_guardrails() -> anyhow::Result<u32> {
+    let existing = db::list_failguard_guardrails(None, Some("all"))?;
+    let mut candidates = db::list_failguard_candidates(None, Some("all"))?;
+    for candidate in &mut candidates {
+        let mut changed = false;
+        if candidate.correlation_key.trim().is_empty() {
+            candidate.correlation_key = candidate_correlation_key(
+                &candidate.repo,
+                &candidate.source_type,
+                &candidate.title,
+                &candidate.affected_paths,
+            );
+            changed = true;
+        }
+        if candidate.last_seen_at.trim().is_empty() {
+            candidate.last_seen_at = if candidate.updated_at.trim().is_empty() {
+                candidate.created_at.clone()
+            } else {
+                candidate.updated_at.clone()
+            };
+            changed = true;
+        }
+        if changed {
+            db::update_failguard_candidate(candidate)?;
+        }
+    }
+    let mut created = 0;
+    for candidate in candidates
+        .into_iter()
+        .filter(|candidate| candidate.status == "promoted")
+    {
+        if candidate.memory_ref.trim().is_empty()
+            || existing
+                .iter()
+                .any(|guardrail| guardrail.candidate_id == candidate.id)
+        {
+            continue;
+        }
+        let request = FailGuardLessonRequest {
+            repo: candidate.repo.clone(),
+            title: candidate.title.clone(),
+            outcome: candidate.outcome.clone(),
+            lesson: candidate.lesson.clone(),
+            prevention: candidate.prevention.clone(),
+            affected_paths: candidate.affected_paths.clone(),
+            evidence: candidate.evidence.clone(),
+            disposition: "policy".into(),
+            pinned: true,
+        };
+        let entry = MemoryEntry {
+            memory_ref: candidate.memory_ref.clone(),
+            repo: candidate.repo.clone(),
+            disposition: "policy".into(),
+            pinned: true,
+            ..MemoryEntry::default()
+        };
+        let guardrail = compile_failguard_guardrail(&request, &entry, &candidate.id);
+        db::save_failguard_guardrail(&guardrail)?;
+        created += 1;
+    }
+    Ok(created)
 }
 
 pub async fn failguard_candidates(
@@ -64,14 +129,64 @@ pub async fn create_failguard_candidate(
         ));
     }
 
-    let candidate = build_failguard_candidate(request);
-    db::save_failguard_candidate(&candidate).map_err(internal_error)?;
+    let mut candidate = build_failguard_candidate(request);
+    if let Some(guardrail_id) =
+        db::find_promoted_failguard_guardrail(&candidate.repo, &candidate.correlation_key)
+            .map_err(internal_error)?
+    {
+        candidate.recurrence_of = guardrail_id;
+        candidate.resolution_note =
+            "Possible recurrence of a previously promoted FailGuard lesson.".into();
+    }
+    let (candidate, correlated) = if let Some(existing) =
+        db::find_open_failguard_candidate(&candidate.repo, &candidate.correlation_key)
+            .map_err(internal_error)?
+    {
+        let merged = merge_failguard_candidate(existing, candidate);
+        db::update_failguard_candidate(&merged).map_err(internal_error)?;
+        (merged, true)
+    } else {
+        db::save_failguard_candidate(&candidate).map_err(internal_error)?;
+        (candidate, false)
+    };
+    if !candidate.recurrence_of.is_empty() {
+        db::record_failguard_recurrence(&candidate.recurrence_of, &candidate.last_seen_at)
+            .map_err(internal_error)?;
+    }
 
     Ok(JsonResponse(FailGuardCandidateResponse {
         ok: true,
-        message: "FailGuard candidate queued for review.".into(),
+        message: if correlated {
+            format!(
+                "FailGuard correlated this outcome with an open candidate now seen {} times.",
+                candidate.occurrence_count
+            )
+        } else {
+            "FailGuard candidate queued for review.".into()
+        },
         candidate,
     }))
+}
+
+pub async fn failguard_guardrails(
+    Query(query): Query<FailGuardGuardrailQuery>,
+) -> JsonResult<FailGuardGuardrailListResponse> {
+    let status = query.status.as_deref().unwrap_or("active");
+    let guardrails = db::list_failguard_guardrails(query.repo.as_deref(), Some(status))
+        .map_err(internal_error)?;
+    Ok(JsonResponse(FailGuardGuardrailListResponse { guardrails }))
+}
+
+pub async fn failguard_matches(
+    Query(query): Query<FailGuardMatchQuery>,
+) -> JsonResult<FailGuardMatchListResponse> {
+    let matches = db::list_failguard_matches(
+        query.repo.as_deref(),
+        query.consumer.as_deref(),
+        query.limit.unwrap_or(50),
+    )
+    .map_err(internal_error)?;
+    Ok(JsonResponse(FailGuardMatchListResponse { matches }))
 }
 
 pub async fn promote_failguard_candidate(
@@ -86,8 +201,10 @@ pub async fn promote_failguard_candidate(
         return Err(bad_request("FailGuard can only promote open candidates."));
     }
 
-    let response = save_failguard_lesson(candidate_to_lesson_request(&candidate, request))?;
-    let note = "Promoted to RepoMemory failure-pattern policy.";
+    let mut response = save_failguard_lesson(candidate_to_lesson_request(&candidate, request))?;
+    response.guardrail.candidate_id = candidate.id.clone();
+    db::save_failguard_guardrail(&response.guardrail).map_err(internal_error)?;
+    let note = "Promoted to RepoMemory and compiled into active product guardrails.";
     db::update_failguard_candidate_status(
         &candidate.id,
         "promoted",
@@ -101,10 +218,11 @@ pub async fn promote_failguard_candidate(
 
     Ok(JsonResponse(FailGuardCandidatePromoteResponse {
         ok: true,
-        message: "FailGuard candidate promoted into RepoMemory.".into(),
+        message: "FailGuard candidate promoted into RepoMemory and compiled into active product guardrails.".into(),
         candidate: updated,
         run: response.run,
         entry: response.entry,
+        guardrail: response.guardrail,
     }))
 }
 
@@ -173,6 +291,7 @@ pub fn save_failguard_lesson(
         ));
     }
 
+    let guardrail_request = request.clone();
     let carry_forward = latest_repo_entries(&request.repo)?;
     let captured_title = format!("FailGuard: {}", request.title);
     let run = build_failguard_lesson_run(request, carry_forward);
@@ -191,12 +310,17 @@ pub fn save_failguard_lesson(
         entry.pinned,
     )
     .map_err(internal_error)?;
+    let guardrail = compile_failguard_guardrail(&guardrail_request, &entry, "");
+    db::save_failguard_guardrail(&guardrail).map_err(internal_error)?;
 
     Ok(FailGuardLessonResponse {
         ok: true,
-        message: "FailGuard lesson captured as a RepoMemory failure-pattern policy.".into(),
+        message:
+            "FailGuard lesson captured in RepoMemory and compiled into active product guardrails."
+                .into(),
         run,
         entry,
+        guardrail,
     })
 }
 
@@ -237,6 +361,12 @@ pub fn build_failguard_candidate(request: FailGuardCandidateRequest) -> FailGuar
     } else {
         truncate(request.prevention.trim(), 260)
     };
+    let correlation_key = candidate_correlation_key(
+        &request.repo,
+        &request.source_type,
+        &request.title,
+        &affected_paths,
+    );
 
     FailGuardCandidate {
         id: Uuid::new_v4().to_string(),
@@ -250,12 +380,217 @@ pub fn build_failguard_candidate(request: FailGuardCandidateRequest) -> FailGuar
         affected_paths,
         evidence,
         confidence: normalized_candidate_confidence(request.confidence, &request.source_type),
+        correlation_key,
+        occurrence_count: 1,
         status: "open".into(),
         memory_ref: String::new(),
         resolution_note: String::new(),
+        recurrence_of: String::new(),
+        created_at: now.clone(),
+        updated_at: now.clone(),
+        last_seen_at: now,
+    }
+}
+
+fn candidate_correlation_key(
+    repo: &str,
+    source_type: &str,
+    title: &str,
+    affected_paths: &[String],
+) -> String {
+    let scope = affected_paths
+        .first()
+        .map(|path| path_bucket(path))
+        .unwrap_or_default();
+    stable_memory_ref(
+        repo,
+        &normalize_source_type(source_type),
+        &format!("{} {scope}", title.trim()),
+    )
+}
+
+fn merge_failguard_candidate(
+    mut existing: FailGuardCandidate,
+    incoming: FailGuardCandidate,
+) -> FailGuardCandidate {
+    existing.occurrence_count = existing.occurrence_count.saturating_add(1);
+    existing.confidence = existing.confidence.max(incoming.confidence).min(96.0);
+    existing.last_seen_at = incoming.last_seen_at;
+    existing.updated_at = incoming.updated_at;
+    if !incoming.source_ref.is_empty() {
+        existing.source_ref = incoming.source_ref;
+    }
+    existing.affected_paths.extend(incoming.affected_paths);
+    existing.affected_paths = clean_failguard_items(existing.affected_paths, 12);
+    existing.evidence.extend(incoming.evidence);
+    existing.evidence = clean_failguard_items(existing.evidence, 10);
+    existing
+}
+
+pub(crate) fn compile_failguard_guardrail(
+    request: &FailGuardLessonRequest,
+    entry: &MemoryEntry,
+    candidate_id: &str,
+) -> FailGuardGuardrail {
+    let now = Utc::now().to_rfc3339();
+    let severity = if entry.disposition == "policy" || entry.pinned {
+        "block"
+    } else {
+        "warn"
+    };
+    let prevention = request.prevention.trim().to_string();
+    let suggestions = vec![
+        FailGuardSuggestion {
+            consumer: "trust-gate".into(),
+            kind: "policy-rule-proposal".into(),
+            severity: severity.into(),
+            instruction: format!("Treat a matching diff as {severity}: {prevention}"),
+        },
+        FailGuardSuggestion {
+            consumer: "repo-reaper".into(),
+            kind: "preflight-constraint".into(),
+            severity: "block".into(),
+            instruction: format!(
+                "Before generating or accepting a patch, prove this constraint is satisfied: {prevention}"
+            ),
+        },
+        FailGuardSuggestion {
+            consumer: "merge-keeper".into(),
+            kind: "merge-warning".into(),
+            severity: "warn".into(),
+            instruction: format!(
+                "Hold for human confirmation when this guardrail matches: {prevention}"
+            ),
+        },
+        FailGuardSuggestion {
+            consumer: "release-sentry".into(),
+            kind: "release-gate-evidence".into(),
+            severity: "warn".into(),
+            instruction: format!(
+                "Include this unresolved guardrail in the ship decision: {prevention}"
+            ),
+        },
+    ];
+    FailGuardGuardrail {
+        id: format!("guardrail__{}", entry.memory_ref),
+        repo: entry.repo.clone(),
+        candidate_id: candidate_id.into(),
+        memory_ref: entry.memory_ref.clone(),
+        title: request.title.trim().to_string(),
+        prevention,
+        affected_paths: clean_failguard_items(request.affected_paths.clone(), 12),
+        suggestions,
+        status: "active".into(),
+        match_count: 0,
+        last_matched_at: String::new(),
+        recurrence_count: 0,
+        last_recurred_at: String::new(),
         created_at: now.clone(),
         updated_at: now,
     }
+}
+
+pub fn match_failguard_guardrails(
+    repo: &str,
+    consumer: &str,
+    changed_paths: &[String],
+    task_summary: &str,
+    diff_summary: &str,
+) -> std::result::Result<Vec<FailGuardGuardrailMatch>, JsonError> {
+    let guardrails =
+        db::list_failguard_guardrails(Some(repo), Some("active")).map_err(internal_error)?;
+    let context_text = format!("{task_summary} {diff_summary}").to_ascii_lowercase();
+    let mut matches = Vec::new();
+    for guardrail in guardrails {
+        let matched_paths = matching_guardrail_paths(&guardrail, changed_paths);
+        let matched_terms = matching_guardrail_terms(&guardrail, &context_text);
+        let repo_wide_consumer = matches!(consumer, "release-sentry");
+        let matched = guardrail.affected_paths.is_empty()
+            || !matched_paths.is_empty()
+            || matched_terms.len() >= 2
+            || repo_wide_consumer;
+        if !matched {
+            continue;
+        }
+        let Some(suggestion) = guardrail
+            .suggestions
+            .iter()
+            .find(|suggestion| suggestion.consumer == consumer)
+        else {
+            continue;
+        };
+        let match_id = Uuid::new_v4().to_string();
+        let matched_at = Utc::now().to_rfc3339();
+        let context_ref = truncate(
+            if task_summary.trim().is_empty() {
+                diff_summary
+            } else {
+                task_summary
+            },
+            220,
+        );
+        db::record_failguard_match(&FailGuardMatchRecord {
+            id: match_id.clone(),
+            guardrail_id: guardrail.id.clone(),
+            repo: repo.into(),
+            consumer: consumer.into(),
+            context_ref,
+            matched_paths: matched_paths.clone(),
+            matched_terms: matched_terms.clone(),
+            created_at: matched_at.clone(),
+        })
+        .map_err(internal_error)?;
+        matches.push(FailGuardGuardrailMatch {
+            guardrail_id: guardrail.id,
+            memory_ref: guardrail.memory_ref,
+            title: guardrail.title,
+            prevention: guardrail.prevention,
+            consumer: suggestion.consumer.clone(),
+            kind: suggestion.kind.clone(),
+            severity: suggestion.severity.clone(),
+            instruction: suggestion.instruction.clone(),
+            matched_paths,
+            matched_terms,
+            match_id,
+            matched_at,
+        });
+    }
+    Ok(matches)
+}
+
+fn matching_guardrail_paths(
+    guardrail: &FailGuardGuardrail,
+    changed_paths: &[String],
+) -> Vec<String> {
+    let mut matches = changed_paths
+        .iter()
+        .filter(|path| {
+            let path = path.trim().trim_start_matches("./").to_ascii_lowercase();
+            let bucket = path_bucket(&path).to_ascii_lowercase();
+            guardrail.affected_paths.iter().any(|candidate| {
+                let candidate = candidate.to_ascii_lowercase();
+                path == candidate
+                    || path.starts_with(&(candidate.clone() + "/"))
+                    || candidate.starts_with(&(path.clone() + "/"))
+                    || bucket == candidate
+            })
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    matches.sort();
+    matches.dedup();
+    matches
+}
+
+fn matching_guardrail_terms(guardrail: &FailGuardGuardrail, context_text: &str) -> Vec<String> {
+    let mut matches =
+        super::utils::tokenize_context(&format!("{} {}", guardrail.title, guardrail.prevention))
+            .into_iter()
+            .filter(|term| context_text.contains(term))
+            .collect::<Vec<_>>();
+    matches.sort();
+    matches.truncate(4);
+    matches
 }
 
 pub fn candidate_to_lesson_request(
@@ -509,4 +844,17 @@ pub fn clean_failguard_items(items: Vec<String>, limit: usize) -> Vec<String> {
 pub struct FailGuardCandidateQuery {
     pub repo: Option<String>,
     pub status: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+pub struct FailGuardGuardrailQuery {
+    pub repo: Option<String>,
+    pub status: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+pub struct FailGuardMatchQuery {
+    pub repo: Option<String>,
+    pub consumer: Option<String>,
+    pub limit: Option<u32>,
 }

@@ -437,6 +437,41 @@ pub async fn review_diff(
     }
 
     if let Some(context) = repo_memory_context.as_ref() {
+        if !context.guardrails.is_empty() {
+            let severity = if context
+                .guardrails
+                .iter()
+                .any(|guardrail| guardrail.severity == "block")
+            {
+                "block"
+            } else {
+                "warn"
+            };
+            findings.push(make_finding(
+                "failguard_policy",
+                "FailGuard promoted guardrails",
+                severity,
+                "A human-promoted FailGuard lesson matched this diff and compiled into TrustGate policy evidence.",
+                context
+                    .guardrails
+                    .iter()
+                    .take(4)
+                    .map(|guardrail| {
+                        format!(
+                            "{} — {}{}",
+                            guardrail.title,
+                            guardrail.instruction,
+                            if guardrail.matched_paths.is_empty() {
+                                String::new()
+                            } else {
+                                format!(" Matched: {}.", guardrail.matched_paths.join(", "))
+                            }
+                        )
+                    })
+                    .collect(),
+            ));
+        }
+
         if missing_tests {
             let memory_testing_entries = context
                 .entries
@@ -477,6 +512,12 @@ pub async fn review_diff(
             .entries
             .iter()
             .filter(|e| e.kind == "failure_pattern")
+            .filter(|entry| {
+                !context
+                    .guardrails
+                    .iter()
+                    .any(|guardrail| guardrail.memory_ref == entry.memory_ref)
+            })
             .map(|e| format!("{} — {}", e.title, e.prompt_line))
             .take(3)
             .collect::<Vec<_>>();
@@ -484,6 +525,12 @@ pub async fn review_diff(
             .entries
             .iter()
             .filter(|e| e.kind == "failure_pattern")
+            .filter(|entry| {
+                !context
+                    .guardrails
+                    .iter()
+                    .any(|guardrail| guardrail.memory_ref == entry.memory_ref)
+            })
             .any(|e| e.pinned || e.disposition == "policy");
         if !failure_entries.is_empty() {
             findings.push(make_finding(

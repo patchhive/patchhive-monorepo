@@ -82,6 +82,9 @@ pub fn valid_repo(repo: &str) -> bool {
 }
 
 pub const STOPWORDS: &[&str] = &[
+    "the",
+    "and",
+    "for",
     "with",
     "that",
     "this",

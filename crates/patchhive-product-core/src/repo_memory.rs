@@ -85,6 +85,36 @@ pub struct RepoMemoryContextResponse {
     pub prompt_lines: Vec<String>,
     #[serde(default)]
     pub entries: Vec<RepoMemoryContextEntry>,
+    #[serde(default)]
+    pub guardrails: Vec<FailGuardGuardrailMatch>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct FailGuardGuardrailMatch {
+    #[serde(default)]
+    pub guardrail_id: String,
+    #[serde(default)]
+    pub memory_ref: String,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub prevention: String,
+    #[serde(default)]
+    pub consumer: String,
+    #[serde(default)]
+    pub kind: String,
+    #[serde(default)]
+    pub severity: String,
+    #[serde(default)]
+    pub instruction: String,
+    #[serde(default)]
+    pub matched_paths: Vec<String>,
+    #[serde(default)]
+    pub matched_terms: Vec<String>,
+    #[serde(default)]
+    pub match_id: String,
+    #[serde(default)]
+    pub matched_at: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

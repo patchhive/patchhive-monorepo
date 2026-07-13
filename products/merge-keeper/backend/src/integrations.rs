@@ -259,12 +259,19 @@ pub async fn fetch_repo_memory_preview(
         .filter(|entry| entry.disposition == "policy")
         .count() as u32;
     let pinned_entries = response.entries.iter().filter(|entry| entry.pinned).count() as u32;
+    let failguard_warnings = response
+        .guardrails
+        .iter()
+        .map(|guardrail| format!("{}: {}", guardrail.title, guardrail.instruction))
+        .take(4)
+        .collect();
 
     Ok(Some(RepoMemoryContextPreview {
         summary: response.summary,
         prompt_lines: response.prompt_lines.into_iter().take(4).collect(),
         policy_entries,
         pinned_entries,
+        failguard_warnings,
         top_entries: response
             .entries
             .into_iter()

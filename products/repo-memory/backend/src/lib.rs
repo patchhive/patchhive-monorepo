@@ -9,6 +9,8 @@ patchhive_product_core::define_api_key_auth_module! {
                 "/memories/curation",
                 "/failguard/lessons",
                 "/failguard/candidates",
+                "/failguard/guardrails",
+                "/failguard/matches",
                 "/failguard/candidates/{id}/promote",
                 "/failguard/candidates/{id}/dismiss",
                 "/api/products/repo-memory/ingest",
@@ -16,6 +18,8 @@ patchhive_product_core::define_api_key_auth_module! {
                 "/api/products/repo-memory/memories/curation",
                 "/api/products/repo-memory/failguard/lessons",
                 "/api/products/repo-memory/failguard/candidates",
+                "/api/products/repo-memory/failguard/guardrails",
+                "/api/products/repo-memory/failguard/matches",
                 "/api/products/repo-memory/failguard/candidates/{id}/promote",
                 "/api/products/repo-memory/failguard/candidates/{id}/dismiss",
             ])
@@ -64,6 +68,10 @@ pub static STARTUP_CHECKS: OnceCell<Vec<StartupCheck>> = OnceCell::new();
 
 pub async fn init_runtime() -> Result<()> {
     db::init_db()?;
+    let backfilled = pipeline::backfill_promoted_guardrails()?;
+    if backfilled > 0 {
+        tracing::info!(backfilled, "compiled existing promoted FailGuard lessons");
+    }
     let checks = startup::validate_config(&reqwest::Client::new()).await;
     log_checks(&checks);
     let _ = STARTUP_CHECKS.set(checks);
@@ -100,6 +108,8 @@ pub fn router() -> Router {
             "/failguard/candidates",
             get(pipeline::failguard_candidates).post(pipeline::create_failguard_candidate),
         )
+        .route("/failguard/guardrails", get(pipeline::failguard_guardrails))
+        .route("/failguard/matches", get(pipeline::failguard_matches))
         .route(
             "/failguard/candidates/:id/promote",
             post(pipeline::promote_failguard_candidate),

@@ -118,6 +118,7 @@ migration is tested.
 | `RELEASE_SENTRY_DB_PATH` | SQLite path for run history. |
 | `RELEASE_SENTRY_DB_POOL_SIZE` | SQLite connection pool size. |
 | `RELEASE_SENTRY_PORT` | Backend port for split local runs (default `8120`). |
+| `PATCHHIVE_REPO_MEMORY_URL` / `PATCHHIVE_REPO_MEMORY_API_KEY` | Optional RepoMemory context; matching promoted FailGuard lessons become warned release-gate checks. |
 | `RUST_LOG` | Rust logging level. |
 | `PATCHHIVE_ALLOW_REMOTE_BOOTSTRAP` | Set `true` to allow API-key generation from non-localhost. |
 

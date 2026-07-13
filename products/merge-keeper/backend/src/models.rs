@@ -100,6 +100,8 @@ pub struct RepoMemoryContextPreview {
     pub pinned_entries: u32,
     #[serde(default)]
     pub top_entries: Vec<String>,
+    #[serde(default)]
+    pub failguard_warnings: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

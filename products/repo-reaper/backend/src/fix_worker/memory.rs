@@ -12,7 +12,7 @@ pub fn build_repo_memory_block(context: Option<&RepoMemoryContextResponse>) -> S
     let Some(context) = context else {
         return String::new();
     };
-    if context.entries.is_empty() {
+    if context.entries.is_empty() && context.guardrails.is_empty() {
         return String::new();
     }
 
@@ -38,6 +38,18 @@ pub fn build_repo_memory_block(context: Option<&RepoMemoryContextResponse>) -> S
     }
 
     let mut sections = Vec::new();
+    if !context.guardrails.is_empty() {
+        sections.push(format!(
+            "FailGuard preflight constraints (human-promoted; do not bypass):\n{}",
+            context
+                .guardrails
+                .iter()
+                .take(6)
+                .map(|guardrail| format!("- [{}] {}", guardrail.severity, guardrail.instruction))
+                .collect::<Vec<_>>()
+                .join("\n")
+        ));
+    }
     if !curated.is_empty() {
         sections.push(format!("Operator-curated memory:\n{}", curated.join("\n")));
     }

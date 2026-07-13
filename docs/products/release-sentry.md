@@ -420,6 +420,8 @@ Scans for presence of common release files. Evaluated by pinging the GitHub Cont
 | `RELEASE_SENTRY_API_KEY_HASH` | — | Argon2 hash for API key auth (optional) |
 | `RELEASE_SENTRY_SERVICE_TOKEN_HASH` | — | Argon2 hash for HiveCore service token (optional) |
 | `BOT_GITHUB_TOKEN` | — | GitHub personal access token for API calls |
+| `PATCHHIVE_REPO_MEMORY_URL` | — | Optional RepoMemory base URL for promoted FailGuard evidence |
+| `PATCHHIVE_REPO_MEMORY_API_KEY` | — | API key for the configured RepoMemory endpoint |
 | `RUST_LOG` | `info` | Logging level |
 | `PATCHHIVE_ALLOW_REMOTE_BOOTSTRAP` | — | Set to `true` to allow API key generation from non-localhost |
 
@@ -616,6 +618,7 @@ with SQLite on a mounted volume. For production:
 | Security posture import (VulnTriage) | ❌ Future |
 | CI flakiness integration (FlakeSting) | ❌ Future |
 | Release checklist presets | ❌ Future |
-| RepoMemory release convention lookup | ❌ Future |
+| RepoMemory promoted FailGuard evidence | ✅ Implemented — matching guardrails add a warned release check and record the match |
+| Broader RepoMemory release convention lookup | ❌ Future |
 | Cross-product signal aggregation | ❌ Future |
 | Manual release hold / unhold UI | ❌ Future |

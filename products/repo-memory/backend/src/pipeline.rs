@@ -53,8 +53,9 @@ mod utils;
 // Re-export public functions from submodules for backward compatibility
 pub use context::disposition_rank;
 pub use failguard::{
-    capture_failguard_lesson, create_failguard_candidate, dismiss_failguard_candidate,
-    failguard_candidates, promote_failguard_candidate,
+    backfill_promoted_guardrails, capture_failguard_lesson, create_failguard_candidate,
+    dismiss_failguard_candidate, failguard_candidates, failguard_guardrails, failguard_matches,
+    promote_failguard_candidate,
 };
 pub use helpers::{build_entry, build_prompt_pack, build_summary, EntryDraft};
 pub use memory_run::truncate;
@@ -73,6 +74,7 @@ use context::rank_context_entries;
 #[cfg(test)]
 use failguard::{
     build_failguard_candidate, build_failguard_lesson_run, candidate_to_lesson_request,
+    compile_failguard_guardrail,
 };
 
 // Tests
@@ -467,6 +469,47 @@ mod tests {
         assert_eq!(lesson.affected_paths, candidate.affected_paths);
         assert_eq!(lesson.disposition, "policy");
         assert!(lesson.pinned);
+    }
+
+    #[test]
+    fn promoted_failguard_lesson_compiles_all_consumer_suggestions() {
+        let request = FailGuardLessonRequest {
+            repo: "patchhive/example".into(),
+            title: "Prevent unsigned webhook dispatch".into(),
+            outcome: "An unsigned webhook reached product logic.".into(),
+            lesson: "Webhook authentication must fail closed.".into(),
+            prevention: "Verify the signature before dispatch.".into(),
+            affected_paths: vec!["backend/src/webhook.rs".into()],
+            evidence: vec!["run-123".into()],
+            disposition: "policy".into(),
+            pinned: true,
+        };
+        let run = build_failguard_lesson_run(request.clone(), Vec::new());
+        let entry = run
+            .entries
+            .iter()
+            .find(|entry| entry.kind == "failure_pattern")
+            .expect("failure lesson should create an entry");
+        let guardrail = compile_failguard_guardrail(&request, entry, "candidate-1");
+
+        assert_eq!(guardrail.suggestions.len(), 4);
+        assert_eq!(guardrail.candidate_id, "candidate-1");
+        assert!(guardrail.suggestions.iter().any(
+            |suggestion| suggestion.consumer == "trust-gate" && suggestion.severity == "block"
+        ));
+        assert!(guardrail
+            .suggestions
+            .iter()
+            .any(|suggestion| suggestion.consumer == "repo-reaper"
+                && suggestion.kind == "preflight-constraint"));
+        assert!(guardrail
+            .suggestions
+            .iter()
+            .any(|suggestion| suggestion.consumer == "merge-keeper"));
+        assert!(guardrail
+            .suggestions
+            .iter()
+            .any(|suggestion| suggestion.consumer == "release-sentry"));
     }
 
     #[test]

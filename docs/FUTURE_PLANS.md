@@ -36,7 +36,7 @@ back here instead of living in parallel long-term.
 - Add incident-informed rule tuning later so painful failures can become future guardrails.
 - Make TrustGate the gate before RepoReaper opens or advances autonomous PRs.
 - FailGuard producer wiring is complete for TrustGate and RepoReaper: TrustGate `warn`/`block` reviews and Smith rejections now submit reviewable candidates when RepoMemory is configured.
-- Feed promoted FailGuard lessons back into TrustGate rule tuning so bad repo fits become future guardrails.
+- Extend promoted FailGuard guardrails with machine-checkable predicates so selected lessons can become exact TrustGate rules and deterministic RepoReaper preflight validators instead of contextual instructions.
 - Add inline file-level findings with stronger path anchors so repo owners can see exactly which parts of a diff triggered the risk call.
 - Add simulation mode for historical PRs so teams can tune TrustGate rules against old merges before enforcing them live.
 - Add explicit override recording so maintainers can say “allowed this once for a reason” without losing the audit trail.
@@ -52,7 +52,7 @@ back here instead of living in parallel long-term.
 - Add maintainer relationship memory that captures tone, pacing, acceptance/rejection patterns, review preferences, and recurring human expectations separately from code conventions.
 - Add a rejection learning loop where rejected PRs, maintainer edits, rejection reasons, and follow-up outcomes feed back into RepoMemory and TrustGate so PatchHive gets measurably better after each interaction.
 - Consider AI-assisted summarization or retrieval later through `patchhive-ai-local`, but keep the base memory loop useful without AI.
-- FailGuard v1 is complete: RepoMemory supports suggested lesson candidates, TrustGate and RepoReaper produce candidates automatically, and direct `POST /failguard/lessons` capture remains available.
+- FailGuard's reviewed loop now correlates candidates, compiles promoted lessons into TrustGate, RepoReaper, MergeKeeper, and ReleaseSentry suggestions, and records later context matches. ReviewBee/revert/incident producers, HiveCore recurrence reporting, guardrail revision/retirement, and machine-checkable predicates remain future work.
 
 ## MergeKeeper
 

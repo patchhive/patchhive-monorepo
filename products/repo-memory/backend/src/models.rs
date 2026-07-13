@@ -273,6 +273,8 @@ pub struct ContextResponse {
     pub summary: String,
     pub prompt_lines: Vec<String>,
     pub entries: Vec<ContextEntry>,
+    #[serde(default)]
+    pub guardrails: Vec<FailGuardGuardrailMatch>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -308,6 +310,7 @@ pub struct FailGuardLessonResponse {
     pub message: String,
     pub run: IngestRecord,
     pub entry: MemoryEntry,
+    pub guardrail: FailGuardGuardrail,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -323,11 +326,88 @@ pub struct FailGuardCandidate {
     pub affected_paths: Vec<String>,
     pub evidence: Vec<String>,
     pub confidence: f64,
+    #[serde(default)]
+    pub correlation_key: String,
+    #[serde(default = "default_occurrence_count")]
+    pub occurrence_count: u32,
     pub status: String,
     pub memory_ref: String,
     pub resolution_note: String,
+    #[serde(default)]
+    pub recurrence_of: String,
     pub created_at: String,
     pub updated_at: String,
+    #[serde(default)]
+    pub last_seen_at: String,
+}
+
+fn default_occurrence_count() -> u32 {
+    1
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct FailGuardSuggestion {
+    pub consumer: String,
+    pub kind: String,
+    pub severity: String,
+    pub instruction: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct FailGuardGuardrail {
+    pub id: String,
+    pub repo: String,
+    pub candidate_id: String,
+    pub memory_ref: String,
+    pub title: String,
+    pub prevention: String,
+    pub affected_paths: Vec<String>,
+    pub suggestions: Vec<FailGuardSuggestion>,
+    pub status: String,
+    pub match_count: u32,
+    pub last_matched_at: String,
+    pub recurrence_count: u32,
+    pub last_recurred_at: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct FailGuardGuardrailMatch {
+    pub guardrail_id: String,
+    pub memory_ref: String,
+    pub title: String,
+    pub prevention: String,
+    pub consumer: String,
+    pub kind: String,
+    pub severity: String,
+    pub instruction: String,
+    pub matched_paths: Vec<String>,
+    pub matched_terms: Vec<String>,
+    pub match_id: String,
+    pub matched_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct FailGuardMatchRecord {
+    pub id: String,
+    pub guardrail_id: String,
+    pub repo: String,
+    pub consumer: String,
+    pub context_ref: String,
+    pub matched_paths: Vec<String>,
+    pub matched_terms: Vec<String>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct FailGuardMatchListResponse {
+    pub matches: Vec<FailGuardMatchRecord>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct FailGuardGuardrailListResponse {
+    pub guardrails: Vec<FailGuardGuardrail>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -396,4 +476,5 @@ pub struct FailGuardCandidatePromoteResponse {
     pub candidate: FailGuardCandidate,
     pub run: IngestRecord,
     pub entry: MemoryEntry,
+    pub guardrail: FailGuardGuardrail,
 }

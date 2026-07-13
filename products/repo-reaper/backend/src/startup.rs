@@ -100,6 +100,10 @@ pub async fn validate_config(http: &Client) -> Vec<StartupCheck> {
         results.push(StartupCheck::info(
             "PATCHHIVE_REPO_MEMORY_URL is set — RepoReaper can enrich patch generation and queue FailGuard candidates when Smith rejects work",
         ));
+    } else {
+        results.push(StartupCheck::info(
+            "RepoMemory is not configured — RepoReaper will skip automatic FailGuard candidate submission and promoted preflight constraints until PATCHHIVE_REPO_MEMORY_URL is set",
+        ));
     }
 
     let encryption_secret = ["REAPER_ENCRYPTION_KEY", "PATCHHIVE_ENCRYPTION_KEY"]

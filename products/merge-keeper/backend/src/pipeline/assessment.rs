@@ -528,6 +528,17 @@ pub fn apply_repo_memory_signals(
         return;
     };
 
+    if !context.failguard_warnings.is_empty() {
+        warnings.push(make_signal(
+            "failguard-guardrail",
+            "warn",
+            "A promoted FailGuard guardrail matched this PR",
+            "FailGuard compiled a human-reviewed failure lesson into merge warning evidence. Confirm the prevention condition before merging.",
+            context.failguard_warnings.clone(),
+        ));
+        return;
+    }
+
     if context.pinned_entries == 0 && context.policy_entries < 2 {
         return;
     }
