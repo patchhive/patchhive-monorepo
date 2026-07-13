@@ -1,6 +1,18 @@
 # HiveCore Repository Safety and PR Budgets
 
-Status: **future design; not implemented**
+Status: **partially implemented (2026-07-13)**
+
+HiveCore now owns operator-managed repository exclusions and trust flags, typed
+repository-policy decisions, atomic per-product and suite-wide concurrent PR
+reservations, reservation audit events, lease expiry, and manual release.
+RepoReaper is the first enforcing consumer: it checks repository policy before
+meaningful work, uses HiveCore trust to permit sandboxed test execution,
+reserves capacity immediately before PR creation, releases failed attempts, and
+releases committed capacity when its PR monitor observes a merge or close.
+
+The verified public `patchhive.dev` repository-owner opt-out service is still a
+future boundary. Other write-capable products must adopt the shared typed
+client before their mutations can be described as suite-policy enforced.
 
 This document records three suite-wide controls that should exist before
 PatchHive expands autonomous outbound work:
@@ -175,8 +187,9 @@ Recommended lifecycle:
 5. Product opens the PR and commits the reservation with the GitHub PR URL.
 6. If PR creation fails, the product releases the reservation.
 7. Expired uncommitted reservations are reclaimed automatically.
-8. Reconciliation compares committed reservations with GitHub so drift remains
-   visible and repairable.
+8. RepoReaper's PR monitor releases committed reservations when it observes a
+   merge or close; broader HiveCore-owned GitHub reconciliation remains future
+   drift repair.
 
 Products must fail closed on PR creation when HiveCore cannot grant a
 reservation. A UI-side counter is informative only; the backend reservation is
@@ -237,10 +250,17 @@ budget capacity never override opt-out.
 - Products declare the operation they want, request a decision or reservation,
   obey it, and store the returned evidence with the run.
 
-## Implementation boundary
+## Current implementation boundary
 
-Nothing in this document is currently active merely because it is documented.
-Before rollout, the API contract, authentication model, GitHub ownership check,
-database migrations, caching behavior, failure policy, and product integration
-tests must be implemented and verified across every product capable of acting
-on repositories.
+The local HiveCore policy and PR-budget controls are active when a product is
+configured with `PATCHHIVE_HIVECORE_URL` and a matching service token or API
+key. RepoReaper fails closed if that configured control plane cannot answer.
+Without a HiveCore URL, RepoReaper deliberately retains standalone behavior so
+independent product deployments do not become unusable by accident.
+
+Not yet implemented:
+
+- verified GitHub ownership and the public `patchhive.dev` opt-out API/form;
+- a HiveCore-owned periodic GitHub reconciliation sweep for all products;
+- enforcement clients in products other than RepoReaper; and
+- rolling daily or weekly creation-rate limits separate from concurrent slots.

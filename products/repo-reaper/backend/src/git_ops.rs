@@ -607,11 +607,11 @@ async fn run_host_test(repo_dir: &Path, runner: &RepoTestRunner) -> Result<TestR
     })
 }
 
-pub async fn run_tests(repo_dir: &Path) -> TestResult {
-    if !env_truthy("REAPER_ENABLE_UNTRUSTED_TESTS") {
+pub async fn run_tests(repo_dir: &Path, repository_trusted: bool) -> TestResult {
+    if !repository_trusted && !env_truthy("REAPER_ENABLE_UNTRUSTED_TESTS") {
         return TestResult {
             status: TestExecutionStatus::Disabled,
-            output: "Unsafe test execution is disabled for untrusted repositories. Set REAPER_ENABLE_UNTRUSTED_TESTS=true to opt in.".into(),
+            output: "Test execution is disabled for this untrusted repository. Mark the repo trusted in HiveCore or set REAPER_ENABLE_UNTRUSTED_TESTS=true to opt in globally.".into(),
             runner: "disabled".into(),
         };
     }
@@ -633,7 +633,7 @@ pub async fn run_tests(repo_dir: &Path) -> TestResult {
     if sandbox == "host" && !env_truthy("REAPER_ALLOW_HOST_TESTS") {
         return TestResult {
             status: TestExecutionStatus::Disabled,
-            output: "Host test execution is disabled. Use the Docker sandbox, or set REAPER_ALLOW_HOST_TESTS=true in addition to REAPER_ENABLE_UNTRUSTED_TESTS=true to explicitly accept host execution risk.".into(),
+            output: "Host test execution is disabled. Use the Docker sandbox, or set REAPER_ALLOW_HOST_TESTS=true to explicitly accept host execution risk.".into(),
             runner: "host-disabled".into(),
         };
     }
@@ -872,7 +872,7 @@ mod tests {
         env::set_var("REAPER_TEST_SANDBOX", "host");
         env::remove_var("REAPER_ALLOW_HOST_TESTS");
 
-        let result = run_tests(&root).await;
+        let result = run_tests(&root, false).await;
 
         assert!(!result.passed());
         assert_eq!(result.status, TestExecutionStatus::Disabled);
@@ -880,7 +880,7 @@ mod tests {
         assert!(result.output.contains("REAPER_ALLOW_HOST_TESTS=true"));
 
         env::set_var("REAPER_ALLOW_HOST_TESTS", "true");
-        let no_runner = run_tests(&root).await;
+        let no_runner = run_tests(&root, false).await;
         assert_eq!(no_runner.status, TestExecutionStatus::Skipped);
         assert!(no_runner.requires_draft());
         assert_eq!(no_runner.runner, "none");
@@ -889,5 +889,26 @@ mod tests {
         restore_env_var("REAPER_ENABLE_UNTRUSTED_TESTS", previous_enabled);
         restore_env_var("REAPER_TEST_SANDBOX", previous_sandbox);
         restore_env_var("REAPER_ALLOW_HOST_TESTS", previous_allow_host);
+    }
+
+    #[tokio::test]
+    async fn trusted_repository_can_enter_the_sandbox_without_global_opt_in() {
+        let _guard = ENV_LOCK.lock().await;
+        let previous_enabled = env::var("REAPER_ENABLE_UNTRUSTED_TESTS").ok();
+        let previous_sandbox = env::var("REAPER_TEST_SANDBOX").ok();
+        let root =
+            std::env::temp_dir().join(format!("repo-reaper-git-ops-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&root).expect("create repo root");
+
+        env::remove_var("REAPER_ENABLE_UNTRUSTED_TESTS");
+        env::remove_var("REAPER_TEST_SANDBOX");
+
+        let result = run_tests(&root, true).await;
+        assert_eq!(result.status, TestExecutionStatus::Skipped);
+        assert_eq!(result.runner, "none");
+
+        let _ = fs::remove_dir_all(&root);
+        restore_env_var("REAPER_ENABLE_UNTRUSTED_TESTS", previous_enabled);
+        restore_env_var("REAPER_TEST_SANDBOX", previous_sandbox);
     }
 }

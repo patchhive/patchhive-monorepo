@@ -227,7 +227,9 @@ pub(super) async fn start_setup_product(
     Json<crate::models::ApiEnvelope<FirstStackSetupResponse>>,
     (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
 > {
-    ensure_launcher_product_slug(&slug)?;
+    if let Some(error) = launcher_product_slug_error(&slug) {
+        return Err(error);
+    }
     let secret = ensure_suite_bootstrap_secret();
     let launcher = run_launcher_product_action(&state, &slug, "start", Some(&secret)).await?;
     let mut actions = launcher.actions;
@@ -250,7 +252,9 @@ pub(super) async fn stop_setup_product(
     Json<crate::models::ApiEnvelope<FirstStackSetupResponse>>,
     (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
 > {
-    ensure_launcher_product_slug(&slug)?;
+    if let Some(error) = launcher_product_slug_error(&slug) {
+        return Err(error);
+    }
     let launcher = run_launcher_product_action(&state, &slug, "stop", None).await?;
     Ok(Json(ok(build_first_stack_response(
         &state,
@@ -266,7 +270,9 @@ pub(super) async fn restart_setup_product(
     Json<crate::models::ApiEnvelope<FirstStackSetupResponse>>,
     (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
 > {
-    ensure_launcher_product_slug(&slug)?;
+    if let Some(error) = launcher_product_slug_error(&slug) {
+        return Err(error);
+    }
     let secret = ensure_suite_bootstrap_secret();
     let launcher = run_launcher_product_action(&state, &slug, "restart", Some(&secret)).await?;
     let mut actions = launcher.actions;
@@ -290,7 +296,9 @@ pub(super) async fn setup_product_logs(
     Json<crate::models::ApiEnvelope<SetupProductLogsResponse>>,
     (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
 > {
-    ensure_launcher_product_slug(&slug)?;
+    if let Some(error) = launcher_product_slug_error(&slug) {
+        return Err(error);
+    }
     let tail = query.tail.unwrap_or(120).clamp(20, 500);
     let url = format!(
         "{}/products/{}/logs?tail={}",
@@ -340,7 +348,9 @@ pub(super) async fn save_setup_product_env(
     Json<crate::models::ApiEnvelope<FirstStackSetupResponse>>,
     (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
 > {
-    ensure_launcher_product_slug(&slug)?;
+    if let Some(error) = launcher_product_slug_error(&slug) {
+        return Err(error);
+    }
     if body.values.is_empty() {
         return Err(api_error(
             StatusCode::BAD_REQUEST,
@@ -659,9 +669,8 @@ async fn queue_fleet_launch(
             "Full fleet launch is gated: {blocked_count} stopped product(s) still need preflight fixes."
         )
     } else if products_to_start.is_empty() {
-        format!(
-            "All enabled managed products already look running. HiveCore did not need to launch anything."
-        )
+        "All enabled managed products already look running. HiveCore did not need to launch anything."
+            .to_string()
     } else {
         format!(
             "HiveCore queued {} product(s) for {} launch. {running_count} already looked running.",
@@ -1189,19 +1198,19 @@ async fn run_launcher_product_action(
     })
 }
 
-fn ensure_launcher_product_slug(
+fn launcher_product_slug_error(
     slug: &str,
-) -> Result<(), (StatusCode, Json<crate::models::ApiEnvelope<Value>>)> {
+) -> Option<(StatusCode, Json<crate::models::ApiEnvelope<Value>>)> {
     if slug == "hive-core" {
-        Err(api_error(
+        Some(api_error(
             StatusCode::BAD_REQUEST,
             "unsupported_setup_product",
             "HiveCore stays self-hosted. Launcher setup controls manage downstream PatchHive products.",
         ))
     } else if product_catalog().iter().any(|product| product.slug == slug) {
-        Ok(())
+        None
     } else {
-        Err(api_error(
+        Some(api_error(
             StatusCode::BAD_REQUEST,
             "unsupported_setup_product",
             "HiveCore setup controls only manage known launcher-backed PatchHive products.",

@@ -4,9 +4,12 @@ use std::collections::HashMap;
 use once_cell::sync::Lazy;
 use patchhive_product_core::secrets::TokenProtector;
 use patchhive_product_core::sqlite::{PooledSqliteConnection, SqlitePool};
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBehavior};
 
-use crate::models::{FirstStackSmokeRun, ProductActionEvent, ProductOverride, SuiteSettings};
+use crate::models::{
+    FirstStackSmokeRun, PrBudgetReservation, ProductActionEvent, ProductOverride, RepositoryPolicy,
+    SuiteSettings,
+};
 
 static DB_POOL: Lazy<SqlitePool> = Lazy::new(|| {
     SqlitePool::new(db_path(), "HiveCore").with_pool_size_env("HIVE_CORE_DB_POOL_SIZE")
@@ -17,6 +20,18 @@ pub struct ServiceTokenStorageStats {
     pub total: usize,
     pub encrypted: usize,
     pub plaintext: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct PrReservationAttempt {
+    pub granted: bool,
+    pub reason: String,
+    pub limiting_layer: String,
+    pub product_limit: u32,
+    pub product_used: u32,
+    pub suite_limit: u32,
+    pub suite_used: u32,
+    pub reservation: Option<PrBudgetReservation>,
 }
 
 pub fn db_path() -> String {
@@ -130,6 +145,345 @@ pub fn recent_action_events(limit: u32) -> Vec<ProductActionEvent> {
     load_action_events(&conn, limit).unwrap_or_default()
 }
 
+pub fn repository_policies() -> Vec<RepositoryPolicy> {
+    let Ok(conn) = connect() else {
+        return Vec::new();
+    };
+    load_repository_policies(&conn).unwrap_or_default()
+}
+
+pub fn repository_policy_result(repository: &str) -> rusqlite::Result<Option<RepositoryPolicy>> {
+    let conn = connect()?;
+    load_repository_policy(&conn, repository)
+}
+
+pub fn replace_repository_policies(policies: &[RepositoryPolicy]) -> rusqlite::Result<()> {
+    let mut conn = connect()?;
+    let tx = conn.transaction()?;
+    tx.execute("DELETE FROM repository_policies", [])?;
+    {
+        let mut stmt = tx.prepare(
+            r#"
+            INSERT INTO repository_policies (
+              repository, trusted, operator_excluded, notes, updated_at
+            ) VALUES (?1, ?2, ?3, ?4, ?5)
+            "#,
+        )?;
+        for policy in policies {
+            stmt.execute(params![
+                policy.repository,
+                if policy.trusted { 1 } else { 0 },
+                if policy.operator_excluded { 1 } else { 0 },
+                policy.notes,
+                policy.updated_at,
+            ])?;
+        }
+    }
+    tx.commit()
+}
+
+pub fn suite_pr_limit() -> u32 {
+    let Ok(conn) = connect() else {
+        return 10;
+    };
+    load_suite_pr_limit(&conn).unwrap_or(10)
+}
+
+pub fn product_pr_limits() -> HashMap<String, u32> {
+    let Ok(conn) = connect() else {
+        return HashMap::new();
+    };
+    load_product_pr_limits(&conn).unwrap_or_default()
+}
+
+pub fn save_pr_budget_settings(
+    suite_limit: u32,
+    products: &[(String, u32)],
+    updated_at: &str,
+) -> rusqlite::Result<()> {
+    let mut conn = connect()?;
+    let tx = conn.transaction()?;
+    tx.execute(
+        r#"
+        INSERT INTO pr_budget_settings (id, suite_limit, updated_at)
+        VALUES (1, ?1, ?2)
+        ON CONFLICT(id) DO UPDATE SET
+          suite_limit = excluded.suite_limit,
+          updated_at = excluded.updated_at
+        "#,
+        params![suite_limit, updated_at],
+    )?;
+    tx.execute("DELETE FROM product_pr_budgets", [])?;
+    {
+        let mut stmt = tx.prepare(
+            "INSERT INTO product_pr_budgets (product_slug, pr_limit, updated_at) VALUES (?1, ?2, ?3)",
+        )?;
+        for (product, limit) in products {
+            stmt.execute(params![product, limit, updated_at])?;
+        }
+    }
+    tx.commit()
+}
+
+pub fn pr_budget_reservations(limit: u32) -> Vec<PrBudgetReservation> {
+    let Ok(mut conn) = connect() else {
+        return Vec::new();
+    };
+    if expire_pr_reservations(&mut conn).is_err() {
+        return Vec::new();
+    }
+    load_pr_reservations(&conn, limit).unwrap_or_default()
+}
+
+pub fn active_pr_usage() -> rusqlite::Result<(u32, HashMap<String, u32>)> {
+    let mut conn = connect()?;
+    expire_pr_reservations(&mut conn)?;
+    let suite_used = active_pr_count(&conn, None)?;
+    let mut stmt = conn.prepare(
+        r#"
+        SELECT product_slug, COUNT(*)
+        FROM pr_budget_reservations
+        WHERE status IN ('reserved', 'committed')
+        GROUP BY product_slug
+        "#,
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)? as u32))
+    })?;
+    Ok((suite_used, rows.collect::<rusqlite::Result<_>>()?))
+}
+
+pub fn reserve_pr_slot(
+    reservation: &PrBudgetReservation,
+) -> rusqlite::Result<PrReservationAttempt> {
+    let mut conn = connect()?;
+    reserve_pr_slot_with_connection(&mut conn, reservation)
+}
+
+fn reserve_pr_slot_with_connection(
+    conn: &mut Connection,
+    reservation: &PrBudgetReservation,
+) -> rusqlite::Result<PrReservationAttempt> {
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    expire_pr_reservations_in_transaction(&tx)?;
+
+    let suite_limit = tx.query_row(
+        "SELECT suite_limit FROM pr_budget_settings WHERE id = 1",
+        [],
+        |row| row.get::<_, i64>(0),
+    )? as u32;
+    let product_limit = tx
+        .query_row(
+            "SELECT pr_limit FROM product_pr_budgets WHERE product_slug = ?1",
+            [&reservation.product],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()?
+        .map(|value| value as u32)
+        .unwrap_or_else(|| default_product_pr_limit(&reservation.product));
+    let suite_used = active_pr_count(&tx, None)?;
+    let product_used = active_pr_count(&tx, Some(&reservation.product))?;
+
+    let denial = if product_limit == 0 {
+        Some((
+            "product",
+            format!(
+                "{} has no PR budget. Configure a positive product maximum in HiveCore.",
+                reservation.product
+            ),
+        ))
+    } else if product_used >= product_limit {
+        Some((
+            "product",
+            format!(
+                "{} has used all {product_limit} of its PR slots.",
+                reservation.product
+            ),
+        ))
+    } else if suite_limit == 0 {
+        Some((
+            "suite",
+            "The PatchHive suite PR ceiling is zero.".to_string(),
+        ))
+    } else if suite_used >= suite_limit {
+        Some((
+            "suite",
+            format!("The PatchHive suite has used all {suite_limit} PR slots."),
+        ))
+    } else {
+        None
+    };
+
+    if let Some((limiting_layer, reason)) = denial {
+        tx.execute(
+            r#"
+            INSERT INTO pr_budget_events (
+              reservation_id, product_slug, repository, event_type, reason, created_at
+            ) VALUES ('', ?1, ?2, 'denied', ?3, ?4)
+            "#,
+            params![
+                reservation.product,
+                reservation.repository,
+                &reason,
+                reservation.created_at
+            ],
+        )?;
+        tx.commit()?;
+        return Ok(PrReservationAttempt {
+            granted: false,
+            reason,
+            limiting_layer: limiting_layer.into(),
+            product_limit,
+            product_used,
+            suite_limit,
+            suite_used,
+            reservation: None,
+        });
+    }
+
+    tx.execute(
+        r#"
+        INSERT INTO pr_budget_reservations (
+          id, product_slug, repository, run_id, action, status, pr_url, reason,
+          created_at, expires_at, updated_at
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+        "#,
+        params![
+            reservation.id,
+            reservation.product,
+            reservation.repository,
+            reservation.run_id,
+            reservation.action,
+            reservation.status,
+            reservation.pr_url,
+            reservation.reason,
+            reservation.created_at,
+            reservation.expires_at,
+            reservation.updated_at,
+        ],
+    )?;
+    record_pr_budget_event(
+        &tx,
+        reservation,
+        "granted",
+        "HiveCore reserved one PR slot.",
+        &reservation.created_at,
+    )?;
+    tx.commit()?;
+
+    Ok(PrReservationAttempt {
+        granted: true,
+        reason: "HiveCore reserved one PR slot.".into(),
+        limiting_layer: String::new(),
+        product_limit,
+        product_used,
+        suite_limit,
+        suite_used,
+        reservation: Some(reservation.clone()),
+    })
+}
+
+pub fn commit_pr_reservation(
+    id: &str,
+    pr_url: &str,
+    updated_at: &str,
+) -> rusqlite::Result<Option<PrBudgetReservation>> {
+    let mut conn = connect()?;
+    expire_pr_reservations(&mut conn)?;
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let changed = tx.execute(
+        r#"
+        UPDATE pr_budget_reservations
+        SET status = 'committed', pr_url = ?2, updated_at = ?3
+        WHERE id = ?1 AND status = 'reserved'
+        "#,
+        params![id, pr_url, updated_at],
+    )?;
+    let reservation = load_pr_reservation(&tx, id)?;
+    if changed > 0 {
+        if let Some(reservation) = &reservation {
+            record_pr_budget_event(&tx, reservation, "committed", pr_url, updated_at)?;
+        }
+    }
+    tx.commit()?;
+    Ok(reservation)
+}
+
+pub fn release_pr_reservation(
+    id: &str,
+    reason: &str,
+    updated_at: &str,
+) -> rusqlite::Result<Option<PrBudgetReservation>> {
+    let mut conn = connect()?;
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let changed = tx.execute(
+        r#"
+        UPDATE pr_budget_reservations
+        SET status = 'released', reason = ?2, updated_at = ?3
+        WHERE id = ?1 AND status IN ('reserved', 'committed')
+        "#,
+        params![id, reason, updated_at],
+    )?;
+    let reservation = load_pr_reservation(&tx, id)?;
+    if changed > 0 {
+        if let Some(reservation) = &reservation {
+            record_pr_budget_event(&tx, reservation, "released", reason, updated_at)?;
+        }
+    }
+    tx.commit()?;
+    Ok(reservation)
+}
+
+pub fn release_pr_reservations_for_run(
+    product: &str,
+    run_id: &str,
+    reason: &str,
+    updated_at: &str,
+) -> rusqlite::Result<Vec<PrBudgetReservation>> {
+    let mut conn = connect()?;
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let ids = {
+        let mut stmt = tx.prepare(
+            r#"
+            SELECT id
+            FROM pr_budget_reservations
+            WHERE product_slug = ?1 AND run_id = ?2
+              AND status IN ('reserved', 'committed')
+            "#,
+        )?;
+        let rows = stmt
+            .query_map(params![product, run_id], |row| row.get::<_, String>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        rows
+    };
+    tx.execute(
+        r#"
+        UPDATE pr_budget_reservations
+        SET status = 'released', reason = ?3, updated_at = ?4
+        WHERE product_slug = ?1 AND run_id = ?2
+          AND status IN ('reserved', 'committed')
+        "#,
+        params![product, run_id, reason, updated_at],
+    )?;
+    let mut released = Vec::with_capacity(ids.len());
+    for id in ids {
+        if let Some(reservation) = load_pr_reservation(&tx, &id)? {
+            record_pr_budget_event(&tx, &reservation, "released", reason, updated_at)?;
+            released.push(reservation);
+        }
+    }
+    tx.commit()?;
+    Ok(released)
+}
+
+pub fn default_product_pr_limit(product: &str) -> u32 {
+    if product == "repo-reaper" {
+        5
+    } else {
+        0
+    }
+}
+
 pub fn action_event(id: &str) -> Option<ProductActionEvent> {
     let Ok(conn) = connect() else {
         return None;
@@ -219,7 +573,61 @@ fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
           summary TEXT NOT NULL,
           steps_json TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS repository_policies (
+          repository TEXT PRIMARY KEY,
+          trusted INTEGER NOT NULL DEFAULT 0,
+          operator_excluded INTEGER NOT NULL DEFAULT 0,
+          notes TEXT NOT NULL DEFAULT '',
+          updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS pr_budget_settings (
+          id INTEGER PRIMARY KEY CHECK (id = 1),
+          suite_limit INTEGER NOT NULL DEFAULT 10,
+          updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS product_pr_budgets (
+          product_slug TEXT PRIMARY KEY,
+          pr_limit INTEGER NOT NULL DEFAULT 0,
+          updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS pr_budget_reservations (
+          id TEXT PRIMARY KEY,
+          product_slug TEXT NOT NULL,
+          repository TEXT NOT NULL,
+          run_id TEXT NOT NULL,
+          action TEXT NOT NULL,
+          status TEXT NOT NULL,
+          pr_url TEXT NOT NULL DEFAULT '',
+          reason TEXT NOT NULL DEFAULT '',
+          created_at TEXT NOT NULL,
+          expires_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_pr_budget_reservations_status
+          ON pr_budget_reservations (status, product_slug, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS pr_budget_events (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          reservation_id TEXT NOT NULL DEFAULT '',
+          product_slug TEXT NOT NULL,
+          repository TEXT NOT NULL,
+          event_type TEXT NOT NULL,
+          reason TEXT NOT NULL DEFAULT '',
+          created_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_pr_budget_events_created
+          ON pr_budget_events (created_at DESC, product_slug);
         "#,
+    )?;
+    conn.execute(
+        "INSERT INTO pr_budget_settings (id, suite_limit, updated_at) VALUES (1, 10, datetime('now')) ON CONFLICT(id) DO NOTHING",
+        [],
     )?;
     migrate_schema(conn)?;
     Ok(())
@@ -579,16 +987,195 @@ fn load_latest_first_stack_smoke_run(
     .optional()
 }
 
+fn load_repository_policies(conn: &Connection) -> rusqlite::Result<Vec<RepositoryPolicy>> {
+    let mut stmt = conn.prepare(
+        r#"
+        SELECT repository, trusted, operator_excluded, notes, updated_at
+        FROM repository_policies
+        ORDER BY repository
+        "#,
+    )?;
+    let rows = stmt.query_map([], decode_repository_policy)?;
+    rows.collect()
+}
+
+fn load_repository_policy(
+    conn: &Connection,
+    repository: &str,
+) -> rusqlite::Result<Option<RepositoryPolicy>> {
+    conn.query_row(
+        r#"
+        SELECT repository, trusted, operator_excluded, notes, updated_at
+        FROM repository_policies
+        WHERE repository = ?1
+        "#,
+        [repository],
+        decode_repository_policy,
+    )
+    .optional()
+}
+
+fn decode_repository_policy(row: &rusqlite::Row<'_>) -> rusqlite::Result<RepositoryPolicy> {
+    Ok(RepositoryPolicy {
+        repository: row.get(0)?,
+        trusted: row.get::<_, i64>(1)? != 0,
+        operator_excluded: row.get::<_, i64>(2)? != 0,
+        notes: row.get(3)?,
+        updated_at: row.get(4)?,
+    })
+}
+
+fn load_suite_pr_limit(conn: &Connection) -> rusqlite::Result<u32> {
+    conn.query_row(
+        "SELECT suite_limit FROM pr_budget_settings WHERE id = 1",
+        [],
+        |row| row.get::<_, i64>(0).map(|value| value as u32),
+    )
+}
+
+fn load_product_pr_limits(conn: &Connection) -> rusqlite::Result<HashMap<String, u32>> {
+    let mut stmt = conn
+        .prepare("SELECT product_slug, pr_limit FROM product_pr_budgets ORDER BY product_slug")?;
+    let rows = stmt.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)? as u32))
+    })?;
+    rows.collect()
+}
+
+fn active_pr_count(conn: &Connection, product: Option<&str>) -> rusqlite::Result<u32> {
+    let count = if let Some(product) = product {
+        conn.query_row(
+            "SELECT COUNT(*) FROM pr_budget_reservations WHERE status IN ('reserved', 'committed') AND product_slug = ?1",
+            [product],
+            |row| row.get::<_, i64>(0),
+        )?
+    } else {
+        conn.query_row(
+            "SELECT COUNT(*) FROM pr_budget_reservations WHERE status IN ('reserved', 'committed')",
+            [],
+            |row| row.get::<_, i64>(0),
+        )?
+    };
+    Ok(count as u32)
+}
+
+fn record_pr_budget_event(
+    conn: &Connection,
+    reservation: &PrBudgetReservation,
+    event_type: &str,
+    reason: &str,
+    created_at: &str,
+) -> rusqlite::Result<()> {
+    conn.execute(
+        r#"
+        INSERT INTO pr_budget_events (
+          reservation_id, product_slug, repository, event_type, reason, created_at
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+        "#,
+        params![
+            reservation.id,
+            reservation.product,
+            reservation.repository,
+            event_type,
+            reason,
+            created_at,
+        ],
+    )?;
+    Ok(())
+}
+
+fn expire_pr_reservations(conn: &mut Connection) -> rusqlite::Result<()> {
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    expire_pr_reservations_in_transaction(&tx)?;
+    tx.commit()
+}
+
+fn expire_pr_reservations_in_transaction(tx: &Transaction<'_>) -> rusqlite::Result<()> {
+    tx.execute(
+        r#"
+        INSERT INTO pr_budget_events (
+          reservation_id, product_slug, repository, event_type, reason, created_at
+        )
+        SELECT id, product_slug, repository, 'expired',
+               'Reservation lease expired before PR creation.', datetime('now')
+        FROM pr_budget_reservations
+        WHERE status = 'reserved' AND datetime(expires_at) <= datetime('now')
+        "#,
+        [],
+    )?;
+    tx.execute(
+        r#"
+        UPDATE pr_budget_reservations
+        SET status = 'expired', reason = 'Reservation lease expired before PR creation.',
+            updated_at = datetime('now')
+        WHERE status = 'reserved' AND datetime(expires_at) <= datetime('now')
+        "#,
+        [],
+    )?;
+    Ok(())
+}
+
+fn load_pr_reservations(
+    conn: &Connection,
+    limit: u32,
+) -> rusqlite::Result<Vec<PrBudgetReservation>> {
+    let mut stmt = conn.prepare(
+        r#"
+        SELECT id, product_slug, repository, run_id, action, status, pr_url,
+               reason, created_at, expires_at, updated_at
+        FROM pr_budget_reservations
+        ORDER BY updated_at DESC
+        LIMIT ?1
+        "#,
+    )?;
+    let rows = stmt.query_map([limit.clamp(1, 200)], decode_pr_reservation)?;
+    rows.collect()
+}
+
+fn load_pr_reservation(
+    conn: &Connection,
+    id: &str,
+) -> rusqlite::Result<Option<PrBudgetReservation>> {
+    conn.query_row(
+        r#"
+        SELECT id, product_slug, repository, run_id, action, status, pr_url,
+               reason, created_at, expires_at, updated_at
+        FROM pr_budget_reservations
+        WHERE id = ?1
+        "#,
+        [id],
+        decode_pr_reservation,
+    )
+    .optional()
+}
+
+fn decode_pr_reservation(row: &rusqlite::Row<'_>) -> rusqlite::Result<PrBudgetReservation> {
+    Ok(PrBudgetReservation {
+        id: row.get(0)?,
+        product: row.get(1)?,
+        repository: row.get(2)?,
+        run_id: row.get(3)?,
+        action: row.get(4)?,
+        status: row.get(5)?,
+        pr_url: row.get(6)?,
+        reason: row.get(7)?,
+        created_at: row.get(8)?,
+        expires_at: row.get(9)?,
+        updated_at: row.get(10)?,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         init_schema, load_action_event, load_action_events, load_latest_first_stack_smoke_run,
         load_product_overrides, load_service_token_storage_stats, load_suite_settings,
-        replace_overrides, write_suite_settings, ServiceTokenStorageStats,
+        replace_overrides, reserve_pr_slot_with_connection, write_suite_settings,
+        ServiceTokenStorageStats,
     };
     use crate::models::{
-        now_rfc3339, FirstStackSmokeRun, FirstStackSmokeStep, ProductActionEvent, ProductOverride,
-        SuiteSettings,
+        now_rfc3339, FirstStackSmokeRun, FirstStackSmokeStep, PrBudgetReservation,
+        ProductActionEvent, ProductOverride, SuiteSettings,
     };
     use patchhive_product_core::secrets::TokenProtector;
     use rusqlite::Connection;
@@ -599,15 +1186,78 @@ mod tests {
         let conn = Connection::open_in_memory().expect("in-memory db should open");
         init_schema(&conn).expect("schema should initialize");
 
-        let mut settings = SuiteSettings::default();
-        settings.operator_label = "Jeremy".into();
-        settings.preferred_launch_product = "repo-reaper".into();
-        settings.updated_at = now_rfc3339();
+        let settings = SuiteSettings {
+            operator_label: "Jeremy".into(),
+            preferred_launch_product: "repo-reaper".into(),
+            updated_at: now_rfc3339(),
+            ..SuiteSettings::default()
+        };
         write_suite_settings(&conn, &settings).expect("settings should save");
 
         let loaded = load_suite_settings(&conn).expect("settings should load");
         assert_eq!(loaded.operator_label, "Jeremy");
         assert_eq!(loaded.preferred_launch_product, "repo-reaper");
+    }
+
+    #[test]
+    fn pr_reservations_enforce_product_and_suite_limits_atomically() {
+        let mut conn = Connection::open_in_memory().expect("in-memory db should open");
+        init_schema(&conn).expect("schema should initialize");
+        conn.execute(
+            "UPDATE pr_budget_settings SET suite_limit = 1 WHERE id = 1",
+            [],
+        )
+        .expect("suite limit should update");
+        conn.execute(
+            "INSERT INTO product_pr_budgets (product_slug, pr_limit, updated_at) VALUES ('repo-reaper', 2, datetime('now'))",
+            [],
+        )
+        .expect("product limit should insert");
+
+        let first = sample_reservation("prr_1", "run_1");
+        let granted = reserve_pr_slot_with_connection(&mut conn, &first)
+            .expect("first reservation should evaluate");
+        assert!(granted.granted);
+
+        let second = sample_reservation("prr_2", "run_2");
+        let denied = reserve_pr_slot_with_connection(&mut conn, &second)
+            .expect("second reservation should evaluate");
+        assert!(!denied.granted);
+        assert_eq!(denied.limiting_layer, "suite");
+        assert_eq!(denied.suite_used, 1);
+
+        let grants: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pr_budget_events WHERE event_type = 'granted'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("grant audit count should load");
+        let denials: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pr_budget_events WHERE event_type = 'denied'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("denial audit count should load");
+        assert_eq!(grants, 1);
+        assert_eq!(denials, 1);
+    }
+
+    fn sample_reservation(id: &str, run_id: &str) -> PrBudgetReservation {
+        PrBudgetReservation {
+            id: id.into(),
+            product: "repo-reaper".into(),
+            repository: "patchhive/example".into(),
+            run_id: run_id.into(),
+            action: "open_pull_request".into(),
+            status: "reserved".into(),
+            pr_url: String::new(),
+            reason: String::new(),
+            created_at: "2026-07-13T12:00:00Z".into(),
+            expires_at: "2099-07-13T12:10:00Z".into(),
+            updated_at: "2026-07-13T12:00:00Z".into(),
+        }
     }
 
     #[test]

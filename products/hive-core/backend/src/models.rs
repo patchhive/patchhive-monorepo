@@ -248,6 +248,140 @@ pub struct SettingsResponse {
     pub products: Vec<ProductSettingsItem>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct RepositoryPolicy {
+    pub repository: String,
+    pub trusted: bool,
+    pub operator_excluded: bool,
+    pub notes: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct RepositoryPoliciesResponse {
+    pub policies: Vec<RepositoryPolicy>,
+    pub public_opt_out_available: bool,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct SaveRepositoryPoliciesRequest {
+    pub policies: Vec<RepositoryPolicyInput>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct RepositoryPolicyInput {
+    pub repository: String,
+    #[serde(default)]
+    pub trusted: bool,
+    #[serde(default)]
+    pub operator_excluded: bool,
+    #[serde(default)]
+    pub notes: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct RepositoryPolicyDecisionRequest {
+    pub repository: String,
+    pub product: String,
+    pub operation: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct RepositoryPolicyDecision {
+    pub repository: String,
+    pub product: String,
+    pub operation: String,
+    pub decision: String,
+    pub reason: String,
+    pub trusted: bool,
+    pub operator_excluded: bool,
+    pub public_opt_out_checked: bool,
+    pub public_opted_out: bool,
+    pub policy_version: String,
+    pub evaluated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct ProductPrBudget {
+    pub product: String,
+    pub limit: u32,
+    pub used: u32,
+    pub remaining: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct PrBudgetStatusResponse {
+    pub suite_limit: u32,
+    pub suite_used: u32,
+    pub suite_remaining: u32,
+    pub products: Vec<ProductPrBudget>,
+    pub reservations: Vec<PrBudgetReservation>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct SavePrBudgetRequest {
+    pub suite_limit: u32,
+    pub products: Vec<ProductPrBudgetInput>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct ProductPrBudgetInput {
+    pub product: String,
+    pub limit: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct PrBudgetReservation {
+    pub id: String,
+    pub product: String,
+    pub repository: String,
+    pub run_id: String,
+    pub action: String,
+    pub status: String,
+    pub pr_url: String,
+    pub reason: String,
+    pub created_at: String,
+    pub expires_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct PrReservationRequest {
+    pub product: String,
+    pub repository: String,
+    pub run_id: String,
+    pub action: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct PrReservationResponse {
+    pub granted: bool,
+    pub reason: String,
+    pub limiting_layer: String,
+    pub product_limit: u32,
+    pub product_used: u32,
+    pub suite_limit: u32,
+    pub suite_used: u32,
+    pub reservation: Option<PrBudgetReservation>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct PrReservationCommitRequest {
+    pub pr_url: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct PrReservationReleaseRequest {
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct PrRunReleaseRequest {
+    pub product: String,
+    pub run_id: String,
+    pub reason: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProductRunsSnapshotResponse {
     pub slug: String,

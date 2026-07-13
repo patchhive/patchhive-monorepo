@@ -164,9 +164,9 @@ pub(super) fn sanitize_product_overrides(
             supplied_service_token.clone()
         };
 
-        let legacy_api_key = if slug == "hive-core" {
-            String::new()
-        } else if !supplied_service_token.is_empty() && supplied_legacy_api_key.is_empty() {
+        let legacy_api_key = if slug == "hive-core"
+            || (!supplied_service_token.is_empty() && supplied_legacy_api_key.is_empty())
+        {
             String::new()
         } else if supplied_legacy_api_key.is_empty() {
             existing_item

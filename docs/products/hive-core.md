@@ -12,7 +12,7 @@ HiveCore is the PatchHive control plane. It brings standalone PatchHive products
 
 HiveCore is not a replacement for standalone products. Its first job is to make the suite legible: what is running, what is healthy, what capabilities exist, what work has happened, and where product contracts have drifted.
 
-Longer term, HiveCore should become the browser-facing suite backend for PatchHive: one operator auth flow, one shared product registry, one shared credential/config surface, and namespaced product APIs for all product frontends. The products remain distinct, but their v2 frontends should eventually talk to HiveCore instead of separate product backends. See [Suite backend direction](../suite-backend-direction.md).
+Longer term, HiveCore should become the browser-facing suite backend for PatchHive: one operator auth flow, one shared product registry, one shared credential/config surface, and namespaced product APIs for all product frontends. It already owns structured local repository trust/exclusion policy and atomic outbound PR capacity. The products remain distinct, but their frontends should eventually talk to HiveCore instead of separate product backends. See [Suite backend direction](../suite-backend-direction.md).
 
 ```
 RepoReaper  SignalHive  TrustGate  RepoMemory  ReviewBee  MergeKeeper
@@ -114,11 +114,11 @@ Operator / Frontend
 - **Run detail path sanitized:** run IDs containing `/`, `?`, `#`, `{`, `}` are rejected before being placed into product path templates.
 - **Partial failures are non-fatal:** If a product is offline or its API is unreachable, HiveCore reports `offline` health with the error message and continues polling remaining products.
 
-Future control-plane safety work is specified in
-[HiveCore repository safety and PR budgets](../hivecore-repository-safety-and-pr-budgets.md):
-a verified public repository-owner opt-out, operator-managed trusted repos, and
-atomic per-product plus suite-wide PR reservations. These controls are not
-implemented by the current settings model.
+The Settings surface manages operator exclusions, trusted repositories,
+per-product PR limits, the suite-wide PR ceiling, and active reservation
+recovery. The first enforcing client is RepoReaper. The verified public owner
+opt-out service remains future work; see
+[HiveCore repository safety and PR budgets](../hivecore-repository-safety-and-pr-budgets.md).
 
 ---
 
@@ -138,6 +138,13 @@ implemented by the current settings model.
 | `GET` | `/products` | API key / Service token | All runtime products as a flat list |
 | `GET` | `/settings` | API key / Service token | Suite settings and product overrides |
 | `PUT` | `/settings` | Service token only | Save suite settings and product overrides |
+| `GET` / `PUT` | `/repository-policies` | Operator API key | List or replace operator trust and exclusion policy |
+| `POST` | `/repository-policy/check` | API key / Service token | Return a typed allow/block decision for a repository operation |
+| `GET` / `PUT` | `/pr-budgets` | Operator API key | Read usage or configure product and suite PR ceilings |
+| `POST` | `/pr-budgets/reservations` | Service token | Atomically reserve product and suite PR capacity |
+| `POST` | `/pr-budgets/reservations/:id/commit` | Service token | Attach a created GitHub PR to a reservation |
+| `POST` | `/pr-budgets/reservations/:id/release` | Service token | Manually release active capacity |
+| `POST` | `/pr-budgets/releases` | Service token | Release active reservations for a completed product run |
 | `GET` | `/products/:slug/runs` | API key / Service token | Fetch a product's recent runs through its `/runs` contract |
 | `GET` | `/products/:slug/runs/:id` | API key / Service token | Fetch a single run detail through the product's `/runs/:id` contract |
 | `POST` | `/products/:slug/provision-service-token` | API key / Service token | Provision or rotate a product's service token server-side |

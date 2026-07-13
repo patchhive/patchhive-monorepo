@@ -46,6 +46,19 @@ pub async fn validate_config() -> Vec<StartupCheck> {
         )));
     }
 
+    let repository_policy_count = crate::db::repository_policies().len();
+    checks.push(StartupCheck::ok(format!(
+        "HiveCore repository safety is active with {repository_policy_count} structured polic{}; local exclusions and trusted-repository elevations are available to suite products.",
+        if repository_policy_count == 1 { "y" } else { "ies" }
+    )));
+    checks.push(StartupCheck::ok(format!(
+        "Atomic pull-request budgets are active with a suite-wide ceiling of {}. RepoReaper reserves capacity before PR creation and releases it when monitored PRs close or merge.",
+        crate::db::suite_pr_limit()
+    )));
+    checks.push(StartupCheck::info(
+        "The public patchhive.dev repository-owner opt-out registry is not connected yet. HiveCore currently enforces operator-managed exclusions only.",
+    ));
+
     let token_stats = crate::db::service_token_storage_stats();
     let protector = TokenProtector::from_env("HIVECORE_ENCRYPTION_KEY");
     if let Ok(secret) = std::env::var("HIVECORE_ENCRYPTION_KEY") {
@@ -97,7 +110,7 @@ pub async fn validate_config() -> Vec<StartupCheck> {
     }
 
     checks.push(StartupCheck::info(
-        "This MVP focuses on visibility, saved defaults, and live product health polling. Cross-product orchestration should build on these contracts next.",
+        "HiveCore provides visibility, saved defaults, live product health polling, repository policy, and shared outbound PR capacity. Additional products should adopt the same typed policy client before gaining write actions.",
     ));
 
     checks

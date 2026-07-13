@@ -162,6 +162,9 @@ function ProductEditor({ product, onChange, onProvision }) {
 
 export default function SettingsPanel({ fetchEnvelope, setRunning, setError }) {
   const [settings, setSettings] = useState(null);
+  const [repositoryPolicies, setRepositoryPolicies] = useState(null);
+  const [prBudgets, setPrBudgets] = useState(null);
+  const [newRepository, setNewRepository] = useState("");
   const [saving, setSaving] = useState(false);
   const [savedMessage, setSavedMessage] = useState("");
 
@@ -170,8 +173,14 @@ export default function SettingsPanel({ fetchEnvelope, setRunning, setError }) {
     setError("");
     setSavedMessage("");
     try {
-      const data = await fetchEnvelope("/settings");
-      setSettings(data);
+      const [settingsData, policyData, budgetData] = await Promise.all([
+        fetchEnvelope("/settings"),
+        fetchEnvelope("/repository-policies"),
+        fetchEnvelope("/pr-budgets"),
+      ]);
+      setSettings(settingsData);
+      setRepositoryPolicies(policyData);
+      setPrBudgets(budgetData);
     } catch (err) {
       setSettings(null);
       setError(err.message || "HiveCore could not load suite settings.");
@@ -212,8 +221,33 @@ export default function SettingsPanel({ fetchEnvelope, setRunning, setError }) {
           })),
         }),
       });
+      const policyData = await fetchEnvelope("/repository-policies", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          policies: repositoryPolicies.policies.map((policy) => ({
+            repository: policy.repository,
+            trusted: policy.trusted,
+            operator_excluded: policy.operator_excluded,
+            notes: policy.notes,
+          })),
+        }),
+      });
+      const budgetData = await fetchEnvelope("/pr-budgets", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          suite_limit: Number(prBudgets.suite_limit),
+          products: prBudgets.products.map((product) => ({
+            product: product.product,
+            limit: Number(product.limit),
+          })),
+        }),
+      });
       setSettings(data);
-      setSavedMessage("HiveCore saved the suite settings.");
+      setRepositoryPolicies(policyData);
+      setPrBudgets(budgetData);
+      setSavedMessage("HiveCore saved suite settings, repository safety, and PR budgets.");
     } catch (err) {
       setError(err.message || "HiveCore could not save suite settings.");
     } finally {
@@ -270,11 +304,69 @@ export default function SettingsPanel({ fetchEnvelope, setRunning, setError }) {
     }));
   }
 
+  function addRepositoryPolicy() {
+    const repository = newRepository.trim().toLowerCase();
+    if (!repository || repositoryPolicies.policies.some((item) => item.repository === repository)) {
+      return;
+    }
+    setRepositoryPolicies((current) => ({
+      ...current,
+      policies: [
+        ...current.policies,
+        { repository, trusted: false, operator_excluded: false, notes: "" },
+      ],
+    }));
+    setNewRepository("");
+  }
+
+  function updateRepositoryPolicy(index, patch) {
+    setRepositoryPolicies((current) => ({
+      ...current,
+      policies: current.policies.map((policy, policyIndex) =>
+        policyIndex === index ? { ...policy, ...patch } : policy,
+      ),
+    }));
+  }
+
+  function removeRepositoryPolicy(index) {
+    setRepositoryPolicies((current) => ({
+      ...current,
+      policies: current.policies.filter((_, policyIndex) => policyIndex !== index),
+    }));
+  }
+
+  function updateProductBudget(index, value) {
+    setPrBudgets((current) => ({
+      ...current,
+      products: current.products.map((product, productIndex) =>
+        productIndex === index ? { ...product, limit: value } : product,
+      ),
+    }));
+  }
+
+  async function releaseReservation(reservation) {
+    setRunning(true);
+    setError("");
+    try {
+      await fetchEnvelope(`/pr-budgets/reservations/${reservation.id}/release`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: "Released manually by the HiveCore operator." }),
+      });
+      setPrBudgets(await fetchEnvelope("/pr-budgets"));
+      setSavedMessage(`Released the PR slot for ${reservation.repository}.`);
+    } catch (err) {
+      setError(err.message || "HiveCore could not release the PR slot.");
+    } finally {
+      setRunning(false);
+    }
+  }
+
   useEffect(() => {
     refresh();
   }, []);
 
-  if (!settings) {
+  if (!settings || !repositoryPolicies || !prBudgets) {
     return (
       <div style={{ display: "grid", gap: 16 }}>
         <CommandPanel tone="var(--blue)" style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
@@ -409,6 +501,110 @@ export default function SettingsPanel({ fetchEnvelope, setRunning, setError }) {
             onChange={(event) => updateSuiteField("notes", event.target.value)}
             style={{ ...textareaStyle, minHeight: 88 }}
           />
+        </div>
+      </CommandPanel>
+
+      <CommandPanel tone="var(--gold)" style={{ display: "grid", gap: 14 }}>
+        <SectionHeader
+          kicker="Repository safety"
+          title="Trust and exclusions"
+          body="Excluded repositories are blocked suite-wide. Trusted repositories may use product operations that are too risky for unknown repositories, including RepoReaper test execution."
+          tone="var(--gold)"
+        />
+        {!repositoryPolicies.public_opt_out_available && (
+          <div style={{ ...commandPanelStyle("var(--gold)"), fontSize: 11, color: "var(--text-dim)", lineHeight: 1.55 }}>
+            Public owner opt-out is not connected yet. These operator exclusions are enforced locally by HiveCore; the patchhive.dev owner registry remains a later service.
+          </div>
+        )}
+        <div style={{ display: "grid", gap: 10, gridTemplateColumns: "minmax(220px, 1fr) auto" }}>
+          <Input value={newRepository} onChange={setNewRepository} placeholder="owner/repository" />
+          <Btn onClick={addRepositoryPolicy}>Add repository</Btn>
+        </div>
+        {repositoryPolicies.policies.length === 0 ? (
+          <div style={{ fontSize: 12, color: "var(--text-dim)" }}>No structured repository policies saved yet.</div>
+        ) : (
+          <div style={{ display: "grid", gap: 10 }}>
+            {repositoryPolicies.policies.map((policy, index) => (
+              <div key={policy.repository} style={commandPanelStyle(policy.operator_excluded ? "var(--red)" : policy.trusted ? "var(--green)" : "var(--blue)", { display: "grid", gap: 10 })}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                  <strong>{policy.repository}</strong>
+                  <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+                    <label style={{ fontSize: 11, color: "var(--text-dim)" }}>
+                      <input
+                        type="checkbox"
+                        checked={policy.trusted}
+                        onChange={(event) => updateRepositoryPolicy(index, { trusted: event.target.checked, operator_excluded: event.target.checked ? false : policy.operator_excluded })}
+                      />{" "}trusted
+                    </label>
+                    <label style={{ fontSize: 11, color: "var(--text-dim)" }}>
+                      <input
+                        type="checkbox"
+                        checked={policy.operator_excluded}
+                        onChange={(event) => updateRepositoryPolicy(index, { operator_excluded: event.target.checked, trusted: event.target.checked ? false : policy.trusted })}
+                      />{" "}exclude all automation
+                    </label>
+                    <Btn onClick={() => removeRepositoryPolicy(index)}>Remove</Btn>
+                  </div>
+                </div>
+                <Input
+                  value={policy.notes}
+                  onChange={(value) => updateRepositoryPolicy(index, { notes: value })}
+                  placeholder="Why this repository is trusted or excluded"
+                />
+              </div>
+            ))}
+          </div>
+        )}
+      </CommandPanel>
+
+      <CommandPanel tone="var(--green)" style={{ display: "grid", gap: 14 }}>
+        <SectionHeader
+          kicker="Outbound limits"
+          title="Pull-request budgets"
+          body="A product must have room in both its own budget and the suite-wide ceiling before it can open a pull request. The smaller remaining budget always wins."
+          tone="var(--green)"
+        />
+        <div style={{ display: "grid", gap: 10, gridTemplateColumns: "minmax(220px, 1fr) auto" }}>
+          <div style={S.field}>
+            <div style={S.label}>Suite-wide PR ceiling</div>
+            <Input
+              type="number"
+              value={String(prBudgets.suite_limit)}
+              onChange={(value) => setPrBudgets((current) => ({ ...current, suite_limit: value }))}
+            />
+          </div>
+          <div style={{ display: "flex", alignItems: "end", paddingBottom: 4 }}>
+            <Tag color="var(--green)">{prBudgets.suite_used} used · {prBudgets.suite_remaining} remaining</Tag>
+          </div>
+        </div>
+        <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))" }}>
+          {prBudgets.products.map((product, index) => (
+            <div key={product.product} style={commandPanelStyle("var(--green)", { display: "grid", gap: 8 })}>
+              <strong>{product.product}</strong>
+              <Input
+                type="number"
+                value={String(product.limit)}
+                onChange={(value) => updateProductBudget(index, value)}
+              />
+              <div style={{ fontSize: 11, color: "var(--text-dim)" }}>{product.used} used · {product.remaining} remaining</div>
+            </div>
+          ))}
+        </div>
+        <div style={{ display: "grid", gap: 8 }}>
+          <div style={S.label}>Recent reservations</div>
+          {prBudgets.reservations.length === 0 ? (
+            <div style={{ fontSize: 12, color: "var(--text-dim)" }}>No PR budget reservations yet.</div>
+          ) : prBudgets.reservations.map((reservation) => (
+            <div key={reservation.id} style={commandPanelStyle("var(--blue)", { display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" })}>
+              <div>
+                <strong>{reservation.product} · {reservation.repository}</strong>
+                <div style={{ fontSize: 11, color: "var(--text-dim)" }}>{reservation.status}{reservation.pr_url ? ` · ${reservation.pr_url}` : ""}</div>
+              </div>
+              {(["reserved", "committed"].includes(reservation.status)) && (
+                <Btn onClick={() => releaseReservation(reservation)}>Release slot</Btn>
+              )}
+            </div>
+          ))}
         </div>
       </CommandPanel>
 

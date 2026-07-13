@@ -16,10 +16,13 @@ use crate::{
     },
     db,
     models::{
-        DispatchActionResponse, OverviewResponse, ProductActionEvent, ProductRunDetailResponse,
+        DispatchActionResponse, OverviewResponse, PrBudgetReservation, PrBudgetStatusResponse,
+        PrReservationCommitRequest, PrReservationReleaseRequest, PrReservationRequest,
+        PrReservationResponse, PrRunReleaseRequest, ProductActionEvent, ProductRunDetailResponse,
         ProductRunsSnapshotResponse, ProductRuntimeItem, ProvisionServiceTokenRequest,
-        ProvisionServiceTokenResponse, SaveSettingsRequest, SettingsResponse, PRODUCT_TITLE,
-        PRODUCT_VERSION,
+        ProvisionServiceTokenResponse, RepositoryPoliciesResponse, RepositoryPolicyDecision,
+        RepositoryPolicyDecisionRequest, SavePrBudgetRequest, SaveRepositoryPoliciesRequest,
+        SaveSettingsRequest, SettingsResponse, PRODUCT_TITLE, PRODUCT_VERSION,
     },
     startup,
     state::AppState,
@@ -113,6 +116,8 @@ pub async fn health() -> Json<Value> {
         "db_ok": db_ok,
         "db_path": db::db_path(),
         "product_override_count": db::product_override_count(),
+        "repository_policy_count": db::repository_policies().len(),
+        "suite_pr_limit": db::suite_pr_limit(),
         "mode": "control-plane",
     }))
 }
@@ -125,21 +130,51 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
     let mut caps = contract::capabilities(
         "hive-core",
         "HiveCore",
-        vec![contract::action(
-            "save_settings",
-            "Save suite settings",
-            "PUT",
-            "/settings",
-            "Persist suite-wide defaults and per-product launch/API overrides.",
-            false,
-        )
-        .mutating(true)
-        .requires_approval(true)
-        .credential_requirements(["suite:control"])],
+        vec![
+            contract::action(
+                "save_settings",
+                "Save suite settings",
+                "PUT",
+                "/settings",
+                "Persist suite-wide defaults and per-product launch/API overrides.",
+                false,
+            )
+            .mutating(true)
+            .requires_approval(true)
+            .credential_requirements(["suite:control"]),
+            contract::action(
+                "save_repository_policies",
+                "Save repository safety policy",
+                "PUT",
+                "/repository-policies",
+                "Persist operator exclusions and trusted-repository elevations.",
+                false,
+            )
+            .mutating(true)
+            .requires_approval(true)
+            .credential_requirements(["suite:control"]),
+            contract::action(
+                "save_pr_budgets",
+                "Save pull-request budgets",
+                "PUT",
+                "/pr-budgets",
+                "Persist per-product limits and the suite-wide PR ceiling.",
+                false,
+            )
+            .mutating(true)
+            .requires_approval(true)
+            .credential_requirements(["suite:control"]),
+        ],
         vec![
             contract::link("overview", "Overview", "/overview"),
             contract::link("products", "Products", "/products"),
             contract::link("settings", "Settings", "/settings"),
+            contract::link(
+                "repository_policies",
+                "Repository policies",
+                "/repository-policies",
+            ),
+            contract::link("pr_budgets", "Pull-request budgets", "/pr-budgets"),
         ],
     );
     caps.hivecore.can_apply_settings = true;
@@ -220,6 +255,82 @@ pub async fn save_settings(
     (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
 > {
     super::settings::save_settings(Json(body)).await
+}
+
+pub async fn repository_policies() -> Json<crate::models::ApiEnvelope<RepositoryPoliciesResponse>> {
+    super::policy::repository_policies().await
+}
+
+pub async fn save_repository_policies(
+    Json(body): Json<SaveRepositoryPoliciesRequest>,
+) -> Result<
+    Json<crate::models::ApiEnvelope<RepositoryPoliciesResponse>>,
+    (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
+> {
+    super::policy::save_repository_policies(Json(body)).await
+}
+
+pub async fn repository_policy_check(
+    Json(body): Json<RepositoryPolicyDecisionRequest>,
+) -> Result<
+    Json<crate::models::ApiEnvelope<RepositoryPolicyDecision>>,
+    (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
+> {
+    super::policy::repository_policy_check(Json(body)).await
+}
+
+pub async fn pr_budget_status() -> Result<
+    Json<crate::models::ApiEnvelope<PrBudgetStatusResponse>>,
+    (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
+> {
+    super::policy::pr_budget_status().await
+}
+
+pub async fn save_pr_budgets(
+    Json(body): Json<SavePrBudgetRequest>,
+) -> Result<
+    Json<crate::models::ApiEnvelope<PrBudgetStatusResponse>>,
+    (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
+> {
+    super::policy::save_pr_budgets(Json(body)).await
+}
+
+pub async fn reserve_pr_budget(
+    Json(body): Json<PrReservationRequest>,
+) -> Result<
+    Json<crate::models::ApiEnvelope<PrReservationResponse>>,
+    (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
+> {
+    super::policy::reserve_pr_budget(Json(body)).await
+}
+
+pub async fn commit_pr_budget_reservation(
+    Path(id): Path<String>,
+    Json(body): Json<PrReservationCommitRequest>,
+) -> Result<
+    Json<crate::models::ApiEnvelope<PrBudgetReservation>>,
+    (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
+> {
+    super::policy::commit_pr_budget_reservation(id, body.pr_url).await
+}
+
+pub async fn release_pr_budget_reservation(
+    Path(id): Path<String>,
+    Json(body): Json<PrReservationReleaseRequest>,
+) -> Result<
+    Json<crate::models::ApiEnvelope<PrBudgetReservation>>,
+    (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
+> {
+    super::policy::release_pr_budget_reservation(id, body.reason).await
+}
+
+pub async fn release_pr_budget_reservations_for_run(
+    Json(body): Json<PrRunReleaseRequest>,
+) -> Result<
+    Json<crate::models::ApiEnvelope<Vec<PrBudgetReservation>>>,
+    (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
+> {
+    super::policy::release_pr_budget_reservations_for_run(Json(body)).await
 }
 
 pub async fn first_stack_status(

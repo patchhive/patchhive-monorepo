@@ -192,13 +192,14 @@ Run history keeps these modes visible:
 
 - **Auth-gated**: API key (`rr-...`) required for all endpoints except `/health`, `/auth/*`, `/startup/checks`, `/capabilities`, and `/webhook/github`
 - **Bootstrap**: key generation is localhost-only
-- **Tests opt-in**: untrusted test execution is disabled by default (`REAPER_ENABLE_UNTRUSTED_TESTS` must be `true`)
+- **Tests opt-in**: untrusted test execution is disabled by default (`REAPER_ENABLE_UNTRUSTED_TESTS` must be `true`); a repository trusted by configured HiveCore policy may enter the Docker sandbox without that global opt-in
 - **Sandboxed execution**: Docker sandbox with `--network none`, `--cap-drop ALL`, `--pids-limit 256`, `--memory 2g`, `--cpus 2`
 - **Host execution**: requires two env vars (`REAPER_ENABLE_UNTRUSTED_TESTS=true` + `REAPER_ALLOW_HOST_TESTS=true`)
 - **Test timeout**: configurable via `REAPER_TEST_TIMEOUT_SECONDS` (default: 600s)
 - **Cost budget**: `COST_BUDGET_USD` caps AI spend per run (0 = uncapped, with a warning)
 - **Concurrency limiting**: Semaphore-based; configurable per run
 - **Only one run at a time**: `runActive` atomic flag prevents concurrent hunts
+- **Suite policy and PR capacity**: when `PATCHHIVE_HIVECORE_URL` is configured, RepoReaper fails closed on unavailable repository policy, reserves both its product slot and suite-wide slot immediately before PR creation, and releases capacity on failed creation or observed PR closure/merge
 - **Existing PR guard**: before starting patch generation, RepoReaper checks the
   GitHub issue timeline for open pull requests already linked to the issue. If
   one exists, RepoReaper records a held attempt and does not open a competing PR.

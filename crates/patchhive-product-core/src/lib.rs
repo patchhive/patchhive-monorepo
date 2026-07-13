@@ -3,6 +3,7 @@ pub mod branding;
 pub mod contract;
 pub mod github_auth;
 pub mod github_permissions;
+pub mod hivecore_policy;
 pub mod rate_limit;
 pub mod repo_memory;
 pub mod scope_policy;

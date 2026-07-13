@@ -41,6 +41,29 @@ const READ_ONLY_FLEET_SLUGS: [&str; 10] = [
 const WRITE_DRY_RUN_SLUGS: [&str; 1] = ["repo-reaper"];
 const RELEASE_GATE_SLUGS: [&str; 1] = ["release-sentry"];
 
+macro_rules! push_step {
+    (
+        $steps:expr,
+        $slug:expr,
+        $title:expr,
+        $check:expr,
+        $status:expr,
+        $message:expr,
+        $remote_status:expr,
+        $evidence:expr $(,)?
+    ) => {
+        $steps.push(FirstStackSmokeStep {
+            slug: $slug.into(),
+            title: $title.into(),
+            check: $check.into(),
+            status: $status.into(),
+            message: $message.into(),
+            remote_status: $remote_status,
+            evidence: $evidence,
+        })
+    };
+}
+
 #[derive(Clone, Copy)]
 enum SmokeTier {
     FirstStack,
@@ -112,13 +135,12 @@ async fn run_smoke_tier_response(
         "HiveCore started {}: {}.",
         tier.label(),
         smoke_tier_description(tier)
-    )
-    .into()];
+    )];
     let mut preflight_steps = Vec::new();
 
     if matches!(tier, SmokeTier::FirstStack) {
         match prepare_first_stack_for_verification(state, &mut actions).await {
-            Ok(()) => push_step(
+            Ok(()) => push_step!(
                 &mut preflight_steps,
                 "first-stack",
                 "First Stack",
@@ -138,7 +160,7 @@ async fn run_smoke_tier_response(
                         "HiveCore could not complete first-stack smoke preflight.".into()
                     });
                 actions.push(format!("First-stack smoke preflight failed: {message}"));
-                push_step(
+                push_step!(
                     &mut preflight_steps,
                     "first-stack",
                     "First Stack",
@@ -160,7 +182,7 @@ async fn run_smoke_tier_response(
             &mut actions,
         )
         .await;
-        push_step(
+        push_step!(
             &mut preflight_steps,
             tier.slug(),
             tier.label(),
@@ -225,7 +247,7 @@ async fn execute_smoke_tier(
 
     for &slug in smoke_tier_slugs(tier) {
         let Some(runtime) = runtimes.iter().find(|item| item.slug == slug) else {
-            push_step(
+            push_step!(
                 &mut steps,
                 slug,
                 slug,
@@ -329,7 +351,7 @@ fn smoke_tier_coverage_check(
     let reachable = expected.len() - missing.len() - offline.len();
     let ok = missing.is_empty() && offline.is_empty();
 
-    push_step(
+    push_step!(
         steps,
         tier.slug(),
         tier.label(),
@@ -364,7 +386,7 @@ async fn smoke_runtime_checks(
     auth: &ProductStoredAuth,
 ) {
     let reachable = matches!(runtime.status.as_str(), "online" | "degraded");
-    push_step(
+    push_step!(
         steps,
         &runtime.slug,
         &runtime.title,
@@ -436,7 +458,7 @@ async fn smoke_runtime_checks(
         }
     }
 
-    push_step(
+    push_step!(
         steps,
         &runtime.slug,
         &runtime.title,
@@ -526,7 +548,7 @@ async fn smoke_auth_checks(
     steps: &mut Vec<FirstStackSmokeStep>,
 ) {
     if !auth.service_token_configured() {
-        push_step(
+        push_step!(
             steps,
             &runtime.slug,
             &runtime.title,
@@ -545,7 +567,7 @@ async fn smoke_auth_checks(
                 && !status.service_auth_expired
                 && status.service_auth_scoped
                 && !status.service_auth_legacy;
-            push_step(
+            push_step!(
                 steps,
                 &runtime.slug,
                 &runtime.title,
@@ -566,7 +588,7 @@ async fn smoke_auth_checks(
                 }),
             );
         }
-        Err(message) => push_step(
+        Err(message) => push_step!(
             steps,
             &runtime.slug,
             &runtime.title,
@@ -579,7 +601,7 @@ async fn smoke_auth_checks(
     }
 
     let (runs_ok, runs, runs_error) = fetch_product_runs(&state.client, api_url, auth).await;
-    push_step(
+    push_step!(
         steps,
         &runtime.slug,
         &runtime.title,
@@ -612,7 +634,7 @@ async fn smoke_capability_check(
                 .actions
                 .iter()
                 .any(|action| action.id == expected_action);
-            push_step(
+            push_step!(
                 steps,
                 &runtime.slug,
                 &runtime.title,
@@ -630,7 +652,7 @@ async fn smoke_capability_check(
                 }),
             );
         }
-        Err(message) => push_step(
+        Err(message) => push_step!(
             steps,
             &runtime.slug,
             &runtime.title,
@@ -651,7 +673,7 @@ async fn smoke_optional_auth_check(
     steps: &mut Vec<FirstStackSmokeStep>,
 ) {
     if !auth.service_token_configured() {
-        push_step(
+        push_step!(
             steps,
             &runtime.slug,
             &runtime.title,
@@ -675,7 +697,7 @@ async fn smoke_capability_inventory_check(
     steps: &mut Vec<FirstStackSmokeStep>,
 ) {
     match fetch_product_capabilities(&state.client, api_url, auth).await {
-        Ok(capabilities) => push_step(
+        Ok(capabilities) => push_step!(
             steps,
             &runtime.slug,
             &runtime.title,
@@ -689,7 +711,7 @@ async fn smoke_capability_inventory_check(
                 "hivecore": capabilities.hivecore,
             }),
         ),
-        Err(message) => push_step(
+        Err(message) => push_step!(
             steps,
             &runtime.slug,
             &runtime.title,
@@ -710,7 +732,7 @@ async fn smoke_safe_action(
     steps: &mut Vec<FirstStackSmokeStep>,
 ) {
     if !auth.service_token_configured() {
-        push_step(
+        push_step!(
             steps,
             &runtime.slug,
             &runtime.title,
@@ -724,7 +746,7 @@ async fn smoke_safe_action(
     }
 
     if runtime.health.startup_errors > 0 {
-        push_step(
+        push_step!(
             steps,
             &runtime.slug,
             &runtime.title,
@@ -738,7 +760,7 @@ async fn smoke_safe_action(
     }
 
     let Ok(capabilities) = fetch_product_capabilities(&state.client, api_url, auth).await else {
-        push_step(
+        push_step!(
             steps,
             &runtime.slug,
             &runtime.title,
@@ -757,7 +779,7 @@ async fn smoke_safe_action(
         .iter()
         .find(|action| action.id == action_id)
     else {
-        push_step(
+        push_step!(
             steps,
             &runtime.slug,
             &runtime.title,
@@ -771,7 +793,7 @@ async fn smoke_safe_action(
     };
 
     if action.destructive {
-        push_step(
+        push_step!(
             steps,
             &runtime.slug,
             &runtime.title,
@@ -786,7 +808,7 @@ async fn smoke_safe_action(
 
     let payload = smoke_payload(&runtime.slug);
     match post_smoke_action(state, api_url, auth, action, payload).await {
-        Ok((remote_status, evidence)) => push_step(
+        Ok((remote_status, evidence)) => push_step!(
             steps,
             &runtime.slug,
             &runtime.title,
@@ -799,7 +821,7 @@ async fn smoke_safe_action(
             Some(remote_status),
             evidence,
         ),
-        Err((remote_status, message, evidence)) => push_step(
+        Err((remote_status, message, evidence)) => push_step!(
             steps,
             &runtime.slug,
             &runtime.title,
@@ -921,27 +943,6 @@ fn smoke_response_evidence(text: &str) -> Value {
     } else {
         parsed
     }
-}
-
-fn push_step(
-    steps: &mut Vec<FirstStackSmokeStep>,
-    slug: impl Into<String>,
-    title: impl Into<String>,
-    check: impl Into<String>,
-    status: impl Into<String>,
-    message: impl Into<String>,
-    remote_status: Option<u16>,
-    evidence: Value,
-) {
-    steps.push(FirstStackSmokeStep {
-        slug: slug.into(),
-        title: title.into(),
-        check: check.into(),
-        status: status.into(),
-        message: message.into(),
-        remote_status,
-        evidence,
-    });
 }
 
 fn summarize_smoke_status(steps: &[FirstStackSmokeStep]) -> String {

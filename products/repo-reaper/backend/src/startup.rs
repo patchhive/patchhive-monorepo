@@ -2,6 +2,7 @@ use crate::db::get_conn;
 use patchhive_product_core::{
     github_auth::verify_github_token,
     github_permissions::GitHubPermissionProfile,
+    hivecore_policy::hivecore_url,
     repo_memory::repo_memory_url,
     startup::{StartupCheck, StartupCheckLevel},
 };
@@ -106,6 +107,16 @@ pub async fn validate_config(http: &Client) -> Vec<StartupCheck> {
         ));
     }
 
+    if let Some(url) = hivecore_url() {
+        results.push(StartupCheck::ok(format!(
+            "HiveCore repository policy and PR-budget enforcement is configured at {url}. RepoReaper will fail closed when that control plane is unavailable."
+        )));
+    } else {
+        results.push(StartupCheck::info(
+            "HiveCore repository policy and PR-budget enforcement is not configured. RepoReaper remains in standalone mode until PATCHHIVE_HIVECORE_URL is set.",
+        ));
+    }
+
     let encryption_secret = ["REAPER_ENCRYPTION_KEY", "PATCHHIVE_ENCRYPTION_KEY"]
         .iter()
         .find_map(|name| {
@@ -167,17 +178,40 @@ async fn poll_all_prs(http: &Client) {
     for (pr_number, repo, run_id) in prs {
         let state = crate::github::gh_poll_pr(http, &repo, pr_number, None).await;
         let merged = state["merged"].as_bool().unwrap_or(false);
+        let state_label = state["state"].as_str().unwrap_or("open");
         if let Ok(conn) = get_conn() {
             let _ = conn.execute(
                 "UPDATE pr_tracking SET state=?1, merged=?2, review_state=?3, last_checked=?4 WHERE pr_number=?5 AND repo=?6",
                 rusqlite::params![
-                    state["state"].as_str().unwrap_or("open"),
+                    state_label,
                     merged as i32,
                     state["review_state"].as_str(),
                     chrono::Utc::now().to_rfc3339(),
                     pr_number, repo,
                 ],
             );
+        }
+        if merged || state_label.eq_ignore_ascii_case("closed") {
+            let release = patchhive_product_core::hivecore_policy::release_pr_slots_for_run(
+                http,
+                &patchhive_product_core::hivecore_policy::PrRunReleaseRequest {
+                    product: "repo-reaper".into(),
+                    run_id: run_id.clone(),
+                    reason: format!(
+                        "RepoReaper observed pull request #{pr_number} as {}.",
+                        if merged { "merged" } else { "closed" }
+                    ),
+                },
+            )
+            .await;
+            if let Err(error) = release {
+                tracing::warn!(
+                    run_id,
+                    repository = repo,
+                    pr_number,
+                    "could not release HiveCore PR budget after closure: {error}"
+                );
+            }
         }
         if merged {
             let issue_number: Option<i64> = get_conn()

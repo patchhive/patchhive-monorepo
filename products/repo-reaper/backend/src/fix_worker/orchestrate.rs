@@ -1,6 +1,10 @@
 // orchestrate.rs — Main fix_one orchestrator
 
 use patchhive_github_pr::github_token_from_env;
+use patchhive_product_core::hivecore_policy::{
+    check_repository_policy, commit_pr_slot, release_pr_slot, reserve_pr_slot,
+    PrReservationRequest, RepositoryPolicyDecisionRequest,
+};
 use serde_json::json;
 use uuid::Uuid;
 
@@ -126,6 +130,10 @@ fn public_hold_reason(reason: &str) -> String {
         "no_changes" => "RepoReaper did not end with a commit-ready diff, so it did not open an empty pull request.".to_string(),
         "no_patch" => "RepoReaper could not produce a concrete patch for this issue from the available context.".to_string(),
         "patch_error" => "RepoReaper generated a candidate patch, but it could not apply cleanly enough to open a pull request.".to_string(),
+        "suite_policy_blocked" => "HiveCore repository policy blocked automation for this repository.".to_string(),
+        "suite_policy_unavailable" => "HiveCore policy was configured but unavailable, so RepoReaper failed closed before repository automation.".to_string(),
+        "pr_budget_denied" => "HiveCore denied PR capacity because a product or suite budget is full.".to_string(),
+        "pr_budget_unavailable" => "HiveCore PR budgeting was configured but unavailable, so RepoReaper did not open an unbudgeted pull request.".to_string(),
         other => format!("RepoReaper held this issue before PR delivery: {other}."),
     }
 }
@@ -321,6 +329,77 @@ pub async fn fix_one(job: FixIssueJob) {
         .clone()
         .unwrap_or_else(|| cfg("BOT_GITHUB_USER"));
 
+    let repository_policy = match check_repository_policy(
+        &http,
+        &RepositoryPolicyDecisionRequest {
+            repository: scope.repo.clone(),
+            product: "repo-reaper".into(),
+            operation: "repo_automation".into(),
+        },
+    )
+    .await
+    {
+        Ok(Some(decision)) if !decision.allowed() => {
+            let _ = start_attempt(IssueAttemptStart {
+                attempt_id: &attempt_id,
+                run_id: &params.run_id,
+                target: &attempt_target,
+                reaper_agent: &agents.reaper.name,
+                smith_agent: agents.smith.as_ref().map(|smith| smith.name.as_str()),
+                gatekeeper_agent: &agents.gatekeeper.name,
+            });
+            artifact(
+                &params.run_id,
+                &attempt_id,
+                "policy",
+                "hivecore.repository.blocked",
+                "blocked",
+                &decision.reason,
+                json!({"repo": scope.repo, "policy": decision}),
+            );
+            attempt_finisher
+                .skipped_with_error(
+                    "suite_policy_blocked",
+                    Some(&decision.reason),
+                    cost,
+                    None,
+                    0,
+                )
+                .await;
+            return;
+        }
+        Ok(Some(decision)) => Some(decision),
+        Ok(None) => None,
+        Err(error) => {
+            let detail = format!("HiveCore repository policy check failed: {error}");
+            let _ = start_attempt(IssueAttemptStart {
+                attempt_id: &attempt_id,
+                run_id: &params.run_id,
+                target: &attempt_target,
+                reaper_agent: &agents.reaper.name,
+                smith_agent: agents.smith.as_ref().map(|smith| smith.name.as_str()),
+                gatekeeper_agent: &agents.gatekeeper.name,
+            });
+            artifact(
+                &params.run_id,
+                &attempt_id,
+                "policy",
+                "hivecore.repository.unavailable",
+                "blocked",
+                &detail,
+                json!({"repo": scope.repo}),
+            );
+            attempt_finisher
+                .skipped_with_error("suite_policy_unavailable", Some(&detail), cost, None, 0)
+                .await;
+            return;
+        }
+    };
+    let repository_trusted = repository_policy
+        .as_ref()
+        .map(|decision| decision.trusted)
+        .unwrap_or(false);
+
     match gh_find_open_linked_pr(&http, &scope.repo, scope.issue_num, Some(&bot_token)).await {
         Ok(Some(pr)) => {
             let detail = existing_pr_detail(&pr);
@@ -446,6 +525,17 @@ pub async fn fix_one(job: FixIssueJob) {
         smith_agent: agents.smith.as_ref().map(|smith| smith.name.as_str()),
         gatekeeper_agent: &agents.gatekeeper.name,
     });
+    if let Some(decision) = &repository_policy {
+        artifact(
+            &params.run_id,
+            &attempt_id,
+            "policy",
+            "hivecore.repository.allowed",
+            "succeeded",
+            &decision.reason,
+            json!({"repo": scope.repo, "policy": decision}),
+        );
+    }
     update_issue_status_comment(
         &http,
         &issue,
@@ -960,7 +1050,7 @@ pub async fn fix_one(job: FixIssueJob) {
             &format!("Testing #{}", scope.issue_num),
         ))
         .await;
-    let mut test = crate::git_ops::run_tests(&scope.work_path).await;
+    let mut test = crate::git_ops::run_tests(&scope.work_path, repository_trusted).await;
     artifact(
         &params.run_id,
         &attempt_id,
@@ -1037,7 +1127,8 @@ pub async fn fix_one(job: FixIssueJob) {
                         result.explanation = retry_result.explanation;
                         result.files_changed = retry_result.files_changed;
                         result.patch = Some(retry_patch);
-                        test = crate::git_ops::run_tests(&scope.work_path).await;
+                        test =
+                            crate::git_ops::run_tests(&scope.work_path, repository_trusted).await;
                         let _ = tx
                             .send(alog(
                                 &agents.reaper,
@@ -1144,6 +1235,111 @@ pub async fn fix_one(job: FixIssueJob) {
             &format!("PR #{}", scope.issue_num),
         ))
         .await;
+
+    let reservation_id = match reserve_pr_slot(
+        &http,
+        &PrReservationRequest {
+            product: "repo-reaper".into(),
+            repository: scope.repo.clone(),
+            run_id: params.run_id.clone(),
+            action: "open_pull_request".into(),
+        },
+    )
+    .await
+    {
+        Ok(Some(response)) if response.granted => {
+            let Some(reservation) = response.reservation else {
+                let detail = "HiveCore granted PR capacity without returning a reservation ID.";
+                artifact(
+                    &params.run_id,
+                    &attempt_id,
+                    "policy",
+                    "hivecore.pr_budget.invalid_response",
+                    "blocked",
+                    detail,
+                    json!({"repo": scope.repo}),
+                );
+                attempt_finisher
+                    .skipped_with_error(
+                        "pr_budget_unavailable",
+                        Some(detail),
+                        cost,
+                        Some(&smith_review.final_patch),
+                        confidence,
+                    )
+                    .await;
+                return;
+            };
+            reservation.id
+        }
+        Ok(Some(response)) => {
+            artifact(
+                &params.run_id,
+                &attempt_id,
+                "policy",
+                "hivecore.pr_budget.denied",
+                "blocked",
+                &response.reason,
+                json!({
+                    "repo": scope.repo,
+                    "limiting_layer": response.limiting_layer,
+                    "product_used": response.product_used,
+                    "product_limit": response.product_limit,
+                    "suite_used": response.suite_used,
+                    "suite_limit": response.suite_limit,
+                }),
+            );
+            update_issue_status_comment(
+                &http,
+                &issue,
+                &scope,
+                &bot_token,
+                issue_comment_held(&issue, &params.run_id, &attempt_id, "pr_budget_denied"),
+            )
+            .await;
+            attempt_finisher
+                .skipped_with_error(
+                    "pr_budget_denied",
+                    Some(&response.reason),
+                    cost,
+                    Some(&smith_review.final_patch),
+                    confidence,
+                )
+                .await;
+            return;
+        }
+        Ok(None) => String::new(),
+        Err(error) => {
+            let detail = format!("HiveCore PR reservation failed: {error}");
+            artifact(
+                &params.run_id,
+                &attempt_id,
+                "policy",
+                "hivecore.pr_budget.unavailable",
+                "blocked",
+                &detail,
+                json!({"repo": scope.repo}),
+            );
+            update_issue_status_comment(
+                &http,
+                &issue,
+                &scope,
+                &bot_token,
+                issue_comment_held(&issue, &params.run_id, &attempt_id, "pr_budget_unavailable"),
+            )
+            .await;
+            attempt_finisher
+                .skipped_with_error(
+                    "pr_budget_unavailable",
+                    Some(&detail),
+                    cost,
+                    Some(&smith_review.final_patch),
+                    confidence,
+                )
+                .await;
+            return;
+        }
+    };
     artifact(
         &params.run_id,
         &attempt_id,
@@ -1182,6 +1378,16 @@ pub async fn fix_one(job: FixIssueJob) {
             outcome
         }
         Err(e) => {
+            if !reservation_id.is_empty() {
+                if let Err(release_error) =
+                    release_pr_slot(&http, &reservation_id, "GitHub PR creation failed.").await
+                {
+                    tracing::warn!(
+                        reservation_id,
+                        "could not release HiveCore PR reservation: {release_error:#}"
+                    );
+                }
+            }
             artifact(
                 &params.run_id,
                 &attempt_id,
@@ -1205,6 +1411,37 @@ pub async fn fix_one(job: FixIssueJob) {
             return;
         }
     };
+
+    if !reservation_id.is_empty() {
+        let pr_url = pr["html_url"].as_str().unwrap_or("");
+        match commit_pr_slot(&http, &reservation_id, pr_url).await {
+            Ok(Some(_)) => artifact(
+                &params.run_id,
+                &attempt_id,
+                "policy",
+                "hivecore.pr_budget.committed",
+                "succeeded",
+                "HiveCore committed the PR budget reservation.",
+                json!({"reservation_id": reservation_id, "pr_url": pr_url}),
+            ),
+            Ok(None) => {}
+            Err(error) => {
+                tracing::warn!(
+                    reservation_id,
+                    "could not commit HiveCore PR reservation: {error:#}"
+                );
+                artifact(
+                    &params.run_id,
+                    &attempt_id,
+                    "policy",
+                    "hivecore.pr_budget.commit_failed",
+                    "failed",
+                    &error.to_string(),
+                    json!({"reservation_id": reservation_id, "pr_url": pr_url}),
+                );
+            }
+        }
+    }
 
     let _ = track_pr(pr_number, &scope.repo, &params.run_id);
     let duration = t_start.elapsed().as_secs_f64();
