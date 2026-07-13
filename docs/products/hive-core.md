@@ -114,6 +114,12 @@ Operator / Frontend
 - **Run detail path sanitized:** run IDs containing `/`, `?`, `#`, `{`, `}` are rejected before being placed into product path templates.
 - **Partial failures are non-fatal:** If a product is offline or its API is unreachable, HiveCore reports `offline` health with the error message and continues polling remaining products.
 
+Future control-plane safety work is specified in
+[HiveCore repository safety and PR budgets](../hivecore-repository-safety-and-pr-budgets.md):
+a verified public repository-owner opt-out, operator-managed trusted repos, and
+atomic per-product plus suite-wide PR reservations. These controls are not
+implemented by the current settings model.
+
 ---
 
 ## API Endpoints

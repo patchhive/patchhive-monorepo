@@ -57,6 +57,7 @@ that links back to its detailed doc (see [PRODUCT_README_TEMPLATE.md](PRODUCT_RE
 | [HiveCore first-stack readiness](hivecore-first-stack-readiness.md) | Readiness audit for the first HiveCore product stack. |
 | [HiveCore suite bootstrap wizard](hivecore-suite-bootstrap-wizard.md) | Bootstrap wizard design. |
 | [Suite runs and fix capabilities](suite-runs-and-fix-capabilities.md) | Long-term system shape: scan → combine evidence → fix. |
+| [HiveCore repository safety and PR budgets](hivecore-repository-safety-and-pr-budgets.md) | Future public opt-out, trusted-repo policy, and hierarchical PR-budget design. |
 | [Public release readiness](public-release-readiness.md) | Criteria for going public. |
 
 ## Release & Workflow Docs

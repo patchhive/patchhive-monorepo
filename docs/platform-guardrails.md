@@ -27,6 +27,11 @@ Rules:
 - Maintainer and operator opt-out signals should be durable and easy to inspect.
 - Products should fail closed when policy data is ambiguous rather than acting aggressively.
 
+The future canonical design for the public `patchhive.dev` repository-owner
+opt-out, HiveCore trusted repositories, and hierarchical PR budgets is recorded
+in [HiveCore repository safety and PR budgets](hivecore-repository-safety-and-pr-budgets.md).
+Those controls are not implemented yet.
+
 ## 2. Reputation And Output Limits
 
 PatchHive's GitHub reputation compounds over time, which means bad output scales just as fast as good output.
@@ -52,6 +57,9 @@ Operational rules:
   reverse proxy and `X-Forwarded-For` is sanitized by that proxy; otherwise
   forwarded client headers are ignored.
 - HiveCore should inherit and coordinate these caps, not bypass them.
+- HiveCore should eventually enforce an atomic two-layer PR budget: a
+  configurable per-product maximum and one suite-wide ceiling. The suite
+  ceiling always wins when it has less capacity than the product maximum.
 - Every GitHub-facing PR body, issue comment, PR comment, report, or other
   maintained message must end with a product signature that links PatchHive:
   `*ProductName by [PatchHive](https://github.com/patchhive)*`. Use

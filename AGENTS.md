@@ -588,6 +588,12 @@ Important env vars:
 - PatchHive should contribute under its own GitHub identity with explicit autonomous attribution.
 - Allowlist, denylist, and opt-out controls should exist early anywhere PatchHive discovers work autonomously.
 - Hard quality and rate limits should gate outbound PR creation so PatchHive's reputation compounds in the right direction.
+- Future suite policy should include a verified repository-owner opt-out on
+  `patchhive.dev`, HiveCore-managed trusted repositories for explicitly
+  elevated operations, and atomic per-product plus suite-wide PR budgets. The
+  suite ceiling always wins. See
+  `docs/hivecore-repository-safety-and-pr-budgets.md`; none of these controls
+  should be described as active until implemented across acting products.
 
 ## Git Conventions
 

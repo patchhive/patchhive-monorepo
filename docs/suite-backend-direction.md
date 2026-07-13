@@ -340,6 +340,10 @@ after the run completes. Product-local repo-list endpoints may remain during
 gateway mode, but the long-term API should be suite-owned so HiveCore can pause
 or constrain the whole system without editing twelve product databases.
 
+The concrete future design for a public `patchhive.dev` owner opt-out, trusted
+repositories, and atomic two-layer PR budgets is documented in
+[HiveCore repository safety and PR budgets](hivecore-repository-safety-and-pr-budgets.md).
+
 ## Product Registry Manifests
 
 The unified backend should treat product registration as a manifest-driven plugin
