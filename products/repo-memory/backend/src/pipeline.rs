@@ -113,6 +113,74 @@ mod tests {
         }
     }
 
+    fn sample_bundle(number: u32, files: &[&str]) -> PullBundle {
+        PullBundle {
+            pr: crate::models::GitHubPullRequest {
+                number,
+                title: format!("Merged change {number}"),
+                html_url: format!("https://github.com/patchhive/example/pull/{number}"),
+                ..crate::models::GitHubPullRequest::default()
+            },
+            reviews: Vec::new(),
+            comments: Vec::new(),
+            files: files
+                .iter()
+                .map(|filename| crate::models::GitHubPullFile {
+                    filename: (*filename).into(),
+                    ..crate::models::GitHubPullFile::default()
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn hotspots_count_distinct_pull_requests_and_keep_evidence() {
+        let run = memory_run::build_memory_run(
+            crate::models::IngestParams {
+                repo: "patchhive/example".into(),
+                ..crate::models::IngestParams::default()
+            },
+            vec![
+                sample_bundle(
+                    1,
+                    &[
+                        "apps/desktop/controller.tsx",
+                        "apps/desktop/panel.tsx",
+                        "tests/desktop/controller.test.tsx",
+                    ],
+                ),
+                sample_bundle(
+                    2,
+                    &[
+                        "apps/desktop/state.ts",
+                        "apps/desktop/view.tsx",
+                        "tests/desktop/state.test.ts",
+                    ],
+                ),
+                sample_bundle(3, &["apps/desktop/routes.ts"]),
+            ],
+            Vec::new(),
+            0,
+        )
+        .expect("memory run should build");
+
+        let hotspot = run
+            .entries
+            .iter()
+            .find(|entry| entry.kind == "hotspot" && entry.title.contains("apps/desktop"))
+            .expect("apps/desktop hotspot should exist");
+        assert_eq!(hotspot.frequency, 3);
+        assert_eq!(hotspot.evidence.len(), 3);
+
+        let testing = run
+            .entries
+            .iter()
+            .find(|entry| entry.kind == "testing_expectation")
+            .expect("testing expectation should exist");
+        assert_eq!(testing.frequency, 2);
+        assert_eq!(testing.evidence.len(), 2);
+    }
+
     #[test]
     fn feature_templates_do_not_become_bug_evidence() {
         let issue = sample_issue(

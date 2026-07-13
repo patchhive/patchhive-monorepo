@@ -26,19 +26,21 @@ pub fn build_memory_run(
 
     let mut entries = Vec::new();
     let mut review_buckets: HashMap<&'static str, SignalBucket> = HashMap::new();
-    let mut dir_counts: HashMap<String, u32> = HashMap::new();
+    let mut hotspot_buckets: HashMap<String, SignalBucket> = HashMap::new();
     let mut file_review_counts: HashMap<String, SignalBucket> = HashMap::new();
     let mut bug_terms: HashMap<String, SignalBucket> = HashMap::new();
     let mut reviewer_profiles: HashMap<String, ReviewerProfileBucket> = HashMap::new();
     let mut maintainer_profiles: HashMap<String, MaintainerProfileBucket> = HashMap::new();
     let mut source_prs = 0u32;
     let mut source_with_tests = 0u32;
+    let mut testing_pattern_evidence = Vec::new();
     let mut review_feedback_items = 0u32;
     let repo_tokens = tokenize(&repo);
 
     for bundle in &bundles {
         let mut touched_source = false;
         let mut touched_tests = false;
+        let mut touched_dirs = HashSet::new();
         let author_login = bundle
             .pr
             .user
@@ -54,9 +56,7 @@ pub fn build_memory_run(
                 touched_tests = true;
             }
 
-            let bucket = path_bucket(&file.filename);
-            let count = dir_counts.entry(bucket).or_insert(0);
-            *count += 1;
+            touched_dirs.insert(path_bucket(&file.filename));
             if let Some(author) = author_login.as_ref() {
                 let profile = maintainer_profiles.entry(author.clone()).or_default();
                 let path_count = profile
@@ -65,6 +65,21 @@ pub fn build_memory_run(
                     .or_insert(0);
                 *path_count += 1;
             }
+        }
+
+        for dir in touched_dirs {
+            let bucket = hotspot_buckets.entry(dir.clone()).or_default();
+            bucket.frequency += 1;
+            push_evidence(
+                &mut bucket.evidence,
+                MemoryEvidence {
+                    source_type: "merged_pr".into(),
+                    title: format!("#{} {}", bundle.pr.number, bundle.pr.title),
+                    url: bundle.pr.html_url.clone(),
+                    path: Some(dir.clone()),
+                    excerpt: format!("Merged PR touched {dir}."),
+                },
+            );
         }
 
         if let Some(author) = author_login.as_ref() {
@@ -99,6 +114,16 @@ pub fn build_memory_run(
             source_prs += 1;
             if touched_tests {
                 source_with_tests += 1;
+                push_evidence(
+                    &mut testing_pattern_evidence,
+                    MemoryEvidence {
+                        source_type: "merged_pr".into(),
+                        title: format!("#{} {}", bundle.pr.number, bundle.pr.title),
+                        url: bundle.pr.html_url.clone(),
+                        path: None,
+                        excerpt: "Merged PR changed source files and tests together.".into(),
+                    },
+                );
             }
         }
 
@@ -216,17 +241,23 @@ pub fn build_memory_run(
                     prompt_line: "When behavior changes or bugs are fixed, update or add tests in the same patch.".into(),
                     frequency: source_with_tests,
                     tags: vec!["tests", "merged-pr-pattern"],
-                    evidence: Vec::new(),
+                    evidence: testing_pattern_evidence,
                 },
             ));
         }
     }
 
-    let mut hotspot_dirs: Vec<_> = dir_counts.into_iter().collect();
-    hotspot_dirs.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
-    for (dir, frequency) in hotspot_dirs
+    let mut hotspot_dirs: Vec<_> = hotspot_buckets.into_iter().collect();
+    hotspot_dirs.sort_by(|left, right| {
+        right
+            .1
+            .frequency
+            .cmp(&left.1.frequency)
+            .then_with(|| left.0.cmp(&right.0))
+    });
+    for (dir, bucket) in hotspot_dirs
         .into_iter()
-        .filter(|(_, count)| *count >= 2)
+        .filter(|(_, bucket)| bucket.frequency >= 2)
         .take(3)
     {
         entries.push(build_entry(
@@ -240,9 +271,9 @@ pub fn build_memory_run(
                     "Recent merged PRs repeatedly touched {dir}. Treat it as a high-context area and read nearby helpers, tests, and conventions before changing it."
                 ),
                 prompt_line: format!("Treat {dir} as a high-context area; read nearby code and tests before editing it."),
-                frequency,
+                frequency: bucket.frequency,
                 tags: vec!["hotspot", "paths"],
-                evidence: Vec::new(),
+                evidence: bucket.evidence,
             },
         ));
     }
