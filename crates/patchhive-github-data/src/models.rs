@@ -66,6 +66,7 @@ pub struct GitHubIssue {
     pub comments: u32,
     #[serde(default)]
     pub labels: Vec<GitHubLabel>,
+    pub user: Option<GitHubUser>,
     pub pull_request: Option<serde_json::Value>,
 }
 

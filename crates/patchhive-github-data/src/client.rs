@@ -4,6 +4,7 @@ use reqwest::{
     Client,
 };
 use serde::de::DeserializeOwned;
+use serde::Deserialize;
 use serde_json::Value;
 
 use crate::models::{
@@ -406,6 +407,102 @@ pub async fn fetch_pull_requests(
     .await
 }
 
+#[derive(Debug, Deserialize)]
+struct GitHubSearchIssuesResponse {
+    #[serde(default)]
+    items: Vec<GitHubIssue>,
+}
+
+fn merged_pull_from_search_issue(issue: GitHubIssue) -> Option<GitHubPullRequest> {
+    let merged_at = issue
+        .pull_request
+        .as_ref()?
+        .get("merged_at")?
+        .as_str()?
+        .to_string();
+
+    Some(GitHubPullRequest {
+        number: issue.number,
+        title: issue.title,
+        html_url: issue.html_url,
+        body: issue.body,
+        merged_at: Some(merged_at),
+        updated_at: issue.updated_at,
+        user: issue.user,
+        ..GitHubPullRequest::default()
+    })
+}
+
+pub async fn search_merged_pull_requests(
+    client: &Client,
+    repo: &str,
+    merged_since: &str,
+    max_items: u32,
+) -> Result<Vec<GitHubPullRequest>> {
+    if !valid_repo(repo) {
+        return Err(anyhow!("Repository must be in owner/name format"));
+    }
+
+    let response: GitHubSearchIssuesResponse = get_json(
+        client,
+        "patchhive-github-data/0.1",
+        "/search/issues",
+        &[
+            (
+                "q",
+                format!("repo:{repo} is:pr is:merged merged:>={merged_since}"),
+            ),
+            ("sort", "updated".to_string()),
+            ("order", "desc".to_string()),
+            ("per_page", max_items.clamp(1, 100).to_string()),
+        ],
+        github_token().as_deref(),
+    )
+    .await?;
+
+    Ok(response
+        .items
+        .into_iter()
+        .filter_map(merged_pull_from_search_issue)
+        .take(max_items as usize)
+        .collect())
+}
+
+pub async fn search_closed_issues(
+    client: &Client,
+    repo: &str,
+    closed_since: &str,
+    max_items: u32,
+) -> Result<Vec<GitHubIssue>> {
+    if !valid_repo(repo) {
+        return Err(anyhow!("Repository must be in owner/name format"));
+    }
+
+    let response: GitHubSearchIssuesResponse = get_json(
+        client,
+        "patchhive-github-data/0.1",
+        "/search/issues",
+        &[
+            (
+                "q",
+                format!("repo:{repo} is:issue is:closed closed:>={closed_since}"),
+            ),
+            ("sort", "updated".to_string()),
+            ("order", "desc".to_string()),
+            ("per_page", max_items.clamp(1, 100).to_string()),
+        ],
+        github_token().as_deref(),
+    )
+    .await?;
+
+    Ok(response
+        .items
+        .into_iter()
+        .filter(|issue| issue.pull_request.is_none())
+        .take(max_items as usize)
+        .collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -438,6 +535,24 @@ mod tests {
                 .and_then(|value| value.to_str().ok()),
             Some("patchhive-test")
         );
+    }
+
+    #[test]
+    fn merged_search_result_maps_to_pull_request() {
+        let issue = GitHubIssue {
+            number: 42,
+            title: "Merged work".into(),
+            html_url: "https://github.com/patchhive/example/pull/42".into(),
+            pull_request: Some(serde_json::json!({
+                "merged_at": "2026-07-12T11:33:00Z"
+            })),
+            ..GitHubIssue::default()
+        };
+
+        let pull = merged_pull_from_search_issue(issue).expect("merged result should map");
+
+        assert_eq!(pull.number, 42);
+        assert_eq!(pull.merged_at.as_deref(), Some("2026-07-12T11:33:00Z"));
     }
 }
 

@@ -96,17 +96,17 @@ export function ProductHeader({
           <div className="leading-tight">
             <div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>PatchHive · {productName}</div>
             <div className={`font-display text-[16px] font-semibold tracking-tight ${V3_TEXT.strong}`}>
-              {productName} <span className={`${V3_TEXT.dim} font-normal hidden lg:inline`}>— {subtitle}</span>
+              {productName} <span className={`${V3_TEXT.dim} hidden font-normal 2xl:inline`}>— {subtitle}</span>
             </div>
           </div>
         </div>
-        <nav className="surface-inset hidden min-w-0 items-center gap-1 overflow-x-auto rounded-full p-1 md:flex" aria-label={`${productName} sections`}>
+        <nav className="surface-inset hidden min-w-0 items-center gap-1 rounded-full p-1 xl:flex" aria-label={`${productName} sections`}>
           {tabs.map((tab) => (
             <button
               key={tab.id}
               type="button"
               onClick={() => onTabChange?.(tab.id)}
-              className={`h-8 shrink-0 whitespace-nowrap rounded-full px-4 text-[12px] transition ${activeTab === tab.id ? `bg-white shadow ${V3_TEXT.strong} dark:bg-white/15` : `${V3_TEXT.mute} hover:opacity-100`}`}
+              className={`h-8 shrink-0 whitespace-nowrap rounded-full px-3 text-[12px] transition ${activeTab === tab.id ? `bg-white shadow ${V3_TEXT.strong} dark:bg-white/15` : `${V3_TEXT.mute} hover:opacity-100`}`}
             >
               {tab.label}
             </button>
@@ -138,13 +138,13 @@ export function ProductHeader({
           ) : null}
         </div>
       </div>
-      <nav className="surface-inset mx-auto mt-2 flex max-w-[1440px] items-center gap-1 overflow-x-auto rounded-full p-1 md:hidden" aria-label={`${productName} mobile sections`}>
+      <nav className="surface-inset mx-auto mt-2 flex max-w-[1440px] flex-wrap items-center justify-center gap-1 rounded-2xl p-1 xl:hidden" aria-label={`${productName} compact sections`}>
         {tabs.map((tab) => (
           <button
             key={tab.id}
             type="button"
             onClick={() => onTabChange?.(tab.id)}
-            className={`h-8 shrink-0 whitespace-nowrap rounded-full px-4 text-[12px] transition ${activeTab === tab.id ? `bg-white shadow ${V3_TEXT.strong} dark:bg-white/15` : `${V3_TEXT.mute} hover:opacity-100`}`}
+            className={`h-8 shrink-0 whitespace-nowrap rounded-full px-3 text-[12px] transition ${activeTab === tab.id ? `bg-white shadow ${V3_TEXT.strong} dark:bg-white/15` : `${V3_TEXT.mute} hover:opacity-100`}`}
           >
             {tab.label}
           </button>
