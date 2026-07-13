@@ -169,7 +169,27 @@ pub fn run_count() -> u32 {
 }
 
 pub fn memory_count() -> u32 {
-    scalar_count("SELECT COUNT(*) FROM memory_entries")
+    scalar_count(
+        r#"
+        WITH latest_runs AS (
+          SELECT mr.id, mr.repo
+          FROM memory_runs mr
+          WHERE mr.id = (
+            SELECT latest.id
+            FROM memory_runs latest
+            WHERE latest.repo = mr.repo
+            ORDER BY latest.created_at DESC, latest.rowid DESC
+            LIMIT 1
+          )
+        )
+        SELECT COUNT(*)
+        FROM memory_entries me
+        JOIN latest_runs lr ON lr.id = me.run_id
+        LEFT JOIN memory_curations mc
+          ON mc.repo = me.repo AND mc.memory_ref = me.memory_ref
+        WHERE COALESCE(mc.disposition, 'signal') != 'suppressed'
+        "#,
+    )
 }
 
 pub fn repo_count() -> u32 {
@@ -207,17 +227,39 @@ pub fn list_known_repos() -> rusqlite::Result<Vec<KnownRepo>> {
           mr.repo,
           MAX(mr.created_at) AS last_ingested_at,
           COUNT(DISTINCT mr.id) AS run_count,
-          COUNT(me.id) AS memory_count,
+          (
+            SELECT COUNT(*)
+            FROM memory_entries latest_me
+            LEFT JOIN memory_curations latest_mc
+              ON latest_mc.repo = latest_me.repo
+             AND latest_mc.memory_ref = latest_me.memory_ref
+            WHERE latest_me.run_id = (
+              SELECT latest.id
+              FROM memory_runs latest
+              WHERE latest.repo = mr.repo
+              ORDER BY latest.created_at DESC, latest.rowid DESC
+              LIMIT 1
+            )
+              AND COALESCE(latest_mc.disposition, 'signal') != 'suppressed'
+          ) AS memory_count,
           COALESCE((
             SELECT title
             FROM memory_entries latest_me
-            JOIN memory_runs latest_mr ON latest_mr.id = latest_me.run_id
-            WHERE latest_mr.repo = mr.repo
+            LEFT JOIN memory_curations latest_mc
+              ON latest_mc.repo = latest_me.repo
+             AND latest_mc.memory_ref = latest_me.memory_ref
+            WHERE latest_me.run_id = (
+              SELECT latest.id
+              FROM memory_runs latest
+              WHERE latest.repo = mr.repo
+              ORDER BY latest.created_at DESC, latest.rowid DESC
+              LIMIT 1
+            )
+              AND COALESCE(latest_mc.disposition, 'signal') != 'suppressed'
             ORDER BY latest_me.confidence DESC, latest_me.created_at DESC
             LIMIT 1
           ), '')
         FROM memory_runs mr
-        LEFT JOIN memory_entries me ON me.run_id = mr.id
         GROUP BY mr.repo
         ORDER BY last_ingested_at DESC
         "#,
@@ -240,6 +282,17 @@ pub fn featured_memories(limit: usize) -> rusqlite::Result<Vec<MemoryEntry>> {
     let conn = connect()?;
     let mut stmt = conn.prepare(
         r#"
+        WITH latest_runs AS (
+          SELECT mr.id, mr.repo
+          FROM memory_runs mr
+          WHERE mr.id = (
+            SELECT latest.id
+            FROM memory_runs latest
+            WHERE latest.repo = mr.repo
+            ORDER BY latest.created_at DESC, latest.rowid DESC
+            LIMIT 1
+          )
+        )
         SELECT
           me.id, me.memory_ref, me.run_id, me.repo, me.kind, me.title, me.detail,
           me.prompt_line, me.confidence, me.frequency,
@@ -247,6 +300,7 @@ pub fn featured_memories(limit: usize) -> rusqlite::Result<Vec<MemoryEntry>> {
           COALESCE(mc.pinned, 0),
           me.tags_json, me.evidence_json, me.created_at
         FROM memory_entries me
+        JOIN latest_runs lr ON lr.id = me.run_id
         LEFT JOIN memory_curations mc
           ON mc.repo = me.repo AND mc.memory_ref = me.memory_ref
         WHERE COALESCE(mc.disposition, 'signal') != 'suppressed'
