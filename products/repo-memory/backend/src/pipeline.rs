@@ -184,6 +184,54 @@ mod tests {
     }
 
     #[test]
+    fn reviewer_profiles_keep_the_feedback_that_created_them() {
+        let mut bundle = sample_bundle(4, &["src/worker.rs"]);
+        bundle.comments = vec![
+            crate::models::GitHubReviewComment {
+                body: "Please add tests for this edge case.".into(),
+                html_url: "https://github.com/patchhive/example/pull/4#discussion-1".into(),
+                path: Some("src/worker.rs".into()),
+                user: Some(patchhive_github_data::models::GitHubUser {
+                    login: "reviewer".into(),
+                }),
+                ..crate::models::GitHubReviewComment::default()
+            },
+            crate::models::GitHubReviewComment {
+                body: "Reuse the existing shared helper.".into(),
+                html_url: "https://github.com/patchhive/example/pull/4#discussion-2".into(),
+                path: Some("src/worker.rs".into()),
+                user: Some(patchhive_github_data::models::GitHubUser {
+                    login: "reviewer".into(),
+                }),
+                ..crate::models::GitHubReviewComment::default()
+            },
+        ];
+
+        let run = memory_run::build_memory_run(
+            crate::models::IngestParams {
+                repo: "patchhive/example".into(),
+                ..crate::models::IngestParams::default()
+            },
+            vec![bundle],
+            Vec::new(),
+            0,
+        )
+        .expect("memory run should build");
+
+        let profile = run
+            .entries
+            .iter()
+            .find(|entry| entry.kind == "reviewer_profile")
+            .expect("reviewer profile should exist");
+        assert_eq!(profile.frequency, 2);
+        assert_eq!(profile.evidence.len(), 2);
+        assert!(profile
+            .evidence
+            .iter()
+            .all(|evidence| evidence.source_type == "review_feedback"));
+    }
+
+    #[test]
     fn feature_templates_do_not_become_bug_evidence() {
         let issue = sample_issue(
             1,
@@ -214,8 +262,16 @@ mod tests {
             },
             Vec::new(),
             vec![
-                sample_issue(3, "bug: Hermes cannot launch", "Launch fails."),
-                sample_issue(4, "bug: Hermes cannot connect", "Connection fails."),
+                sample_issue(
+                    3,
+                    "bug: Hermes environment proposed response",
+                    "Launch fails.",
+                ),
+                sample_issue(
+                    4,
+                    "bug: Hermes environment proposed response",
+                    "Connection fails.",
+                ),
             ],
             0,
         )

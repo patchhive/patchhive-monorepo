@@ -609,22 +609,20 @@ pub fn collect_feedback(
         let Some((bucket_key, _label)) = classify_feedback(&sentence) else {
             continue;
         };
+        let evidence = MemoryEvidence {
+            source_type: "review_feedback".into(),
+            title: format!("#{} {}", pr.number, pr.title),
+            url: url.to_string(),
+            path: path.map(str::to_string),
+            excerpt: if let Some(author) = author {
+                format!("{author}: {}", truncate(&sentence, 180))
+            } else {
+                truncate(&sentence, 180)
+            },
+        };
         let bucket = buckets.entry(bucket_key).or_default();
         bucket.frequency += 1;
-        push_evidence(
-            &mut bucket.evidence,
-            MemoryEvidence {
-                source_type: "review_feedback".into(),
-                title: format!("#{} {}", pr.number, pr.title),
-                url: url.to_string(),
-                path: path.map(str::to_string),
-                excerpt: if let Some(author) = author {
-                    format!("{author}: {}", truncate(&sentence, 180))
-                } else {
-                    truncate(&sentence, 180)
-                },
-            },
-        );
+        push_evidence(&mut bucket.evidence, evidence.clone());
         if let Some(author) = author.filter(|value| !value.trim().is_empty()) {
             let profile = reviewer_profiles.entry(author.to_string()).or_default();
             profile.total_feedback += 1;
@@ -632,6 +630,7 @@ pub fn collect_feedback(
             if let Some(path) = path {
                 *profile.path_counts.entry(path_bucket(path)).or_insert(0) += 1;
             }
+            push_evidence(&mut profile.evidence, evidence);
         }
         matched += 1;
     }

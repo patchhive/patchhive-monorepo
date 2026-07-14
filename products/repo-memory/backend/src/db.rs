@@ -516,6 +516,19 @@ fn list_memories_with_connection(
                 latest_me.rowid DESC
               LIMIT 1
             )
+            AND (
+              me.run_id = (
+                SELECT latest_repo_run.id
+                FROM memory_runs latest_repo_run
+                WHERE latest_repo_run.repo = me.repo
+                ORDER BY latest_repo_run.created_at DESC, latest_repo_run.rowid DESC
+                LIMIT 1
+              )
+              OR (
+                COALESCE(mc.disposition, 'signal') = 'policy'
+                AND COALESCE(mc.pinned, 0) = 1
+              )
+            )
             "#,
         );
 
@@ -1147,6 +1160,11 @@ mod tests {
                 '[]', '[]', '2026-07-12T10:00:01Z'
               ),
               (
+                'old-retired', 'owner-repo__failure__retired', 'old-run', 'owner/repo',
+                'failure', 'Retired memory', 'retired detail', 'retired prompt', 0.65, 2,
+                '[]', '[]', '2026-07-12T10:00:02Z'
+              ),
+              (
                 'new-shared', 'owner-repo__hotspot__shared', 'new-run', 'owner/repo',
                 'hotspot', 'Shared memory', 'new detail', 'new prompt', 0.95, 4,
                 '[]', '[{"kind":"merged_pr"}]', '2026-07-12T11:00:00Z'
@@ -1157,8 +1175,9 @@ mod tests {
                 '[]', '[]', '2026-07-12T12:00:00Z'
               );
 
-            INSERT INTO memory_curations (repo, memory_ref, disposition, pinned)
-            VALUES ('owner/repo', 'owner-repo__hotspot__shared', 'policy', 1);
+            INSERT INTO memory_curations (repo, memory_ref, disposition, pinned) VALUES
+              ('owner/repo', 'owner-repo__hotspot__shared', 'policy', 1),
+              ('owner/repo', 'owner-repo__convention__durable', 'policy', 1);
             "#,
         )
         .expect("create memory fixtures");
@@ -1181,6 +1200,7 @@ mod tests {
         assert!(ids.contains(&"old-only"));
         assert!(ids.contains(&"other-shared"));
         assert!(!ids.contains(&"old-shared"));
+        assert!(!ids.contains(&"old-retired"));
 
         let current = memories
             .iter()
@@ -1203,9 +1223,10 @@ mod tests {
             .map(|memory| memory.id.as_str())
             .collect::<Vec<_>>();
 
-        assert_eq!(memories.len(), 2);
+        assert_eq!(memories.len(), 3);
         assert!(ids.contains(&"old-shared"));
         assert!(ids.contains(&"old-only"));
+        assert!(ids.contains(&"old-retired"));
         assert!(!ids.contains(&"new-shared"));
     }
 }

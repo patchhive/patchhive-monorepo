@@ -134,6 +134,7 @@ pub const STOPWORDS: &[&str] = &[
     "proposed",
     "problem",
     "description",
+    "environment",
     "steps",
     "reproduce",
     "expected",
