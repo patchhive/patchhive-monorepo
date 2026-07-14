@@ -471,6 +471,16 @@ pub fn list_memories(
     run_id: Option<&str>,
 ) -> rusqlite::Result<Vec<MemoryEntry>> {
     let conn = connect()?;
+    list_memories_with_connection(&conn, repo, kind, search, run_id)
+}
+
+fn list_memories_with_connection(
+    conn: &Connection,
+    repo: Option<&str>,
+    kind: Option<&str>,
+    search: Option<&str>,
+    run_id: Option<&str>,
+) -> rusqlite::Result<Vec<MemoryEntry>> {
     let mut sql = String::from(
         r#"
         SELECT
@@ -490,12 +500,29 @@ pub fn list_memories(
     if let Some(run_id) = run_id.filter(|value| !value.trim().is_empty()) {
         sql.push_str(&format!(" AND me.run_id = ?{}", params.len() + 1));
         params.push(run_id.to_string());
-    } else if let Some(repo) = repo.filter(|value| !value.trim().is_empty()) {
-        sql.push_str(&format!(
-            " AND me.run_id = (SELECT id FROM memory_runs WHERE repo = ?{} ORDER BY created_at DESC LIMIT 1)",
-            params.len() + 1
-        ));
-        params.push(repo.to_string());
+    } else {
+        sql.push_str(
+            r#"
+            AND me.id = (
+              SELECT latest_me.id
+              FROM memory_entries latest_me
+              JOIN memory_runs latest_run ON latest_run.id = latest_me.run_id
+              WHERE latest_me.repo = me.repo
+                AND latest_me.memory_ref = me.memory_ref
+              ORDER BY
+                latest_run.created_at DESC,
+                latest_run.rowid DESC,
+                latest_me.created_at DESC,
+                latest_me.rowid DESC
+              LIMIT 1
+            )
+            "#,
+        );
+
+        if let Some(repo) = repo.filter(|value| !value.trim().is_empty()) {
+            sql.push_str(&format!(" AND me.repo = ?{}", params.len() + 1));
+            params.push(repo.to_string());
+        }
     }
 
     if let Some(kind) = kind.filter(|value| !value.trim().is_empty()) {
@@ -1062,4 +1089,123 @@ fn decode_failguard_guardrail(row: &rusqlite::Row<'_>) -> rusqlite::Result<FailG
         created_at: row.get(13)?,
         updated_at: row.get(14)?,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn memory_test_connection() -> Connection {
+        let conn = Connection::open_in_memory().expect("open in-memory database");
+        conn.execute_batch(
+            r#"
+            CREATE TABLE memory_runs (
+              id TEXT PRIMARY KEY,
+              repo TEXT NOT NULL,
+              created_at TEXT NOT NULL
+            );
+            CREATE TABLE memory_entries (
+              id TEXT PRIMARY KEY,
+              memory_ref TEXT NOT NULL,
+              run_id TEXT NOT NULL,
+              repo TEXT NOT NULL,
+              kind TEXT NOT NULL,
+              title TEXT NOT NULL,
+              detail TEXT NOT NULL,
+              prompt_line TEXT NOT NULL,
+              confidence REAL NOT NULL,
+              frequency INTEGER NOT NULL,
+              tags_json TEXT NOT NULL,
+              evidence_json TEXT NOT NULL,
+              created_at TEXT NOT NULL
+            );
+            CREATE TABLE memory_curations (
+              repo TEXT NOT NULL,
+              memory_ref TEXT NOT NULL,
+              disposition TEXT NOT NULL,
+              pinned INTEGER NOT NULL,
+              PRIMARY KEY (repo, memory_ref)
+            );
+
+            INSERT INTO memory_runs (id, repo, created_at) VALUES
+              ('old-run', 'owner/repo', '2026-07-12T10:00:00Z'),
+              ('new-run', 'owner/repo', '2026-07-12T11:00:00Z'),
+              ('other-run', 'other/repo', '2026-07-12T12:00:00Z');
+
+            INSERT INTO memory_entries (
+              id, memory_ref, run_id, repo, kind, title, detail, prompt_line,
+              confidence, frequency, tags_json, evidence_json, created_at
+            ) VALUES
+              (
+                'old-shared', 'owner-repo__hotspot__shared', 'old-run', 'owner/repo',
+                'hotspot', 'Shared memory', 'old detail', 'old prompt', 0.80, 2,
+                '[]', '[]', '2026-07-12T10:00:00Z'
+              ),
+              (
+                'old-only', 'owner-repo__convention__durable', 'old-run', 'owner/repo',
+                'convention', 'Durable memory', 'durable detail', 'durable prompt', 0.70, 1,
+                '[]', '[]', '2026-07-12T10:00:01Z'
+              ),
+              (
+                'new-shared', 'owner-repo__hotspot__shared', 'new-run', 'owner/repo',
+                'hotspot', 'Shared memory', 'new detail', 'new prompt', 0.95, 4,
+                '[]', '[{"kind":"merged_pr"}]', '2026-07-12T11:00:00Z'
+              ),
+              (
+                'other-shared', 'owner-repo__hotspot__shared', 'other-run', 'other/repo',
+                'hotspot', 'Shared memory', 'other detail', 'other prompt', 0.90, 3,
+                '[]', '[]', '2026-07-12T12:00:00Z'
+              );
+
+            INSERT INTO memory_curations (repo, memory_ref, disposition, pinned)
+            VALUES ('owner/repo', 'owner-repo__hotspot__shared', 'policy', 1);
+            "#,
+        )
+        .expect("create memory fixtures");
+        conn
+    }
+
+    #[test]
+    fn memory_library_returns_latest_entry_per_repo_and_memory_ref() {
+        let conn = memory_test_connection();
+
+        let memories = list_memories_with_connection(&conn, None, None, None, None)
+            .expect("list current durable memories");
+        let ids = memories
+            .iter()
+            .map(|memory| memory.id.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(memories.len(), 3);
+        assert!(ids.contains(&"new-shared"));
+        assert!(ids.contains(&"old-only"));
+        assert!(ids.contains(&"other-shared"));
+        assert!(!ids.contains(&"old-shared"));
+
+        let current = memories
+            .iter()
+            .find(|memory| memory.id == "new-shared")
+            .expect("newest shared memory");
+        assert_eq!(current.detail, "new detail");
+        assert_eq!(current.disposition, "policy");
+        assert!(current.pinned);
+    }
+
+    #[test]
+    fn run_detail_keeps_historical_memory_entries() {
+        let conn = memory_test_connection();
+
+        let memories =
+            list_memories_with_connection(&conn, Some("owner/repo"), None, None, Some("old-run"))
+                .expect("list historical run memories");
+        let ids = memories
+            .iter()
+            .map(|memory| memory.id.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(memories.len(), 2);
+        assert!(ids.contains(&"old-shared"));
+        assert!(ids.contains(&"old-only"));
+        assert!(!ids.contains(&"new-shared"));
+    }
 }
