@@ -474,6 +474,38 @@ pub fn list_memories(
     list_memories_with_connection(&conn, repo, kind, search, run_id)
 }
 
+pub fn apply_memory_curations(entries: &mut [MemoryEntry]) -> rusqlite::Result<()> {
+    let conn = connect()?;
+    apply_memory_curations_with_connection(&conn, entries)
+}
+
+fn apply_memory_curations_with_connection(
+    conn: &Connection,
+    entries: &mut [MemoryEntry],
+) -> rusqlite::Result<()> {
+    let mut stmt = conn.prepare(
+        r#"
+        SELECT disposition, pinned
+        FROM memory_curations
+        WHERE repo = ?1 AND memory_ref = ?2
+        "#,
+    )?;
+
+    for entry in entries {
+        if let Some((disposition, pinned)) = stmt
+            .query_row(params![&entry.repo, &entry.memory_ref], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)? != 0))
+            })
+            .optional()?
+        {
+            entry.disposition = disposition;
+            entry.pinned = pinned;
+        }
+    }
+
+    Ok(())
+}
+
 fn list_memories_with_connection(
     conn: &Connection,
     repo: Option<&str>,
@@ -1209,6 +1241,33 @@ mod tests {
         assert_eq!(current.detail, "new detail");
         assert_eq!(current.disposition, "policy");
         assert!(current.pinned);
+    }
+
+    #[test]
+    fn ingest_snapshot_applies_existing_memory_curations() {
+        let conn = memory_test_connection();
+        let mut entries = vec![
+            MemoryEntry {
+                repo: "owner/repo".into(),
+                memory_ref: "owner-repo__hotspot__shared".into(),
+                disposition: "signal".into(),
+                ..MemoryEntry::default()
+            },
+            MemoryEntry {
+                repo: "owner/repo".into(),
+                memory_ref: "owner-repo__testing__uncurated".into(),
+                disposition: "signal".into(),
+                ..MemoryEntry::default()
+            },
+        ];
+
+        apply_memory_curations_with_connection(&conn, &mut entries)
+            .expect("apply memory curations");
+
+        assert_eq!(entries[0].disposition, "policy");
+        assert!(entries[0].pinned);
+        assert_eq!(entries[1].disposition, "signal");
+        assert!(!entries[1].pinned);
     }
 
     #[test]

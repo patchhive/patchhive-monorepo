@@ -26,6 +26,7 @@ use crate::{
 };
 
 use super::{
+    build_prompt_pack,
     context::rank_context_entries,
     diff::build_run_diff,
     memory_run::build_memory_run,
@@ -511,8 +512,10 @@ pub async fn ingest(
     .await
     .map_err(upstream_error)?;
 
-    let run = build_memory_run(params, bundles, issues, partial_read_warnings)
+    let mut run = build_memory_run(params, bundles, issues, partial_read_warnings)
         .map_err(internal_from_anyhow)?;
+    db::apply_memory_curations(&mut run.entries).map_err(internal_error)?;
+    run.prompt_pack = build_prompt_pack(&run.repo, &run.summary, &run.entries);
     db::save_run(&run).map_err(internal_error)?;
     Ok(Json(run))
 }

@@ -77,32 +77,55 @@ pub fn build_summary(
 
 pub fn build_prompt_pack(repo: &str, summary: &IngestSummary, entries: &[MemoryEntry]) -> String {
     let mut sections = Vec::new();
+    let policy_lines: Vec<_> = entries
+        .iter()
+        .filter(|entry| entry.pinned || entry.disposition == "policy")
+        .map(|entry| {
+            format!(
+                "- **[{}]** {}",
+                if entry.pinned {
+                    "Pinned policy"
+                } else {
+                    "Policy"
+                },
+                entry.prompt_line
+            )
+        })
+        .collect();
     let convention_lines: Vec<_> = entries
         .iter()
+        .filter(|entry| !entry.pinned && entry.disposition != "policy")
         .filter(|entry| entry.kind == "review_rule" || entry.kind == "testing_expectation")
         .map(|entry| format!("- {}", entry.prompt_line))
         .collect();
     let failure_lines: Vec<_> = entries
         .iter()
+        .filter(|entry| !entry.pinned && entry.disposition != "policy")
         .filter(|entry| entry.kind == "failure_pattern")
         .map(|entry| format!("- {}", entry.prompt_line))
         .collect();
     let hotspot_lines: Vec<_> = entries
         .iter()
+        .filter(|entry| !entry.pinned && entry.disposition != "policy")
         .filter(|entry| entry.kind == "hotspot")
         .map(|entry| format!("- {}", entry.prompt_line))
         .collect();
     let reviewer_lines: Vec<_> = entries
         .iter()
+        .filter(|entry| !entry.pinned && entry.disposition != "policy")
         .filter(|entry| entry.kind == "reviewer_profile")
         .map(|entry| format!("- {}", entry.prompt_line))
         .collect();
     let maintainer_lines: Vec<_> = entries
         .iter()
+        .filter(|entry| !entry.pinned && entry.disposition != "policy")
         .filter(|entry| entry.kind == "maintainer_profile")
         .map(|entry| format!("- {}", entry.prompt_line))
         .collect();
 
+    if !policy_lines.is_empty() {
+        sections.push(format!("## Operator policies\n{}", policy_lines.join("\n")));
+    }
     if !convention_lines.is_empty() {
         sections.push(format!(
             "## Conventions and review habits\n{}",

@@ -232,6 +232,38 @@ mod tests {
     }
 
     #[test]
+    fn prompt_pack_separates_operator_policy_from_inferred_signals() {
+        let mut policy = sample_entry(
+            "testing_expectation",
+            "Behavior changes ship with tests",
+            "Tests are expected.",
+            "Update tests with behavior changes.",
+        );
+        policy.disposition = "policy".into();
+        policy.pinned = true;
+        let signal = sample_entry(
+            "review_rule",
+            "Prefer existing helpers",
+            "Reviewers request shared helpers.",
+            "Prefer existing helpers before adding one-off logic.",
+        );
+        let entries = vec![policy, signal];
+        let summary = build_summary(&entries, 3, 2, 1, 0);
+
+        let prompt_pack = build_prompt_pack("patchhive/example", &summary, &entries);
+
+        assert!(prompt_pack.contains("## Operator policies"));
+        assert!(prompt_pack.contains("**[Pinned policy]** Update tests"));
+        assert!(prompt_pack.contains("## Conventions and review habits"));
+        assert_eq!(
+            prompt_pack
+                .matches("Update tests with behavior changes.")
+                .count(),
+            1
+        );
+    }
+
+    #[test]
     fn feature_templates_do_not_become_bug_evidence() {
         let issue = sample_issue(
             1,
