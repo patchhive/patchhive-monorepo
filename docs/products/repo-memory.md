@@ -219,7 +219,7 @@ All endpoints verified from `main.rs`. Routes marked **public** do not require a
 
 | Method | Path | Handler | Description |
 |---|---|---|---|
-| GET | `/memories` | `pipeline::memories` | List memories — optional query params: `repo`, `kind`, `search`, `run_id`. If no `run_id`, returns latest run for given repo. |
+| GET | `/memories` | `pipeline::memories` | List memories — optional query params: `repo`, `kind`, `search`, `run_id`. Without `run_id`, returns the active set: the latest ingest plus older explicitly pinned policy memories. |
 | POST | `/memories/curation` | `pipeline::curate_memory` | Set memory disposition (`signal`/`policy`/`suppressed`) and pinned status. Body: `MemoryCurationUpdate { repo, memory_ref, disposition, pinned }`. |
 
 **Request shape** (`POST /memories/curation`):
@@ -301,7 +301,7 @@ All endpoints verified from `main.rs`. Routes marked **public** do not require a
   "consumer": "trust-gate",
   "run_id": "uuid",
   "created_at": "2026-06-28T00:00:00Z",
-  "summary": "RepoMemory selected 3 relevant memories from the latest run for owner/repo, including 1 policy memory, with 1 pinned.",
+  "summary": "RepoMemory selected 3 relevant active memories for owner/repo, including 1 policy memory, with 1 pinned.",
   "prompt_lines": ["Add or update tests when touching auth behavior.", "..."],
   "entries": [{
     "id": "...",

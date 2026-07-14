@@ -336,13 +336,12 @@ pub async fn context(Json(request): Json<ContextRequest>) -> JsonResult<ContextR
         .next()
         .ok_or_else(|| not_found("RepoMemory has no ingested history for that repo yet."))?;
 
-    let run = db::get_history(&latest.id)
-        .map_err(internal_error)?
-        .ok_or_else(|| not_found("RepoMemory run not found."))?;
+    let active_memories =
+        db::list_memories(Some(&repo), None, None, None).map_err(internal_error)?;
 
     let consumer = super::utils::normalize_consumer(&request.consumer);
     let entries = rank_context_entries(
-        &run.entries,
+        &active_memories,
         &consumer,
         &request.changed_paths,
         &request.task_summary,
@@ -364,11 +363,11 @@ pub async fn context(Json(request): Json<ContextRequest>) -> JsonResult<ContextR
     let pinned_count = entries.iter().filter(|entry| entry.pinned).count();
     let summary = if entries.is_empty() {
         format!(
-            "RepoMemory found no especially relevant memories in the latest run for {repo}, so consumers should fall back to the full prompt pack."
+            "RepoMemory found no especially relevant active memories for {repo}, so consumers should fall back to the latest prompt pack."
         )
     } else {
         format!(
-            "RepoMemory selected {} relevant memories from the latest run for {repo}{}{}.",
+            "RepoMemory selected {} relevant active memories for {repo}{}{}.",
             entries.len(),
             if policy_count > 0 {
                 format!(
@@ -393,8 +392,8 @@ pub async fn context(Json(request): Json<ContextRequest>) -> JsonResult<ContextR
     Ok(Json(ContextResponse {
         repo,
         consumer,
-        run_id: run.id,
-        created_at: run.created_at,
+        run_id: latest.id,
+        created_at: latest.created_at,
         summary,
         prompt_lines: entries
             .iter()
