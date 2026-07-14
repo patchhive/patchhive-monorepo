@@ -41,8 +41,29 @@ function kindLabel(kind) {
   return String(kind || "memory").replaceAll("_", " ");
 }
 
+function hasLinkedEvidence(entry) {
+  return (entry.evidence || []).some((evidence) => evidence.url);
+}
+
+function frequencyFact(entry) {
+  if (entry.kind !== "hotspot") {
+    return { label: "Frequency", value: entry.frequency || 0 };
+  }
+  return hasLinkedEvidence(entry)
+    ? { label: "Merged PRs touching path", value: entry.frequency || 0 }
+    : { label: "Historical path touches", value: entry.frequency || 0 };
+}
+
 function evidenceText(evidence) {
   return [evidence.source_type, evidence.title, evidence.path, evidence.excerpt].filter(Boolean).join(" · ");
+}
+
+function mappedEvidence(entry) {
+  const evidence = (entry.evidence || []).map(evidenceText);
+  if (entry.kind === "hotspot" && evidence.length === 0) {
+    return ["This historical ingest predates linked hotspot evidence. Re-ingest the repository to rebuild this memory with supporting merged-PR links."];
+  }
+  return evidence;
 }
 
 function buildRunMarkdown(result) {
@@ -124,10 +145,10 @@ const config = {
     title: entry.title || "Durable memory",
     meta: `${kindLabel(entry.kind)} · ${entry.repo}`,
     summary: entry.detail,
-    evidence: (entry.evidence || []).map(evidenceText),
+    evidence: mappedEvidence(entry),
     links: (entry.evidence || []).filter((evidence) => evidence.url).map((evidence, index) => ({ label: evidence.title || `Evidence ${index + 1}`, url: evidence.url })),
     tags: entry.tags || [],
-    facts: [{ label: "Kind", value: kindLabel(entry.kind) }, { label: "Disposition", value: entry.disposition || "signal" }, { label: "Confidence", value: `${Math.round(entry.confidence || 0)}%` }, { label: "Frequency", value: entry.frequency || 0 }, { label: "Pinned", value: entry.pinned ? "yes" : "no" }],
+    facts: [{ label: "Kind", value: kindLabel(entry.kind) }, { label: "Disposition", value: entry.disposition || "signal" }, { label: "Confidence", value: `${Math.round(entry.confidence || 0)}%` }, frequencyFact(entry), { label: "Pinned", value: entry.pinned ? "yes" : "no" }],
     source: "RepoMemory ingest",
     score: Math.round(entry.confidence || 0),
     status: entry.disposition || "signal",
