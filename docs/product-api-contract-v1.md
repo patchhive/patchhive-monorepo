@@ -355,7 +355,7 @@ publish path ready.
   },
   "operating_modes": {
     "triggers": ["operator", "schedule", "orchestration"],
-    "target_selection": ["discovery"]
+    "target_selection": ["direct", "discovery"]
   },
   "actions": [
     {
@@ -369,7 +369,7 @@ publish path ready.
       "scheduleable": true,
       "operating_modes": {
         "triggers": ["operator", "schedule", "orchestration"],
-        "target_selection": ["discovery"]
+        "target_selection": ["direct", "discovery"]
       },
       "required_scopes": ["actions:dispatch"]
     }

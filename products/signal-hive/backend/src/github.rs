@@ -2,7 +2,7 @@ use anyhow::Result;
 use patchhive_github_data::{
     code_search_count, fetch_issues, fetch_repository, search_repositories,
 };
-use patchhive_product_core::scope_policy::repo_scope_decision;
+use patchhive_product_core::scope_policy::{normalize_repo_name, repo_scope_decision};
 use reqwest::Client;
 use std::collections::HashSet;
 use tracing::warn;
@@ -26,6 +26,14 @@ fn repo_allowed(
     repo_scope_decision(full_name, allowlist, denylist, opt_out).is_allowed()
 }
 
+fn direct_repo_target(params: &ScanParams) -> Option<String> {
+    params
+        .search_query
+        .trim()
+        .strip_prefix("repo:")
+        .and_then(normalize_repo_name)
+}
+
 pub async fn fetch_repo(client: &Client, full_name: &str) -> Result<SearchRepo> {
     fetch_repository(client, full_name).await
 }
@@ -37,6 +45,18 @@ pub async fn discover_repositories(
     denylist: &HashSet<String>,
     opt_out: &HashSet<String>,
 ) -> Result<Vec<SearchRepo>> {
+    if params.search_query.trim().starts_with("repo:") && direct_repo_target(params).is_none() {
+        anyhow::bail!("SignalHive direct targets must use `repo:owner/repository` format.");
+    }
+    if let Some(repo) = direct_repo_target(params) {
+        if !repo_allowed(&repo, allowlist, denylist, opt_out) {
+            anyhow::bail!(
+                "SignalHive repository policy blocks the direct target `{repo}`. Review allowlist, denylist, and opt-out controls before scanning it."
+            );
+        }
+        return Ok(vec![fetch_repo(client, &repo).await?]);
+    }
+
     if !allowlist.is_empty() {
         let mut repos = Vec::new();
         for repo in allowlist {
@@ -172,5 +192,29 @@ pub async fn search_code_marker(
                 warning: Some(warning),
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::direct_repo_target;
+    use crate::models::ScanParams;
+
+    #[test]
+    fn direct_repo_target_requires_an_explicit_repo_prefix() {
+        let mut params = ScanParams {
+            search_query: "repo:NousResearch/hermes-agent".into(),
+            ..ScanParams::default()
+        };
+        assert_eq!(
+            direct_repo_target(&params).as_deref(),
+            Some("nousresearch/hermes-agent")
+        );
+
+        params.search_query = "maintenance tooling".into();
+        assert!(direct_repo_target(&params).is_none());
+
+        params.search_query = "repo:not-a-repository".into();
+        assert!(direct_repo_target(&params).is_none());
     }
 }

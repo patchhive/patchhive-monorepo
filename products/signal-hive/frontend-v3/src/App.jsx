@@ -34,9 +34,26 @@ function toList(value) {
   return String(value || "").split(/[\n,]/).map((entry) => entry.trim()).filter(Boolean);
 }
 
+function storedTarget(searchQuery = "") {
+  const value = String(searchQuery).trim();
+  return value.startsWith("repo:") ? value.slice(5).trim() : "";
+}
+
+function triggerMode(value) {
+  if (value === "manual") return "operator";
+  if (value === "scheduled") return "schedule";
+  return value || "operator";
+}
+
+function triggerLabel(value) {
+  return triggerMode(value) === "schedule" ? "scheduled" : triggerMode(value) === "operator" ? "operator run" : triggerMode(value);
+}
+
 function toFormParams(params = {}) {
+  const targetRepo = storedTarget(params.search_query);
   return {
-    search_query: params.search_query || "",
+    target_repo: targetRepo,
+    search_query: targetRepo ? "" : params.search_query || "",
     topics: (params.topics || []).join(", "),
     languages: (params.languages || []).join(", "),
     min_stars: String(params.min_stars ?? 25),
@@ -47,8 +64,9 @@ function toFormParams(params = {}) {
 }
 
 function serialize(form) {
+  const targetRepo = form.target_repo?.trim() || "";
   return {
-    search_query: form.search_query?.trim() || "",
+    search_query: targetRepo ? `repo:${targetRepo}` : form.search_query?.trim() || "",
     topics: toList(form.topics),
     languages: toList(form.languages),
     min_stars: Number(form.min_stars),
@@ -88,6 +106,8 @@ function trendLabel(repo) {
 
 function scanScope(scan, fallback = "discovery scope") {
   if (!scan?.params) return fallback;
+  const targetRepo = storedTarget(scan.params.search_query);
+  if (targetRepo) return targetRepo;
   const parts = [scan.params.search_query, ...(scan.params.topics || []).map((topic) => `#${topic}`), ...(scan.params.languages || [])].filter(Boolean);
   return parts.length ? parts.join(" · ") : "allowlisted repositories";
 }
@@ -100,7 +120,7 @@ function buildScanMarkdown(scan) {
     `SignalHive found **${scan.summary?.total_signals || 0} maintenance signals** across **${scan.summary?.total_repos || 0} repositories**.`,
     "",
     `- Scan: ${scan.id}`,
-    `- Trigger: ${scan.trigger_type || "manual"}`,
+    `- Trigger: ${triggerMode(scan.trigger_type)}`,
     `- Top repository: ${scan.summary?.top_repo || "none"}`,
     `- Warnings: ${scan.warnings?.length || 0}`,
   ];
@@ -184,8 +204,8 @@ function WorkspaceDetails({ fetcher, health, onError, result }) {
 
   return <div className="mt-8 space-y-6">
     <section className="surface p-5 sm:p-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div><div className={`flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}><Radar size={12} /> Discovery scan evidence</div><h2 className={`mt-2 font-display text-[27px] font-semibold ${V3_TEXT.strong}`}>{scanScope(result)}</h2><p className={`mt-2 max-w-4xl text-[13px] leading-relaxed ${V3_TEXT.body}`}>SignalHive found {result.summary?.total_signals || 0} maintenance signals across {result.summary?.total_repos || 0} repositories. The queue remains reconnaissance evidence, not authorization to modify any repository.</p></div><div className="flex flex-wrap gap-2"><CopyMarkdownButton content={report || buildScanMarkdown(result)} label="Copy report Markdown" onError={() => onError("Could not copy the SignalHive report.")} /><button className={`surface-inset h-9 rounded-full px-3 text-[11px] ${V3_TEXT.body}`} onClick={downloadReport} type="button">Download report</button></div></div>
-      <div className="mt-5 flex flex-wrap gap-2"><Chip>{String(result.id).slice(0, 8)}</Chip><Chip tone="ok">read only</Chip><Chip tone={result.warnings?.length ? "warn" : "ok"}>{result.warnings?.length ? `${result.warnings.length} warnings` : "complete evidence"}</Chip><Chip>{result.trigger_type || "manual"}</Chip>{result.schedule_name ? <Chip>{result.schedule_name}</Chip> : null}</div>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div><div className={`flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}><Radar size={12} /> Repository scan evidence</div><h2 className={`mt-2 font-display text-[27px] font-semibold ${V3_TEXT.strong}`}>{scanScope(result)}</h2><p className={`mt-2 max-w-4xl text-[13px] leading-relaxed ${V3_TEXT.body}`}>SignalHive found {result.summary?.total_signals || 0} maintenance signals across {result.summary?.total_repos || 0} repositories. The queue remains reconnaissance evidence, not authorization to modify any repository.</p></div><div className="flex flex-wrap gap-2"><CopyMarkdownButton content={report || buildScanMarkdown(result)} label="Copy report Markdown" onError={() => onError("Could not copy the SignalHive report.")} /><button className={`surface-inset h-9 rounded-full px-3 text-[11px] ${V3_TEXT.body}`} onClick={downloadReport} type="button">Download report</button></div></div>
+      <div className="mt-5 flex flex-wrap gap-2"><Chip>{String(result.id).slice(0, 8)}</Chip><Chip tone="ok">read only</Chip><Chip tone={result.warnings?.length ? "warn" : "ok"}>{result.warnings?.length ? `${result.warnings.length} warnings` : "complete evidence"}</Chip><Chip>{triggerLabel(result.trigger_type)}</Chip>{result.schedule_name ? <Chip>{result.schedule_name}</Chip> : null}</div>
     </section>
     <section className="surface p-5 sm:p-6"><div className={`flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}><Workflow size={12} /> Complete scan metrics</div><div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5"><Fact label="Repositories" value={repos.length} /><Fact label="Signals" value={result.summary?.total_signals} /><Fact label="Stale issues" value={totals.stale} /><Fact label="Duplicate pairs" value={totals.duplicates} /><Fact label="Recurring clusters" value={totals.recurring} /><Fact label="TODO / FIXME" value={totals.markers} /><Fact label="Issue examples" value={totals.examples} /><Fact label="Warnings" value={result.warnings?.length || 0} /><Fact label="Min stars" value={result.params?.min_stars} /><Fact label="Stale window" value={`${result.params?.stale_days || 0}d`} /></div></section>
     {trend ? <section className="surface p-5 sm:p-6"><div className={`flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}><TrendingUp size={12} /> Change since comparable scan</div><p className={`mt-2 text-[12px] ${V3_TEXT.mute}`}>Compared with {new Date(trend.compared_to_created_at).toLocaleString()}.</p><div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7"><Fact label="Signal delta" value={trend.total_signals_delta} /><Fact label="Repo delta" value={trend.total_repos_delta} /><Fact label="New repos" value={trend.new_repos} /><Fact label="Dropped" value={trend.dropped_repos} /><Fact label="Rising" value={trend.rising_repos} /><Fact label="Improving" value={trend.improving_repos} /><Fact label="Steady" value={trend.steady_repos} /></div></section> : null}
@@ -199,14 +219,14 @@ function ChecksDetails({ health }) {
   const github = health.github || {};
   const lists = health.repo_lists || {};
   const schedules = health.schedules || {};
-  return <section className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2"><article className="surface p-6"><div className={`flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}><GitBranch size={12} /> GitHub discovery-read path</div><div className="mt-5 grid grid-cols-2 gap-3"><Fact label="Token" value={github.token_verified ? "verified" : github.token_configured ? "unverified" : "missing"} /><Fact label="Repositories" value="read" /><Fact label="Issues" value="read" /><Fact label="Code search" value="best effort" /></div><GitHubPermissionGuidance>Repository metadata and issue reads power the base signal queue. TODO/FIXME counts depend on GitHub code-search availability; unavailable marker evidence must remain visible rather than silently becoming zero.</GitHubPermissionGuidance></article><article className="surface p-6"><div className={`flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}><Database size={12} /> Product state</div><div className="surface-inset mt-5 rounded-xl p-3"><div className={`text-[10px] uppercase tracking-wider ${V3_TEXT.mute}`}>Database path</div><div className={`mt-1 break-all text-[12px] ${V3_TEXT.strong}`}>{health.db_path || "unknown"}</div></div><div className="mt-4 flex flex-wrap gap-2"><Chip tone={health.db_ok ? "ok" : "hot"}>database {health.db_ok ? "ready" : "unavailable"}</Chip><Chip tone={health.auth_enabled ? "ok" : "warn"}>auth {health.auth_enabled ? "enabled" : "disabled"}</Chip><Chip tone="ok">{countLabel(health.scan_count, "scan")}</Chip><Chip>{schedules.enabled || 0} schedules active</Chip></div><div className="mt-3 flex flex-wrap gap-2"><Chip>{lists.allowlist || 0} allowlisted</Chip><Chip tone="warn">{lists.denylist || 0} denied</Chip><Chip tone="hot">{lists.opt_out || 0} opted out</Chip></div></article></section>;
+  return <section className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2"><article className="surface p-6"><div className={`flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}><GitBranch size={12} /> GitHub repository-read path</div><div className="mt-5 grid grid-cols-2 gap-3"><Fact label="Token" value={github.token_verified ? "verified" : github.token_configured ? "unverified" : "missing"} /><Fact label="Repositories" value="read" /><Fact label="Issues" value="read" /><Fact label="Code search" value="best effort" /></div><GitHubPermissionGuidance>Repository metadata and issue reads power the base signal queue. TODO/FIXME counts depend on GitHub code-search availability; unavailable marker evidence must remain visible rather than silently becoming zero.</GitHubPermissionGuidance></article><article className="surface p-6"><div className={`flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}><Database size={12} /> Product state</div><div className="surface-inset mt-5 rounded-xl p-3"><div className={`text-[10px] uppercase tracking-wider ${V3_TEXT.mute}`}>Database path</div><div className={`mt-1 break-all text-[12px] ${V3_TEXT.strong}`}>{health.db_path || "unknown"}</div></div><div className="mt-4 flex flex-wrap gap-2"><Chip tone={health.db_ok ? "ok" : "hot"}>database {health.db_ok ? "ready" : "unavailable"}</Chip><Chip tone={health.auth_enabled ? "ok" : "warn"}>auth {health.auth_enabled ? "enabled" : "disabled"}</Chip><Chip tone="ok">{countLabel(health.scan_count, "scan")}</Chip><Chip>{schedules.enabled || 0} schedules active</Chip></div><div className="mt-3 flex flex-wrap gap-2"><Chip>{lists.allowlist || 0} allowlisted</Chip><Chip tone="warn">{lists.denylist || 0} denied</Chip><Chip tone="hot">{lists.opt_out || 0} opted out</Chip></div></article></section>;
 }
 
 function SourcesDetails({ health }) {
-  return <section className="surface mt-6 p-5 sm:p-6"><div className={`flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}><ShieldCheck size={12} /> Discovery safety</div><div className="mt-4 grid gap-3 sm:grid-cols-3"><div className="surface-inset rounded-xl p-4"><div className={`font-display text-[16px] ${V3_TEXT.strong}`}>Read only</div><p className={`mt-2 text-[11px] leading-relaxed ${V3_TEXT.mute}`}>SignalHive searches public GitHub evidence and saves local scan results. It does not comment, change code, open issues, or create pull requests.</p></div><div className="surface-inset rounded-xl p-4"><div className={`font-display text-[16px] ${V3_TEXT.strong}`}>Scope controls win</div><p className={`mt-2 text-[11px] leading-relaxed ${V3_TEXT.mute}`}>Allowlists narrow discovery. Denylists and repository opt-outs always exclude a repository from scans.</p></div><div className="surface-inset rounded-xl p-4"><div className={`font-display text-[16px] ${V3_TEXT.strong}`}>Coverage gaps stay visible</div><p className={`mt-2 text-[11px] leading-relaxed ${V3_TEXT.mute}`}>Rate limits and unavailable code search are reported as warnings, never interpreted as proof that maintenance pressure is absent.</p></div></div>{!health.github_ready ? <GitHubPermissionGuidance>{health.github?.token_configured ? "GitHub token verification failed. Review startup evidence before scanning." : "Add a GitHub token with repository, issue, and code read access."}</GitHubPermissionGuidance> : null}</section>;
+  return <section className="surface mt-6 p-5 sm:p-6"><div className={`flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}><ShieldCheck size={12} /> Repository safety</div><div className="mt-4 grid gap-3 sm:grid-cols-3"><div className="surface-inset rounded-xl p-4"><div className={`font-display text-[16px] ${V3_TEXT.strong}`}>Read only</div><p className={`mt-2 text-[11px] leading-relaxed ${V3_TEXT.mute}`}>SignalHive searches public GitHub evidence and saves local scan results. It does not comment, change code, open issues, or create pull requests.</p></div><div className="surface-inset rounded-xl p-4"><div className={`font-display text-[16px] ${V3_TEXT.strong}`}>Scope controls win</div><p className={`mt-2 text-[11px] leading-relaxed ${V3_TEXT.mute}`}>Allowlists constrain direct and discovery scans. Denylists and repository opt-outs always exclude a repository.</p></div><div className="surface-inset rounded-xl p-4"><div className={`font-display text-[16px] ${V3_TEXT.strong}`}>Coverage gaps stay visible</div><p className={`mt-2 text-[11px] leading-relaxed ${V3_TEXT.mute}`}>Rate limits and unavailable code search are reported as warnings, never interpreted as proof that maintenance pressure is absent.</p></div></div>{!health.github_ready ? <GitHubPermissionGuidance>{health.github?.token_configured ? "GitHub token verification failed. Review startup evidence before scanning." : "Add a GitHub token with repository, issue, and code read access."}</GitHubPermissionGuidance> : null}</section>;
 }
 
-const DEFAULT_FORM = { search_query: "", topics: "", languages: "rust, typescript, python", min_stars: "25", max_repos: "8", issues_per_repo: "30", stale_days: "45" };
+const DEFAULT_FORM = { target_repo: "", search_query: "", topics: "", languages: "rust, typescript, python", min_stars: "25", max_repos: "8", issues_per_repo: "30", stale_days: "45" };
 
 const baseConfig = {
   productKey: "signal-hive",
@@ -216,19 +236,20 @@ const baseConfig = {
   workspaceLabel: "Recon",
   eyebrow: "Maintenance discovery",
   queueLabel: "Repository signal queue",
-  description: "Discovers stale backlog pressure, duplicate issues, recurring bugs, and TODO/FIXME hotspots across GitHub repositories—without changing them.",
+  description: "Surfaces stale backlog pressure, duplicate issues, recurring bugs, and TODO/FIXME hotspots in one repository or across a bounded GitHub discovery scope—without changing them.",
   runLabel: "Run scan",
   runningLabel: "Scanning…",
   actionPath: "/scan",
   requiresRepo: false,
-  canRun: (form) => Boolean(form.search_query?.trim() || toList(form.topics).length || toList(form.languages).length),
-  formTitle: "Choose a discovery scope.",
-  sourceHelp: "The unified backend searches repository metadata, issues, and code markers under explicit read-only scope controls.",
+  canRun: (form) => Boolean(form.target_repo?.trim() || form.search_query?.trim() || toList(form.topics).length || toList(form.languages).length),
+  formTitle: "Choose a repository or discovery scope.",
+  sourceHelp: "Enter one repository for a direct scan, or leave it blank and let SignalHive discover repositories from the bounded scope.",
   searchPlaceholder: "Search repository, signal, issue, language…",
   emptyLabel: "No repositories match this view.",
   defaultForm: DEFAULT_FORM,
   fields: [
-    { key: "search_query", label: "GitHub search query", placeholder: "archived:false good first issues", primary: true, help: "Optional repository-search qualifiers or keywords." },
+    { key: "target_repo", label: "Target repository", placeholder: "owner/repository", primary: true, help: "Optional. When present, SignalHive scans only this repository." },
+    { key: "search_query", label: "GitHub discovery query", placeholder: "archived:false good first issues", help: "Used only when Target repository is blank." },
     { key: "topics", label: "Topics", placeholder: "developer-tools, maintenance", help: "Comma- or newline-separated GitHub topics." },
     { key: "languages", label: "Languages", placeholder: "rust, typescript, python", help: "Comma- or newline-separated languages." },
     { key: "min_stars", label: "Minimum stars", type: "number", min: 0, max: 1000000 },
@@ -237,7 +258,8 @@ const baseConfig = {
     { key: "stale_days", label: "Stale after days", type: "number", min: 1, max: 730 },
   ],
   validate: (form) => {
-    if (!form.search_query?.trim() && !toList(form.topics).length && !toList(form.languages).length) return "Provide a search query, topic, or language before scanning.";
+    if (form.target_repo?.trim() && !/^[^/\s]+\/[^/\s]+$/.test(form.target_repo.trim())) return "Target repository must use owner/repository format.";
+    if (!form.target_repo?.trim() && !form.search_query?.trim() && !toList(form.topics).length && !toList(form.languages).length) return "Provide a target repository or a discovery query, topic, or language before scanning.";
     const ranges = [["Minimum stars", form.min_stars, 0, 1000000], ["Repository limit", form.max_repos, 1, 25], ["Issues per repository", form.issues_per_repo, 5, 100], ["Stale days", form.stale_days, 1, 730]];
     const invalid = ranges.find(([, input, min, max]) => !Number.isInteger(Number(input)) || Number(input) < min || Number(input) > max);
     return invalid ? `${invalid[0]} must be a whole number from ${invalid[2]} through ${invalid[3]}.` : "";
@@ -266,7 +288,7 @@ const baseConfig = {
     status: trendLabel(repo),
     tone: repo.trend ? trendTone(repo.trend.status) : scoreTone(repo.priority_score),
     score: Math.round(repo.priority_score || 0),
-    source: "GitHub discovery",
+    source: "GitHub repository evidence",
     link: repo.repo_url,
     language: repo.language || "unknown",
     trend: trendLabel(repo),
@@ -284,14 +306,14 @@ const baseConfig = {
   status: (result) => {
     const count = Number(result?.summary?.total_signals || 0);
     const warnings = result?.warnings?.length || 0;
-    return { label: warnings ? "partial" : count ? "pressure" : "quiet", detail: warnings ? "Some discovery evidence was unavailable; warnings remain visible." : count ? "Maintenance pressure is ranked for review." : "No strong maintenance signals in this scan.", progress: `${Math.min(100, Math.max(12, count))}%`, stats: [["repos", result?.summary?.total_repos || 0], ["signals", count], ["warnings", warnings]] };
+    return { label: warnings ? "partial" : count ? "pressure" : "quiet", detail: warnings ? "Some repository evidence was unavailable; warnings remain visible." : count ? "Maintenance pressure is ranked for review." : "No strong maintenance signals in this scan.", progress: `${Math.min(100, Math.max(12, count))}%`, stats: [["repos", result?.summary?.total_repos || 0], ["signals", count], ["warnings", warnings]] };
   },
-  chips: (result, health) => [scanScope(result), `${result?.params?.stale_days || 45} day stale window`, `${result?.params?.max_repos || 8} repo cap`, health.github_ready ? "GitHub verified" : "coverage pending"],
-  targetSubtitle: (result) => result ? `${result.trigger_type || "manual"} scan · ${result.summary?.total_repos || 0} repositories` : "No scan loaded",
+  chips: (result, health) => [scanScope(result), `${result?.params?.stale_days || 45} day stale window`, storedTarget(result?.params?.search_query) ? "direct target" : `${result?.params?.max_repos || 8} repo cap`, health.github_ready ? "GitHub verified" : "coverage pending"],
+  targetSubtitle: (result) => result ? `${triggerLabel(result.trigger_type)} · ${result.summary?.total_repos || 0} repositories` : "No scan loaded",
   historyItems: (payload) => payload.scans || [],
   historyTitle: (entry) => entry.top_repo || scanScope({ params: { search_query: entry.search_query, topics: entry.topics, languages: entry.languages } }),
   historySummary: (entry) => `${entry.total_signals || 0} maintenance signals across ${entry.total_repos || 0} repositories${entry.warning_count ? ` with ${entry.warning_count} coverage warnings` : ""}.`,
-  historyMeta: (entry) => `${entry.trigger_type || "manual"}${entry.schedule_name ? ` · ${entry.schedule_name}` : ""} · ${entry.max_repos || 0} repo cap`,
+  historyMeta: (entry) => `${triggerLabel(entry.trigger_type)}${entry.schedule_name ? ` · ${entry.schedule_name}` : ""} · ${storedTarget(entry.search_query) ? "direct target" : `${entry.max_repos || 0} repo cap`}`,
   historyIdentity: (entry) => `scan ${String(entry.id).slice(0, 8)}`,
   historySearchText: (entry) => `${entry.top_repo} ${(entry.topics || []).join(" ")} ${(entry.languages || []).join(" ")} ${entry.trigger_type} ${entry.schedule_name || ""}`,
   historyBadges: (entry) => [{ label: `${entry.total_repos || 0} repos`, tone: "neutral" }, { label: `${entry.total_signals || 0} signals`, tone: entry.total_signals ? "warn" : "ok" }, { label: `${entry.warning_count || 0} warnings`, tone: entry.warning_count ? "warn" : "neutral" }],
@@ -311,8 +333,8 @@ const baseConfig = {
     defaultView: { trigger: "all", coverage: "all", sort: "newest" },
     initialCount: 6,
     searchPlaceholder: "Search scan, repository, topic, language…",
-    filters: (_entries, view) => [{ key: "trigger", label: "Trigger", value: view.trigger, options: [{ value: "all", label: "All" }, { value: "manual", label: "Manual" }, { value: "schedule", label: "Scheduled" }] }, { key: "coverage", label: "Coverage", value: view.coverage, options: [{ value: "all", label: "All" }, { value: "complete", label: "Complete" }, { value: "warnings", label: "Warnings" }] }],
-    filterEntry: (entry, view) => (view.trigger === "all" || entry.trigger_type === view.trigger) && (view.coverage === "all" || (view.coverage === "warnings" ? entry.warning_count > 0 : !entry.warning_count)),
+    filters: (_entries, view) => [{ key: "trigger", label: "Trigger", value: view.trigger, options: [{ value: "all", label: "All" }, { value: "operator", label: "Operator run" }, { value: "schedule", label: "Scheduled" }] }, { key: "coverage", label: "Coverage", value: view.coverage, options: [{ value: "all", label: "All" }, { value: "complete", label: "Complete" }, { value: "warnings", label: "Warnings" }] }],
+    filterEntry: (entry, view) => (view.trigger === "all" || triggerMode(entry.trigger_type) === view.trigger) && (view.coverage === "all" || (view.coverage === "warnings" ? entry.warning_count > 0 : !entry.warning_count)),
     sortEntries: (left, right, sort) => sort === "oldest" ? new Date(left.created_at) - new Date(right.created_at) : sort === "signals" ? right.total_signals - left.total_signals : sort === "repos" ? right.total_repos - left.total_repos : new Date(right.created_at) - new Date(left.created_at),
     sortOptions: [{ value: "newest", label: "Newest first" }, { value: "oldest", label: "Oldest first" }, { value: "signals", label: "Most signals" }, { value: "repos", label: "Most repositories" }],
   },

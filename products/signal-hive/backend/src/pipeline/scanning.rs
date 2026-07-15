@@ -413,7 +413,7 @@ pub async fn run_schedule_now(state: &AppState, schedule_name: &str) -> Result<S
     let result = run_scan_record(
         state,
         schedule.params.clone(),
-        "scheduled",
+        "schedule",
         Some(&schedule.name),
     )
     .await;
@@ -444,7 +444,7 @@ pub fn start_scheduler(state: AppState) {
                         match run_scan_record(
                             &state,
                             schedule.params.clone(),
-                            "scheduled",
+                            "schedule",
                             Some(&name),
                         )
                         .await

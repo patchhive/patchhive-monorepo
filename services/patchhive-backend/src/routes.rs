@@ -296,6 +296,13 @@ mod tests {
                     .is_some_and(|modes| !modes.is_empty()),
                 "{key} must advertise at least one target-selection mode"
             );
+            if key == "signal-hive" {
+                let target_modes = capabilities["operating_modes"]["target_selection"]
+                    .as_array()
+                    .expect("SignalHive target-selection modes");
+                assert!(target_modes.iter().any(|mode| mode == "direct"));
+                assert!(target_modes.iter().any(|mode| mode == "discovery"));
+            }
         }
         drop(app);
         let _ = std::fs::remove_file(db_path);

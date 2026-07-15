@@ -34,12 +34,15 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
                 "Run signal scan",
                 "POST",
                 "/scan",
-                "Discover maintenance signals across repositories from configured topics and languages.",
+                "Surface maintenance signals for a direct repository target or repositories discovered from a bounded scope.",
                 true,
             )
             .read_only(true)
             .scheduleable(true)
-            .target_selection_modes([contract::TargetSelectionMode::Discovery])
+            .target_selection_modes([
+                contract::TargetSelectionMode::Direct,
+                contract::TargetSelectionMode::Discovery,
+            ])
             .credential_requirements(["github:repo:read", "github:issues:read", "github:code:read"]),
             contract::action(
                 "run_schedule_now",
@@ -51,7 +54,10 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
             )
             .read_only(true)
             .scheduleable(true)
-            .target_selection_modes([contract::TargetSelectionMode::Discovery])
+            .target_selection_modes([
+                contract::TargetSelectionMode::Direct,
+                contract::TargetSelectionMode::Discovery,
+            ])
             .credential_requirements(["github:repo:read", "github:issues:read", "github:code:read"]),
         ],
         vec![
@@ -113,7 +119,7 @@ pub async fn scan(
         }
     }
 
-    let record = run_scan_record(&state, params, "manual", None)
+    let record = run_scan_record(&state, params, "operator", None)
         .await
         .map_err(internal_error)?;
     Ok(Json(record))
