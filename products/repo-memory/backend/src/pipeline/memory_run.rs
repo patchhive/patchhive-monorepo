@@ -322,6 +322,7 @@ pub fn build_memory_run(
         .filter(|(_, bucket)| bucket.frequency >= 2)
         .take(4)
     {
+        let topic = failure_topic_label(&term);
         entries.push(build_entry(
             &run_id,
             &repo,
@@ -333,7 +334,7 @@ pub fn build_memory_run(
                     "Closed bug reports repeatedly mention {term}. RepoMemory is treating that as a repeated failure pattern worth checking before new patches move forward."
                 ),
                 prompt_line: format!(
-                    "Verify behavior and edge cases related to {term} before finalizing a patch."
+                    "Verify behavior and edge cases related to {topic} before finalizing a patch."
                 ),
                 frequency: bucket.frequency,
                 tags: vec!["bugs", "issues", "failure-pattern"],
@@ -690,6 +691,13 @@ pub fn review_bucket_specs() -> Vec<(
             vec!["errors", "operability"],
         ),
     ]
+}
+
+fn failure_topic_label(term: &str) -> &str {
+    match term {
+        "windows" => "Windows",
+        _ => term,
+    }
 }
 
 pub fn classify_feedback(sentence: &str) -> Option<(&'static str, &'static str)> {

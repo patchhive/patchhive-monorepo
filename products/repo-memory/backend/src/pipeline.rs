@@ -324,8 +324,8 @@ mod tests {
             },
             Vec::new(),
             vec![
-                sample_issue(5, "bug: sandbox exits early", "The worker crashes."),
-                sample_issue(6, "bug: sandbox rejects valid path", "The worker fails."),
+                sample_issue(5, "bug: Windows process exits early", "The worker crashes."),
+                sample_issue(6, "bug: Windows runner rejects input", "The worker fails."),
             ],
             0,
         )
@@ -334,11 +334,11 @@ mod tests {
         let failure = run
             .entries
             .iter()
-            .find(|entry| entry.kind == "failure_pattern" && entry.title.contains("sandbox"))
-            .expect("repeated sandbox issues should create a failure memory");
+            .find(|entry| entry.kind == "failure_pattern" && entry.title.contains("windows"))
+            .expect("repeated Windows issues should create a failure memory");
         assert_eq!(
             failure.prompt_line,
-            "Verify behavior and edge cases related to sandbox before finalizing a patch."
+            "Verify behavior and edge cases related to Windows before finalizing a patch."
         );
     }
 
