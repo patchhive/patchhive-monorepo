@@ -367,22 +367,7 @@ mod tests {
 
     #[test]
     fn dispatch_service_token_issue_blocks_legacy_machine_tokens() {
-        let action = contract::ProductAction {
-            id: "scan".into(),
-            label: "Run signal scan".into(),
-            method: "POST".into(),
-            path: "/scan".into(),
-            description: String::new(),
-            starts_run: true,
-            destructive: false,
-            read_only: false,
-            mutating: false,
-            requires_approval: false,
-            scheduleable: false,
-            opens_pr: false,
-            required_scopes: vec!["actions:dispatch".into()],
-            credential_requirements: vec![],
-        };
+        let action = contract::action("scan", "Run signal scan", "POST", "/scan", "", true);
         let auth_status = ProductAuthStatusBody {
             service_auth_enabled: true,
             service_auth_scoped: false,
@@ -398,22 +383,7 @@ mod tests {
 
     #[test]
     fn dispatch_service_token_issue_blocks_expired_machine_tokens() {
-        let action = contract::ProductAction {
-            id: "scan".into(),
-            label: "Run signal scan".into(),
-            method: "POST".into(),
-            path: "/scan".into(),
-            description: String::new(),
-            starts_run: true,
-            destructive: false,
-            read_only: false,
-            mutating: false,
-            requires_approval: false,
-            scheduleable: false,
-            opens_pr: false,
-            required_scopes: vec!["actions:dispatch".into()],
-            credential_requirements: vec![],
-        };
+        let action = contract::action("scan", "Run signal scan", "POST", "/scan", "", true);
         let auth_status = ProductAuthStatusBody {
             service_auth_enabled: true,
             service_auth_scoped: true,

@@ -256,6 +256,7 @@ mod tests {
         let (_, products) = get_json(&app, "/api/products").await;
         let products = products.as_array().expect("product list");
         let integrated = [
+            "signal-hive",
             "merge-keeper",
             "release-sentry",
             "dep-triage",
@@ -282,6 +283,18 @@ mod tests {
             assert_eq!(
                 capabilities["schema_version"],
                 "patchhive.product.contract.v1"
+            );
+            assert!(
+                capabilities["operating_modes"]["triggers"]
+                    .as_array()
+                    .is_some_and(|modes| !modes.is_empty()),
+                "{key} must advertise at least one run trigger"
+            );
+            assert!(
+                capabilities["operating_modes"]["target_selection"]
+                    .as_array()
+                    .is_some_and(|modes| !modes.is_empty()),
+                "{key} must advertise at least one target-selection mode"
             );
         }
         drop(app);

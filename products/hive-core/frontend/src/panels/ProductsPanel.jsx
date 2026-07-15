@@ -59,6 +59,19 @@ function authLabel(product) {
   return "token missing";
 }
 
+const MODE_LABELS = {
+  operator: "operator run",
+  schedule: "scheduled",
+  webhook: "webhook",
+  orchestration: "orchestrated",
+  direct: "direct target",
+  discovery: "discovery",
+};
+
+function modeLabel(mode) {
+  return MODE_LABELS[mode] || String(mode || "").replaceAll("_", " ");
+}
+
 function pretty(value) {
   return JSON.stringify(value, null, 2);
 }
@@ -554,16 +567,28 @@ function ProductCard({ product, onDispatch, onOpenRun }) {
           </select>
 
           {selectedAction && (
-            <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.5 }}>
-              <strong style={{ color: "var(--text)" }}>{selectedAction.method} {selectedAction.path}</strong>
-              <br />
-              {selectedAction.description}
-              {selectedAction.required_scopes?.length ? (
-                <>
-                  <br />
-                  Requires scopes: {selectedAction.required_scopes.join(", ")}
-                </>
-              ) : null}
+            <div style={{ display: "grid", gap: 8 }}>
+              <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.5 }}>
+                <strong style={{ color: "var(--text)" }}>{selectedAction.method} {selectedAction.path}</strong>
+                <br />
+                {selectedAction.description}
+                {selectedAction.required_scopes?.length ? (
+                  <>
+                    <br />
+                    Requires scopes: {selectedAction.required_scopes.join(", ")}
+                  </>
+                ) : null}
+              </div>
+              {selectedAction.operating_modes && (
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  {selectedAction.operating_modes.triggers?.map((mode) => (
+                    <Tag color="var(--blue)" key={`trigger-${mode}`}>{modeLabel(mode)}</Tag>
+                  ))}
+                  {selectedAction.operating_modes.target_selection?.map((mode) => (
+                    <Tag color="var(--green)" key={`target-${mode}`}>{modeLabel(mode)}</Tag>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

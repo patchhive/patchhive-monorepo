@@ -59,6 +59,7 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
                 true,
             )
             .read_only(true)
+            .trigger_modes([contract::RunTriggerMode::Webhook])
             .credential_requirements(["github:pull_requests:read", "github:checks:read"]),
         ],
         vec![

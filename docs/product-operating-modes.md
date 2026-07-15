@@ -1,25 +1,53 @@
 # Product Operating Modes
 
-PatchHive products should support two operator postures when the product domain allows it:
+PatchHive treats **who starts a run** and **how a target is selected** as two
+independent decisions. Do not use `autonomous` as a synonym for `discovery`.
 
-- **Directed mode**: the operator supplies a specific repo, PR, diff, release, package, or local path.
-- **Autonomous mode**: the operator supplies a broad scope such as topic, language, org, schedule, or policy, and the product discovers the concrete targets.
+## Run triggers
 
-Neither mode replaces the other. Directed mode keeps testing, known work, and trusted-repo workflows fast. Autonomous mode preserves PatchHive's core identity: the suite should find maintenance work instead of waiting for every target to be hand-picked.
+- **Operator**: the operator clicks Run or dispatches the action directly.
+- **Schedule**: a product-local or HiveCore schedule starts the action.
+- **Webhook**: an authenticated external event starts the action.
+- **Orchestration**: HiveCore or another authorized PatchHive product dispatches
+  the action.
+
+Operator-run and self-run behavior are both first-class. Automation does not
+replace the Run button, and the Run button is not a temporary development path.
+
+## Target selection
+
+- **Direct**: the run receives a concrete repo, PR, diff, release, package,
+  workflow, or local path.
+- **Discovery**: the run receives a bounded scope such as topics, languages,
+  organizations, repository policy, or saved scope and finds concrete targets.
+
+This produces four valid combinations:
+
+| Trigger | Target selection | Example |
+| --- | --- | --- |
+| Operator | Direct | Review this PR now |
+| Operator | Discovery | Search these Rust topics now |
+| Schedule/webhook/orchestration | Direct | Reassess this PR when it changes |
+| Schedule/orchestration | Discovery | Hunt for suitable maintenance work nightly |
+
+Every product should retain operator-run behavior while gaining appropriate
+self-run triggers. Every maintenance product should retain direct targeting
+while gaining bounded discovery where its data source and safety model allow
+it. Products must advertise only combinations their current engine supports.
 
 ## Defaults
 
 Products should prefer this behavior:
 
-1. If a concrete target is present, run directed mode.
-2. If the target is blank and a discovery scope is present, run autonomous mode.
+1. If a concrete target is present, use direct target selection.
+2. If the target is blank and a discovery scope is present, use discovery target selection.
 3. If neither target nor scope is present, show a clear empty-state prompt instead of inventing risky defaults.
 4. Scan/read actions stay read-only by default.
 5. Fix/write actions stay separate, explicit, and approval-aware.
 
 ## Scope Policy Controls
 
-Autonomous mode is only trustworthy when scope controls are visible and
+Discovery is only trustworthy when scope controls are visible and
 enforced. Any product that discovers repos or work items should expose the
 policy posture that shaped the run:
 
@@ -29,7 +57,7 @@ policy posture that shaped the run:
 - saved scope name or inline discovery scope
 - repo caps, owner/org caps, and PR caps when relevant
 
-Directed mode still uses these controls. A directed target that matches
+Direct target selection still uses these controls. A direct target that matches
 `opt_out` or `denylist` should be blocked with a clear explanation. A directed
 target outside a configured allowlist should be blocked unless the operator
 explicitly changes policy.
@@ -38,7 +66,8 @@ Run history should record the policy result, not just the target:
 
 ```json
 {
-  "run_style": "targeted",
+  "trigger_mode": "operator",
+  "target_selection_mode": "direct",
   "target_repo": "owner/repo",
   "policy_result": "allowed | blocked | opt_out",
   "policy_scope": "saved-scope-name or inline summary"
@@ -51,21 +80,25 @@ Recommended labels:
 
 | Mode | UI language | Meaning |
 | --- | --- | --- |
-| Directed | `Target repo`, `Target PR`, `Target release`, `Local path` | Analyze or act on the supplied concrete target |
-| Autonomous | `Topic query`, `Language`, `Max repos`, `Discovery scope` | Discover targets inside a bounded scope |
-| Hybrid | `Blank target = autonomous hunt` | A product can expose one form where a blank target falls back to discovery |
+| Direct target | `Target repo`, `Target PR`, `Target release`, `Local path` | Analyze or act on the supplied concrete target |
+| Discovery target | `Topic query`, `Language`, `Max repos`, `Discovery scope` | Discover targets inside a bounded scope |
+| Operator trigger | `Run`, `Run now`, `Assess`, `Scan` | Start the work immediately |
+| Self-run trigger | `Automation`, `Schedule`, `Webhook`, `Run with HiveCore` | Configure how PatchHive starts future work |
 
-Avoid making autonomous discovery look like a failure to choose a target. Also avoid making directed mode feel less "PatchHive"; it is the control surface that makes autonomous behavior testable and trustworthy.
+Avoid making discovery look like a failure to choose a target. Also avoid
+making direct targeting or operator-run behavior feel less "PatchHive"; those
+controls make self-running discovery testable and trustworthy.
 
 ## Run History
 
-When a product supports both directed and autonomous runs, its history UI and run APIs should expose the run style.
+History and run APIs should expose both axes independently.
 
 Minimum metadata:
 
 ```json
 {
-  "run_style": "directed | targeted | autonomous",
+  "trigger_mode": "operator | schedule | webhook | orchestration",
+  "target_selection_mode": "direct | discovery",
   "target_repo": "owner/repo",
   "discovery_scope": "topic/language/org/schedule summary"
 }
@@ -73,16 +106,18 @@ Minimum metadata:
 
 UI expectations:
 
-- Do not label all saved work as "autonomous runs" once directed runs exist.
-- Split history into clear sections when both styles are common, such as `Targeted runs` and `Autonomous runs`.
-- If a single mixed list is more compact, include a visible style chip on every row.
+- Do not infer target selection from the trigger. A scheduled direct reassessment
+  is automated but not discovery; an operator-triggered hunt is discovery but
+  not self-started.
+- If a single mixed list is used, show trigger and target-selection chips when
+  the distinction matters.
 - Keep selected-run detail panels style-neutral unless the style changes the meaning of the evidence.
 
-This should become the default pattern for every product as autonomous/batch discovery is added.
+This is the suite-wide default as automation and discovery are added.
 
 ## Product Expectations
 
-| Product | Directed mode | Autonomous mode |
+| Product | Direct target selection | Discovery target selection |
 | --- | --- | --- |
 | SignalHive | Scan a supplied repo or saved scope | Discover maintenance-pressure repos from topics, languages, allowlists, or schedules |
 | ReviewBee | Analyze a supplied PR | Later: find PRs with unresolved review pressure across repos |
@@ -102,15 +137,21 @@ This should become the default pattern for every product as autonomous/batch dis
 RepoReaper should support both modes:
 
 - **Target repo filled**: hunt open issues only inside `owner/repo`.
-- **Target repo blank**: run the autonomous GitHub repo discovery flow using topic, language, stars, labels, and repo caps.
+- **Target repo blank**: run GitHub repo discovery using topic, language, stars,
+  labels, and repo caps.
+
+Either selection mode may be started by the operator or by an enabled schedule
+or HiveCore orchestration.
 
 Both modes must honor allowlist, denylist, and opt-out controls before patching or opening pull requests. Dry Stalk should support the same target rules but remain no-write.
 
 ## HiveCore Direction
 
-HiveCore should eventually expose the same distinction at suite level:
+HiveCore should expose both dimensions at suite level:
 
 - Run the suite against this repo, PR, release, or local product.
 - Run the suite across this topic, org, saved scope, schedule, or product registry.
 
-That lets PatchHive stay radically autonomous without taking away the operator's ability to test, compare, and focus the system on known work.
+HiveCore owns cross-product automation, but standalone products keep their Run
+controls and product-local triggers. That lets PatchHive run itself without
+taking away the operator's ability to start, test, compare, and focus work.

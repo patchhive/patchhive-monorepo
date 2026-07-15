@@ -268,7 +268,7 @@ async fn capabilities() -> Json<contract::ProductCapabilities> {
         vec![
             contract::action(
                 "run",
-                "Run autonomous patch hunt",
+                "Run patch hunt",
                 "POST",
                 "/run",
                 "Find candidate issues, generate fixes, validate them, and open pull requests.",
@@ -276,7 +276,12 @@ async fn capabilities() -> Json<contract::ProductCapabilities> {
             )
             .mutating(true)
             .requires_approval(true)
+            .scheduleable(true)
             .opens_pr(true)
+            .target_selection_modes([
+                contract::TargetSelectionMode::Direct,
+                contract::TargetSelectionMode::Discovery,
+            ])
             .credential_requirements([
                 "github:contents:write",
                 "github:pull_requests:write",
@@ -292,6 +297,10 @@ async fn capabilities() -> Json<contract::ProductCapabilities> {
             )
             .read_only(true)
             .scheduleable(true)
+            .target_selection_modes([
+                contract::TargetSelectionMode::Direct,
+                contract::TargetSelectionMode::Discovery,
+            ])
             .credential_requirements(["github:issues:read", "provider:ai"]),
         ],
         vec![

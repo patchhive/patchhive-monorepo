@@ -353,6 +353,10 @@ publish path ready.
     "runs": "/runs",
     "run_detail_template": "/runs/{id}"
   },
+  "operating_modes": {
+    "triggers": ["operator", "schedule", "orchestration"],
+    "target_selection": ["discovery"]
+  },
   "actions": [
     {
       "id": "scan",
@@ -362,6 +366,11 @@ publish path ready.
       "description": "Discover maintenance signals.",
       "starts_run": true,
       "destructive": false,
+      "scheduleable": true,
+      "operating_modes": {
+        "triggers": ["operator", "schedule", "orchestration"],
+        "target_selection": ["discovery"]
+      },
       "required_scopes": ["actions:dispatch"]
     }
   ],
@@ -370,6 +379,14 @@ publish path ready.
   ]
 }
 ```
+
+`operating_modes.triggers` and `operating_modes.target_selection` are separate
+axes. `operator` means a person starts the action; `schedule`, `webhook`, and
+`orchestration` are self-run triggers. `direct` means a concrete target was
+provided, while `discovery` means the product selects targets from a bounded
+scope. A run may therefore be operator-triggered discovery or a scheduled
+direct reassessment. Products must not collapse both facts into one
+`autonomous` flag.
 
 `/runs` should follow:
 

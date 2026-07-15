@@ -36,6 +36,12 @@ The intended UX across PatchHive products is:
 - User chooses broad topics and language areas to work on.
 - User clicks Run.
 - The product discovers repos and candidate work on its own instead of asking the user to pick exact repos, issues, or PRs manually.
+- Every product keeps an operator-run path and may also run itself through
+  schedules, webhooks, or HiveCore orchestration. Run trigger and target
+  selection are independent: operator-triggered discovery and scheduled direct
+  reassessment are both valid.
+- Direct targeting remains available alongside discovery for known work,
+  testing, and operator focus.
 - Per-product defaults can live inside each product, and HiveCore should eventually provide global settings across the suite.
 
 ## Product System Shape
@@ -144,6 +150,9 @@ Shared platform guidance:
 - Shared auth/provider infrastructure should live in a shared package instead of being reimplemented per product.
 - Keep product APIs close enough that HiveCore can orchestrate them without heavy translation layers.
 - Standardize request/response envelopes, error shapes, run/job identifiers, and async webhook/run lifecycle patterns as products are built out.
+- Standardize run triggers (`operator`, `schedule`, `webhook`, `orchestration`)
+  separately from target selection (`direct`, `discovery`). Products should
+  advertise only the combinations their current engine supports.
 - Treat repo discovery safety, output caps, and cross-product contracts as platform guardrails, not optional product polish.
 - The unified backend product registry lives in `services/patchhive-backend/registry/products/*.toml`; product modules should declare identity, route claims, capabilities, safety boundaries, gateway targets, health contracts, and module paths there instead of being hardcoded in `main.rs`.
 - The unified backend shared SQLite DB is configured with `PATCHHIVE_DB_PATH`; suite tables stay backend-owned, while product tables should be product-namespaced as engines migrate in-process.

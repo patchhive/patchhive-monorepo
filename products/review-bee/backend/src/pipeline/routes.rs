@@ -55,6 +55,7 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
                 "Process a signed GitHub pull request review webhook.",
                 true,
             )
+            .trigger_modes([contract::RunTriggerMode::Webhook])
             .credential_requirements(["github:pull_requests:read", "github:issues:write"]),
         ],
         vec![

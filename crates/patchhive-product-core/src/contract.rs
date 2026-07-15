@@ -14,8 +14,34 @@ pub struct ProductCapabilities {
     pub standalone: bool,
     pub hivecore: HiveCoreLifecycleSupport,
     pub routes: ProductContractRoutes,
+    #[serde(default)]
+    pub operating_modes: ProductOperatingModes,
     pub actions: Vec<ProductAction>,
     pub links: Vec<ProductLink>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProductOperatingModes {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub triggers: Vec<RunTriggerMode>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub target_selection: Vec<TargetSelectionMode>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RunTriggerMode {
+    Operator,
+    Schedule,
+    Webhook,
+    Orchestration,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TargetSelectionMode {
+    Direct,
+    Discovery,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -61,6 +87,8 @@ pub struct ProductAction {
     pub required_scopes: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub credential_requirements: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operating_modes: Option<ProductOperatingModes>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -229,6 +257,42 @@ impl ProductAction {
 
     pub fn scheduleable(mut self, value: bool) -> Self {
         self.scheduleable = value;
+        if let Some(modes) = &mut self.operating_modes {
+            if value {
+                push_unique(&mut modes.triggers, RunTriggerMode::Schedule);
+            } else {
+                modes
+                    .triggers
+                    .retain(|mode| *mode != RunTriggerMode::Schedule);
+            }
+        }
+        self
+    }
+
+    pub fn trigger_modes<I>(mut self, values: I) -> Self
+    where
+        I: IntoIterator<Item = RunTriggerMode>,
+    {
+        if let Some(modes) = &mut self.operating_modes {
+            modes.triggers.clear();
+            for value in values {
+                push_unique(&mut modes.triggers, value);
+            }
+            self.scheduleable = modes.triggers.contains(&RunTriggerMode::Schedule);
+        }
+        self
+    }
+
+    pub fn target_selection_modes<I>(mut self, values: I) -> Self
+    where
+        I: IntoIterator<Item = TargetSelectionMode>,
+    {
+        if let Some(modes) = &mut self.operating_modes {
+            modes.target_selection.clear();
+            for value in values {
+                push_unique(&mut modes.target_selection, value);
+            }
+        }
         self
     }
 
@@ -433,6 +497,7 @@ pub fn capabilities(
     links: Vec<ProductLink>,
 ) -> ProductCapabilities {
     let can_start_runs = actions.iter().any(|action| action.starts_run);
+    let operating_modes = aggregate_operating_modes(&actions);
     ProductCapabilities {
         schema_version: CONTRACT_SCHEMA_VERSION.into(),
         product_slug: product_slug.into(),
@@ -454,6 +519,7 @@ pub fn capabilities(
             run_detail_template: "/runs/{id}".into(),
             settings_apply: None,
         },
+        operating_modes,
         actions,
         links,
     }
@@ -467,6 +533,10 @@ pub fn action(
     description: impl Into<String>,
     starts_run: bool,
 ) -> ProductAction {
+    let operating_modes = starts_run.then(|| ProductOperatingModes {
+        triggers: vec![RunTriggerMode::Operator, RunTriggerMode::Orchestration],
+        target_selection: vec![TargetSelectionMode::Direct],
+    });
     ProductAction {
         id: id.into(),
         label: label.into(),
@@ -482,6 +552,29 @@ pub fn action(
         opens_pr: false,
         required_scopes: vec![crate::auth::SERVICE_SCOPE_ACTIONS_DISPATCH.into()],
         credential_requirements: vec![],
+        operating_modes,
+    }
+}
+
+fn aggregate_operating_modes(actions: &[ProductAction]) -> ProductOperatingModes {
+    let mut aggregate = ProductOperatingModes::default();
+    for modes in actions
+        .iter()
+        .filter_map(|action| action.operating_modes.as_ref())
+    {
+        for trigger in &modes.triggers {
+            push_unique(&mut aggregate.triggers, trigger.clone());
+        }
+        for selection in &modes.target_selection {
+            push_unique(&mut aggregate.target_selection, selection.clone());
+        }
+    }
+    aggregate
+}
+
+fn push_unique<T: PartialEq>(values: &mut Vec<T>, value: T) {
+    if !values.contains(&value) {
+        values.push(value);
     }
 }
 
@@ -702,7 +795,7 @@ mod tests {
     use super::{
         action, cadence_from_hours, capabilities, interval_cron_label, parse_dispatch_input,
         run_events_response, runs_from_values, ProductRunArtifact, ProductRunEvent, RunEventLevel,
-        RunLifecycleStatus, SuiteScheduleRecord,
+        RunLifecycleStatus, RunTriggerMode, SuiteScheduleRecord, TargetSelectionMode,
     };
     use serde_json::json;
 
@@ -733,6 +826,81 @@ mod tests {
         assert!(!caps.actions[0].read_only);
         assert!(!caps.actions[0].mutating);
         assert!(caps.actions[0].credential_requirements.is_empty());
+        assert_eq!(
+            caps.operating_modes.triggers,
+            vec![RunTriggerMode::Operator, RunTriggerMode::Orchestration]
+        );
+        assert_eq!(
+            caps.operating_modes.target_selection,
+            vec![TargetSelectionMode::Direct]
+        );
+    }
+
+    #[test]
+    fn operating_modes_keep_trigger_and_target_selection_independent() {
+        let caps = capabilities(
+            "repo-reaper",
+            "RepoReaper",
+            vec![action(
+                "run",
+                "Run patch hunt",
+                "POST",
+                "/run",
+                "Find and fix suitable work.",
+                true,
+            )
+            .scheduleable(true)
+            .target_selection_modes([TargetSelectionMode::Direct, TargetSelectionMode::Discovery])],
+            vec![],
+        );
+
+        assert_eq!(
+            caps.operating_modes.triggers,
+            vec![
+                RunTriggerMode::Operator,
+                RunTriggerMode::Orchestration,
+                RunTriggerMode::Schedule,
+            ]
+        );
+        assert_eq!(
+            caps.operating_modes.target_selection,
+            vec![TargetSelectionMode::Direct, TargetSelectionMode::Discovery]
+        );
+        assert!(caps.actions[0].scheduleable);
+    }
+
+    #[test]
+    fn operating_modes_are_backward_compatible_during_rolling_upgrades() {
+        let caps = capabilities(
+            "merge-keeper",
+            "MergeKeeper",
+            vec![action(
+                "assess",
+                "Assess PR",
+                "POST",
+                "/assess",
+                "Assess one pull request.",
+                true,
+            )],
+            vec![],
+        );
+        let mut legacy = serde_json::to_value(caps).expect("capabilities should serialize");
+        legacy
+            .as_object_mut()
+            .expect("capabilities object")
+            .remove("operating_modes");
+        legacy["actions"][0]
+            .as_object_mut()
+            .expect("action object")
+            .remove("operating_modes");
+
+        let decoded: super::ProductCapabilities =
+            serde_json::from_value(legacy).expect("legacy capabilities should deserialize");
+        assert_eq!(
+            decoded.operating_modes,
+            super::ProductOperatingModes::default()
+        );
+        assert!(decoded.actions[0].operating_modes.is_none());
     }
 
     #[test]
