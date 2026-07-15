@@ -1,5 +1,6 @@
 use patchhive_product_core::contract::{
     cadence_from_hours, interval_cron_label, DispatchActionInput, SuiteScheduleRecord,
+    TargetSelectionMode,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -27,6 +28,23 @@ impl Default for ScanParams {
             max_repos: 8,
             issues_per_repo: 30,
             stale_days: 45,
+        }
+    }
+}
+
+impl ScanParams {
+    pub fn direct_repository(&self) -> Option<String> {
+        self.search_query
+            .trim()
+            .strip_prefix("repo:")
+            .and_then(patchhive_product_core::scope_policy::normalize_repo_name)
+    }
+
+    pub fn target_selection_mode(&self) -> TargetSelectionMode {
+        if self.search_query.trim().starts_with("repo:") {
+            TargetSelectionMode::Direct
+        } else {
+            TargetSelectionMode::Discovery
         }
     }
 }
@@ -143,6 +161,7 @@ pub struct ScanRecord {
     pub id: String,
     pub created_at: String,
     pub params: ScanParams,
+    pub target_selection_mode: TargetSelectionMode,
     pub summary: ScanSummary,
     pub repos: Vec<RepoSignal>,
     #[serde(default)]
@@ -160,6 +179,7 @@ pub struct ScanHistoryItem {
     pub id: String,
     pub created_at: String,
     pub search_query: String,
+    pub target_selection_mode: TargetSelectionMode,
     pub topics: Vec<String>,
     pub languages: Vec<String>,
     pub max_repos: u32,
@@ -194,6 +214,7 @@ pub struct OverviewPayload {
 pub struct ScanPreset {
     pub name: String,
     pub params: ScanParams,
+    pub target_selection_mode: TargetSelectionMode,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -202,6 +223,7 @@ pub struct ScanPreset {
 pub struct ScanSchedule {
     pub name: String,
     pub params: ScanParams,
+    pub target_selection_mode: TargetSelectionMode,
     pub cadence_hours: u32,
     pub enabled: bool,
     pub created_at: String,
@@ -215,7 +237,13 @@ pub struct ScanSchedule {
 
 impl ScanSchedule {
     pub fn to_suite_schedule_record(&self) -> SuiteScheduleRecord {
-        let target_scope = serde_json::to_value(&self.params).unwrap_or(Value::Null);
+        let mut target_scope = serde_json::to_value(&self.params).unwrap_or(Value::Null);
+        if let Value::Object(fields) = &mut target_scope {
+            fields.insert(
+                "target_selection_mode".into(),
+                serde_json::to_value(&self.target_selection_mode).unwrap_or(Value::Null),
+            );
+        }
         let mut dispatch = DispatchActionInput {
             payload: target_scope.clone(),
             ..DispatchActionInput::default()
@@ -263,6 +291,7 @@ pub struct ScanTimelinePoint {
     pub avg_priority_score: f64,
     pub top_priority_score: f64,
     pub top_repo: String,
+    pub target_selection_mode: TargetSelectionMode,
     pub trigger_type: String,
     pub schedule_name: Option<String>,
 }
@@ -275,4 +304,40 @@ pub struct ScanTimeline {
 
 fn default_true() -> bool {
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ScanParams, ScanSchedule};
+    use patchhive_product_core::contract::TargetSelectionMode;
+
+    #[test]
+    fn suite_schedule_records_preserve_direct_target_mode() {
+        let params = ScanParams {
+            search_query: "repo:patchhive/patchhive".into(),
+            ..ScanParams::default()
+        };
+        let schedule = ScanSchedule {
+            name: "direct-daily".into(),
+            target_selection_mode: params.target_selection_mode(),
+            params,
+            cadence_hours: 24,
+            enabled: true,
+            created_at: "2026-07-15T00:00:00Z".into(),
+            updated_at: "2026-07-15T00:00:00Z".into(),
+            next_run_at: "2026-07-16T00:00:00Z".into(),
+            last_run_at: None,
+            last_scan_id: None,
+            last_status: "idle".into(),
+            last_error: None,
+        };
+
+        assert_eq!(schedule.target_selection_mode, TargetSelectionMode::Direct);
+        let suite_record = schedule.to_suite_schedule_record();
+        assert_eq!(suite_record.target_scope["target_selection_mode"], "direct");
+        assert_eq!(
+            suite_record.dispatch.payload["search_query"],
+            "repo:patchhive/patchhive"
+        );
+    }
 }

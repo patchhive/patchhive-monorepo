@@ -34,6 +34,10 @@ pub fn clamp_params(mut params: ScanParams) -> ScanParams {
     if params.min_stars == 0 {
         params.min_stars = 25;
     }
+    params.max_repos = params.max_repos.min(25);
+    params.issues_per_repo = params.issues_per_repo.clamp(5, 100);
+    params.stale_days = params.stale_days.min(730);
+    params.min_stars = params.min_stars.min(1_000_000);
     params.topics = params
         .topics
         .into_iter()
@@ -50,6 +54,25 @@ pub fn clamp_params(mut params: ScanParams) -> ScanParams {
     params
 }
 
+pub fn validate_scan_scope(
+    params: &ScanParams,
+    allowlist_configured: bool,
+) -> Result<(), &'static str> {
+    if params.search_query.starts_with("repo:") && params.direct_repository().is_none() {
+        return Err("SignalHive direct targets must use owner/repository format.");
+    }
+    if params.search_query.is_empty()
+        && params.topics.is_empty()
+        && params.languages.is_empty()
+        && !allowlist_configured
+    {
+        return Err(
+            "Provide a target repository, search query, topic, or language, or configure an allowlist.",
+        );
+    }
+    Ok(())
+}
+
 pub fn issue_age_days(updated_at: &str) -> i64 {
     DateTime::parse_from_rfc3339(updated_at)
         .ok()
@@ -62,6 +85,10 @@ pub fn round1(value: f64) -> f64 {
 }
 
 pub fn format_scope_text(params: &ScanParams) -> String {
+    if let Some(repository) = params.direct_repository() {
+        return format!("direct repository `{repository}`");
+    }
+
     let query = if params.search_query.is_empty() {
         "no search query filter".to_string()
     } else {
@@ -210,4 +237,45 @@ pub fn recurring_issue_count(clusters: &[crate::models::RecurringBugCluster]) ->
         .iter()
         .map(|cluster| cluster.issue_count as i32)
         .sum()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{clamp_params, format_scope_text, validate_scan_scope};
+    use crate::models::ScanParams;
+
+    #[test]
+    fn server_bounds_scan_parameters_even_outside_the_frontend() {
+        let params = clamp_params(ScanParams {
+            min_stars: u32::MAX,
+            max_repos: u32::MAX,
+            issues_per_repo: u32::MAX,
+            stale_days: u32::MAX,
+            ..ScanParams::default()
+        });
+
+        assert_eq!(params.min_stars, 1_000_000);
+        assert_eq!(params.max_repos, 25);
+        assert_eq!(params.issues_per_repo, 100);
+        assert_eq!(params.stale_days, 730);
+    }
+
+    #[test]
+    fn direct_scopes_are_validated_and_described_explicitly() {
+        let direct = ScanParams {
+            search_query: "repo:PatchHive/patchhive".into(),
+            ..ScanParams::default()
+        };
+        assert!(validate_scan_scope(&direct, false).is_ok());
+        assert_eq!(
+            format_scope_text(&direct),
+            "direct repository `patchhive/patchhive`"
+        );
+
+        let malformed = ScanParams {
+            search_query: "repo:not-a-repository".into(),
+            ..ScanParams::default()
+        };
+        assert!(validate_scan_scope(&malformed, false).is_err());
+    }
 }

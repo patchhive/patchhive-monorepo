@@ -296,7 +296,14 @@ async fn save_scan_preset(
         return Err(StatusCode::BAD_REQUEST);
     }
 
-    db::save_scan_preset(name, &body.params).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let params = pipeline::utils::clamp_params(body.params);
+    let allowlist_configured = !db::repo_list_sets()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .0
+        .is_empty();
+    pipeline::utils::validate_scan_scope(&params, allowlist_configured)
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+    db::save_scan_preset(name, &params).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(json!({ "ok": true, "name": name })))
 }
 
@@ -318,8 +325,20 @@ async fn save_scan_schedule(
         return Err(StatusCode::BAD_REQUEST);
     }
 
-    db::save_scan_schedule(name, &body.params, body.cadence_hours.max(1), body.enabled)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let params = pipeline::utils::clamp_params(body.params);
+    let allowlist_configured = !db::repo_list_sets()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .0
+        .is_empty();
+    pipeline::utils::validate_scan_scope(&params, allowlist_configured)
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+    db::save_scan_schedule(
+        name,
+        &params,
+        body.cadence_hours.clamp(1, 8_760),
+        body.enabled,
+    )
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(json!({ "ok": true, "name": name })))
 }
 

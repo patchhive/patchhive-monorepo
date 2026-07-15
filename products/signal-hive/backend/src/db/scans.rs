@@ -21,6 +21,16 @@ fn normalized_signature_parts(values: &[String]) -> Vec<String> {
 }
 
 pub fn params_signature(params: &ScanParams) -> String {
+    if let Some(repository) = params.direct_repository() {
+        return serde_json::json!({
+            "target_selection_mode": "direct",
+            "repository": repository,
+            "issues_per_repo": params.issues_per_repo,
+            "stale_days": params.stale_days,
+        })
+        .to_string();
+    }
+
     serde_json::json!({
         "search_query": params.search_query.trim().to_ascii_lowercase(),
         "topics": normalized_signature_parts(&params.topics),
@@ -56,6 +66,7 @@ pub fn save_scan(
         id: id.clone(),
         created_at: created_at.clone(),
         params: params_in.clone(),
+        target_selection_mode: params_in.target_selection_mode(),
         summary: summary.clone(),
         repos: repos.to_vec(),
         warnings: warnings.to_vec(),
@@ -163,10 +174,17 @@ pub fn list_scans() -> Result<Vec<ScanHistoryItem>> {
     )?;
 
     let rows = stmt.query_map([], |row| {
+        let search_query: String = row.get(2)?;
+        let target_selection_mode = ScanParams {
+            search_query: search_query.clone(),
+            ..ScanParams::default()
+        }
+        .target_selection_mode();
         Ok(ScanHistoryItem {
             id: row.get(0)?,
             created_at: row.get(1)?,
-            search_query: row.get(2)?,
+            search_query,
+            target_selection_mode,
             topics: serde_json::from_str::<Vec<String>>(&row.get::<_, String>(3)?)
                 .unwrap_or_default(),
             languages: serde_json::from_str::<Vec<String>>(&row.get::<_, String>(4)?)
@@ -203,18 +221,20 @@ pub fn get_scan(id: &str) -> Result<Option<ScanRecord>> {
         "#,
         params![id],
         |row| {
+            let params = ScanParams {
+                search_query: row.get(1)?,
+                topics: serde_json::from_str(&row.get::<_, String>(2)?).unwrap_or_default(),
+                languages: serde_json::from_str(&row.get::<_, String>(3)?).unwrap_or_default(),
+                min_stars: row.get(4)?,
+                max_repos: row.get(5)?,
+                issues_per_repo: row.get(6)?,
+                stale_days: row.get(7)?,
+            };
             Ok(ScanRecord {
                 id: id.to_string(),
                 created_at: row.get(0)?,
-                params: ScanParams {
-                    search_query: row.get(1)?,
-                    topics: serde_json::from_str(&row.get::<_, String>(2)?).unwrap_or_default(),
-                    languages: serde_json::from_str(&row.get::<_, String>(3)?).unwrap_or_default(),
-                    min_stars: row.get(4)?,
-                    max_repos: row.get(5)?,
-                    issues_per_repo: row.get(6)?,
-                    stale_days: row.get(7)?,
-                },
+                target_selection_mode: params.target_selection_mode(),
+                params,
                 summary: ScanSummary {
                     total_repos: row.get(8)?,
                     total_signals: row.get(9)?,
@@ -306,6 +326,7 @@ pub fn scan_timeline(id: &str, limit: usize) -> Result<Option<ScanTimeline>> {
                s.total_repos,
                s.total_signals,
                s.top_repo,
+               s.search_query,
                s.trigger_type,
                s.schedule_name,
                COALESCE((SELECT SUM(stale_issues) FROM repo_signals WHERE scan_id = s.id), 0) AS total_stale_issues,
@@ -319,17 +340,23 @@ pub fn scan_timeline(id: &str, limit: usize) -> Result<Option<ScanTimeline>> {
     )?;
 
     let rows = stmt.query_map(params![signature, created_at, limit as i64], |row| {
+        let target_selection_mode = ScanParams {
+            search_query: row.get(5)?,
+            ..ScanParams::default()
+        }
+        .target_selection_mode();
         Ok(ScanTimelinePoint {
             id: row.get(0)?,
             created_at: row.get(1)?,
             total_repos: row.get(2)?,
             total_signals: row.get(3)?,
             top_repo: row.get(4)?,
-            trigger_type: row.get(5)?,
-            schedule_name: row.get(6)?,
-            total_stale_issues: row.get(7)?,
-            avg_priority_score: row.get(8)?,
-            top_priority_score: row.get(9)?,
+            target_selection_mode,
+            trigger_type: row.get(6)?,
+            schedule_name: row.get(7)?,
+            total_stale_issues: row.get(8)?,
+            avg_priority_score: row.get(9)?,
+            top_priority_score: row.get(10)?,
         })
     })?;
 
@@ -369,5 +396,35 @@ pub fn previous_scan_for_params(
     match previous_id {
         Some(id) => get_scan(&id),
         None => Ok(None),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::params_signature;
+    use crate::models::ScanParams;
+
+    #[test]
+    fn direct_scan_trends_ignore_discovery_only_fields() {
+        let first = ScanParams {
+            search_query: "repo:PatchHive/PatchHive".into(),
+            topics: vec!["maintenance".into()],
+            languages: vec!["rust".into()],
+            min_stars: 25,
+            max_repos: 8,
+            issues_per_repo: 30,
+            stale_days: 45,
+        };
+        let mut second = first.clone();
+        second.search_query = "repo:patchhive/patchhive".into();
+        second.topics = vec!["unrelated".into()];
+        second.languages = vec!["typescript".into()];
+        second.min_stars = 9_999;
+        second.max_repos = 25;
+
+        assert_eq!(params_signature(&first), params_signature(&second));
+
+        second.stale_days = 90;
+        assert_ne!(params_signature(&first), params_signature(&second));
     }
 }

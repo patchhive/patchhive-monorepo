@@ -14,6 +14,7 @@ import {
 } from "@patchhivehq/ui-v3";
 import ControlsPanel from "./ControlsPanel.jsx";
 import { API } from "./config.js";
+import { downloadDashboardSnapshot } from "./snapshot.js";
 
 const CHIP_TONES = {
   hot: "border-red-900/30 bg-red-900/10 text-red-800 dark:border-red-400/25 dark:bg-red-500/10 dark:text-red-300",
@@ -47,6 +48,10 @@ function triggerMode(value) {
 
 function triggerLabel(value) {
   return triggerMode(value) === "schedule" ? "scheduled" : triggerMode(value) === "operator" ? "operator run" : triggerMode(value);
+}
+
+function targetSelectionMode(value) {
+  return value?.target_selection_mode || (storedTarget(value?.search_query || value?.params?.search_query) ? "direct" : "discovery");
 }
 
 function toFormParams(params = {}) {
@@ -204,12 +209,12 @@ function WorkspaceDetails({ fetcher, health, onError, result }) {
 
   return <div className="mt-8 space-y-6">
     <section className="surface p-5 sm:p-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div><div className={`flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}><Radar size={12} /> Repository scan evidence</div><h2 className={`mt-2 font-display text-[27px] font-semibold ${V3_TEXT.strong}`}>{scanScope(result)}</h2><p className={`mt-2 max-w-4xl text-[13px] leading-relaxed ${V3_TEXT.body}`}>SignalHive found {result.summary?.total_signals || 0} maintenance signals across {result.summary?.total_repos || 0} repositories. The queue remains reconnaissance evidence, not authorization to modify any repository.</p></div><div className="flex flex-wrap gap-2"><CopyMarkdownButton content={report || buildScanMarkdown(result)} label="Copy report Markdown" onError={() => onError("Could not copy the SignalHive report.")} /><button className={`surface-inset h-9 rounded-full px-3 text-[11px] ${V3_TEXT.body}`} onClick={downloadReport} type="button">Download report</button></div></div>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div><div className={`flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}><Radar size={12} /> Repository scan evidence</div><h2 className={`mt-2 font-display text-[27px] font-semibold ${V3_TEXT.strong}`}>{scanScope(result)}</h2><p className={`mt-2 max-w-4xl text-[13px] leading-relaxed ${V3_TEXT.body}`}>SignalHive found {result.summary?.total_signals || 0} maintenance signals across {result.summary?.total_repos || 0} repositories. The queue remains reconnaissance evidence, not authorization to modify any repository.</p></div><div className="flex flex-wrap gap-2"><CopyMarkdownButton content={report || buildScanMarkdown(result)} label="Copy report Markdown" onError={() => onError("Could not copy the SignalHive report.")} /><button className={`surface-inset h-9 rounded-full px-3 text-[11px] ${V3_TEXT.body}`} onClick={downloadReport} type="button">Download report</button><button className={`surface-inset h-9 rounded-full px-3 text-[11px] ${V3_TEXT.body}`} onClick={() => downloadDashboardSnapshot(result, timeline, scanScope(result))} type="button">Export snapshot</button></div></div>
       <div className="mt-5 flex flex-wrap gap-2"><Chip>{String(result.id).slice(0, 8)}</Chip><Chip tone="ok">read only</Chip><Chip tone={result.warnings?.length ? "warn" : "ok"}>{result.warnings?.length ? `${result.warnings.length} warnings` : "complete evidence"}</Chip><Chip>{triggerLabel(result.trigger_type)}</Chip>{result.schedule_name ? <Chip>{result.schedule_name}</Chip> : null}</div>
     </section>
     <section className="surface p-5 sm:p-6"><div className={`flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}><Workflow size={12} /> Complete scan metrics</div><div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5"><Fact label="Repositories" value={repos.length} /><Fact label="Signals" value={result.summary?.total_signals} /><Fact label="Stale issues" value={totals.stale} /><Fact label="Duplicate pairs" value={totals.duplicates} /><Fact label="Recurring clusters" value={totals.recurring} /><Fact label="TODO / FIXME" value={totals.markers} /><Fact label="Issue examples" value={totals.examples} /><Fact label="Warnings" value={result.warnings?.length || 0} /><Fact label="Min stars" value={result.params?.min_stars} /><Fact label="Stale window" value={`${result.params?.stale_days || 0}d`} /></div></section>
     {trend ? <section className="surface p-5 sm:p-6"><div className={`flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}><TrendingUp size={12} /> Change since comparable scan</div><p className={`mt-2 text-[12px] ${V3_TEXT.mute}`}>Compared with {new Date(trend.compared_to_created_at).toLocaleString()}.</p><div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7"><Fact label="Signal delta" value={trend.total_signals_delta} /><Fact label="Repo delta" value={trend.total_repos_delta} /><Fact label="New repos" value={trend.new_repos} /><Fact label="Dropped" value={trend.dropped_repos} /><Fact label="Rising" value={trend.rising_repos} /><Fact label="Improving" value={trend.improving_repos} /><Fact label="Steady" value={trend.steady_repos} /></div></section> : null}
-    {events.length ? <ActivityTimeline caption="Comparable discovery scans" eventTypes={["scan", "schedule"]} events={events} /> : null}
+    {events.length ? <ActivityTimeline caption="Comparable scans" eventTypes={["scan", "schedule"]} events={events} /> : null}
     <ScanWarnings warnings={result.warnings || []} />
     {!health.github_ready ? <GitHubPermissionGuidance>{health.github?.token_configured ? "GitHub could not verify the configured token. Repository, issue, and code-search coverage may be incomplete." : "Configure repository, issue, and code read access before treating discovery coverage as complete."}</GitHubPermissionGuidance> : null}
   </div>;
@@ -252,7 +257,7 @@ const baseConfig = {
     { key: "search_query", label: "GitHub discovery query", placeholder: "archived:false good first issues", help: "Used only when Target repository is blank." },
     { key: "topics", label: "Topics", placeholder: "developer-tools, maintenance", help: "Comma- or newline-separated GitHub topics." },
     { key: "languages", label: "Languages", placeholder: "rust, typescript, python", help: "Comma- or newline-separated languages." },
-    { key: "min_stars", label: "Minimum stars", type: "number", min: 0, max: 1000000 },
+    { key: "min_stars", label: "Minimum stars", type: "number", min: 1, max: 1000000 },
     { key: "max_repos", label: "Repository limit", type: "number", min: 1, max: 25 },
     { key: "issues_per_repo", label: "Issues per repository", type: "number", min: 5, max: 100 },
     { key: "stale_days", label: "Stale after days", type: "number", min: 1, max: 730 },
@@ -260,7 +265,7 @@ const baseConfig = {
   validate: (form) => {
     if (form.target_repo?.trim() && !/^[^/\s]+\/[^/\s]+$/.test(form.target_repo.trim())) return "Target repository must use owner/repository format.";
     if (!form.target_repo?.trim() && !form.search_query?.trim() && !toList(form.topics).length && !toList(form.languages).length) return "Provide a target repository or a discovery query, topic, or language before scanning.";
-    const ranges = [["Minimum stars", form.min_stars, 0, 1000000], ["Repository limit", form.max_repos, 1, 25], ["Issues per repository", form.issues_per_repo, 5, 100], ["Stale days", form.stale_days, 1, 730]];
+    const ranges = [["Minimum stars", form.min_stars, 1, 1000000], ["Repository limit", form.max_repos, 1, 25], ["Issues per repository", form.issues_per_repo, 5, 100], ["Stale days", form.stale_days, 1, 730]];
     const invalid = ranges.find(([, input, min, max]) => !Number.isInteger(Number(input)) || Number(input) < min || Number(input) > max);
     return invalid ? `${invalid[0]} must be a whole number from ${invalid[2]} through ${invalid[3]}.` : "";
   },
@@ -308,14 +313,14 @@ const baseConfig = {
     const warnings = result?.warnings?.length || 0;
     return { label: warnings ? "partial" : count ? "pressure" : "quiet", detail: warnings ? "Some repository evidence was unavailable; warnings remain visible." : count ? "Maintenance pressure is ranked for review." : "No strong maintenance signals in this scan.", progress: `${Math.min(100, Math.max(12, count))}%`, stats: [["repos", result?.summary?.total_repos || 0], ["signals", count], ["warnings", warnings]] };
   },
-  chips: (result, health) => [scanScope(result), `${result?.params?.stale_days || 45} day stale window`, storedTarget(result?.params?.search_query) ? "direct target" : `${result?.params?.max_repos || 8} repo cap`, health.github_ready ? "GitHub verified" : "coverage pending"],
+  chips: (result, health) => [scanScope(result), `${result?.params?.stale_days || 45} day stale window`, targetSelectionMode(result) === "direct" ? "direct target" : `${result?.params?.max_repos || 8} repo cap`, health.github_ready ? "GitHub verified" : "coverage pending"],
   targetSubtitle: (result) => result ? `${triggerLabel(result.trigger_type)} · ${result.summary?.total_repos || 0} repositories` : "No scan loaded",
   historyItems: (payload) => payload.scans || [],
   historyTitle: (entry) => entry.top_repo || scanScope({ params: { search_query: entry.search_query, topics: entry.topics, languages: entry.languages } }),
   historySummary: (entry) => `${entry.total_signals || 0} maintenance signals across ${entry.total_repos || 0} repositories${entry.warning_count ? ` with ${entry.warning_count} coverage warnings` : ""}.`,
-  historyMeta: (entry) => `${triggerLabel(entry.trigger_type)}${entry.schedule_name ? ` · ${entry.schedule_name}` : ""} · ${storedTarget(entry.search_query) ? "direct target" : `${entry.max_repos || 0} repo cap`}`,
+  historyMeta: (entry) => `${triggerLabel(entry.trigger_type)}${entry.schedule_name ? ` · ${entry.schedule_name}` : ""} · ${targetSelectionMode(entry) === "direct" ? "direct target" : `${entry.max_repos || 0} repo cap`}`,
   historyIdentity: (entry) => `scan ${String(entry.id).slice(0, 8)}`,
-  historySearchText: (entry) => `${entry.top_repo} ${(entry.topics || []).join(" ")} ${(entry.languages || []).join(" ")} ${entry.trigger_type} ${entry.schedule_name || ""}`,
+  historySearchText: (entry) => `${entry.top_repo} ${entry.search_query || ""} ${(entry.topics || []).join(" ")} ${(entry.languages || []).join(" ")} ${entry.trigger_type} ${entry.schedule_name || ""}`,
   historyBadges: (entry) => [{ label: `${entry.total_repos || 0} repos`, tone: "neutral" }, { label: `${entry.total_signals || 0} signals`, tone: entry.total_signals ? "warn" : "ok" }, { label: `${entry.warning_count || 0} warnings`, tone: entry.warning_count ? "warn" : "neutral" }],
   dashboard: {
     defaultView: { language: "all", trend: "all", sort: "priority" },

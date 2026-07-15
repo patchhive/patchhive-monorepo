@@ -28,8 +28,10 @@ Operator / HiveCore
     ▼
 SignalHive Backend
     │
-    ├── 1. Discover repositories (GitHub search: topics, languages, min_stars)
-    │       └── Safety filters: allowlist / denylist / opt_out
+    ├── 1. Select target mode
+    │       ├── Direct: fetch the exact `repo:owner/repository` target
+    │       └── Discovery: GitHub search by query, topics, languages, and min_stars
+    │               └── Safety filters: allowlist / denylist / opt_out
     ├── 2. For each repo: fetch open issues (non-PR)
     ├── 3. Analyze issues: stale backlog, duplicate candidates, recurring bug clusters
     ├── 4. Sort by issue-only priority score
@@ -60,13 +62,18 @@ SignalHive Backend
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `search_query` | string | `""` | GitHub search term to filter repositories |
+| `search_query` | string | `""` | GitHub discovery query, or `repo:owner/repository` for one direct target |
 | `topics` | string[] | `[]` | GitHub topics to match |
 | `languages` | string[] | `["rust"]` | Programming languages to filter by |
-| `min_stars` | number | `25` | Minimum star count (clamped to ≥ 1) |
-| `max_repos` | number | `8` | Max repositories to scan (clamped to ≥ 1) |
-| `issues_per_repo` | number | `30` | Max open issues to fetch per repo (clamped 1–100) |
-| `stale_days` | number | `45` | Days without update to consider an issue stale |
+| `min_stars` | number | `25` | Discovery minimum star count (server-bounded to 1–1,000,000) |
+| `max_repos` | number | `8` | Discovery repository cap (server-bounded to 1–25) |
+| `issues_per_repo` | number | `30` | Max open issues to fetch per repo (server-bounded to 5–100) |
+| `stale_days` | number | `45` | Days without update to consider an issue stale (server-bounded to 1–730) |
+
+Run trigger and target mode are independent. `POST /scan` is an operator or
+orchestration trigger; a saved schedule is a schedule trigger. Either may use a
+direct repository or bounded discovery scope. Presets, schedules, scan history,
+timelines, and suite schedule records preserve the selected target mode.
 
 ---
 
@@ -87,6 +94,7 @@ SignalHive Backend
     "issues_per_repo": 30,
     "stale_days": 45
   },
+  "target_selection_mode": "discovery",
   "summary": {
     "total_repos": 4,
     "total_signals": 7,
@@ -180,7 +188,7 @@ SignalHive Backend
     }
   ],
   "warnings": [],
-  "trigger_type": "manual",
+  "trigger_type": "operator",
   "schedule_name": null,
   "trend": {
     "compared_to_scan_id": "previous-uuid",
@@ -217,11 +225,11 @@ The priority score is a 0–100 composite computed from these factors:
 
 SignalHive is **read-only**. It does not open pull requests, mutate repositories, or post issues. It does not require AI for its base loop.
 
-Discovery safety controls (applied in `github::discover_repositories`):
+Repository safety controls (applied before direct reads and retained during discovery):
 
 - `opt_out` wins over all other controls — repos here are always excluded
-- `denylist` excludes repositories even when they match a topic or language
-- `allowlist` constrains discovery when present (only allowlisted repos are scanned)
+- `denylist` excludes direct targets and repositories that match discovery
+- `allowlist` constrains both modes when present (only allowlisted repos are scanned)
 - When allowlist is empty and no search query/topics/languages are provided, the scan is rejected with a 400 error
 - Ambiguous policy fails closed: invalid list types are rejected by `normalize_repo_list_type`
 
@@ -242,6 +250,7 @@ docker compose up --build
 | Backend | `http://localhost:8010` |
 | Frontend | `http://localhost:5174` |
 | Frontend v2 | `http://localhost:5192` |
+| Frontend v3 candidate | `http://localhost:5308` |
 
 Backend: `http://localhost:8010`
 Frontend: `http://localhost:5174`
@@ -338,12 +347,12 @@ products/signal-hive/
 
 ### Data Flow
 
-1. **Repository Discovery** — `github::discover_repositories` searches GitHub by query/topics/languages/min_stars with allowlist/denylist/opt_out filtering
+1. **Target Selection** — `github::discover_repositories` either fetches one explicit `repo:owner/repository` target or searches GitHub by query/topics/languages/min_stars, with allowlist/denylist/opt_out filtering in both modes
 2. **Issue Analysis** — `scoring::issue_signals` computes stale counts, duplicate candidates (Jaccard title similarity ≥ 0.58), and recurring bug clusters (graph-connected bug issues sharing ≥ 2 terms at ≥ 0.34 similarity)
 3. **Marker Scanning** — `scanning::collect_marker_counts` runs GitHub code search for `TODO` and `FIXME` on the top `SIGNAL_MARKER_REPO_LIMIT` repos; rate limits propagate to remaining repos
 4. **Scoring** — `scoring::priority_score` combines all factors into a 0–100 priority score with per-factor breakdown
 5. **Persistence** — Scan results saved to SQLite (scans + repo_signals + metadata)
-6. **Trend Enrichment** — If a previous scan with the same params signature exists, per-repo and scan-level trend deltas are computed
+6. **Trend Enrichment** — If a previous comparable scan exists, per-repo and scan-level trend deltas are computed. Direct comparisons ignore discovery-only fields such as topics, languages, stars, and repo cap.
 7. **Scheduler** — Background `tokio::spawn` loop polls every 60s for due scan schedules
 
 ### Extensibility Points
@@ -392,6 +401,9 @@ products/signal-hive/
 #### `POST /scan`
 
 Body: `ScanParams` (see Inputs section above).
+
+For a direct scan, set `search_query` to `repo:owner/repository`. The response,
+history row, and timeline point then expose `target_selection_mode: "direct"`.
 
 #### `POST /presets`
 
@@ -483,40 +495,41 @@ Valid `list_type` values: `allowlist`, `denylist` (or `blocklist`), `opt_out` (o
 
 #### `GET /capabilities`
 
+Representative contract excerpt (the live response also includes smoke and
+saved-schedule actions):
+
 ```json
 {
-  "product": "signal-hive",
-  "name": "SignalHive",
+  "schema_version": "patchhive.product.contract.v1",
+  "product_slug": "signal-hive",
+  "display_name": "SignalHive",
+  "version": "0.1.0",
+  "standalone": true,
+  "operating_modes": {
+    "triggers": ["operator", "orchestration", "schedule"],
+    "target_selection": ["direct", "discovery"]
+  },
   "actions": [
     {
-      "key": "smoke_check",
-      "label": "Run smoke check",
-      "method": "POST",
-      "path": "/smoke",
-      "description": "Verify SignalHive is ready for HiveCore dispatch without running a live GitHub scan.",
-      "requires_scan": false
-    },
-    {
-      "key": "scan",
+      "id": "scan",
       "label": "Run signal scan",
       "method": "POST",
       "path": "/scan",
-      "description": "Discover maintenance signals across repositories from configured topics and languages.",
-      "requires_scan": true
-    },
-    {
-      "key": "run_schedule_now",
-      "label": "Run saved schedule",
-      "method": "POST",
-      "path": "/schedules/{name}/run",
-      "description": "Trigger a saved SignalHive scan schedule immediately.",
-      "requires_scan": true
+      "description": "Surface maintenance signals for a direct repository target or repositories discovered from a bounded scope.",
+      "starts_run": true,
+      "destructive": false,
+      "read_only": true,
+      "scheduleable": true,
+      "operating_modes": {
+        "triggers": ["operator", "orchestration", "schedule"],
+        "target_selection": ["direct", "discovery"]
+      }
     }
   ],
   "links": [
-    { "key": "history", "label": "History", "path": "/history" },
-    { "key": "presets", "label": "Presets", "path": "/presets" },
-    { "key": "schedules", "label": "Schedules", "path": "/schedules" }
+    { "id": "history", "label": "History", "path": "/history" },
+    { "id": "presets", "label": "Presets", "path": "/presets" },
+    { "id": "schedules", "label": "Schedules", "path": "/schedules" }
   ]
 }
 ```
@@ -526,10 +539,15 @@ Valid `list_type` values: `allowlist`, `denylist` (or `blocklist`), `opt_out` (o
 ```json
 {
   "filename": "signalhive-report-550e8400.md",
-  "markdown": "# SignalHive by PatchHive\n\n> Maintenance visibility before automation\n\n## Scan 550e8400-...\n\n- Scan ID: `550e8400-...`\n- Trigger: `manual`\n- ...",
+  "markdown": "# SignalHive by PatchHive\n\n> Maintenance visibility before automation\n\n## Scan 550e8400-...\n\n- Scan ID: `550e8400-...`\n- Trigger: `operator`\n- ...",
   "exported_at": "2026-06-28T10:30:00Z"
 }
 ```
+
+The v3 frontend also creates a self-contained HTML dashboard snapshot from the
+saved scan and comparable timeline. The snapshot is generated entirely in the
+browser, escapes repository evidence before rendering, and does not add a new
+backend write path.
 
 ### Auth
 
@@ -549,8 +567,9 @@ Valid `list_type` values: `allowlist`, `denylist` (or `blocklist`), `opt_out` (o
 
 | Status | Meaning |
 |--------|---------|
-| 400 | Invalid request body, missing fields, empty params with no allowlist |
+| 400 | Invalid request body, malformed direct target, missing scope, or empty params with no allowlist |
 | 401 | Missing or invalid API key / service token |
+| 403 | Direct target blocked by allowlist, denylist, or opt-out policy |
 | 503 | Auth not enabled on login attempt |
 | 404 | Scan ID not found in history |
 | 500 | Internal error (logged) |

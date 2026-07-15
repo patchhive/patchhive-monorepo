@@ -85,7 +85,7 @@ typography scale, spacing system, or theme implementation.
 | ReviewBee | `products/review-bee/frontend` | Promoted after live unified action, real history, checks, sources, Markdown preview, and safety acceptance; v1/v2 removed |
 | TrustGate | `products/trust-gate/frontend` | Promoted after pasted and live PR review, policy, history/detail, diagnostics, PAT publishing, responsive layout, and light/dark acceptance; v1/v2 removed |
 | RepoMemory | `products/repo-memory/frontend` | Promoted after ingest, memory curation, context preview, run diff, prompt-pack, FailGuard, history, checks, sources, responsive layout, and light/dark acceptance; v1/v2 removed |
-| SignalHive | `products/signal-hive/frontend-v3` | Integrated parity candidate; backend, real-data discovery queue, saved history, controls, responsive layout, strict builds, and container build verified; awaiting operator visual/interaction acceptance before promotion |
+| SignalHive | `products/signal-hive/frontend-v3` | Integrated parity candidate; direct and discovery targets, operator and scheduled runs, presets, repository controls, trend/timeline, Markdown report, HTML dashboard snapshot, saved history, diagnostics, strict builds, and container build verified; awaiting operator visual/interaction acceptance before promotion |
 | Other specialist products | not created | Wait until their product engine is integrated in-process |
 | HiveCore | not applicable | Intentionally separate |
 

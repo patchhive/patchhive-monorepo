@@ -1,0 +1,10 @@
+.git
+**/.env
+**/.env.*
+**/node_modules
+**/target
+**/dist
+**/*.db
+**/*.db-shm
+**/*.db-wal
+**/.DS_Store

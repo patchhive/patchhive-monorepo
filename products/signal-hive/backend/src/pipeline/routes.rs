@@ -13,7 +13,7 @@ use crate::models::{OverviewCounts, OverviewPayload};
 use crate::state::AppState;
 
 use super::scanning::{enrich_scan_record, run_scan_record};
-use super::utils::{bad_request, clamp_params, internal_error};
+use super::utils::{bad_request, clamp_params, internal_error, validate_scan_scope};
 
 pub async fn capabilities() -> Json<contract::ProductCapabilities> {
     Json(contract::capabilities(
@@ -110,11 +110,24 @@ pub async fn scan(
     Json(params): Json<crate::models::ScanParams>,
 ) -> Result<Json<crate::models::ScanRecord>, (StatusCode, Json<serde_json::Value>)> {
     let params = clamp_params(params);
-    if params.search_query.is_empty() && params.topics.is_empty() && params.languages.is_empty() {
-        let allowlist = crate::db::repo_list_sets().map_err(internal_error)?.0;
-        if allowlist.is_empty() {
-            return Err(bad_request(
-                "Provide at least a search query, topic, or language, or configure an allowlist.",
+    let (allowlist, denylist, opt_out) = crate::db::repo_list_sets().map_err(internal_error)?;
+    validate_scan_scope(&params, !allowlist.is_empty()).map_err(bad_request)?;
+
+    if let Some(repository) = params.direct_repository() {
+        let decision = patchhive_product_core::scope_policy::repo_scope_decision(
+            &repository,
+            &allowlist,
+            &denylist,
+            &opt_out,
+        );
+        if !decision.is_allowed() {
+            return Err((
+                StatusCode::FORBIDDEN,
+                Json(json!({
+                    "error": format!(
+                        "SignalHive repository policy blocks the direct target `{repository}`. Review allowlist, denylist, and opt-out controls before scanning it."
+                    )
+                })),
             ));
         }
     }

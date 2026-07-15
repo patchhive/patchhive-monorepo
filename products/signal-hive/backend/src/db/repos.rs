@@ -81,9 +81,12 @@ pub fn list_scan_presets() -> Result<Vec<ScanPreset>> {
         "SELECT name, params_json, created_at, updated_at FROM scan_presets ORDER BY updated_at DESC, name ASC",
     )?;
     let rows = stmt.query_map([], |row| {
+        let params: ScanParams =
+            serde_json::from_str(&row.get::<_, String>(1)?).unwrap_or_default();
         Ok(ScanPreset {
             name: row.get(0)?,
-            params: serde_json::from_str(&row.get::<_, String>(1)?).unwrap_or_default(),
+            target_selection_mode: params.target_selection_mode(),
+            params,
             created_at: row.get(2)?,
             updated_at: row.get(3)?,
         })

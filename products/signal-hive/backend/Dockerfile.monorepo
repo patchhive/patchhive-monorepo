@@ -1,13 +1,15 @@
 FROM rust:1.87-slim AS builder
 WORKDIR /app
 RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
-COPY Cargo.toml .
-COPY src ./src
-RUN cargo build --release
+COPY crates/patchhive-product-core ./crates/patchhive-product-core
+COPY crates/patchhive-github-data ./crates/patchhive-github-data
+COPY products/signal-hive/backend ./products/signal-hive/backend
+WORKDIR /app/products/signal-hive/backend
+RUN cargo build --release --locked
 
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y ca-certificates libssl3 && rm -rf /var/lib/apt/lists/*
-COPY --from=builder /app/target/release/signal-hive /usr/local/bin/signal-hive
+COPY --from=builder /app/products/signal-hive/backend/target/release/signal-hive /usr/local/bin/signal-hive
 RUN useradd --create-home --uid 10001 patchhive \
     && mkdir -p /app \
     && chown patchhive:patchhive /app /usr/local/bin/signal-hive

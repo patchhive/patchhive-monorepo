@@ -13,7 +13,7 @@ use super::analysis::{analyze_repo_issue_draft, collect_marker_counts, finalize_
 use super::scoring::MarkerCounts;
 use super::utils::{
     clamp_params, format_scope_text, marker_scan_repo_limit, marker_total, recurring_issue_count,
-    round1,
+    round1, validate_scan_scope,
 };
 
 pub fn repo_trend_status(
@@ -309,15 +309,7 @@ pub async fn run_scan_record(
 ) -> Result<ScanRecord> {
     let params = clamp_params(params);
     let (allowlist, denylist, opt_out) = crate::db::repo_list_sets()?;
-    if params.search_query.is_empty()
-        && params.topics.is_empty()
-        && params.languages.is_empty()
-        && allowlist.is_empty()
-    {
-        anyhow::bail!(
-            "Provide at least a search query, topic, or language, or configure an allowlist."
-        );
-    }
+    validate_scan_scope(&params, !allowlist.is_empty()).map_err(anyhow::Error::msg)?;
 
     let repos =
         crate::github::discover_repositories(&state.http, &params, &allowlist, &denylist, &opt_out)
@@ -535,6 +527,7 @@ mod tests {
                 issues_per_repo: 30,
                 stale_days: 45,
             },
+            target_selection_mode: patchhive_product_core::contract::TargetSelectionMode::Discovery,
             summary: ScanSummary {
                 total_repos: 1,
                 total_signals: 1,

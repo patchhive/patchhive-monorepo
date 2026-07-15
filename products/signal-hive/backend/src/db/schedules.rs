@@ -11,9 +11,11 @@ fn next_run_at(cadence_hours: u32) -> String {
 }
 
 fn scan_schedule_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ScanSchedule> {
+    let params: ScanParams = serde_json::from_str(&row.get::<_, String>(1)?).unwrap_or_default();
     Ok(ScanSchedule {
         name: row.get(0)?,
-        params: serde_json::from_str(&row.get::<_, String>(1)?).unwrap_or_default(),
+        target_selection_mode: params.target_selection_mode(),
+        params,
         cadence_hours: row.get(2)?,
         enabled: row.get::<_, i64>(3)? != 0,
         created_at: row.get(4)?,

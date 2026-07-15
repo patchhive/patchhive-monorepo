@@ -1,7 +1,9 @@
 services:
   backend:
     image: "${PATCHHIVE_SIGNAL_HIVE_BACKEND_IMAGE:-ghcr.io/patchhive/signalhive-backend}:${PATCHHIVE_IMAGE_TAG:-main}"
-    build: ./backend
+    build:
+      context: ../..
+      dockerfile: products/signal-hive/backend/Dockerfile.monorepo
     pull_policy: "${PATCHHIVE_IMAGE_PULL_POLICY:-missing}"
     user: "${PATCHHIVE_BACKEND_UID:-0}:${PATCHHIVE_BACKEND_GID:-0}"
     ports:
@@ -33,6 +35,17 @@ services:
     pull_policy: never
     ports:
       - "5192:8080"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  frontend-v3:
+    build:
+      context: ../..
+      dockerfile: products/signal-hive/frontend-v3/Dockerfile
+    pull_policy: never
+    ports:
+      - "5308:8080"
     depends_on:
       - backend
     restart: unless-stopped

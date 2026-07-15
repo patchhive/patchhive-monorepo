@@ -4,7 +4,7 @@ mod analysis;
 mod routes;
 mod scanning;
 mod scoring;
-mod utils;
+pub(crate) mod utils;
 
 // Re-export route handlers for main.rs
 pub use routes::{

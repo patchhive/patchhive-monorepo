@@ -2,7 +2,7 @@ use anyhow::Result;
 use patchhive_github_data::{
     code_search_count, fetch_issues, fetch_repository, search_repositories,
 };
-use patchhive_product_core::scope_policy::{normalize_repo_name, repo_scope_decision};
+use patchhive_product_core::scope_policy::repo_scope_decision;
 use reqwest::Client;
 use std::collections::HashSet;
 use tracing::warn;
@@ -27,11 +27,7 @@ fn repo_allowed(
 }
 
 fn direct_repo_target(params: &ScanParams) -> Option<String> {
-    params
-        .search_query
-        .trim()
-        .strip_prefix("repo:")
-        .and_then(normalize_repo_name)
+    params.direct_repository()
 }
 
 pub async fn fetch_repo(client: &Client, full_name: &str) -> Result<SearchRepo> {
