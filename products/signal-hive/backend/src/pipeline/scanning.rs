@@ -364,12 +364,7 @@ pub async fn run_scan_record(
             )
             .await
         } else {
-            MarkerCounts {
-                warnings: vec![
-                    "SignalHive capped TODO/FIXME code search to the highest-priority repos in this scan, so the rest of the queue does not include marker counts.".into(),
-                ],
-                ..MarkerCounts::default()
-            }
+            MarkerCounts::default()
         };
 
         for warning in &marker_counts.warnings {

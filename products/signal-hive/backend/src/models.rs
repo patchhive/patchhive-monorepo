@@ -4,8 +4,28 @@ use patchhive_product_core::contract::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashSet;
 
 pub use patchhive_github_data::models::{GitHubIssue, GitHubRepository as SearchRepo};
+
+pub fn consolidate_scan_warnings(warnings: &[String]) -> Vec<String> {
+    let mut seen = HashSet::new();
+    warnings
+        .iter()
+        .filter_map(|warning| {
+            let normalized = warning.trim().to_ascii_lowercase();
+            let key = if normalized.contains("todo/fixme code search")
+                && normalized.contains("rest of the queue")
+            {
+                "marker-scan-scope-limit".to_string()
+            } else {
+                normalized
+            };
+
+            seen.insert(key).then(|| warning.clone())
+        })
+        .collect()
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScanParams {
@@ -308,7 +328,7 @@ fn default_true() -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{ScanParams, ScanSchedule};
+    use super::{consolidate_scan_warnings, ScanParams, ScanSchedule};
     use patchhive_product_core::contract::TargetSelectionMode;
 
     #[test]
@@ -339,5 +359,19 @@ mod tests {
             suite_record.dispatch.payload["search_query"],
             "repo:patchhive/patchhive"
         );
+    }
+
+    #[test]
+    fn equivalent_marker_scope_warnings_are_presented_once() {
+        let warnings = vec![
+            "SignalHive only ran TODO/FIXME code search on the top 4 repos in this scan to stay within GitHub search limits. Marker counts are unavailable for the rest of the queue.".into(),
+            "SignalHive capped TODO/FIXME code search to the highest-priority repos in this scan, so the rest of the queue does not include marker counts.".into(),
+            "GitHub code search rate-limited TODO/FIXME scanning for `owner/repo`. Marker counts may be partial or unavailable in this scan.".into(),
+        ];
+
+        let consolidated = consolidate_scan_warnings(&warnings);
+        assert_eq!(consolidated.len(), 2);
+        assert_eq!(consolidated[0], warnings[0]);
+        assert_eq!(consolidated[1], warnings[2]);
     }
 }

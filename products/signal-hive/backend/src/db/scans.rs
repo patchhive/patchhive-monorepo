@@ -3,8 +3,8 @@ use chrono::Utc;
 use rusqlite::{params, OptionalExtension};
 
 use crate::models::{
-    RepoSignal, ScanHistoryItem, ScanParams, ScanRecord, ScanSummary, ScanTimeline,
-    ScanTimelinePoint,
+    consolidate_scan_warnings, RepoSignal, ScanHistoryItem, ScanParams, ScanRecord, ScanSummary,
+    ScanTimeline, ScanTimelinePoint,
 };
 
 use super::schema::connect;
@@ -69,7 +69,7 @@ pub fn save_scan(
         target_selection_mode: params_in.target_selection_mode(),
         summary: summary.clone(),
         repos: repos.to_vec(),
-        warnings: warnings.to_vec(),
+        warnings: consolidate_scan_warnings(warnings),
         trigger_type: trigger_type.to_string(),
         schedule_name: schedule_name.map(|value| value.to_string()),
         trend: None,
@@ -193,9 +193,10 @@ pub fn list_scans() -> Result<Vec<ScanHistoryItem>> {
             total_repos: row.get(6)?,
             total_signals: row.get(7)?,
             top_repo: row.get(8)?,
-            warning_count: serde_json::from_str::<Vec<String>>(&row.get::<_, String>(9)?)
-                .unwrap_or_default()
-                .len() as u32,
+            warning_count: consolidate_scan_warnings(
+                &serde_json::from_str::<Vec<String>>(&row.get::<_, String>(9)?).unwrap_or_default(),
+            )
+            .len() as u32,
             trigger_type: row.get(10)?,
             schedule_name: row.get(11)?,
         })
@@ -240,7 +241,10 @@ pub fn get_scan(id: &str) -> Result<Option<ScanRecord>> {
                     total_signals: row.get(9)?,
                     top_repo: row.get(10)?,
                 },
-                warnings: serde_json::from_str(&row.get::<_, String>(11)?).unwrap_or_default(),
+                warnings: consolidate_scan_warnings(
+                    &serde_json::from_str::<Vec<String>>(&row.get::<_, String>(11)?)
+                        .unwrap_or_default(),
+                ),
                 repos: Vec::new(),
                 trigger_type: row.get(12)?,
                 schedule_name: row.get(13)?,
