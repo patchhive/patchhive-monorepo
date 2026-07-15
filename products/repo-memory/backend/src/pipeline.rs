@@ -296,12 +296,12 @@ mod tests {
             vec![
                 sample_issue(
                     3,
-                    "bug: Hermes environment proposed response",
+                    "bug: Hermes environment path tool proposed response",
                     "Launch fails.",
                 ),
                 sample_issue(
                     4,
-                    "bug: Hermes environment proposed response",
+                    "bug: Hermes environment path tool proposed response",
                     "Connection fails.",
                 ),
             ],
