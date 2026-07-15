@@ -303,6 +303,8 @@ fn route_path_matches(pattern: &str, path: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use crate::models::MigrationStage;
+
     use super::ProductRegistry;
 
     #[test]
@@ -320,7 +322,11 @@ mod tests {
         assert!(!signal_hive.capabilities.is_empty());
         assert!(!signal_hive.routes.is_empty());
         assert!(signal_hive.safety.read_only);
-        assert!(signal_hive.gateway_target_url().is_some());
+        assert!(matches!(
+            signal_hive.migration_stage(),
+            MigrationStage::Integrated
+        ));
+        assert!(signal_hive.gateway_target_url().is_none());
         assert_eq!(
             signal_hive.health.endpoint,
             "/api/products/signal-hive/health"

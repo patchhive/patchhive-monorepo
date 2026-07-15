@@ -21,6 +21,7 @@ merge-keeper = { path = "../../products/merge-keeper/backend" }
 release-sentry = { path = "../../products/release-sentry/backend" }
 repo-memory = { path = "../../products/repo-memory/backend" }
 review-bee = { path = "../../products/review-bee/backend" }
+signal-hive = { path = "../../products/signal-hive/backend" }
 trust-gate = { path = "../../products/trust-gate/backend" }
 vuln-triage = { path = "../../products/vuln-triage/backend" }
 rusqlite = { version = "0.31", features = ["bundled"] }

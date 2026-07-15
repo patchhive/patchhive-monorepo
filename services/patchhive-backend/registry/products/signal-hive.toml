@@ -4,16 +4,12 @@ name = "SignalHive"
 role = "maintenance signal reconnaissance"
 module_path = "crate::products::signal_hive"
 route_prefix = "/api/products/signal-hive"
-migration_stage = "not-started"
+migration_stage = "integrated"
 
 [safety]
 read_only = true
 credential_scopes = ["github:repo:read", "github:issues:read", "github:code:read"]
 evidence_required = ["scan parameters", "repo sample list"]
-
-[gateway]
-default_url = "http://127.0.0.1:8010"
-env_var = "SIGNAL_HIVE_GATEWAY_URL"
 
 [health]
 endpoint = "/api/products/signal-hive/health"

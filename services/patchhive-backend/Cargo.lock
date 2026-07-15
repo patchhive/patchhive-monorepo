@@ -1151,6 +1151,7 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+ "signal-hive",
  "tokio",
  "toml",
  "tower",
@@ -1757,6 +1758,28 @@ name = "shlex"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
+
+[[package]]
+name = "signal-hive"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "chrono",
+ "dotenvy",
+ "once_cell",
+ "patchhive-github-data",
+ "patchhive-product-core",
+ "reqwest",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tower-http 0.5.2",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
 
 [[package]]
 name = "signal-hook-registry"
