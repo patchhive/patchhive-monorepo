@@ -78,8 +78,6 @@ docker compose up --build
 ```
 
 Frontend: `http://localhost:5176`
-Frontend v2 prototype: `http://localhost:5194`
-Frontend v3 parity candidate: `http://localhost:5307`
 Backend: `http://localhost:8030`
 
 ### Split Backend and Frontend
@@ -89,23 +87,21 @@ cp .env.example .env
 
 cd backend && cargo run
 cd ../frontend && npm install && npm run dev
-cd ../frontend-v2 && npm install && npm run dev
-cd ../frontend-v3 && npm install && npm run dev
 ```
 
-Generate the first local API key from the UI at `http://localhost:5176`. The frontend uses
-`@patchhivehq/ui` and `@patchhivehq/product-shell`; the v2 prototype lives in
-`frontend-v2/` while the suite UI direction is settled. The generated prompt
-pack is meant to be reused as context, not treated as infallible policy.
+Generate the first local API key from the UI at `http://localhost:5176`. The
+frontend uses `@patchhivehq/ui-v3` and `@patchhivehq/product-shell`. The
+generated prompt pack is meant to be reused as context, not treated as
+infallible policy.
 
-### UI v3 parity candidate
+### Canonical UI
 
 RepoMemory is mounted in-process by the unified backend. Its Lovable-derived
-v3 parity candidate lives in `frontend-v3/` and preserves GitHub history
-ingest, filterable memory evidence, curation, consumer context preview, run
-diffs, prompt-pack copy, saved views, and the complete FailGuard
-suggest/review/promote/dismiss loop. The v1 and v2 frontends remain until live
-parity acceptance.
+v3 frontend lives in `frontend/` and preserves GitHub history ingest,
+filterable memory evidence, curation, consumer context preview, run diffs,
+prompt-pack copy, saved views, and the complete FailGuard
+suggest/review/promote/dismiss loop. It passed final parity acceptance on
+2026-07-14; the v1 and v2 frontends have been removed.
 
 ## Configuration
 

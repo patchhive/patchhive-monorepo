@@ -1,6 +1,1 @@
-const defaultApiBase =
-  typeof window !== "undefined" && !import.meta.env.DEV && window.location?.origin
-    ? `${window.location.origin}/api`
-    : "http://localhost:8030";
-
-export const API = import.meta.env.VITE_API_URL || defaultApiBase;
+export const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:8100/api/products/repo-memory";

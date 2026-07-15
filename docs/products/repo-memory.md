@@ -62,8 +62,6 @@ docker compose up --build
 
 Defaults:
 - Frontend: `http://localhost:5176`
-- Frontend v2 prototype: `http://localhost:5194`
-- Frontend v3 parity candidate: `http://localhost:5307`
 - Backend: `http://localhost:8030`
 
 ### Split Backend and Frontend
@@ -73,20 +71,19 @@ cp .env.example .env
 
 cd backend && cargo run
 cd ../frontend && npm install && npm run dev
-cd ../frontend-v2 && npm install && npm run dev
-cd ../frontend-v3 && npm install && npm run dev
 ```
 
 Generate the first local API key from the UI at `http://localhost:5176`.
 
-### UI v3 parity candidate
+### Canonical UI
 
 RepoMemory is mounted directly by `patchhive-backend` at
-`/api/products/repo-memory`. Its staged Lovable-derived v3 frontend lives in
-`frontend-v3/`. It retains ingest, memory search and curation, consumer context
+`/api/products/repo-memory`. Its Lovable-derived v3 frontend lives in
+`frontend/`. It retains ingest, memory search and curation, consumer context
 preview, history and run diffs, prompt-pack handoff, FailGuard review and
 promotion, diagnostics, saved views, progressive lists, and suite-wide
-light/dark persistence. Keep v1/v2 until live acceptance is complete.
+light/dark persistence. It passed final parity acceptance on 2026-07-14; the
+v1 and v2 frontends have been removed.
 
 ## Configuration
 
@@ -509,7 +506,7 @@ cargo build --release
 - **No AI provider required**: The MVP loop uses GitHub data plus deterministic extraction heuristics (classification of review sentences, tokenization of issue bodies, path bucketing, frequency counting, confidence scoring).
 - **Auth**: Optional API-key auth with service-token support for HiveCore.
 - **Database**: SQLite via `patchhive_product_core::sqlite` pooled connections.
-- **Frontend**: Uses `@patchhivehq/ui` and `@patchhivehq/product-shell`. The v2 prototype lives in `frontend-v2/` while the suite UI direction is being settled.
+- **Frontend**: Uses `@patchhivehq/ui-v3` and `@patchhivehq/product-shell`; the canonical UI lives in `frontend/`.
 
 ## Standalone Repository
 

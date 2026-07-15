@@ -84,7 +84,7 @@ typography scale, spacing system, or theme implementation.
 | FlakeSting | `products/flake-sting/frontend` | Promoted after live scan, detail, sampled evidence, trend, history, checks, and sources acceptance; v1/v2 removed |
 | ReviewBee | `products/review-bee/frontend` | Promoted after live unified action, real history, checks, sources, Markdown preview, and safety acceptance; v1/v2 removed |
 | TrustGate | `products/trust-gate/frontend` | Promoted after pasted and live PR review, policy, history/detail, diagnostics, PAT publishing, responsive layout, and light/dark acceptance; v1/v2 removed |
-| RepoMemory | `products/repo-memory/frontend-v3` | Staged after in-process integration; v1/v2 remain until ingest, memory curation, context preview, run diff, prompt-pack, FailGuard, history, checks, and sources acceptance |
+| RepoMemory | `products/repo-memory/frontend` | Promoted after ingest, memory curation, context preview, run diff, prompt-pack, FailGuard, history, checks, sources, responsive layout, and light/dark acceptance; v1/v2 removed |
 | Other specialist products | not created | Wait until their product engine is integrated in-process |
 | HiveCore | not applicable | Intentionally separate |
 

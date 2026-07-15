@@ -18,33 +18,12 @@ services:
 
   frontend:
     image: "${PATCHHIVE_REPO_MEMORY_FRONTEND_IMAGE:-ghcr.io/patchhive/repomemory-frontend}:${PATCHHIVE_IMAGE_TAG:-main}"
-    build: ./frontend
+    build:
+      context: ../..
+      dockerfile: products/repo-memory/frontend/Dockerfile
     pull_policy: "${PATCHHIVE_IMAGE_PULL_POLICY:-missing}"
     ports:
       - "5176:8080"
-    depends_on:
-      - backend
-    restart: unless-stopped
-
-  frontend-v2:
-    image: "${PATCHHIVE_REPO_MEMORY_FRONTEND_V2_IMAGE:-ghcr.io/patchhive/repomemory-frontend-v2}:${PATCHHIVE_IMAGE_TAG:-main}"
-    build:
-      context: ../..
-      dockerfile: products/repo-memory/frontend-v2/Dockerfile
-    pull_policy: "${PATCHHIVE_IMAGE_PULL_POLICY:-missing}"
-    ports:
-      - "5194:8080"
-    depends_on:
-      - backend
-    restart: unless-stopped
-
-  frontend-v3:
-    build:
-      context: ../..
-      dockerfile: products/repo-memory/frontend-v3/Dockerfile
-    pull_policy: never
-    ports:
-      - "5307:8080"
     depends_on:
       - backend
     restart: unless-stopped

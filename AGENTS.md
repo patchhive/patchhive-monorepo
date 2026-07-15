@@ -209,10 +209,9 @@ Rules:
 - TrustGate passed its final parity audit on 2026-07-12; its canonical v3 UI
   lives in `products/trust-gate/frontend/`, and its v1/v2 trees have been
   removed.
-- RepoMemory is integrated in-process and its parity candidate lives in
-  `products/repo-memory/frontend-v3/`. Keep `frontend/` and `frontend-v2/`
-  until ingest, curation, context preview, run diff, prompt-pack, FailGuard,
-  history, and diagnostics pass final acceptance.
+- RepoMemory passed its final parity audit on 2026-07-14; its canonical v3 UI
+  lives in `products/repo-memory/frontend/`, and its v1/v2 trees have been
+  removed.
 - Prefer finishing and validating v3 for the current integrated product set before moving another product engine into the unified backend.
 - HiveCore is intentionally outside the specialist-product v3 migration and keeps its control-plane UI.
 - `prototypes/vuln-triage-calm-mockup.html` is reference material only; it is not the v3 source of truth.
