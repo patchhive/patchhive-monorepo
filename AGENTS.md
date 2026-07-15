@@ -184,7 +184,8 @@ Location: `packages/ui-v3/`
 
 UI v3 is the next specialist-product interface. Its canonical visual source is
 `unified-ui-revamp-main/`, the Lovable project. MergeKeeper, ReleaseSentry,
-DepTriage, VulnTriage, FlakeSting, ReviewBee, TrustGate, and RepoMemory have v3 frontends because their engines
+DepTriage, VulnTriage, FlakeSting, ReviewBee, TrustGate, RepoMemory, and
+SignalHive have v3 frontends because their engines
 are mounted in-process by the unified backend. Do not start another product's
 v3 frontend until its unified-backend engine reaches `integrated`.
 
@@ -212,6 +213,11 @@ Rules:
 - RepoMemory passed its final parity audit on 2026-07-14; its canonical v3 UI
   lives in `products/repo-memory/frontend/`, and its v1/v2 trees have been
   removed.
+- SignalHive is integrated in-process and its parity candidate lives in
+  `products/signal-hive/frontend-v3/`. Keep `frontend/` and `frontend-v2/`
+  until discovery, presets, schedules, repository controls, trend/timeline,
+  reports, history, diagnostics, responsive layout, and light/dark behavior
+  pass final acceptance.
 - Prefer finishing and validating v3 for the current integrated product set before moving another product engine into the unified backend.
 - HiveCore is intentionally outside the specialist-product v3 migration and keeps its control-plane UI.
 - `prototypes/vuln-triage-calm-mockup.html` is reference material only; it is not the v3 source of truth.

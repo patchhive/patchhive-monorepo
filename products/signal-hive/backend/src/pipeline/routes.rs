@@ -9,6 +9,7 @@ use axum::{
 use patchhive_product_core::contract;
 use serde_json::json;
 
+use crate::models::{OverviewCounts, OverviewPayload};
 use crate::state::AppState;
 
 use super::scanning::{enrich_scan_record, run_scan_record};
@@ -52,6 +53,7 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
             .credential_requirements(["github:repo:read", "github:issues:read", "github:code:read"]),
         ],
         vec![
+            contract::link("overview", "Overview", "/overview"),
             contract::link("history", "History", "/history"),
             contract::link("presets", "Presets", "/presets"),
             contract::link("schedules", "Schedules", "/schedules"),
@@ -64,6 +66,22 @@ pub async fn runs() -> Json<contract::ProductRunsResponse> {
         "signal-hive",
         crate::db::list_scans().unwrap_or_default(),
     ))
+}
+
+pub async fn overview() -> Json<OverviewPayload> {
+    let scans = crate::db::list_scans().unwrap_or_default();
+    let counts = OverviewCounts {
+        scans: scans.len() as u32,
+        repositories: scans.iter().map(|scan| scan.total_repos).sum(),
+        signals: scans.iter().map(|scan| scan.total_signals).sum(),
+        warnings: scans.iter().map(|scan| scan.warning_count).sum(),
+    };
+    Json(OverviewPayload {
+        product: "SignalHive by PatchHive".into(),
+        tagline: "Discover maintenance pressure before it becomes maintenance debt.".into(),
+        counts,
+        recent_scans: scans.into_iter().take(6).collect(),
+    })
 }
 
 pub async fn smoke_check() -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)>

@@ -85,6 +85,7 @@ pub fn router() -> Router {
         .route("/capabilities", get(pipeline::capabilities))
         .route("/runs", get(pipeline::runs))
         .route("/runs/:id", get(pipeline::history_detail))
+        .route("/overview", get(pipeline::overview))
         .route("/smoke", post(pipeline::smoke_check))
         .route("/presets", get(scan_presets).post(save_scan_preset))
         .route("/presets/:name", delete(delete_scan_preset))

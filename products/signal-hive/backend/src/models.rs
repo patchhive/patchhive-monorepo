@@ -174,6 +174,22 @@ pub struct ScanHistoryItem {
     pub schedule_name: Option<String>,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct OverviewCounts {
+    pub scans: u32,
+    pub repositories: u32,
+    pub signals: u32,
+    pub warnings: u32,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct OverviewPayload {
+    pub product: String,
+    pub tagline: String,
+    pub counts: OverviewCounts,
+    pub recent_scans: Vec<ScanHistoryItem>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScanPreset {
     pub name: String,

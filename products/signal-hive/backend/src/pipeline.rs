@@ -8,7 +8,7 @@ mod utils;
 
 // Re-export route handlers for main.rs
 pub use routes::{
-    capabilities, history, history_detail, report, runs, scan, smoke_check, timeline,
+    capabilities, history, history_detail, overview, report, runs, scan, smoke_check, timeline,
 };
 
 // Re-export for schedule/scheduler endpoints in main.rs

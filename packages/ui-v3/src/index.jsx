@@ -93,7 +93,7 @@ export function ProductHeader({
           <div className="h-10 w-10 rounded-xl grid place-items-center text-white" style={{ backgroundImage: "linear-gradient(135deg, var(--accent-2), var(--accent-3))", boxShadow: "var(--accent-glow)" }}>
             {Icon ? <Icon size={18} /> : null}
           </div>
-          <div className="leading-tight">
+          <div className="hidden leading-tight sm:block">
             <div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>PatchHive · {productName}</div>
             <div className={`font-display text-[16px] font-semibold tracking-tight ${V3_TEXT.strong}`}>
               {productName} <span className={`${V3_TEXT.dim} hidden font-normal 2xl:inline`}>— {subtitle}</span>
@@ -181,5 +181,5 @@ export function MetricCard({ label, value, footerLeft, footerRight, tone = "from
   );
 }
 
-export { countLabel, IntegratedProductApp, ProductLoginScreen } from "./integrated-product.jsx";
+export { countLabel, IntegratedProductApp, ProductLoginScreen, readJson } from "./integrated-product.jsx";
 export { ActivityTimeline, CopyMarkdownButton, DashboardControls, GitHubPermissionGuidance, GuidanceNotice, HistoryDashboard, ProgressiveList, ScanWarnings, StartupCheckList, useSavedDashboardViews } from "./workspace.jsx";
