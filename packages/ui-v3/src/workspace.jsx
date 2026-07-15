@@ -204,6 +204,8 @@ function startupCheckTitle(check) {
   if (code.includes("github") || message.includes("github token") || message.includes("github access") || message.includes("github accepted")) return "GitHub access";
   if (message.includes("approval policy")) return "Approval policy";
   if (message.includes("read-only") || message.includes("read only") || message.includes("does not merge") || message.includes("does not publish")) return "Safety boundary";
+  if (message.includes("does not require a live ai provider") || message.includes("deterministic extraction")) return "Extraction mode";
+  if (message.includes("builds durable repo memory")) return "Product mode";
   if (message.includes("reads ") || message.includes("returns a simple") || message.includes("turns ") || message.includes("combines ") || message.includes("detects ") || message.includes("ranks ") || message.includes("clusters ")) return "Product mode";
   if (message.includes("reviewbee")) return "ReviewBee";
   if (message.includes("trustgate")) return "TrustGate";
