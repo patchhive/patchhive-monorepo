@@ -27,8 +27,8 @@ function Chip({ children, tone = "neutral" }) {
   return <span className={`inline-flex items-center justify-center rounded-full border px-2.5 py-1 text-[10px] leading-none uppercase tracking-wider ${CHIP_TONES[tone]}`}>{children}</span>;
 }
 
-function Fact({ label, value }) {
-  return <div className="surface-inset rounded-xl p-3"><div className={`text-[9px] uppercase tracking-[0.18em] ${V3_TEXT.mute}`}>{label}</div><div className={`mt-1 font-display text-[18px] font-semibold tabular-nums ${V3_TEXT.strong}`}>{value ?? 0}</div></div>;
+function Fact({ detail, label, value }) {
+  return <div className="surface-inset rounded-xl p-3"><div className={`text-[9px] uppercase tracking-[0.18em] ${V3_TEXT.mute}`}>{label}</div><div className={`mt-1 font-display text-[18px] font-semibold tabular-nums ${V3_TEXT.strong}`}>{value ?? 0}</div>{detail ? <div className={`mt-1 text-[9px] ${V3_TEXT.mute}`}>{detail}</div> : null}</div>;
 }
 
 function toList(value) {
@@ -85,6 +85,12 @@ function markerCount(repo) {
   return Number(repo.todo_count || 0) + Number(repo.fixme_count || 0);
 }
 
+function markerEvidence(repo) {
+  const availableFeeds = Number(Boolean(repo.todo_available)) + Number(Boolean(repo.fixme_available));
+  if (!availableFeeds) return "marker search unavailable";
+  return `${markerCount(repo)} observed markers${availableFeeds < 2 ? " · partial coverage" : ""}`;
+}
+
 function duplicateCount(repo) {
   return repo.duplicate_candidates?.length || 0;
 }
@@ -131,7 +137,7 @@ function buildScanMarkdown(scan) {
   ];
   if (scan.repos?.length) {
     lines.push("", "## Ranked repositories", "");
-    scan.repos.forEach((repo) => lines.push(`- **${repo.full_name}** — ${Math.round(repo.priority_score || 0)}/100 · ${repo.stale_issues || 0} stale · ${duplicateCount(repo)} duplicate candidates · ${markerCount(repo)} markers`));
+    scan.repos.forEach((repo) => lines.push(`- **${repo.full_name}** — ${Math.round(repo.priority_score || 0)}/100 · ${repo.stale_issues || 0} stale · ${duplicateCount(repo)} duplicate candidates · ${markerEvidence(repo)}`));
   }
   if (scan.warnings?.length) {
     lines.push("", "## Scan warnings", "", ...scan.warnings.map((warning) => `- ${warning}`));
@@ -187,6 +193,7 @@ function WorkspaceDetails({ fetcher, health, onError, result }) {
     markers: current.markers + markerCount(repo),
     examples: current.examples + (repo.issue_examples?.length || 0),
   }), { stale: 0, duplicates: 0, recurring: 0, markers: 0, examples: 0 });
+  const markerCoverage = repos.filter((repo) => repo.todo_available || repo.fixme_available).length;
   const trend = result.trend;
   const events = (timeline?.points || []).map((point) => ({
     id: point.id,
@@ -212,7 +219,7 @@ function WorkspaceDetails({ fetcher, health, onError, result }) {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div><div className={`flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}><Radar size={12} /> Repository scan evidence</div><h2 className={`mt-2 font-display text-[27px] font-semibold ${V3_TEXT.strong}`}>{scanScope(result)}</h2><p className={`mt-2 max-w-4xl text-[13px] leading-relaxed ${V3_TEXT.body}`}>SignalHive found {result.summary?.total_signals || 0} maintenance signals across {result.summary?.total_repos || 0} repositories. The queue remains reconnaissance evidence, not authorization to modify any repository.</p></div><div className="flex flex-wrap gap-2"><CopyMarkdownButton content={report || buildScanMarkdown(result)} label="Copy report Markdown" onError={() => onError("Could not copy the SignalHive report.")} /><button className={`surface-inset h-9 rounded-full px-3 text-[11px] ${V3_TEXT.body}`} onClick={downloadReport} type="button">Download report</button><button className={`surface-inset h-9 rounded-full px-3 text-[11px] ${V3_TEXT.body}`} onClick={() => downloadDashboardSnapshot(result, timeline, scanScope(result))} type="button">Export snapshot</button></div></div>
       <div className="mt-5 flex flex-wrap gap-2"><Chip>{String(result.id).slice(0, 8)}</Chip><Chip tone="ok">read only</Chip><Chip tone={result.warnings?.length ? "warn" : "ok"}>{result.warnings?.length ? `${result.warnings.length} warnings` : "complete evidence"}</Chip><Chip>{triggerLabel(result.trigger_type)}</Chip>{result.schedule_name ? <Chip>{result.schedule_name}</Chip> : null}</div>
     </section>
-    <section className="surface p-5 sm:p-6"><div className={`flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}><Workflow size={12} /> Complete scan metrics</div><div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5"><Fact label="Repositories" value={repos.length} /><Fact label="Signals" value={result.summary?.total_signals} /><Fact label="Stale issues" value={totals.stale} /><Fact label="Duplicate pairs" value={totals.duplicates} /><Fact label="Recurring clusters" value={totals.recurring} /><Fact label="TODO / FIXME" value={totals.markers} /><Fact label="Issue examples" value={totals.examples} /><Fact label="Warnings" value={result.warnings?.length || 0} /><Fact label="Min stars" value={result.params?.min_stars} /><Fact label="Stale window" value={`${result.params?.stale_days || 0}d`} /></div></section>
+    <section className="surface p-5 sm:p-6"><div className={`flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}><Workflow size={12} /> Complete scan metrics</div><div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5"><Fact label="Repositories" value={repos.length} /><Fact label="Signals" value={result.summary?.total_signals} /><Fact label="Stale issues" value={totals.stale} /><Fact label="Duplicate pairs" value={totals.duplicates} /><Fact label="Recurring clusters" value={totals.recurring} /><Fact detail={`${markerCoverage}/${repos.length} repos searched`} label="TODO / FIXME observed" value={totals.markers} /><Fact label="Issue examples" value={totals.examples} /><Fact label="Warnings" value={result.warnings?.length || 0} /><Fact label="Min stars" value={result.params?.min_stars} /><Fact label="Stale window" value={`${result.params?.stale_days || 0}d`} /></div></section>
     {trend ? <section className="surface p-5 sm:p-6"><div className={`flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}><TrendingUp size={12} /> Change since comparable scan</div><p className={`mt-2 text-[12px] ${V3_TEXT.mute}`}>Compared with {new Date(trend.compared_to_created_at).toLocaleString()}.</p><div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7"><Fact label="Signal delta" value={trend.total_signals_delta} /><Fact label="Repo delta" value={trend.total_repos_delta} /><Fact label="New repos" value={trend.new_repos} /><Fact label="Dropped" value={trend.dropped_repos} /><Fact label="Rising" value={trend.rising_repos} /><Fact label="Improving" value={trend.improving_repos} /><Fact label="Steady" value={trend.steady_repos} /></div></section> : null}
     {events.length ? <ActivityTimeline caption="Comparable scans" eventTypes={["scan", "schedule"]} events={events} /> : null}
     <ScanWarnings warnings={result.warnings || []} />

@@ -11,6 +11,12 @@ function markerCount(repo) {
   return Number(repo.todo_count || 0) + Number(repo.fixme_count || 0);
 }
 
+function markerEvidence(repo) {
+  const availableFeeds = Number(Boolean(repo.todo_available)) + Number(Boolean(repo.fixme_available));
+  if (!availableFeeds) return "unavailable";
+  return `${markerCount(repo)} observed${availableFeeds < 2 ? " (partial)" : ""}`;
+}
+
 function safeHttpUrl(value) {
   try {
     const url = new URL(String(value || ""));
@@ -29,7 +35,7 @@ function repositoryRows(repositories) {
       <td>${Number(repo.stale_issues || 0)}</td>
       <td>${repo.duplicate_candidates?.length || 0}</td>
       <td>${repo.recurring_bug_clusters?.length || 0}</td>
-      <td>${markerCount(repo)}</td>
+      <td>${markerEvidence(repo)}</td>
       <td>${escapeHtml(repo.summary)}</td>
     </tr>`).join("");
 }
