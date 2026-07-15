@@ -332,7 +332,9 @@ pub fn build_memory_run(
                 detail: format!(
                     "Closed bug reports repeatedly mention {term}. RepoMemory is treating that as a repeated failure pattern worth checking before new patches move forward."
                 ),
-                prompt_line: format!("Re-check {term}-adjacent behavior and edge cases before finalizing a patch."),
+                prompt_line: format!(
+                    "Verify behavior and edge cases related to {term} before finalizing a patch."
+                ),
                 frequency: bucket.frequency,
                 tags: vec!["bugs", "issues", "failure-pattern"],
                 evidence: bucket.evidence,

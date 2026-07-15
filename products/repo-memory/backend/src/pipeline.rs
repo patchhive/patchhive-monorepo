@@ -331,10 +331,15 @@ mod tests {
         )
         .expect("memory run should build");
 
-        assert!(run
+        let failure = run
             .entries
             .iter()
-            .any(|entry| { entry.kind == "failure_pattern" && entry.title.contains("sandbox") }));
+            .find(|entry| entry.kind == "failure_pattern" && entry.title.contains("sandbox"))
+            .expect("repeated sandbox issues should create a failure memory");
+        assert_eq!(
+            failure.prompt_line,
+            "Verify behavior and edge cases related to sandbox before finalizing a patch."
+        );
     }
 
     #[test]
