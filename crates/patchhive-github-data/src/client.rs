@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Context, Result};
 use reqwest::{
     header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, LINK, USER_AGENT},
-    Client,
+    Client, Response, StatusCode,
 };
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
@@ -15,6 +15,60 @@ use crate::models::{
 use crate::{response_preview, GitHubApiError};
 
 pub const GH_API: &str = "https://api.github.com";
+const TRANSIENT_RETRY_DELAYS_MS: [u64; 2] = [300, 900];
+
+fn is_transient_github_status(status: StatusCode) -> bool {
+    matches!(
+        status,
+        StatusCode::BAD_GATEWAY | StatusCode::SERVICE_UNAVAILABLE | StatusCode::GATEWAY_TIMEOUT
+    )
+}
+
+async fn send_get_with_retry(
+    client: &Client,
+    user_agent: &str,
+    path: &str,
+    query: &[(&str, String)],
+    token: Option<&str>,
+) -> Result<Response> {
+    let mut retry_index = 0usize;
+
+    loop {
+        let result = client
+            .get(format!("{GH_API}{path}"))
+            .headers(request_headers(user_agent, token)?)
+            .query(query)
+            .send()
+            .await;
+
+        match result {
+            Ok(response)
+                if is_transient_github_status(response.status())
+                    && retry_index < TRANSIENT_RETRY_DELAYS_MS.len() =>
+            {
+                tokio::time::sleep(std::time::Duration::from_millis(
+                    TRANSIENT_RETRY_DELAYS_MS[retry_index],
+                ))
+                .await;
+                retry_index += 1;
+            }
+            Ok(response) => return Ok(response),
+            Err(error)
+                if (error.is_connect() || error.is_timeout())
+                    && retry_index < TRANSIENT_RETRY_DELAYS_MS.len() =>
+            {
+                tokio::time::sleep(std::time::Duration::from_millis(
+                    TRANSIENT_RETRY_DELAYS_MS[retry_index],
+                ))
+                .await;
+                retry_index += 1;
+            }
+            Err(error) => {
+                return Err(error).with_context(|| format!("GitHub request failed for {path}"));
+            }
+        }
+    }
+}
 
 pub fn github_token() -> Option<String> {
     std::env::var("BOT_GITHUB_TOKEN")
@@ -67,13 +121,7 @@ pub async fn get_json<T: DeserializeOwned>(
     query: &[(&str, String)],
     token: Option<&str>,
 ) -> Result<T> {
-    let response = client
-        .get(format!("{GH_API}{path}"))
-        .headers(request_headers(user_agent, token)?)
-        .query(query)
-        .send()
-        .await
-        .with_context(|| format!("GitHub request failed for {path}"))?;
+    let response = send_get_with_retry(client, user_agent, path, query, token).await?;
 
     let status = response.status();
     if !status.is_success() {
@@ -159,13 +207,7 @@ pub async fn get_cursor_paginated_json<T: DeserializeOwned>(
             page_query.push(("after", cursor.to_string()));
         }
 
-        let response = client
-            .get(format!("{GH_API}{path}"))
-            .headers(request_headers(user_agent, token)?)
-            .query(&page_query)
-            .send()
-            .await
-            .with_context(|| format!("GitHub request failed for {path}"))?;
+        let response = send_get_with_retry(client, user_agent, path, &page_query, token).await?;
 
         let status = response.status();
         let link_header = response
@@ -217,7 +259,8 @@ fn next_after_cursor(link_header: &str) -> Option<String> {
 
 #[cfg(test)]
 mod pagination_tests {
-    use super::next_after_cursor;
+    use super::{is_transient_github_status, next_after_cursor};
+    use reqwest::StatusCode;
 
     #[test]
     fn extracts_next_after_cursor_from_link_header() {
@@ -231,6 +274,17 @@ mod pagination_tests {
         let header = r#"<https://api.github.com/repos/o/r/dependabot/alerts?before=cursor-456&per_page=100>; rel="prev""#;
 
         assert_eq!(next_after_cursor(header), None);
+    }
+
+    #[test]
+    fn retries_only_transient_gateway_failures() {
+        assert!(is_transient_github_status(StatusCode::BAD_GATEWAY));
+        assert!(is_transient_github_status(StatusCode::SERVICE_UNAVAILABLE));
+        assert!(is_transient_github_status(StatusCode::GATEWAY_TIMEOUT));
+        assert!(!is_transient_github_status(StatusCode::FORBIDDEN));
+        assert!(!is_transient_github_status(
+            StatusCode::INTERNAL_SERVER_ERROR
+        ));
     }
 }
 

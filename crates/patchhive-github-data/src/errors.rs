@@ -46,7 +46,15 @@ impl GitHubApiError {
         status: StatusCode,
         body: &str,
     ) -> Self {
-        let message = github_message_from_body(body);
+        let message = if status == StatusCode::BAD_GATEWAY
+            || status == StatusCode::SERVICE_UNAVAILABLE
+            || status == StatusCode::GATEWAY_TIMEOUT
+        {
+            "GitHub is temporarily unavailable after retrying the request. Try the scan again shortly."
+                .to_string()
+        } else {
+            github_message_from_body(body)
+        };
         let kind = classify_github_api_error(status, &message, body);
         Self {
             method: method.into(),
@@ -215,5 +223,19 @@ mod tests {
         assert_eq!(err.kind, GitHubApiErrorKind::InvalidToken);
         assert_eq!(err.message, "Bad credentials");
         assert!(github_error_is_token_invalid(&err.to_string()));
+    }
+
+    #[test]
+    fn hides_html_for_transient_github_outages() {
+        let err = GitHubApiError::from_response(
+            "GET",
+            "/search/repositories",
+            StatusCode::SERVICE_UNAVAILABLE,
+            "<!DOCTYPE html><html><body>temporary outage</body></html>",
+        );
+
+        assert_eq!(err.kind, GitHubApiErrorKind::HttpStatus);
+        assert!(err.to_string().contains("temporarily unavailable"));
+        assert!(!err.to_string().contains("DOCTYPE"));
     }
 }
