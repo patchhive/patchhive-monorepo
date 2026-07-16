@@ -333,8 +333,10 @@ const baseConfig = {
   chips: (result, health) => [scanScope(result), `${result?.params?.stale_days || 45} day stale window`, targetSelectionMode(result) === "direct" ? "direct target" : `${result?.params?.max_repos || 8} repo cap`, health.github_ready ? "GitHub verified" : "coverage pending"],
   targetSubtitle: (result) => result ? `${triggerLabel(result.trigger_type)} · ${countLabel(result.summary?.total_repos, "repository")}` : "No scan loaded",
   historyItems: (payload) => payload.scans || [],
-  historyTitle: (entry) => entry.top_repo || scanScope({ params: { search_query: entry.search_query, topics: entry.topics, languages: entry.languages } }),
-  historySummary: (entry) => `${countLabel(entry.total_signals, "maintenance signal")} across ${countLabel(entry.total_repos, "repository")}${entry.warning_count ? ` with ${countLabel(entry.warning_count, "coverage warning")}` : ""}.`,
+  historyTitle: (entry) => targetSelectionMode(entry) === "direct"
+    ? storedTarget(entry.search_query) || entry.top_repo
+    : scanScope({ params: { search_query: entry.search_query, topics: entry.topics, languages: entry.languages } }),
+  historySummary: (entry) => `${countLabel(entry.total_signals, "maintenance signal")} across ${countLabel(entry.total_repos, "repository")}${entry.warning_count ? ` with ${countLabel(entry.warning_count, "coverage warning")}` : ""}.${targetSelectionMode(entry) === "discovery" && entry.top_repo ? ` Top-ranked repository: ${entry.top_repo}.` : ""}`,
   historyMeta: (entry) => `${triggerLabel(entry.trigger_type)}${entry.schedule_name ? ` · ${entry.schedule_name}` : ""} · ${targetSelectionMode(entry) === "direct" ? "direct target" : `${entry.max_repos || 0} repo cap`}`,
   historyIdentity: (entry) => `scan ${String(entry.id).slice(0, 8)}`,
   historySearchText: (entry) => `${entry.top_repo} ${entry.search_query || ""} ${(entry.topics || []).join(" ")} ${(entry.languages || []).join(" ")} ${entry.trigger_type} ${entry.schedule_name || ""}`,
