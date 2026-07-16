@@ -1,4 +1,4 @@
-@import "tailwindcss" source(none);
+@import "tailwindcss";
 @import "@patchhivehq/ui-v3/styles.css";
 @source "./";
 @source "../../../../packages/ui-v3/src";
