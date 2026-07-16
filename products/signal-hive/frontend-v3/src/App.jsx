@@ -264,12 +264,12 @@ const baseConfig = {
   fields: [
     { key: "target_repo", label: "Target repository", placeholder: "owner/repository", primary: true, help: "Optional. When present, SignalHive scans only this repository." },
     { key: "search_query", label: "GitHub discovery query", placeholder: "archived:false good first issues", help: "Used only when Target repository is blank." },
-    { key: "topics", label: "Topics", placeholder: "developer-tools, maintenance", help: "Comma- or newline-separated GitHub topics." },
-    { key: "languages", label: "Languages", placeholder: "rust, typescript, python", help: "Comma- or newline-separated languages." },
-    { key: "min_stars", label: "Minimum stars", type: "number", min: 1, max: 1000000 },
-    { key: "max_repos", label: "Repository limit", type: "number", min: 1, max: 25 },
-    { key: "issues_per_repo", label: "Issues per repository", type: "number", min: 5, max: 100 },
-    { key: "stale_days", label: "Stale after days", type: "number", min: 1, max: 730 },
+    { key: "topics", label: "Topics", placeholder: "developer-tools, maintenance", help: "Discovery only. Enter comma- or newline-separated GitHub topics." },
+    { key: "languages", label: "Languages", placeholder: "rust, typescript, python", help: "Discovery only. Enter comma- or newline-separated languages." },
+    { key: "min_stars", label: "Minimum stars", type: "number", min: 1, max: 1000000, help: "Discovery only. Repositories below this star count are excluded." },
+    { key: "max_repos", label: "Repository limit", type: "number", min: 1, max: 25, help: "Discovery only. Caps the number of repositories returned." },
+    { key: "issues_per_repo", label: "Issues per repository", type: "number", min: 5, max: 100, help: "Applies to direct and discovery scans." },
+    { key: "stale_days", label: "Stale after days", type: "number", min: 1, max: 730, help: "Applies to direct and discovery scans." },
   ],
   validate: (form) => {
     if (form.target_repo?.trim() && !/^[^/\s]+\/[^/\s]+$/.test(form.target_repo.trim())) return "Target repository must use owner/repository format.";
