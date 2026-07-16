@@ -150,7 +150,6 @@ function buildScanMarkdown(scan) {
 
 function repoEvidence(repo) {
   return [
-    ...(repo.signals || []),
     ...(repo.warnings || []).map((warning) => `Coverage warning: ${warning}`),
     ...(repo.score_breakdown || []).map((factor) => `${factor.label}: ${factor.detail} (${factor.impact >= 0 ? "+" : ""}${factor.impact})`),
     ...(repo.issue_examples || []).map((issue) => `Issue #${issue.number}: ${issue.title} · ${issue.age_days} days old · ${issue.comments} comments`),
@@ -283,16 +282,14 @@ const baseConfig = {
   targetLabel: (result, form) => result ? scanScope(result) : scanScope({ params: serialize(form) }),
   items: (result) => result?.repos || [],
   mapItem: (repo) => {
-    const signalTags = (repo.signals || []).filter((signal) => signal !== repo.summary).slice(0, 5);
-    const tagSet = new Set(signalTags);
     return {
       id: repo.full_name,
       title: repo.full_name,
       meta: [repo.language || "unknown language", countLabel(repo.stars, "star"), `${countLabel(repo.sampled_issues, "issue")} sampled`].join(" · "),
       summary: repo.summary,
-      evidence: repoEvidence(repo).filter((entry) => entry !== repo.summary && !tagSet.has(entry)),
+      evidence: repoEvidence(repo),
       links: repoLinks(repo),
-      tags: [...signalTags, ...(repo.warnings?.length ? [countLabel(repo.warnings.length, "coverage warning")] : [])],
+      tags: repo.warnings?.length ? [countLabel(repo.warnings.length, "coverage warning")] : [],
       facts: [
         { label: "Priority score", value: Math.round(repo.priority_score || 0) },
         { label: "Trend", value: trendLabel(repo) },

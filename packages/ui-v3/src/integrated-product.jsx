@@ -52,7 +52,11 @@ function timeAgo(value) {
   return `${Math.floor(hours / 24)}d`;
 }
 
-function countLabel(value, noun, plural = `${noun}s`) {
+function defaultPlural(noun) {
+  return /[^aeiou]y$/i.test(noun) ? `${noun.slice(0, -1)}ies` : `${noun}s`;
+}
+
+function countLabel(value, noun, plural = defaultPlural(noun)) {
   const count = Number(value || 0);
   return `${count} ${count === 1 ? noun : plural}`;
 }

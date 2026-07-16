@@ -84,6 +84,10 @@ pub fn round1(value: f64) -> f64 {
     (value * 10.0).round() / 10.0
 }
 
+pub fn count_label(count: u32, singular: &str, plural: &str) -> String {
+    format!("{count} {}", if count == 1 { singular } else { plural })
+}
+
 pub fn format_scope_text(params: &ScanParams) -> String {
     if let Some(repository) = params.direct_repository() {
         return format!("direct repository `{repository}`");
@@ -241,7 +245,7 @@ pub fn recurring_issue_count(clusters: &[crate::models::RecurringBugCluster]) ->
 
 #[cfg(test)]
 mod tests {
-    use super::{clamp_params, format_scope_text, validate_scan_scope};
+    use super::{clamp_params, count_label, format_scope_text, validate_scan_scope};
     use crate::models::ScanParams;
 
     #[test]
@@ -277,5 +281,21 @@ mod tests {
             ..ScanParams::default()
         };
         assert!(validate_scan_scope(&malformed, false).is_err());
+    }
+
+    #[test]
+    fn count_labels_use_singular_only_for_one() {
+        assert_eq!(
+            count_label(0, "sampled issue", "sampled issues"),
+            "0 sampled issues"
+        );
+        assert_eq!(
+            count_label(1, "sampled issue", "sampled issues"),
+            "1 sampled issue"
+        );
+        assert_eq!(
+            count_label(2, "sampled issue", "sampled issues"),
+            "2 sampled issues"
+        );
     }
 }

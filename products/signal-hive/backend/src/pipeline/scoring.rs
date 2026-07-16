@@ -7,8 +7,8 @@ use crate::models::{
 };
 
 use super::utils::{
-    is_bug_issue, issue_age_days, recurring_bug_tokens, round1, title_tokens, to_issue_sample,
-    tokenize_title,
+    count_label, is_bug_issue, issue_age_days, recurring_bug_tokens, round1, title_tokens,
+    to_issue_sample, tokenize_title,
 };
 
 // ---- Internal types ----
@@ -108,8 +108,18 @@ pub fn priority_score(
             label: "Stale backlog".into(),
             impact: round1(stale_backlog_impact),
             detail: format!(
-                "{} of {} sampled issues are stale",
-                issue_analysis.stale_issues, issue_analysis.sampled_issues
+                "{} of {} {} stale",
+                issue_analysis.stale_issues,
+                count_label(
+                    issue_analysis.sampled_issues,
+                    "sampled issue",
+                    "sampled issues"
+                ),
+                if issue_analysis.stale_issues == 1 {
+                    "is"
+                } else {
+                    "are"
+                }
             ),
         });
     }
@@ -121,8 +131,17 @@ pub fn priority_score(
             label: "Stale bug pressure".into(),
             impact: round1(stale_bug_impact),
             detail: format!(
-                "{} stale bug-like issues are still open",
-                issue_analysis.stale_bug_issues
+                "{} {} still open",
+                count_label(
+                    issue_analysis.stale_bug_issues,
+                    "stale bug-like issue",
+                    "stale bug-like issues"
+                ),
+                if issue_analysis.stale_bug_issues == 1 {
+                    "is"
+                } else {
+                    "are"
+                }
             ),
         });
     }
@@ -135,8 +154,17 @@ pub fn priority_score(
             label: "Stalled discussions".into(),
             impact: round1(stalled_discussion_impact),
             detail: format!(
-                "{} stale issues still have active discussion",
-                issue_analysis.stale_high_comment_issues
+                "{} {} 3 or more comments",
+                count_label(
+                    issue_analysis.stale_high_comment_issues,
+                    "stale issue",
+                    "stale issues"
+                ),
+                if issue_analysis.stale_high_comment_issues == 1 {
+                    "has"
+                } else {
+                    "have"
+                }
             ),
         });
     }
@@ -190,8 +218,12 @@ pub fn priority_score(
             label: "Duplicate issue pressure".into(),
             impact: round1(duplicate_impact),
             detail: format!(
-                "{} likely duplicate pairs; {}",
-                issue_analysis.duplicate_candidates.len(),
+                "{}; {}",
+                count_label(
+                    issue_analysis.duplicate_candidates.len() as u32,
+                    "potential duplicate pair",
+                    "potential duplicate pairs"
+                ),
                 strongest
             ),
         });
@@ -206,8 +238,17 @@ pub fn priority_score(
             label: "Triage gap".into(),
             impact: round1(unlabeled_impact),
             detail: format!(
-                "{} sampled issues have no labels",
-                issue_analysis.unlabeled_issues
+                "{} {} no labels",
+                count_label(
+                    issue_analysis.unlabeled_issues,
+                    "sampled issue",
+                    "sampled issues"
+                ),
+                if issue_analysis.unlabeled_issues == 1 {
+                    "has"
+                } else {
+                    "have"
+                }
             ),
         });
     }
@@ -276,38 +317,85 @@ pub fn summary_from_signals(input: SummarySignalInput<'_>) -> (String, Vec<Strin
 
     if let Some(cluster) = issue_analysis.recurring_bug_clusters.first() {
         signals.push(format!(
-            "Recurring bug pattern '{}' appears across {} sampled issues",
-            cluster.label, cluster.issue_count
+            "Recurring bug pattern '{}' appears across {}",
+            cluster.label,
+            count_label(cluster.issue_count, "sampled issue", "sampled issues")
         ));
     }
     if issue_analysis.stale_bug_issues > 0 {
         signals.push(format!(
-            "{} stale bug-like issues are still open",
-            issue_analysis.stale_bug_issues
+            "{} {} still open",
+            count_label(
+                issue_analysis.stale_bug_issues,
+                "stale bug-like issue",
+                "stale bug-like issues"
+            ),
+            if issue_analysis.stale_bug_issues == 1 {
+                "is"
+            } else {
+                "are"
+            }
         ));
     }
     if issue_analysis.stale_issues > 0 {
         signals.push(format!(
-            "{} of {} sampled issues look stale",
-            issue_analysis.stale_issues, issue_analysis.sampled_issues
+            "{} of {} {} stale",
+            issue_analysis.stale_issues,
+            count_label(
+                issue_analysis.sampled_issues,
+                "sampled issue",
+                "sampled issues"
+            ),
+            if issue_analysis.stale_issues == 1 {
+                "looks"
+            } else {
+                "look"
+            }
         ));
     }
     if issue_analysis.stale_high_comment_issues > 0 {
         signals.push(format!(
-            "{} stale issues still have active comment history",
-            issue_analysis.stale_high_comment_issues
+            "{} {} 3 or more comments",
+            count_label(
+                issue_analysis.stale_high_comment_issues,
+                "stale issue",
+                "stale issues"
+            ),
+            if issue_analysis.stale_high_comment_issues == 1 {
+                "has"
+            } else {
+                "have"
+            }
         ));
     }
     if !issue_analysis.duplicate_candidates.is_empty() {
         signals.push(format!(
-            "{} likely duplicate issue pairs were found",
-            issue_analysis.duplicate_candidates.len()
+            "{} {} found",
+            count_label(
+                issue_analysis.duplicate_candidates.len() as u32,
+                "potential duplicate issue pair",
+                "potential duplicate issue pairs"
+            ),
+            if issue_analysis.duplicate_candidates.len() == 1 {
+                "was"
+            } else {
+                "were"
+            }
         ));
     }
     if issue_analysis.unlabeled_issues >= 2 {
         signals.push(format!(
-            "{} sampled issues are unlabeled, which points to triage drift",
-            issue_analysis.unlabeled_issues
+            "{} {} unlabeled, which points to triage drift",
+            count_label(
+                issue_analysis.unlabeled_issues,
+                "sampled issue",
+                "sampled issues"
+            ),
+            if issue_analysis.unlabeled_issues == 1 {
+                "is"
+            } else {
+                "are"
+            }
         ));
     }
     if todo_available && fixme_available && (todo_count > 0 || fixme_count > 0) {
@@ -408,7 +496,7 @@ fn duplicate_candidates(issues: &[GitHubIssue]) -> Vec<DuplicateCandidate> {
                 similarity = similarity.max(0.78);
             }
 
-            if similarity >= 0.58 {
+            if similarity >= 0.72 {
                 pairs.push(DuplicateCandidate {
                     left_number: left.number,
                     right_number: right.number,
@@ -571,4 +659,76 @@ fn recurring_bug_clusters(issues: &[GitHubIssue]) -> Vec<RecurringBugCluster> {
     });
     clusters.truncate(3);
     clusters
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        duplicate_candidates, priority_score, summary_from_signals, IssueAnalysis,
+        SummarySignalInput,
+    };
+    use crate::models::GitHubIssue;
+
+    fn issue(number: u32, title: &str) -> GitHubIssue {
+        GitHubIssue {
+            number,
+            title: title.into(),
+            ..GitHubIssue::default()
+        }
+    }
+
+    #[test]
+    fn sibling_feature_requests_are_not_duplicate_candidates() {
+        let issues = vec![
+            issue(206, "Add an output filter for bun"),
+            issue(203, "Add an output filter for glab"),
+            issue(202, "Add an output filter for playwright"),
+        ];
+
+        assert!(duplicate_candidates(&issues).is_empty());
+    }
+
+    #[test]
+    fn strongly_overlapping_issue_titles_remain_duplicate_candidates() {
+        let issues = vec![
+            issue(41, "Crash when loading workspace configuration"),
+            issue(42, "Crash when loading workspace configuration file"),
+        ];
+
+        let candidates = duplicate_candidates(&issues);
+        assert_eq!(candidates.len(), 1);
+        assert!(candidates[0].similarity >= 0.72);
+    }
+
+    #[test]
+    fn generated_evidence_uses_singular_issue_grammar() {
+        let analysis = IssueAnalysis {
+            sampled_issues: 1,
+            stale_issues: 1,
+            unlabeled_issues: 1,
+            stale_bug_issues: 1,
+            stale_high_comment_issues: 1,
+            issue_examples: Vec::new(),
+            duplicate_candidates: Vec::new(),
+            recurring_bug_clusters: Vec::new(),
+        };
+
+        let (_, breakdown) = priority_score(100, 1, &analysis, 0, 0);
+        assert!(breakdown
+            .iter()
+            .any(|factor| factor.detail == "1 sampled issue has no labels"));
+
+        let (summary, _) = summary_from_signals(SummarySignalInput {
+            stars: 100,
+            open_issues: 1,
+            issue_analysis: &analysis,
+            todo_count: 0,
+            fixme_count: 0,
+            todo_available: true,
+            fixme_available: true,
+            repo_warnings: &[],
+        });
+        assert!(summary.contains("1 stale bug-like issue is still open"));
+        assert!(summary.contains("1 of 1 sampled issue looks stale"));
+    }
 }

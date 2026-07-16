@@ -12,8 +12,8 @@ use crate::state::AppState;
 use super::analysis::{analyze_repo_issue_draft, collect_marker_counts, finalize_repo_signal};
 use super::scoring::MarkerCounts;
 use super::utils::{
-    clamp_params, format_scope_text, marker_scan_repo_limit, marker_total, recurring_issue_count,
-    round1, validate_scan_scope,
+    clamp_params, count_label, format_scope_text, marker_scan_repo_limit, marker_total,
+    recurring_issue_count, round1, validate_scan_scope,
 };
 
 pub fn repo_trend_status(
@@ -132,10 +132,6 @@ pub fn enrich_scan_trend(record: &mut ScanRecord, previous: &ScanRecord) {
         improving_repos,
         steady_repos,
     });
-}
-
-fn count_label(count: u32, singular: &str, plural: &str) -> String {
-    format!("{count} {}", if count == 1 { singular } else { plural })
 }
 
 pub fn build_scan_report(record: &ScanRecord) -> ScanReport {
