@@ -125,10 +125,12 @@ function scanScope(scan, fallback = "discovery scope") {
 
 function buildScanMarkdown(scan) {
   if (!scan) return "";
+  const signalCount = scan.summary?.total_signals || 0;
+  const repositoryCount = scan.summary?.total_repos || 0;
   const lines = [
     `# SignalHive scan · ${scanScope(scan)}`,
     "",
-    `SignalHive found **${scan.summary?.total_signals || 0} maintenance signals** across **${scan.summary?.total_repos || 0} repositories**.`,
+    `SignalHive found **${countLabel(signalCount, "maintenance signal")}** across **${countLabel(repositoryCount, "repository")}**.`,
     "",
     `- Scan: ${scan.id}`,
     `- Trigger: ${triggerMode(scan.trigger_type)}`,
@@ -200,7 +202,7 @@ function WorkspaceDetails({ fetcher, health, onError, result }) {
     kind: point.trigger_type === "schedule" ? "schedule" : "scan",
     at: point.created_at,
     actor: point.schedule_name ? `schedule ${point.schedule_name}` : "SignalHive",
-    message: `${point.total_signals} signals across ${point.total_repos} repositories · top ${point.top_repo || "none"} at ${Math.round(point.top_priority_score || 0)}/100`,
+    message: `${countLabel(point.total_signals, "signal")} across ${countLabel(point.total_repos, "repository")} · top ${point.top_repo || "none"} at ${Math.round(point.top_priority_score || 0)}/100`,
   }));
 
   function downloadReport() {
@@ -216,7 +218,7 @@ function WorkspaceDetails({ fetcher, health, onError, result }) {
 
   return <div className="mt-8 space-y-6">
     <section className="surface p-5 sm:p-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div><div className={`flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}><Radar size={12} /> Repository scan evidence</div><h2 className={`mt-2 font-display text-[27px] font-semibold ${V3_TEXT.strong}`}>{scanScope(result)}</h2><p className={`mt-2 max-w-4xl text-[13px] leading-relaxed ${V3_TEXT.body}`}>SignalHive found {result.summary?.total_signals || 0} maintenance signals across {result.summary?.total_repos || 0} repositories. The queue remains reconnaissance evidence, not authorization to modify any repository.</p></div><div className="flex flex-wrap gap-2"><CopyMarkdownButton content={report || buildScanMarkdown(result)} label="Copy report Markdown" onError={() => onError("Could not copy the SignalHive report.")} /><button className={`surface-inset h-9 rounded-full px-3 text-[11px] ${V3_TEXT.body}`} onClick={downloadReport} type="button">Download report</button><button className={`surface-inset h-9 rounded-full px-3 text-[11px] ${V3_TEXT.body}`} onClick={() => downloadDashboardSnapshot(result, timeline, scanScope(result))} type="button">Export snapshot</button></div></div>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div><div className={`flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}><Radar size={12} /> Repository scan evidence</div><h2 className={`mt-2 font-display text-[27px] font-semibold ${V3_TEXT.strong}`}>{scanScope(result)}</h2><p className={`mt-2 max-w-4xl text-[13px] leading-relaxed ${V3_TEXT.body}`}>SignalHive found {countLabel(result.summary?.total_signals, "maintenance signal")} across {countLabel(result.summary?.total_repos, "repository")}. The queue remains reconnaissance evidence, not authorization to modify any repository.</p></div><div className="flex flex-wrap gap-2"><CopyMarkdownButton content={report || buildScanMarkdown(result)} label="Copy report Markdown" onError={() => onError("Could not copy the SignalHive report.")} /><button className={`surface-inset h-9 rounded-full px-3 text-[11px] ${V3_TEXT.body}`} onClick={downloadReport} type="button">Download report</button><button className={`surface-inset h-9 rounded-full px-3 text-[11px] ${V3_TEXT.body}`} onClick={() => downloadDashboardSnapshot(result, timeline, scanScope(result))} type="button">Export snapshot</button></div></div>
       <div className="mt-5 flex flex-wrap gap-2"><Chip>{String(result.id).slice(0, 8)}</Chip><Chip tone="ok">read only</Chip><Chip tone={result.warnings?.length ? "warn" : "ok"}>{result.warnings?.length ? `${result.warnings.length} warnings` : "complete evidence"}</Chip><Chip>{triggerLabel(result.trigger_type)}</Chip>{result.schedule_name ? <Chip>{result.schedule_name}</Chip> : null}</div>
     </section>
     <section className="surface p-5 sm:p-6"><div className={`flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}><Workflow size={12} /> Complete scan metrics</div><div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5"><Fact label="Repositories" value={repos.length} /><Fact label="Signals" value={result.summary?.total_signals} /><Fact label="Stale issues" value={totals.stale} /><Fact label="Duplicate pairs" value={totals.duplicates} /><Fact label="Recurring clusters" value={totals.recurring} /><Fact detail={`${markerCoverage}/${repos.length} repos searched`} label="TODO / FIXME observed" value={totals.markers} /><Fact label="Issue examples" value={totals.examples} /><Fact label="Warnings" value={result.warnings?.length || 0} /><Fact label="Min stars" value={result.params?.min_stars} /><Fact label="Stale window" value={`${result.params?.stale_days || 0}d`} /></div></section>
@@ -280,55 +282,63 @@ const baseConfig = {
   formFromResult: (result) => toFormParams(result?.params),
   targetLabel: (result, form) => result ? scanScope(result) : scanScope({ params: serialize(form) }),
   items: (result) => result?.repos || [],
-  mapItem: (repo) => ({
-    id: repo.full_name,
-    title: repo.full_name,
-    meta: [repo.language || "unknown language", `${repo.stars || 0} stars`, `${repo.sampled_issues || 0} issues sampled`].join(" · "),
-    summary: repo.summary,
-    evidence: repoEvidence(repo),
-    links: repoLinks(repo),
-    tags: [...(repo.signals || []).slice(0, 5), ...(repo.warnings?.length ? [`${repo.warnings.length} coverage warnings`] : [])],
-    facts: [
-      { label: "Priority score", value: Math.round(repo.priority_score || 0) },
-      { label: "Trend", value: trendLabel(repo) },
-      { label: "Stale issues", value: repo.stale_issues || 0 },
-      { label: "Unlabeled issues", value: repo.unlabeled_issues || 0 },
-      { label: "Duplicate pairs", value: duplicateCount(repo) },
-      { label: "Recurring clusters", value: recurringCount(repo) },
-      { label: "TODO / FIXME", value: `${repo.todo_available ? repo.todo_count || 0 : "unavailable"} / ${repo.fixme_available ? repo.fixme_count || 0 : "unavailable"}` },
-    ],
-    status: trendLabel(repo),
-    tone: repo.trend ? trendTone(repo.trend.status) : scoreTone(repo.priority_score),
-    score: Math.round(repo.priority_score || 0),
-    source: "GitHub repository evidence",
-    link: repo.repo_url,
-    language: repo.language || "unknown",
-    trend: trendLabel(repo),
-    stale: repo.stale_issues || 0,
-    duplicates: duplicateCount(repo),
-    markers: markerCount(repo),
-  }),
+  mapItem: (repo) => {
+    const signalTags = (repo.signals || []).filter((signal) => signal !== repo.summary).slice(0, 5);
+    const tagSet = new Set(signalTags);
+    return {
+      id: repo.full_name,
+      title: repo.full_name,
+      meta: [repo.language || "unknown language", countLabel(repo.stars, "star"), `${countLabel(repo.sampled_issues, "issue")} sampled`].join(" · "),
+      summary: repo.summary,
+      evidence: repoEvidence(repo).filter((entry) => entry !== repo.summary && !tagSet.has(entry)),
+      links: repoLinks(repo),
+      tags: [...signalTags, ...(repo.warnings?.length ? [countLabel(repo.warnings.length, "coverage warning")] : [])],
+      facts: [
+        { label: "Priority score", value: Math.round(repo.priority_score || 0) },
+        { label: "Trend", value: trendLabel(repo) },
+        { label: "Stale issues", value: repo.stale_issues || 0 },
+        { label: "Unlabeled issues", value: repo.unlabeled_issues || 0 },
+        { label: "Duplicate pairs", value: duplicateCount(repo) },
+        { label: "Recurring clusters", value: recurringCount(repo) },
+        { label: "TODO / FIXME", value: `${repo.todo_available ? repo.todo_count || 0 : "unavailable"} / ${repo.fixme_available ? repo.fixme_count || 0 : "unavailable"}` },
+      ],
+      status: trendLabel(repo),
+      tone: repo.trend ? trendTone(repo.trend.status) : scoreTone(repo.priority_score),
+      score: Math.round(repo.priority_score || 0),
+      source: "GitHub repository evidence",
+      link: repo.repo_url,
+      language: repo.language || "unknown",
+      trend: trendLabel(repo),
+      stale: repo.stale_issues || 0,
+      duplicates: duplicateCount(repo),
+      markers: markerCount(repo),
+    };
+  },
   metrics: (result, overview, health) => [
     { label: "Repositories", value: result?.summary?.total_repos ?? overview?.counts?.repositories ?? 0, footerLeft: "ranked", footerRight: `${result?.repos?.length || 0} in queue`, tone: "from-sky-600/70 to-blue-900/60" },
     { label: "Signals", value: result?.summary?.total_signals ?? overview?.counts?.signals ?? 0, footerLeft: "maintenance", footerRight: "visible pressure", tone: "from-orange-700/70 to-red-900/60" },
     { label: "Scans", value: health.scan_count || overview?.counts?.scans || 0, footerLeft: "saved", footerRight: "local history", tone: "from-slate-500/70 to-slate-800/60" },
     { label: "Warnings", value: result?.warnings?.length ?? overview?.counts?.warnings ?? 0, footerLeft: "coverage", footerRight: result?.warnings?.length ? "review" : "complete", tone: result?.warnings?.length ? "from-amber-600/70 to-yellow-800/50" : "from-emerald-700/70 to-teal-900/60" },
   ],
-  hero: (result) => ({ lead: result?.summary?.total_repos ?? 0, middle: "repositories surface", highlight: `${result?.summary?.total_signals ?? 0} signals.` }),
+  hero: (result) => {
+    const repositories = result?.summary?.total_repos ?? 0;
+    const signals = result?.summary?.total_signals ?? 0;
+    return { lead: repositories, middle: repositories === 1 ? "repository surfaces" : "repositories surface", highlight: `${countLabel(signals, "signal")}.` };
+  },
   status: (result) => {
     const count = Number(result?.summary?.total_signals || 0);
     const warnings = result?.warnings?.length || 0;
     return { label: warnings ? "partial" : count ? "pressure" : "quiet", detail: warnings ? "Some repository evidence was unavailable; warnings remain visible." : count ? "Maintenance pressure is ranked for review." : "No strong maintenance signals in this scan.", progress: `${Math.min(100, Math.max(12, count))}%`, stats: [["repos", result?.summary?.total_repos || 0], ["signals", count], ["warnings", warnings]] };
   },
   chips: (result, health) => [scanScope(result), `${result?.params?.stale_days || 45} day stale window`, targetSelectionMode(result) === "direct" ? "direct target" : `${result?.params?.max_repos || 8} repo cap`, health.github_ready ? "GitHub verified" : "coverage pending"],
-  targetSubtitle: (result) => result ? `${triggerLabel(result.trigger_type)} · ${result.summary?.total_repos || 0} repositories` : "No scan loaded",
+  targetSubtitle: (result) => result ? `${triggerLabel(result.trigger_type)} · ${countLabel(result.summary?.total_repos, "repository")}` : "No scan loaded",
   historyItems: (payload) => payload.scans || [],
   historyTitle: (entry) => entry.top_repo || scanScope({ params: { search_query: entry.search_query, topics: entry.topics, languages: entry.languages } }),
-  historySummary: (entry) => `${entry.total_signals || 0} maintenance signals across ${entry.total_repos || 0} repositories${entry.warning_count ? ` with ${entry.warning_count} coverage warnings` : ""}.`,
+  historySummary: (entry) => `${countLabel(entry.total_signals, "maintenance signal")} across ${countLabel(entry.total_repos, "repository")}${entry.warning_count ? ` with ${countLabel(entry.warning_count, "coverage warning")}` : ""}.`,
   historyMeta: (entry) => `${triggerLabel(entry.trigger_type)}${entry.schedule_name ? ` · ${entry.schedule_name}` : ""} · ${targetSelectionMode(entry) === "direct" ? "direct target" : `${entry.max_repos || 0} repo cap`}`,
   historyIdentity: (entry) => `scan ${String(entry.id).slice(0, 8)}`,
   historySearchText: (entry) => `${entry.top_repo} ${entry.search_query || ""} ${(entry.topics || []).join(" ")} ${(entry.languages || []).join(" ")} ${entry.trigger_type} ${entry.schedule_name || ""}`,
-  historyBadges: (entry) => [{ label: `${entry.total_repos || 0} repos`, tone: "neutral" }, { label: `${entry.total_signals || 0} signals`, tone: entry.total_signals ? "warn" : "ok" }, { label: `${entry.warning_count || 0} warnings`, tone: entry.warning_count ? "warn" : "neutral" }],
+  historyBadges: (entry) => [{ label: countLabel(entry.total_repos, "repo"), tone: "neutral" }, { label: countLabel(entry.total_signals, "signal"), tone: entry.total_signals ? "warn" : "ok" }, { label: countLabel(entry.warning_count, "warning"), tone: entry.warning_count ? "warn" : "neutral" }],
   dashboard: {
     defaultView: { language: "all", trend: "all", sort: "priority" },
     initialCount: 6,

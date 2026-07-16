@@ -134,6 +134,10 @@ pub fn enrich_scan_trend(record: &mut ScanRecord, previous: &ScanRecord) {
     });
 }
 
+fn count_label(count: u32, singular: &str, plural: &str) -> String {
+    format!("{count} {}", if count == 1 { singular } else { plural })
+}
+
 pub fn build_scan_report(record: &ScanRecord) -> ScanReport {
     let top_repo = record.repos.first();
     let top_stale = record.repos.iter().max_by_key(|repo| repo.stale_issues);
@@ -162,8 +166,10 @@ pub fn build_scan_report(record: &ScanRecord) -> ScanReport {
     lines.extend([
         format!("- Scope: {}", format_scope_text(&record.params)),
         format!(
-            "- Coverage: {} repos scanned, {} signals found, top repo `{}`",
-            record.summary.total_repos, record.summary.total_signals, record.summary.top_repo
+            "- Coverage: {} scanned, {} found, top repo `{}`",
+            count_label(record.summary.total_repos, "repository", "repositories"),
+            count_label(record.summary.total_signals, "signal", "signals"),
+            record.summary.top_repo
         ),
         String::new(),
     ]);
@@ -172,8 +178,13 @@ pub fn build_scan_report(record: &ScanRecord) -> ScanReport {
         "## Executive Readout".into(),
         String::new(),
         format!(
-            "- {} repos scanned and {} maintenance signals surfaced.",
-            record.summary.total_repos, record.summary.total_signals
+            "- {} scanned and {} surfaced.",
+            count_label(record.summary.total_repos, "repository", "repositories"),
+            count_label(
+                record.summary.total_signals,
+                "maintenance signal",
+                "maintenance signals"
+            )
         ),
         match top_repo {
             Some(repo) => format!(
@@ -185,17 +196,26 @@ pub fn build_scan_report(record: &ScanRecord) -> ScanReport {
         },
         match top_stale.filter(|repo| repo.stale_issues > 0) {
             Some(repo) => format!(
-                "- Largest stale backlog: `{}` with {} stale issues.",
-                repo.full_name, repo.stale_issues
+                "- Largest stale backlog: `{}` with {}.",
+                repo.full_name,
+                count_label(repo.stale_issues, "stale issue", "stale issues")
             ),
             None => "- No stale backlog stood out in this scan.".into(),
         },
         match top_recurring.filter(|repo| !repo.recurring_bug_clusters.is_empty()) {
             Some(repo) => format!(
-                "- Strongest recurring bug pressure: `{}` with {} recurring clusters covering {} issues.",
+                "- Strongest recurring bug pressure: `{}` with {} covering {}.",
                 repo.full_name,
-                repo.recurring_bug_clusters.len(),
-                recurring_issue_count(&repo.recurring_bug_clusters)
+                count_label(
+                    repo.recurring_bug_clusters.len() as u32,
+                    "recurring cluster",
+                    "recurring clusters"
+                ),
+                count_label(
+                    recurring_issue_count(&repo.recurring_bug_clusters) as u32,
+                    "issue",
+                    "issues"
+                )
             ),
             None => "- No recurring bug cluster stood out in this scan.".into(),
         },
@@ -544,6 +564,12 @@ mod tests {
         assert!(report
             .markdown
             .contains("- No recurring bug cluster stood out in this scan."));
+        assert!(report
+            .markdown
+            .contains("- Coverage: 1 repository scanned, 1 signal found"));
+        assert!(report
+            .markdown
+            .contains("- 1 repository scanned and 1 maintenance signal surfaced."));
         assert!(!report.markdown.contains("*none*"));
         assert!(!report.markdown.contains("with 0 recurring clusters"));
     }
