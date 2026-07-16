@@ -43,6 +43,13 @@ pub fn params_signature(params: &ScanParams) -> String {
     .to_string()
 }
 
+pub(crate) fn total_signal_count(repos: &[RepoSignal]) -> u32 {
+    repos
+        .iter()
+        .map(|repo| repo.score_breakdown.len() as u32)
+        .sum()
+}
+
 pub fn save_scan(
     params_in: &ScanParams,
     repos: &[RepoSignal],
@@ -55,7 +62,7 @@ pub fn save_scan(
     let params_signature = params_signature(params_in);
     let summary = ScanSummary {
         total_repos: repos.len() as u32,
-        total_signals: repos.iter().map(|repo| repo.signals.len() as u32).sum(),
+        total_signals: total_signal_count(repos),
         top_repo: repos
             .first()
             .map(|repo| repo.full_name.clone())

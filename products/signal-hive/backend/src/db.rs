@@ -21,7 +21,7 @@ pub use schema::{db_path, health_check, init_db};
 mod tests {
     use rusqlite::Connection;
 
-    use crate::models::RepoSignal;
+    use crate::models::{RepoSignal, ScoreFactor};
 
     fn sample_repo_signal() -> RepoSignal {
         RepoSignal {
@@ -43,9 +43,14 @@ mod tests {
             todo_available: true,
             fixme_available: true,
             priority_score: 18.5,
-            score_breakdown: Vec::new(),
+            score_breakdown: vec![ScoreFactor {
+                key: "stale_backlog".into(),
+                label: "Stale backlog".into(),
+                impact: 12.0,
+                detail: "2 of 5 sampled issues are stale".into(),
+            }],
             summary: "test summary".into(),
-            signals: vec!["signal".into()],
+            signals: vec!["signal".into(), "coverage unavailable".into()],
             issue_examples: Vec::new(),
             warnings: vec!["warning".into()],
             trend: None,
@@ -65,5 +70,10 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM repo_signals", [], |row| row.get(0))
             .expect("count repo signals");
         assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn total_signal_count_excludes_coverage_messages() {
+        assert_eq!(super::scans::total_signal_count(&[sample_repo_signal()]), 1);
     }
 }
