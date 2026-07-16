@@ -327,15 +327,15 @@ pub async fn run_scan_record(
     let (allowlist, denylist, opt_out) = crate::db::repo_list_sets()?;
     validate_scan_scope(&params, !allowlist.is_empty()).map_err(anyhow::Error::msg)?;
 
-    let repos =
+    let discovery =
         crate::github::discover_repositories(&state.http, &params, &allowlist, &denylist, &opt_out)
             .await?;
 
     let mut drafts = Vec::new();
-    let mut scan_warnings = Vec::new();
-    let mut seen_scan_warnings = HashSet::new();
+    let mut scan_warnings = discovery.warnings;
+    let mut seen_scan_warnings = scan_warnings.iter().cloned().collect::<HashSet<_>>();
 
-    for repo in repos {
+    for repo in discovery.repos {
         match analyze_repo_issue_draft(&state.http, &repo, &params).await {
             Ok(draft) => drafts.push(draft),
             Err(err) => {
