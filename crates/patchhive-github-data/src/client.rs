@@ -17,6 +17,7 @@ use crate::{response_preview, GitHubApiError};
 
 pub const GH_API: &str = "https://api.github.com";
 const TRANSIENT_RETRY_DELAYS_MS: [u64; 2] = [300, 900];
+const REPOSITORY_FORMAT_ERROR: &str = "Repository must be in owner/name format";
 
 fn is_transient_github_status(status: StatusCode) -> bool {
     matches!(
@@ -113,6 +114,14 @@ pub fn valid_repo(repo: &str) -> bool {
         (parts.next(), parts.next(), parts.next()),
         (Some(owner), Some(name), None) if !owner.trim().is_empty() && !name.trim().is_empty()
     )
+}
+
+fn ensure_valid_repo(repo: &str) -> Result<()> {
+    if valid_repo(repo) {
+        Ok(())
+    } else {
+        Err(anyhow!(REPOSITORY_FORMAT_ERROR))
+    }
 }
 
 pub async fn get_json<T: DeserializeOwned>(
@@ -375,9 +384,7 @@ pub async fn validate_token(client: &Client) -> Result<()> {
 }
 
 pub async fn fetch_repository(client: &Client, full_name: &str) -> Result<GitHubRepository> {
-    if !valid_repo(full_name) {
-        return Err(anyhow!("Repository must be in owner/name format"));
-    }
+    ensure_valid_repo(full_name)?;
 
     get_public_json(client, &format!("/repos/{full_name}"), &[]).await
 }
@@ -416,9 +423,7 @@ pub async fn fetch_issues(
     direction: &str,
     per_page: u32,
 ) -> Result<Vec<GitHubIssue>> {
-    if !valid_repo(repo) {
-        return Err(anyhow!("Repository must be in owner/name format"));
-    }
+    ensure_valid_repo(repo)?;
 
     get_paginated_json(
         client,
@@ -443,9 +448,7 @@ pub async fn fetch_pull_requests(
     direction: &str,
     per_page: u32,
 ) -> Result<Vec<GitHubPullRequest>> {
-    if !valid_repo(repo) {
-        return Err(anyhow!("Repository must be in owner/name format"));
-    }
+    ensure_valid_repo(repo)?;
 
     get_paginated_json(
         client,
@@ -494,9 +497,7 @@ pub async fn search_merged_pull_requests(
     merged_since: &str,
     max_items: u32,
 ) -> Result<Vec<GitHubPullRequest>> {
-    if !valid_repo(repo) {
-        return Err(anyhow!("Repository must be in owner/name format"));
-    }
+    ensure_valid_repo(repo)?;
 
     let response: GitHubSearchIssuesResponse = get_json(
         client,
@@ -529,9 +530,7 @@ pub async fn search_closed_issues(
     closed_since: &str,
     max_items: u32,
 ) -> Result<Vec<GitHubIssue>> {
-    if !valid_repo(repo) {
-        return Err(anyhow!("Repository must be in owner/name format"));
-    }
+    ensure_valid_repo(repo)?;
 
     let response: GitHubSearchIssuesResponse = get_json(
         client,
@@ -571,6 +570,15 @@ mod tests {
     fn valid_repo_rejects_extra_or_missing_segments() {
         assert!(!valid_repo("patchhive/repo/extra"));
         assert!(!valid_repo("patchhive/"));
+    }
+
+    #[test]
+    fn ensure_valid_repo_preserves_the_public_error_contract() {
+        let error = ensure_valid_repo("patchhive/repo/extra")
+            .expect_err("invalid repository should be rejected");
+
+        assert_eq!(error.to_string(), REPOSITORY_FORMAT_ERROR);
+        ensure_valid_repo("patchhive/repo").expect("valid repository should be accepted");
     }
 
     #[test]
@@ -616,9 +624,7 @@ pub async fn fetch_pull_reviews(
     repo: &str,
     number: u32,
 ) -> Result<Vec<GitHubReview>> {
-    if !valid_repo(repo) {
-        return Err(anyhow!("Repository must be in owner/name format"));
-    }
+    ensure_valid_repo(repo)?;
 
     get_paginated_json(
         client,
@@ -636,9 +642,7 @@ pub async fn fetch_pull_review_comments(
     repo: &str,
     number: u32,
 ) -> Result<Vec<GitHubReviewComment>> {
-    if !valid_repo(repo) {
-        return Err(anyhow!("Repository must be in owner/name format"));
-    }
+    ensure_valid_repo(repo)?;
 
     get_paginated_json(
         client,
@@ -656,9 +660,7 @@ pub async fn fetch_pull_files(
     repo: &str,
     number: u32,
 ) -> Result<Vec<GitHubPullFile>> {
-    if !valid_repo(repo) {
-        return Err(anyhow!("Repository must be in owner/name format"));
-    }
+    ensure_valid_repo(repo)?;
 
     get_paginated_json(
         client,
@@ -692,9 +694,7 @@ pub async fn fetch_workflow_runs(
     branch: Option<&str>,
     limit: u32,
 ) -> Result<Vec<GitHubActionsWorkflowRun>> {
-    if !valid_repo(repo) {
-        return Err(anyhow!("Repository must be in owner/name format"));
-    }
+    ensure_valid_repo(repo)?;
 
     let mut query = vec![("exclude_pull_requests", "false".into())];
 
@@ -719,9 +719,7 @@ pub async fn fetch_workflow_jobs(
     repo: &str,
     run_id: i64,
 ) -> Result<Vec<GitHubActionsWorkflowJob>> {
-    if !valid_repo(repo) {
-        return Err(anyhow!("Repository must be in owner/name format"));
-    }
+    ensure_valid_repo(repo)?;
 
     get_paginated_field_json(
         client,
