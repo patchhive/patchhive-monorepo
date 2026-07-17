@@ -42,6 +42,24 @@ pub fn repo_trend_status(
     }
 }
 
+fn cohorts_are_comparable(overlap: u32, current_total: u32, previous_total: u32) -> bool {
+    let larger_cohort = current_total.max(previous_total);
+    larger_cohort > 0 && overlap.saturating_mul(2) >= larger_cohort
+}
+
+fn effective_trend_cohort(trend: &ScanTrendSummary) -> (u32, bool) {
+    let overlap = trend
+        .comparable_repos
+        .max(trend.rising_repos + trend.improving_repos + trend.steady_repos);
+    let comparable = trend.cohort_comparable
+        || cohorts_are_comparable(
+            overlap,
+            overlap + trend.new_repos,
+            overlap + trend.dropped_repos,
+        );
+    (overlap, comparable)
+}
+
 pub fn enrich_scan_trend(record: &mut ScanRecord, previous: &ScanRecord) {
     let mut previous_repos = previous
         .repos
@@ -119,6 +137,7 @@ pub fn enrich_scan_trend(record: &mut ScanRecord, previous: &ScanRecord) {
         }
     }
 
+    let comparable_repos = rising_repos + improving_repos + steady_repos;
     record.trend = Some(ScanTrendSummary {
         compared_to_scan_id: previous.id.clone(),
         compared_to_created_at: previous.created_at.clone(),
@@ -130,6 +149,12 @@ pub fn enrich_scan_trend(record: &mut ScanRecord, previous: &ScanRecord) {
         rising_repos,
         improving_repos,
         steady_repos,
+        comparable_repos,
+        cohort_comparable: cohorts_are_comparable(
+            comparable_repos,
+            record.summary.total_repos,
+            previous.summary.total_repos,
+        ),
     });
 }
 
@@ -226,6 +251,7 @@ pub fn build_scan_report(record: &ScanRecord) -> ScanReport {
     }
 
     if let Some(trend) = &record.trend {
+        let (comparable_repos, cohort_comparable) = effective_trend_cohort(trend);
         lines.extend([
             "## Trend vs Previous Similar Scan".into(),
             String::new(),
@@ -233,10 +259,17 @@ pub fn build_scan_report(record: &ScanRecord) -> ScanReport {
                 "- Compared to `{}` from {}",
                 trend.compared_to_scan_id, trend.compared_to_created_at
             ),
-            format!(
-                "- Signals delta: {:+}, repos delta: {:+}",
-                trend.total_signals_delta, trend.total_repos_delta
-            ),
+            if cohort_comparable {
+                format!(
+                    "- Signals delta: {:+}, repos delta: {:+}",
+                    trend.total_signals_delta, trend.total_repos_delta
+                )
+            } else {
+                format!(
+                    "- Aggregate deltas hidden because only {} repositories overlap; the discovery cohort changed substantially",
+                    comparable_repos
+                )
+            },
             format!(
                 "- Queue movement: {} new, {} dropped, {} rising, {} improving, {} steady",
                 trend.new_repos,
@@ -471,8 +504,8 @@ pub fn start_scheduler(state: AppState) {
 
 #[cfg(test)]
 mod tests {
-    use super::build_scan_report;
-    use crate::models::{RepoSignal, ScanParams, ScanRecord, ScanSummary};
+    use super::{build_scan_report, cohorts_are_comparable, effective_trend_cohort};
+    use crate::models::{RepoSignal, ScanParams, ScanRecord, ScanSummary, ScanTrendSummary};
 
     fn sample_repo() -> RepoSignal {
         RepoSignal {
@@ -495,12 +528,39 @@ mod tests {
             fixme_available: true,
             priority_score: 9.8,
             score_breakdown: Vec::new(),
-            summary: "1 TODO and 0 FIXME markers were found in code search".into(),
-            signals: vec!["1 TODO and 0 FIXME markers were found in code search".into()],
+            summary: "1 TODO and 0 FIXME matching files were found in code search".into(),
+            signals: vec!["1 TODO and 0 FIXME matching files were found in code search".into()],
             issue_examples: Vec::new(),
             warnings: Vec::new(),
             trend: None,
         }
+    }
+
+    #[test]
+    fn aggregate_deltas_require_at_least_half_the_cohort_to_overlap() {
+        assert!(!cohorts_are_comparable(1, 8, 8));
+        assert!(!cohorts_are_comparable(4, 10, 10));
+        assert!(cohorts_are_comparable(5, 10, 10));
+        assert!(cohorts_are_comparable(8, 8, 8));
+    }
+
+    #[test]
+    fn historical_trends_derive_missing_cohort_fields() {
+        let trend = ScanTrendSummary {
+            compared_to_scan_id: "prior".into(),
+            compared_to_created_at: "2026-07-15T00:00:00Z".into(),
+            total_signals_delta: 2,
+            total_repos_delta: 0,
+            new_repos: 1,
+            dropped_repos: 1,
+            rising_repos: 3,
+            improving_repos: 2,
+            steady_repos: 2,
+            comparable_repos: 0,
+            cohort_comparable: false,
+        };
+
+        assert_eq!(effective_trend_cohort(&trend), (7, true));
     }
 
     #[test]

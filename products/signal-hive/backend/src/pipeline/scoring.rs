@@ -258,9 +258,9 @@ pub fn priority_score(
     if todo_count > 0 || fixme_count > 0 {
         breakdown.push(ScoreFactor {
             key: "markers".into(),
-            label: "Code markers".into(),
+            label: "Code-search matches".into(),
             impact: round1(marker_impact),
-            detail: format!("{todo_count} TODO and {fixme_count} FIXME markers found"),
+            detail: format!("{todo_count} TODO and {fixme_count} FIXME matching files found"),
         });
     }
 
@@ -383,7 +383,7 @@ pub fn summary_from_signals(input: SummarySignalInput<'_>) -> (String, Vec<Strin
             }
         ));
     }
-    if issue_analysis.unlabeled_issues >= 2 {
+    if issue_analysis.unlabeled_issues > 0 {
         signals.push(format!(
             "{} {} unlabeled, which points to triage drift",
             count_label(
@@ -400,14 +400,16 @@ pub fn summary_from_signals(input: SummarySignalInput<'_>) -> (String, Vec<Strin
     }
     if todo_available && fixme_available && (todo_count > 0 || fixme_count > 0) {
         signals.push(format!(
-            "{todo_count} TODO and {fixme_count} FIXME markers were found in code search"
+            "{todo_count} TODO and {fixme_count} FIXME matching files were found in code search"
         ));
     } else if !todo_available && !fixme_available {
-        signals.push("TODO/FIXME marker counts were unavailable for this repo in this scan".into());
+        signals.push(
+            "TODO/FIXME code-search counts were unavailable for this repo in this scan".into(),
+        );
     } else if !todo_available {
-        signals.push("TODO marker counts were unavailable for this repo in this scan".into());
+        signals.push("TODO code-search counts were unavailable for this repo in this scan".into());
     } else if !fixme_available {
-        signals.push("FIXME marker counts were unavailable for this repo in this scan".into());
+        signals.push("FIXME code-search counts were unavailable for this repo in this scan".into());
     }
 
     let issue_density = (open_issues as f64 / stars.max(25) as f64) * 100.0;
@@ -730,5 +732,33 @@ mod tests {
         });
         assert!(summary.contains("1 stale bug-like issue is still open"));
         assert!(summary.contains("1 of 1 sampled issue looks stale"));
+    }
+
+    #[test]
+    fn one_unlabeled_issue_is_reported_as_triage_pressure() {
+        let analysis = IssueAnalysis {
+            sampled_issues: 1,
+            stale_issues: 0,
+            unlabeled_issues: 1,
+            stale_bug_issues: 0,
+            stale_high_comment_issues: 0,
+            issue_examples: Vec::new(),
+            duplicate_candidates: Vec::new(),
+            recurring_bug_clusters: Vec::new(),
+        };
+
+        let (summary, _) = summary_from_signals(SummarySignalInput {
+            stars: 100,
+            open_issues: 1,
+            issue_analysis: &analysis,
+            todo_count: 0,
+            fixme_count: 0,
+            todo_available: true,
+            fixme_available: true,
+            repo_warnings: &[],
+        });
+
+        assert!(summary.contains("1 sampled issue is unlabeled"));
+        assert!(!summary.contains("No major maintenance signals"));
     }
 }

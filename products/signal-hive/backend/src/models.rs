@@ -174,6 +174,10 @@ pub struct ScanTrendSummary {
     pub rising_repos: u32,
     pub improving_repos: u32,
     pub steady_repos: u32,
+    #[serde(default)]
+    pub comparable_repos: u32,
+    #[serde(default)]
+    pub cohort_comparable: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
