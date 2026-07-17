@@ -9,6 +9,7 @@ pub(crate) fn build_metrics(
         files_scanned,
         files_skipped,
         opportunities: opportunities.len() as u32,
+        returned_opportunities: opportunities.len() as u32,
         ..ScanMetrics::default()
     };
 
@@ -53,7 +54,7 @@ pub(crate) fn build_summary(
     );
 
     if let Some(top) = top {
-        summary.push_str(" Strongest lead: ");
+        summary.push_str(" Top review priority: ");
         summary.push_str(top.summary.trim_end_matches(['.', '!', '?']));
         summary.push('.');
     }

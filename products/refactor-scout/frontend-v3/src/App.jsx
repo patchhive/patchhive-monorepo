@@ -69,6 +69,7 @@ function buildScanMarkdown(scan) {
     `- Files scanned: ${metrics.files_scanned || 0}`,
     `- Files skipped: ${metrics.files_skipped || 0}`,
     `- Opportunities: ${metrics.opportunities || 0}`,
+    `- Opportunities loaded: ${metrics.returned_opportunities || scan?.opportunities?.length || 0}`,
     `- High-safety leads: ${metrics.high_safety || 0}`,
     `- Medium-safety leads: ${metrics.medium_safety || 0}`,
   ];
@@ -121,6 +122,7 @@ function WorkspaceDetails({ health, onError, result }) {
           <Fact label="Files scanned" value={metrics.files_scanned} />
           <Fact label="Files skipped" value={metrics.files_skipped} />
           <Fact label="Opportunities" value={metrics.opportunities} />
+          {metrics.opportunities_truncated ? <Fact label="Loaded leads" value={metrics.returned_opportunities || result.opportunities?.length || 0} /> : null}
           <Fact label="High safety" value={metrics.high_safety} />
           <Fact label="Medium safety" value={metrics.medium_safety} />
           <Fact label="Large files" value={metrics.large_file_count} />
@@ -130,6 +132,7 @@ function WorkspaceDetails({ health, onError, result }) {
       </section>
 
       <ScanWarnings warnings={result.warnings || []} />
+      {metrics.opportunities_truncated ? <GuidanceNotice label="Bounded queue">RefactorScout found {metrics.opportunities} candidates and loaded the highest-priority {metrics.returned_opportunities || result.opportunities?.length || 0}. Aggregate metrics cover every detected candidate; filters apply to the loaded queue.</GuidanceNotice> : null}
 
       <section className="surface p-5 sm:p-6">
         <div className={`flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}><ShieldCheck size={12} /> Inspection boundary</div>
@@ -217,6 +220,8 @@ const config = {
   serialize: (form) => ({ repo_path: form.repo_path.trim(), max_files: Number(form.max_files) }),
   formFromResult: (result) => ({ repo_path: result.repo_path || "" }),
   items: (result) => result?.opportunities || [],
+  queueTotal: (result, items) => result?.metrics?.opportunities ?? items.length,
+  queueTotalLabel: (result, items) => (Number(result?.metrics?.opportunities || 0) > items.length ? "found" : "tracked"),
   mapItem: (item) => ({
     id: item.id || `${item.kind}-${item.path}-${item.line_start}`,
     title: item.title || "Refactor opportunity",
@@ -288,7 +293,14 @@ const config = {
   priorityItems: (items) => [...items].sort((left, right) => safetyRank(right.safety) - safetyRank(left.safety) || right.score - left.score),
   chips: (result, health) => [result?.repo_path || "No repository selected", result ? targetKind(result.repo_path) : "local or GitHub target", health.remote_fs_enabled ? "remote callers enabled" : "localhost only", "read only"],
   targetLabel: (result, form, overview) => result?.repo_name || result?.repo_path || form.repo_path || overview.last_repo || "no repository selected",
-  targetSubtitle: (result) => result ? `${targetKind(result.repo_path)} · ${countLabel(result.metrics?.opportunities, "opportunity")}` : "local path or public GitHub repository",
+  targetSubtitle: (result) => {
+    if (!result) return "local path or public GitHub repository";
+    const total = Number(result.metrics?.opportunities || 0);
+    const loaded = Number(result.metrics?.returned_opportunities || result.opportunities?.length || 0);
+    return total > loaded
+      ? `${targetKind(result.repo_path)} · ${loaded} loaded / ${total} found`
+      : `${targetKind(result.repo_path)} · ${countLabel(total, "opportunity")}`;
+  },
   connectionName: "Filesystem",
   connectionLabel: (health) => health.db_ok ? "Filesystem ready" : "Filesystem unavailable",
   connectionValue: (health) => health.remote_fs_enabled ? "remote enabled" : "local only",

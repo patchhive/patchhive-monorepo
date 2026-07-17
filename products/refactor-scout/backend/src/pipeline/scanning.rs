@@ -62,6 +62,14 @@ pub(crate) struct ScanArtifacts {
     pub(crate) limit_hit: bool,
 }
 
+#[derive(Default)]
+struct BraceScanState {
+    block_comment_depth: u32,
+    string_delimiter: Option<char>,
+    escaped: bool,
+    rust_raw_hashes: Option<usize>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct GitHubRepoTarget {
     owner: String,
@@ -164,19 +172,28 @@ fn build_scan_result_from_root(
     }
 
     artifacts.opportunities.sort_by(|left, right| {
-        right
-            .score
-            .cmp(&left.score)
-            .then_with(|| safety_rank(&right.safety).cmp(&safety_rank(&left.safety)))
+        safety_rank(&right.safety)
+            .cmp(&safety_rank(&left.safety))
+            .then_with(|| right.score.cmp(&left.score))
             .then_with(|| left.path.cmp(&right.path))
     });
-    artifacts.opportunities.truncate(MAX_RETURNED_OPPORTUNITIES);
-
-    let metrics = build_metrics(
+    let mut metrics = build_metrics(
         artifacts.files_scanned,
         artifacts.files_skipped,
         &artifacts.opportunities,
     );
+    artifacts.opportunities.truncate(MAX_RETURNED_OPPORTUNITIES);
+    metrics.returned_opportunities = artifacts.opportunities.len() as u32;
+    metrics.opportunities_truncated = metrics.returned_opportunities < metrics.opportunities;
+    if metrics.opportunities_truncated {
+        push_warning(
+            &mut artifacts.warnings,
+            format!(
+                "RefactorScout found {} candidates and returned the highest-priority {} to keep this result bounded.",
+                metrics.opportunities, metrics.returned_opportunities
+            ),
+        );
+    }
     let summary = build_summary(&repo_name, &metrics, artifacts.opportunities.first());
 
     Ok(RefactorScanResult {
@@ -511,10 +528,12 @@ fn long_function_opportunities(
 
         let end = match language {
             "python" => python_function_end(lines, start),
-            "rust" | "javascript" | "typescript" | "go" => match brace_function_end(lines, start) {
-                Some(end) => end,
-                None => continue,
-            },
+            "rust" | "javascript" | "typescript" | "go" => {
+                match brace_function_end(lines, start, language) {
+                    Some(end) => end,
+                    None => continue,
+                }
+            }
             _ => continue,
         };
 
@@ -633,18 +652,17 @@ fn function_name_for_line(language: &str, line: &str) -> Option<String> {
     Some(capture.get(1)?.as_str().to_string())
 }
 
-fn brace_function_end(lines: &[&str], start: usize) -> Option<usize> {
+fn brace_function_end(lines: &[&str], start: usize, language: &str) -> Option<usize> {
     let mut depth = 0i32;
     let mut saw_body = false;
+    let mut state = BraceScanState::default();
 
     for (offset, line) in lines[start..].iter().enumerate() {
-        for ch in line.chars() {
-            if ch == '{' {
-                saw_body = true;
-                depth += 1;
-            } else if ch == '}' && saw_body {
-                depth -= 1;
-            }
+        let (opens, closes) = structural_braces(line, language, &mut state);
+        saw_body |= opens > 0;
+        depth += opens as i32;
+        if saw_body {
+            depth -= closes as i32;
         }
 
         if saw_body && depth <= 0 {
@@ -656,6 +674,130 @@ fn brace_function_end(lines: &[&str], start: usize) -> Option<usize> {
         Some(lines.len().saturating_sub(1))
     } else {
         None
+    }
+}
+
+fn structural_braces(line: &str, language: &str, state: &mut BraceScanState) -> (u32, u32) {
+    let chars = line.chars().collect::<Vec<_>>();
+    let mut opens = 0;
+    let mut closes = 0;
+    let mut index = 0;
+
+    while index < chars.len() {
+        if let Some(hashes) = state.rust_raw_hashes {
+            if chars[index] == '"' && raw_string_closes(&chars, index, hashes) {
+                state.rust_raw_hashes = None;
+                index += hashes + 1;
+                continue;
+            }
+            index += 1;
+            continue;
+        }
+
+        if let Some(delimiter) = state.string_delimiter {
+            let ch = chars[index];
+            if state.escaped {
+                state.escaped = false;
+            } else if ch == '\\' && (delimiter != '`' || language != "go") {
+                state.escaped = true;
+            } else if ch == delimiter {
+                state.string_delimiter = None;
+            }
+            index += 1;
+            continue;
+        }
+
+        if state.block_comment_depth > 0 {
+            if pair_at(&chars, index, '/', '*') {
+                state.block_comment_depth += 1;
+                index += 2;
+                continue;
+            }
+            if pair_at(&chars, index, '*', '/') {
+                state.block_comment_depth -= 1;
+                index += 2;
+                continue;
+            }
+            index += 1;
+            continue;
+        }
+
+        if pair_at(&chars, index, '/', '/') {
+            break;
+        }
+        if pair_at(&chars, index, '/', '*') {
+            state.block_comment_depth = 1;
+            index += 2;
+            continue;
+        }
+
+        if language == "rust" {
+            if let Some((hashes, prefix_len)) = rust_raw_string_start(&chars, index) {
+                state.rust_raw_hashes = Some(hashes);
+                index += prefix_len;
+                continue;
+            }
+            if chars[index] == '\'' {
+                if let Some(end) = rust_char_literal_end(&chars, index) {
+                    index = end + 1;
+                    continue;
+                }
+            }
+        }
+
+        let ch = chars[index];
+        let quoted = ch == '"'
+            || (ch == '\'' && language != "rust")
+            || (ch == '`' && matches!(language, "javascript" | "typescript" | "go"));
+        if quoted {
+            state.string_delimiter = Some(ch);
+            state.escaped = false;
+        } else if ch == '{' {
+            opens += 1;
+        } else if ch == '}' {
+            closes += 1;
+        }
+        index += 1;
+    }
+
+    state.escaped = false;
+    (opens, closes)
+}
+
+fn pair_at(chars: &[char], index: usize, first: char, second: char) -> bool {
+    chars.get(index) == Some(&first) && chars.get(index + 1) == Some(&second)
+}
+
+fn rust_raw_string_start(chars: &[char], index: usize) -> Option<(usize, usize)> {
+    if chars.get(index) != Some(&'r') {
+        return None;
+    }
+
+    let mut cursor = index + 1;
+    let mut hashes = 0;
+    while chars.get(cursor) == Some(&'#') {
+        hashes += 1;
+        cursor += 1;
+    }
+    (chars.get(cursor) == Some(&'"')).then_some((hashes, cursor - index + 1))
+}
+
+fn raw_string_closes(chars: &[char], quote_index: usize, hashes: usize) -> bool {
+    (0..hashes).all(|offset| chars.get(quote_index + 1 + offset) == Some(&'#'))
+}
+
+fn rust_char_literal_end(chars: &[char], start: usize) -> Option<usize> {
+    match (chars.get(start + 1), chars.get(start + 2)) {
+        (Some('\\'), Some('u')) if chars.get(start + 3) == Some(&'{') => {
+            let closing_brace = chars[start + 4..]
+                .iter()
+                .position(|ch| *ch == '}')
+                .map(|offset| start + 4 + offset)?;
+            (chars.get(closing_brace + 1) == Some(&'\'')).then_some(closing_brace + 1)
+        }
+        (Some('\\'), Some(_)) if chars.get(start + 3) == Some(&'\'') => Some(start + 3),
+        (Some(_), Some('\'')) => Some(start + 2),
+        _ => None,
     }
 }
 

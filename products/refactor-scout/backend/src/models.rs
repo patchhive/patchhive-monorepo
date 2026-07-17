@@ -30,6 +30,10 @@ pub struct ScanMetrics {
     #[serde(default)]
     pub opportunities: u32,
     #[serde(default)]
+    pub returned_opportunities: u32,
+    #[serde(default)]
+    pub opportunities_truncated: bool,
+    #[serde(default)]
     pub high_safety: u32,
     #[serde(default)]
     pub medium_safety: u32,
