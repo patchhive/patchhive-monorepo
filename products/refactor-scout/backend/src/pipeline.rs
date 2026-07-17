@@ -50,6 +50,46 @@ const C = "service unavailable while syncing billing customers";
     }
 
     #[test]
+    fn repeated_literal_scan_does_not_cross_between_neighboring_strings() {
+        let source = r#"
+if text.contains("dependabot alerts are disabled")
+    || text.contains("code scanning is not enabled")
+    || text.contains("advanced security must be enabled")
+{
+    return FeatureDisabled;
+}
+if text.contains("resource not accessible by personal access token")
+    || text.contains("requires authentication")
+    || text.contains("missing token scope")
+{
+    return MissingScope;
+}
+"#;
+
+        let opportunities = analyze_file("src/errors.rs", "rust", source);
+        assert!(!opportunities
+            .iter()
+            .any(|item| item.kind == "repeated_literal"));
+    }
+
+    #[test]
+    fn repeated_literal_scan_handles_escaped_quotes() {
+        let source = r#"
+const A: &str = "service said \"try again later\"";
+const B: &str = "service said \"try again later\"";
+const C: &str = "service said \"try again later\"";
+"#;
+
+        let opportunities = analyze_file("src/messages.rs", "rust", source);
+        let repeated = opportunities
+            .iter()
+            .find(|item| item.kind == "repeated_literal")
+            .expect("real repeated literal should remain visible");
+        assert!(repeated.summary.contains("service said"));
+        assert!(!repeated.summary.contains("const B"));
+    }
+
+    #[test]
     fn rust_braces_in_strings_and_comments_do_not_expand_function_bounds() {
         let mut source = String::from(
             r####"

@@ -47,13 +47,6 @@ static GO_FN_RE: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"^\s*func\s+(?:\([^)]+\)\s*)?([A-Za-z_][A-Za-z0-9_]*)")
         .expect("go function regex should compile")
 });
-static DOUBLE_QUOTED_LITERAL_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r#""([^"\\]|\\.){12,}""#).expect("double-quoted literal regex should compile")
-});
-static SINGLE_QUOTED_LITERAL_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r#"'([^'\\]|\\.){12,}'"#).expect("single-quoted literal regex should compile")
-});
-
 pub(crate) struct ScanArtifacts {
     pub(crate) opportunities: Vec<RefactorOpportunity>,
     pub(crate) warnings: Vec<String>,
@@ -577,24 +570,15 @@ fn repeated_literal_opportunity(
     content: &str,
 ) -> Option<RefactorOpportunity> {
     let mut literals: HashMap<String, (u32, usize)> = HashMap::new();
-    let literal_matchers: &[&Lazy<Regex>] = if language == "rust" {
-        &[&DOUBLE_QUOTED_LITERAL_RE]
-    } else {
-        &[&DOUBLE_QUOTED_LITERAL_RE, &SINGLE_QUOTED_LITERAL_RE]
-    };
 
-    for matcher in literal_matchers {
-        for matched in matcher.find_iter(content) {
-            let literal = matched.as_str().trim_matches(&['"', '\''][..]).trim();
-            if should_ignore_literal(literal) {
-                continue;
-            }
-
-            let entry = literals
-                .entry(literal.to_string())
-                .or_insert((0, matched.start()));
-            entry.0 += 1;
+    for (literal, offset) in source_string_literals(content, language) {
+        let literal = literal.trim();
+        if should_ignore_literal(literal) {
+            continue;
         }
+
+        let entry = literals.entry(literal.to_string()).or_insert((0, offset));
+        entry.0 += 1;
     }
 
     let (literal, (count, first_offset)) = literals
@@ -636,6 +620,180 @@ fn repeated_literal_opportunity(
             "Repeated literals are usually one of the safest refactor entry points.".into(),
         ],
     })
+}
+
+fn source_string_literals(content: &str, language: &str) -> Vec<(String, usize)> {
+    let bytes = content.as_bytes();
+    let mut literals = Vec::new();
+    let mut index = 0;
+
+    while index < bytes.len() {
+        if language == "python" && bytes[index] == b'#' {
+            index = line_end(bytes, index);
+            continue;
+        }
+        if language != "python" && bytes.get(index..index + 2) == Some(b"//") {
+            index = line_end(bytes, index);
+            continue;
+        }
+        if language != "python" && bytes.get(index..index + 2) == Some(b"/*") {
+            index = block_comment_end(bytes, index + 2);
+            continue;
+        }
+
+        if language == "rust" {
+            if let Some((content_start, hashes)) = rust_raw_string_open(bytes, index) {
+                if let Some((content_end, after)) =
+                    rust_raw_string_bounds(bytes, content_start, hashes)
+                {
+                    literals.push((content[content_start..content_end].to_string(), index));
+                    index = after;
+                    continue;
+                }
+            }
+        }
+
+        let delimiter = match (language, bytes[index]) {
+            ("rust", b'"') | ("go", b'"') => Some(b'"'),
+            ("javascript" | "typescript" | "python", b'"') => Some(b'"'),
+            ("javascript" | "typescript" | "python", b'\'') => Some(b'\''),
+            ("javascript" | "typescript" | "go", b'`') => Some(b'`'),
+            _ => None,
+        };
+        let Some(delimiter) = delimiter else {
+            index += 1;
+            continue;
+        };
+
+        let triple_quoted = language == "python"
+            && bytes.get(index..index + 3) == Some(&[delimiter, delimiter, delimiter]);
+        let content_start = index + if triple_quoted { 3 } else { 1 };
+        let allow_escapes = !(language == "go" && delimiter == b'`');
+        let Some((content_end, after)) = quoted_string_bounds(
+            bytes,
+            content_start,
+            delimiter,
+            triple_quoted,
+            allow_escapes,
+        ) else {
+            index += 1;
+            continue;
+        };
+
+        let literal = &content[content_start..content_end];
+        let dynamic_template = matches!(language, "javascript" | "typescript")
+            && delimiter == b'`'
+            && literal.contains("${");
+        let python_f_string =
+            language == "python" && python_string_prefix(content, index).contains('f');
+        if !triple_quoted && !dynamic_template && !python_f_string {
+            literals.push((literal.to_string(), index));
+        }
+        index = after;
+    }
+
+    literals
+}
+
+fn line_end(bytes: &[u8], start: usize) -> usize {
+    bytes[start..]
+        .iter()
+        .position(|byte| *byte == b'\n')
+        .map(|offset| start + offset + 1)
+        .unwrap_or(bytes.len())
+}
+
+fn block_comment_end(bytes: &[u8], start: usize) -> usize {
+    let mut depth = 1u32;
+    let mut index = start;
+    while index < bytes.len() {
+        if bytes.get(index..index + 2) == Some(b"/*") {
+            depth += 1;
+            index += 2;
+            continue;
+        }
+        if bytes.get(index..index + 2) == Some(b"*/") {
+            depth -= 1;
+            index += 2;
+            if depth == 0 {
+                return index;
+            }
+            continue;
+        }
+        index += 1;
+    }
+    bytes.len()
+}
+
+fn rust_raw_string_open(bytes: &[u8], start: usize) -> Option<(usize, usize)> {
+    let mut cursor = start;
+    if bytes.get(cursor) == Some(&b'b') {
+        cursor += 1;
+    }
+    if bytes.get(cursor) != Some(&b'r') {
+        return None;
+    }
+    cursor += 1;
+
+    let mut hashes = 0;
+    while bytes.get(cursor) == Some(&b'#') {
+        hashes += 1;
+        cursor += 1;
+    }
+    (bytes.get(cursor) == Some(&b'"')).then_some((cursor + 1, hashes))
+}
+
+fn rust_raw_string_bounds(
+    bytes: &[u8],
+    content_start: usize,
+    hashes: usize,
+) -> Option<(usize, usize)> {
+    let mut cursor = content_start;
+    while cursor < bytes.len() {
+        if bytes[cursor] == b'"'
+            && (0..hashes).all(|offset| bytes.get(cursor + 1 + offset) == Some(&b'#'))
+        {
+            return Some((cursor, cursor + hashes + 1));
+        }
+        cursor += 1;
+    }
+    None
+}
+
+fn quoted_string_bounds(
+    bytes: &[u8],
+    content_start: usize,
+    delimiter: u8,
+    triple_quoted: bool,
+    allow_escapes: bool,
+) -> Option<(usize, usize)> {
+    let mut cursor = content_start;
+    while cursor < bytes.len() {
+        if allow_escapes && bytes[cursor] == b'\\' {
+            cursor = (cursor + 2).min(bytes.len());
+            continue;
+        }
+        if triple_quoted {
+            if bytes.get(cursor..cursor + 3) == Some(&[delimiter, delimiter, delimiter]) {
+                return Some((cursor, cursor + 3));
+            }
+        } else if bytes[cursor] == delimiter {
+            return Some((cursor, cursor + 1));
+        }
+        cursor += 1;
+    }
+    None
+}
+
+fn python_string_prefix(content: &str, quote_start: usize) -> String {
+    let prefix_start = content[..quote_start]
+        .char_indices()
+        .rev()
+        .take_while(|(_, ch)| ch.is_ascii_alphabetic())
+        .last()
+        .map(|(index, _)| index)
+        .unwrap_or(quote_start);
+    content[prefix_start..quote_start].to_ascii_lowercase()
 }
 
 fn function_name_for_line(language: &str, line: &str) -> Option<String> {
