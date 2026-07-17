@@ -180,8 +180,11 @@ const config = {
       { label: "FailGuard", value: "review", footerLeft: "operator", footerRight: "promoted", tone: "from-slate-500/70 to-slate-800/60" },
     ];
   },
-  hero: (result) => result ? { lead: result.repo, middle: "built", highlight: countLabel(result.entries?.length, "memory", "memories") + "." } : { lead: "Repository history", middle: "becomes", highlight: "durable context." },
-  status: (result, overview) => ({ label: result ? result.entries?.length ? "memory-ready" : "baseline" : "idle", detail: result?.summary?.top_memory || "Ingest a repository to build durable context.", progress: result ? "100%" : "8%", stats: [["Repos", overview?.counts?.repos || 0], ["Runs", overview?.counts?.runs || 0], ["Memories", overview?.counts?.memories || 0]] }),
+  hero: () => ({ lead: "Repository history", middle: "becomes", highlight: "durable context." }),
+  status: (result) => ({ label: result ? result.entries?.length ? "memory-ready" : "baseline" : "idle", detail: result?.summary?.top_memory || "Ingest a repository to build durable context.", progress: result ? "100%" : "8%" }),
+  priorityLabel: "Strongest memories",
+  priorityEmptyLabel: "No durable memories were created in this ingest.",
+  priorityItems: (items) => [...items].sort((left, right) => Number(right.score || 0) - Number(left.score || 0)),
   chips: (result, health) => [result?.repo || "No repository selected", result ? `${result.params?.since_days || 0} day lookback` : "Merged history", result ? countLabel(result.summary?.partial_read_warnings, "partial read") : health.github_ready ? "GitHub verified" : "GitHub unavailable", "FailGuard reviewed"],
   targetSubtitle: (result) => result ? `Run ${String(result.id).slice(0, 8)} · ${countLabel(result.entries?.length, "memory", "memories")}` : "Durable repository context",
   historyTitle: (entry) => entry.repo,

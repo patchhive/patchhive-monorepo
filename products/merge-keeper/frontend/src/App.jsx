@@ -299,7 +299,7 @@ const config = {
     ];
   },
   hero: (result) => result ? { lead: `PR #${result.pr_number}`, middle: "is", highlight: `${result.readiness || "pending"}.` } : { lead: "Merge decisions", middle: "need clear", highlight: "evidence." },
-  status: (result, overview) => ({ label: result?.readiness || "—", detail: result?.summary || "Assess a pull request to begin", progress: result ? "100%" : "8%", stats: [["Blocks", result?.blockers?.length || 0], ["Warnings", result?.warnings?.length || 0], ["Runs", overview?.counts?.runs || 0]] }),
+  status: (result) => ({ label: result?.readiness || "—", detail: result?.summary || "Assess a pull request to begin", progress: result ? "100%" : "8%" }),
   chips: (result, health) => [result?.repo || "No repository selected", result?.pr_number ? `PR #${result.pr_number}` : "No PR selected", result ? mergePostureLabel(result) : health.github_ready ? "GitHub verified" : health.github?.token_configured ? "GitHub unverified" : "Token missing", result ? result.approval_required === false ? "Approval optional" : "Approval required" : "Local by default"],
   targetSubtitle: (result) => result?.pr_number ? `Pull request #${result.pr_number} · ${result.readiness || "pending"}` : "Pull request readiness",
   historyTitle: (entry) => `${entry.repo} · PR #${entry.pr_number}`,

@@ -278,11 +278,10 @@ const config = {
   hero: (result) => result
     ? { lead: result.target_tag || result.target_version || "Release", middle: "is", highlight: `${result.decision || "pending"}.` }
     : { lead: "Release candidates", middle: "need a", highlight: "ship call." },
-  status: (result, overview) => ({
+  status: (result) => ({
     label: result?.decision || "—",
     detail: result?.summary || "Check a release candidate to begin",
     progress: result ? `${result.score || 0}%` : "8%",
-    stats: [["Score", result?.score || 0], ["Checks", result?.metrics?.checks || 0], ["Runs", overview?.counts?.runs || 0]],
   }),
   chips: (result, health) => [
     result?.repo || "No repository selected",

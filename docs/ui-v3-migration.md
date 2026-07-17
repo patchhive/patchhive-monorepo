@@ -52,6 +52,16 @@ typography scale, spacing system, or theme implementation.
 
 ## Shared Workspace Contract
 
+- Aggregate KPIs appear once in the metric-card row. Do not repeat the same
+  repository, finding, run, or warning totals in the assessment card and
+  evidence rail.
+- The assessment card uses the reclaimed space for up to three prioritized,
+  clickable findings through the shared `PriorityHighlights` control. Clear
+  runs show an explicit empty state instead of promoting healthy evidence as a
+  concern.
+- Read-only reconnaissance products describe a current `assessment`, not an
+  operational `decision`. Labels such as review priority must name or link to
+  their leading scoring factors instead of relying on vague pressure language.
 - Product queues should use the shared progressive list when a long result set
   would overwhelm the dashboard; the default collapsed count is six.
 - Filter/sort state and named dashboard views use the shared v3 saved-view hook

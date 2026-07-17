@@ -207,7 +207,7 @@ const config = {
     if (result.status === "clear" || result.status === "resolved") return { lead: `PR #${result.pr_number}`, middle: "needs", highlight: "no follow-up." };
     return { lead: `PR #${result.pr_number}`, middle: "needs", highlight: "review follow-up." };
   },
-  status: (result, overview) => ({ label: result?.status || "—", detail: result?.summary || "Review a pull request to begin", progress: result ? "100%" : "8%", stats: [["Open", result?.metrics?.open_items || 0], ["Resolved", result?.metrics?.resolved_items || 0], ["Runs", overview?.counts?.reviews || 0]] }),
+  status: (result) => ({ label: result?.status || "—", detail: result?.summary || "Review a pull request to begin", progress: result ? "100%" : "8%" }),
   chips: (result, health) => [result?.repo || "No repository selected", result?.pr_number ? `PR #${result.pr_number}` : "No PR selected", result ? countLabel(result.metrics?.reviewer_count, "reviewer") : health.github_ready ? "GitHub verified" : health.github?.token_configured ? "GitHub unverified" : "Token missing", result?.github_report?.attempted ? "Publish attempted" : "Local by default"],
   targetSubtitle: (result) => result?.pr_number ? `Pull request #${result.pr_number} · ${result.status || "saved"}` : "Review resolution",
   historyTitle: (entry) => `${entry.repo} · PR #${entry.pr_number}`,

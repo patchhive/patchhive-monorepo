@@ -233,8 +233,8 @@ const config = {
       { label: "GitHub", value: health.github_ready ? "on" : "off", footerLeft: "Actions", footerRight: "read", tone: "from-slate-500/70 to-slate-800/60" },
     ];
   },
-  hero: (result) => result ? { lead: countLabel(result.metrics?.flaky_signals, "signal"), middle: Number(result.metrics?.flaky_signals || 0) === 1 ? "needs" : "need", highlight: "attention." } : { lead: "Unstable checks", middle: "need", highlight: "evidence." },
-  status: (result, overview) => ({ label: result?.metrics?.quarantine_candidates ? "quarantine" : result?.metrics?.flaky_signals ? "suspect" : result ? "stable" : "—", detail: result?.summary || "Scan workflow history to begin", progress: result ? "100%" : "8%", stats: [["Runs", result?.metrics?.workflow_runs || 0], ["Reruns", result?.metrics?.rerun_like_runs || 0], ["Scans", overview?.counts?.scans || 0]] }),
+  hero: () => ({ lead: "Workflow instability", middle: "ranked by", highlight: "evidence." }),
+  status: (result) => ({ label: result?.metrics?.quarantine_candidates ? "quarantine" : result?.metrics?.flaky_signals ? "suspect" : result ? "stable" : "—", detail: result?.summary || "Scan workflow history to begin", progress: result ? "100%" : "8%" }),
   chips: (result, health) => [result?.repo || "No repository selected", result?.branch || "All branches", result?.workflow_name || "All workflows", health.github_ready ? "GitHub verified" : health.github?.token_configured ? "GitHub unverified" : "Token missing"],
   targetSubtitle: (result) => result ? `${result.branch || "all branches"} · ${result.workflow_name || "all workflows"}` : "Actions history",
   historyTitle: (entry) => `${entry.repo} · ${entry.workflow_name || entry.branch || "Actions"}`,

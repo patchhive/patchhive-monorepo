@@ -22,6 +22,7 @@ import {
   GitHubPermissionGuidance,
   HistoryDashboard,
   MetricCard,
+  PriorityHighlights,
   ProductHeader,
   ProductShell,
   ProgressiveList,
@@ -154,13 +155,6 @@ function findingActivity(finding) {
     events.push({ id: `notes-${index}`, kind: "notes", at, actor: source, message });
   });
   return events;
-}
-
-function triageStatus(metrics) {
-  if ((metrics.fix_now || 0) > 0) return "act now";
-  if ((metrics.plan_next || 0) > 0) return "plan";
-  if ((metrics.watch || 0) > 0) return "watch";
-  return "clear";
 }
 
 function runtimeScoped(metrics) {
@@ -496,7 +490,6 @@ function MainProduct({ auth }) {
   }));
   const [health, setHealth] = useState({});
   const [checks, setChecks] = useState([]);
-  const [overview, setOverview] = useState({ counts: {}, recent_scans: [] });
   const [history, setHistory] = useState([]);
   const [scan, setScan] = useState(null);
   const [selectedFinding, setSelectedFinding] = useState(null);
@@ -512,15 +505,13 @@ function MainProduct({ auth }) {
     setError("");
     setLoading(true);
     try {
-      const [nextHealth, nextChecks, nextOverview, nextHistory] = await Promise.all([
+      const [nextHealth, nextChecks, nextHistory] = await Promise.all([
         readJson(await fetcher(`${API}/health`)),
         readJson(await fetcher(`${API}/startup/checks`)),
-        readJson(await fetcher(`${API}/overview`)),
         readJson(await fetcher(`${API}/history`)),
       ]);
       setHealth(nextHealth);
       setChecks(nextChecks.checks || []);
-      setOverview(nextOverview);
       setHistory(Array.isArray(nextHistory) ? nextHistory : []);
       const latest = Array.isArray(nextHistory) ? nextHistory[0] : null;
       if ((loadLatest || !scan) && latest?.id) {
@@ -593,6 +584,21 @@ function MainProduct({ auth }) {
   ];
   const metrics = scan?.metrics || {};
   const activeRepo = scan?.repo || form.repo || "No repository selected";
+  const priorityFindings = useMemo(() => [...findings]
+    .sort((left, right) => Number(right.score || 0) - Number(left.score || 0))
+    .slice(0, 3)
+    .map((finding) => {
+      const rec = recommendation(finding.recommendation);
+      return {
+        id: findingId(finding),
+        title: finding.title || finding.summary || findingId(finding),
+        summary: finding.summary || finding.next_action || finding.location,
+        score: Math.round(Number(finding.score || 0)),
+        status: rec,
+        tone: rec === "fix now" ? "hot" : rec === "plan next" ? "warn" : "neutral",
+        finding,
+      };
+    }), [findings]);
   const filteredHistory = useMemo(() => history.filter((item) => {
     if (historyDashboard.view.repo !== "all" && item.repo !== historyDashboard.view.repo) return false;
     if (historyDashboard.view.urgency === "fix-now" && !asCount(item.fix_now)) return false;
@@ -641,8 +647,8 @@ function MainProduct({ auth }) {
               <div className="surface col-span-12 lg:col-span-8 p-6 sm:p-10">
                 <div className={`flex items-center gap-2 text-[11px] tracking-[0.2em] uppercase ${V3_TEXT.mute}`}><Sparkles size={12} style={{ color: "var(--accent-2)" }} /> Security queue · {activeRepo}</div>
                 <h1 className={`font-display mt-4 text-[44px] sm:text-[68px] leading-[0.95] tracking-[-0.03em] font-semibold ${V3_TEXT.strong}`}>
-                  {findings.length ? countLabel(findings.length, "finding") : "No findings"} <br />
-                  need a decision{" "}<span className="bg-clip-text text-transparent" style={{ backgroundImage: "linear-gradient(90deg, var(--accent), var(--accent-2), #cbd5e1)" }}>today.</span>
+                  Security findings <br />
+                  ranked by{" "}<span className="bg-clip-text text-transparent" style={{ backgroundImage: "linear-gradient(90deg, var(--accent), var(--accent-2), #cbd5e1)" }}>urgency.</span>
                 </h1>
                 <p className={`mt-6 max-w-xl text-[15px] ${V3_TEXT.body} leading-relaxed`}>Reads GitHub code scanning and Dependabot alerts, then sorts them into fix-now, plan-next, and watch—all in one calm, luminous surface.</p>
                 <div className="mt-8 flex flex-wrap gap-2">
@@ -652,13 +658,11 @@ function MainProduct({ auth }) {
               <div className="surface col-span-12 lg:col-span-4 p-6 overflow-hidden">
                 <div className="absolute -top-20 -right-16 h-56 w-56 rounded-full opacity-40 blur-2xl" style={{ backgroundImage: "var(--orb-1)" }} />
                 <div className="relative">
-                  <div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute} flex items-center gap-1.5`}><Clock size={11} /> Current scan</div>
-                  <div className={`mt-3 font-display text-[46px] font-semibold tabular-nums ${V3_TEXT.strong} leading-none`}>{scan ? timeAgo(scan.created_at) : "—"}</div>
-                  <div className={`mt-2 text-[12px] ${V3_TEXT.mute}`}>{scan ? `${scan.repo} · ${countLabel(metrics.tracked_findings, "finding")}` : "Run a repository scan to begin"}</div>
+                  <div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute} flex items-center gap-1.5`}><Clock size={11} /> Current assessment</div>
+                  <div className={`mt-3 font-display text-[46px] font-semibold ${V3_TEXT.strong} leading-none`}>{scan?.warnings?.length ? "partial" : metrics.fix_now ? "fix now" : metrics.plan_next ? "plan next" : metrics.tracked_findings ? "watch" : scan ? "clear" : "idle"}</div>
+                  <div className={`mt-2 text-[12px] leading-relaxed ${V3_TEXT.mute}`}>{scanSummary(scan)}</div>
                   <div className="mt-6 h-2 rounded-full overflow-hidden" style={{ background: "var(--surface-border)" }}><div className="h-full rounded-full" style={{ width: scan ? "100%" : "8%", backgroundImage: "linear-gradient(90deg, var(--accent), var(--accent-2))" }} /></div>
-                  <div className="mt-6 grid grid-cols-3 gap-2">
-                    {[["Scans", overview.counts?.scans || 0], ["Repos", overview.counts?.repos || 0], ["Feeds", health.github_ready ? "live" : "off"]].map(([label, value]) => <div key={label} className="surface-inset rounded-xl p-2.5"><div className={`text-[10px] uppercase tracking-wider ${V3_TEXT.mute}`}>{label}</div><div className={`font-display text-[16px] font-semibold tabular-nums ${V3_TEXT.strong}`}>{value}</div></div>)}
-                  </div>
+                  <PriorityHighlights className="mt-6" emptyLabel={scan ? "No active security findings in this scan." : "Run a security scan to load prioritized findings."} items={priorityFindings} label="Prioritized findings" onOpen={(item) => setSelectedFinding(item.finding)} />
                 </div>
               </div>
             </section>
@@ -718,7 +722,7 @@ function MainProduct({ auth }) {
               <aside className="col-span-12 lg:col-span-4 space-y-6">
                 <div className="surface p-5 overflow-hidden">
                   <div className="absolute -top-10 -right-10 h-32 w-32 rounded-full opacity-60 blur-2xl" style={{ backgroundImage: "var(--orb-1)" }} />
-                  <div className="relative"><div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>Active repo</div><div className={`mt-2 font-display text-[22px] font-semibold ${V3_TEXT.strong}`}>{activeRepo}</div><div className={`text-[12px] ${V3_TEXT.mute}`}>GitHub security feeds</div><div className="mt-4 grid grid-cols-3 gap-2 text-center">{[["Tracked", metrics.tracked_findings || 0], ["Owners", metrics.owner_scoped || 0], ["Triage", triageStatus(metrics)]].map(([label, value]) => <div className="surface-inset rounded-xl p-2" key={label}><div className={`text-[10px] uppercase tracking-wider ${V3_TEXT.mute}`}>{label}</div><div className={`font-display text-[18px] font-semibold tabular-nums ${V3_TEXT.strong}`}>{value}</div></div>)}</div></div>
+                  <div className="relative"><div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>Active repo</div><div className={`mt-2 font-display text-[22px] font-semibold ${V3_TEXT.strong}`}>{activeRepo}</div><div className={`mt-1 text-[12px] ${V3_TEXT.mute}`}>{scan ? `${countLabel(metrics.tracked_findings, "finding")} from GitHub security feeds · scanned ${timeAgo(scan.created_at)} ago` : "GitHub security feeds"}</div></div>
                 </div>
                 <div className="surface p-5">
                   <div className="flex items-center justify-between mb-3"><div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>Feeds</div><Zap size={13} style={{ color: "var(--accent-2)" }} /></div>

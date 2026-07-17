@@ -306,8 +306,8 @@ const config = {
       { label: "Safe defers", value: counts.ignore_for_now || health.ignore_count || 0, footerLeft: "saved", footerRight: "ignore", tone: "from-emerald-700/70 to-teal-900/60" },
     ];
   },
-  hero: (result) => result ? { lead: countLabel(result.metrics?.tracked_items, "dependency", "dependencies"), middle: "need a", highlight: "decision." } : { lead: "Dependency noise", middle: "needs a", highlight: "priority." },
-  status: (result, overview) => ({ label: result?.metrics?.update_now ? "act" : result?.metrics?.watch ? "watch" : result ? "defer" : "—", detail: result ? scanSummary(result) : "Scan a repository to begin", progress: result ? "100%" : "8%", stats: [["Tracked", result?.metrics?.tracked_items || 0], ["Alerts", result?.metrics?.open_alerts || 0], ["Scans", overview?.counts?.scans || 0]] }),
+  hero: () => ({ lead: "Dependency work", middle: "ranked by", highlight: "urgency." }),
+  status: (result) => ({ label: result?.metrics?.update_now ? "act" : result?.metrics?.watch ? "watch" : result ? "defer" : "—", detail: result ? scanSummary(result) : "Scan a repository to begin", progress: result ? "100%" : "8%" }),
   chips: (result, health) => [result?.repo || "No repository selected", countLabel(result?.metrics?.dependency_pull_requests, "dependency PR"), countLabel(result?.metrics?.open_alerts, "alert"), health.github_ready ? "GitHub verified" : health.github?.token_configured ? "GitHub unverified" : "Token missing"],
   targetSubtitle: (result) => result ? countLabel(result.metrics?.tracked_items, "tracked dependency item") : "Dependency intake",
   historyTitle: (entry) => entry.repo,

@@ -188,7 +188,7 @@ const config = {
     ];
   },
   hero: (result) => result ? { lead: result.github?.pr_number ? `PR #${result.github.pr_number}` : "This diff", middle: "is", highlight: result.recommendation === "safe" ? "policy-safe." : result.recommendation === "block" ? "blocked by policy." : `${result.recommendation || "pending"}.` } : { lead: "Every diff", middle: "needs a", highlight: "trust call." },
-  status: (result, overview) => ({ label: result ? decisionLabel(result.recommendation) : "—", detail: displaySummary(result?.summary) || "Review a pasted diff or live pull request to begin", progress: result ? `${Math.max(4, result.risk_score || 0)}%` : "8%", stats: [["Risk", result?.risk_score || 0], ["Findings", result?.findings?.length || 0], ["Runs", overview?.counts?.reviews || 0]] }),
+  status: (result) => ({ label: result ? decisionLabel(result.recommendation) : "—", detail: displaySummary(result?.summary) || "Review a pasted diff or live pull request to begin", progress: result ? `${Math.max(4, result.risk_score || 0)}%` : "8%" }),
   chips: (result, health) => [result?.repo || "No repository selected", result?.source_kind === "github_pr" ? `PR #${result.github?.pr_number || "—"}` : result?.source_kind || "Pasted or GitHub diff", result?.ai_source || "AI source optional", health.github_ready ? "GitHub verified" : "Manual review ready"],
   targetSubtitle: (result) => result?.github?.pr_number ? `Pull request #${result.github.pr_number} · ${decisionLabel(result.recommendation)}` : result ? `${result.source_kind} · ${decisionLabel(result.recommendation)}` : "Diff policy review",
   historyTitle: (entry) => `${entry.repo}${entry.pr_number ? ` · PR #${entry.pr_number}` : " · pasted diff"}`,

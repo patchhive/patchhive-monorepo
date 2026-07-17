@@ -238,7 +238,24 @@ function ChecksDetails({ health }) {
 }
 
 function SourcesDetails({ health }) {
-  return <section className="surface mt-6 p-5 sm:p-6"><div className={`flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}><ShieldCheck size={12} /> Repository safety</div><div className="mt-4 grid gap-3 sm:grid-cols-3"><div className="surface-inset rounded-xl p-4"><div className={`font-display text-[16px] ${V3_TEXT.strong}`}>Read only</div><p className={`mt-2 text-[11px] leading-relaxed ${V3_TEXT.mute}`}>SignalHive searches public GitHub evidence and saves local scan results. It does not comment, change code, open issues, or create pull requests.</p></div><div className="surface-inset rounded-xl p-4"><div className={`font-display text-[16px] ${V3_TEXT.strong}`}>Scope controls win</div><p className={`mt-2 text-[11px] leading-relaxed ${V3_TEXT.mute}`}>Allowlists constrain direct and discovery scans. Denylists and repository opt-outs always exclude a repository.</p></div><div className="surface-inset rounded-xl p-4"><div className={`font-display text-[16px] ${V3_TEXT.strong}`}>Coverage gaps stay visible</div><p className={`mt-2 text-[11px] leading-relaxed ${V3_TEXT.mute}`}>Rate limits and unavailable code search are reported as warnings, never interpreted as proof that maintenance pressure is absent.</p></div></div>{!health.github_ready ? <GitHubPermissionGuidance>{health.github?.token_configured ? "GitHub token verification failed. Review startup evidence before scanning." : "Add a GitHub token with repository, issue, and code read access."}</GitHubPermissionGuidance> : null}</section>;
+  return <section className="surface mt-6 p-5 sm:p-6"><div className={`flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}><ShieldCheck size={12} /> Repository safety</div><div className="mt-4 grid gap-3 sm:grid-cols-3"><div className="surface-inset rounded-xl p-4"><div className={`font-display text-[16px] ${V3_TEXT.strong}`}>Read only</div><p className={`mt-2 text-[11px] leading-relaxed ${V3_TEXT.mute}`}>SignalHive searches public GitHub evidence and saves local scan results. It does not comment, change code, open issues, or create pull requests.</p></div><div className="surface-inset rounded-xl p-4"><div className={`font-display text-[16px] ${V3_TEXT.strong}`}>Scope controls win</div><p className={`mt-2 text-[11px] leading-relaxed ${V3_TEXT.mute}`}>Allowlists constrain direct and discovery scans. Denylists and repository opt-outs always exclude a repository.</p></div><div className="surface-inset rounded-xl p-4"><div className={`font-display text-[16px] ${V3_TEXT.strong}`}>Coverage gaps stay visible</div><p className={`mt-2 text-[11px] leading-relaxed ${V3_TEXT.mute}`}>Rate limits and unavailable code search are reported as warnings, never interpreted as proof that maintenance needs are absent.</p></div></div>{!health.github_ready ? <GitHubPermissionGuidance>{health.github?.token_configured ? "GitHub token verification failed. Review startup evidence before scanning." : "Add a GitHub token with repository, issue, and code read access."}</GitHubPermissionGuidance> : null}</section>;
+}
+
+function signalAssessment(result) {
+  const repositories = [...(result?.repos || [])].sort((left, right) => Number(right.priority_score || 0) - Number(left.priority_score || 0));
+  const top = repositories[0];
+  const score = Math.round(Number(top?.priority_score || 0));
+  const drivers = [...(top?.score_breakdown || [])]
+    .filter((factor) => Number(factor.impact || 0) > 0)
+    .sort((left, right) => Number(right.impact || 0) - Number(left.impact || 0))
+    .slice(0, 3)
+    .map((factor) => factor.label?.toLowerCase())
+    .filter(Boolean);
+  const driverText = drivers.length ? `, driven by ${drivers.join(", ")}` : "";
+  const warnings = result?.warnings?.length || 0;
+  if (warnings) return { label: "partial", detail: `Evidence is incomplete. The available repositories are still ranked by stale backlog, bug and duplicate signals, triage gaps, issue density, and code-search matches.`, progress: `${Math.max(8, score)}%` };
+  if (top && score > 0) return { label: "review priority", detail: `${top.full_name} has the highest current priority score at ${score}/100${driverText}.`, progress: `${Math.max(8, score)}%` };
+  return { label: result ? "clear" : "idle", detail: result ? "No repository crossed the current review-priority heuristics." : "Run a scan to rank repository maintenance evidence.", progress: result ? "8%" : "0%" };
 }
 
 const DEFAULT_FORM = { target_repo: "", search_query: "", topics: "", languages: "rust, typescript, python", min_stars: "25", max_repos: "8", issues_per_repo: "30", stale_days: "45" };
@@ -252,6 +269,9 @@ const baseConfig = {
   eyebrow: "Maintenance discovery",
   queueLabel: "Repository signal queue",
   detailStatusLabel: "Trend",
+  assessmentLabel: "Current assessment",
+  priorityLabel: "Review priorities",
+  priorityEmptyLabel: "No repositories currently need review.",
   description: "Surfaces stale backlog pressure, duplicate issues, recurring bugs, and TODO/FIXME hotspots in one repository or across a bounded GitHub discovery scope—without changing them.",
   runLabel: "Run scan",
   runningLabel: "Scanning…",
@@ -315,22 +335,15 @@ const baseConfig = {
   },
   metrics: (result, overview, health) => [
     { label: "Repositories", value: result?.summary?.total_repos ?? overview?.counts?.repositories ?? 0, footerLeft: "ranked", footerRight: `${result?.repos?.length || 0} in queue`, tone: "from-sky-600/70 to-blue-900/60" },
-    { label: "Signals", value: result?.summary?.total_signals ?? overview?.counts?.signals ?? 0, footerLeft: "maintenance", footerRight: "visible pressure", tone: "from-orange-700/70 to-red-900/60" },
+    { label: "Signals", value: result?.summary?.total_signals ?? overview?.counts?.signals ?? 0, footerLeft: "maintenance", footerRight: "ranked evidence", tone: "from-orange-700/70 to-red-900/60" },
     { label: "Scans", value: health.scan_count || overview?.counts?.scans || 0, footerLeft: "saved", footerRight: "local history", tone: "from-slate-500/70 to-slate-800/60" },
     { label: "Warnings", value: result?.warnings?.length ?? overview?.counts?.warnings ?? 0, footerLeft: "coverage", footerRight: result?.warnings?.length ? "review" : "complete", tone: result?.warnings?.length ? "from-amber-600/70 to-yellow-800/50" : "from-emerald-700/70 to-teal-900/60" },
   ],
-  hero: (result) => {
-    const repositories = result?.summary?.total_repos ?? 0;
-    const signals = result?.summary?.total_signals ?? 0;
-    return { lead: repositories, middle: repositories === 1 ? "repository surfaces" : "repositories surface", highlight: `${countLabel(signals, "signal")}.` };
-  },
-  status: (result) => {
-    const count = Number(result?.summary?.total_signals || 0);
-    const warnings = result?.warnings?.length || 0;
-    return { label: warnings ? "partial" : count ? "pressure" : "quiet", detail: warnings ? "Some repository evidence was unavailable; warnings remain visible." : count ? "Maintenance pressure is ranked for review." : "No strong maintenance signals in this scan.", progress: `${Math.min(100, Math.max(12, count))}%`, stats: [["repos", result?.summary?.total_repos || 0], ["signals", count], ["warnings", warnings]] };
-  },
+  hero: () => ({ lead: "Maintenance evidence", middle: "ranked for", highlight: "review." }),
+  status: signalAssessment,
+  priorityItems: (items) => [...items].filter((item) => Number(item.score || 0) > 0).sort((left, right) => Number(right.score || 0) - Number(left.score || 0)),
   chips: (result, health) => [scanScope(result), `${result?.params?.stale_days || 45} day stale window`, targetSelectionMode(result) === "direct" ? "direct target" : `${result?.params?.max_repos || 8} repo cap`, health.github_ready ? "GitHub verified" : "coverage pending"],
-  targetSubtitle: (result) => result ? `${triggerLabel(result.trigger_type)} · ${countLabel(result.summary?.total_repos, "repository")}` : "No scan loaded",
+  targetSubtitle: (result) => result ? `${triggerLabel(result.trigger_type)} · ${targetSelectionMode(result) === "direct" ? "direct target" : "discovery scope"}` : "No scan loaded",
   historyItems: (payload) => payload.scans || [],
   historyTitle: (entry) => targetSelectionMode(entry) === "direct"
     ? storedTarget(entry.search_query) || entry.top_repo
