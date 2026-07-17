@@ -97,6 +97,23 @@ cargo run --manifest-path services/patchhive-backend/Cargo.toml
 The mounted API prefix is
 `http://127.0.0.1:8100/api/products/refactor-scout`.
 
+## UI v3 Parity Candidate
+
+The current v3 candidate lives in `frontend-v3/` while the existing v1 and v2
+frontends remain available for the final visual parity check:
+
+```bash
+cd products/refactor-scout/frontend-v3
+npm install
+npm run dev
+```
+
+It connects to the in-process API by default at
+`http://127.0.0.1:8100/api/products/refactor-scout` and preserves local-path
+and public-GitHub intake, ranked opportunity details, warnings, copyable
+Markdown, saved dashboard views, history, startup diagnostics, filesystem
+guidance, responsive layout, and the suite-wide theme preference.
+
 ## Safety Boundary
 
 RefactorScout is trying to answer one narrow question well:

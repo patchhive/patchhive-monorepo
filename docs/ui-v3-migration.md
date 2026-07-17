@@ -96,7 +96,7 @@ typography scale, spacing system, or theme implementation.
 | TrustGate | `products/trust-gate/frontend` | Promoted after pasted and live PR review, policy, history/detail, diagnostics, PAT publishing, responsive layout, and light/dark acceptance; v1/v2 removed |
 | RepoMemory | `products/repo-memory/frontend` | Promoted after ingest, memory curation, context preview, run diff, prompt-pack, FailGuard, history, checks, sources, responsive layout, and light/dark acceptance; v1/v2 removed |
 | SignalHive | `products/signal-hive/frontend` | Promoted after direct and discovery targets, operator and scheduled runs, presets, repository controls, trend/timeline, Markdown report, HTML dashboard snapshot, saved history, diagnostics, responsive layout, light/dark behavior, strict builds, and container acceptance; v1/v2 removed |
-| RefactorScout | not created | Engine integrated in-process; v1/v2 parity audit is active before the v3 candidate is built |
+| RefactorScout | `products/refactor-scout/frontend-v3` | Engine integrated in-process; parity candidate includes real SQLite history, local/GitHub intake, ranked detail, saved filters, warnings, Markdown summary, filesystem guidance, diagnostics, responsive layout, and persistent theme; keep v1/v2 until visual acceptance |
 | Other specialist products | not created | Wait until their product engine is integrated in-process |
 | HiveCore | not applicable | Intentionally separate |
 

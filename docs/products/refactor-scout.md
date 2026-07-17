@@ -106,6 +106,17 @@ This serves the same routes under
 `/api/products/refactor-scout`. Use an absolute database path when starting from
 the monorepo root so RefactorScout reuses its current history database.
 
+### UI v3 parity candidate
+
+The integrated v3 candidate lives in
+`products/refactor-scout/frontend-v3/`. It deliberately coexists with
+`frontend/` and `frontend-v2/` until the operator completes the final visual
+parity audit. The candidate covers both local-path and public-GitHub intake,
+the ranked opportunity queue and detail surface, saved filters and sorts,
+progressive results, scan warnings, copyable Markdown, history, startup
+diagnostics, filesystem safety guidance, responsive layout, and persistent
+light/dark preference.
+
 ## Configuration
 
 All variables are loaded from environment (`.env` file via `dotenvy`, or system env).
