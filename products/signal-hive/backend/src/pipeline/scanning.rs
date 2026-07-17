@@ -10,10 +10,9 @@ use crate::models::{RepoSignalTrend, ScanRecord, ScanReport, ScanTrendSummary};
 use crate::state::AppState;
 
 use super::analysis::{analyze_repo_issue_draft, collect_marker_counts, finalize_repo_signal};
-use super::scoring::MarkerCounts;
 use super::utils::{
-    clamp_params, count_label, format_scope_text, marker_scan_repo_limit, marker_total,
-    recurring_issue_count, round1, validate_scan_scope,
+    clamp_params, count_label, format_scope_text, marker_total, recurring_issue_count, round1,
+    validate_scan_scope,
 };
 
 pub fn repo_trend_status(
@@ -358,30 +357,10 @@ pub async fn run_scan_record(
             .then_with(|| b.repo.stargazers_count.cmp(&a.repo.stargazers_count))
     });
 
-    let marker_repo_limit = marker_scan_repo_limit();
-    if drafts.len() > marker_repo_limit {
-        let warning = format!(
-            "SignalHive only ran TODO/FIXME code search on the top {marker_repo_limit} repos in this scan to stay within GitHub search limits. Marker counts are unavailable for the rest of the queue."
-        );
-        if seen_scan_warnings.insert(warning.clone()) {
-            scan_warnings.push(warning);
-        }
-    }
-
     let mut signals = Vec::new();
-    let mut code_search_rate_limited = false;
 
-    for (index, draft) in drafts.into_iter().enumerate() {
-        let marker_counts = if index < marker_repo_limit {
-            collect_marker_counts(
-                &state.http,
-                &draft.repo.full_name,
-                &mut code_search_rate_limited,
-            )
-            .await
-        } else {
-            MarkerCounts::default()
-        };
+    for draft in drafts {
+        let marker_counts = collect_marker_counts(&state.http, &draft.repo.full_name).await;
 
         for warning in &marker_counts.warnings {
             if seen_scan_warnings.insert(warning.clone()) {

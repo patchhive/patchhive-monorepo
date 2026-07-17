@@ -8,8 +8,9 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::models::{
-    GitHubActionsWorkflowJob, GitHubActionsWorkflowRun, GitHubCodeSearchResponse, GitHubIssue,
-    GitHubPullFile, GitHubPullRequest, GitHubRepository, GitHubReview, GitHubReviewComment,
+    GitHubActionsWorkflowJob, GitHubActionsWorkflowRun, GitHubCodeSearchRateLimit,
+    GitHubCodeSearchResponse, GitHubIssue, GitHubPullFile, GitHubPullRequest,
+    GitHubRateLimitResponse, GitHubRepository, GitHubReview, GitHubReviewComment,
     GitHubSearchRepositoriesResponse,
 };
 use crate::{response_preview, GitHubApiError};
@@ -678,6 +679,11 @@ pub async fn code_search_count(client: &Client, query: &str) -> Result<u32> {
     )
     .await?;
     Ok(response.total_count)
+}
+
+pub async fn code_search_rate_limit(client: &Client) -> Result<GitHubCodeSearchRateLimit> {
+    let response: GitHubRateLimitResponse = get_public_json(client, "/rate_limit", &[]).await?;
+    Ok(response.resources.code_search)
 }
 
 pub async fn fetch_workflow_runs(

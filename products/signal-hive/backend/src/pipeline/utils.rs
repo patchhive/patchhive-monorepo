@@ -128,14 +128,6 @@ pub fn marker_total(
     total
 }
 
-pub fn marker_scan_repo_limit() -> usize {
-    std::env::var("SIGNAL_MARKER_REPO_LIMIT")
-        .ok()
-        .and_then(|value| value.trim().parse::<usize>().ok())
-        .filter(|value| *value > 0)
-        .unwrap_or(4)
-}
-
 pub fn title_tokens(title: &str) -> Vec<String> {
     const STOP: &[&str] = &[
         "the", "a", "an", "and", "or", "for", "with", "from", "into", "after", "before", "that",

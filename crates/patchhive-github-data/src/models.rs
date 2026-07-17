@@ -129,6 +129,28 @@ pub struct GitHubCodeSearchResponse {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct GitHubCodeSearchRateLimit {
+    #[serde(default)]
+    pub limit: u32,
+    #[serde(default)]
+    pub remaining: u32,
+    #[serde(default)]
+    pub reset: i64,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub(crate) struct GitHubRateLimitResources {
+    #[serde(default)]
+    pub code_search: GitHubCodeSearchRateLimit,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub(crate) struct GitHubRateLimitResponse {
+    #[serde(default)]
+    pub resources: GitHubRateLimitResources,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct GitHubActionsWorkflowRun {
     #[serde(default)]
     pub id: i64,
@@ -198,7 +220,27 @@ pub struct GitHubActionsWorkflowJobsResponse {
 
 #[cfg(test)]
 mod tests {
-    use super::{GitHubActionsWorkflowJob, GitHubActionsWorkflowRun, GitHubActionsWorkflowStep};
+    use super::{
+        GitHubActionsWorkflowJob, GitHubActionsWorkflowRun, GitHubActionsWorkflowStep,
+        GitHubRateLimitResponse,
+    };
+
+    #[test]
+    fn rate_limit_response_exposes_code_search_capacity() {
+        let response: GitHubRateLimitResponse = serde_json::from_str(
+            r#"{
+              "resources": {
+                "core": {"limit": 5000, "remaining": 4999, "reset": 1000},
+                "code_search": {"limit": 10, "remaining": 3, "reset": 1060}
+              }
+            }"#,
+        )
+        .expect("rate-limit response should decode");
+
+        assert_eq!(response.resources.code_search.limit, 10);
+        assert_eq!(response.resources.code_search.remaining, 3);
+        assert_eq!(response.resources.code_search.reset, 1060);
+    }
 
     #[test]
     fn workflow_run_allows_nullable_github_actions_fields() {
