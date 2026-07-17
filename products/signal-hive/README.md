@@ -32,19 +32,13 @@ It is the read-only reconnaissance layer in PatchHive: a product that scans repo
 - rank repositories into a maintenance queue with explainable score drivers
 - save presets, schedules, trend history, and shareable reports
 
-## UI v2 Prototype
+## Canonical UI
 
-The suite-wide UI v2 prototype for SignalHive lives in `frontend-v2/`. It is a React/Vite radar/atlas prototype used to prove the new PatchHive visual language before the production frontend is ported. The original static mockup is preserved as `frontend-v2/prototype-static.html`.
-
-When using Docker Compose, the v2 prototype is exposed as the `frontend-v2` service on `http://localhost:5192`.
-
-The current production frontend remains in `frontend/`. Keep old UI code there until the full suite has moved to v2 and the old UI is intentionally legacy or removed.
-
-For local v2 development:
-
-```bash
-cd frontend-v2 && npm install && npm run dev
-```
+SignalHive passed its final UI v3 parity audit on 2026-07-16. The canonical
+frontend lives in `frontend/`; the former v1 and v2 trees were removed after
+direct and discovery scans, scheduled runs, presets, repository controls,
+history, trend/timeline evidence, reports, diagnostics, responsive behavior,
+and light/dark behavior were accepted.
 
 ## Quick Start
 

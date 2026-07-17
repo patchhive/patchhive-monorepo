@@ -182,7 +182,6 @@ Rules:
 - Keep v2 experiments in `products/<product>/frontend-v2/` until the new design system is ready to replace production UI code.
 - Keep current production frontends in `products/<product>/frontend/` during the transition.
 - Do not mix v2 work into old UI code while the direction is still being tested.
-- SignalHive's active v2 prototype lives in `products/signal-hive/frontend-v2/`.
 - HiveCore does not currently follow the v2 direction, but it should converge before old UI code is legacy or removed.
 - Once every product has moved to v2, old UI code should either move to a clearly named legacy path or be removed.
 - See [docs/ui-v2-migration.md](/home/coemedia/Documents/code/patchhive/docs/ui-v2-migration.md).
@@ -223,11 +222,9 @@ Rules:
 - RepoMemory passed its final parity audit on 2026-07-14; its canonical v3 UI
   lives in `products/repo-memory/frontend/`, and its v1/v2 trees have been
   removed.
-- SignalHive is integrated in-process and its parity candidate lives in
-  `products/signal-hive/frontend-v3/`. Keep `frontend/` and `frontend-v2/`
-  until discovery, presets, schedules, repository controls, trend/timeline,
-  reports, history, diagnostics, responsive layout, and light/dark behavior
-  pass final acceptance.
+- SignalHive passed its final parity audit on 2026-07-16; its canonical v3 UI
+  lives in `products/signal-hive/frontend/`, and its v1/v2 trees have been
+  removed.
 - Prefer finishing and validating v3 for the current integrated product set before moving another product engine into the unified backend.
 - HiveCore is intentionally outside the specialist-product v3 migration and keeps its control-plane UI.
 - `prototypes/vuln-triage-calm-mockup.html` is reference material only; it is not the v3 source of truth.

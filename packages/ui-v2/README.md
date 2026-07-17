@@ -20,12 +20,9 @@ UI v2 is based on the SignalHive radar/atlas prototype:
 - explainable queues, metrics, and evidence trails
 - interactive scope/radar surfaces where they clarify product state
 
-SignalHive is the first product prototype and now has a React/Vite v2 app:
-
-- `products/signal-hive/frontend-v2/index.html`
-- `products/signal-hive/frontend-v2/src/`
-- `products/signal-hive/frontend-v2/prototype-static.html` keeps the original
-  static concept reference
+SignalHive originally proved this direction. It has since passed v3 parity, and
+its legacy v2 tree was removed; its canonical UI now lives in
+`products/signal-hive/frontend/`.
 
 ## Product Migration Rule
 

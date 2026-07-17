@@ -5,10 +5,8 @@
 > whose canonical source is `unified-ui-revamp-main/`. Do not extend the v2
 > radar design into a product that is being ported to v3.
 
-PatchHive is moving toward a shared v2 frontend language. The current candidate
-direction is the SignalHive radar/atlas React prototype in
-`products/signal-hive/frontend-v2/`. The original static concept is preserved as
-`products/signal-hive/frontend-v2/prototype-static.html`.
+PatchHive used the v2 frontend language as an intermediate migration track.
+SignalHive has since passed v3 parity, and its former v1/v2 trees were removed.
 
 ## Why
 
@@ -140,7 +138,7 @@ cross-product handoffs rather than another single-product radar board.
 
 | Product | v2 folder | Status |
 | --- | --- | --- |
-| SignalHive | `products/signal-hive/frontend-v2` | React prototype active |
+| SignalHive | — | v2 retired after v3 parity; canonical UI is `products/signal-hive/frontend` |
 | RepoReaper | `products/repo-reaper/frontend-v2` | React prototype active |
 | ReviewBee | `products/review-bee/frontend-v2` | React prototype active |
 | TrustGate | — | v2 retired after v3 parity; canonical UI is `products/trust-gate/frontend` |

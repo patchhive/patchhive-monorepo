@@ -20,32 +20,12 @@ services:
 
   frontend:
     image: "${PATCHHIVE_SIGNAL_HIVE_FRONTEND_IMAGE:-ghcr.io/patchhive/signalhive-frontend}:${PATCHHIVE_IMAGE_TAG:-main}"
-    build: ./frontend
+    build:
+      context: ../..
+      dockerfile: products/signal-hive/frontend/Dockerfile
     pull_policy: "${PATCHHIVE_IMAGE_PULL_POLICY:-missing}"
     ports:
       - "5174:8080"
-    depends_on:
-      - backend
-    restart: unless-stopped
-
-  frontend-v2:
-    build:
-      context: ../..
-      dockerfile: products/signal-hive/frontend-v2/Dockerfile
-    pull_policy: never
-    ports:
-      - "5192:8080"
-    depends_on:
-      - backend
-    restart: unless-stopped
-
-  frontend-v3:
-    build:
-      context: ../..
-      dockerfile: products/signal-hive/frontend-v3/Dockerfile
-    pull_policy: never
-    ports:
-      - "5308:8080"
     depends_on:
       - backend
     restart: unless-stopped
