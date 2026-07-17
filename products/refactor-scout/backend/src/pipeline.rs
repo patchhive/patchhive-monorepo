@@ -90,6 +90,109 @@ const C: &str = "service said \"try again later\"";
     }
 
     #[test]
+    fn repeated_validation_gets_context_aware_guidance() {
+        let source = r#"
+fn validate_one(repo: &str) -> anyhow::Result<()> {
+    if !valid_repo(repo) {
+        return Err(anyhow::anyhow!("Repository must be in owner/name format"));
+    }
+    Ok(())
+}
+fn validate_two(repo: &str) -> anyhow::Result<()> {
+    if !valid_repo(repo) {
+        return Err(anyhow::anyhow!("Repository must be in owner/name format"));
+    }
+    Ok(())
+}
+fn validate_three(repo: &str) -> anyhow::Result<()> {
+    if !valid_repo(repo) {
+        return Err(anyhow::anyhow!("Repository must be in owner/name format"));
+    }
+    Ok(())
+}
+"#;
+
+        let opportunities = analyze_file("src/client.rs", "rust", source);
+        let validation = opportunities
+            .iter()
+            .find(|item| item.kind == "repeated_validation")
+            .expect("repeated validation should receive specific guidance");
+        assert_eq!(validation.title, "Consolidate repeated validation");
+        assert!(validation.suggestion.contains("validation helper"));
+        assert!(validation.summary.contains("similar error paths"));
+    }
+
+    #[test]
+    fn test_and_fixture_leads_rank_below_runtime_equivalents() {
+        let source = r#"
+const A: &str = "shared production boundary message";
+const B: &str = "shared production boundary message";
+const C: &str = "shared production boundary message";
+"#;
+
+        let runtime = analyze_file("src/client.rs", "rust", source)
+            .into_iter()
+            .find(|item| item.kind == "repeated_literal")
+            .expect("runtime lead should exist");
+        let test = analyze_file("tests/client.rs", "rust", source)
+            .into_iter()
+            .find(|item| item.kind == "repeated_literal")
+            .expect("test lead should remain visible");
+
+        assert_eq!(runtime.score.saturating_sub(test.score), 10);
+        assert!(test
+            .evidence
+            .iter()
+            .any(|item| item.contains("ranked below runtime code")));
+    }
+
+    #[test]
+    fn local_scan_ignores_dependency_build_and_cache_directories() {
+        let base =
+            std::env::temp_dir().join(format!("refactor-scout-ignore-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(base.join("src")).expect("source directory should exist");
+        fs::write(base.join("src/lib.rs"), "pub fn visible() {}\n")
+            .expect("source fixture should write");
+
+        for directory in [
+            "node_modules",
+            "NODE_MODULES",
+            "build",
+            "dist",
+            "target",
+            ".next",
+            ".pytest_cache",
+            "__pycache__",
+            ".gradle",
+            ".svelte-kit",
+            "storybook-static",
+        ] {
+            let ignored = base.join(directory);
+            fs::create_dir_all(&ignored).expect("ignored directory should exist");
+            fs::write(
+                ignored.join("noise.rs"),
+                r#"
+const A: &str = "ignored dependency or build output";
+const B: &str = "ignored dependency or build output";
+const C: &str = "ignored dependency or build output";
+"#,
+            )
+            .expect("ignored fixture should write");
+        }
+
+        let state = AppState {
+            allowed_roots: vec![base.clone()],
+            remote_fs_enabled: false,
+        };
+        let result = build_scan_result(&state, base.to_str().expect("utf8 scan root"), 100)
+            .expect("scan should succeed");
+
+        assert_eq!(result.metrics.files_scanned, 1);
+        assert_eq!(result.metrics.opportunities, 0);
+        fs::remove_dir_all(base).ok();
+    }
+
+    #[test]
     fn rust_braces_in_strings_and_comments_do_not_expand_function_bounds() {
         let mut source = String::from(
             r####"

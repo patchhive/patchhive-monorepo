@@ -27,6 +27,7 @@ pub(crate) const REPEATED_LITERAL_MIN_REPEATS: u32 = 3;
 pub(crate) const MAX_WARNINGS: usize = 12;
 const DEFAULT_CLONE_TIMEOUT_SECS: u64 = 120;
 const MAX_CLONE_ERROR_BYTES: usize = 600;
+const SUPPORT_CODE_SCORE_PENALTY: u32 = 10;
 
 static RUST_FN_RE: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"^\s*(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?fn\s+([A-Za-z_][A-Za-z0-9_]*)")
@@ -382,6 +383,7 @@ fn scan_repo(root: &Path, max_files: u32) -> Result<ScanArtifacts> {
 
     for entry in WalkDir::new(root)
         .follow_links(false)
+        .sort_by_file_name()
         .into_iter()
         .filter_entry(should_descend)
     {
@@ -479,6 +481,16 @@ pub(crate) fn analyze_file(path: &str, language: &str, content: &str) -> Vec<Ref
         opportunities.push(opportunity);
     }
 
+    if is_test_or_fixture_path(path) {
+        for opportunity in &mut opportunities {
+            opportunity.score = opportunity.score.saturating_sub(SUPPORT_CODE_SCORE_PENALTY);
+            opportunity.evidence.push(
+                "Test or fixture code is ranked below runtime code at the same safety level."
+                    .into(),
+            );
+        }
+    }
+
     opportunities
 }
 
@@ -569,7 +581,7 @@ fn repeated_literal_opportunity(
     language: &str,
     content: &str,
 ) -> Option<RefactorOpportunity> {
-    let mut literals: HashMap<String, (u32, usize)> = HashMap::new();
+    let mut literals: HashMap<String, (u32, usize, Vec<usize>)> = HashMap::new();
 
     for (literal, offset) in source_string_literals(content, language) {
         let literal = literal.trim();
@@ -577,13 +589,16 @@ fn repeated_literal_opportunity(
             continue;
         }
 
-        let entry = literals.entry(literal.to_string()).or_insert((0, offset));
+        let entry = literals
+            .entry(literal.to_string())
+            .or_insert_with(|| (0, offset, Vec::new()));
         entry.0 += 1;
+        entry.2.push(offset);
     }
 
-    let (literal, (count, first_offset)) = literals
+    let (literal, (count, first_offset, offsets)) = literals
         .into_iter()
-        .filter(|(literal, (count, _))| {
+        .filter(|(literal, (count, _, _))| {
             literal.len() >= REPEATED_LITERAL_MIN_LEN && *count >= REPEATED_LITERAL_MIN_REPEATS
         })
         .max_by(|left, right| {
@@ -598,15 +613,34 @@ fn repeated_literal_opportunity(
         .count() as u32;
     let preview = literal_preview(&literal);
     let score = 68 + (count.saturating_sub(REPEATED_LITERAL_MIN_REPEATS) * 7).min(18);
+    let validation_pattern = repeated_validation_pattern(content, &offsets);
+    let (kind, title, summary, suggestion, context_evidence) = if validation_pattern {
+        (
+            "repeated_validation",
+            "Consolidate repeated validation",
+            format!(
+                "`{path}` repeats the validation message `{preview}` {count} times alongside similar error paths, which suggests one shared validation boundary can remove duplicated checks and text."
+            ),
+            "Start by extracting the message into a named constant. If the surrounding guards enforce the same contract, follow with a small validation helper while preserving the current error text and adding focused tests.",
+            "The repeated message appears in validation or error-return paths.",
+        )
+    } else {
+        (
+            "repeated_literal",
+            "Extract repeated string literal",
+            format!(
+                "`{path}` repeats the string `{preview}` {count} times, which is usually a low-risk extract-constant cleanup."
+            ),
+            "Lift the repeated literal into a named constant close to its usage site first. If the meaning stays clear, promote it to a shared module later.",
+            "Repeated literals are usually one of the safest refactor entry points.",
+        )
+    };
 
     Some(RefactorOpportunity {
         id: Uuid::new_v4().to_string(),
-        kind: "repeated_literal".into(),
-        title: "Extract repeated string literal".into(),
-        summary: format!(
-            "`{path}` repeats the string `{preview}` {} times, which is usually a low-risk extract-constant cleanup.",
-            count
-        ),
+        kind: kind.into(),
+        title: title.into(),
+        summary,
         path: path.into(),
         language: language.into(),
         score,
@@ -614,12 +648,52 @@ fn repeated_literal_opportunity(
         effort: "low".into(),
         line_start: line,
         line_end: line,
-        suggestion: "Lift the repeated literal into a named constant close to its usage site first. If the meaning stays clear, promote it to a shared module later.".into(),
+        suggestion: suggestion.into(),
         evidence: vec![
             format!("{count} repeated occurrences"),
-            "Repeated literals are usually one of the safest refactor entry points.".into(),
+            context_evidence.into(),
         ],
     })
+}
+
+fn repeated_validation_pattern(content: &str, offsets: &[usize]) -> bool {
+    let validation_hits = offsets
+        .iter()
+        .filter(|offset| {
+            let context = nearby_source_lines(content, **offset).to_ascii_lowercase();
+            [
+                "return err",
+                "anyhow!",
+                "bail!",
+                "ensure!",
+                "ok_or",
+                "raise ",
+                "throw ",
+                "panic!",
+            ]
+            .iter()
+            .any(|marker| context.contains(marker))
+        })
+        .count();
+
+    validation_hits >= REPEATED_LITERAL_MIN_REPEATS as usize && validation_hits * 2 >= offsets.len()
+}
+
+fn nearby_source_lines(content: &str, offset: usize) -> &str {
+    let current_start = content[..offset]
+        .rfind('\n')
+        .map(|index| index + 1)
+        .unwrap_or(0);
+    let previous_start = current_start
+        .checked_sub(1)
+        .and_then(|index| content[..index].rfind('\n'))
+        .map(|index| index + 1)
+        .unwrap_or(0);
+    let current_end = content[offset..]
+        .find('\n')
+        .map(|index| offset + index)
+        .unwrap_or(content.len());
+    &content[previous_start..current_end]
 }
 
 fn source_string_literals(content: &str, language: &str) -> Vec<(String, usize)> {
@@ -1021,20 +1095,57 @@ fn should_descend(entry: &DirEntry) -> bool {
         return false;
     };
 
-    !matches!(
-        name,
-        ".git"
+    !is_ignored_directory(name)
+}
+
+fn is_ignored_directory(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        ".cache"
+            | ".git"
+            | ".gradle"
+            | ".mypy_cache"
             | ".next"
+            | ".nox"
+            | ".nuxt"
+            | ".output"
+            | ".parcel-cache"
+            | ".pnpm-store"
+            | ".pytest_cache"
+            | ".ruff_cache"
+            | ".svelte-kit"
+            | ".tox"
             | ".turbo"
-            | ".vite"
             | ".venv"
+            | ".vite"
+            | ".yarn"
+            | "__pycache__"
+            | "bower_components"
             | "build"
             | "coverage"
             | "dist"
             | "node_modules"
+            | "out"
+            | "storybook-static"
             | "target"
             | "vendor"
     )
+}
+
+fn is_test_or_fixture_path(path: &str) -> bool {
+    let normalized = path.replace('\\', "/").to_ascii_lowercase();
+    let filename = normalized.rsplit('/').next().unwrap_or(&normalized);
+
+    normalized.starts_with("tests/")
+        || normalized.starts_with("test/")
+        || normalized.starts_with("fixtures/")
+        || normalized.contains("/tests/")
+        || normalized.contains("/test/")
+        || normalized.contains("/__tests__/")
+        || normalized.contains("/fixtures/")
+        || filename.contains(".test.")
+        || filename.contains(".spec.")
+        || filename.ends_with("_test.go")
 }
 
 fn should_ignore_literal(literal: &str) -> bool {

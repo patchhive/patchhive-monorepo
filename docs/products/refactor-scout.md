@@ -15,7 +15,7 @@ RefactorScout is refactor-first, read-only, and conservative. Its job is to help
 1. **Target** — Point RefactorScout at a local repository path inside an allowed root, or a public GitHub repo slug (e.g., `owner/repo`), or a GitHub URL.
 2. **Walk** — Traverse the repository without mutating anything. GitHub repos are shallow-cloned into a temporary directory.
 3. **Analyze** — Apply conservative heuristics to surface refactor opportunities.
-4. **Rank** — Sort leads by score, safety, and path.
+4. **Rank** — Sort leads by safety, score, and path, with test and fixture code ranked below equivalent runtime-code leads.
 5. **Store** — Save the scan result to SQLite history.
 6. **Clean up** — Remove any temporary GitHub clone after the scan finishes.
 
@@ -34,7 +34,7 @@ Future write-capable flows (e.g., "Create refactor PR") should stay behind an ex
 
 | Output | Description |
 |--------|-------------|
-| **Ranked refactor opportunities** | Up to 60 opportunities sorted by score (descending), then safety rank, then path. |
+| **Ranked refactor opportunities** | Up to 60 opportunities sorted by safety rank, then score (descending), then path. |
 | **Scan metrics** | Counts: `files_scanned`, `files_skipped`, `opportunities`, `high_safety`, `medium_safety`, `large_file_count`, `long_function_count`, `repeated_literal_count`. |
 | **Summary** | A human-readable sentence describing the strongest lead and aggregate counts. |
 | **Evidence per opportunity** | File path, language, line range, score (0–100), safety label (`high`/`medium`), effort label (`low`/`medium`), suggestion text, and evidence strings. |
@@ -192,7 +192,7 @@ backend/src/
        └── GitHub: parse_github_repo_target() → TemporaryClone → git clone --depth 1
        │
        ▼
-3. scan_repo() — WalkDir traversal (skip .git, node_modules, target, etc.)
+3. scan_repo() — deterministic WalkDir traversal (skip dependency, build, cache, and VCS directories such as .git, node_modules, dist, build, target, .next, and __pycache__)
        │   Filter: only .rs, .py, .js, .jsx, .ts, .tsx, .go files
        │   Skip: files > 350 KB, unreadable text, walk errors
        │
@@ -200,10 +200,10 @@ backend/src/
 4. analyze_file() per file:
        ├── > 320 lines   → "large_file" opportunity (safety: medium)
        ├── > 60 lines/fn → "long_function" opportunity (safety: medium)
-       └── ≥3 repeats of ≥12-char string literal → "repeated_literal" (safety: high)
+       └── ≥3 repeats of ≥12-char string literal → "repeated_literal" or context-aware "repeated_validation" guidance (safety: high)
        │
        ▼
-5. Sort by score desc → safety desc → path asc, truncate to 60
+5. Sort by safety desc → score desc → path asc, truncate to 60
        │
        ▼
 6. build_metrics() + build_summary() → RefactorScanResult

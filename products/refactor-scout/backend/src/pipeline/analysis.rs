@@ -22,7 +22,7 @@ pub(crate) fn build_metrics(
         match opportunity.kind.as_str() {
             "large_file" => metrics.large_file_count += 1,
             "long_function" => metrics.long_function_count += 1,
-            "repeated_literal" => metrics.repeated_literal_count += 1,
+            "repeated_literal" | "repeated_validation" => metrics.repeated_literal_count += 1,
             _ => {}
         }
     }
