@@ -30,6 +30,9 @@ pub async fn init_enabled_products(config: &Config) -> Result<()> {
     if config.product_selection.enables("signal-hive") {
         signal_hive::init_runtime().await?;
     }
+    if config.product_selection.enables("refactor-scout") {
+        refactor_scout::init_runtime().await?;
+    }
     Ok(())
 }
 
@@ -67,4 +70,8 @@ pub fn repo_memory_router() -> axum::Router {
 
 pub fn signal_hive_router() -> axum::Router {
     signal_hive::router()
+}
+
+pub fn refactor_scout_router() -> axum::Router {
+    refactor_scout::router()
 }

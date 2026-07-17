@@ -8,6 +8,10 @@ license = "MIT"
 name = "refactor-scout"
 path = "src/main.rs"
 
+[lib]
+name = "refactor_scout"
+path = "src/lib.rs"
+
 [dependencies]
 anyhow = "1"
 axum = { version = "0.7", features = ["macros"] }

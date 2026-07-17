@@ -78,6 +78,25 @@ cd frontend-v2 && npm install && npm run dev
 
 RefactorScout scans local filesystem paths and public GitHub repositories. Set `REFACTOR_SCOUT_ALLOWED_ROOTS` before pointing it at broader checkout directories. GitHub repo inputs are cloned into a temporary directory, scanned, and removed after the scan. By default, filesystem scans are limited to localhost callers even when API-key auth is enabled.
 
+## Unified Backend
+
+RefactorScout's engine is mounted in-process by `services/patchhive-backend`.
+The standalone backend and unified runtime use the same library, routes, SQLite
+history, auth, filesystem guardrails, and temporary-clone lifecycle.
+
+When launching from the monorepo root, use an absolute database path so the
+unified process reuses the product database instead of creating a new root-level
+file:
+
+```bash
+REFACTOR_SCOUT_DB_PATH="$PWD/products/refactor-scout/refactor-scout.db" \
+PATCHHIVE_PRODUCTS=refactor-scout \
+cargo run --manifest-path services/patchhive-backend/Cargo.toml
+```
+
+The mounted API prefix is
+`http://127.0.0.1:8100/api/products/refactor-scout`.
+
 ## Safety Boundary
 
 RefactorScout is trying to answer one narrow question well:

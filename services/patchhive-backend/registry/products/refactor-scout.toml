@@ -4,16 +4,12 @@ name = "RefactorScout"
 role = "conservative refactor discovery"
 module_path = "crate::products::refactor_scout"
 route_prefix = "/api/products/refactor-scout"
-migration_stage = "gateway-ready"
+migration_stage = "integrated"
 
 [safety]
 read_only = true
 credential_scopes = ["local:filesystem:read", "github:public-repo:clone"]
 evidence_required = ["local path allowlist or temporary GitHub clone", "file metrics", "ranking reason"]
-
-[gateway]
-default_url = "http://127.0.0.1:8090"
-env_var = "REFACTOR_SCOUT_GATEWAY_URL"
 
 [health]
 endpoint = "/api/products/refactor-scout/health"

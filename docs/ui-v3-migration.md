@@ -96,11 +96,12 @@ typography scale, spacing system, or theme implementation.
 | TrustGate | `products/trust-gate/frontend` | Promoted after pasted and live PR review, policy, history/detail, diagnostics, PAT publishing, responsive layout, and light/dark acceptance; v1/v2 removed |
 | RepoMemory | `products/repo-memory/frontend` | Promoted after ingest, memory curation, context preview, run diff, prompt-pack, FailGuard, history, checks, sources, responsive layout, and light/dark acceptance; v1/v2 removed |
 | SignalHive | `products/signal-hive/frontend` | Promoted after direct and discovery targets, operator and scheduled runs, presets, repository controls, trend/timeline, Markdown report, HTML dashboard snapshot, saved history, diagnostics, responsive layout, light/dark behavior, strict builds, and container acceptance; v1/v2 removed |
+| RefactorScout | not created | Engine integrated in-process; v1/v2 parity audit is active before the v3 candidate is built |
 | Other specialist products | not created | Wait until their product engine is integrated in-process |
 | HiveCore | not applicable | Intentionally separate |
 
 The integrated set is derived from both the registry manifests and executable
-route mounts. As of 2026-07-14, these nine products have
+route mounts. As of 2026-07-16, these ten products have
 `migration_stage = "integrated"`, are initialized by
 `services/patchhive-backend/src/products.rs`, and are nested directly by
 `services/patchhive-backend/src/routes.rs`. Gateway-ready products are not

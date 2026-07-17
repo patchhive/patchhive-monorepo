@@ -92,6 +92,20 @@ npm install
 npm run dev
 ```
 
+### Unified backend
+
+The RefactorScout engine is also mounted in-process by the shared suite backend:
+
+```bash
+REFACTOR_SCOUT_DB_PATH="$PWD/products/refactor-scout/refactor-scout.db" \
+PATCHHIVE_PRODUCTS=refactor-scout \
+cargo run --manifest-path services/patchhive-backend/Cargo.toml
+```
+
+This serves the same routes under
+`/api/products/refactor-scout`. Use an absolute database path when starting from
+the monorepo root so RefactorScout reuses its current history database.
+
 ## Configuration
 
 All variables are loaded from environment (`.env` file via `dotenvy`, or system env).
@@ -118,7 +132,8 @@ All variables are loaded from environment (`.env` file via `dotenvy`, or system 
 
 ```
 backend/src/
-├── main.rs              — Axum router, middleware stack, server bootstrap
+├── lib.rs               — Shared engine initialization and router
+├── main.rs              — Thin standalone server bootstrap
 ├── models.rs            — Request/response types (ScanRequest, ScanMetrics,
 │                          RefactorOpportunity, RefactorScanResult, HistoryItem,
 │                          OverviewCounts, OverviewPayload)

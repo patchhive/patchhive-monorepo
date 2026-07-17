@@ -1,6 +1,6 @@
-mod analysis;
-mod routes;
-mod scanning;
+pub mod analysis;
+pub mod routes;
+pub mod scanning;
 
 // Re-export all public route handlers for main.rs.
 pub use routes::{
@@ -13,7 +13,7 @@ mod tests {
     use super::analysis::build_summary;
     use super::scanning::{analyze_file, parse_github_repo_target, resolve_scan_root};
     use crate::{models::ScanMetrics, state::AppState};
-    use std::{fs, path::PathBuf};
+    use std::fs;
 
     #[test]
     fn analyze_file_surfaces_large_file_and_long_function() {
@@ -73,7 +73,7 @@ const C = "service unavailable while syncing billing customers";
             .to_string()
             .contains("outside the configured allowed roots"));
 
-        fs::remove_dir_all(PathBuf::from(base)).ok();
+        fs::remove_dir_all(base).ok();
     }
 
     #[test]

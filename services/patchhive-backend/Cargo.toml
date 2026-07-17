@@ -19,6 +19,7 @@ dep-triage = { path = "../../products/dep-triage/backend" }
 flake-sting = { path = "../../products/flake-sting/backend" }
 merge-keeper = { path = "../../products/merge-keeper/backend" }
 release-sentry = { path = "../../products/release-sentry/backend" }
+refactor-scout = { path = "../../products/refactor-scout/backend" }
 repo-memory = { path = "../../products/repo-memory/backend" }
 review-bee = { path = "../../products/review-bee/backend" }
 signal-hive = { path = "../../products/signal-hive/backend" }

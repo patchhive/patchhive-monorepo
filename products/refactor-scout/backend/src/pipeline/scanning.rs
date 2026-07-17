@@ -153,7 +153,7 @@ fn build_scan_result_from_root(
     repo_name: String,
     max_files: u32,
 ) -> Result<RefactorScanResult> {
-    let mut artifacts = scan_repo(&root, max_files)?;
+    let mut artifacts = scan_repo(root, max_files)?;
     if artifacts.limit_hit {
         push_warning(
             &mut artifacts.warnings,
@@ -663,8 +663,7 @@ fn python_function_end(lines: &[&str], start: usize) -> usize {
     let mut body_indent = None;
     let mut end = start;
 
-    for index in (start + 1)..lines.len() {
-        let line = lines[index];
+    for (index, line) in lines.iter().enumerate().skip(start + 1) {
         let trimmed = line.trim();
         if trimmed.is_empty() {
             end = index;

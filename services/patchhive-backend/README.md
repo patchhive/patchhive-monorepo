@@ -238,6 +238,22 @@ POST /api/products/repo-memory/context
 GET  /api/products/repo-memory/failguard/candidates
 ```
 
+Run the suite backend with only RefactorScout enabled:
+
+```bash
+REFACTOR_SCOUT_DB_PATH=/absolute/path/to/refactor-scout.db \
+PATCHHIVE_PRODUCTS=refactor-scout cargo run
+```
+
+RefactorScout product routes are served directly by the unified backend:
+
+```text
+GET  /api/products/refactor-scout/health
+POST /api/products/refactor-scout/scan/local
+GET  /api/products/refactor-scout/runs
+GET  /api/products/refactor-scout/history
+```
+
 When launching the suite backend with product `.env` files, avoid shell-sourcing
 unquoted JSON service-token records such as `*_SERVICE_TOKEN_HASH={...}`.
 Shell parsing can flatten the JSON and make product-core treat the value as a
