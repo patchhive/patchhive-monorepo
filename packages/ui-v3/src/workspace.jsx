@@ -147,7 +147,7 @@ export function ProgressiveList({
         </button> : null}
         {canCollapse ? <button type="button" onClick={() => setVisibleCount(initialCount)} className={`surface-inset flex h-10 items-center gap-2 rounded-full px-5 text-[12px] ${V3_TEXT.body}`}>
           <ChevronUp size={13} />
-          Show first {Math.min(initialCount, items.length)}
+          Collapse
         </button> : null}
       </div> : null}
     </>
