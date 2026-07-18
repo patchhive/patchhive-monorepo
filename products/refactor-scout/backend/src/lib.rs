@@ -5,7 +5,9 @@ patchhive_product_core::define_api_key_auth_module! {
             .with_service_default_name("hivecore")
             .with_service_dispatch_paths([
                 "/scan/local",
+                "/schedules/{name}/run",
                 "/api/products/refactor-scout/scan/local",
+                "/api/products/refactor-scout/schedules/{name}/run",
             ])
             .with_unauthorized_message("Unauthorized — provide X-API-Key or X-PatchHive-Service-Token.")
             .with_public_paths([
@@ -57,6 +59,7 @@ pub async fn init_runtime() -> Result<()> {
     let checks = startup::validate_config(&state).await;
     log_checks(&checks);
     let _ = STARTUP_CHECKS.set(checks);
+    pipeline::schedules::start_scheduler(state);
     Ok(())
 }
 
@@ -81,6 +84,18 @@ pub fn router() -> Router {
         .route("/overview", get(pipeline::overview))
         .route("/history", get(pipeline::history))
         .route("/history/:id", get(pipeline::history_detail))
+        .route(
+            "/schedules",
+            get(pipeline::scan_schedules).post(pipeline::save_scan_schedule),
+        )
+        .route(
+            "/schedules/:name",
+            axum::routing::delete(pipeline::delete_scan_schedule),
+        )
+        .route(
+            "/schedules/:name/run",
+            post(pipeline::run_scan_schedule_now),
+        )
         .route("/scan/local", post(pipeline::scan_local_repo))
         .layer(middleware::from_fn(auth::auth_middleware))
         .layer(middleware::from_fn(rate_limit_middleware))

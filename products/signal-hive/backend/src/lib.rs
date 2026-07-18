@@ -280,14 +280,6 @@ struct ScanPresetBody {
     params: crate::models::ScanParams,
 }
 
-#[derive(serde::Deserialize)]
-struct ScanScheduleBody {
-    name: String,
-    params: crate::models::ScanParams,
-    cadence_hours: u32,
-    enabled: bool,
-}
-
 async fn save_scan_preset(
     Json(body): Json<ScanPresetBody>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
@@ -318,14 +310,16 @@ async fn delete_scan_preset(
 }
 
 async fn save_scan_schedule(
-    Json(body): Json<ScanScheduleBody>,
+    Json(body): Json<
+        patchhive_product_core::scheduling::SaveProductScheduleRequest<crate::models::ScanParams>,
+    >,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let name = body.name.trim();
     if name.is_empty() {
         return Err(StatusCode::BAD_REQUEST);
     }
 
-    let params = pipeline::utils::clamp_params(body.params);
+    let params = pipeline::utils::clamp_params(body.payload);
     let allowlist_configured = !db::repo_list_sets()
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .0

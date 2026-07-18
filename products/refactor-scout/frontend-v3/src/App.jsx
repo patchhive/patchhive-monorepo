@@ -13,6 +13,7 @@ import {
   countLabel,
   GuidanceNotice,
   IntegratedProductApp,
+  ProductScheduleManager,
   ProductLoginScreen,
   ProductShell,
   ScanWarnings,
@@ -170,6 +171,7 @@ function ChecksDetails({ health }) {
           <Chip tone={health.remote_fs_enabled ? "warn" : "ok"}>{health.remote_fs_enabled ? "remote FS enabled" : "localhost only"}</Chip>
           <Chip>{countLabel(health.scan_count, "scan")}</Chip>
           <Chip>{countLabel(health.repo_count, "repo")}</Chip>
+          <Chip>{health.schedules?.enabled || 0} active schedules</Chip>
         </div>
         <div className="mt-3 flex flex-wrap gap-2"><Chip tone="ok">{countLabel(health.high_safety_count, "high-confidence candidate")}</Chip><Chip tone="warn">{countLabel(health.medium_safety_count, "review candidate")}</Chip></div>
       </article>
@@ -192,6 +194,28 @@ function SourcesDetails({ health }) {
   );
 }
 
+function SchedulesPanel({ apiBase, fetcher, form, onError, onLoad, onRefresh, setForm }) {
+  return (
+    <ProductScheduleManager
+      actionLabel="repository scan"
+      apiBase={apiBase}
+      currentPayload={config.serialize(form)}
+      description="Save an allowed local path or public GitHub repository target and let RefactorScout rerun the same read-only structural review automatically."
+      fetcher={fetcher}
+      onError={onError}
+      onLoadPayload={(payload) => setForm((current) => ({
+        ...current,
+        repo_path: payload.repo_path || "",
+        max_files: String(payload.max_files || 250),
+      }))}
+      onRefresh={onRefresh}
+      onRunComplete={(result) => result?.id && onLoad(result.id)}
+      productName="RefactorScout"
+      safetyNote="Scheduled RefactorScout runs remain read-only. Local paths must still be inside the configured allowlist; public GitHub targets still use disposable shallow clones. A schedule never grants broader filesystem access."
+    />
+  );
+}
+
 const config = {
   productKey: "refactor-scout",
   name: "RefactorScout",
@@ -209,6 +233,7 @@ const config = {
   searchPlaceholder: "Search title, path, kind, language, evidence…",
   emptyLabel: "No refactor opportunities match this view.",
   defaultForm: { repo_path: "", max_files: "250" },
+  extraTabs: [{ id: "schedules", label: "Schedules", render: SchedulesPanel }],
   requiresRepo: false,
   fields: [
     { key: "repo_path", label: "Repository path or GitHub repository", placeholder: "/home/you/code/project or owner/repository", primary: true, fullWidth: true, help: "Local paths must be within a configured allowed root. Public GitHub repositories use a temporary shallow clone." },
@@ -295,7 +320,7 @@ const config = {
   priorityLabel: "Review priorities",
   priorityEmptyLabel: "No active refactor priorities in this scan.",
   priorityItems: (items) => [...items].sort((left, right) => safetyRank(right.safety) - safetyRank(left.safety) || right.score - left.score),
-  chips: (result, health) => [result?.repo_path || "No repository selected", result ? targetKind(result.repo_path) : "local or GitHub target", health.remote_fs_enabled ? "remote callers enabled" : "localhost only", "read only"],
+  chips: (result, health) => [result?.repo_path || "No repository selected", result ? targetKind(result.repo_path) : "local or GitHub target", result?.trigger_type === "schedule" ? `schedule ${result.schedule_name || ""}`.trim() : "operator run", health.remote_fs_enabled ? "remote callers enabled" : "localhost only", "read only"],
   targetLabel: (result, form, overview) => result?.repo_name || result?.repo_path || form.repo_path || overview.last_repo || "no repository selected",
   targetSubtitle: (result) => {
     if (!result) return "local path or public GitHub repository";
@@ -303,28 +328,30 @@ const config = {
     const retained = Number(result.metrics?.returned_opportunities || result.opportunities?.length || 0);
     return total > retained
       ? `${targetKind(result.repo_path)} · historical run retained ${retained} / ${total}`
-      : `${targetKind(result.repo_path)} · ${countLabel(total, "opportunity")}`;
+      : `${result.trigger_type === "schedule" ? `scheduled · ${result.schedule_name || "saved schedule"}` : "operator run"} · ${targetKind(result.repo_path)} · ${countLabel(total, "opportunity")}`;
   },
   connectionName: "Filesystem",
   connectionLabel: (health) => health.db_ok ? "Filesystem ready" : "Filesystem unavailable",
   connectionValue: (health) => health.remote_fs_enabled ? "remote enabled" : "local only",
   historyTitle: (entry) => entry.repo_name || entry.repo_path || "Saved repository scan",
   historySummary: (entry) => entry.summary,
-  historyMeta: (entry) => `${countLabel(entry.opportunities, "opportunity")} · ${countLabel(entry.high_safety, "high-confidence candidate")} · ${countLabel(entry.medium_safety, "review candidate")}`,
+  historyMeta: (entry) => `${entry.trigger_type === "schedule" ? `scheduled${entry.schedule_name ? ` · ${entry.schedule_name}` : ""}` : "operator run"} · ${countLabel(entry.opportunities, "opportunity")} · ${countLabel(entry.high_safety, "high-confidence candidate")} · ${countLabel(entry.medium_safety, "review candidate")}`,
   historyIdentity: (entry) => `scan ${String(entry.id || "unknown").slice(0, 8)}`,
-  historySearchText: (entry) => `${entry.repo_path || ""} ${entry.opportunities || 0} opportunities ${entry.high_safety || 0} high safety ${entry.medium_safety || 0} medium safety`,
+  historySearchText: (entry) => `${entry.repo_path || ""} ${entry.trigger_type || "operator"} ${entry.schedule_name || ""} ${entry.opportunities || 0} opportunities ${entry.high_safety || 0} high safety ${entry.medium_safety || 0} medium safety`,
   historyBadges: (entry) => [{ label: countLabel(entry.high_safety, "high"), tone: entry.high_safety ? "ok" : "neutral" }, { label: countLabel(entry.medium_safety, "medium"), tone: entry.medium_safety ? "warn" : "neutral" }, { label: countLabel(entry.opportunities, "lead"), tone: entry.opportunities ? "ok" : "neutral" }],
   historyDashboard: {
-    defaultView: { safety: "all", repo: "all", sort: "newest" },
+    defaultView: { safety: "all", trigger: "all", repo: "all", sort: "newest" },
     initialCount: 6,
     searchPlaceholder: "Search repository, summary, opportunity count…",
     filters: (items, view) => [
       { key: "safety", label: "Evidence", value: view.safety, options: [{ value: "all", label: "All" }, { value: "high", label: "Has high-confidence candidates" }, { value: "medium", label: "Closer-review only" }, { value: "empty", label: "No candidates" }] },
+      { key: "trigger", label: "Trigger", value: view.trigger, options: [{ value: "all", label: "All" }, { value: "operator", label: "Operator" }, { value: "schedule", label: "Scheduled" }] },
       { key: "repo", label: "Repository", value: view.repo, options: [{ value: "all", label: "All" }, ...[...new Set(items.map((entry) => entry.repo_name || entry.repo_path).filter(Boolean))].sort().map((repo) => ({ value: repo, label: repo }))] },
     ],
     filterEntry: (entry, view) => {
       const safetyMatches = view.safety === "all" || (view.safety === "high" && entry.high_safety > 0) || (view.safety === "medium" && entry.high_safety === 0 && entry.medium_safety > 0) || (view.safety === "empty" && entry.opportunities === 0);
-      return safetyMatches && (view.repo === "all" || (entry.repo_name || entry.repo_path) === view.repo);
+      const triggerMatches = view.trigger === "all" || (entry.trigger_type || "operator") === view.trigger;
+      return safetyMatches && triggerMatches && (view.repo === "all" || (entry.repo_name || entry.repo_path) === view.repo);
     },
     sortEntries: (left, right, sort) => {
       if (sort === "oldest") return new Date(left.created_at) - new Date(right.created_at);

@@ -196,6 +196,8 @@ fn build_scan_result_from_root(
         metrics,
         opportunities: artifacts.opportunities,
         warnings: artifacts.warnings,
+        trigger_type: "operator".into(),
+        schedule_name: None,
     })
 }
 
@@ -763,9 +765,24 @@ fn repeated_literal_opportunity(
     let preview = literal_preview(&literal);
     let validation_pattern = repeated_validation_pattern(content, &offsets);
     let literal_context = classify_literal_context(&literal, content, &offsets);
-    let (kind, title, summary, suggestion, context_evidence, score, safety) = if validation_pattern
-    {
-        (
+    let machine_readable_error_contract =
+        validation_pattern && machine_readable_contract_value(&literal);
+    let (kind, title, summary, suggestion, context_evidence, score, safety) =
+        if machine_readable_error_contract {
+            (
+                "repeated_validation",
+                "Review repeated error contract",
+                format!(
+                    "`{path}` repeats the machine-readable error value `{preview}` {count} times in similar error paths. Review whether those paths share one error contract before centralizing it."
+                ),
+                "Compare the error semantics and consumers first. If the value is one stable contract, centralize it while preserving the exact machine-readable value and adding focused tests.",
+                "The repeated value is a machine-readable identifier used in similar error paths."
+                    .to_string(),
+                76 + bounded_score_bonus(count.saturating_sub(3) as usize, 12, 4),
+                "high",
+            )
+        } else if validation_pattern {
+            (
             "repeated_validation",
             "Review repeated validation boundary",
             format!(
@@ -777,20 +794,20 @@ fn repeated_literal_opportunity(
             76 + bounded_score_bonus(count.saturating_sub(3) as usize, 12, 4),
             "high",
         )
-    } else if literal_context == LiteralContext::Contract {
-        let coherent_usage = coherent_contract_usage(&literal, content, &offsets);
-        let safety = if count >= 5 && coherent_usage.is_some() {
-            "high"
-        } else {
-            "medium"
-        };
-        let context_evidence = coherent_usage.map_or_else(
+        } else if literal_context == LiteralContext::Contract {
+            let coherent_usage = coherent_contract_usage(&literal, content, &offsets);
+            let safety = if count >= 5 && coherent_usage.is_some() {
+                "high"
+            } else {
+                "medium"
+            };
+            let context_evidence = coherent_usage.map_or_else(
             || {
                 "The literal looks contract-shaped, but its surrounding usage does not establish one shared ownership boundary.".to_string()
             },
             |role| format!("Every occurrence has the same {role} role."),
         );
-        (
+            (
             "repeated_literal",
             "Review repeated contract literal",
             format!(
@@ -801,8 +818,8 @@ fn repeated_literal_opportunity(
             62 + bounded_score_bonus(count.saturating_sub(3) as usize, 18, 5),
             safety,
         )
-    } else if literal_context == LiteralContext::UiCopy {
-        (
+        } else if literal_context == LiteralContext::UiCopy {
+            (
             "repeated_literal",
             "Review repeated interface copy",
             format!(
@@ -814,8 +831,8 @@ fn repeated_literal_opportunity(
             44 + bounded_score_bonus(count.saturating_sub(3) as usize, 13, 7),
             "medium",
         )
-    } else {
-        (
+        } else {
+            (
             "repeated_literal",
             "Review repeated string usage",
             format!(
@@ -827,7 +844,7 @@ fn repeated_literal_opportunity(
             50 + bounded_score_bonus(count.saturating_sub(3) as usize, 16, 6),
             "medium",
         )
-    };
+        };
 
     let mut evidence = vec![format!("{count} repeated occurrences"), context_evidence];
     if safety == "medium" {
@@ -980,6 +997,17 @@ fn repeated_validation_pattern(content: &str, offsets: &[usize]) -> bool {
         .count();
 
     validation_hits >= REPEATED_LITERAL_MIN_REPEATS as usize && validation_hits * 2 >= offsets.len()
+}
+
+fn machine_readable_contract_value(literal: &str) -> bool {
+    !literal.is_empty()
+        && !literal.chars().any(char::is_whitespace)
+        && literal
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || "._:/-".contains(character))
+        && literal
+            .chars()
+            .any(|character| matches!(character, '_' | '-' | ':' | '/'))
 }
 
 fn nearby_source_lines(content: &str, offset: usize) -> &str {

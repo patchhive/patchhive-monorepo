@@ -2,11 +2,13 @@ pub mod analysis;
 pub mod routes;
 mod scan_hygiene;
 pub mod scanning;
+pub mod schedules;
 
 // Re-export all public route handlers for main.rs.
 pub use routes::{
-    auth_status, capabilities, gen_key, gen_service_token, health, history, history_detail, login,
-    overview, rotate_service_token, runs, scan_local_repo, startup_checks_route,
+    auth_status, capabilities, delete_scan_schedule, gen_key, gen_service_token, health, history,
+    history_detail, login, overview, rotate_service_token, run_scan_schedule_now, runs,
+    save_scan_schedule, scan_local_repo, scan_schedules, startup_checks_route,
 };
 
 #[cfg(test)]
@@ -388,6 +390,33 @@ fn validate_three(repo: &str) -> anyhow::Result<()> {
         assert_eq!(validation.title, "Review repeated validation boundary");
         assert!(validation.suggestion.contains("Compare the guards"));
         assert!(validation.summary.contains("one contract"));
+    }
+
+    #[test]
+    fn machine_readable_error_values_are_not_called_validation_messages() {
+        let source = r#"
+fn closed_client() -> Result<(), Error> {
+    raise Error("connection_closed");
+}
+fn closed_socket() -> Result<(), Error> {
+    raise Error("connection_closed");
+}
+fn closed_transport() -> Result<(), Error> {
+    raise Error("connection_closed");
+}
+fn closed_session() -> Result<(), Error> {
+    raise Error("connection_closed");
+}
+"#;
+
+        let contract = analyze_file("src/client.py", "python", source)
+            .into_iter()
+            .find(|item| item.kind == "repeated_validation")
+            .expect("repeated machine-readable errors should remain reviewable");
+        assert_eq!(contract.title, "Review repeated error contract");
+        assert!(contract.summary.contains("machine-readable error value"));
+        assert!(!contract.summary.contains("validation message"));
+        assert!(contract.suggestion.contains("exact machine-readable value"));
     }
 
     #[test]

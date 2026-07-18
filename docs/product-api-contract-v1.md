@@ -196,10 +196,25 @@ for patch-and-retest automation.
 
 - Webhooks and scheduled jobs should create the same `run_id` style as manual runs.
 - Scheduled jobs should include trigger metadata such as `trigger: "schedule"`,
-  `schedule_id`, and the schedule owner product so HiveCore can trace them.
-- Product-local schedule endpoints can remain during gateway migration, but v2
-  schedule creation should converge on suite-level `/api/schedules` records that
-  dispatch product-owned actions.
+  `schedule_id`, `schedule_name`, and the schedule owner product so HiveCore can
+  trace them.
+- Product engines should use `patchhive_product_core::scheduling` for schedule
+  persistence, due-work claims, result recording, and conversion to
+  `SuiteScheduleRecord`. The common product API is `GET/POST /schedules`,
+  `DELETE /schedules/:name`, and `POST /schedules/:name/run`.
+- Schedule creation uses
+  `SaveProductScheduleRequest<T>`, where `T` is the product action's typed
+  payload. A schedule stores target selection separately from its `schedule`
+  trigger; both direct and discovery payloads remain valid when the product
+  supports them.
+- Products own scheduled action validation, authorization, execution, and
+  approval policy. Scheduling must reuse the action's existing safety boundary
+  rather than grant new repository, filesystem, credential, or write access.
+- Product-local endpoints remain valid during migration. HiveCore should
+  eventually index and dispatch the common suite records through its own API,
+  not read product databases directly.
+- See [Shared product scheduling](shared-scheduling-architecture.md) for the
+  safety boundary and suite rollout.
 - Async callbacks should be idempotent when possible.
 - State changes should be inspectable later through a normal history or runs endpoint.
 - HiveCore should be able to poll or subscribe without product-specific translation glue.

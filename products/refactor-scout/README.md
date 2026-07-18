@@ -31,6 +31,8 @@ It is a read-only scouting product inside PatchHive: a product that looks for cl
 - remove any temporary GitHub clone after the scan finishes
 - rank structural review candidates such as oversized runtime modules, long functions, and repeated string usage
 - save scan history so recurring cleanup pressure is visible over time
+- optionally schedule the same allowed local or public-GitHub target for
+  repeated read-only inspection
 - copy or reload the ranked queue when it is time to schedule cleanup work
 
 ## Quick Start
@@ -111,8 +113,9 @@ npm run dev
 It connects to the in-process API by default at
 `http://127.0.0.1:8100/api/products/refactor-scout` and preserves local-path
 and public-GitHub intake, ranked opportunity details, warnings, copyable
-Markdown, saved dashboard views, history, startup diagnostics, filesystem
-guidance, responsive layout, and the suite-wide theme preference.
+Markdown, saved dashboard views, shared read-only schedules, history, startup
+diagnostics, filesystem guidance, responsive layout, and the suite-wide theme
+preference.
 
 ## Safety Boundary
 

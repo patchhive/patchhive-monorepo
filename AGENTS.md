@@ -208,6 +208,9 @@ Rules:
 - Use the actual Lovable component structure, theme tokens, typography, spacing, radii, glass surfaces, shadows, backgrounds, and responsive behavior. Do not approximate it from screenshots or replace it with a static mockup.
 - Every specialist product remains an independent frontend, Docker image, API integration, and workflow. Share only the stable visual shell and primitives through `@patchhivehq/ui-v3`.
 - Reuse `@patchhivehq/ui-v3` progressive lists, saved dashboard views, filter/sort controls, and activity timelines across specialist products; products supply their own field and event mappings.
+- Reuse `ProductScheduleManager` from `@patchhivehq/ui-v3` for products that
+  expose the shared schedule contract. Products supply the current typed action
+  payload and retain ownership of action-specific safety copy and execution.
 - Every product must persist every first-class finding produced inside its configured input scope. Input bounds are valid; post-analysis evidence truncation is not. APIs may paginate complete retained collections, and v3 should progressively render them with show-more, show-all, and collapse controls while filters operate over the complete retained set.
 - Show aggregate dashboard KPIs once. Use the shared assessment card for up to three prioritized findings instead of repeating repository, finding, run, and warning totals in multiple surfaces. Read-only products should call this an assessment and explain the factors behind labels such as review priority.
 - Product differences belong in product name/icon, accent colors, copy, tabs, data, forms, actions, and workflow-specific panels.
@@ -281,7 +284,15 @@ Rules:
 - Product backends should use `listen_addr()` so `PATCHHIVE_BIND_ADDR` can force loopback-only local runs when Docker-style `0.0.0.0` binding is not desired.
 - Product backends should use `SqlitePool` from `patchhive-product-core` instead of a single global `Mutex<Connection>` or ad hoc connection opens. Tune globally with `PATCHHIVE_DB_POOL_SIZE` or with a product-specific `<PRODUCT>_DB_POOL_SIZE`.
 - Product backends should define their `crate::auth` module with `define_api_key_auth_module!` in `main.rs` instead of carrying one-file delegation wrappers.
-- Good candidates: auth middleware, SQLite pooling, startup/health helpers, generic ID or envelope helpers, generic named preset storage interfaces.
+- Good candidates: auth middleware, SQLite pooling, startup/health helpers,
+  generic ID or envelope helpers, generic named preset storage interfaces, and
+  the shared schedule request/record, persistence, claim, and result lifecycle.
+- Product schedules should use `patchhive_product_core::scheduling` so the
+  product-local database shape, suite-facing record, due-work claim, and run
+  evidence are consistent. The product still owns payload validation,
+  authorization, execution, and approval policy; scheduling must never widen an
+  action's safety boundary. See
+  [docs/shared-scheduling-architecture.md](docs/shared-scheduling-architecture.md).
 - Shared `TokenProtector` encryption keys must contain at least 32 characters of machine-random material; generate them with `openssl rand -hex 32` and keep them stable across restarts.
 - Future Squad candidates: shared AI agent config types, encrypted active-squad and preset storage, redacted browser views, provider/model readiness checks, and HiveCore-facing Squad capability metadata once at least two products need AI roles.
 - Bad candidates until proven generic: GitHub search logic, scoring heuristics, pipelines, route behavior, and product-specific SQLite schemas.

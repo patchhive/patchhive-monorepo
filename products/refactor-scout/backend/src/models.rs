@@ -93,6 +93,14 @@ pub struct RefactorScanResult {
     pub opportunities: Vec<RefactorOpportunity>,
     #[serde(default)]
     pub warnings: Vec<String>,
+    #[serde(default = "default_trigger_type")]
+    pub trigger_type: String,
+    #[serde(default)]
+    pub schedule_name: Option<String>,
+}
+
+fn default_trigger_type() -> String {
+    "operator".into()
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -113,6 +121,10 @@ pub struct HistoryItem {
     pub high_safety: u32,
     #[serde(default)]
     pub medium_safety: u32,
+    #[serde(default = "default_trigger_type")]
+    pub trigger_type: String,
+    #[serde(default)]
+    pub schedule_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

@@ -237,5 +237,7 @@ pub(crate) fn init_schema(conn: &Connection) -> anyhow::Result<()> {
 
 pub fn init_db() -> anyhow::Result<()> {
     let conn = connect()?;
-    init_schema(&conn)
+    init_schema(&conn)?;
+    drop(conn);
+    super::schedules::migrate_legacy_scan_schedules()
 }

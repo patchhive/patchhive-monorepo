@@ -18,6 +18,9 @@ RefactorScout is refactor-first, read-only, and conservative. Its job is to help
 4. **Rank** — Sort candidates by evidence strength and score, with test and fixture code ranked below equivalent runtime-code leads.
 5. **Store** — Save the scan result to SQLite history.
 6. **Clean up** — Remove any temporary GitHub clone after the scan finishes.
+7. **Repeat safely** — Optionally save the same typed scan inputs as a read-only
+   schedule. Scheduled runs reuse the local-root or temporary-clone boundary and
+   record their trigger and schedule name in normal scan history.
 
 Future write-capable flows (e.g., "Create refactor PR") should stay behind an explicit action: scan first, select a lead, branch in an isolated clone, run tests, pass TrustGate, then open a clearly attributed PR. A normal scan remains read-only.
 
@@ -141,9 +144,9 @@ The integrated v3 candidate lives in
 `frontend/` and `frontend-v2/` until the operator completes the final visual
 parity audit. The candidate covers both local-path and public-GitHub intake,
 the ranked opportunity queue and detail surface, saved filters and sorts,
-progressive results, scan warnings, copyable Markdown, history, startup
-diagnostics, filesystem safety guidance, responsive layout, and persistent
-light/dark preference.
+progressive results, scan warnings, copyable Markdown, history, shared
+read-only scheduling, startup diagnostics, filesystem safety guidance,
+responsive layout, and persistent light/dark preference.
 
 ## Configuration
 
@@ -228,10 +231,11 @@ backend/src/
 4. analyze_file() per file:
        ├── > 320 lines   → "large_file" opportunity (safety: medium)
        ├── > 60 lines/fn → "long_function" opportunity (safety: medium)
-       └── ≥3 repeats of ≥12-char string literal → "repeated_literal" or context-aware "repeated_validation" guidance (safety: high)
+       └── ≥3 repeats of ≥12-char string literal → "repeated_literal" or context-aware error-contract / validation guidance (safety: high)
        │
        ▼
-5. Sort by safety desc → score desc → path asc, truncate to 60
+5. Sort by safety desc → score desc → source span desc → path asc and retain
+   every detected candidate
        │
        ▼
 6. build_metrics() + build_summary() → RefactorScanResult
@@ -269,9 +273,15 @@ All endpoints verified against source (`main.rs` route table and `routes.rs` han
 | `GET` | `/overview` | `pipeline::overview` | Aggregate counts and product metadata |
 | `GET` | `/history` | `pipeline::history` | Last 30 scans as history items |
 | `GET` | `/history/:id` | `pipeline::history_detail` | Full scan result by ID |
+| `GET` | `/schedules` | `pipeline::scan_schedules` | List saved RefactorScout schedules and suite-facing schedule records |
+| `POST` | `/schedules` | `pipeline::save_scan_schedule` | Save typed scan inputs and a bounded cadence |
+| `DELETE` | `/schedules/:name` | `pipeline::delete_scan_schedule` | Delete one saved schedule |
+| `POST` | `/schedules/:name/run` | `pipeline::run_scan_schedule_now` | Run one schedule immediately and record a scheduled scan |
 | `POST` | `/scan/local` | `pipeline::scan_local_repo` | **Trigger a scan** (see below) |
 
 > `/scan/local` is also a service dispatch path, meaning a valid `X-PatchHive-Service-Token` with `service_name: hivecore` can call it.
+> `/schedules/:name/run` is also a service dispatch path. Schedule creation and
+> deletion remain operator-authenticated configuration changes.
 
 ### Request & response shapes
 

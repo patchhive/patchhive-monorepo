@@ -22,7 +22,7 @@ use crate::{
 };
 
 use super::analysis::scan_request_allowed;
-use super::scanning::{build_scan_result_for_input, MAX_SCAN_FILES};
+use super::scanning::{build_scan_result_for_input, parse_github_repo_target, MAX_SCAN_FILES};
 
 type ApiError = (StatusCode, Json<serde_json::Value>);
 pub type JsonResult<T> = Result<Json<T>, ApiError>;
@@ -50,6 +50,7 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
         vec![
             contract::link("overview", "Overview", "/overview"),
             contract::link("history", "History", "/history"),
+            contract::link("schedules", "Schedules", "/schedules"),
         ],
     ))
 }
@@ -140,6 +141,7 @@ pub async fn health(State(state): State<AppState>) -> Json<serde_json::Value> {
         .unwrap_or(0);
     let db_ok = db::health_check();
     let counts = db::overview_counts();
+    let schedules = db::list_schedules().unwrap_or_default();
 
     Json(json!({
         "status": if errors > 0 || !db_ok { "degraded" } else { "ok" },
@@ -156,6 +158,14 @@ pub async fn health(State(state): State<AppState>) -> Json<serde_json::Value> {
         "medium_safety_count": counts.medium_safety,
         "allowed_roots": state.allowed_root_labels(),
         "remote_fs_enabled": state.remote_fs_enabled,
+        "schedules": {
+            "total": schedules.len(),
+            "enabled": schedules.iter().filter(|schedule| schedule.enabled).count(),
+            "next_run_at": schedules.iter()
+                .filter(|schedule| schedule.enabled)
+                .map(|schedule| schedule.next_run_at.clone())
+                .min(),
+        },
         "mode": "local-refactor-scout",
     }))
 }
@@ -214,13 +224,99 @@ pub async fn scan_local_repo(
     }
 
     let max_files = request.max_files.clamp(25, MAX_SCAN_FILES);
-    let result = build_scan_result_for_input(&state, repo_path, max_files)
+    let mut result = build_scan_result_for_input(&state, repo_path, max_files)
         .await
         .map_err(|err| api_error(StatusCode::BAD_REQUEST, err.to_string()))?;
+    result.trigger_type = "operator".into();
+    result.schedule_name = None;
 
     db::save_scan(&result)
         .map_err(|err| api_error(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
     Ok(Json(result))
+}
+
+pub async fn scan_schedules() -> Json<serde_json::Value> {
+    let schedules = db::list_schedules().unwrap_or_default();
+    let suite_schedules = schedules
+        .iter()
+        .map(patchhive_product_core::scheduling::ProductSchedule::to_suite_schedule_record)
+        .collect::<Vec<_>>();
+    Json(json!({
+        "schedules": schedules,
+        "suite_schedules": suite_schedules,
+    }))
+}
+
+pub async fn save_scan_schedule(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<patchhive_product_core::scheduling::SaveProductScheduleRequest<ScanRequest>>,
+) -> JsonResult<serde_json::Value> {
+    let repo_path = body.payload.repo_path.trim();
+    if repo_path.is_empty() {
+        return Err(api_error(
+            StatusCode::BAD_REQUEST,
+            "Scheduled repository target is required.",
+        ));
+    }
+    if parse_github_repo_target(repo_path).is_none()
+        && !scan_request_allowed(&headers, state.remote_fs_enabled)
+    {
+        return Err(api_error(
+            StatusCode::FORBIDDEN,
+            "Local-path schedules are limited to localhost callers unless REFACTOR_SCOUT_ALLOW_REMOTE_FS=true.",
+        ));
+    }
+    if !(25..=MAX_SCAN_FILES).contains(&body.payload.max_files) {
+        return Err(api_error(
+            StatusCode::BAD_REQUEST,
+            format!("Scheduled maximum source files must be between 25 and {MAX_SCAN_FILES}."),
+        ));
+    }
+    let payload = serde_json::to_value(&body.payload)
+        .map_err(|error| api_error(StatusCode::BAD_REQUEST, error.to_string()))?;
+    let schedule = db::save_schedule(&body.name, &payload, body.cadence_hours, body.enabled)
+        .map_err(|error| api_error(StatusCode::BAD_REQUEST, error.to_string()))?;
+    Ok(Json(json!({ "ok": true, "schedule": schedule })))
+}
+
+pub async fn delete_scan_schedule(
+    AxumPath(name): AxumPath<String>,
+) -> JsonResult<serde_json::Value> {
+    let deleted = db::delete_schedule(&name)
+        .map_err(|error| api_error(StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?;
+    if !deleted {
+        return Err(api_error(
+            StatusCode::NOT_FOUND,
+            "RefactorScout schedule not found.",
+        ));
+    }
+    Ok(Json(json!({ "ok": true })))
+}
+
+pub async fn run_scan_schedule_now(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    AxumPath(name): AxumPath<String>,
+) -> JsonResult<RefactorScanResult> {
+    let schedule = db::get_schedule(&name)
+        .map_err(|error| api_error(StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?
+        .ok_or_else(|| api_error(StatusCode::NOT_FOUND, "RefactorScout schedule not found."))?;
+    let request = schedule
+        .decode_payload::<ScanRequest>()
+        .map_err(|error| api_error(StatusCode::BAD_REQUEST, error.to_string()))?;
+    if parse_github_repo_target(request.repo_path.trim()).is_none()
+        && !scan_request_allowed(&headers, state.remote_fs_enabled)
+    {
+        return Err(api_error(
+            StatusCode::FORBIDDEN,
+            "Local-path schedules are limited to localhost callers unless REFACTOR_SCOUT_ALLOW_REMOTE_FS=true.",
+        ));
+    }
+    super::schedules::run_schedule_now(&state, &name)
+        .await
+        .map(Json)
+        .map_err(|error| api_error(StatusCode::BAD_REQUEST, error.to_string()))
 }
 
 pub(crate) fn api_error(status: StatusCode, error: impl Into<String>) -> ApiError {

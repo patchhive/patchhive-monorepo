@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Activity, Bookmark, Check, ChevronDown, ChevronUp, Copy, ListFilter, Search, ShieldAlert, SlidersHorizontal, Trash2 } from "lucide-react";
+import { Activity, Bookmark, CalendarClock, Check, ChevronDown, ChevronUp, Copy, ListFilter, LoaderCircle, Play, Search, ShieldAlert, SlidersHorizontal, Trash2 } from "lucide-react";
 import { V3_TEXT } from "./tokens.js";
 
 function readStoredJson(key, fallback) {
@@ -110,6 +110,182 @@ export function DashboardControls({
           <button disabled={!viewName.trim()} onClick={save} className="h-9 shrink-0 rounded-full px-4 text-[11px] font-semibold text-white disabled:opacity-40" style={{ backgroundImage: "linear-gradient(90deg, var(--accent), var(--accent-2))" }} type="button">Save view</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+const SCHEDULE_CADENCES = [
+  { value: "1", label: "Hourly" },
+  { value: "6", label: "Every 6 hours" },
+  { value: "12", label: "Every 12 hours" },
+  { value: "24", label: "Daily" },
+  { value: "168", label: "Weekly" },
+];
+
+export function ProductScheduleManager({
+  actionLabel = "run",
+  apiBase,
+  currentPayload,
+  description = "Save the current product inputs and rerun them automatically on a bounded cadence.",
+  fetcher,
+  onError,
+  onLoadPayload,
+  onRefresh,
+  onRunComplete,
+  productName,
+  safetyNote = "Schedules reuse the product's existing safety and authorization boundaries.",
+  schedulePayload = (schedule) => schedule.payload,
+}) {
+  const [schedules, setSchedules] = useState([]);
+  const [selectedName, setSelectedName] = useState("");
+  const [name, setName] = useState("");
+  const [cadence, setCadence] = useState("24");
+  const [enabled, setEnabled] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [runningName, setRunningName] = useState("");
+  const [message, setMessage] = useState("");
+
+  const selected = schedules.find((schedule) => schedule.name === selectedName);
+
+  async function readResponse(response) {
+    const text = await response.text();
+    let payload = {};
+    try {
+      payload = text ? JSON.parse(text) : {};
+    } catch {
+      payload = {};
+    }
+    if (!response.ok) {
+      throw new Error(payload.error || payload.message || `Request failed: ${response.status}`);
+    }
+    return payload;
+  }
+
+  async function refreshSchedules() {
+    try {
+      const payload = await readResponse(await fetcher(`${apiBase}/schedules`));
+      const next = Array.isArray(payload.schedules) ? payload.schedules : [];
+      setSchedules(next);
+      setSelectedName((current) => current && next.some((schedule) => schedule.name === current) ? current : next[0]?.name || "");
+    } catch (error) {
+      onError?.(error.message || `${productName} schedules could not load.`);
+    }
+  }
+
+  useEffect(() => {
+    refreshSchedules();
+  }, [apiBase, fetcher]);
+
+  useEffect(() => {
+    if (!selected) return;
+    setName(selected.name);
+    setCadence(String(selected.cadence_hours || 24));
+    setEnabled(Boolean(selected.enabled));
+  }, [selectedName, schedules]);
+
+  async function perform(work) {
+    setBusy(true);
+    setMessage("");
+    try {
+      await work();
+      await refreshSchedules();
+      await onRefresh?.();
+    } catch (error) {
+      onError?.(error.message || `${productName} schedule action failed.`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveSchedule() {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    await perform(async () => {
+      await readResponse(await fetcher(`${apiBase}/schedules`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: trimmed,
+          payload: currentPayload,
+          cadence_hours: Number(cadence),
+          enabled,
+        }),
+      }));
+      setSelectedName(trimmed);
+      setMessage(`Schedule saved: ${trimmed}.`);
+    });
+  }
+
+  async function runNow() {
+    if (!selected) return;
+    setBusy(true);
+    setRunningName(selected.name);
+    setMessage(`${selected.name} is running its saved ${actionLabel} inputs.`);
+    try {
+      const result = await readResponse(await fetcher(
+        `${apiBase}/schedules/${encodeURIComponent(selected.name)}/run`,
+        { method: "POST" },
+      ));
+      await refreshSchedules();
+      await onRefresh?.();
+      onRunComplete?.(result);
+    } catch (error) {
+      onError?.(error.message || `${productName} could not run this schedule.`);
+    } finally {
+      setBusy(false);
+      setRunningName("");
+    }
+  }
+
+  async function deleteSchedule() {
+    if (!selected) return;
+    const deletedName = selected.name;
+    await perform(async () => {
+      await readResponse(await fetcher(
+        `${apiBase}/schedules/${encodeURIComponent(deletedName)}`,
+        { method: "DELETE" },
+      ));
+      setSelectedName("");
+      setName("");
+      setMessage(`Schedule deleted: ${deletedName}.`);
+    });
+  }
+
+  function loadInputs() {
+    if (!selected) return;
+    onLoadPayload?.(schedulePayload(selected) || {});
+    setMessage(`Loaded saved inputs from ${selected.name}.`);
+  }
+
+  return (
+    <div className="space-y-6">
+      <section className="surface p-6 sm:p-8">
+        <div className={`flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}><CalendarClock size={12} /> Autonomous operation</div>
+        <h1 className={`mt-2 font-display text-[42px] font-semibold ${V3_TEXT.strong}`}>Schedules.</h1>
+        <p className={`mt-3 max-w-3xl text-[13px] leading-relaxed ${V3_TEXT.body}`}>{description}</p>
+        {message ? <div aria-live="polite" className={`surface-inset mt-5 rounded-xl p-3 text-[12px] ${V3_TEXT.body}`} role="status">{message}</div> : null}
+      </section>
+
+      <section className="surface p-6">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="block"><span className={`text-[10px] uppercase tracking-[0.2em] ${V3_TEXT.mute}`}>Schedule name</span><input className={`surface-inset mt-2 h-12 w-full rounded-xl bg-transparent px-4 text-[13px] outline-none ${V3_TEXT.strong}`} onChange={(event) => setName(event.target.value)} placeholder="daily-review" value={name} /></label>
+          <label className="block"><span className={`text-[10px] uppercase tracking-[0.2em] ${V3_TEXT.mute}`}>Saved schedules</span><select className={`surface-inset mt-2 h-12 w-full rounded-xl bg-transparent px-4 text-[13px] outline-none ${V3_TEXT.strong}`} onChange={(event) => setSelectedName(event.target.value)} value={selectedName}><option value="">No saved schedule selected</option>{schedules.map((schedule) => <option key={schedule.id || schedule.name} value={schedule.name}>{schedule.name} · {schedule.enabled ? "enabled" : "paused"}</option>)}</select></label>
+          <label className="block"><span className={`text-[10px] uppercase tracking-[0.2em] ${V3_TEXT.mute}`}>Cadence</span><select className={`surface-inset mt-2 h-12 w-full rounded-xl bg-transparent px-4 text-[13px] outline-none ${V3_TEXT.strong}`} onChange={(event) => setCadence(event.target.value)} value={cadence}>{SCHEDULE_CADENCES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+          <label className="block"><span className={`text-[10px] uppercase tracking-[0.2em] ${V3_TEXT.mute}`}>State</span><select className={`surface-inset mt-2 h-12 w-full rounded-xl bg-transparent px-4 text-[13px] outline-none ${V3_TEXT.strong}`} onChange={(event) => setEnabled(event.target.value === "true")} value={String(enabled)}><option value="true">Enabled</option><option value="false">Paused</option></select></label>
+        </div>
+        <div className="mt-5 flex flex-wrap gap-2">
+          <button className="h-10 rounded-full px-4 text-[12px] font-semibold text-white disabled:opacity-40" disabled={busy || !name.trim()} onClick={saveSchedule} style={{ backgroundImage: "linear-gradient(90deg, var(--accent), var(--accent-2))" }} type="button">Save schedule</button>
+          <button className={`surface-inset h-10 rounded-full px-4 text-[12px] ${V3_TEXT.body} disabled:opacity-40`} disabled={busy || !selected} onClick={loadInputs} type="button">Load inputs</button>
+          <button className={`surface-inset inline-flex h-10 items-center gap-2 rounded-full px-4 text-[12px] ${V3_TEXT.body} disabled:opacity-40`} disabled={busy || !selected} onClick={runNow} type="button">{runningName ? <LoaderCircle className="animate-spin" size={13} /> : <Play size={13} />}{runningName ? "Running…" : "Run now"}</button>
+          <button className="surface-inset h-10 rounded-full px-4 text-[12px] text-red-700 disabled:opacity-40 dark:text-red-300" disabled={busy || !selected} onClick={deleteSchedule} type="button"><span className="inline-flex items-center gap-2"><Trash2 size={13} />Delete</span></button>
+        </div>
+        {selected ? <div className={`surface-inset mt-5 rounded-xl p-4 text-[11px] leading-relaxed ${V3_TEXT.mute}`}><strong className={V3_TEXT.strong}>{selected.name}</strong> · Next run: {selected.next_run_at ? new Date(selected.next_run_at).toLocaleString() : "not scheduled"} · Last status: {selected.last_status || "idle"}{selected.last_error ? ` · ${selected.last_error}` : ""}</div> : null}
+      </section>
+
+      <section className="surface p-6">
+        <div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>Scheduling boundary</div>
+        <p className={`mt-3 text-[12px] leading-relaxed ${V3_TEXT.body}`}>{safetyNote}</p>
+      </section>
     </div>
   );
 }

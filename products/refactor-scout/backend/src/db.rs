@@ -1,8 +1,12 @@
 use std::collections::HashSet;
 
 use once_cell::sync::Lazy;
+use patchhive_product_core::scheduling::{
+    self, ProductSchedule, SaveSchedule, DEFAULT_SCHEDULE_APPROVAL_POLICY,
+};
 use patchhive_product_core::sqlite::{PooledSqliteConnection, SqlitePool};
 use rusqlite::{params, types::Type};
+use serde_json::Value;
 
 use crate::models::{HistoryItem, OverviewCounts, RefactorScanResult, ScanMetrics};
 
@@ -36,14 +40,43 @@ pub fn init_db() -> rusqlite::Result<()> {
           summary TEXT NOT NULL,
           metrics_json TEXT NOT NULL,
           opportunities_json TEXT NOT NULL,
-          warnings_json TEXT NOT NULL
+          warnings_json TEXT NOT NULL,
+          trigger_type TEXT NOT NULL DEFAULT 'operator',
+          schedule_name TEXT
         );
 
         CREATE INDEX IF NOT EXISTS idx_refactor_scout_scans_created_at
         ON scans(created_at DESC);
         "#,
     )?;
+    ensure_scan_column(
+        &conn,
+        "trigger_type",
+        "ALTER TABLE scans ADD COLUMN trigger_type TEXT NOT NULL DEFAULT 'operator';",
+    )?;
+    ensure_scan_column(
+        &conn,
+        "schedule_name",
+        "ALTER TABLE scans ADD COLUMN schedule_name TEXT;",
+    )?;
+    scheduling::init_schema(&conn)
+        .map_err(|error| rusqlite::Error::ToSqlConversionFailure(error.into()))?;
     Ok(())
+}
+
+fn ensure_scan_column(
+    conn: &rusqlite::Connection,
+    column_name: &str,
+    migration: &str,
+) -> rusqlite::Result<()> {
+    let mut stmt = conn.prepare("PRAGMA table_info(scans)")?;
+    let columns = stmt.query_map([], |row| row.get::<_, String>(1))?;
+    for column in columns {
+        if column? == column_name {
+            return Ok(());
+        }
+    }
+    conn.execute_batch(migration)
 }
 
 pub fn save_scan(scan: &RefactorScanResult) -> rusqlite::Result<()> {
@@ -60,9 +93,9 @@ pub fn save_scan(scan: &RefactorScanResult) -> rusqlite::Result<()> {
         r#"
         INSERT OR REPLACE INTO scans (
           id, created_at, repo_path, repo_name, summary,
-          metrics_json, opportunities_json, warnings_json
+          metrics_json, opportunities_json, warnings_json, trigger_type, schedule_name
         )
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
         "#,
         params![
             scan.id,
@@ -73,6 +106,8 @@ pub fn save_scan(scan: &RefactorScanResult) -> rusqlite::Result<()> {
             metrics_json,
             opportunities_json,
             warnings_json,
+            scan.trigger_type,
+            scan.schedule_name,
         ],
     )?;
     Ok(())
@@ -83,7 +118,7 @@ pub fn get_scan(id: &str) -> Option<RefactorScanResult> {
     conn.query_row(
         r#"
         SELECT id, created_at, repo_path, repo_name, summary,
-               metrics_json, opportunities_json, warnings_json
+               metrics_json, opportunities_json, warnings_json, trigger_type, schedule_name
         FROM scans
         WHERE id = ?1
         "#,
@@ -98,6 +133,8 @@ pub fn get_scan(id: &str) -> Option<RefactorScanResult> {
                 metrics: parse_json_column(row.get::<_, String>(5)?, 5)?,
                 opportunities: parse_json_column(row.get::<_, String>(6)?, 6)?,
                 warnings: parse_json_column(row.get::<_, String>(7)?, 7)?,
+                trigger_type: row.get(8)?,
+                schedule_name: row.get(9)?,
             }))
         },
     )
@@ -110,7 +147,8 @@ pub fn history(limit: usize) -> Vec<HistoryItem> {
     };
     let Ok(mut stmt) = conn.prepare(
         r#"
-        SELECT id, created_at, repo_path, repo_name, summary, metrics_json
+        SELECT id, created_at, repo_path, repo_name, summary, metrics_json,
+               trigger_type, schedule_name
         FROM scans
         ORDER BY created_at DESC
         LIMIT ?1
@@ -130,12 +168,65 @@ pub fn history(limit: usize) -> Vec<HistoryItem> {
             opportunities: metrics.opportunities,
             high_safety: metrics.high_safety,
             medium_safety: metrics.medium_safety,
+            trigger_type: row.get(6)?,
+            schedule_name: row.get(7)?,
         })
     }) else {
         return Vec::new();
     };
 
     rows.filter_map(Result::ok).collect()
+}
+
+pub fn list_schedules() -> anyhow::Result<Vec<ProductSchedule>> {
+    let conn = connect()?;
+    scheduling::list(&conn, "refactor-scout", "scan")
+}
+
+pub fn get_schedule(name: &str) -> anyhow::Result<Option<ProductSchedule>> {
+    let conn = connect()?;
+    scheduling::get(&conn, "refactor-scout", "scan", name)
+}
+
+pub fn save_schedule(
+    name: &str,
+    payload: &Value,
+    cadence_hours: u32,
+    enabled: bool,
+) -> anyhow::Result<ProductSchedule> {
+    let conn = connect()?;
+    scheduling::save(
+        &conn,
+        SaveSchedule {
+            name,
+            product: "refactor-scout",
+            action_id: "scan",
+            payload,
+            cadence_hours,
+            enabled,
+            approval_policy: DEFAULT_SCHEDULE_APPROVAL_POLICY,
+        },
+    )
+}
+
+pub fn delete_schedule(name: &str) -> anyhow::Result<bool> {
+    let conn = connect()?;
+    scheduling::delete(&conn, "refactor-scout", "scan", name)
+}
+
+pub fn claim_due_schedules(limit: usize) -> anyhow::Result<Vec<ProductSchedule>> {
+    let mut conn = connect()?;
+    scheduling::claim_due(&mut conn, "refactor-scout", "scan", limit)
+}
+
+pub fn record_schedule_result(
+    name: &str,
+    run_id: Option<&str>,
+    status: &str,
+    error: Option<&str>,
+) -> anyhow::Result<bool> {
+    let conn = connect()?;
+    scheduling::record_result(&conn, "refactor-scout", "scan", name, run_id, status, error)
 }
 
 pub fn overview_counts() -> OverviewCounts {
@@ -235,7 +326,9 @@ mod tests {
               summary TEXT NOT NULL,
               metrics_json TEXT NOT NULL,
               opportunities_json TEXT NOT NULL,
-              warnings_json TEXT NOT NULL
+              warnings_json TEXT NOT NULL,
+              trigger_type TEXT NOT NULL DEFAULT 'operator',
+              schedule_name TEXT
             );
             "#,
         )
