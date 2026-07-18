@@ -272,7 +272,7 @@ fn lifetime_value<'a>(value: &'a str) -> &'a str { value }
     }
 
     #[test]
-    fn scan_metrics_keep_total_when_returned_queue_is_bounded() {
+    fn scan_retains_every_detected_opportunity() {
         let base =
             std::env::temp_dir().join(format!("refactor-scout-cap-{}", uuid::Uuid::new_v4()));
         fs::create_dir_all(&base).expect("scan root should exist");
@@ -296,13 +296,9 @@ const C: &str = "repeated service boundary literal";
             .expect("scan should succeed");
 
         assert_eq!(result.metrics.opportunities, 65);
-        assert_eq!(result.metrics.returned_opportunities, 60);
-        assert!(result.metrics.opportunities_truncated);
-        assert_eq!(result.opportunities.len(), 60);
-        assert!(result
-            .warnings
-            .iter()
-            .any(|warning| warning.contains("found 65 candidates")));
+        assert_eq!(result.metrics.returned_opportunities, 65);
+        assert!(!result.metrics.opportunities_truncated);
+        assert_eq!(result.opportunities.len(), 65);
 
         fs::remove_dir_all(base).ok();
     }

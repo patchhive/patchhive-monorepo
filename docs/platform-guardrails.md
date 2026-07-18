@@ -85,7 +85,34 @@ See:
 - [Product API Contract v1](/home/coemedia/Documents/code/patchhive/docs/product-api-contract-v1.md)
 - [Suite runs and fix capabilities](/home/coemedia/Documents/code/patchhive/docs/suite-runs-and-fix-capabilities.md)
 
-## 4. Git Credential Isolation
+## 4. Complete Evidence Retention
+
+Configured input bounds are valid safety controls. A product may limit the
+repositories, files, pull requests, issues, workflow runs, or alerts it reads,
+and it must report those coverage boundaries honestly. Once analysis produces a
+first-class finding, however, the product must retain it.
+
+Rules:
+
+- Persist every first-class finding produced inside the configured run scope.
+- Never truncate the persisted collection to satisfy a dashboard or response
+  size preference.
+- APIs may paginate the complete retained collection. Use
+  `patchhive_product_core::contract::RetainedEvidencePage` for shared page
+  metadata.
+- UIs should render the collection progressively and offer `show more`, `show
+  all`, and `collapse` controls. Filters and saved views operate over the full
+  retained collection, not only the currently rendered rows.
+- Summary cards, Markdown previews, prompt excerpts, and recent-run widgets may
+  remain concise because they are views of durable evidence.
+- If an older run was historically truncated, label the retention gap and ask
+  for a rerun. Never imply the missing records can be reconstructed from
+  aggregate counts.
+
+This distinction matters for trust: operators need access to low-ranked
+findings to identify false positives and tune product heuristics.
+
+## 5. Git Credential Isolation
 
 PatchHive products must not inherit a developer machine's ambient Git credentials.
 
@@ -100,7 +127,7 @@ Any product that runs `git clone`, `git fetch`, `git push`, or similar Git-over-
 
 RepoReaper is the first write-capable product to enforce this because it opens outbound PRs. RefactorScout applies the same isolation to temporary read-only GitHub clones so local credentials are not accidentally consulted during public repo scans.
 
-## 5. Warning-Free Quality Gate
+## 6. Warning-Free Quality Gate
 
 PatchHive should not accumulate ignored compiler or tooling warnings. Every
 change must leave the affected code warning-free:
@@ -125,7 +152,7 @@ verification at startup, verify repository/API access during each target run,
 and only claim write readiness after the requested target-specific write
 succeeds. Health and startup contracts must preserve those distinctions.
 
-## 6. Implementation Notes
+## 7. Implementation Notes
 
 ### Encryption key material
 

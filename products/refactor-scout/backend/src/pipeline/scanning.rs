@@ -18,7 +18,6 @@ use crate::models::{RefactorOpportunity, RefactorScanResult};
 use super::analysis::*;
 
 pub(crate) const MAX_SCAN_FILES: u32 = 1_500;
-pub(crate) const MAX_RETURNED_OPPORTUNITIES: usize = 60;
 pub(crate) const MAX_FILE_BYTES: u64 = 350_000;
 pub(crate) const LONG_FILE_THRESHOLD: usize = 320;
 pub(crate) const LONG_FUNCTION_THRESHOLD: usize = 60;
@@ -175,23 +174,11 @@ fn build_scan_result_from_root(
             .then_with(|| right.score.cmp(&left.score))
             .then_with(|| left.path.cmp(&right.path))
     });
-    let mut metrics = build_metrics(
+    let metrics = build_metrics(
         artifacts.files_scanned,
         artifacts.files_skipped,
         &artifacts.opportunities,
     );
-    artifacts.opportunities.truncate(MAX_RETURNED_OPPORTUNITIES);
-    metrics.returned_opportunities = artifacts.opportunities.len() as u32;
-    metrics.opportunities_truncated = metrics.returned_opportunities < metrics.opportunities;
-    if metrics.opportunities_truncated {
-        push_warning(
-            &mut artifacts.warnings,
-            format!(
-                "RefactorScout found {} candidates and returned the highest-priority {} to keep this result bounded.",
-                metrics.opportunities, metrics.returned_opportunities
-            ),
-        );
-    }
     let summary = build_summary(&repo_name, &metrics, artifacts.opportunities.first());
 
     Ok(RefactorScanResult {

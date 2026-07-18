@@ -69,7 +69,7 @@ function buildScanMarkdown(scan) {
     `- Files scanned: ${metrics.files_scanned || 0}`,
     `- Files skipped: ${metrics.files_skipped || 0}`,
     `- Opportunities: ${metrics.opportunities || 0}`,
-    `- Opportunities loaded: ${metrics.returned_opportunities || scan?.opportunities?.length || 0}`,
+    `- Opportunities retained: ${metrics.returned_opportunities || scan?.opportunities?.length || 0}`,
     `- High-safety leads: ${metrics.high_safety || 0}`,
     `- Medium-safety leads: ${metrics.medium_safety || 0}`,
   ];
@@ -122,7 +122,7 @@ function WorkspaceDetails({ health, onError, result }) {
           <Fact label="Files scanned" value={metrics.files_scanned} />
           <Fact label="Files skipped" value={metrics.files_skipped} />
           <Fact label="Opportunities" value={metrics.opportunities} />
-          {metrics.opportunities_truncated ? <Fact label="Loaded leads" value={metrics.returned_opportunities || result.opportunities?.length || 0} /> : null}
+          {metrics.opportunities_truncated ? <Fact label="Historically retained" value={metrics.returned_opportunities || result.opportunities?.length || 0} /> : null}
           <Fact label="High safety" value={metrics.high_safety} />
           <Fact label="Medium safety" value={metrics.medium_safety} />
           <Fact label="Large files" value={metrics.large_file_count} />
@@ -132,7 +132,7 @@ function WorkspaceDetails({ health, onError, result }) {
       </section>
 
       <ScanWarnings warnings={result.warnings || []} />
-      {metrics.opportunities_truncated ? <GuidanceNotice label="Bounded queue">RefactorScout found {metrics.opportunities} candidates and loaded the highest-priority {metrics.returned_opportunities || result.opportunities?.length || 0}. Aggregate metrics cover every detected candidate; filters apply to the loaded queue.</GuidanceNotice> : null}
+      {metrics.opportunities_truncated ? <GuidanceNotice label="Historical retention gap">This older saved run retained only {metrics.returned_opportunities || result.opportunities?.length || 0} of {metrics.opportunities} detected opportunities. Rerun the scan to retain and inspect every finding.</GuidanceNotice> : null}
 
       <section className="surface p-5 sm:p-6">
         <div className={`flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}><ShieldCheck size={12} /> Inspection boundary</div>
@@ -296,9 +296,9 @@ const config = {
   targetSubtitle: (result) => {
     if (!result) return "local path or public GitHub repository";
     const total = Number(result.metrics?.opportunities || 0);
-    const loaded = Number(result.metrics?.returned_opportunities || result.opportunities?.length || 0);
-    return total > loaded
-      ? `${targetKind(result.repo_path)} · ${loaded} loaded / ${total} found`
+    const retained = Number(result.metrics?.returned_opportunities || result.opportunities?.length || 0);
+    return total > retained
+      ? `${targetKind(result.repo_path)} · historical run retained ${retained} / ${total}`
       : `${targetKind(result.repo_path)} · ${countLabel(total, "opportunity")}`;
   },
   connectionName: "Filesystem",

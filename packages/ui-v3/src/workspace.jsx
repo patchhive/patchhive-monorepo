@@ -114,22 +114,41 @@ export function DashboardControls({
   );
 }
 
-export function ProgressiveList({ empty, initialCount = 6, itemLabel = "findings", items, renderItem }) {
-  const [expanded, setExpanded] = useState(false);
-  const visible = expanded ? items : items.slice(0, initialCount);
+export function ProgressiveList({
+  batchCount = 60,
+  empty,
+  initialCount = 6,
+  itemLabel = "findings",
+  items,
+  renderItem,
+  resetKey = "",
+}) {
+  const [visibleCount, setVisibleCount] = useState(initialCount);
+  const visible = items.slice(0, visibleCount);
+  const remaining = Math.max(0, items.length - visible.length);
+  const nextCount = Math.min(Math.max(1, batchCount), remaining);
+  const canCollapse = visible.length > Math.min(initialCount, items.length);
 
-  useEffect(() => { setExpanded(false); }, [items]);
+  useEffect(() => { setVisibleCount(initialCount); }, [initialCount, items.length, resetKey]);
 
   if (!items.length) return empty;
 
   return (
     <>
       <div className="space-y-2">{visible.map(renderItem)}</div>
-      {items.length > initialCount ? <div className="mt-4 flex justify-center">
-        <button type="button" onClick={() => setExpanded((value) => !value)} className={`surface-inset flex h-10 items-center gap-2 rounded-full px-5 text-[12px] ${V3_TEXT.body}`}>
-          {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-          {expanded ? `Show first ${initialCount}` : `Show all ${items.length} ${itemLabel}`}
-        </button>
+      {remaining || canCollapse ? <div className="mt-4 flex flex-wrap justify-center gap-2">
+        {remaining ? <button type="button" onClick={() => setVisibleCount((count) => Math.min(items.length, count + nextCount))} className={`surface-inset flex h-10 items-center gap-2 rounded-full px-5 text-[12px] ${V3_TEXT.body}`}>
+          <ChevronDown size={13} />
+          Show next {nextCount} {itemLabel}
+        </button> : null}
+        {remaining > nextCount ? <button type="button" onClick={() => setVisibleCount(items.length)} className={`surface-inset flex h-10 items-center gap-2 rounded-full px-5 text-[12px] ${V3_TEXT.body}`}>
+          <ChevronDown size={13} />
+          Show all {items.length} {itemLabel}
+        </button> : null}
+        {canCollapse ? <button type="button" onClick={() => setVisibleCount(initialCount)} className={`surface-inset flex h-10 items-center gap-2 rounded-full px-5 text-[12px] ${V3_TEXT.body}`}>
+          <ChevronUp size={13} />
+          Show first {Math.min(initialCount, items.length)}
+        </button> : null}
       </div> : null}
     </>
   );
@@ -140,6 +159,7 @@ export function HistoryDashboard({
   emptyLabel = "No saved runs match this view.",
   eyebrow = "Saved evidence",
   filters,
+  batchCount = 25,
   initialCount = 6,
   itemLabel = "runs",
   items,
@@ -183,10 +203,12 @@ export function HistoryDashboard({
       <div className="mt-7">
         <ProgressiveList
           empty={<div className={`py-14 text-center text-[13px] ${V3_TEXT.mute}`}>{emptyLabel}</div>}
+          batchCount={batchCount}
           initialCount={initialCount}
           itemLabel={itemLabel}
           items={items}
           renderItem={renderItem}
+          resetKey={`${query}|${JSON.stringify(dashboard.view)}|${items.length}`}
         />
       </div>
     </section>

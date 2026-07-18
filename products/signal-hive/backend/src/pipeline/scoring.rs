@@ -461,7 +461,6 @@ fn stale_issue_examples(issues: &[GitHubIssue], stale_days: u32) -> Vec<IssueSam
             .cmp(&a.age_days)
             .then_with(|| b.comments.cmp(&a.comments))
     });
-    examples.truncate(3);
     examples
 }
 
@@ -515,7 +514,6 @@ fn duplicate_candidates(issues: &[GitHubIssue]) -> Vec<DuplicateCandidate> {
             .partial_cmp(&a.similarity)
             .unwrap_or(std::cmp::Ordering::Equal)
     });
-    pairs.truncate(3);
     pairs
 }
 
@@ -639,7 +637,7 @@ fn recurring_bug_clusters(issues: &[GitHubIssue]) -> Vec<RecurringBugCluster> {
             label,
             issue_count: component.len() as u32,
             shared_terms,
-            examples: samples.into_iter().take(3).collect(),
+            examples: samples,
         });
     }
 
@@ -659,7 +657,6 @@ fn recurring_bug_clusters(issues: &[GitHubIssue]) -> Vec<RecurringBugCluster> {
                 )
         })
     });
-    clusters.truncate(3);
     clusters
 }
 
@@ -700,6 +697,16 @@ mod tests {
         let candidates = duplicate_candidates(&issues);
         assert_eq!(candidates.len(), 1);
         assert!(candidates[0].similarity >= 0.72);
+    }
+
+    #[test]
+    fn duplicate_detection_retains_every_detected_pair() {
+        let issues = (1..=5)
+            .map(|number| issue(number, "Crash when loading workspace configuration"))
+            .collect::<Vec<_>>();
+
+        let candidates = duplicate_candidates(&issues);
+        assert_eq!(candidates.len(), 10);
     }
 
     #[test]

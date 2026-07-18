@@ -127,6 +127,36 @@ pub struct ProductRunEventsResponse {
     pub events: Vec<ProductRunEvent>,
 }
 
+/// A presentation page over a complete, product-owned evidence collection.
+///
+/// Products must persist the complete collection before using this type. A
+/// page is an API/view boundary, never the product's storage boundary.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RetainedEvidencePage<T> {
+    pub items: Vec<T>,
+    pub total: u64,
+    pub offset: u64,
+    pub limit: u64,
+    pub has_more: bool,
+}
+
+impl<T: Clone> RetainedEvidencePage<T> {
+    pub fn from_retained(items: &[T], offset: u64, limit: u64) -> Self {
+        let total = items.len() as u64;
+        let offset = offset.min(total);
+        let limit = limit.max(1);
+        let end = offset.saturating_add(limit).min(total);
+
+        Self {
+            items: items[offset as usize..end as usize].to_vec(),
+            total,
+            offset,
+            limit,
+            has_more: end < total,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ProductRunEvent {
     pub id: String,
@@ -794,8 +824,9 @@ fn numeric_summary(raw: &Value) -> Option<String> {
 mod tests {
     use super::{
         action, cadence_from_hours, capabilities, interval_cron_label, parse_dispatch_input,
-        run_events_response, runs_from_values, ProductRunArtifact, ProductRunEvent, RunEventLevel,
-        RunLifecycleStatus, RunTriggerMode, SuiteScheduleRecord, TargetSelectionMode,
+        run_events_response, runs_from_values, ProductRunArtifact, ProductRunEvent,
+        RetainedEvidencePage, RunEventLevel, RunLifecycleStatus, RunTriggerMode,
+        SuiteScheduleRecord, TargetSelectionMode,
     };
     use serde_json::json;
 
@@ -915,6 +946,21 @@ mod tests {
         assert_eq!(input.query["dry"], "true");
         assert_eq!(input.query["limit"], "3");
         assert_eq!(input.payload["repo"], "patchhive/example");
+    }
+
+    #[test]
+    fn retained_evidence_pages_preserve_complete_collection_metadata() {
+        let retained = vec!["one", "two", "three", "four", "five"];
+        let first = RetainedEvidencePage::from_retained(&retained, 0, 2);
+        let last = RetainedEvidencePage::from_retained(&retained, 4, 2);
+
+        assert_eq!(first.items, vec!["one", "two"]);
+        assert_eq!(first.total, 5);
+        assert!(first.has_more);
+        assert_eq!(last.items, vec!["five"]);
+        assert_eq!(last.total, 5);
+        assert!(!last.has_more);
+        assert_eq!(retained.len(), 5);
     }
 
     #[test]

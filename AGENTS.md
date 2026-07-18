@@ -201,6 +201,7 @@ Rules:
 - Use the actual Lovable component structure, theme tokens, typography, spacing, radii, glass surfaces, shadows, backgrounds, and responsive behavior. Do not approximate it from screenshots or replace it with a static mockup.
 - Every specialist product remains an independent frontend, Docker image, API integration, and workflow. Share only the stable visual shell and primitives through `@patchhivehq/ui-v3`.
 - Reuse `@patchhivehq/ui-v3` progressive lists, saved dashboard views, filter/sort controls, and activity timelines across specialist products; products supply their own field and event mappings.
+- Every product must persist every first-class finding produced inside its configured input scope. Input bounds are valid; post-analysis evidence truncation is not. APIs may paginate complete retained collections, and v3 should progressively render them with show-more, show-all, and collapse controls while filters operate over the complete retained set.
 - Show aggregate dashboard KPIs once. Use the shared assessment card for up to three prioritized findings instead of repeating repository, finding, run, and warning totals in multiple surfaces. Read-only products should call this an assessment and explain the factors behind labels such as review priority.
 - Product differences belong in product name/icon, accent colors, copy, tabs, data, forms, actions, and workflow-specific panels.
 - Keep the specialist footer identity aligned with v2: `<Product> by PatchHive`, the product subtitle, and `Autonomous maintenance suite`.

@@ -411,6 +411,30 @@ direct reassessment. Products must not collapse both facts into one
 
 The normalized fields are for HiveCore. The `raw` object preserves product-specific detail so standalone UIs and deeper integrations do not lose context.
 
+### Finding retention and pagination
+
+Every product owns the complete evidence generated inside a run's configured
+input scope. Presentation limits must not become storage limits: products
+persist every first-class finding before returning a subset or page.
+
+An optional paged evidence response should follow the shared
+`RetainedEvidencePage<T>` shape:
+
+```json
+{
+  "items": [],
+  "total": 342,
+  "offset": 60,
+  "limit": 60,
+  "has_more": true
+}
+```
+
+`total` describes the durable collection for that run. Filters, sorts, exports,
+and saved dashboard views must operate over that complete collection. Concise
+summary fields and excerpts remain allowed, but they must not be the only saved
+copy of detected evidence.
+
 ## Initial Adoption Order
 
 1. New products should start with this envelope and ID style.
