@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Btn, EmptyState, S, Tag } from "@patchhivehq/ui";
 
 const TEXT_DIM_COLOR = "var(--text-dim)";
+const STATUS_NEEDS_ACTION = "needs_action";
 
 const statGridStyle = {
   display: "grid",
@@ -26,7 +27,7 @@ function statusMeta(status) {
   switch (status) {
     case "complete":
       return { label: "complete", color: "var(--green)" };
-    case "needs_action":
+    case STATUS_NEEDS_ACTION:
       return { label: "needs action", color: "var(--accent)" };
     case "optional":
       return { label: "optional", color: TEXT_DIM_COLOR };
@@ -152,9 +153,9 @@ export default function ProductSetupWizard({
 
   const counts = useMemo(() => summarizeChecks(checks), [checks]);
   const overallStatus = loadError
-    ? "needs_action"
+    ? STATUS_NEEDS_ACTION
     : counts.errors > 0
-      ? "needs_action"
+      ? STATUS_NEEDS_ACTION
       : counts.warns > 0
         ? "recommended"
         : "complete";
@@ -162,7 +163,7 @@ export default function ProductSetupWizard({
   const overallMeta = statusMeta(overallStatus);
   const serviceStatus = authStatus?.service_auth_supported
     ? authStatus?.service_auth_expired
-      ? "needs_action"
+      ? STATUS_NEEDS_ACTION
       : authStatus?.service_auth_configured
         ? authStatus?.service_auth_legacy
           ? "recommended"
@@ -187,7 +188,7 @@ export default function ProductSetupWizard({
         detail: authStatus?.auth_configured
           ? "This browser session already has a working operator API key for this product."
           : "Generate the first local operator key or sign in with an existing key before continuing.",
-        status: authStatus?.auth_configured ? "complete" : "needs_action",
+        status: authStatus?.auth_configured ? "complete" : STATUS_NEEDS_ACTION,
       },
       {
         title: "Clear backend startup checks",
@@ -197,7 +198,7 @@ export default function ProductSetupWizard({
             : counts.warns > 0
               ? `${counts.warns} warning${counts.warns === 1 ? "" : "s"} remain. The product can usually run, but the setup deserves a quick pass.`
               : "The shared startup checks are clean right now.",
-        status: counts.errors > 0 ? "needs_action" : counts.warns > 0 ? "recommended" : "complete",
+        status: counts.errors > 0 ? STATUS_NEEDS_ACTION : counts.warns > 0 ? "recommended" : "complete",
         tab: checksTabId,
         actionLabel: "Open Checks",
       },
