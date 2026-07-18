@@ -3,6 +3,12 @@
 This file gives Codex the repo context that was previously captured in `CLAUDE.md`.
 Keep it up to date when the architecture, conventions, or product inventory changes.
 
+When a PatchHive discussion, phone note, email, or external conversation reaches
+a concrete architecture, product, contract, workflow, or safety decision, write
+or merge that decision into the canonical repo docs. Do not leave model-handoff
+knowledge trapped in chat. Keep unresolved brainstorming in planning docs and
+label open choices honestly.
+
 ## What PatchHive Is
 
 PatchHive is a software maintenance platform: a family of focused tools that help engineering teams find, prioritize, and automate maintenance work without losing reviewability or trust.
@@ -154,12 +160,13 @@ Shared platform guidance:
   separately from target selection (`direct`, `discovery`). Products should
   advertise only the combinations their current engine supports.
 - Treat repo discovery safety, output caps, and cross-product contracts as platform guardrails, not optional product polish.
+- PatchHive-owned inbound email must be a native, auditable, policy-gated capability rather than a production dependency on Hermes or a personal agent profile. The final module/product boundary remains open; see `docs/inbound-email-architecture.md`.
 - The unified backend product registry lives in `services/patchhive-backend/registry/products/*.toml`; product modules should declare identity, route claims, capabilities, safety boundaries, gateway targets, health contracts, and module paths there instead of being hardcoded in `main.rs`.
 - The unified backend shared SQLite DB is configured with `PATCHHIVE_DB_PATH`; suite tables stay backend-owned, while product tables should be product-namespaced as engines migrate in-process.
 - All product routers should layer `patchhive_product_core::rate_limit::rate_limit_middleware` so auth, mutating, and run-triggering routes share backend rate limiting.
 - GitHub-enabled products should use `patchhive_product_core::github_auth::verify_github_token` at startup. Token presence is configuration, `github_ready` means GitHub accepted the authenticated identity request, target read access is verified during the run, and write readiness is only proven by a successful target-specific write.
 - When the same Rust backend seam exists in 2 or more products, prefer extracting it into `crates/patchhive-product-core` before starting another product.
-- See [docs/platform-guardrails.md](/home/coemedia/Documents/code/patchhive/docs/platform-guardrails.md) and [docs/product-api-contract-v1.md](/home/coemedia/Documents/code/patchhive/docs/product-api-contract-v1.md).
+- See [docs/platform-guardrails.md](docs/platform-guardrails.md) and [docs/product-api-contract-v1.md](docs/product-api-contract-v1.md).
 
 ## Shared UI Package
 
@@ -184,7 +191,7 @@ Rules:
 - Do not mix v2 work into old UI code while the direction is still being tested.
 - HiveCore does not currently follow the v2 direction, but it should converge before old UI code is legacy or removed.
 - Once every product has moved to v2, old UI code should either move to a clearly named legacy path or be removed.
-- See [docs/ui-v2-migration.md](/home/coemedia/Documents/code/patchhive/docs/ui-v2-migration.md).
+- See [docs/ui-v2-migration.md](docs/ui-v2-migration.md).
 
 ## UI v3 Track
 
@@ -234,7 +241,7 @@ Rules:
 - Prefer finishing and validating v3 for the current integrated product set before moving another product engine into the unified backend.
 - HiveCore is intentionally outside the specialist-product v3 migration and keeps its control-plane UI.
 - `prototypes/vuln-triage-calm-mockup.html` is reference material only; it is not the v3 source of truth.
-- See [docs/ui-v3-migration.md](/home/coemedia/Documents/code/patchhive/docs/ui-v3-migration.md).
+- See [docs/ui-v3-migration.md](docs/ui-v3-migration.md).
 
 ## Shared Product Shell Package
 
@@ -260,7 +267,7 @@ Rules:
 - Browser code should not call third-party AI providers directly. It may pass a user-entered provider key to the local product backend for one-time model discovery.
 - Keep actual AI request execution in the product backend or a shared Rust crate once 2 or more products need the same backend model-discovery/runtime seam.
 - Custom providers should use OpenAI-compatible chat and model-list APIs and carry an explicit base URL in product config or agent config.
-- RepoReaper's agent team is the seed of a shared PatchHive Squad architecture: product-owned AI roles backed by shared provider/model discovery, model testing, noisy model filtering, encrypted per-agent secret storage, presets, readiness checks, and HiveCore visibility. Do not clone the RepoReaper team builder into future products; extract the common Squad substrate into `patchhive-product-core` when a second AI-capable product needs it. See [docs/shared-squad-architecture.md](/home/coemedia/Documents/code/patchhive/docs/shared-squad-architecture.md).
+- RepoReaper's agent team is the seed of a shared PatchHive Squad architecture: product-owned AI roles backed by shared provider/model discovery, model testing, noisy model filtering, encrypted per-agent secret storage, presets, readiness checks, and HiveCore visibility. Do not clone the RepoReaper team builder into future products; extract the common Squad substrate into `patchhive-product-core` when a second AI-capable product needs it. See [docs/shared-squad-architecture.md](docs/shared-squad-architecture.md).
 
 ## Shared Rust Product Core
 

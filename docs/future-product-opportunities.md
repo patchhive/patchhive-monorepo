@@ -21,6 +21,7 @@ another product surface.
 | SecretShade | Secret leak detection and rotation | Strong new-product candidate | SecretSentry |
 | MergePilot | Merge queue and conflict resolution | Extend existing product | MergeKeeper |
 | AuditMesh | Evidence vault and audit replay | Shared platform capability | Shared evidence ledger + HiveCore + FailGuard |
+| MailHive / InboxBee | Inbound email intake, safe replies, and product dispatch | Native capability; final product boundary open | Unified backend, suite service, or specialist product |
 
 The clearest additions are BuildSentry, a performance-regression product, and
 SecretSentry. DocKeeper also owns useful work, but its changelog responsibilities
@@ -195,6 +196,23 @@ reconstruction, lesson extraction, and preventative guardrails, with durable
 lessons flowing into RepoMemory. A separately packaged compliance product
 should only be reconsidered if external audit workflows become a real customer
 need.
+
+### MailHive / InboxBee
+
+PatchHive should eventually monitor a suite-owned mailbox, classify
+repository-related messages, answer narrowly safe questions, begin verified
+opt-out and intake workflows, dispatch approved read-only product actions, and
+escalate uncertainty to the operator with a summary.
+
+The durable decision is that this must be a native PatchHive capability rather
+than a production dependency on Hermes or Jeremy's personal agent setup. The
+final boundary remains open: it may live inside the unified backend, run as a
+suite service, or become a standalone product if a distinct inbox and triage
+workflow proves real.
+
+**Decision:** Preserve the native capability and safety boundary now; defer the
+product/module decision and final name. See
+[Inbound email architecture](inbound-email-architecture.md).
 
 ## Recommended Product Boundaries
 

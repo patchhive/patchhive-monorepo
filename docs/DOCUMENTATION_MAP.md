@@ -7,6 +7,12 @@ PatchHive is monorepo-first. Product work starts in `products/<slug>/` and is do
 depth at `docs/products/<slug>.md`. Each product README is a short getting-started companion
 that links back to its detailed doc (see [PRODUCT_README_TEMPLATE.md](PRODUCT_README_TEMPLATE.md)).
 
+When a PatchHive discussion, note, or external conversation reaches a concrete
+architecture, product, contract, workflow, or safety decision, record it in the
+canonical repository documentation before implementation or model handoff.
+Brainstorming may remain in planning docs, but unresolved choices must be marked
+open rather than written as settled architecture.
+
 ## How to navigate
 
 - **"I want to run a product locally"** → the product's `README.md` (`## Quick Start`), then
@@ -40,6 +46,7 @@ that links back to its detailed doc (see [PRODUCT_README_TEMPLATE.md](PRODUCT_RE
 
 - [Product operating modes](product-operating-modes.md) — directed targets vs autonomous discovery, and how products expose both.
 - [Future product opportunities](future-product-opportunities.md) — overlap analysis and boundaries for recovered product concepts.
+- [Inbound email architecture](inbound-email-architecture.md) — native PatchHive mailbox intake, classification, safe replies, product dispatch, and escalation boundaries.
 - [Shared Squad architecture](shared-squad-architecture.md) — RepoReaper's agent team as the first shared squad implementation.
 
 ## Platform Docs
