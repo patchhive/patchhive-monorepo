@@ -16,6 +16,7 @@ use crate::models::{
 use crate::{response_preview, GitHubApiError};
 
 pub const GH_API: &str = "https://api.github.com";
+const GITHUB_DATA_USER_AGENT: &str = "patchhive-github-data/0.1";
 const TRANSIENT_RETRY_DELAYS_MS: [u64; 2] = [300, 900];
 const REPOSITORY_FORMAT_ERROR: &str = "Repository must be in owner/name format";
 
@@ -354,7 +355,7 @@ async fn get_public_json<T: DeserializeOwned>(
     let token = github_token();
     get_json(
         client,
-        "patchhive-github-data/0.1",
+        GITHUB_DATA_USER_AGENT,
         path,
         query,
         token.as_deref(),
@@ -370,7 +371,7 @@ async fn get_authenticated_json<T: DeserializeOwned>(
     let token = github_token_required()?;
     get_json(
         client,
-        "patchhive-github-data/0.1",
+        GITHUB_DATA_USER_AGENT,
         path,
         query,
         Some(token.as_str()),
@@ -400,7 +401,7 @@ pub async fn search_repositories(
     let token = github_token();
     let items = get_paginated_field_json(
         client,
-        "patchhive-github-data/0.1",
+        GITHUB_DATA_USER_AGENT,
         "/search/repositories",
         &[
             ("q", query.trim().to_string()),
@@ -427,7 +428,7 @@ pub async fn fetch_issues(
 
     get_paginated_json(
         client,
-        "patchhive-github-data/0.1",
+        GITHUB_DATA_USER_AGENT,
         &format!("/repos/{repo}/issues"),
         &[
             ("state", state.trim().to_string()),
@@ -452,7 +453,7 @@ pub async fn fetch_pull_requests(
 
     get_paginated_json(
         client,
-        "patchhive-github-data/0.1",
+        GITHUB_DATA_USER_AGENT,
         &format!("/repos/{repo}/pulls"),
         &[
             ("state", state.trim().to_string()),
@@ -501,7 +502,7 @@ pub async fn search_merged_pull_requests(
 
     let response: GitHubSearchIssuesResponse = get_json(
         client,
-        "patchhive-github-data/0.1",
+        GITHUB_DATA_USER_AGENT,
         "/search/issues",
         &[
             (
@@ -534,7 +535,7 @@ pub async fn search_closed_issues(
 
     let response: GitHubSearchIssuesResponse = get_json(
         client,
-        "patchhive-github-data/0.1",
+        GITHUB_DATA_USER_AGENT,
         "/search/issues",
         &[
             (
@@ -628,7 +629,7 @@ pub async fn fetch_pull_reviews(
 
     get_paginated_json(
         client,
-        "patchhive-github-data/0.1",
+        GITHUB_DATA_USER_AGENT,
         &format!("/repos/{repo}/pulls/{number}/reviews"),
         &[],
         github_token().as_deref(),
@@ -646,7 +647,7 @@ pub async fn fetch_pull_review_comments(
 
     get_paginated_json(
         client,
-        "patchhive-github-data/0.1",
+        GITHUB_DATA_USER_AGENT,
         &format!("/repos/{repo}/pulls/{number}/comments"),
         &[],
         github_token().as_deref(),
@@ -664,7 +665,7 @@ pub async fn fetch_pull_files(
 
     get_paginated_json(
         client,
-        "patchhive-github-data/0.1",
+        GITHUB_DATA_USER_AGENT,
         &format!("/repos/{repo}/pulls/{number}/files"),
         &[],
         github_token().as_deref(),
@@ -704,7 +705,7 @@ pub async fn fetch_workflow_runs(
 
     get_paginated_field_json(
         client,
-        "patchhive-github-data/0.1",
+        GITHUB_DATA_USER_AGENT,
         &format!("/repos/{repo}/actions/runs"),
         &query,
         github_token().as_deref(),
@@ -723,7 +724,7 @@ pub async fn fetch_workflow_jobs(
 
     get_paginated_field_json(
         client,
-        "patchhive-github-data/0.1",
+        GITHUB_DATA_USER_AGENT,
         &format!("/repos/{repo}/actions/runs/{run_id}/jobs"),
         &[],
         github_token().as_deref(),
