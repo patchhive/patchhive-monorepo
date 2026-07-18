@@ -45,6 +45,7 @@ open rather than written as settled architecture.
 ## Architecture Notes
 
 - [Product operating modes](product-operating-modes.md) — directed targets vs autonomous discovery, and how products expose both.
+- [Product naming strategy](product-naming-strategy.md) — descriptive external names, internal apiary vocabulary, protected names, and rename safety.
 - [Future product opportunities](future-product-opportunities.md) — overlap analysis and boundaries for recovered product concepts.
 - [Email and agentic webmail architecture](inbound-email-architecture.md) — native mailbox access, agent-assisted triage and replies, product dispatch, approval, and escalation boundaries.
 - [Shared Squad architecture](shared-squad-architecture.md) — RepoReaper's agent team as the first shared squad implementation.
@@ -85,6 +86,7 @@ open rather than written as settled architecture.
 | --- | --- |
 | [PRODUCT_README_TEMPLATE.md](PRODUCT_README_TEMPLATE.md) | **Canonical README structure + Safety Boundary standard.** Read before writing a product README. |
 | [CONFIGURATION_STANDARDS.md](CONFIGURATION_STANDARDS.md) | De-facto config naming, suffixes, and known deviations. |
+| [Product naming strategy](product-naming-strategy.md) | Customer-facing naming rules, internal apiary vocabulary, and rename candidates. |
 | [PatchHive Improvements](PatchHive_Improvements.md) | The master improvement analysis (10 findings + action plan). |
 | [Future plans](FUTURE_PLANS.md) | Planning scratchpad. |
 

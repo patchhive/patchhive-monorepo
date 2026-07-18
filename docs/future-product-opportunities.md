@@ -258,7 +258,9 @@ product set should reach parity before another engine or frontend is started.
 ## Naming Status
 
 BuildSentry, PerfSentry, BenchSting, SecretSentry, DocKeeper, and HiveMail are
-working names only. Before scaffolding a product, confirm that the name:
+working names only. Apply the external-versus-internal naming rules in
+[Product naming strategy](product-naming-strategy.md) before scaffolding a
+product, and confirm that the name:
 
 - is distinct from current PatchHive product responsibilities;
 - fits the suite's concise specialist naming style;

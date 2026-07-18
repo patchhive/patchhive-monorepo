@@ -153,6 +153,11 @@ Packaging:
 - `@patchhive/ai-local` is the shared localhost gateway for user-owned Codex/Copilot sessions
 
 Shared platform guidance:
+- Product naming should follow
+  [docs/product-naming-strategy.md](docs/product-naming-strategy.md): keep
+  customer-facing names descriptive, use deeper apiary vocabulary inside
+  products, and treat a product rename as a compatibility migration rather than
+  a display-text edit.
 - Shared auth/provider infrastructure should live in a shared package instead of being reimplemented per product.
 - Keep product APIs close enough that HiveCore can orchestrate them without heavy translation layers.
 - Standardize request/response envelopes, error shapes, run/job identifiers, and async webhook/run lifecycle patterns as products are built out.
