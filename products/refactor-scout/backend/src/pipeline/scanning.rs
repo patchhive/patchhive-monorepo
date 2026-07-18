@@ -17,9 +17,9 @@ use crate::models::{RefactorOpportunity, RefactorScanResult};
 
 use super::analysis::*;
 use super::scan_hygiene::{
-    classify_function_shape, classify_literal_context, control_flow_markers, is_generated_source,
-    is_non_actionable_style_literal, is_style_literal_usage, is_template_placeholder,
-    FunctionShape, LiteralContext,
+    classify_function_shape, classify_literal_context, coherent_contract_usage,
+    control_flow_markers, is_generated_source, is_non_actionable_style_literal,
+    is_style_literal_usage, is_template_placeholder, FunctionShape, LiteralContext,
 };
 
 pub(crate) const MAX_SCAN_FILES: u32 = 1_500;
@@ -757,12 +757,24 @@ fn repeated_literal_opportunity(
                 "`{path}` repeats the validation message `{preview}` {count} times in similar error paths. Review whether those paths enforce one contract before consolidating them."
             ),
             "Compare the guards and error semantics first. If they enforce the same contract, consolidate the boundary while preserving exact behavior and adding focused tests.",
-            "The repeated message appears in similar validation or error-return paths.",
+            "The repeated message appears in similar validation or error-return paths."
+                .to_string(),
             76 + bounded_score_bonus(count.saturating_sub(3) as usize, 12, 4),
             "high",
         )
     } else if literal_context == LiteralContext::Contract {
-        let safety = if count >= 5 { "high" } else { "medium" };
+        let coherent_usage = coherent_contract_usage(&literal, content, &offsets);
+        let safety = if count >= 5 && coherent_usage.is_some() {
+            "high"
+        } else {
+            "medium"
+        };
+        let context_evidence = coherent_usage.map_or_else(
+            || {
+                "The literal looks contract-shaped, but its surrounding usage does not establish one shared ownership boundary.".to_string()
+            },
+            |role| format!("Every occurrence has the same {role} role."),
+        );
         (
             "repeated_literal",
             "Review repeated contract literal",
@@ -770,7 +782,7 @@ fn repeated_literal_opportunity(
                 "`{path}` repeats the contract-shaped string `{preview}` {count} times. Review whether every occurrence represents the same protocol, configuration, route, or machine-readable value."
             ),
             "Compare the consumers first. Introduce a named constant only when all occurrences must evolve together.",
-            "The literal shape or its usage resembles a shared technical contract.",
+            context_evidence,
             62 + bounded_score_bonus(count.saturating_sub(3) as usize, 18, 5),
             safety,
         )
@@ -782,7 +794,8 @@ fn repeated_literal_opportunity(
                 "`{path}` repeats the interface text `{preview}` {count} times. Shared wording may be intentional, but occurrence count alone does not justify a constant."
             ),
             "Check whether the text is one product concept or separate labels that may diverge. Share it only when synchronized wording is a real requirement.",
-            "Most occurrences appear in labels, titles, placeholders, or other interface copy.",
+            "Most occurrences appear in labels, titles, placeholders, or other interface copy."
+                .to_string(),
             44 + bounded_score_bonus(count.saturating_sub(3) as usize, 13, 7),
             "medium",
         )
@@ -794,16 +807,14 @@ fn repeated_literal_opportunity(
                 "`{path}` repeats the string `{preview}` {count} times. Review semantic ownership before deciding whether a shared constant improves the code."
             ),
             "Compare the surrounding responsibilities first. Keep the values inline when proximity is clearer; share them only when they represent one concept.",
-            "The occurrences are real, but their surrounding contexts do not prove shared ownership.",
+            "The occurrences are real, but their surrounding contexts do not prove shared ownership."
+                .to_string(),
             50 + bounded_score_bonus(count.saturating_sub(3) as usize, 16, 6),
             "medium",
         )
     };
 
-    let mut evidence = vec![
-        format!("{count} repeated occurrences"),
-        context_evidence.into(),
-    ];
+    let mut evidence = vec![format!("{count} repeated occurrences"), context_evidence];
     if safety == "medium" {
         evidence.push(
             "Confirm the occurrences represent the same concept before sharing one constant."

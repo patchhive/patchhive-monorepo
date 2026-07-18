@@ -140,6 +140,22 @@ pub(super) fn classify_literal_context(
     }
 }
 
+pub(super) fn coherent_contract_usage(
+    literal: &str,
+    content: &str,
+    offsets: &[usize],
+) -> Option<&'static str> {
+    let mut expected = None;
+    for offset in offsets {
+        let role = contract_usage_role(literal, content, *offset)?;
+        if expected.is_some_and(|current| current != role) {
+            return None;
+        }
+        expected = Some(role);
+    }
+    expected
+}
+
 pub(super) fn is_non_actionable_style_literal(literal: &str) -> bool {
     is_css_custom_property_literal(literal)
         || is_css_function_value(literal)
@@ -258,6 +274,47 @@ fn looks_like_contract_literal(literal: &str, content: &str, offsets: &[usize]) 
     contract_hits * 2 >= offsets.len()
 }
 
+fn contract_usage_role(literal: &str, content: &str, offset: usize) -> Option<&'static str> {
+    let line = source_line_at(content, offset);
+    let normalized = line.to_ascii_lowercase();
+    let nearby = source_context_at(content, offset, 2).to_ascii_lowercase();
+
+    if normalized.contains("key:") || normalized.contains("label:") {
+        return None;
+    }
+    if (literal.starts_with("application/") || literal.starts_with("text/"))
+        && (nearby.contains("content-type") || nearby.contains("headers"))
+    {
+        return Some("HTTP header value");
+    }
+    if normalized.contains(&format!("[\"{literal}\"]"))
+        || normalized.contains(&format!("['{literal}']"))
+    {
+        return Some("structured-data field");
+    }
+    if normalized.contains("=>") || normalized.contains("matches!") {
+        return Some("match discriminant");
+    }
+    if nearby.contains("api_error")
+        || nearby.contains("error_code")
+        || normalized.contains("\"type\":")
+    {
+        return Some("machine-readable error code");
+    }
+    if literal.starts_with("/api/") && (nearby.contains(".route") || nearby.contains("route(")) {
+        return Some("API route");
+    }
+    if is_environment_name(literal)
+        && (nearby.contains("env::var")
+            || nearby.contains("std::env")
+            || nearby.contains("clean_env")
+            || nearby.contains("env("))
+    {
+        return Some("environment lookup");
+    }
+    None
+}
+
 fn is_environment_name(literal: &str) -> bool {
     literal.len() >= 8
         && literal.contains('_')
@@ -301,6 +358,22 @@ fn source_line_at(content: &str, offset: usize) -> &str {
         .find('\n')
         .map(|index| offset + index)
         .unwrap_or(content.len());
+    &content[start..end]
+}
+
+fn source_context_at(content: &str, offset: usize, radius: usize) -> &str {
+    let mut start = offset.min(content.len());
+    for _ in 0..radius {
+        start = content[..start].rfind('\n').unwrap_or(0);
+    }
+
+    let mut end = offset.min(content.len());
+    for _ in 0..=radius {
+        end = content[end..]
+            .find('\n')
+            .map(|index| end + index + 1)
+            .unwrap_or(content.len());
+    }
     &content[start..end]
 }
 

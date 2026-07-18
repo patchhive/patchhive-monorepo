@@ -51,19 +51,40 @@ const C = "service unavailable while syncing billing customers";
     }
 
     #[test]
-    fn five_contract_literals_are_high_confidence() {
+    fn five_contract_literals_need_one_consistent_usage_role_for_high_confidence() {
         let source = r#"
-const A = "application/vnd.github+json";
-const B = "application/vnd.github+json";
-const C = "application/vnd.github+json";
-const D = "application/vnd.github+json";
-const E = "application/vnd.github+json";
+const A = { headers: { "Content-Type": "application/vnd.github+json" } };
+const B = { headers: { "Content-Type": "application/vnd.github+json" } };
+const C = { headers: { "Content-Type": "application/vnd.github+json" } };
+const D = { headers: { "Content-Type": "application/vnd.github+json" } };
+const E = { headers: { "Content-Type": "application/vnd.github+json" } };
 "#;
 
         let opportunities = analyze_file("src/client.ts", "typescript", source);
         assert!(opportunities
             .iter()
             .any(|item| item.kind == "repeated_literal" && item.safety == "high"));
+    }
+
+    #[test]
+    fn contract_shape_and_count_do_not_promote_declarative_registry_keys() {
+        let source = r#"
+const A = { key: "BOT_GITHUB_TOKEN", label: "SignalHive" };
+const B = { key: "BOT_GITHUB_TOKEN", label: "TrustGate" };
+const C = { key: "BOT_GITHUB_TOKEN", label: "RepoMemory" };
+const D = { key: "BOT_GITHUB_TOKEN", label: "ReviewBee" };
+const E = { key: "BOT_GITHUB_TOKEN", label: "MergeKeeper" };
+"#;
+
+        let opportunity = analyze_file("src/registry.ts", "typescript", source)
+            .into_iter()
+            .find(|item| item.kind == "repeated_literal")
+            .expect("declarative contract usage should remain reviewable");
+        assert_eq!(opportunity.safety, "medium");
+        assert!(opportunity
+            .evidence
+            .iter()
+            .any(|item| item.contains("does not establish one shared ownership boundary")));
     }
 
     #[test]
@@ -629,11 +650,11 @@ const C: &str = "repeated service boundary literal";
         fs::write(
             base.join("bounded.rs"),
             r#"
-const A: &str = "application/vnd.github+json";
-const B: &str = "application/vnd.github+json";
-const C: &str = "application/vnd.github+json";
-const D: &str = "application/vnd.github+json";
-const E: &str = "application/vnd.github+json";
+fn one() { let _ = ("Content-Type", "application/vnd.github+json"); }
+fn two() { let _ = ("Content-Type", "application/vnd.github+json"); }
+fn three() { let _ = ("Content-Type", "application/vnd.github+json"); }
+fn four() { let _ = ("Content-Type", "application/vnd.github+json"); }
+fn five() { let _ = ("Content-Type", "application/vnd.github+json"); }
 "#,
         )
         .expect("high-safety fixture should write");

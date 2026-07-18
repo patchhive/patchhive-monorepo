@@ -54,9 +54,10 @@ refactor is safe or even necessary.
   category-specific explanations and lower complexity weight than branching
   application logic.
 - Repeated strings are judged by usage context as well as count. Validation
-  paths and shared technical contracts may become high-confidence candidates;
-  interface copy and general repetition remain closer-review candidates even
-  when they occur many times.
+  paths and technical contract values with one consistent usage role may
+  become high-confidence candidates. Contract-shaped strings in declarative
+  registries or mixed configuration roles remain closer-review candidates,
+  as do interface copy and general repetition even when they occur many times.
 - File and function size use bounded scoring curves, and equal scores are
   ordered by source span. This keeps the review queue ranked without turning
   every large body into the same near-maximum score.
