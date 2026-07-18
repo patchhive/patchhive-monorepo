@@ -21,7 +21,7 @@ another product surface.
 | SecretShade | Secret leak detection and rotation | Strong new-product candidate | SecretSentry |
 | MergePilot | Merge queue and conflict resolution | Extend existing product | MergeKeeper |
 | AuditMesh | Evidence vault and audit replay | Shared platform capability | Shared evidence ledger + HiveCore + FailGuard |
-| HiveMail | Inbound email intake, safe replies, and product dispatch | Native capability; final product boundary open | Unified backend, suite service, or specialist product |
+| HiveMail | Agentic operator webmail, inbound intake, safe replies, and product dispatch | Native capability; final product boundary open | Shared mail engine plus HiveCore or a specialist product surface |
 
 The clearest additions are BuildSentry, a performance-regression product, and
 SecretSentry. DocKeeper also owns useful work, but its changelog responsibilities
@@ -204,16 +204,22 @@ repository-related messages, answer narrowly safe questions, begin verified
 opt-out and intake workflows, dispatch approved read-only product actions, and
 escalate uncertainty to the operator with a summary.
 
+The operator experience should be a focused agentic webmail client over the
+actual suite mailbox: inbox and thread access, search, compose and reply, cited
+summaries, AI-assisted triage and drafts, approval queues, and one-click dispatch
+into advertised PatchHive capabilities. It should not attempt to clone every
+general-purpose Gmail feature.
+
 The durable decision is that this must be a native PatchHive capability rather
 than a production dependency on Hermes or Jeremy's personal agent setup. The
 final boundary remains open: it may live inside the unified backend, run as a
 suite service, or become a standalone product if a distinct inbox and triage
 workflow proves real.
 
-**Decision:** Preserve the native capability and safety boundary now, use
-**HiveMail** as the preferred working name, and defer the product/module decision
-and final naming confirmation. See
-[Inbound email architecture](inbound-email-architecture.md).
+**Decision:** Preserve the native capability, agentic webmail surface, and safety
+boundary now, use **HiveMail** as the preferred working name, and defer the
+product/module decision and final naming confirmation. See
+[Email and agentic webmail architecture](inbound-email-architecture.md).
 
 ## Recommended Product Boundaries
 
