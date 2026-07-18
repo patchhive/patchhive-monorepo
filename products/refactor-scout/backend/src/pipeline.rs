@@ -51,7 +51,23 @@ const C = "service unavailable while syncing billing customers";
     }
 
     #[test]
-    fn five_repeated_literals_are_high_safety() {
+    fn five_contract_literals_are_high_confidence() {
+        let source = r#"
+const A = "application/vnd.github+json";
+const B = "application/vnd.github+json";
+const C = "application/vnd.github+json";
+const D = "application/vnd.github+json";
+const E = "application/vnd.github+json";
+"#;
+
+        let opportunities = analyze_file("src/client.ts", "typescript", source);
+        assert!(opportunities
+            .iter()
+            .any(|item| item.kind == "repeated_literal" && item.safety == "high"));
+    }
+
+    #[test]
+    fn occurrence_count_alone_does_not_make_literal_high_confidence() {
         let source = r#"
 const A = "service unavailable while syncing billing customers";
 const B = "service unavailable while syncing billing customers";
@@ -60,10 +76,12 @@ const D = "service unavailable while syncing billing customers";
 const E = "service unavailable while syncing billing customers";
 "#;
 
-        let opportunities = analyze_file("src/client.ts", "typescript", source);
-        assert!(opportunities
-            .iter()
-            .any(|item| item.kind == "repeated_literal" && item.safety == "high"));
+        let opportunity = analyze_file("src/client.ts", "typescript", source)
+            .into_iter()
+            .find(|item| item.kind == "repeated_literal")
+            .expect("repeated usage should remain reviewable");
+        assert_eq!(opportunity.safety, "medium");
+        assert!(opportunity.summary.contains("semantic ownership"));
     }
 
     #[test]
@@ -150,6 +168,20 @@ const F = { grid: "repeat(auto-fit, minmax(220px, 1fr))", transform: "translate(
     }
 
     #[test]
+    fn repeated_literal_scan_uses_usage_context_for_css_classes() {
+        let source = r#"
+const A = <button className="selected-stat">One</button>;
+const B = <button className="selected-stat">Two</button>;
+const C = <button className="selected-stat">Three</button>;
+const D = <button className="selected-stat">Four</button>;
+"#;
+
+        assert!(!analyze_file("src/panel.jsx", "javascript", source)
+            .iter()
+            .any(|item| item.kind == "repeated_literal"));
+    }
+
+    #[test]
     fn repeated_literal_scan_ignores_tailwind_attribute_selectors() {
         let source = r#"
 const A = "group-data-[collapsible=icon]:hidden";
@@ -206,9 +238,12 @@ const C = "service-token auth is not configured for this product";
             .expect("embedded stylesheet should remain visible");
         assert_eq!(
             opportunity.title,
-            "Move embedded stylesheet out of `CommandCenterStyles`"
+            "Review embedded stylesheet boundary in `CommandCenterStyles`"
         );
         assert!(opportunity.suggestion.contains("CSS module"));
+        assert!(opportunity
+            .summary
+            .contains("not a complex-function finding"));
     }
 
     #[test]
@@ -312,9 +347,153 @@ fn validate_three(repo: &str) -> anyhow::Result<()> {
             .iter()
             .find(|item| item.kind == "repeated_validation")
             .expect("repeated validation should receive specific guidance");
-        assert_eq!(validation.title, "Consolidate repeated validation");
-        assert!(validation.suggestion.contains("validation helper"));
-        assert!(validation.summary.contains("similar error paths"));
+        assert_eq!(validation.title, "Review repeated validation boundary");
+        assert!(validation.suggestion.contains("Compare the guards"));
+        assert!(validation.summary.contains("one contract"));
+    }
+
+    #[test]
+    fn inline_rust_test_modules_do_not_inflate_file_or_function_measurements() {
+        let mut source = String::from("pub fn runtime() {}\n\n#[cfg(test)]\nmod tests {\n");
+        source.push_str("    #[test]\n    fn oversized_test_helper() {\n");
+        for _ in 0..360 {
+            source.push_str("        assert!(true);\n");
+        }
+        source.push_str("    }\n}\n\npub fn after_tests() {}\n");
+
+        let opportunities = analyze_file("src/pipeline.rs", "rust", &source);
+        assert!(!opportunities.iter().any(|item| item.kind == "large_file"));
+        assert!(!opportunities
+            .iter()
+            .any(|item| item.kind == "long_function"));
+    }
+
+    #[test]
+    fn runtime_code_after_inline_tests_still_counts_toward_file_size() {
+        let mut source = String::from("#[cfg(test)]\nmod tests {\n");
+        for _ in 0..80 {
+            source.push_str("    // test support\n");
+        }
+        source.push_str("}\n");
+        for _ in 0..330 {
+            source.push_str("pub const RUNTIME_VALUE: bool = true;\n");
+        }
+
+        let opportunity = analyze_file("src/client.rs", "rust", &source)
+            .into_iter()
+            .find(|item| item.kind == "large_file")
+            .expect("runtime lines after the test module should still count");
+        assert!(opportunity
+            .evidence
+            .iter()
+            .any(|item| item.contains("inline test-module lines excluded")));
+        assert!(opportunity.summary.contains("330 measured non-test lines"));
+    }
+
+    #[test]
+    fn declarative_jsx_is_not_described_as_branching_complexity() {
+        let mut source = String::from("function ProductPanel() {\n  return (\n    <section>\n");
+        for index in 0..70 {
+            source.push_str(&format!(
+                "      <div className=\"row\">Item {index}</div>\n"
+            ));
+        }
+        source.push_str("    </section>\n  );\n}\n");
+
+        let opportunity = analyze_file("src/ProductPanel.jsx", "javascript", &source)
+            .into_iter()
+            .find(|item| item.kind == "long_function")
+            .expect("large declarative component should remain visible");
+        assert!(opportunity.title.contains("declarative component"));
+        assert!(opportunity.summary.contains("declarative JSX"));
+        assert!(opportunity.score < 70);
+    }
+
+    #[test]
+    fn schema_blocks_receive_schema_specific_guidance() {
+        let mut source = String::from(
+            "fn init_db(connection: &Connection) {\n    connection.execute_batch(r#\"\n",
+        );
+        for index in 0..70 {
+            source.push_str(&format!(
+                "CREATE TABLE example_{index} (id INTEGER PRIMARY KEY);\n"
+            ));
+        }
+        source.push_str("\"#).unwrap();\n}\n");
+
+        let opportunity = analyze_file("src/db.rs", "rust", &source)
+            .into_iter()
+            .find(|item| item.kind == "long_function")
+            .expect("large schema setup should remain visible");
+        assert!(opportunity.title.contains("schema setup boundary"));
+        assert!(opportunity.summary.contains("SQL or schema declarations"));
+    }
+
+    #[test]
+    fn lookup_tables_receive_table_specific_guidance() {
+        let mut source = String::from(
+            "fn credential_requirements(product: &str) -> &'static [&'static str] {\n    match product {\n",
+        );
+        for index in 0..65 {
+            source.push_str(&format!("        \"product-{index}\" => &[\"token\"],\n"));
+        }
+        source.push_str("        _ => &[],\n    }\n}\n");
+
+        let opportunity = analyze_file("src/registry.rs", "rust", &source)
+            .into_iter()
+            .find(|item| item.kind == "long_function")
+            .expect("large lookup table should remain visible");
+        assert!(opportunity.title.contains("declarative table"));
+        assert!(opportunity.summary.contains("table or match-heavy shape"));
+        assert!(opportunity.score < 75);
+    }
+
+    #[test]
+    fn struct_literal_tables_are_not_scored_as_complex_control_flow() {
+        let mut source =
+            String::from("fn credential_requirements() -> Vec<Requirement> {\n    vec![\n");
+        for index in 0..65 {
+            source.push_str(&format!(
+                "        Requirement {{\n            key: \"KEY_{index}\",\n            description: \"Used for a product boundary\",\n        }},\n"
+            ));
+        }
+        source.push_str("    ]\n}\n");
+
+        let opportunity = analyze_file("src/launcher.rs", "rust", &source)
+            .into_iter()
+            .find(|item| item.kind == "long_function")
+            .expect("large struct table should remain visible");
+        assert!(opportunity.title.contains("declarative table"));
+        assert!(opportunity.score < 75);
+    }
+
+    #[test]
+    fn long_function_scores_preserve_size_order_without_immediate_saturation() {
+        fn rust_function(lines: usize) -> String {
+            let mut source = String::from("fn candidate() {\n");
+            for _ in 0..lines {
+                source.push_str("    do_work();\n");
+            }
+            source.push_str("}\n");
+            source
+        }
+
+        let short = analyze_file("src/short.rs", "rust", &rust_function(70))
+            .into_iter()
+            .find(|item| item.kind == "long_function")
+            .expect("short candidate");
+        let medium = analyze_file("src/medium.rs", "rust", &rust_function(140))
+            .into_iter()
+            .find(|item| item.kind == "long_function")
+            .expect("medium candidate");
+        let long = analyze_file("src/long.rs", "rust", &rust_function(300))
+            .into_iter()
+            .find(|item| item.kind == "long_function")
+            .expect("long candidate");
+
+        assert!(short.score < medium.score);
+        assert!(medium.score < long.score);
+        assert!(long.score < 94);
     }
 
     #[test]
@@ -450,11 +629,11 @@ const C: &str = "repeated service boundary literal";
         fs::write(
             base.join("bounded.rs"),
             r#"
-const A: &str = "shared validation boundary message";
-const B: &str = "shared validation boundary message";
-const C: &str = "shared validation boundary message";
-const D: &str = "shared validation boundary message";
-const E: &str = "shared validation boundary message";
+const A: &str = "application/vnd.github+json";
+const B: &str = "application/vnd.github+json";
+const C: &str = "application/vnd.github+json";
+const D: &str = "application/vnd.github+json";
+const E: &str = "application/vnd.github+json";
 "#,
         )
         .expect("high-safety fixture should write");
@@ -492,7 +671,7 @@ const E: &str = "shared validation boundary message";
     #[test]
     fn build_summary_handles_empty_scan_cleanly() {
         let summary = build_summary("example", &ScanMetrics::default(), None);
-        assert!(summary.contains("did not find clear low-risk refactor candidates"));
+        assert!(summary.contains("did not find structural review candidates"));
     }
 
     #[test]

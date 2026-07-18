@@ -47,6 +47,10 @@ function safetyRank(safety) {
   return safety === "high" ? 2 : safety === "medium" ? 1 : 0;
 }
 
+function strengthLabel(safety) {
+  return safety === "high" ? "high confidence" : safety === "medium" ? "review candidate" : "unranked";
+}
+
 function targetKind(repoPath) {
   return /^[^/\s]+\/[^/\s]+$/.test(repoPath || "") ? "temporary GitHub clone" : "allowed local path";
 }
@@ -70,8 +74,8 @@ function buildScanMarkdown(scan) {
     `- Files skipped: ${metrics.files_skipped || 0}`,
     `- Opportunities: ${metrics.opportunities || 0}`,
     `- Opportunities retained: ${metrics.returned_opportunities || scan?.opportunities?.length || 0}`,
-    `- High-safety leads: ${metrics.high_safety || 0}`,
-    `- Medium-safety leads: ${metrics.medium_safety || 0}`,
+    `- High-confidence candidates: ${metrics.high_safety || 0}`,
+    `- Candidates needing closer review: ${metrics.medium_safety || 0}`,
   ];
 
   if (scan?.opportunities?.length) {
@@ -79,8 +83,8 @@ function buildScanMarkdown(scan) {
     scan.opportunities.slice(0, 10).forEach((opportunity, index) => {
       lines.push(
         `${index + 1}. **${opportunity.title}** — ${opportunity.summary}`,
-        `   - ${opportunity.path}:${lineRange(opportunity)} · ${opportunity.kind} · ${opportunity.safety} safety · score ${opportunity.score}`,
-        `   - Suggested first move: ${opportunity.suggestion}`,
+        `   - ${opportunity.path}:${lineRange(opportunity)} · ${opportunity.kind} · ${strengthLabel(opportunity.safety)} · score ${opportunity.score}`,
+        `   - Review guidance: ${opportunity.suggestion}`,
       );
     });
   }
@@ -112,7 +116,7 @@ function WorkspaceDetails({ health, onError, result }) {
           <Chip>{value(result.id).slice(0, 8)}</Chip>
           <Chip tone="ok">read only</Chip>
           <Chip>{targetKind(result.repo_path)}</Chip>
-          <Chip tone={metrics.high_safety ? "ok" : metrics.medium_safety ? "warn" : "neutral"}>{metrics.high_safety ? "high-safety queue" : metrics.medium_safety ? "review queue" : "no clear lead"}</Chip>
+          <Chip tone={metrics.high_safety ? "ok" : metrics.medium_safety ? "warn" : "neutral"}>{metrics.high_safety ? "high-confidence queue" : metrics.medium_safety ? "review queue" : "no clear candidate"}</Chip>
         </div>
       </section>
 
@@ -123,8 +127,8 @@ function WorkspaceDetails({ health, onError, result }) {
           <Fact label="Files skipped" value={metrics.files_skipped} />
           <Fact label="Opportunities" value={metrics.opportunities} />
           {metrics.opportunities_truncated ? <Fact label="Historically retained" value={metrics.returned_opportunities || result.opportunities?.length || 0} /> : null}
-          <Fact label="High safety" value={metrics.high_safety} />
-          <Fact label="Medium safety" value={metrics.medium_safety} />
+          <Fact label="High confidence" value={metrics.high_safety} />
+          <Fact label="Closer review" value={metrics.medium_safety} />
           <Fact label="Large files" value={metrics.large_file_count} />
           <Fact label="Long functions" value={metrics.long_function_count} />
           <Fact label="Repeated literals" value={metrics.repeated_literal_count} />
@@ -167,7 +171,7 @@ function ChecksDetails({ health }) {
           <Chip>{countLabel(health.scan_count, "scan")}</Chip>
           <Chip>{countLabel(health.repo_count, "repo")}</Chip>
         </div>
-        <div className="mt-3 flex flex-wrap gap-2"><Chip tone="ok">{countLabel(health.high_safety_count, "high-safety lead")}</Chip><Chip tone="warn">{countLabel(health.medium_safety_count, "medium-safety lead")}</Chip></div>
+        <div className="mt-3 flex flex-wrap gap-2"><Chip tone="ok">{countLabel(health.high_safety_count, "high-confidence candidate")}</Chip><Chip tone="warn">{countLabel(health.medium_safety_count, "review candidate")}</Chip></div>
       </article>
     </section>
   );
@@ -183,7 +187,7 @@ function SourcesDetails({ health }) {
         <div className="surface-inset rounded-xl p-4"><div className={`font-display text-[16px] ${V3_TEXT.strong}`}>Local allowlist</div><p className={`mt-2 text-[11px] leading-relaxed ${V3_TEXT.mute}`}>{allowedRoots.length ? `${allowedRoots.length} configured root${allowedRoots.length === 1 ? "" : "s"} constrain local scans.` : "No local roots are configured, so local path scans remain blocked."}</p></div>
         <div className="surface-inset rounded-xl p-4"><div className={`font-display text-[16px] ${V3_TEXT.strong}`}>Temporary clones</div><p className={`mt-2 text-[11px] leading-relaxed ${V3_TEXT.mute}`}>Public owner/repository targets are shallow-cloned without credentials and deleted when analysis finishes.</p></div>
       </div>
-      <GuidanceNotice label="Result meaning">High safety means the current deterministic heuristic expects a bounded structural cleanup. It is still a review priority, not permission to change code automatically.</GuidanceNotice>
+      <GuidanceNotice label="Result meaning">High confidence means multiple deterministic signals point to one shared concern. Review candidate means the evidence is weaker or more declarative. Neither label proves an extraction is safe or authorizes a code change.</GuidanceNotice>
     </section>
   );
 }
@@ -191,7 +195,7 @@ function SourcesDetails({ health }) {
 const config = {
   productKey: "refactor-scout",
   name: "RefactorScout",
-  subtitle: "safe refactor queue",
+  subtitle: "structural review queue",
   icon: Compass,
   workspaceLabel: "Refactor map",
   eyebrow: "Structural cleanup",
@@ -227,10 +231,10 @@ const config = {
     title: item.title || "Refactor opportunity",
     meta: [item.path, item.language, item.kind].filter(Boolean).join(" · "),
     summary: item.summary || item.suggestion,
-    evidence: [item.suggestion ? `Suggested first move: ${item.suggestion}` : "", ...(item.evidence || [])].filter(Boolean),
+    evidence: [item.suggestion ? `Review guidance: ${item.suggestion}` : "", ...(item.evidence || [])].filter(Boolean),
     tags: [item.kind, item.language, item.effort].filter(Boolean),
     facts: [
-      { label: "Safety", value: value(item.safety) },
+      { label: "Evidence strength", value: strengthLabel(item.safety) },
       { label: "Effort", value: value(item.effort) },
       { label: "Kind", value: value(item.kind) },
       { label: "Language", value: value(item.language) },
@@ -239,7 +243,7 @@ const config = {
     ],
     source: "RefactorScout heuristics",
     score: item.score || 0,
-    status: item.safety ? `${item.safety} safety` : "review",
+    status: strengthLabel(item.safety),
     safety: item.safety || "unknown",
     kind: item.kind || "unknown",
     language: item.language || "unknown",
@@ -252,7 +256,7 @@ const config = {
     initialCount: 6,
     itemLabel: "opportunities",
     filters: (items, view) => [
-      { key: "safety", label: "Safety", value: view.safety, options: [{ value: "all", label: "All" }, { value: "high", label: "High" }, { value: "medium", label: "Medium" }] },
+      { key: "safety", label: "Evidence", value: view.safety, options: [{ value: "all", label: "All" }, { value: "high", label: "High confidence" }, { value: "medium", label: "Review candidate" }] },
       { key: "kind", label: "Kind", value: view.kind, options: [{ value: "all", label: "All" }, ...[...new Set(items.map((item) => item.kind).filter(Boolean))].sort().map((kind) => ({ value: kind, label: kind.replaceAll("_", " ") }))] },
       { key: "language", label: "Language", value: view.language, options: [{ value: "all", label: "All" }, ...[...new Set(items.map((item) => item.language).filter(Boolean))].sort().map((language) => ({ value: language, label: language }))] },
     ],
@@ -264,18 +268,18 @@ const config = {
       if (sort === "effort") return left.effort.localeCompare(right.effort) || right.score - left.score;
       return safetyRank(right.safety) - safetyRank(left.safety) || right.score - left.score || left.path.localeCompare(right.path);
     },
-    sortOptions: [{ value: "priority", label: "Review priority" }, { value: "score", label: "Highest score" }, { value: "safety", label: "Safest first" }, { value: "path", label: "Path" }, { value: "effort", label: "Effort" }],
+    sortOptions: [{ value: "priority", label: "Review priority" }, { value: "score", label: "Highest score" }, { value: "safety", label: "Strongest evidence" }, { value: "path", label: "Path" }, { value: "effort", label: "Effort" }],
   },
   metrics: (result, overview, health) => {
     const metrics = result?.metrics || {};
     return result ? [
-      { label: "High safety", value: metrics.high_safety || 0, footerLeft: "bounded", footerRight: "first", tone: "from-emerald-600/70 to-teal-800/60" },
-      { label: "Medium safety", value: metrics.medium_safety || 0, footerLeft: "review", footerRight: "carefully", tone: "from-amber-600/70 to-yellow-800/50" },
+      { label: "High confidence", value: metrics.high_safety || 0, footerLeft: "strongest", footerRight: "evidence", tone: "from-emerald-600/70 to-teal-800/60" },
+      { label: "Closer review", value: metrics.medium_safety || 0, footerLeft: "review", footerRight: "carefully", tone: "from-amber-600/70 to-yellow-800/50" },
       { label: "Files scanned", value: metrics.files_scanned || 0, footerLeft: `${metrics.files_skipped || 0} skipped`, footerRight: "source files", tone: "from-slate-500/70 to-slate-800/60" },
       { label: "Hotspots", value: (metrics.large_file_count || 0) + (metrics.long_function_count || 0) + (metrics.repeated_literal_count || 0), footerLeft: `${metrics.large_file_count || 0} files`, footerRight: `${metrics.long_function_count || 0} functions`, tone: "from-teal-600/70 to-emerald-900/60" },
     ] : [
-      { label: "High safety", value: overview.high_safety_count || health.high_safety_count || 0, footerLeft: "saved", footerRight: "priorities", tone: "from-emerald-600/70 to-teal-800/60" },
-      { label: "Medium safety", value: overview.medium_safety_count || health.medium_safety_count || 0, footerLeft: "saved", footerRight: "review", tone: "from-amber-600/70 to-yellow-800/50" },
+      { label: "High confidence", value: overview.high_safety_count || health.high_safety_count || 0, footerLeft: "saved", footerRight: "priorities", tone: "from-emerald-600/70 to-teal-800/60" },
+      { label: "Closer review", value: overview.medium_safety_count || health.medium_safety_count || 0, footerLeft: "saved", footerRight: "review", tone: "from-amber-600/70 to-yellow-800/50" },
       { label: "Scans", value: overview.scan_count || health.scan_count || 0, footerLeft: "saved", footerRight: countLabel(overview.repo_count || health.repo_count, "repo"), tone: "from-slate-500/70 to-slate-800/60" },
       { label: "Allowed roots", value: (overview.allowed_roots || health.allowed_roots || []).length, footerLeft: "local", footerRight: "boundary", tone: "from-teal-600/70 to-emerald-900/60" },
     ];
@@ -285,8 +289,8 @@ const config = {
   status: (result) => {
     const top = [...(result?.opportunities || [])].sort((left, right) => safetyRank(right.safety) - safetyRank(left.safety) || (right.score || 0) - (left.score || 0))[0];
     if (!result) return { label: "waiting", detail: "Choose a repository to build a bounded cleanup queue.", progress: "8%" };
-    if (!top) return { label: "clear", detail: result.summary || "No clear low-risk cleanup lead was found.", progress: "100%" };
-    return { label: "review priority", detail: `${top.title} leads the queue at ${top.score}/100 with ${top.safety || "unknown"} safety.`, progress: `${Math.max(10, Math.min(100, top.score || 0))}%` };
+    if (!top) return { label: "clear", detail: result.summary || "No structural review candidate was found.", progress: "100%" };
+    return { label: "review priority", detail: `${top.title} leads the queue at ${top.score}/100 as a ${strengthLabel(top.safety)} item.`, progress: `${Math.max(10, Math.min(100, top.score || 0))}%` };
   },
   priorityLabel: "Review priorities",
   priorityEmptyLabel: "No active refactor priorities in this scan.",
@@ -306,7 +310,7 @@ const config = {
   connectionValue: (health) => health.remote_fs_enabled ? "remote enabled" : "local only",
   historyTitle: (entry) => entry.repo_name || entry.repo_path || "Saved repository scan",
   historySummary: (entry) => entry.summary,
-  historyMeta: (entry) => `${countLabel(entry.opportunities, "opportunity")} · ${countLabel(entry.high_safety, "high-safety lead")} · ${countLabel(entry.medium_safety, "medium-safety lead")}`,
+  historyMeta: (entry) => `${countLabel(entry.opportunities, "opportunity")} · ${countLabel(entry.high_safety, "high-confidence candidate")} · ${countLabel(entry.medium_safety, "review candidate")}`,
   historyIdentity: (entry) => `scan ${String(entry.id || "unknown").slice(0, 8)}`,
   historySearchText: (entry) => `${entry.repo_path || ""} ${entry.opportunities || 0} opportunities ${entry.high_safety || 0} high safety ${entry.medium_safety || 0} medium safety`,
   historyBadges: (entry) => [{ label: countLabel(entry.high_safety, "high"), tone: entry.high_safety ? "ok" : "neutral" }, { label: countLabel(entry.medium_safety, "medium"), tone: entry.medium_safety ? "warn" : "neutral" }, { label: countLabel(entry.opportunities, "lead"), tone: entry.opportunities ? "ok" : "neutral" }],
@@ -315,7 +319,7 @@ const config = {
     initialCount: 6,
     searchPlaceholder: "Search repository, summary, opportunity count…",
     filters: (items, view) => [
-      { key: "safety", label: "Safety", value: view.safety, options: [{ value: "all", label: "All" }, { value: "high", label: "Has high-safety leads" }, { value: "medium", label: "Medium only" }, { value: "empty", label: "No leads" }] },
+      { key: "safety", label: "Evidence", value: view.safety, options: [{ value: "all", label: "All" }, { value: "high", label: "Has high-confidence candidates" }, { value: "medium", label: "Closer-review only" }, { value: "empty", label: "No candidates" }] },
       { key: "repo", label: "Repository", value: view.repo, options: [{ value: "all", label: "All" }, ...[...new Set(items.map((entry) => entry.repo_name || entry.repo_path).filter(Boolean))].sort().map((repo) => ({ value: repo, label: repo }))] },
     ],
     filterEntry: (entry, view) => {
@@ -329,7 +333,7 @@ const config = {
       if (sort === "repo") return (left.repo_name || left.repo_path || "").localeCompare(right.repo_name || right.repo_path || "") || new Date(right.created_at) - new Date(left.created_at);
       return new Date(right.created_at) - new Date(left.created_at);
     },
-    sortOptions: [{ value: "newest", label: "Newest first" }, { value: "oldest", label: "Oldest first" }, { value: "safety", label: "Safest first" }, { value: "opportunities", label: "Most opportunities" }, { value: "repo", label: "Repository" }],
+    sortOptions: [{ value: "newest", label: "Newest first" }, { value: "oldest", label: "Oldest first" }, { value: "safety", label: "Strongest evidence" }, { value: "opportunities", label: "Most opportunities" }, { value: "repo", label: "Repository" }],
   },
   WorkspaceDetails,
   ChecksDetails,

@@ -37,12 +37,12 @@ pub(crate) fn build_summary(
 ) -> String {
     if metrics.opportunities == 0 {
         return format!(
-            "RefactorScout did not find clear low-risk refactor candidates in `{repo_name}` within the current scan limits."
+            "RefactorScout did not find structural review candidates in `{repo_name}` within the current scan limits."
         );
     }
 
     let mut summary = format!(
-        "RefactorScout found {} candidate{} across {} scanned file{}. {} high-safety lead{}, {} medium-safety lead{}.",
+        "RefactorScout found {} review candidate{} across {} scanned file{}. {} high-confidence candidate{}, {} candidate{} needing closer review.",
         metrics.opportunities,
         plural_suffix(metrics.opportunities),
         metrics.files_scanned,

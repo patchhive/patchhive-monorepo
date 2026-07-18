@@ -41,7 +41,7 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
             "Scan repo target",
             "POST",
             "/scan/local",
-            "Surface safe refactor opportunities from an allowed local path or public GitHub repository.",
+            "Surface evidence-ranked structural review candidates from an allowed local path or public GitHub repository.",
             true,
         )
         .read_only(true)
@@ -168,8 +168,7 @@ pub async fn overview(State(state): State<AppState>) -> Json<OverviewPayload> {
     let counts = db::overview_counts();
     Json(OverviewPayload {
         product: "RefactorScout by PatchHive".into(),
-        tagline: "Surface safe, high-value refactors before code quality drift turns expensive."
-            .into(),
+        tagline: "Surface evidence-ranked structural review candidates before code quality drift turns expensive.".into(),
         scan_count: counts.scans,
         repo_count: counts.repos,
         opportunity_count: counts.opportunities,

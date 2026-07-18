@@ -63,7 +63,7 @@ pub async fn validate_config(state: &AppState) -> Vec<StartupCheck> {
     }
 
     checks.push(StartupCheck::info(
-        "RefactorScout is currently a read-only repo scanner for safe refactor opportunities such as oversized files, oversized functions, and repeated string literals.",
+        "RefactorScout is a read-only structural review scanner. Its candidates are evidence-ranked prompts for human inspection, not claims that an extraction is safe.",
     ));
 
     checks

@@ -17,8 +17,9 @@ use crate::models::{RefactorOpportunity, RefactorScanResult};
 
 use super::analysis::*;
 use super::scan_hygiene::{
-    is_embedded_stylesheet_wrapper, is_generated_source, is_non_actionable_style_literal,
-    is_template_placeholder,
+    classify_function_shape, classify_literal_context, control_flow_markers, is_generated_source,
+    is_non_actionable_style_literal, is_style_literal_usage, is_template_placeholder,
+    FunctionShape, LiteralContext,
 };
 
 pub(crate) const MAX_SCAN_FILES: u32 = 1_500;
@@ -176,6 +177,7 @@ fn build_scan_result_from_root(
         safety_rank(&right.safety)
             .cmp(&safety_rank(&left.safety))
             .then_with(|| right.score.cmp(&left.score))
+            .then_with(|| opportunity_span(right).cmp(&opportunity_span(left)))
             .then_with(|| left.path.cmp(&right.path))
     });
     let metrics = build_metrics(
@@ -469,14 +471,35 @@ pub(crate) fn analyze_file(path: &str, language: &str, content: &str) -> Vec<Ref
     }
 
     let lines = content.lines().collect::<Vec<_>>();
+    let inline_test_ranges = if language == "rust" {
+        rust_inline_test_module_ranges(content)
+    } else {
+        Vec::new()
+    };
+    let inline_test_line_ranges = byte_ranges_to_line_ranges(content, &inline_test_ranges);
+    let measured_lines = lines
+        .len()
+        .saturating_sub(lines_in_ranges(&inline_test_line_ranges));
     let mut opportunities = Vec::new();
 
-    if lines.len() > LONG_FILE_THRESHOLD {
-        opportunities.push(large_file_opportunity(path, language, lines.len()));
+    if measured_lines > LONG_FILE_THRESHOLD {
+        opportunities.push(large_file_opportunity(
+            path,
+            language,
+            measured_lines,
+            lines.len(),
+        ));
     }
 
-    opportunities.extend(long_function_opportunities(path, language, &lines));
-    if let Some(opportunity) = repeated_literal_opportunity(path, language, content) {
+    opportunities.extend(long_function_opportunities(
+        path,
+        language,
+        &lines,
+        &inline_test_line_ranges,
+    ));
+    if let Some(opportunity) =
+        repeated_literal_opportunity(path, language, content, &inline_test_ranges)
+    {
         opportunities.push(opportunity);
     }
 
@@ -493,15 +516,53 @@ pub(crate) fn analyze_file(path: &str, language: &str, content: &str) -> Vec<Ref
     opportunities
 }
 
-fn large_file_opportunity(path: &str, language: &str, line_count: usize) -> RefactorOpportunity {
-    let score = 54 + ((line_count.saturating_sub(LONG_FILE_THRESHOLD) as u32) / 8).min(36);
+fn opportunity_span(opportunity: &RefactorOpportunity) -> u32 {
+    opportunity
+        .line_end
+        .saturating_sub(opportunity.line_start)
+        .saturating_add(1)
+}
+
+fn bounded_score_bonus(excess: usize, max_bonus: u32, half_saturation: usize) -> u32 {
+    if excess == 0 {
+        return 0;
+    }
+
+    ((excess as u64 * max_bonus as u64) / (excess + half_saturation) as u64) as u32
+}
+
+fn adjusted_score(score: u32, adjustment: i32) -> u32 {
+    if adjustment.is_negative() {
+        score.saturating_sub(adjustment.unsigned_abs())
+    } else {
+        score.saturating_add(adjustment as u32).min(94)
+    }
+}
+
+fn large_file_opportunity(
+    path: &str,
+    language: &str,
+    measured_lines: usize,
+    total_lines: usize,
+) -> RefactorOpportunity {
+    let score = 50 + bounded_score_bonus(measured_lines - LONG_FILE_THRESHOLD, 31, 180);
+    let excluded_test_lines = total_lines.saturating_sub(measured_lines);
+    let mut evidence = vec![
+        format!("{measured_lines} measured non-test lines"),
+        "File size is a review signal, not proof that a cohesive extraction exists.".into(),
+    ];
+    if excluded_test_lines > 0 {
+        evidence.push(format!(
+            "{excluded_test_lines} inline test-module lines excluded from measurement"
+        ));
+    }
+
     RefactorOpportunity {
         id: Uuid::new_v4().to_string(),
         kind: "large_file".into(),
-        title: "Split oversized file".into(),
+        title: "Review oversized file boundary".into(),
         summary: format!(
-            "`{path}` is {} lines long, which is a strong signal that one cohesive slice could be extracted without changing behavior.",
-            line_count
+            "`{path}` contains {measured_lines} measured non-test lines. Its size makes it a review candidate, but the scanner cannot infer a safe split from line count alone."
         ),
         path: path.into(),
         language: language.into(),
@@ -509,12 +570,9 @@ fn large_file_opportunity(path: &str, language: &str, line_count: usize) -> Refa
         safety: "medium".into(),
         effort: "medium".into(),
         line_start: 1,
-        line_end: line_count as u32,
-        suggestion: "Start by extracting one helper cluster or domain slice behind the current public surface so the file gets smaller without changing callers.".into(),
-        evidence: vec![
-            format!("{line_count} total lines"),
-            "Oversized modules are often the safest first cut for incremental refactors.".into(),
-        ],
+        line_end: total_lines as u32,
+        suggestion: "Review module responsibilities and change history first. Propose a boundary only when one responsibility can be isolated with focused tests and a stable public surface.".into(),
+        evidence,
     }
 }
 
@@ -522,10 +580,14 @@ fn long_function_opportunities(
     path: &str,
     language: &str,
     lines: &[&str],
+    excluded_line_ranges: &[(usize, usize)],
 ) -> Vec<RefactorOpportunity> {
     let mut opportunities = Vec::new();
 
     for start in 0..lines.len() {
+        if line_is_in_ranges(start, excluded_line_ranges) {
+            continue;
+        }
         let Some(name) = function_name_for_line(language, lines[start]) else {
             continue;
         };
@@ -546,39 +608,82 @@ fn long_function_opportunities(
             continue;
         }
 
-        let score = 58 + ((line_count.saturating_sub(LONG_FUNCTION_THRESHOLD) as u32) / 2).min(34);
-        let embedded_stylesheet =
-            is_embedded_stylesheet_wrapper(language, &name, lines, start, end);
-        let (title, summary, suggestion, evidence) = if embedded_stylesheet {
-            (
-                format!("Move embedded stylesheet out of `{name}`"),
+        let body = &lines[start..=end];
+        let shape = classify_function_shape(language, &name, lines, start, end);
+        let control_markers = control_flow_markers(body);
+        let base_score = 52 + bounded_score_bonus(line_count - LONG_FUNCTION_THRESHOLD, 31, 120);
+        let score = adjusted_score(
+            base_score,
+            shape.score_adjustment() + control_markers.min(8) as i32,
+        );
+        let (title, summary, suggestion, evidence) = match shape {
+            FunctionShape::EmbeddedStylesheet => (
+                format!("Review embedded stylesheet boundary in `{name}`"),
                 format!(
-                    "`{name}` in `{path}` contains a {}-line embedded stylesheet ({}-{}). Move those declarations into a dedicated stylesheet instead of splitting the wrapper into more JavaScript helpers.",
-                    line_count,
+                    "`{name}` in `{path}` contains a {line_count}-line embedded stylesheet ({}-{}). It is declarative styling, not a complex-function finding.",
                     start + 1,
                     end + 1
                 ),
-                "Move the static declarations into a product stylesheet or CSS module, preserve the current selectors, and leave the component responsible only for loading or applying that stylesheet.".into(),
+                "Review whether the stylesheet belongs in a product stylesheet or CSS module. Preserve selector scope and loading behavior if it moves.".into(),
                 vec![
                     format!("{line_count} lines in one embedded stylesheet"),
-                    "Detected as declarative styling rather than branching application logic.".into(),
+                    "Classified as declarative styling rather than branching application logic.".into(),
                 ],
-            )
-        } else {
-            (
-                format!("Extract helper from `{name}`"),
+            ),
+            FunctionShape::DeclarativeJsx => (
+                format!("Review large declarative component `{name}`"),
                 format!(
-                    "`{name}` in `{path}` spans {} lines ({}-{}), which usually means there is at least one validation, formatting, or branching step worth extracting.",
-                    line_count,
+                    "`{name}` in `{path}` spans {line_count} lines ({}-{}), but most of the body is declarative JSX rather than control-flow complexity.",
                     start + 1,
                     end + 1
                 ),
-                "Keep the current function signature stable and extract one internal phase into a named helper first. That usually buys readability without widening the refactor blast radius.".into(),
+                "Review component responsibilities and rendering boundaries. Extract only when a child surface has a stable purpose, inputs, and focused tests.".into(),
+                vec![
+                    format!("{line_count} lines in one JSX component"),
+                    format!("{control_markers} control-flow markers"),
+                    "Classified as declarative JSX; line count receives a lower score.".into(),
+                ],
+            ),
+            FunctionShape::SqlSchema => (
+                format!("Review schema setup boundary in `{name}`"),
+                format!(
+                    "`{name}` in `{path}` spans {line_count} lines ({}-{}), primarily in SQL or schema declarations rather than branching application logic.",
+                    start + 1,
+                    end + 1
+                ),
+                "Review migration ownership and transactional boundaries before splitting declarations. Keep schema ordering and rollback behavior explicit.".into(),
+                vec![
+                    format!("{line_count} lines in one schema-oriented function"),
+                    "Classified as SQL/schema declarations; line count receives a lower score.".into(),
+                ],
+            ),
+            FunctionShape::LookupTable => (
+                format!("Review declarative table in `{name}`"),
+                format!(
+                    "`{name}` in `{path}` spans {line_count} lines ({}-{}), with a table or match-heavy shape rather than dense branching logic.",
+                    start + 1,
+                    end + 1
+                ),
+                "Review whether the table is easier to validate in place or as named data. Do not extract it solely to reduce the function's line count.".into(),
+                vec![
+                    format!("{line_count} lines in one table-oriented function"),
+                    "Classified as a declarative lookup/table; line count receives a lower score.".into(),
+                ],
+            ),
+            FunctionShape::ComplexLogic => (
+                format!("Review responsibilities in `{name}`"),
+                format!(
+                    "`{name}` in `{path}` spans {line_count} lines ({}-{}) with {control_markers} control-flow markers. Review it for separable responsibilities before proposing an extraction.",
+                    start + 1,
+                    end + 1
+                ),
+                "Map the function's phases and tests first. Extract one named responsibility only when its inputs, outputs, and failure behavior are clear.".into(),
                 vec![
                     format!("{line_count} lines in one function"),
+                    format!("{control_markers} control-flow markers"),
                     format!("Detected in {language} code"),
                 ],
-            )
+            ),
         };
         opportunities.push(RefactorOpportunity {
             id: Uuid::new_v4().to_string(),
@@ -604,16 +709,12 @@ fn repeated_literal_opportunity(
     path: &str,
     language: &str,
     content: &str,
+    inline_test_ranges: &[(usize, usize)],
 ) -> Option<RefactorOpportunity> {
     let mut literals: HashMap<String, (u32, usize, Vec<usize>)> = HashMap::new();
-    let inline_test_ranges = if language == "rust" {
-        rust_inline_test_module_ranges(content)
-    } else {
-        Vec::new()
-    };
 
     for (literal, offset) in source_string_literals(content, language) {
-        if is_non_extractable_literal_context(content, language, offset, &inline_test_ranges) {
+        if is_non_extractable_literal_context(content, language, offset, inline_test_ranges) {
             continue;
         }
 
@@ -645,35 +746,60 @@ fn repeated_literal_opportunity(
         .filter(|byte| *byte == b'\n')
         .count() as u32;
     let preview = literal_preview(&literal);
-    let score = 68 + (count.saturating_sub(REPEATED_LITERAL_MIN_REPEATS) * 7).min(18);
     let validation_pattern = repeated_validation_pattern(content, &offsets);
-    let (kind, title, summary, suggestion, context_evidence) = if validation_pattern {
+    let literal_context = classify_literal_context(&literal, content, &offsets);
+    let (kind, title, summary, suggestion, context_evidence, score, safety) = if validation_pattern
+    {
         (
             "repeated_validation",
-            "Consolidate repeated validation",
+            "Review repeated validation boundary",
             format!(
-                "`{path}` repeats the validation message `{preview}` {count} times alongside similar error paths, which suggests one shared validation boundary can remove duplicated checks and text."
+                "`{path}` repeats the validation message `{preview}` {count} times in similar error paths. Review whether those paths enforce one contract before consolidating them."
             ),
-            "Start by extracting the message into a named constant. If the surrounding guards enforce the same contract, follow with a small validation helper while preserving the current error text and adding focused tests.",
-            "The repeated message appears in validation or error-return paths.",
+            "Compare the guards and error semantics first. If they enforce the same contract, consolidate the boundary while preserving exact behavior and adding focused tests.",
+            "The repeated message appears in similar validation or error-return paths.",
+            76 + bounded_score_bonus(count.saturating_sub(3) as usize, 12, 4),
+            "high",
+        )
+    } else if literal_context == LiteralContext::Contract {
+        let safety = if count >= 5 { "high" } else { "medium" };
+        (
+            "repeated_literal",
+            "Review repeated contract literal",
+            format!(
+                "`{path}` repeats the contract-shaped string `{preview}` {count} times. Review whether every occurrence represents the same protocol, configuration, route, or machine-readable value."
+            ),
+            "Compare the consumers first. Introduce a named constant only when all occurrences must evolve together.",
+            "The literal shape or its usage resembles a shared technical contract.",
+            62 + bounded_score_bonus(count.saturating_sub(3) as usize, 18, 5),
+            safety,
+        )
+    } else if literal_context == LiteralContext::UiCopy {
+        (
+            "repeated_literal",
+            "Review repeated interface copy",
+            format!(
+                "`{path}` repeats the interface text `{preview}` {count} times. Shared wording may be intentional, but occurrence count alone does not justify a constant."
+            ),
+            "Check whether the text is one product concept or separate labels that may diverge. Share it only when synchronized wording is a real requirement.",
+            "Most occurrences appear in labels, titles, placeholders, or other interface copy.",
+            44 + bounded_score_bonus(count.saturating_sub(3) as usize, 13, 7),
+            "medium",
         )
     } else {
         (
             "repeated_literal",
-            "Extract repeated string literal",
+            "Review repeated string usage",
             format!(
-                "`{path}` repeats the string `{preview}` {count} times, which is usually a low-risk extract-constant cleanup."
+                "`{path}` repeats the string `{preview}` {count} times. Review semantic ownership before deciding whether a shared constant improves the code."
             ),
-            "Lift the repeated literal into a named constant close to its usage site first. If the meaning stays clear, promote it to a shared module later.",
-            "Repeated literals are usually one of the safest refactor entry points.",
+            "Compare the surrounding responsibilities first. Keep the values inline when proximity is clearer; share them only when they represent one concept.",
+            "The occurrences are real, but their surrounding contexts do not prove shared ownership.",
+            50 + bounded_score_bonus(count.saturating_sub(3) as usize, 16, 6),
+            "medium",
         )
     };
 
-    let safety = if validation_pattern || count >= 5 {
-        "high"
-    } else {
-        "medium"
-    };
     let mut evidence = vec![
         format!("{count} repeated occurrences"),
         context_evidence.into(),
@@ -708,11 +834,13 @@ fn is_non_extractable_literal_context(
     offset: usize,
     inline_test_ranges: &[(usize, usize)],
 ) -> bool {
-    language == "rust"
+    (language == "rust"
         && (is_inside_rust_attribute(content, offset)
             || inline_test_ranges
                 .iter()
-                .any(|(start, end)| (*start..*end).contains(&offset)))
+                .any(|(start, end)| (*start..*end).contains(&offset))))
+        || (matches!(language, "javascript" | "typescript")
+            && is_style_literal_usage(content, offset))
 }
 
 fn is_inside_rust_attribute(content: &str, offset: usize) -> bool {
@@ -758,7 +886,7 @@ fn rust_inline_test_module_ranges(content: &str) -> Vec<(usize, usize)> {
         let Some(end_line) = brace_function_end(&lines, module_line, "rust") else {
             continue;
         };
-        let start = line_offsets[module_line];
+        let start = line_offsets[cfg_line];
         let end = line_offsets
             .get(end_line + 1)
             .copied()
@@ -767,6 +895,42 @@ fn rust_inline_test_module_ranges(content: &str) -> Vec<(usize, usize)> {
     }
 
     ranges
+}
+
+fn byte_ranges_to_line_ranges(
+    content: &str,
+    byte_ranges: &[(usize, usize)],
+) -> Vec<(usize, usize)> {
+    byte_ranges
+        .iter()
+        .map(|(start, end)| {
+            let start_line = content[..*start]
+                .bytes()
+                .filter(|byte| *byte == b'\n')
+                .count();
+            let mut end_line = content[..*end]
+                .bytes()
+                .filter(|byte| *byte == b'\n')
+                .count();
+            if *end == content.len() && !content.ends_with('\n') {
+                end_line += 1;
+            }
+            (start_line, end_line)
+        })
+        .collect()
+}
+
+fn lines_in_ranges(ranges: &[(usize, usize)]) -> usize {
+    ranges
+        .iter()
+        .map(|(start, end)| end.saturating_sub(*start))
+        .sum()
+}
+
+fn line_is_in_ranges(line: usize, ranges: &[(usize, usize)]) -> bool {
+    ranges
+        .iter()
+        .any(|(start, end)| (*start..*end).contains(&line))
 }
 
 fn repeated_validation_pattern(content: &str, offsets: &[usize]) -> bool {

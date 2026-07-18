@@ -1,6 +1,6 @@
 # RefactorScout by PatchHive
 
-RefactorScout surfaces safe, high-value refactors before code quality drift turns expensive.
+RefactorScout surfaces evidence-ranked structural review candidates before code quality drift turns expensive.
 
 It is a read-only scouting product inside PatchHive: a product that looks for cleanup work with a favorable safety-to-value ratio so teams can improve structure without bundling those changes into larger feature or bug-fix moments.
 
@@ -29,7 +29,7 @@ It is a read-only scouting product inside PatchHive: a product that looks for cl
 - point RefactorScout at a local repository path inside an allowed root, or a public GitHub repo such as `owner/repo`
 - walk the repo without mutating anything
 - remove any temporary GitHub clone after the scan finishes
-- rank safe refactor leads like oversized files, oversized functions, and repeated string literals
+- rank structural review candidates such as oversized runtime modules, long functions, and repeated string usage
 - save scan history so recurring cleanup pressure is visible over time
 - copy or reload the ranked queue when it is time to schedule cleanup work
 

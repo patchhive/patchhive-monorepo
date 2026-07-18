@@ -4,18 +4,18 @@
   <img src="../../../patchhive3.png" width="120" alt="PatchHive logo" />
 </p>
 
-RefactorScout surfaces safe, high-value refactor opportunities before code quality drift turns expensive. It is a read-only scouting product inside PatchHive: it scans local repository paths or public GitHub repositories and ranks conservative cleanup leads such as oversized files, oversized functions, and repeated string literals.
+RefactorScout surfaces evidence-ranked structural review candidates before code quality drift turns expensive. It is a read-only scouting product inside PatchHive: it scans local repository paths or public GitHub repositories and ranks signals such as oversized runtime modules, oversized functions, and repeated string usage.
 
 ## Product Role
 
-RefactorScout is refactor-first, read-only, and conservative. Its job is to help teams schedule cleanup work with a strong safety-to-value ratio. It does **not** rewrite code, apply codemods, or open pull requests. It identifies work — humans decide whether and when to do it.
+RefactorScout is refactor-first, read-only, and conservative. Its job is to help teams schedule cleanup work without confusing a heuristic with proof that a change is safe. It does **not** rewrite code, apply codemods, or open pull requests. It identifies review candidates — humans decide whether a refactor exists and when to do it.
 
 ## Core Workflow
 
 1. **Target** — Point RefactorScout at a local repository path inside an allowed root, or a public GitHub repo slug (e.g., `owner/repo`), or a GitHub URL.
 2. **Walk** — Traverse the repository without mutating anything. GitHub repos are shallow-cloned into a temporary directory.
-3. **Analyze** — Apply conservative heuristics to surface refactor opportunities.
-4. **Rank** — Sort leads by safety, score, and path, with test and fixture code ranked below equivalent runtime-code leads.
+3. **Analyze** — Apply conservative, context-aware heuristics to surface structural review candidates.
+4. **Rank** — Sort candidates by evidence strength and score, with test and fixture code ranked below equivalent runtime-code leads.
 5. **Store** — Save the scan result to SQLite history.
 6. **Clean up** — Remove any temporary GitHub clone after the scan finishes.
 
@@ -34,12 +34,35 @@ Future write-capable flows (e.g., "Create refactor PR") should stay behind an ex
 
 | Output | Description |
 |--------|-------------|
-| **Ranked refactor opportunities** | Up to 60 opportunities sorted by safety rank, then score (descending), then path. |
+| **Ranked refactor opportunities** | Every detected opportunity retained and sorted by evidence rank, score (descending), source span, then path. The UI renders the complete set progressively. |
 | **Scan metrics** | Counts: `files_scanned`, `files_skipped`, `opportunities`, `high_safety`, `medium_safety`, `large_file_count`, `long_function_count`, `repeated_literal_count`. |
 | **Summary** | A human-readable sentence describing the strongest lead and aggregate counts. |
 | **Evidence per opportunity** | File path, language, line range, score (0–100), safety label (`high`/`medium`), effort label (`low`/`medium`), suggestion text, and evidence strings. |
 | **Warnings** | Up to 12 non-blocking scan warnings (e.g., skipped large files, truncated limit, filtered `.vite/` cache noise). |
 | **Scan history** | Persisted in SQLite; accessible via `/history` and `/overview`. |
+
+## Evidence Policy
+
+RefactorScout's scores prioritize inspection; they do not certify that a
+refactor is safe or even necessary.
+
+- Inline Rust `#[cfg(test)] mod ...` ranges are excluded from runtime file-size
+  and long-function measurements. Runtime code before and after those ranges
+  still counts.
+- Long bodies are classified before scoring. Declarative JSX, embedded styles,
+  SQL/schema declarations, and lookup tables remain visible but receive
+  category-specific explanations and lower complexity weight than branching
+  application logic.
+- Repeated strings are judged by usage context as well as count. Validation
+  paths and shared technical contracts may become high-confidence candidates;
+  interface copy and general repetition remain closer-review candidates even
+  when they occur many times.
+- File and function size use bounded scoring curves, and equal scores are
+  ordered by source span. This keeps the review queue ranked without turning
+  every large body into the same near-maximum score.
+- Public wording uses **high-confidence candidate** and **review candidate**.
+  The serialized `high` and `medium` values remain for API compatibility, but
+  neither value authorizes a write or promises behavior-preserving extraction.
 
 ## Safety Boundary
 
@@ -267,13 +290,13 @@ Response (`RefactorScanResult`):
   "created_at": "2026-01-15T10:30:00+00:00",
   "repo_path": "/home/user/projects/my-app",
   "repo_name": "my-app",
-  "summary": "RefactorScout found 12 candidates across 87 scanned files. 8 high-safety leads, 4 medium-safety leads. Strongest lead: `src/main.rs` is 421 lines long.",
+  "summary": "RefactorScout found 12 review candidates across 87 scanned files. 3 high-confidence candidates, 9 candidates needing closer review.",
   "metrics": {
     "files_scanned": 87,
     "files_skipped": 3,
     "opportunities": 12,
-    "high_safety": 8,
-    "medium_safety": 4,
+    "high_safety": 3,
+    "medium_safety": 9,
     "large_file_count": 2,
     "long_function_count": 6,
     "repeated_literal_count": 4
@@ -282,19 +305,19 @@ Response (`RefactorScanResult`):
     {
       "id": "uuid-v4",
       "kind": "repeated_literal",
-      "title": "Extract repeated string literal",
-      "summary": "`src/client.ts` repeats the string `service unavailable while syncing` 4 times",
+      "title": "Review repeated string usage",
+      "summary": "`src/client.ts` repeats the string `service unavailable while syncing` 4 times. Review semantic ownership before deciding whether a shared constant improves the code.",
       "path": "src/client.ts",
       "language": "typescript",
-      "score": 75,
-      "safety": "high",
+      "score": 52,
+      "safety": "medium",
       "effort": "low",
       "line_start": 42,
       "line_end": 42,
-      "suggestion": "Lift the repeated literal into a named constant close to its usage site first.",
+      "suggestion": "Compare the surrounding responsibilities first. Share the value only when every occurrence represents one concept.",
       "evidence": [
         "4 repeated occurrences",
-        "Repeated literals are usually one of the safest refactor entry points."
+        "The occurrences are real, but their surrounding contexts do not prove shared ownership."
       ]
     }
   ],

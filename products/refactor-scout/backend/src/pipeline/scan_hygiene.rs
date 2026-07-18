@@ -34,10 +34,310 @@ pub(super) fn is_embedded_stylesheet_wrapper(
             .any(|line| line.contains("<style"))
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum FunctionShape {
+    ComplexLogic,
+    DeclarativeJsx,
+    EmbeddedStylesheet,
+    LookupTable,
+    SqlSchema,
+}
+
+impl FunctionShape {
+    pub(super) fn score_adjustment(self) -> i32 {
+        match self {
+            Self::ComplexLogic => 4,
+            Self::DeclarativeJsx => -8,
+            Self::EmbeddedStylesheet => -12,
+            Self::LookupTable => -7,
+            Self::SqlSchema => -10,
+        }
+    }
+}
+
+pub(super) fn classify_function_shape(
+    language: &str,
+    name: &str,
+    lines: &[&str],
+    start: usize,
+    end: usize,
+) -> FunctionShape {
+    if is_embedded_stylesheet_wrapper(language, name, lines, start, end) {
+        return FunctionShape::EmbeddedStylesheet;
+    }
+
+    let body = &lines[start..=end];
+    let normalized = body.join("\n").to_ascii_lowercase();
+    if looks_like_sql_schema(name, &normalized) {
+        return FunctionShape::SqlSchema;
+    }
+    if looks_like_declarative_jsx(language, body) {
+        return FunctionShape::DeclarativeJsx;
+    }
+    if looks_like_lookup_table(body) {
+        return FunctionShape::LookupTable;
+    }
+
+    FunctionShape::ComplexLogic
+}
+
+pub(super) fn control_flow_markers(lines: &[&str]) -> usize {
+    lines
+        .iter()
+        .filter(|line| {
+            let normalized = format!(" {} ", code_outside_strings(line).to_ascii_lowercase());
+            [
+                " if ",
+                " else ",
+                " for ",
+                " while ",
+                " match ",
+                " switch ",
+                " catch ",
+                " return ",
+                " break ",
+                " continue ",
+            ]
+            .iter()
+            .any(|marker| normalized.contains(marker))
+        })
+        .count()
+}
+
+pub(super) fn is_style_literal_usage(content: &str, offset: usize) -> bool {
+    let context = source_line_at(content, offset).to_ascii_lowercase();
+    context.contains("classname")
+        || context.contains("classlist")
+        || context.contains("class:")
+        || context.contains("style=")
+        || context.contains("styles.")
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum LiteralContext {
+    Contract,
+    General,
+    UiCopy,
+}
+
+pub(super) fn classify_literal_context(
+    literal: &str,
+    content: &str,
+    offsets: &[usize],
+) -> LiteralContext {
+    if looks_like_contract_literal(literal, content, offsets) {
+        return LiteralContext::Contract;
+    }
+
+    let ui_hits = offsets
+        .iter()
+        .filter(|offset| looks_like_ui_copy_usage(source_line_at(content, **offset)))
+        .count();
+    if ui_hits * 2 >= offsets.len() {
+        LiteralContext::UiCopy
+    } else {
+        LiteralContext::General
+    }
+}
+
 pub(super) fn is_non_actionable_style_literal(literal: &str) -> bool {
     is_css_custom_property_literal(literal)
         || is_css_function_value(literal)
         || looks_like_css_class_literal(literal)
+}
+
+fn looks_like_sql_schema(name: &str, normalized: &str) -> bool {
+    let schema_name = {
+        let name = name.to_ascii_lowercase();
+        name.contains("schema")
+            || name.contains("migration")
+            || name == "init_db"
+            || name == "init_database"
+    };
+    let schema_statements = [
+        "create table",
+        "create index",
+        "alter table",
+        "drop table",
+        "pragma ",
+    ]
+    .iter()
+    .filter(|marker| normalized.contains(**marker))
+    .count();
+
+    (schema_name && schema_statements >= 1)
+        || schema_statements >= 2
+        || (normalized.contains("execute_batch") && schema_statements >= 1)
+}
+
+fn looks_like_declarative_jsx(language: &str, lines: &[&str]) -> bool {
+    if !matches!(language, "javascript" | "typescript") {
+        return false;
+    }
+
+    let jsx_lines = lines
+        .iter()
+        .filter(|line| {
+            let trimmed = line.trim();
+            trimmed.starts_with('<')
+                || trimmed.starts_with("</")
+                || trimmed.contains("className=")
+                || trimmed.contains("return (")
+        })
+        .count();
+    jsx_lines >= 10 && jsx_lines * 4 >= lines.len()
+}
+
+fn looks_like_lookup_table(lines: &[&str]) -> bool {
+    let match_arms = lines.iter().filter(|line| line.contains("=>")).count();
+    let struct_rows = lines
+        .iter()
+        .filter(|line| looks_like_struct_literal_row(line))
+        .count();
+    let data_rows = lines
+        .iter()
+        .filter(|line| {
+            let trimmed = line.trim();
+            (trimmed.starts_with('(') || trimmed.starts_with('[') || trimmed.starts_with('{'))
+                && trimmed.ends_with(',')
+        })
+        .count();
+    let controls = control_flow_markers(lines);
+
+    (match_arms >= 10 && controls <= match_arms / 2)
+        || (struct_rows >= 10 && controls <= 5)
+        || (data_rows >= 14 && controls <= 4)
+}
+
+fn looks_like_struct_literal_row(line: &str) -> bool {
+    let trimmed = line.trim();
+    let Some(prefix) = trimmed.strip_suffix('{') else {
+        return false;
+    };
+    let type_name = prefix
+        .trim()
+        .rsplit(|ch: char| !ch.is_ascii_alphanumeric() && ch != '_')
+        .next()
+        .unwrap_or("");
+    type_name
+        .chars()
+        .next()
+        .is_some_and(|ch| ch.is_ascii_uppercase())
+}
+
+fn looks_like_contract_literal(literal: &str, content: &str, offsets: &[usize]) -> bool {
+    let trimmed = literal.trim();
+    let literal_shape = trimmed.starts_with("application/")
+        || trimmed.starts_with("text/")
+        || trimmed.starts_with("/api/")
+        || trimmed.starts_with("X-")
+        || is_environment_name(trimmed)
+        || is_machine_identifier(trimmed);
+    if literal_shape {
+        return true;
+    }
+
+    let contract_hits = offsets
+        .iter()
+        .filter(|offset| {
+            let line = source_line_at(content, **offset).to_ascii_lowercase();
+            [
+                "header",
+                "content-type",
+                "env::var",
+                "std::env",
+                "statuscode",
+                "error_code",
+                "route(",
+                ".route",
+            ]
+            .iter()
+            .any(|marker| line.contains(marker))
+        })
+        .count();
+    contract_hits * 2 >= offsets.len()
+}
+
+fn is_environment_name(literal: &str) -> bool {
+    literal.len() >= 8
+        && literal.contains('_')
+        && literal
+            .chars()
+            .all(|ch| ch.is_ascii_uppercase() || ch.is_ascii_digit() || ch == '_')
+}
+
+fn is_machine_identifier(literal: &str) -> bool {
+    literal.len() >= 12
+        && literal.contains('_')
+        && !literal.contains(' ')
+        && literal
+            .chars()
+            .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '_')
+}
+
+fn looks_like_ui_copy_usage(line: &str) -> bool {
+    let normalized = line.to_ascii_lowercase();
+    [
+        "label:",
+        "title:",
+        "placeholder",
+        "<button",
+        "<chip",
+        "toast",
+        "helpertext",
+        "emptycopy",
+        "description:",
+    ]
+    .iter()
+    .any(|marker| normalized.contains(marker))
+}
+
+fn source_line_at(content: &str, offset: usize) -> &str {
+    let start = content[..offset]
+        .rfind('\n')
+        .map(|index| index + 1)
+        .unwrap_or(0);
+    let end = content[offset..]
+        .find('\n')
+        .map(|index| offset + index)
+        .unwrap_or(content.len());
+    &content[start..end]
+}
+
+fn code_outside_strings(line: &str) -> String {
+    let mut result = String::with_capacity(line.len());
+    let mut delimiter = None;
+    let mut escaped = false;
+    let chars = line.chars().collect::<Vec<_>>();
+    let mut index = 0;
+
+    while index < chars.len() {
+        let ch = chars[index];
+        if let Some(active) = delimiter {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' && active != '`' {
+                escaped = true;
+            } else if ch == active {
+                delimiter = None;
+            }
+            result.push(' ');
+            index += 1;
+            continue;
+        }
+        if ch == '/' && chars.get(index + 1) == Some(&'/') {
+            break;
+        }
+        if matches!(ch, '"' | '\'' | '`') {
+            delimiter = Some(ch);
+            result.push(' ');
+        } else {
+            result.push(ch);
+        }
+        index += 1;
+    }
+
+    result
 }
 
 pub(super) fn is_template_placeholder(literal: &str) -> bool {
