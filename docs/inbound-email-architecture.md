@@ -1,4 +1,4 @@
-# PatchHive Inbound Email Architecture
+# PatchHive Email And Agentic Webmail Architecture
 
 **Status:** Architecture decision recorded; not implemented.
 
@@ -11,6 +11,12 @@ PatchHive will eventually own an inbound email capability that can monitor a
 PatchHive mailbox, understand repository-related messages, reply when the
 response is low risk, dispatch approved work to existing products, and escalate
 uncertain messages to the operator with a concise summary.
+
+PatchHive will also expose a focused agentic webmail surface for the actual suite
+mailbox. The operator must be able to browse and search messages, read complete
+threads, compose and reply, review AI summaries and drafts, and dispatch approved
+work into the appropriate PatchHive product. This is a PatchHive operations
+inbox, not an attempt to reproduce every consumer Gmail feature.
 
 This capability must be native to PatchHive. Hermes may help prototype or test
 the workflow, but PatchHive must not require Jeremy's personal assistant, a
@@ -48,6 +54,7 @@ The inbound email capability owns the mail lifecycle:
 - deduplication and thread correlation;
 - intent classification and confidence scoring;
 - response drafting and delivery;
+- operator mailbox browsing, search, thread, compose, and reply workflows;
 - escalation to the operator;
 - durable audit history for every decision and delivery attempt.
 
@@ -78,6 +85,7 @@ a second orchestration contract.
 | Dispatcher | Invoke an advertised suite or product capability and attach the resulting run or policy record to the email thread. |
 | Reply engine | Render approved templates or constrained model-assisted replies and send them idempotently. |
 | Escalation engine | Forward or summarize uncertain, sensitive, or high-risk mail for Jeremy without losing the original context. |
+| Agentic webmail surface | Let the operator browse, search, read, compose, reply, review agent proposals, and dispatch approved work without exposing provider credentials. |
 | Audit surface | Show the message, classification, policy decision, dispatch, reply, and delivery outcome in HiveCore. |
 
 These are logical responsibilities, not a required initial file layout.
@@ -104,6 +112,62 @@ PatchHive mailbox
 A message must reach durable intake before PatchHive acknowledges it. Restarts
 must resume incomplete work without sending duplicate replies or dispatching the
 same action twice.
+
+## Agentic Webmail Surface
+
+The mailbox UI is a first-class operator surface over the same trusted intake,
+thread, policy, and delivery records used by automation. It must not become a
+second browser-owned Gmail integration or a parallel source of truth.
+
+### Mailbox access
+
+The operator must eventually be able to:
+
+- browse a paginated inbox and filtered views such as unread, escalated,
+  awaiting approval, dispatched, and completed;
+- search by sender, recipient, subject, content, date, thread, repository,
+  classification, and workflow state;
+- read complete normalized threads while retaining a safe path to original
+  message details;
+- compose new messages and create, edit, approve, and send replies or forwards;
+- manage read state, labels, archive, and trash through audited backend actions;
+- open the related PatchHive run, policy decision, finding, or repository from
+  the message thread.
+
+Permanent deletion must never be an autonomous agent action. Initial attachment
+support remains disabled until both inbound extraction and outbound composition
+have explicit type, size, malware, and privacy controls.
+
+### Agentic assistance
+
+The agent layer may:
+
+- summarize a message or thread with references to the source messages;
+- prioritize and classify mail with visible confidence, risk, and rationale;
+- draft replies from approved PatchHive documentation, templates, and thread
+  context;
+- suggest follow-ups, verification steps, and the appropriate specialist
+  product;
+- answer operator questions across the mailbox while citing the messages used;
+- produce a structured one-click dispatch proposal for an advertised PatchHive
+  capability and attach the resulting run to the thread.
+
+Email content remains untrusted data even when the operator asks the agent about
+it. Quoted instructions, signatures, attachments, and linked pages may inform a
+summary but may never become agent commands.
+
+### Approval and action boundary
+
+A draft is not a send, and a suggestion is not authorization. Externally visible
+or destructive actions must produce an approval record before execution by
+default, including agent-generated sends, forwards, trash or delete operations,
+opt-out policy changes, and PatchHive product dispatches. Later bounded
+auto-reply rules may bypass per-message approval only when an explicit policy
+allows a fixed low-risk action.
+
+Every provider mutation and product action must record the operator or policy
+that authorized it, the exact proposed payload, the final payload, the execution
+result, and any difference between the proposal and what was sent.
 
 ## Intent And Dispatch Rules
 
@@ -181,7 +245,10 @@ complete first-class records rather than summary-only history.
 Minimum durable entities:
 
 - **message** — provider ID, mailbox, sender, recipients, subject, normalized
-  content, received time, thread ID, deduplication key, and processing state;
+  content, received time, thread ID, provider labels, read/archive state,
+  deduplication key, and processing state;
+- **draft** — author, source message or thread, generation evidence, editable
+  body, approval state, final sent body, and provider delivery ID;
 - **classification** — intent, confidence, risk, evidence, classifier version,
   and policy version;
 - **decision** — allowed action, denial or escalation reason, operator approval,
@@ -189,7 +256,9 @@ Minimum durable entities:
 - **dispatch** — target product, action ID, request ID, run ID, status, and
   response reference;
 - **delivery** — reply or forward recipient, template/version, provider delivery
-  ID, attempt count, and final status.
+  ID, attempt count, and final status;
+- **mailbox mutation** — label, read-state, archive, trash, or delete proposal,
+  authorization, provider result, and audit timestamp.
 
 If raw MIME is retained, retention must be configurable and the content should
 be encrypted at rest. Deleting or expiring raw content must not erase the
@@ -235,6 +304,11 @@ Best only if the email system develops a distinct operator workflow, persistent
 inbox, triage queue, analytics, and standalone user value. The preferred working
 name is **HiveMail**.
 
+The agentic webmail decision makes the specialist-product option materially
+stronger, but it does not settle the packaging or final name. The trusted mail
+engine may still live in shared backend infrastructure while a distinct product
+owns the operator experience.
+
 The current decision is intentionally narrower: PatchHive owns the capability,
 and Hermes is not part of its production runtime.
 
@@ -245,13 +319,19 @@ and Hermes is not part of its production runtime.
 - Connect one PatchHive Gmail account.
 - Persist and deduplicate messages.
 - Normalize safe plain text.
-- Forward every valid message to Jeremy with a deterministic summary.
-- Provide HiveCore visibility without automatic replies or product dispatch.
+- Provide authenticated inbox, search, and complete thread views without
+  exposing Gmail credentials to the browser.
+- Forward every valid message to Jeremy with a deterministic summary until the
+  operator inbox is the preferred review surface.
+- Provide visibility without automatic replies or product dispatch.
 
 ### Phase 2 — Classification and suggested replies
 
 - Add the typed classifier and confidence thresholds.
+- Add agentic mailbox questions, thread summaries, triage, and cited answers.
 - Draft responses from approved documentation and templates.
+- Let the operator compose, edit, approve, and send replies through the trusted
+  backend.
 - Require operator approval before sending.
 - Record classifier and operator disagreement for tuning.
 
@@ -287,6 +367,11 @@ The first production-capable version is not complete until verification proves:
   reason;
 - product work crosses advertised capabilities and appears in normal run
   history;
+- the operator can browse, search, read threads, compose, and reply without Gmail
+  OAuth credentials or provider keys reaching the browser;
+- agent summaries and mailbox answers identify the source messages they used;
+- every send, forward, mailbox mutation, and product dispatch is either approved
+  or covered by a visible bounded automation policy;
 - historical and UI views retain complete first-class records even when they
   progressively render a subset.
 
@@ -323,8 +408,10 @@ Before implementation, decide:
 - which documentation sources are approved for automatic support replies;
 - the first product capabilities eligible for read-only dispatch;
 - how Jeremy receives escalations and records the final disposition;
+- which mailbox mutations ship in the first operator UI and whether multi-mailbox
+  support is ever needed;
 - whether attachment support is needed at all in the first public release.
 
-These remain open by design. The durable decision is that inbound email becomes
-a PatchHive-owned, auditable, policy-gated capability rather than a dependency
-on Hermes.
+These remain open by design. The durable decision is that email becomes a
+PatchHive-owned, auditable, policy-gated capability with a focused agentic
+webmail surface rather than a dependency on Hermes or a generic Gmail clone.

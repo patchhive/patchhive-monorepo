@@ -160,7 +160,7 @@ Shared platform guidance:
   separately from target selection (`direct`, `discovery`). Products should
   advertise only the combinations their current engine supports.
 - Treat repo discovery safety, output caps, and cross-product contracts as platform guardrails, not optional product polish.
-- PatchHive-owned inbound email must be a native, auditable, policy-gated capability rather than a production dependency on Hermes or a personal agent profile. The final module/product boundary remains open; see `docs/inbound-email-architecture.md`.
+- PatchHive-owned email must be a native, auditable, policy-gated capability with a focused agentic webmail operator surface for inbox access, search, threads, compose/reply, AI triage and drafts, approval, and product dispatch. It must not depend on Hermes, a personal agent profile, browser-held provider credentials, or a generic Gmail clone. The final module/product boundary remains open; see `docs/inbound-email-architecture.md`.
 - The unified backend product registry lives in `services/patchhive-backend/registry/products/*.toml`; product modules should declare identity, route claims, capabilities, safety boundaries, gateway targets, health contracts, and module paths there instead of being hardcoded in `main.rs`.
 - The unified backend shared SQLite DB is configured with `PATCHHIVE_DB_PATH`; suite tables stay backend-owned, while product tables should be product-namespaced as engines migrate in-process.
 - All product routers should layer `patchhive_product_core::rate_limit::rate_limit_middleware` so auth, mutating, and run-triggering routes share backend rate limiting.

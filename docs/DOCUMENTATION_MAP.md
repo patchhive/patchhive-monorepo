@@ -46,7 +46,7 @@ open rather than written as settled architecture.
 
 - [Product operating modes](product-operating-modes.md) — directed targets vs autonomous discovery, and how products expose both.
 - [Future product opportunities](future-product-opportunities.md) — overlap analysis and boundaries for recovered product concepts.
-- [Inbound email architecture](inbound-email-architecture.md) — native PatchHive mailbox intake, classification, safe replies, product dispatch, and escalation boundaries.
+- [Email and agentic webmail architecture](inbound-email-architecture.md) — native mailbox access, agent-assisted triage and replies, product dispatch, approval, and escalation boundaries.
 - [Shared Squad architecture](shared-squad-architecture.md) — RepoReaper's agent team as the first shared squad implementation.
 
 ## Platform Docs
