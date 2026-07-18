@@ -16,7 +16,11 @@ pub fn github_token_from_env() -> Option<String> {
     env_value(&["BOT_GITHUB_TOKEN", "GITHUB_TOKEN"])
 }
 
-pub fn verify_github_webhook_signature(headers: &HeaderMap, body: &[u8], secret: &str) -> Result<()> {
+pub fn verify_github_webhook_signature(
+    headers: &HeaderMap,
+    body: &[u8],
+    secret: &str,
+) -> Result<()> {
     if secret.trim().is_empty() {
         return Err(anyhow!("GitHub webhook secret is empty"));
     }
@@ -29,7 +33,8 @@ pub fn verify_github_webhook_signature(headers: &HeaderMap, body: &[u8], secret:
     let sig_hex = signature
         .strip_prefix("sha256=")
         .ok_or_else(|| anyhow!("Malformed GitHub webhook signature"))?;
-    let sig_bytes = hex::decode(sig_hex).map_err(|_| anyhow!("Webhook signature was not valid hex"))?;
+    let sig_bytes =
+        hex::decode(sig_hex).map_err(|_| anyhow!("Webhook signature was not valid hex"))?;
 
     let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes())
         .map_err(|_| anyhow!("Could not initialize webhook verifier"))?;

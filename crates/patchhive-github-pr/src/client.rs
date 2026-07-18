@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Context, Result};
 use reqwest::{
-    header::{ACCEPT, AUTHORIZATION, HeaderMap, HeaderValue, USER_AGENT},
+    header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, USER_AGENT},
     Client,
 };
 use serde_json::{json, Value};
@@ -8,10 +8,10 @@ use std::fmt;
 
 use crate::{
     models::{
-        GitHubCheckRunRequest, GitHubCheckRunResult, GitHubCommitStatusRequest,
-        GitHubCommitHealth, GitHubCommitStatusResult, GitHubManagedCommentResult,
+        GitHubCheckRunRequest, GitHubCheckRunResult, GitHubCheckRunSummary, GitHubCommitHealth,
+        GitHubCommitStatusRequest, GitHubCommitStatusResult, GitHubManagedCommentResult,
         GitHubPullRequestDetail, GitHubPullReview, GitHubPullReviewThread,
-        GitHubPullReviewThreadComment, GitHubCheckRunSummary, GitHubStatusContext,
+        GitHubPullReviewThreadComment, GitHubStatusContext,
     },
     webhook::github_token_from_env,
 };
@@ -62,7 +62,10 @@ impl GitHubPrClient {
     fn headers(&self, accept: &str, require_token: bool) -> Result<HeaderMap> {
         let mut headers = HeaderMap::new();
         headers.insert(USER_AGENT, HeaderValue::from_str(&self.user_agent)?);
-        headers.insert("X-GitHub-Api-Version", HeaderValue::from_static("2022-11-28"));
+        headers.insert(
+            "X-GitHub-Api-Version",
+            HeaderValue::from_static("2022-11-28"),
+        );
         headers.insert(ACCEPT, HeaderValue::from_str(accept)?);
 
         if require_token {
@@ -244,7 +247,11 @@ impl GitHubPrClient {
             .with_context(|| format!("Failed to decode GitHub JSON for {path}"))
     }
 
-    pub async fn fetch_pull_request(&self, repo: &str, pr_number: i64) -> Result<GitHubPullRequestDetail> {
+    pub async fn fetch_pull_request(
+        &self,
+        repo: &str,
+        pr_number: i64,
+    ) -> Result<GitHubPullRequestDetail> {
         validate_repo(repo)?;
         let value = self
             .get_json(&format!("/repos/{repo}/pulls/{pr_number}"))
@@ -334,9 +341,11 @@ impl GitHubPrClient {
             match (run.status.as_str(), run.conclusion.as_str()) {
                 ("completed", "success") => health.successful_checks += 1,
                 ("completed", "neutral" | "skipped") => health.neutral_checks += 1,
-                ("completed", "failure" | "timed_out" | "cancelled" | "action_required" | "startup_failure" | "stale") => {
-                    health.failing_checks += 1
-                }
+                (
+                    "completed",
+                    "failure" | "timed_out" | "cancelled" | "action_required" | "startup_failure"
+                    | "stale",
+                ) => health.failing_checks += 1,
                 ("completed", _) => health.neutral_checks += 1,
                 _ => health.pending_checks += 1,
             }
@@ -361,7 +370,11 @@ impl GitHubPrClient {
     ) -> Result<Vec<GitHubPullReview>> {
         validate_repo(repo)?;
         let value = self
-            .get_paginated_array(&format!("/repos/{repo}/pulls/{pr_number}/reviews"), &[], None)
+            .get_paginated_array(
+                &format!("/repos/{repo}/pulls/{pr_number}/reviews"),
+                &[],
+                None,
+            )
             .await?;
 
         Ok(value
@@ -530,15 +543,19 @@ query PatchHiveReviewThreads($owner: String!, $name: String!, $number: Int!) {
     ) -> Result<GitHubManagedCommentResult> {
         validate_repo(repo)?;
         let comments = self
-            .get_paginated_array(&format!("/repos/{repo}/issues/{issue_number}/comments"), &[], None)
+            .get_paginated_array(
+                &format!("/repos/{repo}/issues/{issue_number}/comments"),
+                &[],
+                None,
+            )
             .await?;
 
         if let Some(existing) = comments.iter().find(|item| {
-                item["body"]
-                    .as_str()
-                    .map(|text| text.contains(marker))
-                    .unwrap_or(false)
-            }) {
+            item["body"]
+                .as_str()
+                .map(|text| text.contains(marker))
+                .unwrap_or(false)
+        }) {
             let id = existing["id"]
                 .as_i64()
                 .ok_or_else(|| anyhow!("Existing managed comment was missing an id"))?;

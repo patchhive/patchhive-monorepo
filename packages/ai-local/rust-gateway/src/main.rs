@@ -233,7 +233,7 @@ async fn main() -> Result<()> {
 
 async fn health(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
     if let Err(response) = authorize_request(&state, &headers) {
-        return response;
+        return *response;
     }
 
     let mut providers = Map::new();
@@ -281,7 +281,7 @@ async fn health(State(state): State<AppState>, headers: HeaderMap) -> impl IntoR
 
 async fn list_models(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
     if let Err(response) = authorize_request(&state, &headers) {
-        return response;
+        return *response;
     }
 
     let mut data = Vec::new();
@@ -333,16 +333,16 @@ async fn list_models(State(state): State<AppState>, headers: HeaderMap) -> impl 
     .into_response()
 }
 
-async fn chat_completions(State(state): State<AppState>, headers: HeaderMap, Json(body): Json<Value>) -> impl IntoResponse {
+async fn chat_completions(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<Value>,
+) -> impl IntoResponse {
     if let Err(response) = authorize_request(&state, &headers) {
-        return response;
+        return *response;
     }
 
-    if body
-        .get("stream")
-        .and_then(Value::as_bool)
-        .unwrap_or(false)
-    {
+    if body.get("stream").and_then(Value::as_bool).unwrap_or(false) {
         return (
             StatusCode::BAD_REQUEST,
             Json(json!({
@@ -355,7 +355,13 @@ async fn chat_completions(State(state): State<AppState>, headers: HeaderMap, Jso
             .into_response();
     }
 
-    match complete_with_fallback(&state, &body, body.get("messages").cloned().unwrap_or_else(|| json!([]))).await {
+    match complete_with_fallback(
+        &state,
+        &body,
+        body.get("messages").cloned().unwrap_or_else(|| json!([])),
+    )
+    .await
+    {
         Ok(envelope) => Json(make_chat_completion_response(&state, envelope)).into_response(),
         Err(failure) => (
             StatusCode::BAD_GATEWAY,
@@ -373,16 +379,16 @@ async fn chat_completions(State(state): State<AppState>, headers: HeaderMap, Jso
     }
 }
 
-async fn responses_api(State(state): State<AppState>, headers: HeaderMap, Json(body): Json<Value>) -> impl IntoResponse {
+async fn responses_api(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<Value>,
+) -> impl IntoResponse {
     if let Err(response) = authorize_request(&state, &headers) {
-        return response;
+        return *response;
     }
 
-    if body
-        .get("stream")
-        .and_then(Value::as_bool)
-        .unwrap_or(false)
-    {
+    if body.get("stream").and_then(Value::as_bool).unwrap_or(false) {
         return (
             StatusCode::BAD_REQUEST,
             Json(json!({
@@ -395,7 +401,9 @@ async fn responses_api(State(state): State<AppState>, headers: HeaderMap, Json(b
             .into_response();
     }
 
-    let messages = json!(response_input_to_messages(body.get("input").unwrap_or(&Value::Null)));
+    let messages = json!(response_input_to_messages(
+        body.get("input").unwrap_or(&Value::Null)
+    ));
     match complete_with_fallback(&state, &body, messages).await {
         Ok(envelope) => Json(make_responses_api_response(&state, envelope)).into_response(),
         Err(failure) => (
@@ -509,7 +517,7 @@ fn host_is_local(host: &str) -> bool {
 fn authorize_request(
     state: &AppState,
     headers: &HeaderMap,
-) -> std::result::Result<(), axum::response::Response> {
+) -> std::result::Result<(), Box<axum::response::Response>> {
     let Some(expected) = state.gateway_api_key.as_deref() else {
         return Ok(());
     };
@@ -524,11 +532,13 @@ fn authorize_request(
     if provided == expected {
         Ok(())
     } else {
-        Err((
-            StatusCode::UNAUTHORIZED,
-            Json(json!({ "error": "Unauthorized — provide X-API-Key header" })),
-        )
-            .into_response())
+        Err(Box::new(
+            (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({ "error": "Unauthorized — provide X-API-Key header" })),
+            )
+                .into_response(),
+        ))
     }
 }
 
@@ -554,7 +564,12 @@ async fn spawn_initialized_process(name: &str, script_path: &PathBuf) -> Result<
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
         .spawn()
-        .with_context(|| format!("failed to spawn {name} adapter at {}", script_path.display()))?;
+        .with_context(|| {
+            format!(
+                "failed to spawn {name} adapter at {}",
+                script_path.display()
+            )
+        })?;
 
     let stdin = child
         .stdin
@@ -605,9 +620,8 @@ async fn initialize_adapter_process(name: &str, process: &mut AdapterProcess) ->
 }
 
 async fn shutdown_adapter_process(process: &mut AdapterProcess) {
-    match process.child.try_wait() {
-        Ok(Some(_)) => return,
-        Ok(None) | Err(_) => {}
+    if let Ok(Some(_)) = process.child.try_wait() {
+        return;
     }
 
     let _ = process.child.start_kill();
@@ -642,11 +656,9 @@ async fn send_request_to_process(
         .write_all(b"\n")
         .await
         .map_err(|error| AdapterError::transport(format!("failed to write newline: {error}")))?;
-    process
-        .stdin
-        .flush()
-        .await
-        .map_err(|error| AdapterError::transport(format!("failed to flush adapter stdin: {error}")))?;
+    process.stdin.flush().await.map_err(|error| {
+        AdapterError::transport(format!("failed to flush adapter stdin: {error}"))
+    })?;
 
     let line = process
         .stdout
@@ -659,11 +671,9 @@ async fn send_request_to_process(
         })?
         .ok_or_else(|| AdapterError::transport(format!("{name} adapter closed stdout")))?;
 
-    if let Some(status) = process
-        .child
-        .try_wait()
-        .map_err(|error| AdapterError::transport(format!("failed to inspect adapter status: {error}")))?
-    {
+    if let Some(status) = process.child.try_wait().map_err(|error| {
+        AdapterError::transport(format!("failed to inspect adapter status: {error}"))
+    })? {
         if method != "shutdown" {
             warn!("{name} adapter exited unexpectedly with status {status}");
         }
@@ -686,9 +696,9 @@ async fn send_request_to_process(
         return Err(error);
     }
 
-    response
-        .result
-        .ok_or_else(|| AdapterError::transport(format!("{name} adapter returned no result for {method}")))
+    response.result.ok_or_else(|| {
+        AdapterError::transport(format!("{name} adapter returned no result for {method}"))
+    })
 }
 
 impl AdapterClient {
@@ -726,11 +736,9 @@ impl AdapterClient {
         loop {
             let mut process = self.process.lock().await;
 
-            if let Some(status) = process
-                .child
-                .try_wait()
-                .map_err(|error| AdapterError::transport(format!("failed to inspect adapter status: {error}")))?
-            {
+            if let Some(status) = process.child.try_wait().map_err(|error| {
+                AdapterError::transport(format!("failed to inspect adapter status: {error}"))
+            })? {
                 self.restart_locked(
                     &mut process,
                     format!("{method} requested while adapter was exited with status {status}"),
@@ -739,7 +747,15 @@ impl AdapterClient {
             }
 
             let request_id = self.next_id.fetch_add(1, Ordering::SeqCst);
-            match send_request_to_process(self.name, &mut process, request_id, method, params.clone()).await {
+            match send_request_to_process(
+                self.name,
+                &mut process,
+                request_id,
+                method,
+                params.clone(),
+            )
+            .await
+            {
                 Ok(value) => return Ok(value),
                 Err(error) if error.is_transport() && attempt == 0 => {
                     self.restart_locked(
@@ -795,7 +811,10 @@ fn adapter_script_path(name: &str) -> Result<PathBuf> {
 
 fn env_bool(key: &str, fallback: bool) -> bool {
     match std::env::var(key) {
-        Ok(value) => matches!(value.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"),
+        Ok(value) => matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "1" | "true" | "yes" | "on"
+        ),
         Err(_) => fallback,
     }
 }
@@ -882,10 +901,12 @@ fn response_input_item_to_messages(item: &Value) -> Vec<Value> {
             "role": "user",
             "content": text,
         })],
-        Value::Object(map) if map.get("type").and_then(Value::as_str) == Some("message") => vec![json!({
-            "role": map.get("role").cloned().unwrap_or_else(|| json!("user")),
-            "content": map.get("content").cloned().unwrap_or_else(|| json!("")),
-        })],
+        Value::Object(map) if map.get("type").and_then(Value::as_str) == Some("message") => {
+            vec![json!({
+                "role": map.get("role").cloned().unwrap_or_else(|| json!("user")),
+                "content": map.get("content").cloned().unwrap_or_else(|| json!("")),
+            })]
+        }
         other => vec![json!({
             "role": "user",
             "content": other,

@@ -1,18 +1,13 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum RegistryMode {
     Disabled,
+    #[default]
     Anonymous,
     NamedPrivate,
     PublicDemo,
-}
-
-impl Default for RegistryMode {
-    fn default() -> Self {
-        Self::Anonymous
-    }
 }
 
 impl RegistryMode {
@@ -156,4 +151,14 @@ pub struct ErrorResponse {
 #[derive(Clone, Debug, Serialize)]
 pub struct OkResponse {
     pub ok: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::RegistryMode;
+
+    #[test]
+    fn registry_mode_defaults_to_anonymous() {
+        assert_eq!(RegistryMode::default(), RegistryMode::Anonymous);
+    }
 }
