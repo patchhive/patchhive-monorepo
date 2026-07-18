@@ -90,6 +90,29 @@ const C: &str = "service said \"try again later\"";
     }
 
     #[test]
+    fn rust_attribute_literals_are_not_extract_constant_leads() {
+        let source = r#"
+#[derive(serde::Deserialize)]
+struct Example {
+    #[serde(default, deserialize_with = "default_on_null")]
+    first: String,
+    #[serde(
+        default,
+        deserialize_with = "default_on_null"
+    )]
+    second: String,
+    #[serde(default, deserialize_with = "default_on_null")]
+    third: String,
+}
+"#;
+
+        let opportunities = analyze_file("src/models.rs", "rust", source);
+        assert!(!opportunities
+            .iter()
+            .any(|item| item.kind == "repeated_literal"));
+    }
+
+    #[test]
     fn repeated_validation_gets_context_aware_guidance() {
         let source = r#"
 fn validate_one(repo: &str) -> anyhow::Result<()> {

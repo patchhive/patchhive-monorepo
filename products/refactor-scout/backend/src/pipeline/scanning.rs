@@ -584,6 +584,10 @@ fn repeated_literal_opportunity(
     let mut literals: HashMap<String, (u32, usize, Vec<usize>)> = HashMap::new();
 
     for (literal, offset) in source_string_literals(content, language) {
+        if is_non_extractable_literal_context(content, language, offset) {
+            continue;
+        }
+
         let literal = literal.trim();
         if should_ignore_literal(literal) {
             continue;
@@ -654,6 +658,20 @@ fn repeated_literal_opportunity(
             context_evidence.into(),
         ],
     })
+}
+
+fn is_non_extractable_literal_context(content: &str, language: &str, offset: usize) -> bool {
+    language == "rust" && is_inside_rust_attribute(content, offset)
+}
+
+fn is_inside_rust_attribute(content: &str, offset: usize) -> bool {
+    let prefix = &content[..offset];
+    let Some(attribute_start) = prefix.rfind("#[") else {
+        return false;
+    };
+    prefix
+        .rfind(']')
+        .is_none_or(|attribute_end| attribute_start > attribute_end)
 }
 
 fn repeated_validation_pattern(content: &str, offsets: &[usize]) -> bool {
