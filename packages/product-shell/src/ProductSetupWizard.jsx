@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Btn, EmptyState, S, Tag } from "@patchhivehq/ui";
 
+const TEXT_DIM_COLOR = "var(--text-dim)";
+
 const statGridStyle = {
   display: "grid",
   gap: 12,
@@ -27,7 +29,7 @@ function statusMeta(status) {
     case "needs_action":
       return { label: "needs action", color: "var(--accent)" };
     case "optional":
-      return { label: "optional", color: "var(--text-dim)" };
+      return { label: "optional", color: TEXT_DIM_COLOR };
     default:
       return { label: "recommended", color: "var(--gold)" };
   }
@@ -37,7 +39,7 @@ function levelColor(level) {
   if (level === "error") return "var(--accent)";
   if (level === "warn") return "var(--gold)";
   if (level === "ok") return "var(--green)";
-  return "var(--text-dim)";
+  return TEXT_DIM_COLOR;
 }
 
 function summarizeChecks(checks) {
@@ -230,7 +232,7 @@ export default function ProductSetupWizard({
             <div style={{ fontSize: 20, fontWeight: 700, color: "var(--accent)" }}>
               {icon} {product} Setup Wizard
             </div>
-            <div style={{ color: "var(--text-dim)", fontSize: 13, lineHeight: 1.6 }}>
+            <div style={{ color: TEXT_DIM_COLOR, fontSize: 13, lineHeight: 1.6 }}>
               {description}
             </div>
           </div>
@@ -313,7 +315,7 @@ export default function ProductSetupWizard({
                     Step {index + 1}
                   </div>
                   <div style={{ fontSize: 16, fontWeight: 700 }}>{step.title}</div>
-                  <div style={{ color: "var(--text-dim)", fontSize: 12, lineHeight: 1.6 }}>{step.detail}</div>
+                  <div style={{ color: TEXT_DIM_COLOR, fontSize: 12, lineHeight: 1.6 }}>{step.detail}</div>
                 </div>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                   <Tag color={meta.color}>{meta.label}</Tag>
@@ -334,7 +336,7 @@ export default function ProductSetupWizard({
           <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
             <div>
               <div style={{ fontSize: 16, fontWeight: 700 }}>Live Startup Checks</div>
-              <div style={{ color: "var(--text-dim)", fontSize: 12 }}>
+              <div style={{ color: TEXT_DIM_COLOR, fontSize: 12 }}>
                 The same backend checks the dedicated Checks tab reads.
               </div>
             </div>
@@ -362,7 +364,7 @@ export default function ProductSetupWizard({
         <div style={{ ...S.panel, display: "grid", gap: 12 }}>
           <div>
             <div style={{ fontSize: 16, fontWeight: 700 }}>Health Snapshot</div>
-            <div style={{ color: "var(--text-dim)", fontSize: 12 }}>
+            <div style={{ color: TEXT_DIM_COLOR, fontSize: 12 }}>
               Quick backend facts from `/health` and `/auth/status`.
             </div>
           </div>
@@ -379,7 +381,7 @@ export default function ProductSetupWizard({
             {authStatus?.service_auth_token?.fingerprint && (
               <div style={{ display: "grid", gap: 4 }}>
                 <div style={S.label}>Service Fingerprint</div>
-                <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
+                <div style={{ fontSize: 12, color: TEXT_DIM_COLOR }}>
                   {authStatus.service_auth_token.fingerprint}
                 </div>
               </div>
