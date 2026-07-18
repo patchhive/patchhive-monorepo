@@ -1,5 +1,6 @@
 pub mod analysis;
 pub mod routes;
+mod scan_hygiene;
 pub mod scanning;
 
 // Re-export all public route handlers for main.rs.
@@ -46,6 +47,22 @@ const C = "service unavailable while syncing billing customers";
         let opportunities = analyze_file("src/client.ts", "typescript", source);
         assert!(opportunities
             .iter()
+            .any(|item| item.kind == "repeated_literal" && item.safety == "medium"));
+    }
+
+    #[test]
+    fn five_repeated_literals_are_high_safety() {
+        let source = r#"
+const A = "service unavailable while syncing billing customers";
+const B = "service unavailable while syncing billing customers";
+const C = "service unavailable while syncing billing customers";
+const D = "service unavailable while syncing billing customers";
+const E = "service unavailable while syncing billing customers";
+"#;
+
+        let opportunities = analyze_file("src/client.ts", "typescript", source);
+        assert!(opportunities
+            .iter()
             .any(|item| item.kind == "repeated_literal" && item.safety == "high"));
     }
 
@@ -70,6 +87,128 @@ if text.contains("resource not accessible by personal access token")
         assert!(!opportunities
             .iter()
             .any(|item| item.kind == "repeated_literal"));
+    }
+
+    #[test]
+    fn repeated_literal_scan_does_not_cross_same_line_neighboring_strings() {
+        let source = r#"
+if haystack.contains("cargo") || haystack.contains("crates.io") {}
+if haystack.contains("pip") || haystack.contains("python") {}
+if haystack.contains("npm") || haystack.contains("pnpm") {}
+if haystack.contains("github action") || haystack.contains("actions/") {}
+"#;
+
+        let opportunities = analyze_file("src/utils.rs", "rust", source);
+        assert!(!opportunities
+            .iter()
+            .any(|item| item.kind == "repeated_literal"));
+    }
+
+    #[test]
+    fn repeated_literal_scan_ignores_rust_char_literals_before_neighboring_strings() {
+        let source = r#"
+fn clean_version_token(raw: &str) -> &str {
+    raw.trim_matches(|character: char| {
+        matches!(character, '`' | '"' | '\'' | ',' | '.' | ';' | ':' | '(' | ')' | '[' | ']')
+    })
+}
+
+fn ecosystem(haystack: &str) -> &str {
+    if haystack.contains("cargo") || haystack.contains("crates.io") {
+        "rust"
+    } else if haystack.contains("pip") || haystack.contains("python") {
+        "python"
+    } else if haystack.contains("npm") || haystack.contains("pnpm") {
+        "javascript"
+    } else {
+        "unknown"
+    }
+}
+"#;
+
+        let opportunities = analyze_file("src/utils.rs", "rust", source);
+        assert!(!opportunities.iter().any(|item| {
+            item.kind == "repeated_literal" && item.summary.contains("haystack.contains")
+        }));
+    }
+
+    #[test]
+    fn repeated_literal_scan_ignores_css_tokens_and_class_lists() {
+        let source = r#"
+const A = { color: "var(--accent)", className: "surface-inset rounded-xl p-4" };
+const B = { color: "var(--accent)", className: "surface-inset rounded-xl p-4" };
+const C = { color: "var(--accent)", className: "surface-inset rounded-xl p-4" };
+const D = { grid: "repeat(auto-fit, minmax(220px, 1fr))", transform: "translate(-50%, -50%)" };
+const E = { grid: "repeat(auto-fit, minmax(220px, 1fr))", transform: "translate(-50%, -50%)" };
+const F = { grid: "repeat(auto-fit, minmax(220px, 1fr))", transform: "translate(-50%, -50%)" };
+"#;
+
+        let opportunities = analyze_file("src/panel.jsx", "javascript", source);
+        assert!(!opportunities
+            .iter()
+            .any(|item| item.kind == "repeated_literal"));
+    }
+
+    #[test]
+    fn repeated_literal_scan_ignores_tailwind_attribute_selectors() {
+        let source = r#"
+const A = "group-data-[collapsible=icon]:hidden";
+const B = "group-data-[collapsible=icon]:hidden";
+const C = "group-data-[collapsible=icon]:hidden";
+const D = "group-data-[collapsible=icon]:hidden";
+const E = "group-data-[collapsible=icon]:hidden";
+"#;
+
+        let opportunities = analyze_file("src/sidebar.tsx", "typescript", source);
+        assert!(!opportunities
+            .iter()
+            .any(|item| item.kind == "repeated_literal"));
+    }
+
+    #[test]
+    fn repeated_literal_scan_keeps_hyphenated_prose() {
+        let source = r#"
+const A = "service-token auth is not configured for this product";
+const B = "service-token auth is not configured for this product";
+const C = "service-token auth is not configured for this product";
+"#;
+
+        let opportunity = analyze_file("src/auth.rs", "rust", source)
+            .into_iter()
+            .find(|item| item.kind == "repeated_literal")
+            .expect("hyphenated prose is not a CSS class list");
+        assert!(opportunity.summary.contains("service-token auth"));
+    }
+
+    #[test]
+    fn generated_source_does_not_create_refactor_leads() {
+        let mut source = String::from("// This file was automatically generated. Do not edit.\n");
+        source.push_str("export function generatedRoute() {\n");
+        for _ in 0..90 {
+            source.push_str("  console.log(\"generated route identifier\");\n");
+        }
+        source.push_str("}\n");
+
+        assert!(analyze_file("src/routeTree.gen.ts", "typescript", &source).is_empty());
+    }
+
+    #[test]
+    fn embedded_stylesheet_gets_stylesheet_guidance() {
+        let mut source = String::from("function CommandCenterStyles() {\n  return <style>{`\n");
+        for index in 0..70 {
+            source.push_str(&format!("  .selector-{index} {{ color: red; }}\n"));
+        }
+        source.push_str("  `}</style>;\n}\n");
+
+        let opportunity = analyze_file("src/SetupPanel.jsx", "javascript", &source)
+            .into_iter()
+            .find(|item| item.kind == "long_function")
+            .expect("embedded stylesheet should remain visible");
+        assert_eq!(
+            opportunity.title,
+            "Move embedded stylesheet out of `CommandCenterStyles`"
+        );
+        assert!(opportunity.suggestion.contains("CSS module"));
     }
 
     #[test]
@@ -314,6 +453,8 @@ const C: &str = "repeated service boundary literal";
 const A: &str = "shared validation boundary message";
 const B: &str = "shared validation boundary message";
 const C: &str = "shared validation boundary message";
+const D: &str = "shared validation boundary message";
+const E: &str = "shared validation boundary message";
 "#,
         )
         .expect("high-safety fixture should write");

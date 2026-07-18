@@ -16,6 +16,10 @@ use walkdir::{DirEntry, WalkDir};
 use crate::models::{RefactorOpportunity, RefactorScanResult};
 
 use super::analysis::*;
+use super::scan_hygiene::{
+    is_embedded_stylesheet_wrapper, is_generated_source, is_non_actionable_style_literal,
+    is_template_placeholder,
+};
 
 pub(crate) const MAX_SCAN_FILES: u32 = 1_500;
 pub(crate) const MAX_FILE_BYTES: u64 = 350_000;
@@ -460,6 +464,10 @@ fn scan_repo(root: &Path, max_files: u32) -> Result<ScanArtifacts> {
 }
 
 pub(crate) fn analyze_file(path: &str, language: &str, content: &str) -> Vec<RefactorOpportunity> {
+    if is_generated_source(path, content) {
+        return Vec::new();
+    }
+
     let lines = content.lines().collect::<Vec<_>>();
     let mut opportunities = Vec::new();
 
@@ -539,16 +547,44 @@ fn long_function_opportunities(
         }
 
         let score = 58 + ((line_count.saturating_sub(LONG_FUNCTION_THRESHOLD) as u32) / 2).min(34);
+        let embedded_stylesheet =
+            is_embedded_stylesheet_wrapper(language, &name, lines, start, end);
+        let (title, summary, suggestion, evidence) = if embedded_stylesheet {
+            (
+                format!("Move embedded stylesheet out of `{name}`"),
+                format!(
+                    "`{name}` in `{path}` contains a {}-line embedded stylesheet ({}-{}). Move those declarations into a dedicated stylesheet instead of splitting the wrapper into more JavaScript helpers.",
+                    line_count,
+                    start + 1,
+                    end + 1
+                ),
+                "Move the static declarations into a product stylesheet or CSS module, preserve the current selectors, and leave the component responsible only for loading or applying that stylesheet.".into(),
+                vec![
+                    format!("{line_count} lines in one embedded stylesheet"),
+                    "Detected as declarative styling rather than branching application logic.".into(),
+                ],
+            )
+        } else {
+            (
+                format!("Extract helper from `{name}`"),
+                format!(
+                    "`{name}` in `{path}` spans {} lines ({}-{}), which usually means there is at least one validation, formatting, or branching step worth extracting.",
+                    line_count,
+                    start + 1,
+                    end + 1
+                ),
+                "Keep the current function signature stable and extract one internal phase into a named helper first. That usually buys readability without widening the refactor blast radius.".into(),
+                vec![
+                    format!("{line_count} lines in one function"),
+                    format!("Detected in {language} code"),
+                ],
+            )
+        };
         opportunities.push(RefactorOpportunity {
             id: Uuid::new_v4().to_string(),
             kind: "long_function".into(),
-            title: format!("Extract helper from `{name}`"),
-            summary: format!(
-                "`{name}` in `{path}` spans {} lines ({}-{}), which usually means there is at least one validation, formatting, or branching step worth extracting.",
-                line_count,
-                start + 1,
-                end + 1
-            ),
+            title,
+            summary,
             path: path.into(),
             language: language.into(),
             score,
@@ -556,11 +592,8 @@ fn long_function_opportunities(
             effort: "medium".into(),
             line_start: (start + 1) as u32,
             line_end: (end + 1) as u32,
-            suggestion: "Keep the current function signature stable and extract one internal phase into a named helper first. That usually buys readability without widening the refactor blast radius.".into(),
-            evidence: vec![
-                format!("{line_count} lines in one function"),
-                format!("Detected in {language} code"),
-            ],
+            suggestion,
+            evidence,
         });
     }
 
@@ -636,6 +669,22 @@ fn repeated_literal_opportunity(
         )
     };
 
+    let safety = if validation_pattern || count >= 5 {
+        "high"
+    } else {
+        "medium"
+    };
+    let mut evidence = vec![
+        format!("{count} repeated occurrences"),
+        context_evidence.into(),
+    ];
+    if safety == "medium" {
+        evidence.push(
+            "Confirm the occurrences represent the same concept before sharing one constant."
+                .into(),
+        );
+    }
+
     Some(RefactorOpportunity {
         id: Uuid::new_v4().to_string(),
         kind: kind.into(),
@@ -644,15 +693,12 @@ fn repeated_literal_opportunity(
         path: path.into(),
         language: language.into(),
         score,
-        safety: "high".into(),
+        safety: safety.into(),
         effort: "low".into(),
         line_start: line,
         line_end: line,
         suggestion: suggestion.into(),
-        evidence: vec![
-            format!("{count} repeated occurrences"),
-            context_evidence.into(),
-        ],
+        evidence,
     })
 }
 
@@ -783,6 +829,12 @@ fn source_string_literals(content: &str, language: &str) -> Vec<(String, usize)>
         }
 
         if language == "rust" {
+            if bytes[index] == b'\'' {
+                if let Some(after) = rust_char_literal_after(bytes, index) {
+                    index = after;
+                    continue;
+                }
+            }
             if let Some((content_start, hashes)) = rust_raw_string_open(bytes, index) {
                 if let Some((content_end, after)) =
                     rust_raw_string_bounds(bytes, content_start, hashes)
@@ -834,6 +886,35 @@ fn source_string_literals(content: &str, language: &str) -> Vec<(String, usize)>
     }
 
     literals
+}
+
+fn rust_char_literal_after(bytes: &[u8], start: usize) -> Option<usize> {
+    if bytes.get(start) != Some(&b'\'') {
+        return None;
+    }
+
+    let content_start = start + 1;
+    let mut cursor = content_start;
+    if bytes.get(cursor) == Some(&b'\\') {
+        cursor += 1;
+        if bytes.get(cursor) == Some(&b'u') && bytes.get(cursor + 1) == Some(&b'{') {
+            cursor += 2;
+            while bytes.get(cursor).is_some_and(|byte| *byte != b'}') {
+                cursor += 1;
+            }
+            if bytes.get(cursor) != Some(&b'}') {
+                return None;
+            }
+            cursor += 1;
+        } else {
+            cursor += 1;
+        }
+    } else {
+        let text = std::str::from_utf8(bytes.get(content_start..)?).ok()?;
+        cursor += text.chars().next()?.len_utf8();
+    }
+
+    (bytes.get(cursor) == Some(&b'\'')).then_some(cursor + 1)
 }
 
 fn line_end(bytes: &[u8], start: usize) -> usize {
@@ -1225,6 +1306,8 @@ fn should_ignore_literal(literal: &str) -> bool {
         || trimmed.starts_with("https://")
         || trimmed.starts_with("./")
         || trimmed.starts_with("../")
+        || is_non_actionable_style_literal(trimmed)
+        || is_template_placeholder(trimmed)
 }
 
 fn literal_preview(literal: &str) -> String {
