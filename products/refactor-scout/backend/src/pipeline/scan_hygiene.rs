@@ -53,6 +53,15 @@ impl FunctionShape {
             Self::SqlSchema => -10,
         }
     }
+
+    pub(super) fn has_review_evidence(self, line_count: usize, control_markers: usize) -> bool {
+        match self {
+            Self::ComplexLogic => line_count >= 80 || control_markers >= 4,
+            Self::DeclarativeJsx => line_count >= 80,
+            Self::EmbeddedStylesheet => line_count >= 200,
+            Self::LookupTable | Self::SqlSchema => line_count >= 100,
+        }
+    }
 }
 
 pub(super) fn classify_function_shape(

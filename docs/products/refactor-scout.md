@@ -52,12 +52,16 @@ refactor is safe or even necessary.
 - Long bodies are classified before scoring. Declarative JSX, embedded styles,
   SQL/schema declarations, and lookup tables remain visible but receive
   category-specific explanations and lower complexity weight than branching
-  application logic.
+  application logic. A body must also clear a shape-specific evidence floor:
+  short straight-line functions, sub-80-line declarative components, and small
+  schema/table wrappers do not enter the queue merely for crossing 60 lines.
 - Repeated strings are judged by usage context as well as count. Validation
   paths and technical contract values with one consistent usage role may
   become high-confidence candidates. Contract-shaped strings in declarative
   registries or mixed configuration roles remain closer-review candidates,
-  as do interface copy and general repetition even when they occur many times.
+  as do interface copy and general repetition when they have enough recurrence
+  to justify inspection. Three generic or interface-copy occurrences alone do
+  not create a finding.
 - File and function size use bounded scoring curves, and equal scores are
   ordered by source span. This keeps the review queue ranked without turning
   every large body into the same near-maximum score.

@@ -611,6 +611,9 @@ fn long_function_opportunities(
         let body = &lines[start..=end];
         let shape = classify_function_shape(language, &name, lines, start, end);
         let control_markers = control_flow_markers(body);
+        if !shape.has_review_evidence(line_count, control_markers) {
+            continue;
+        }
         let base_score = 52 + bounded_score_bonus(line_count - LONG_FUNCTION_THRESHOLD, 31, 120);
         let score = adjusted_score(
             base_score,
@@ -732,8 +735,20 @@ fn repeated_literal_opportunity(
 
     let (literal, (count, first_offset, offsets)) = literals
         .into_iter()
-        .filter(|(literal, (count, _, _))| {
-            literal.len() >= REPEATED_LITERAL_MIN_LEN && *count >= REPEATED_LITERAL_MIN_REPEATS
+        .filter(|(literal, (count, _, offsets))| {
+            if literal.len() < REPEATED_LITERAL_MIN_LEN || *count < REPEATED_LITERAL_MIN_REPEATS {
+                return false;
+            }
+
+            if repeated_validation_pattern(content, offsets) {
+                return true;
+            }
+
+            match classify_literal_context(literal, content, offsets) {
+                LiteralContext::Contract => true,
+                LiteralContext::General => *count >= 4,
+                LiteralContext::UiCopy => *count >= 5,
+            }
         })
         .max_by(|left, right| {
             let left_score = left.1 .0 as usize * left.0.len();

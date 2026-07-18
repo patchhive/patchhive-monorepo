@@ -42,12 +42,26 @@ mod tests {
 const A = "service unavailable while syncing billing customers";
 const B = "service unavailable while syncing billing customers";
 const C = "service unavailable while syncing billing customers";
+const D = "service unavailable while syncing billing customers";
 "#;
 
         let opportunities = analyze_file("src/client.ts", "typescript", source);
         assert!(opportunities
             .iter()
             .any(|item| item.kind == "repeated_literal" && item.safety == "medium"));
+    }
+
+    #[test]
+    fn three_general_literals_do_not_enter_the_review_queue() {
+        let source = r#"
+const A = "service unavailable while syncing billing customers";
+const B = "service unavailable while syncing billing customers";
+const C = "service unavailable while syncing billing customers";
+"#;
+
+        assert!(!analyze_file("src/client.ts", "typescript", source)
+            .iter()
+            .any(|item| item.kind == "repeated_literal"));
     }
 
     #[test]
@@ -224,6 +238,7 @@ const E = "group-data-[collapsible=icon]:hidden";
 const A = "service-token auth is not configured for this product";
 const B = "service-token auth is not configured for this product";
 const C = "service-token auth is not configured for this product";
+const D = "service-token auth is not configured for this product";
 "#;
 
         let opportunity = analyze_file("src/auth.rs", "rust", source)
@@ -248,7 +263,7 @@ const C = "service-token auth is not configured for this product";
     #[test]
     fn embedded_stylesheet_gets_stylesheet_guidance() {
         let mut source = String::from("function CommandCenterStyles() {\n  return <style>{`\n");
-        for index in 0..70 {
+        for index in 0..210 {
             source.push_str(&format!("  .selector-{index} {{ color: red; }}\n"));
         }
         source.push_str("  `}</style>;\n}\n");
@@ -273,6 +288,7 @@ const C = "service-token auth is not configured for this product";
 const A: &str = "service said \"try again later\"";
 const B: &str = "service said \"try again later\"";
 const C: &str = "service said \"try again later\"";
+const D: &str = "service said \"try again later\"";
 "#;
 
         let opportunities = analyze_file("src/messages.rs", "rust", source);
@@ -327,6 +343,7 @@ mod tests {
 const A: &str = "runtime service boundary message";
 const B: &str = "runtime service boundary message";
 const C: &str = "runtime service boundary message";
+const D: &str = "runtime service boundary message";
 "#;
 
         let opportunities = analyze_file("src/contract.rs", "rust", source);
@@ -414,7 +431,7 @@ fn validate_three(repo: &str) -> anyhow::Result<()> {
     #[test]
     fn declarative_jsx_is_not_described_as_branching_complexity() {
         let mut source = String::from("function ProductPanel() {\n  return (\n    <section>\n");
-        for index in 0..70 {
+        for index in 0..100 {
             source.push_str(&format!(
                 "      <div className=\"row\">Item {index}</div>\n"
             ));
@@ -435,7 +452,7 @@ fn validate_three(repo: &str) -> anyhow::Result<()> {
         let mut source = String::from(
             "fn init_db(connection: &Connection) {\n    connection.execute_batch(r#\"\n",
         );
-        for index in 0..70 {
+        for index in 0..100 {
             source.push_str(&format!(
                 "CREATE TABLE example_{index} (id INTEGER PRIMARY KEY);\n"
             ));
@@ -455,7 +472,7 @@ fn validate_three(repo: &str) -> anyhow::Result<()> {
         let mut source = String::from(
             "fn credential_requirements(product: &str) -> &'static [&'static str] {\n    match product {\n",
         );
-        for index in 0..65 {
+        for index in 0..100 {
             source.push_str(&format!("        \"product-{index}\" => &[\"token\"],\n"));
         }
         source.push_str("        _ => &[],\n    }\n}\n");
@@ -499,7 +516,7 @@ fn validate_three(repo: &str) -> anyhow::Result<()> {
             source
         }
 
-        let short = analyze_file("src/short.rs", "rust", &rust_function(70))
+        let short = analyze_file("src/short.rs", "rust", &rust_function(90))
             .into_iter()
             .find(|item| item.kind == "long_function")
             .expect("short candidate");
@@ -518,11 +535,42 @@ fn validate_three(repo: &str) -> anyhow::Result<()> {
     }
 
     #[test]
+    fn short_straight_line_bodies_do_not_enter_the_review_queue() {
+        let mut source = String::from("fn cohesive_setup() {\n");
+        for index in 0..70 {
+            source.push_str(&format!("    configure_step_{index}();\n"));
+        }
+        source.push_str("}\n");
+
+        assert!(!analyze_file("src/setup.rs", "rust", &source)
+            .iter()
+            .any(|item| item.kind == "long_function"));
+    }
+
+    #[test]
+    fn shorter_control_dense_bodies_remain_reviewable() {
+        let mut source = String::from("fn branching_setup() {\n");
+        for index in 0..20 {
+            source.push_str(&format!(
+                "    if condition_{index}() {{\n        configure_{index}();\n    }}\n"
+            ));
+        }
+        source.push_str("}\n");
+
+        let opportunity = analyze_file("src/setup.rs", "rust", &source)
+            .into_iter()
+            .find(|item| item.kind == "long_function")
+            .expect("control-dense body should remain reviewable");
+        assert!(opportunity.summary.contains("control-flow markers"));
+    }
+
+    #[test]
     fn test_and_fixture_leads_rank_below_runtime_equivalents() {
         let source = r#"
 const A: &str = "shared production boundary message";
 const B: &str = "shared production boundary message";
 const C: &str = "shared production boundary message";
+const D: &str = "shared production boundary message";
 "#;
 
         let runtime = analyze_file("src/client.rs", "rust", source)
@@ -622,6 +670,7 @@ fn lifetime_value<'a>(value: &'a str) -> &'a str { value }
 const A: &str = "repeated service boundary literal";
 const B: &str = "repeated service boundary literal";
 const C: &str = "repeated service boundary literal";
+const D: &str = "repeated service boundary literal";
 "#,
             )
             .expect("fixture should write");
