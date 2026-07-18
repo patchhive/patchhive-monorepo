@@ -2,7 +2,8 @@
 
 **Status:** Architecture decision recorded; not implemented.
 
-**Working names:** MailHive, InboxBee. Neither name is final.
+**Preferred working name:** HiveMail. Final confirmation remains open until
+scaffolding.
 
 ## Decision
 
@@ -231,8 +232,8 @@ unified-backend contracts and expose its operator surface through HiveCore.
 ### Specialist product
 
 Best only if the email system develops a distinct operator workflow, persistent
-inbox, triage queue, analytics, and standalone user value. Working names include
-**MailHive** and **InboxBee**.
+inbox, triage queue, analytics, and standalone user value. The preferred working
+name is **HiveMail**.
 
 The current decision is intentionally narrower: PatchHive owns the capability,
 and Hermes is not part of its production runtime.
@@ -313,7 +314,8 @@ delivery. Those responsibilities require a trusted backend.
 
 Before implementation, decide:
 
-- final name and packaging: backend module, suite service, or specialist product;
+- confirm HiveMail before scaffolding and choose the final packaging: backend
+  module, suite service, or specialist product;
 - mailbox address and Google Workspace ownership;
 - polling interval versus Gmail push notifications;
 - repository-owner verification flow for opt-outs and requested actions;
