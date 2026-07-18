@@ -33,6 +33,10 @@ static RUST_FN_RE: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"^\s*(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?fn\s+([A-Za-z_][A-Za-z0-9_]*)")
         .expect("rust function regex should compile")
 });
+static RUST_MOD_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"^\s*(?:pub(?:\([^)]*\))?\s+)?mod\s+[A-Za-z_][A-Za-z0-9_]*")
+        .expect("rust module regex should compile")
+});
 static PY_FN_RE: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"^\s*def\s+([A-Za-z_][A-Za-z0-9_]*)").expect("python function regex should compile")
 });
@@ -582,9 +586,14 @@ fn repeated_literal_opportunity(
     content: &str,
 ) -> Option<RefactorOpportunity> {
     let mut literals: HashMap<String, (u32, usize, Vec<usize>)> = HashMap::new();
+    let inline_test_ranges = if language == "rust" {
+        rust_inline_test_module_ranges(content)
+    } else {
+        Vec::new()
+    };
 
     for (literal, offset) in source_string_literals(content, language) {
-        if is_non_extractable_literal_context(content, language, offset) {
+        if is_non_extractable_literal_context(content, language, offset, &inline_test_ranges) {
             continue;
         }
 
@@ -660,8 +669,17 @@ fn repeated_literal_opportunity(
     })
 }
 
-fn is_non_extractable_literal_context(content: &str, language: &str, offset: usize) -> bool {
-    language == "rust" && is_inside_rust_attribute(content, offset)
+fn is_non_extractable_literal_context(
+    content: &str,
+    language: &str,
+    offset: usize,
+    inline_test_ranges: &[(usize, usize)],
+) -> bool {
+    language == "rust"
+        && (is_inside_rust_attribute(content, offset)
+            || inline_test_ranges
+                .iter()
+                .any(|(start, end)| (*start..*end).contains(&offset)))
 }
 
 fn is_inside_rust_attribute(content: &str, offset: usize) -> bool {
@@ -672,6 +690,50 @@ fn is_inside_rust_attribute(content: &str, offset: usize) -> bool {
     prefix
         .rfind(']')
         .is_none_or(|attribute_end| attribute_start > attribute_end)
+}
+
+fn rust_inline_test_module_ranges(content: &str) -> Vec<(usize, usize)> {
+    let lines = content.lines().collect::<Vec<_>>();
+    let mut line_offsets = vec![0usize];
+    line_offsets.extend(
+        content
+            .match_indices('\n')
+            .map(|(newline_offset, _)| newline_offset + 1),
+    );
+    let mut ranges = Vec::new();
+
+    for cfg_line in 0..lines.len() {
+        if lines[cfg_line].trim() != "#[cfg(test)]" {
+            continue;
+        }
+
+        let mut module_line = None;
+        for (index, line) in lines.iter().enumerate().skip(cfg_line + 1) {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with("#[") {
+                continue;
+            }
+            if RUST_MOD_RE.is_match(line) {
+                module_line = Some(index);
+            }
+            break;
+        }
+        let Some(module_line) = module_line else {
+            continue;
+        };
+
+        let Some(end_line) = brace_function_end(&lines, module_line, "rust") else {
+            continue;
+        };
+        let start = line_offsets[module_line];
+        let end = line_offsets
+            .get(end_line + 1)
+            .copied()
+            .unwrap_or(content.len());
+        ranges.push((start, end));
+    }
+
+    ranges
 }
 
 fn repeated_validation_pattern(content: &str, offsets: &[usize]) -> bool {

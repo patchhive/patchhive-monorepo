@@ -113,6 +113,39 @@ struct Example {
     }
 
     #[test]
+    fn inline_rust_test_literals_do_not_hide_runtime_leads_after_the_module() {
+        let source = r#"
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn one() {
+        assert_eq!("patchhive/example", "patchhive/example");
+    }
+
+    #[test]
+    fn two() {
+        let payload = serde_json::json!({ "repo": "patchhive/example" });
+        assert_eq!(payload["repo"], "patchhive/example");
+    }
+}
+
+const A: &str = "runtime service boundary message";
+const B: &str = "runtime service boundary message";
+const C: &str = "runtime service boundary message";
+"#;
+
+        let opportunities = analyze_file("src/contract.rs", "rust", source);
+        let repeated = opportunities
+            .iter()
+            .find(|item| item.kind == "repeated_literal")
+            .expect("runtime literal after the test module should remain visible");
+        assert!(repeated
+            .summary
+            .contains("runtime service boundary message"));
+        assert!(!repeated.summary.contains("patchhive/example"));
+    }
+
+    #[test]
     fn repeated_validation_gets_context_aware_guidance() {
         let source = r#"
 fn validate_one(repo: &str) -> anyhow::Result<()> {
