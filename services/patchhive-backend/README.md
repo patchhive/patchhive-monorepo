@@ -60,9 +60,10 @@ The importer reads the canonical databases for every currently integrated
 product, preserves SignalHive history, maps RefactorScout's formerly generic
 tables to `refactor_scout_*`, merges shared schedules by their product-aware
 keys, and records per-table source counts in
-`database_consolidation_manifest`. Re-running it is safe: rows are upserted by
-their existing keys and the manifest is refreshed. RepoReaper and HiveCore
-remain outside this importer until their engines move in-process.
+`database_consolidation_manifest`. Re-running it is safe: new rows are imported
+by their existing keys without overwriting newer consolidated state, and the
+manifest is refreshed. RepoReaper and HiveCore remain outside this importer
+until their engines move in-process.
 
 ## First Contract
 

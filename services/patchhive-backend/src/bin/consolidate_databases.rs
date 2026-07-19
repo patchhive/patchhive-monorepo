@@ -238,7 +238,7 @@ fn copy_table(
         .collect::<Vec<_>>()
         .join(", ");
     let insert_sql = format!(
-        "INSERT OR REPLACE INTO {} ({column_sql}) VALUES ({placeholders})",
+        "INSERT OR IGNORE INTO {} ({column_sql}) VALUES ({placeholders})",
         quote_identifier(destination_table)
     );
     let mut insert = target.prepare(&insert_sql)?;
