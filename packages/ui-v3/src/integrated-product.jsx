@@ -227,8 +227,30 @@ function HistoryRow({ config, entry, onLoad }) {
   );
 }
 
+function QueueEmptyState({ emptyLabel, hiddenCount, onShowAll }) {
+  if (!hiddenCount) {
+    return <div className={`py-14 text-center text-[13px] ${V3_TEXT.mute}`}>{emptyLabel}</div>;
+  }
+
+  return (
+    <div className="py-12 text-center">
+      <div className={`text-[13px] ${V3_TEXT.body}`}>
+        {hiddenCount} tracked {hiddenCount === 1 ? "finding is" : "findings are"} hidden by the current search or filters.
+      </div>
+      <button
+        className={`surface-inset mt-4 h-9 rounded-full px-4 text-[11px] font-semibold ${V3_TEXT.strong}`}
+        onClick={onShowAll}
+        type="button"
+      >
+        Show all findings
+      </button>
+    </div>
+  );
+}
+
 export function IntegratedProductApp({ apiBase, auth, config, fetcher }) {
   const storagePrefix = `${config.productKey}.v3`;
+  const dashboardDefaultView = config.dashboard?.defaultView || { sort: "default" };
   const inputRef = useRef(null);
   const initialRunId = useRef(typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("run") || "");
   const tabs = [{ id: "workspace", label: config.workspaceLabel }, { id: "history", label: "History" }, ...(config.extraTabs || []).map(({ id, label }) => ({ id, label })), { id: "checks", label: "Checks" }, { id: "sources", label: "Sources" }];
@@ -253,7 +275,7 @@ export function IntegratedProductApp({ apiBase, auth, config, fetcher }) {
   const [running, setRunning] = useState(false);
   const dashboard = useSavedDashboardViews({
     storageKey: `${storagePrefix}.dashboard`,
-    defaultView: config.dashboard?.defaultView || { sort: "default" },
+    defaultView: dashboardDefaultView,
   });
   const historyDashboard = useSavedDashboardViews({
     storageKey: `${storagePrefix}.history-dashboard`,
@@ -388,6 +410,17 @@ export function IntegratedProductApp({ apiBase, auth, config, fetcher }) {
   const canRun = config.canRun ? config.canRun(form, health) : config.requiresRepo === false || Boolean(form.repo?.trim());
   const queueTotal = config.queueTotal?.(result, items) ?? items.length;
   const queueTotalLabel = config.queueTotalLabel?.(result, items) || "tracked";
+  const hasActiveDashboardFilter = Boolean(query.trim())
+    || Object.entries(dashboardDefaultView).some(
+      ([key, defaultValue]) => dashboard.view[key] !== defaultValue,
+    );
+  const hiddenQueueCount = filtered.length === 0 && items.length > 0 && hasActiveDashboardFilter
+    ? items.length
+    : 0;
+  const showAllQueueItems = () => {
+    dashboard.resetView();
+    setQuery("");
+  };
 
   if (selected) return <ProductShell productKey={config.productKey}><Detail config={config} item={selected} onBack={() => setSelected(null)} /></ProductShell>;
 
@@ -402,7 +435,7 @@ export function IntegratedProductApp({ apiBase, auth, config, fetcher }) {
             <div className="surface col-span-12 lg:col-span-4 p-6 overflow-hidden"><div className="absolute -top-20 -right-16 h-56 w-56 rounded-full opacity-40 blur-2xl" style={{ backgroundImage: "var(--orb-1)" }} /><div className="relative"><div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute} flex items-center gap-1.5`}><Clock size={11} />{config.assessmentLabel || "Current decision"}</div><div className={`mt-3 font-display text-[46px] font-semibold ${V3_TEXT.strong} leading-none`}>{status.label}</div><div className={`mt-2 text-[12px] leading-relaxed ${V3_TEXT.mute}`}>{status.detail}</div><div className="mt-6 h-2 rounded-full overflow-hidden" style={{ background: "var(--surface-border)" }}><div className="h-full rounded-full" style={{ width: status.progress || "70%", backgroundImage: "linear-gradient(90deg, var(--accent), var(--accent-2))" }} /></div><PriorityHighlights className="mt-6" emptyLabel={result ? config.priorityEmptyLabel : `Run ${config.name} to load prioritized findings.`} items={priorityItems} label={config.priorityLabel} onOpen={(opened) => setSelected({ ...opened, runId: result?.id, runCreatedAt: result?.created_at })} /></div></div>
           </section>
           <section className="mt-8 grid grid-cols-2 lg:grid-cols-4 gap-4">{metrics.slice(0, 4).map((metric) => <MetricCard icon={Activity} key={metric.label} {...metric} />)}</section>
-          <section className="mt-8 grid grid-cols-12 gap-6"><div className="col-span-12 lg:col-span-8"><div className="surface p-5"><div className="mb-4"><div><div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>{config.queueLabel}</div><div className={`font-display text-2xl mt-0.5 ${V3_TEXT.strong}`}>{filtered.length} in view <span className={`${V3_TEXT.dim} font-normal`}>/ {queueTotal} {queueTotalLabel}</span></div></div></div>{config.dashboard ? <DashboardControls filters={dashboardFilters} onApplySavedView={dashboard.applyView} onDeleteSavedView={dashboard.deleteView} onFilterChange={dashboard.updateView} onQueryChange={setQuery} onReset={() => { dashboard.resetView(); setQuery(""); }} onSaveView={dashboard.saveView} onSortChange={(nextSort) => dashboard.updateView("sort", nextSort)} query={query} savedViews={dashboard.savedViews} searchPlaceholder={config.searchPlaceholder} sort={dashboard.view.sort} sortOptions={config.dashboard.sortOptions} /> : <div className="surface-inset flex items-center gap-2 rounded-full px-3 h-9 w-full sm:w-[260px]"><Search size={13} className={V3_TEXT.dim} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={config.searchPlaceholder} className={`bg-transparent outline-none text-[12px] w-full ${V3_TEXT.strong}`} /></div>}<div className="mt-5">{loading ? <div className={`py-14 text-center ${V3_TEXT.mute}`}>Loading…</div> : <ProgressiveList batchCount={config.dashboard?.batchCount || 60} empty={<div className={`py-14 text-center text-[13px] ${V3_TEXT.mute}`}>{config.emptyLabel}</div>} initialCount={config.dashboard?.initialCount || 6} itemLabel={config.dashboard?.itemLabel || "items"} items={filtered} renderItem={(item) => <ItemRow item={item} key={item.id} onOpen={(opened) => setSelected({ ...opened, runId: result?.id, runCreatedAt: result?.created_at })} />} resetKey={`${result?.id || ""}|${query}|${JSON.stringify(dashboard.view)}`} />}</div></div></div><aside className="col-span-12 lg:col-span-4 space-y-6"><div className="surface p-5 overflow-hidden"><div className="absolute -top-10 -right-10 h-32 w-32 rounded-full opacity-60 blur-2xl" style={{ backgroundImage: "var(--orb-1)" }} /><div className="relative"><div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>Active target</div><div className={`mt-2 font-display text-[22px] font-semibold ${V3_TEXT.strong}`}>{targetLabel}</div><div className={`text-[12px] ${V3_TEXT.mute}`}>{config.targetSubtitle(result)}</div></div></div><div className="surface p-5"><div className="flex items-center justify-between mb-3"><div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>Recent runs</div><Cpu size={13} className={V3_TEXT.mute} /></div>{history.slice(0, 4).map((entry, index) => <button key={entry.id} onClick={() => load(entry.id)} className={`w-full flex items-center justify-between py-2 text-left ${index ? "border-t" : ""}`} style={index ? { borderColor: "var(--surface-border-2)" } : undefined} type="button"><div><div className={`text-[13px] ${V3_TEXT.strong}`}>{config.historyTitle(entry)}</div><div className={`text-[11px] ${V3_TEXT.mute}`}>{timeAgo(entry.created_at)} ago</div></div><ArrowUpRight size={13} className={V3_TEXT.dim} /></button>)}</div></aside></section>
+          <section className="mt-8 grid grid-cols-12 gap-6"><div className="col-span-12 lg:col-span-8"><div className="surface p-5"><div className="mb-4"><div><div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>{config.queueLabel}</div><div className={`font-display text-2xl mt-0.5 ${V3_TEXT.strong}`}>{filtered.length} in view <span className={`${V3_TEXT.dim} font-normal`}>/ {queueTotal} {queueTotalLabel}</span></div></div></div>{config.dashboard ? <DashboardControls filters={dashboardFilters} onApplySavedView={dashboard.applyView} onDeleteSavedView={dashboard.deleteView} onFilterChange={dashboard.updateView} onQueryChange={setQuery} onReset={showAllQueueItems} onSaveView={dashboard.saveView} onSortChange={(nextSort) => dashboard.updateView("sort", nextSort)} query={query} savedViews={dashboard.savedViews} searchPlaceholder={config.searchPlaceholder} sort={dashboard.view.sort} sortOptions={config.dashboard.sortOptions} /> : <div className="surface-inset flex items-center gap-2 rounded-full px-3 h-9 w-full sm:w-[260px]"><Search size={13} className={V3_TEXT.dim} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={config.searchPlaceholder} className={`bg-transparent outline-none text-[12px] w-full ${V3_TEXT.strong}`} /></div>}<div className="mt-5">{loading ? <div className={`py-14 text-center ${V3_TEXT.mute}`}>Loading…</div> : <ProgressiveList batchCount={config.dashboard?.batchCount || 60} empty={<QueueEmptyState emptyLabel={config.emptyLabel} hiddenCount={hiddenQueueCount} onShowAll={showAllQueueItems} />} initialCount={config.dashboard?.initialCount || 6} itemLabel={config.dashboard?.itemLabel || "items"} items={filtered} renderItem={(item) => <ItemRow item={item} key={item.id} onOpen={(opened) => setSelected({ ...opened, runId: result?.id, runCreatedAt: result?.created_at })} />} resetKey={`${result?.id || ""}|${query}|${JSON.stringify(dashboard.view)}`} />}</div></div></div><aside className="col-span-12 lg:col-span-4 space-y-6"><div className="surface p-5 overflow-hidden"><div className="absolute -top-10 -right-10 h-32 w-32 rounded-full opacity-60 blur-2xl" style={{ backgroundImage: "var(--orb-1)" }} /><div className="relative"><div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>Active target</div><div className={`mt-2 font-display text-[22px] font-semibold ${V3_TEXT.strong}`}>{targetLabel}</div><div className={`text-[12px] ${V3_TEXT.mute}`}>{config.targetSubtitle(result)}</div></div></div><div className="surface p-5"><div className="flex items-center justify-between mb-3"><div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>Recent runs</div><Cpu size={13} className={V3_TEXT.mute} /></div>{history.slice(0, 4).map((entry, index) => <button key={entry.id} onClick={() => load(entry.id)} className={`w-full flex items-center justify-between py-2 text-left ${index ? "border-t" : ""}`} style={index ? { borderColor: "var(--surface-border-2)" } : undefined} type="button"><div><div className={`text-[13px] ${V3_TEXT.strong}`}>{config.historyTitle(entry)}</div><div className={`text-[11px] ${V3_TEXT.mute}`}>{timeAgo(entry.created_at)} ago</div></div><ArrowUpRight size={13} className={V3_TEXT.dim} /></button>)}</div></aside></section>
           {WorkspaceDetails ? <WorkspaceDetails health={health} onError={setError} onLoad={load} result={result} /> : null}
         </> : null}
         {activeTab === "history" ? <HistoryDashboard dashboard={historyDashboard} filters={historyFilters} initialCount={config.historyDashboard?.initialCount || 6} items={filteredHistory} loading={loading} onQueryChange={setHistoryQuery} onRefresh={() => refresh(false)} query={historyQuery} renderItem={(entry) => <HistoryRow config={config} entry={entry} key={entry.id} onLoad={load} />} searchPlaceholder={config.historyDashboard?.searchPlaceholder || "Search run, repository, PR…"} sortOptions={config.historyDashboard?.sortOptions || [{ value: "newest", label: "Newest first" }]} totalCount={history.length} /> : null}
