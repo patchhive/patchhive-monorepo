@@ -1,5 +1,5 @@
+use crate::github::repo_reaper_github_token;
 use anyhow::{anyhow, Result};
-use patchhive_github_pr::github_token_from_env;
 use patchhive_product_core::validation::TestExecutionStatus;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
@@ -112,7 +112,7 @@ pub async fn git_clone(
     let token = bot_token
         .map(|s| s.to_string())
         .filter(|value| !value.trim().is_empty())
-        .or_else(github_token_from_env)
+        .or_else(repo_reaper_github_token)
         .unwrap_or_default();
     let email = env_str("BOT_GITHUB_EMAIL");
     let askpass_user = if user.trim().is_empty() {
@@ -176,7 +176,7 @@ pub async fn git_commit_push(
     let token = bot_token
         .map(|s| s.to_string())
         .filter(|value| !value.trim().is_empty())
-        .or_else(github_token_from_env)
+        .or_else(repo_reaper_github_token)
         .unwrap_or_default();
     let askpass_user = if user.trim().is_empty() {
         "x-access-token"

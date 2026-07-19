@@ -479,19 +479,14 @@ All auth endpoints return JSON responses with appropriate messages:
 | `DEP_TRIAGE_DB_POOL_SIZE` | — | SQLite connection pool size |
 | `DEP_TRIAGE_API_KEY_HASH` | — | Argon2 hash for API key auth (optional) |
 | `DEP_TRIAGE_SERVICE_TOKEN_HASH` | — | Argon2 hash for HiveCore service token (optional) |
-| `BOT_GITHUB_TOKEN` | — | GitHub personal access token for API calls (recommended) |
-| `GITHUB_TOKEN` | — | Fallback GitHub token (optional, less preferred) |
+| `PATCHHIVE_GITHUB_TOKEN_RO` | — | GitHub personal access token for API calls (recommended) |
 | `RUST_LOG` | `info` | Logging level |
 
 ### GitHub Token Scope
 
-Recommended scopes (fine-grained PAT):
+Use `public_repo` for public repositories or `repo` for private repositories. Add `security_events` when Dependabot alert enrichment is required.
 
-- **Metadata:** read
-- **Pull requests:** read
-- **Dependabot alerts:** read (required for alert enrichment)
-
-DepTriage works best with a fine-grained GitHub token. Reading pull requests is enough for the base product loop. Dependabot alert reads need the matching security permission; without that access, DepTriage still scores dependency pull requests and reports the limitation clearly.
+DepTriage uses the suite-wide classic PAT. Reading pull requests is enough for the base product loop. Dependabot alert reads need the matching security permission; without that access, DepTriage still scores dependency pull requests and reports the limitation clearly.
 
 ---
 
@@ -676,7 +671,7 @@ DepTriage identifies the automation tool from PR content:
 |---|---|---|
 | `scan_count` | DB | Total dependency scans performed |
 | `update_now / watch / ignore_for_now` | DB | Recommendation distribution — high `ignore_for_now` rate may indicate healthy dependency posture or stale scans |
-| `github_ready` | Config | Whether `BOT_GITHUB_TOKEN` is configured |
+| `github_ready` | Config | Whether `PATCHHIVE_GITHUB_TOKEN_RO` is configured |
 | `config_errors` | Startup checks | Count of failed startup validations |
 | `tracked_item_count` | DB | Total dependency items tracked across all scans |
 | `open_alerts` | Scan result | Total Dependabot security alerts associated with tracked items |
@@ -690,7 +685,7 @@ DepTriage identifies the automation tool from PR content:
 ```bash
 cd products/dep-triage
 cp .env.example .env
-# Edit .env: set BOT_GITHUB_TOKEN and optionally configure auth
+# Edit .env: set PATCHHIVE_GITHUB_TOKEN_RO and optionally configure auth
 docker compose up --build
 ```
 
@@ -738,7 +733,7 @@ services:
 
 For production deployment:
 
-1. Set `BOT_GITHUB_TOKEN` with appropriate scopes
+1. Set `PATCHHIVE_GITHUB_TOKEN_RO` with appropriate scopes
 2. Set `DEP_TRIAGE_API_KEY_HASH` for API auth
 3. Set `DEP_TRIAGE_SERVICE_TOKEN_HASH` for HiveCore dispatch
 4. Configure `DEP_TRIAGE_DB_PATH` to a persisted volume
@@ -750,7 +745,7 @@ For production deployment:
 
 | Symptom | Likely Cause | Check |
 |---|---|---|
-| `502 BAD_GATEWAY` on scan | GitHub API is unreachable or token invalid | Verify `BOT_GITHUB_TOKEN` is set and valid; check GitHub API rate limits |
+| `502 BAD_GATEWAY` on scan | GitHub API is unreachable or token invalid | Verify `PATCHHIVE_GITHUB_TOKEN_RO` is set and valid; check GitHub API rate limits |
 | Scan returns zero items | No dependency PRs or alerts detected for the repo | Verify repo is correct `owner/name` format; check that dependency PRs are open and use recognized keywords |
 | Dependabot alerts not appearing | Token lacks Dependabot alerts read permission, or `include_alerts` is `false` | Set `include_alerts: true` and grant Dependabot alerts read scope to token |
 | `400 BAD_REQUEST` on scan | `repo` field is not in `owner/name` format | Ensure the repo string has exactly one `/` separator |

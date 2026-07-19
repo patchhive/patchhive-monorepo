@@ -225,7 +225,7 @@ All errors are wrapped in the `ApiEnvelope` format:
 | `PATCHHIVE_LAUNCHER_URL` | — | Base URL for the local `patchhive-launcher` service that controls Docker start/stop |
 | `PATCHHIVE_SUITE_BOOTSTRAP_SECRET` | — | Shared bootstrap secret for automatic service-token provisioning/rotation across products |
 | `PATCHHIVE_ALLOW_REMOTE_BOOTSTRAP` | — | Set to `true` to allow API key generation from non-localhost clients |
-| `BOT_GITHUB_TOKEN` | — | Optional GitHub fine-grained PAT for future control-plane GitHub reads. Metadata (read) scope is sufficient |
+| `PATCHHIVE_GITHUB_TOKEN_RO` | — | Optional suite-wide classic PAT for future GitHub reads. Use `public_repo` for public repositories or `repo` for private repositories |
 | `RUST_LOG` | `info` | Logging level |
 
 Generate `HIVECORE_ENCRYPTION_KEY` with `openssl rand -hex 32`. Startup checks
@@ -493,7 +493,7 @@ The `docker-compose.yml` runs the backend as a single container with SQLite on a
 | Frontend v2 | 🚧 In progress |
 | Destructive action dispatch | ❌ Blocked — requires explicit approval flow |
 | Cross-product orchestration (e.g., RepoReaper + ReleaseSentry handoff) | ❌ Future — will build on shared capability contracts |
-| GitHub token for control-plane reads | ❌ Optional — env var exists but `BOT_GITHUB_TOKEN` is not yet wired into product operations |
+| GitHub token for control-plane reads | ❌ Optional — env var exists but `PATCHHIVE_GITHUB_TOKEN_RO` is not yet wired into product operations |
 
 ---
 

@@ -61,14 +61,14 @@ cd ../frontend && npm install && npm run dev
 
 | Variable | Purpose |
 | --- | --- |
-| `BOT_GITHUB_TOKEN` or `GITHUB_TOKEN` | Optional fine-grained PAT for dependency pull request and Dependabot reads. Recommended scopes: Metadata (read), Pull requests (read), Dependabot alerts (read). |
+| `PATCHHIVE_GITHUB_TOKEN_RO` | Suite-wide classic PAT with `public_repo` or `repo`; add `security_events` for Dependabot alert reads. |
 | `DEP_TRIAGE_API_KEY_HASH` | Optional pre-seeded app auth hash. Otherwise generate the first local key from the UI. |
 | `DEP_TRIAGE_SERVICE_TOKEN_HASH` | Optional pre-seeded service-token hash for HiveCore or other PatchHive product callers. |
 | `DEP_TRIAGE_DB_PATH` | SQLite path for scan history. |
 | `DEP_TRIAGE_PORT` | Backend port for split local runs. |
 | `RUST_LOG` | Rust logging level. |
 
-DepTriage works best with a fine-grained GitHub token. Reading pull requests is enough for the base product loop. Dependabot alert reads need the matching security permission; without that access, DepTriage still scores dependency pull requests and reports the limitation clearly.
+DepTriage works best with a classic GitHub token. Reading pull requests is enough for the base product loop. Dependabot alert reads need the matching security permission; without that access, DepTriage still scores dependency pull requests and reports the limitation clearly.
 
 The first API key and service token are bootstrapped locally (generate from the UI, or via the localhost-only `/auth/generate-key` and `/auth/generate-service-token` endpoints). When starting the unified backend by sourcing `products/dep-triage/.env` in a shell, quote any JSON service-token value — unquoted JSON can be flattened by the shell and treated as a legacy token string. HiveCore service-token pairing should use a properly quoted/exported value, the product wrapper's `dotenvy` loading path, or a regenerated scoped service token before depending on service dispatch.
 

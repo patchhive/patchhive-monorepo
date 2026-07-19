@@ -141,8 +141,8 @@ gate passed.
 
 | Variable | Purpose |
 |----------|---------|
-| `BOT_GITHUB_TOKEN` | GitHub credential for PR reads and optional publishing. Fine-grained PATs support selected-repository analysis. PAT publishing requires repository write access plus classic `public_repo` for public repos or `repo` for private repos; native check runs require a GitHub App. |
-| `GITHUB_TOKEN` | Fallback GitHub token. |
+| `PATCHHIVE_GITHUB_TOKEN_RO` | Shared classic PAT for PR, review, mergeability, and check reads. |
+| `MERGE_KEEPER_GITHUB_TOKEN_RW` | Dedicated classic PAT for explicit commit-status and maintained-comment publishing; native check runs require a GitHub App. |
 | `MERGE_KEEPER_GITHUB_WEBHOOK_SECRET` | Optional signed webhook secret for auto-refresh on supported PR events. |
 | `MERGE_KEEPER_PUBLIC_URL` | Optional public URL for deep-links from GitHub artifacts back to saved runs. |
 | `MERGE_KEEPER_REQUIRE_APPROVAL` | Default approval policy (`true` = require one active approval before calling a PR ready). Manual API runs can override per assessment. Defaults to `true`. |
@@ -408,7 +408,7 @@ on port 5197 while it remains useful as parity reference material.
 ```bash
 cd products/merge-keeper/backend
 cp ../.env.example .env
-# Set BOT_GITHUB_TOKEN at minimum
+# Set PATCHHIVE_GITHUB_TOKEN_RO at minimum
 cargo run --release
 ```
 
@@ -418,7 +418,7 @@ The backend runs on `MERGE_KEEPER_PORT` (default 8050). No external database ser
 
 | Symptom | Cause | Check |
 |---------|-------|-------|
-| `POST /assess/github/pr` returns `502` | GitHub API error — missing or invalid token, network issue, or PR doesn't exist | Verify `BOT_GITHUB_TOKEN` or `GITHUB_TOKEN` is set and has Metadata (read) + Pull requests (read) scopes. Verify the repo and PR number are correct. |
+| `POST /assess/github/pr` returns `502` | GitHub API error — missing or invalid token, network issue, or PR doesn't exist | Verify `PATCHHIVE_GITHUB_TOKEN_RO` is set to a valid classic PAT with `public_repo` or `repo`. Verify the repo and PR number are correct. |
 | `POST /assess/github/pr` returns `400 "Repository must be in owner/name format"` | `repo` field is not in `owner/repo-name` format | Ensure the `repo` value contains exactly one `/` with non-empty owner and name segments. |
 | GitHub report is not published (`github_report.delivered: false`) | Token identity lacks repository write access or its token lacks publishing scope | Check `github_report.details`. For a public-repo PAT path, give the PatchHive identity repository write access and use a classic PAT with `public_repo`; use `repo` for private repos. Native check runs require a GitHub App, but the commit-status fallback is a complete status signal. |
 | Webhook returns `401` | Signature mismatch — `MERGE_KEEPER_GITHUB_WEBHOOK_SECRET` doesn't match the webhook secret configured in GitHub | Compare the webhook secret in GitHub repo settings with the `.env` value. |

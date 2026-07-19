@@ -32,7 +32,7 @@ When enabled, downstream products call RepoMemory through `PATCHHIVE_REPO_MEMORY
 
 ## Inputs
 
-- **GitHub token** (optional, via `BOT_GITHUB_TOKEN`): fine-grained PAT with Metadata (read), Pull requests (read), Issues (read) scopes.
+- **GitHub token** (optional, via `PATCHHIVE_GITHUB_TOKEN_RO`): suite-wide classic PAT with `public_repo` for public repositories or `repo` for private repositories.
 - **Repository reference** (`owner/repo` format): target repo for ingestion.
 - **Ingest parameters**: merged PR limit (5–40), issue limit (5–40), lookback window (30–730 days).
 - **FailGuard candidates** from operators, TrustGate (`warn`/`block`), RepoReaper (Smith rejection below confidence threshold), or future products.
@@ -89,7 +89,7 @@ v1 and v2 frontends have been removed.
 
 | Variable | Purpose | Default |
 |---|---|---|
-| `BOT_GITHUB_TOKEN` | Optional fine-grained PAT for merged PR, review, issue, and file hotspot reads. Scopes: Metadata (read), Pull requests (read), Issues (read). | unset |
+| `PATCHHIVE_GITHUB_TOKEN_RO` | Suite-wide classic PAT for GitHub reads. Use `public_repo` for public repositories or `repo` for private repositories. | unset |
 | `REPO_MEMORY_API_KEY_HASH` | Optional pre-seeded app auth hash. Otherwise generate the first local key from the UI. | unset |
 | `REPO_MEMORY_SERVICE_TOKEN_HASH` | Optional pre-seeded service-token hash for HiveCore or other PatchHive product callers. | unset |
 | `REPO_MEMORY_DB_PATH` | SQLite path for runs and memory entries. | `repo-memory.db` |
@@ -451,7 +451,7 @@ All endpoints verified from `main.rs`. Routes marked **public** do not require a
 - **`status`**: `"ok"` if no config errors and DB healthy; `"degraded"` otherwise.
 - **`config_errors`**: count of failed startup checks (from `startup::validate_config`).
 - **`db_ok`**: true if `SELECT 1` succeeds on the SQLite pool.
-- **`github_ready`**: true if `BOT_GITHUB_TOKEN` or `GITHUB_TOKEN` is set.
+- **`github_ready`**: true if `PATCHHIVE_GITHUB_TOKEN_RO` is set.
 
 ### Logging
 
@@ -484,7 +484,7 @@ cargo build --release
 |---|---|---|
 | `401 Unauthorized` on protected endpoints | Missing or invalid API key | Set `REPO_MEMORY_API_KEY_HASH` in `.env` or generate from UI at `http://localhost:5176` |
 | `503 Service Unavailable` on `/auth/login` | Auth not configured yet | Generate first API key via the UI or `POST /auth/generate-key` |
-| Ingestion returns `502 Bad Gateway` | GitHub API error | Verify `BOT_GITHUB_TOKEN` is set and has correct scopes (Metadata: read, Pull requests: read, Issues: read) |
+| Ingestion returns `502 Bad Gateway` | GitHub API error | Verify `PATCHHIVE_GITHUB_TOKEN_RO` is set and has correct scopes (Metadata: read, Pull requests: read, Issues: read) |
 | Ingestion returns 0 memories | No merged PRs or closed issues in the lookback window | Increase `since_days` (max 730) or verify repo has recent PR/issue activity |
 | `partial_read_warnings` > 0 in ingest summary | GitHub API rate limiting or permission errors on individual PR reviews/comments/files | Check GitHub token scopes and rate limit status |
 | Health shows `status: "degraded"` | Config errors or DB connection failure | Check `config_errors` count and `db_ok` field; inspect startup checks via `GET /startup/checks` |

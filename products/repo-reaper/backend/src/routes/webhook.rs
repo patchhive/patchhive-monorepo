@@ -8,7 +8,7 @@ use axum::{
     Json, Router,
 };
 use chrono::{Duration, Utc};
-use patchhive_github_pr::{env_value, github_token_from_env, verify_github_webhook_signature};
+use patchhive_github_pr::{env_value, verify_github_webhook_signature};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -350,7 +350,7 @@ async fn webhook_pr_comment(state: AppState, repo: &str, issue: Value, comment: 
         .as_deref()
         .filter(|value| !value.trim().is_empty())
         .map(|s| s.to_string())
-        .or_else(github_token_from_env)
+        .or_else(crate::github::repo_reaper_github_token)
         .unwrap_or_default();
     let bot_user = reaper
         .bot_user

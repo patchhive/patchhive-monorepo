@@ -6,14 +6,11 @@ use reqwest::{
 use serde_json::{json, Value};
 use std::fmt;
 
-use crate::{
-    models::{
-        GitHubCheckRunRequest, GitHubCheckRunResult, GitHubCheckRunSummary, GitHubCommitHealth,
-        GitHubCommitStatusRequest, GitHubCommitStatusResult, GitHubManagedCommentResult,
-        GitHubPullRequestDetail, GitHubPullReview, GitHubPullReviewThread,
-        GitHubPullReviewThreadComment, GitHubStatusContext,
-    },
-    webhook::github_token_from_env,
+use crate::models::{
+    GitHubCheckRunRequest, GitHubCheckRunResult, GitHubCheckRunSummary, GitHubCommitHealth,
+    GitHubCommitStatusRequest, GitHubCommitStatusResult, GitHubManagedCommentResult,
+    GitHubPullRequestDetail, GitHubPullReview, GitHubPullReviewThread,
+    GitHubPullReviewThreadComment, GitHubStatusContext,
 };
 
 const GH_API: &str = "https://api.github.com";
@@ -43,10 +40,6 @@ impl GitHubPrClient {
                 .filter(|value| !value.is_empty()),
             user_agent: user_agent.into(),
         }
-    }
-
-    pub fn with_env_token(client: Client, user_agent: impl Into<String>) -> Self {
-        Self::new(client, github_token_from_env(), user_agent)
     }
 
     pub fn token_configured(&self) -> bool {

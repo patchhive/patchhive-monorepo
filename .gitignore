@@ -17,6 +17,7 @@ target/
 .env.*
 .env.local
 .env.*.local
+.backups/
 !.env.example
 .npmrc
 .netrc

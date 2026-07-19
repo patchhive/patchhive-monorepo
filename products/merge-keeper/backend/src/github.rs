@@ -1,11 +1,15 @@
 use anyhow::Result;
 use patchhive_github_pr::{
-    env_value, github_token_from_env, GitHubCheckRunRequest, GitHubCommitHealth,
-    GitHubCommitStatusRequest, GitHubManagedCommentResult, GitHubPrClient, GitHubPullRequestDetail,
-    GitHubPullReview, GitHubPullReviewThread,
+    env_value, GitHubCheckRunRequest, GitHubCommitHealth, GitHubCommitStatusRequest,
+    GitHubManagedCommentResult, GitHubPrClient, GitHubPullRequestDetail, GitHubPullReview,
+    GitHubPullReviewThread,
 };
 use patchhive_product_core::{
-    branding::append_product_signature, github_auth::github_token_may_create_check_runs,
+    branding::append_product_signature,
+    github_auth::{
+        github_read_token, github_token_may_create_check_runs, github_write_token,
+        github_write_token_configured,
+    },
 };
 use reqwest::Client;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -16,6 +20,7 @@ use crate::models::{GitHubReportOutcome, MergeAssessment};
 const STATUS_CONTEXT: &str = "mergekeeper/readiness";
 const CHECK_RUN_NAME: &str = "MergeKeeper";
 const COMMENT_MARKER: &str = "<!-- patchhive-mergekeeper-report -->";
+const GITHUB_WRITE_TOKEN_ENV: &str = "MERGE_KEEPER_GITHUB_TOKEN_RW";
 const MERGEABLE_REFRESH_ATTEMPTS: usize = 2;
 const MERGEABLE_REFRESH_DELAY_MS: u64 = 900;
 static REPORT_PUBLISH_VERIFIED: AtomicBool = AtomicBool::new(false);
@@ -44,7 +49,11 @@ pub struct GitHubMergeContext {
 }
 
 pub fn github_token_configured() -> bool {
-    github_token_from_env().is_some()
+    github_read_token().is_some()
+}
+
+pub fn report_publish_configured() -> bool {
+    github_write_token_configured(GITHUB_WRITE_TOKEN_ENV)
 }
 
 pub fn webhook_secret() -> Option<String> {
@@ -64,7 +73,15 @@ pub fn report_publish_verified() -> bool {
 }
 
 fn pr_client(client: &Client) -> GitHubPrClient {
-    GitHubPrClient::with_env_token(client.clone(), "merge-keeper/0.1")
+    GitHubPrClient::new(client.clone(), github_read_token(), "merge-keeper/0.1")
+}
+
+fn publish_client(client: &Client) -> GitHubPrClient {
+    GitHubPrClient::new(
+        client.clone(),
+        github_write_token(GITHUB_WRITE_TOKEN_ENV),
+        "merge-keeper/0.1",
+    )
 }
 
 pub async fn fetch_merge_context(
@@ -373,13 +390,13 @@ pub async fn publish_assessment_outcome(
     };
 
     let markdown = render_comment_markdown(assessment);
-    if !github_token_configured() {
+    if !report_publish_configured() {
         return GitHubReportOutcome {
             attempted: true,
             delivered: false,
             method: "none".into(),
             state: "missing_token".into(),
-            message: "BOT_GITHUB_TOKEN or GITHUB_TOKEN is required before MergeKeeper can publish back to GitHub.".into(),
+            message: "MERGE_KEEPER_GITHUB_TOKEN_RW is required before MergeKeeper can publish back to GitHub.".into(),
             details: vec![
                 "GitHub PR assessment still works for public repos without a token.".into(),
                 "Maintained PR comments and check-style signals stay disabled until a token is configured.".into(),
@@ -392,7 +409,7 @@ pub async fn publish_assessment_outcome(
         };
     }
 
-    let gh = pr_client(client);
+    let gh = publish_client(client);
     let target_repo = if github.head_repo.trim().is_empty() {
         assessment.repo.as_str()
     } else {
@@ -407,7 +424,7 @@ pub async fn publish_assessment_outcome(
     let mut comment_url = String::new();
     let mut comment_mode = String::new();
 
-    if github_token_from_env()
+    if github_write_token(GITHUB_WRITE_TOKEN_ENV)
         .as_deref()
         .is_some_and(github_token_may_create_check_runs)
     {

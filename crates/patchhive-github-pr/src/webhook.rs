@@ -12,10 +12,6 @@ pub fn env_value(names: &[&str]) -> Option<String> {
     })
 }
 
-pub fn github_token_from_env() -> Option<String> {
-    env_value(&["BOT_GITHUB_TOKEN", "GITHUB_TOKEN"])
-}
-
 pub fn verify_github_webhook_signature(
     headers: &HeaderMap,
     body: &[u8],

@@ -1,15 +1,19 @@
 use anyhow::Result;
 use patchhive_github_pr::{
-    env_value, github_token_from_env, GitHubManagedCommentResult, GitHubPrClient,
-    GitHubPullRequestDetail, GitHubPullReview, GitHubPullReviewThread,
+    env_value, GitHubManagedCommentResult, GitHubPrClient, GitHubPullRequestDetail,
+    GitHubPullReview, GitHubPullReviewThread,
 };
-use patchhive_product_core::branding::append_product_signature;
+use patchhive_product_core::{
+    branding::append_product_signature,
+    github_auth::{github_read_token, github_write_token, github_write_token_configured},
+};
 use reqwest::Client;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::models::{GitHubReportOutcome, ReviewResult};
 
 const COMMENT_MARKER: &str = "<!-- patchhive-reviewbee-report -->";
+const GITHUB_WRITE_TOKEN_ENV: &str = "REVIEW_BEE_GITHUB_TOKEN_RW";
 static COMMENT_PUBLISH_VERIFIED: AtomicBool = AtomicBool::new(false);
 
 pub struct GitHubReviewContext {
@@ -19,7 +23,11 @@ pub struct GitHubReviewContext {
 }
 
 pub fn github_token_configured() -> bool {
-    github_token_from_env().is_some()
+    github_read_token().is_some()
+}
+
+pub fn comment_publish_configured() -> bool {
+    github_write_token_configured(GITHUB_WRITE_TOKEN_ENV)
 }
 
 pub fn webhook_secret() -> Option<String> {
@@ -39,7 +47,15 @@ pub fn comment_publish_verified() -> bool {
 }
 
 fn pr_client(client: &Client) -> GitHubPrClient {
-    GitHubPrClient::with_env_token(client.clone(), "review-bee/0.1")
+    GitHubPrClient::new(client.clone(), github_read_token(), "review-bee/0.1")
+}
+
+fn publish_client(client: &Client) -> GitHubPrClient {
+    GitHubPrClient::new(
+        client.clone(),
+        github_write_token(GITHUB_WRITE_TOKEN_ENV),
+        "review-bee/0.1",
+    )
 }
 
 pub async fn fetch_review_context(
@@ -237,15 +253,15 @@ pub async fn publish_review_outcome(client: &Client, review: &ReviewResult) -> G
         );
     };
 
-    if !github_token_configured() {
+    if !comment_publish_configured() {
         return preview_review_outcome(
             review,
-            "Configure BOT_GITHUB_TOKEN or GITHUB_TOKEN before ReviewBee can maintain PR comments.",
+            "Configure REVIEW_BEE_GITHUB_TOKEN_RW before ReviewBee can maintain PR comments.",
         );
     }
 
     let markdown = render_comment_markdown(review);
-    let client = pr_client(client);
+    let client = publish_client(client);
     match client
         .upsert_issue_comment(&github.repo, github.pr_number, COMMENT_MARKER, &markdown)
         .await

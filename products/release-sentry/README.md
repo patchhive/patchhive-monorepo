@@ -112,7 +112,7 @@ migration is tested.
 
 | Variable | Purpose |
 | --- | --- |
-| `BOT_GITHUB_TOKEN` | GitHub fine-grained PAT for release-readiness checks. Scopes: Metadata (read), Contents (read), Actions (read), Issues (read), Deployments/Releases (read). |
+| `PATCHHIVE_GITHUB_TOKEN_RO` | Suite-wide classic PAT for GitHub reads. Use `public_repo` for public repositories or `repo` for private repositories. |
 | `RELEASE_SENTRY_API_KEY_HASH` | Optional pre-seeded API-key auth hash. Otherwise generate the first local key from the UI. |
 | `RELEASE_SENTRY_SERVICE_TOKEN_HASH` | Optional pre-seeded service-token hash for HiveCore dispatch. |
 | `RELEASE_SENTRY_DB_PATH` | SQLite path for run history. |
@@ -122,8 +122,7 @@ migration is tested.
 | `RUST_LOG` | Rust logging level. |
 | `PATCHHIVE_ALLOW_REMOTE_BOOTSTRAP` | Set `true` to allow API-key generation from non-localhost. |
 
-GitHub-backed checks should use a fine-grained token with Metadata (read), Contents (read),
-Actions (read), Issues (read), and Deployments/Releases read access where available. Keep
+GitHub-backed checks should use the suite-wide classic PAT with `public_repo` for public repositories or `repo` for private repositories. Keep
 repository access public-only unless release readiness for private repos is explicitly enabled.
 
 ## Safety Boundary

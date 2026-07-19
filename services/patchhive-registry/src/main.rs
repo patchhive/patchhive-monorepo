@@ -17,7 +17,7 @@ use crate::state::AppState;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    dotenvy::dotenv().ok();
+    patchhive_product_core::environment::load_patchhive_env()?;
     init_tracing();
 
     let config = Config::from_env()?;

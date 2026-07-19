@@ -65,7 +65,7 @@ cd ../frontend && npm install && npm run dev
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `BOT_GITHUB_TOKEN` | — | Fine-grained PAT for SignalHive scans. Recommended scopes: Metadata (read), Issues (read), and Contents (read) when GitHub-backed code-search reads are needed. |
+| `PATCHHIVE_GITHUB_TOKEN_RO` | — | Suite-wide classic PAT for GitHub reads. Use `public_repo` for public repositories or `repo` for private repositories. |
 | `SIGNAL_API_KEY_HASH` | — | Optional pre-seeded app auth hash. The monorepo helper can set it for a stable suite password. |
 | `SIGNAL_SERVICE_TOKEN_HASH` | — | Optional service-token hash for HiveCore or other PatchHive service callers. |
 | `PATCHHIVE_ALLOW_REMOTE_BOOTSTRAP` | — | Allows first-time key bootstrap from non-localhost clients. Keep unset for local use. |
@@ -74,7 +74,7 @@ cd ../frontend && npm install && npm run dev
 | `SIGNAL_MARKER_REPO_LIMIT` | `4` | Caps TODO/FIXME code-search scans to the top-ranked repos. |
 | `RUST_LOG` | `info` | Rust logging level. |
 
-SignalHive works best with a fine-grained GitHub token. For public-only scanning, start with `Metadata: Read` and `Issues: Read`; add `Contents: Read` only if your setup needs GitHub-backed TODO or FIXME code-search reads.
+SignalHive works best with a classic GitHub token. For public-only scanning, start with `Metadata: Read` and `Issues: Read`; add `Contents: Read` only if your setup needs GitHub-backed TODO or FIXME code-search reads.
 
 To keep the same password across SignalHive, TrustGate, RepoReaper, and HiveCore, run `./scripts/set-suite-api-key.sh --stack first` from the monorepo root and restart the stack. For every PatchHive product, run `./scripts/set-suite-api-key.sh` with no extra flags. Once the hash is pre-seeded, logging in through a subdomain works normally without remote bootstrap.
 

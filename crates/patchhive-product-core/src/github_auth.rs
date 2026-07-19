@@ -4,24 +4,90 @@ use reqwest::{
     Client,
 };
 use serde::Deserialize;
+use std::fmt;
 
 const GITHUB_API_USER: &str = "https://api.github.com/user";
+pub const PATCHHIVE_GITHUB_TOKEN_RO: &str = "PATCHHIVE_GITHUB_TOKEN_RO";
+pub const REPO_REAPER_GITHUB_TOKEN_RW: &str = "REPO_REAPER_GITHUB_TOKEN_RW";
+const LEGACY_BOT_GITHUB_TOKEN: &str = "BOT_GITHUB_TOKEN";
+const LEGACY_GITHUB_TOKEN: &str = "GITHUB_TOKEN";
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 pub struct GitHubIdentity {
     pub login: String,
 }
 
+#[derive(Clone, Eq, PartialEq)]
+pub struct ResolvedGitHubToken {
+    value: String,
+    env_var: &'static str,
+    legacy: bool,
+}
+
+impl fmt::Debug for ResolvedGitHubToken {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ResolvedGitHubToken")
+            .field("value", &"[redacted]")
+            .field("env_var", &self.env_var)
+            .field("legacy", &self.legacy)
+            .finish()
+    }
+}
+
+impl ResolvedGitHubToken {
+    pub fn value(&self) -> &str {
+        &self.value
+    }
+
+    pub fn into_value(self) -> String {
+        self.value
+    }
+
+    pub fn env_var(&self) -> &'static str {
+        self.env_var
+    }
+
+    pub fn is_legacy(&self) -> bool {
+        self.legacy
+    }
+}
+
+pub fn resolved_github_read_token() -> Option<ResolvedGitHubToken> {
+    resolve_from_env(&[
+        (PATCHHIVE_GITHUB_TOKEN_RO, false),
+        (LEGACY_BOT_GITHUB_TOKEN, true),
+        (LEGACY_GITHUB_TOKEN, true),
+    ])
+}
+
+pub fn github_read_token() -> Option<String> {
+    resolved_github_read_token().map(ResolvedGitHubToken::into_value)
+}
+
+/// Compatibility alias for read-only GitHub clients.
 pub fn github_token() -> Option<String> {
-    ["BOT_GITHUB_TOKEN", "GITHUB_TOKEN"]
-        .iter()
-        .find_map(|name| std::env::var(name).ok())
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
+    github_read_token()
 }
 
 pub fn github_token_configured() -> bool {
-    github_token().is_some()
+    resolved_github_read_token().is_some()
+}
+
+pub fn github_write_token(env_var: &'static str) -> Option<String> {
+    resolve_from_env(&[(env_var, false)]).map(ResolvedGitHubToken::into_value)
+}
+
+pub fn github_write_token_configured(env_var: &'static str) -> bool {
+    github_write_token(env_var).is_some()
+}
+
+pub fn github_read_token_source() -> Option<&'static str> {
+    resolved_github_read_token().map(|token| token.env_var())
+}
+
+pub fn github_read_token_uses_legacy_name() -> bool {
+    resolved_github_read_token().is_some_and(|token| token.is_legacy())
 }
 
 /// Returns whether a token represents GitHub App authentication that may create check runs.
@@ -36,11 +102,24 @@ pub fn github_token_may_create_check_runs(token: &str) -> bool {
 }
 
 pub async fn verify_github_token(client: &Client) -> Result<GitHubIdentity> {
-    let token = github_token()
-        .ok_or_else(|| anyhow!("[missing_token]: BOT_GITHUB_TOKEN or GITHUB_TOKEN is not set"))?;
+    let token = github_read_token()
+        .ok_or_else(|| anyhow!("[missing_token]: PATCHHIVE_GITHUB_TOKEN_RO is not set"))?;
+    verify_github_token_value(client, &token).await
+}
+
+pub async fn verify_github_write_token(
+    client: &Client,
+    env_var: &'static str,
+) -> Result<GitHubIdentity> {
+    let token = github_write_token(env_var)
+        .ok_or_else(|| anyhow!("[missing_token]: {env_var} is not set"))?;
+    verify_github_token_value(client, &token).await
+}
+
+pub async fn verify_github_token_value(client: &Client, token: &str) -> Result<GitHubIdentity> {
     let response = client
         .get(GITHUB_API_USER)
-        .headers(github_headers(&token)?)
+        .headers(github_headers(token)?)
         .timeout(std::time::Duration::from_secs(15))
         .send()
         .await
@@ -60,6 +139,20 @@ pub async fn verify_github_token(client: &Client) -> Result<GitHubIdentity> {
         return Err(anyhow!("GitHub token verification returned an empty login"));
     }
     Ok(identity)
+}
+
+fn resolve_from_env(names: &[(&'static str, bool)]) -> Option<ResolvedGitHubToken> {
+    names.iter().find_map(|(name, legacy)| {
+        std::env::var(name)
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .map(|value| ResolvedGitHubToken {
+                value,
+                env_var: name,
+                legacy: *legacy,
+            })
+    })
 }
 
 fn github_headers(token: &str) -> Result<HeaderMap> {

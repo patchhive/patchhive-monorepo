@@ -1,113 +1,84 @@
-# GitHub Token Scopes
+# GitHub Credential Contract
 
-PatchHive products do not all need the same GitHub access. Use the narrowest
-fine-grained personal access token or GitHub App installation token that supports
-the product being tested.
+PatchHive uses one suite-wide credential for GitHub reads and separate
+product-owned credentials for GitHub writes. GitHub credentials are distinct
+from PatchHive operator API keys and peer-service tokens.
 
-GitHub tokens are separate from PatchHive operator API keys and product service
-tokens. Operator API keys log into a local product. Product service tokens let
-HiveCore call product-owned APIs. GitHub tokens let product backends read or
-write GitHub data.
+## Canonical variables
 
-Most products read `BOT_GITHUB_TOKEN` first and may fall back to `GITHUB_TOKEN`
-when the product supports that fallback. Keep raw tokens out of logs, screenshots,
-and committed files.
+| Variable | Owner | Use |
+| --- | --- | --- |
+| `PATCHHIVE_GITHUB_TOKEN_RO` | Suite | Repository, pull-request, issue, Actions, release, history, and security reads. |
+| `MERGE_KEEPER_GITHUB_TOKEN_RW` | MergeKeeper | Explicitly requested status and maintained-comment publishing. |
+| `REVIEW_BEE_GITHUB_TOKEN_RW` | ReviewBee | Explicitly requested maintained checklist comments. |
+| `TRUST_GATE_GITHUB_TOKEN_RW` | TrustGate | Explicitly requested status and maintained-comment publishing. |
+| `REPO_REAPER_GITHUB_TOKEN_RW` | RepoReaper | Discovery, forks, branches, commits, and pull requests. |
 
-## Token Types
+`BOT_GITHUB_TOKEN` and `GITHUB_TOKEN` remain temporary read-path compatibility
+aliases. New configuration and publishing code must not use them. The shared
+read credential is never a fallback for a write client.
 
-Fine-grained tokens are preferred because they can be limited to specific
-repositories and specific repository permissions.
+## Recommended classic PATs
 
-For classic personal access tokens, use the smallest equivalent scope:
+Use a classic PAT with:
 
-- Public read-only scans usually need no classic scope beyond public access, but
-  `public_repo` raises the rate limit and allows public-repo write operations
-  when a write-capable product explicitly needs them. Protected security feeds
-  such as code scanning alerts and Dependabot alerts still need `public_repo`
-  for public-only classic-token access.
-- Private repository reads and writes usually require `repo`; security alert
-  reads should prefer the narrower `security_events` scope when a classic token
-  is unavoidable.
-- Code scanning alert reads may require `security_events`.
-- Workflow file edits require workflow write capability.
+- `public_repo` when PatchHive only works with public repositories;
+- `repo` when private repositories are intentionally in scope;
+- `security_events` in addition when code-scanning or Dependabot alert reads
+  require it;
+- `workflow` only on RepoReaper's dedicated credential when RepoReaper is
+  explicitly allowed to change files under `.github/workflows`.
 
-Classic tokens are broader and easier to overgrant, so treat them as fallback
-credentials.
+GitHub classic PAT scopes are not truly read-only. `public_repo` and `repo`
+authorize more than reads. PatchHive enforces the read boundary in code by
+constructing read clients only from `PATCHHIVE_GITHUB_TOKEN_RO` and refusing to
+use it for publishing.
 
-## Product Matrix
+For least privilege beyond that code boundary, use a GitHub App. Native check
+runs require GitHub App authentication; PAT-backed publishers use commit
+statuses plus maintained PR comments.
 
-| Product | Base fine-grained permissions | Optional permissions | Why |
-| --- | --- | --- | --- |
-| SignalHive | Metadata read, Issues read, Contents read | None | Repository discovery, issue/backlog reads, and TODO/FIXME code-search evidence. |
-| ReviewBee | Metadata read, Pull requests read | Issues write or Pull requests write | Reads PR metadata, reviews, review comments, and review-thread state. Write access is only for maintained PR checklist comments. |
-| TrustGate | None for pasted diffs; Metadata read and Pull requests read for PR diff review | For PAT publishing, use a write-capable bot collaborator and classic `public_repo` (public repos) or `repo` (private repos); use a GitHub App for native check runs | Pasted diff review is local. GitHub mode reads PR diffs and may publish a maintained comment plus either a commit status or check run. |
-| RepoMemory | Metadata read, Pull requests read, Issues read, Contents read | None | Reads merged PRs, review/comment/file context, closed issues, and lightweight file evidence for durable repo memory. |
-| MergeKeeper | Metadata read, Pull requests read | Actions read; for PAT publishing use a write-capable bot account and classic `public_repo` (public repos) or `repo` (private repos); use a GitHub App for native check runs | Reads PR state, reviewer state, mergeability, review pressure, and optional CI evidence. A complete publish is a maintained PR comment plus either a check run or commit status. |
-| FlakeSting | Metadata read, Actions read | None | Reads workflow runs and workflow jobs to detect pass/fail swings and unstable steps. |
-| DepTriage | Metadata read, Pull requests read | Dependabot alerts read | Reads dependency PRs. Dependabot alert access enriches security urgency, but the product still ranks dependency PRs when alert access is unavailable. |
-| VulnTriage | Metadata read, Code scanning alerts read, Dependabot alerts read, with the target repository selected | None | Reads GitHub security alert feeds. These feeds can still return `403` if alerts are disabled, the repo was not selected for the token, or the token owner lacks security access. |
-| RefactorScout | No GitHub token for local filesystem scans | Metadata read, Contents read for future GitHub-backed scans | Current MVP scans configured local paths. |
-| ReleaseSentry | Metadata read, Contents read, Actions read, Pull requests read | Code scanning alerts read, Dependabot alerts read, Deployments read, Commit statuses write or Checks write if publishing becomes enabled | Reads release files, tags/check context, PR/release pressure, and optional security/dependency pressure. |
-| RepoReaper | Metadata read, Contents read/write, Pull requests read/write, Issues read | Issues write for issue updates, Actions read for validation context, Workflows read/write only when editing `.github/workflows` | Clones or reads repos, creates branches/commits, opens PRs, and may reference issues. This token should belong to the PatchHive bot identity. |
-| HiveCore | No GitHub token for current control-plane reads | Metadata read for future suite-level GitHub checks | HiveCore primarily stores product service tokens and calls product APIs. Product GitHub work should stay behind product-owned backends. |
+## Product matrix
 
-## MergeKeeper Publish Test Token
+| Product | Shared read credential | Dedicated write credential |
+| --- | --- | --- |
+| SignalHive | Repository, issue, and code-search evidence | None |
+| RepoMemory | Merged PR, review, file, and closed-issue history | None |
+| FlakeSting | Actions workflow runs and jobs | None |
+| DepTriage | Dependency PRs and optional Dependabot alerts | None |
+| VulnTriage | Code-scanning and Dependabot alerts | None |
+| RefactorScout | Public GitHub clone and repository metadata | None |
+| ReleaseSentry | Repository, tag, release, PR, issue, status, and Actions evidence | None |
+| MergeKeeper | PR, review, mergeability, and check evidence | `MERGE_KEEPER_GITHUB_TOKEN_RW` |
+| ReviewBee | PR reviews, comments, and thread state | `REVIEW_BEE_GITHUB_TOKEN_RW` |
+| TrustGate | PR metadata and diff reads | `TRUST_GATE_GITHUB_TOKEN_RW` |
+| RepoReaper | None; its autonomous workflow is one write-capable boundary | `REPO_REAPER_GITHUB_TOKEN_RW` |
+| HiveCore | No direct GitHub work in the current control plane | None |
 
-Fine-grained PATs are suitable for analysis when the token's resource owner owns
-or controls the selected repository. They are not a way for the PatchHive bot
-identity to gain write access to an unrelated owner's repository.
+## Permission behavior
 
-For the verified public-repository publishing path, add the PatchHive identity
-as a write collaborator and use that identity's classic PAT with `public_repo`.
-Use `repo` instead for private repositories. MergeKeeper and TrustGate use a
-commit status directly for PAT publishing and reserve native check runs for
-GitHub App authentication. Full delivery requires both the status signal and
-the maintained PR comment. A partial write remains visible as
-`report_partial` and does not verify the publishing path.
+- Token acceptance only proves that GitHub recognizes the identity.
+- Every product verifies target-specific read access during the run.
+- A configured write credential is not reported as verified until a
+  target-specific write succeeds.
+- Repository security settings and the token owner's access can still make
+  protected alert APIs return `403`.
+- Missing protected evidence remains a warning. It is never interpreted as zero
+  risk.
+- Public-repository write access still depends on the token owner having
+  collaborator or equivalent repository permission.
 
-## DepTriage Test Token
+## Common failures
 
-For the DepTriage rerun, use a fine-grained token selected for the target test
-repositories with:
+- `Resource not accessible by personal access token`: the token owner lacks
+  target access, a required classic scope is absent, or the endpoint requires a
+  GitHub App.
+- `You must authenticate via a GitHub App`: native check runs do not accept a
+  PAT. PatchHive should use its commit-status fallback.
+- Security-alert `403`: add `security_events`, confirm the repository exposes
+  the feed, and confirm the token owner can view repository security alerts.
+- Empty results with no warning: the product read the feed and found no matching
+  evidence in the requested scope.
 
-- Metadata: read
-- Pull requests: read
-- Dependabot alerts: read if security alert enrichment is expected
-
-If Dependabot alerts are disabled on the target repo, or the token owner cannot
-see that repo's security alerts, GitHub can return `403 Forbidden`. That should
-be shown as unavailable security evidence, not as "no dependency risk exists."
-
-## Common Failure Shapes
-
-- `Resource not accessible by personal access token`: the token does not have
-  the needed repository permission, the repo was not selected for the token, or
-  the token owner does not have access to that protected data.
-- `Code scanning alerts could not be read`: select the target repository and
-  grant `Code scanning alerts` read on a fine-grained token, or
-  `security_events` on a classic token. The token owner must also be able to see
-  that repository's security alerts. For public-only classic-token scans,
-  `public_repo` can be used instead.
-- `Dependabot alerts could not be read`: select the target repository and grant
-  `Dependabot alerts` read on a fine-grained token, or `security_events` on a
-  classic token. The token owner must also be able to see that repository's
-  security alerts. For public-only classic-token scans, `public_repo` can be
-  used instead.
-- `Dependabot alerts are disabled for this repository`: the repo does not expose
-  Dependabot alert data to this token.
-- Empty results with no warning: the product could read the feed and found no
-  matching data in the requested window.
-
-## Official Permission References
-
-- GitHub Actions workflow runs and jobs use the `Actions` repository permission.
-- Repository issues use the `Issues` repository permission.
-- Repository contents and file reads use the `Contents` repository permission.
-- Pull request metadata, reviews, and review comments use the `Pull requests`
-  repository permission.
-- PR checklist comments use the issue-comment API, which accepts `Issues` write
-  or `Pull requests` write.
-- Creating check runs requires a GitHub App installation token. PAT-based
-  publishers should use a commit status for the status signal.
-- Code scanning alerts use the `Code scanning alerts` repository permission.
-- Dependabot alerts use the `Dependabot alerts` repository permission.
+Keep raw tokens only in the ignored canonical root `.env`. Never put them in
+logs, screenshots, committed files, or frontend storage.

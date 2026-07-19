@@ -1,6 +1,7 @@
 pub mod auth;
 pub mod branding;
 pub mod contract;
+pub mod environment;
 pub mod github_auth;
 pub mod github_permissions;
 pub mod hivecore_policy;

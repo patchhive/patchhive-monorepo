@@ -217,7 +217,7 @@ function groupDependencyFindings(findings, sort = "priority-desc") {
 function warningLabel(warning) {
   const value = String(warning || "");
   const lower = value.toLowerCase();
-  if (value.includes("BOT_GITHUB_TOKEN is not set") || value.includes("GITHUB_TOKEN is not set")) return "Security feeds were skipped because GitHub token access is not configured.";
+  if (value.includes("PATCHHIVE_GITHUB_TOKEN_RO is not set") || value.includes("BOT_GITHUB_TOKEN is not set") || value.includes("GITHUB_TOKEN is not set")) return "Security feeds were skipped because GitHub token access is not configured.";
   if (value.includes("403 Forbidden") || value.includes("[missing_token_scope]") || value.includes("[forbidden]") || lower.includes("resource not accessible")) return `${value.includes("dependabot") ? "Dependabot" : "Code scanning"} alerts could not be read. ${SECURITY_SCOPE_HINT}`;
   if (lower.includes("dependabot alerts are disabled")) return "Dependabot alerts are disabled for this repository, so dependency vulnerability pressure is unavailable.";
   if (lower.includes("code scanning is not enabled")) return "Code scanning is not enabled for this repository, so code-level security findings are unavailable.";

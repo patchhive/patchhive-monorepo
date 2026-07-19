@@ -40,11 +40,11 @@ use crate::state::AppState;
 
 #[tokio::main]
 async fn main() {
+    patchhive_product_core::environment::load_patchhive_env()
+        .expect("failed to load PatchHive environment");
     tracing_subscriber::fmt()
         .with_env_filter(std::env::var("RUST_LOG").unwrap_or_else(|_| "info".into()))
         .init();
-
-    let _ = dotenvy::dotenv();
 
     if let Err(err) = db::init_db() {
         eprintln!("DB init failed: {err}");

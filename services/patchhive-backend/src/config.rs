@@ -17,7 +17,7 @@ pub enum ProductSelection {
 
 impl Config {
     pub fn from_env() -> Result<Self> {
-        dotenvy::dotenv().ok();
+        patchhive_product_core::environment::load_patchhive_env()?;
 
         let bind_addr = env::var("PATCHHIVE_BIND_ADDR")
             .unwrap_or_else(|_| {

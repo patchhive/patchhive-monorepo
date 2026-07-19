@@ -948,6 +948,7 @@ name = "patchhive-github-data"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "patchhive-product-core",
  "reqwest",
  "serde",
  "serde_json",
@@ -962,6 +963,7 @@ dependencies = [
  "anyhow",
  "axum",
  "chrono",
+ "dotenvy",
  "hex",
  "http",
  "reqwest",

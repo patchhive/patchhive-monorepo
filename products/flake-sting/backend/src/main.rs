@@ -5,11 +5,10 @@ use tracing::info;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    patchhive_product_core::environment::load_patchhive_env()?;
     tracing_subscriber::fmt()
         .with_env_filter(std::env::var("RUST_LOG").unwrap_or_else(|_| "info".into()))
         .init();
-
-    let _ = dotenvy::dotenv();
 
     flake_sting::init_runtime().await?;
 

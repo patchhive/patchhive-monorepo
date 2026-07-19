@@ -17,6 +17,7 @@ aes-gcm = "0.10"
 anyhow = "1"
 axum = "0.7"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
+dotenvy = "0.15"
 hex = "0.4"
 http = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
@@ -27,6 +28,3 @@ sha2 = "0.10"
 tower-http = { version = "0.5", features = ["cors"] }
 tracing = "0.1"
 uuid = { version = "1", features = ["v4"] }
-
-[dev-dependencies]
-dotenvy = "0.15"

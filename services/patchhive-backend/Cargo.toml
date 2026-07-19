@@ -18,10 +18,10 @@ path = "src/bin/consolidate_databases.rs"
 anyhow = "1"
 axum = { version = "0.7", features = ["macros"] }
 chrono = { version = "0.4", features = ["serde"] }
-dotenvy = "0.15"
 dep-triage = { path = "../../products/dep-triage/backend" }
 flake-sting = { path = "../../products/flake-sting/backend" }
 merge-keeper = { path = "../../products/merge-keeper/backend" }
+patchhive-product-core = { path = "../../crates/patchhive-product-core" }
 release-sentry = { path = "../../products/release-sentry/backend" }
 refactor-scout = { path = "../../products/refactor-scout/backend" }
 repo-memory = { path = "../../products/repo-memory/backend" }

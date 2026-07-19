@@ -199,8 +199,7 @@ cd ../frontend && npm install && npm run dev
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `BOT_GITHUB_TOKEN` | — | Fine-grained PAT for workflow run/job reads. Recommended scopes: Metadata (read), Actions (read). |
-| `GITHUB_TOKEN` | — | Fallback if `BOT_GITHUB_TOKEN` is not set. |
+| `PATCHHIVE_GITHUB_TOKEN_RO` | — | Suite-wide classic PAT for GitHub reads. Use `public_repo` for public repositories or `repo` for private repositories. |
 | `FLAKE_STING_API_KEY_HASH` | — | Pre-seeded app auth hash. Otherwise generate the first local key from the UI. API keys use the `flake-sting-` prefix. |
 | `FLAKE_STING_SERVICE_TOKEN_HASH` | — | Pre-seeded service-token hash for HiveCore or other PatchHive product callers. Service tokens use the `flake-sting-svc-` prefix. |
 | `FLAKE_STING_DB_PATH` | `flake-sting.db` | SQLite path for flaky scan history. |
@@ -208,7 +207,7 @@ cd ../frontend && npm install && npm run dev
 | `FLAKE_STING_DB_POOL_SIZE` | (pool default) | SQLite connection pool size. |
 | `RUST_LOG` | `info` | Rust logging level. |
 
-FlakeSting works best with a fine-grained GitHub token. Without one,
+FlakeSting works best with a classic GitHub token. Without one,
 public-repo scans may still work, but GitHub rate limits will be tighter.
 
 ---
@@ -770,7 +769,7 @@ is the only supported deployment method.
 | Issue | Diagnosis | Resolution |
 |-------|-----------|------------|
 | **Auth failures on API calls** | `401 Unauthorized` on protected routes. | Set `FLAKE_STING_API_KEY_HASH` or generate a key via `POST /auth/generate-key` from localhost. |
-| **GitHub API errors** | `502 Bad Gateway` on `/scan/github/actions`. | Check `BOT_GITHUB_TOKEN` or `GITHUB_TOKEN` has `Actions: read` and `Metadata: read` scopes. |
+| **GitHub API errors** | `502 Bad Gateway` on `/scan/github/actions`. | Check `PATCHHIVE_GITHUB_TOKEN_RO` has `Actions: read` and `Metadata: read` scopes. |
 | **Rate limiting** | Slow scans or GitHub errors for public repos. | Configure a GitHub token to get higher rate limits. |
 | **No signals found** | Summary says "did not find fail/pass swings". | Increase `lookback_runs` (max 40). Verify job/step names match test-like keywords. Try without `workflow_name` and `branch` filters. |
 | **Empty scan results** | `workflow_runs` is 0. | Repository may have no completed workflow runs. Check repo name format (`owner/name`). |

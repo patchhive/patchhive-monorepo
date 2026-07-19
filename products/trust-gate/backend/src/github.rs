@@ -1,10 +1,14 @@
 use anyhow::Result;
 use patchhive_github_pr::{
-    env_value, github_token_from_env, GitHubCheckRunRequest, GitHubCommitStatusRequest,
-    GitHubManagedCommentResult, GitHubPrClient, GitHubPullRequestDetail,
+    env_value, GitHubCheckRunRequest, GitHubCommitStatusRequest, GitHubManagedCommentResult,
+    GitHubPrClient, GitHubPullRequestDetail,
 };
 use patchhive_product_core::{
-    branding::append_product_signature, github_auth::github_token_may_create_check_runs,
+    branding::append_product_signature,
+    github_auth::{
+        github_read_token, github_token_may_create_check_runs, github_write_token,
+        github_write_token_configured,
+    },
 };
 use reqwest::Client;
 
@@ -16,6 +20,7 @@ use crate::{
 const STATUS_CONTEXT: &str = "trustgate/recommendation";
 const CHECK_RUN_NAME: &str = "TrustGate";
 const COMMENT_MARKER: &str = "<!-- patchhive-trustgate-report -->";
+const GITHUB_WRITE_TOKEN_ENV: &str = "TRUST_GATE_GITHUB_TOKEN_RW";
 
 struct RenderedGitHubReport {
     check_title: String,
@@ -27,7 +32,11 @@ struct RenderedGitHubReport {
 }
 
 pub fn github_token_configured() -> bool {
-    github_token_from_env().is_some()
+    github_read_token().is_some()
+}
+
+pub fn report_publish_configured() -> bool {
+    github_write_token_configured(GITHUB_WRITE_TOKEN_ENV)
 }
 
 pub fn webhook_secret() -> Option<String> {
@@ -39,7 +48,15 @@ pub fn webhook_secret_configured() -> bool {
 }
 
 fn pr_client(client: &Client) -> GitHubPrClient {
-    GitHubPrClient::with_env_token(client.clone(), "trust-gate/0.1")
+    GitHubPrClient::new(client.clone(), github_read_token(), "trust-gate/0.1")
+}
+
+fn publish_client(client: &Client) -> GitHubPrClient {
+    GitHubPrClient::new(
+        client.clone(),
+        github_write_token(GITHUB_WRITE_TOKEN_ENV),
+        "trust-gate/0.1",
+    )
 }
 
 pub async fn fetch_pull_request(
@@ -335,14 +352,14 @@ pub async fn publish_review_outcome(client: &Client, review: &ReviewResult) -> G
 
     let rendered = render_github_report(review);
 
-    if !github_token_configured() {
+    if !report_publish_configured() {
         return GitHubReportOutcome {
             attempted: true,
             delivered: false,
             method: "none".into(),
             state: "missing_token".into(),
             message:
-                "BOT_GITHUB_TOKEN or GITHUB_TOKEN is required to report TrustGate results back to GitHub."
+                "TRUST_GATE_GITHUB_TOKEN_RW is required to report TrustGate results back to GitHub."
                     .into(),
             details: vec![
                 "PR diff ingestion still works for public repos without a token.".into(),
@@ -364,7 +381,7 @@ pub async fn publish_review_outcome(client: &Client, review: &ReviewResult) -> G
         github.head_repo.as_str()
     };
 
-    let gh = pr_client(client);
+    let gh = publish_client(client);
     let mut details = Vec::new();
     let mut method = "none".to_string();
     let mut delivered = false;
@@ -373,7 +390,7 @@ pub async fn publish_review_outcome(client: &Client, review: &ReviewResult) -> G
     let mut comment_url = String::new();
     let mut comment_mode = String::new();
 
-    if github_token_from_env()
+    if github_write_token(GITHUB_WRITE_TOKEN_ENV)
         .as_deref()
         .is_some_and(github_token_may_create_check_runs)
     {

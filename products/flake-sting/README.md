@@ -63,14 +63,14 @@ cd ../frontend && npm install && npm run dev
 
 | Variable | Purpose |
 | --- | --- |
-| `BOT_GITHUB_TOKEN` or `GITHUB_TOKEN` | Optional fine-grained PAT for workflow run and job reads. Recommended scopes: Metadata (read), Actions (read). |
+| `PATCHHIVE_GITHUB_TOKEN_RO` | Suite-wide classic PAT for GitHub reads. Use `public_repo` for public repositories or `repo` for private repositories. |
 | `FLAKE_STING_API_KEY_HASH` | Optional pre-seeded app auth hash. Otherwise generate the first local key from the UI. |
 | `FLAKE_STING_SERVICE_TOKEN_HASH` | Optional pre-seeded service-token hash for HiveCore or other PatchHive product callers. |
 | `FLAKE_STING_DB_PATH` | SQLite path for flaky scan history. |
 | `FLAKE_STING_PORT` | Backend port for split local runs. |
 | `RUST_LOG` | Rust logging level. |
 
-FlakeSting works best with a fine-grained GitHub token. GitHub Actions read
+FlakeSting works best with a classic GitHub token. GitHub Actions read
 access is the main requirement for the MVP. When auth is not yet configured, the
 first API key (and service token) can be bootstrapped from localhost; once set,
 it must be supplied on protected calls.

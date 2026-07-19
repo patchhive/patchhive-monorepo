@@ -29,6 +29,16 @@ pub async fn validate_config(client: &Client) -> Vec<StartupCheck> {
             .push(github_profile.validation_failed_check(err.to_string(), StartupCheckLevel::Warn)),
     }
 
+    if crate::github::report_publish_configured() {
+        checks.push(StartupCheck::info(
+            "TRUST_GATE_GITHUB_TOKEN_RW is configured for explicit per-run publishing. Target write access is verified only after a successful publish.",
+        ));
+    } else {
+        checks.push(StartupCheck::info(
+            "TRUST_GATE_GITHUB_TOKEN_RW is not configured. TrustGate remains read-only and will not fall back to the shared read credential for publishing.",
+        ));
+    }
+
     if crate::github::webhook_secret_configured() {
         checks.push(StartupCheck::info(
             "GitHub webhook secret is configured. Public webhook ingestion is ready.",

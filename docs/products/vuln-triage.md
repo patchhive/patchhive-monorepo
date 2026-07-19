@@ -167,8 +167,7 @@ remain HiveCore responsibilities rather than VulnTriage frontend parity gaps.
 
 | Variable | Purpose | Required | Default |
 |---|---|---|---|
-| `BOT_GITHUB_TOKEN` | Fine-grained PAT for code scanning and Dependabot alert reads. Select the target repo and grant Metadata (read), Code scanning alerts (read), and Dependabot alerts (read); the token owner must have security-alert access. | No | — |
-| `GITHUB_TOKEN` | Fallback GitHub token (classic or fine-grained) if `BOT_GITHUB_TOKEN` is not set. | No | — |
+| `PATCHHIVE_GITHUB_TOKEN_RO` | Suite-wide classic PAT with `public_repo` or `repo` plus `security_events`; the token owner must have security-alert access. | No | — |
 | `VULN_TRIAGE_API_KEY_HASH` | Pre-seeded API-key hash for app authentication. If not set, the first local key can be generated via `POST /auth/generate-key`. | No | — |
 | `VULN_TRIAGE_SERVICE_TOKEN_HASH` | Pre-seeded service-token hash for HiveCore or other PatchHive product callers. | No | — |
 | `VULN_TRIAGE_DB_PATH` | Path to the SQLite database file for scan history. | No | `vuln-triage.db` |
@@ -176,7 +175,7 @@ remain HiveCore responsibilities rather than VulnTriage frontend parity gaps.
 | `VULN_TRIAGE_PORT` | Backend HTTP listen port. | No | `8110` |
 | `RUST_LOG` | Rust logging level. | No | `info` |
 
-VulnTriage works best with a fine-grained GitHub token that has matching security-read permissions for the repositories being scanned: select the target repository, grant `Metadata` read, `Code scanning alerts` read, and `Dependabot alerts` read, and make sure the token owner can access that repository's security alerts. Classic tokens need `security_events` for security alert reads, or `public_repo` when scanning public repositories only. Avoid broad `repo` unless another workflow needs full private-repository access.
+VulnTriage uses the suite-wide classic PAT with `public_repo` for public repositories or `repo` for private repositories, plus `security_events` for protected alert reads. The token owner must also be able to view the repository's security alerts.
 
 ---
 
@@ -459,8 +458,8 @@ The backend binary serves all API endpoints. No external database server is requ
 | Symptom | Likely Cause | Resolution |
 |---|---|---|
 | `POST /scan/github/findings` returns 400 | Repo not in `owner/name` format | Ensure repo parameter is `"owner/repo-name"` with a single `/`. |
-| Scan returns 0 findings with a warning about `403 Forbidden` | GitHub token lacks security-read access for the target repo | Grant "Code scanning alerts (read)" and "Dependabot alerts (read)" permissions on the fine-grained PAT, or verify the repo has alerts enabled. |
-| Scan returns 0 findings with a warning about "token not set" | Neither `BOT_GITHUB_TOKEN` nor `GITHUB_TOKEN` is configured | Set one of these environment variables. Dependabot alert reads require authenticated access. |
+| Scan returns 0 findings with a warning about `403 Forbidden` | GitHub token lacks security-read access for the target repo | Add `security_events` to the classic PAT and confirm the token owner can view repository security alerts, or verify the repo has alerts enabled. |
+| Scan returns 0 findings with a warning about "token not set" | `PATCHHIVE_GITHUB_TOKEN_RO` is not configured | Set this environment variable. Dependabot alert reads require authenticated access. |
 | `POST /auth/generate-key` returns an error | Auth is already configured or request is not from localhost | Remove `VULN_TRIAGE_API_KEY_HASH` from `.env` to reset, or make the request from localhost. |
 | `POST /auth/generate-service-token` returns an error | Service auth already configured or request origin not allowed | See rotate endpoint to change token, or remove `VULN_TRIAGE_SERVICE_TOKEN_HASH` to reset. |
 | Backend won't start (DB init failed) | SQLite path is not writable | Check `VULN_TRIAGE_DB_PATH` and directory permissions. |

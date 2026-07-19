@@ -46,8 +46,8 @@ Suggested shape:
   "slug": "repo-reaper",
   "credentials": [
     {
-      "key": "BOT_GITHUB_TOKEN",
-      "label": "PatchHive GitHub token",
+      "key": "REPO_REAPER_GITHUB_TOKEN_RW",
+      "label": "RepoReaper GitHub write token",
       "kind": "github_token",
       "required": true,
       "profile": "repo_pr_writer",
@@ -90,7 +90,7 @@ Initial profiles:
 
 The wizard should explain the practical choice:
 
-- Fine-grained PATs are safest for known repos and orgs.
+- Classic PATs are safest for known repos and orgs.
 - Public-only discovery may use a more limited token.
 - RepoReaper should preferably use the PatchHive GitHub account because PRs and commits are attributed to the token owner.
 

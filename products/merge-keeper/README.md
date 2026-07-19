@@ -59,7 +59,8 @@ cd ../frontend && npm install && npm run dev
 
 | Variable | Purpose |
 | --- | --- |
-| `BOT_GITHUB_TOKEN` or `GITHUB_TOKEN` | GitHub credential for PR reads and optional publishing. Fine-grained PATs work for selected-repository analysis. PAT-based publishing uses a write-capable PatchHive account plus classic `public_repo` (public repos) or `repo` (private repos) and delivers a commit status plus maintained PR comment. Native check runs require a GitHub App. |
+| `PATCHHIVE_GITHUB_TOKEN_RO` | Shared classic PAT for PR, review, mergeability, and check reads. |
+| `MERGE_KEEPER_GITHUB_TOKEN_RW` | Dedicated classic PAT for explicit commit-status and maintained-comment publishing; native check runs require a GitHub App. |
 | `MERGE_KEEPER_GITHUB_WEBHOOK_SECRET` | Optional signed webhook secret for refreshes. |
 | `MERGE_KEEPER_PUBLIC_URL` | Optional public URL for links from GitHub artifacts back to saved runs. |
 | `MERGE_KEEPER_REQUIRE_APPROVAL` | Optional default approval policy. Defaults to `true`; set `false` for repos where a clean/check-passing PR can be ready without review approval. Manual runs can override this per assessment. |

@@ -142,7 +142,7 @@ Every product ships with the same first-run API-key bootstrap pattern.
 - Once a product hash is configured, logging in through a subdomain or other remote host works normally.
 - If remote bootstrap is truly intentional, opt in explicitly with `PATCHHIVE_ALLOW_REMOTE_BOOTSTRAP=true`.
 
-GitHub-backed products are designed to work with fine-grained personal access tokens and can be run against public repositories only when that fits the use case.
+GitHub-backed products are designed to work with classic personal access tokens and can be run against public repositories only when that fits the use case.
 
 ## Current Status
 

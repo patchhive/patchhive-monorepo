@@ -58,11 +58,11 @@ static STARTUP_CHECKS: OnceCell<Vec<StartupCheck>> = OnceCell::new();
 
 #[tokio::main]
 async fn main() {
+    patchhive_product_core::environment::load_patchhive_env()
+        .expect("failed to load PatchHive environment");
     tracing_subscriber::fmt()
         .with_env_filter(std::env::var("RUST_LOG").unwrap_or_else(|_| "info".into()))
         .init();
-
-    let _ = dotenvy::dotenv();
 
     if let Err(e) = db::init_db() {
         eprintln!("DB init failed: {e}");
@@ -251,7 +251,9 @@ async fn health(State(state): State<AppState>) -> Json<serde_json::Value> {
         "db_path": db::db_path(),
         "github_ready": github_verified,
         "github": {
-            "token_configured": patchhive_product_core::github_auth::github_token_configured(),
+            "token_configured": patchhive_product_core::github_auth::github_write_token_configured(
+                patchhive_product_core::github_auth::REPO_REAPER_GITHUB_TOKEN_RW,
+            ),
             "token_verified": github_verified,
         },
     }))

@@ -39,9 +39,9 @@ Next validation: rerun the cold-start ladder with the 12-product fleet and the n
 
 | Product | Role | Frontend | API | Required first-pass config |
 | --- | --- | --- | --- | --- |
-| SignalHive | Read-only maintenance discovery | `http://localhost:5174` | `http://localhost:8010` | `BOT_GITHUB_TOKEN`, optional `SIGNAL_API_KEY_HASH`, optional `SIGNAL_SERVICE_TOKEN_HASH` |
-| TrustGate | Diff and PR risk review | `http://localhost:5175` | `http://localhost:8020` | Optional `BOT_GITHUB_TOKEN`, optional `PATCHHIVE_REPO_MEMORY_URL`, optional `TRUST_SERVICE_TOKEN_HASH` |
-| RepoReaper | Autonomous patch and PR execution | `http://localhost:5173` | `http://localhost:8000` | `BOT_GITHUB_TOKEN`, `BOT_GITHUB_USER`, `BOT_GITHUB_EMAIL`, AI credentials or `PATCHHIVE_AI_URL`, optional `REAPER_SERVICE_TOKEN_HASH` |
+| SignalHive | Read-only maintenance discovery | `http://localhost:5174` | `http://localhost:8010` | `PATCHHIVE_GITHUB_TOKEN_RO`, optional `SIGNAL_API_KEY_HASH`, optional `SIGNAL_SERVICE_TOKEN_HASH` |
+| TrustGate | Diff and PR risk review | `http://localhost:5175` | `http://localhost:8020` | Optional `PATCHHIVE_GITHUB_TOKEN_RO`, optional `PATCHHIVE_REPO_MEMORY_URL`, optional `TRUST_SERVICE_TOKEN_HASH` |
+| RepoReaper | Autonomous patch and PR execution | `http://localhost:5173` | `http://localhost:8000` | `REPO_REAPER_GITHUB_TOKEN_RW`, `BOT_GITHUB_USER`, `BOT_GITHUB_EMAIL`, AI credentials or `PATCHHIVE_AI_URL`, optional `REAPER_SERVICE_TOKEN_HASH` |
 | HiveCore | Suite control plane | `http://localhost:5183` | `http://localhost:8100` | Optional `HIVE_CORE_API_KEY_HASH`, optional `HIVE_CORE_SERVICE_TOKEN_HASH`, optional `HIVECORE_ENCRYPTION_KEY`, saved product service tokens for protected reads |
 
 Docker Compose maps every backend container to port `8000` internally and exposes the public API ports above. Those exposed ports match HiveCore's built-in product registry defaults.

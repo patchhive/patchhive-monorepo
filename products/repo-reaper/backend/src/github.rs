@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Result};
-use patchhive_github_pr::{github_token_from_env, GitHubPrClient};
+use patchhive_github_pr::GitHubPrClient;
+use patchhive_product_core::github_auth::{github_write_token, REPO_REAPER_GITHUB_TOKEN_RW};
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, USER_AGENT};
 use reqwest::Client;
 use serde_json::Value;
@@ -9,8 +10,12 @@ use tokio::time::sleep;
 
 const GH_API: &str = "https://api.github.com";
 
+pub fn repo_reaper_github_token() -> Option<String> {
+    github_write_token(REPO_REAPER_GITHUB_TOKEN_RW)
+}
+
 fn bot_token() -> String {
-    github_token_from_env().unwrap_or_default()
+    repo_reaper_github_token().unwrap_or_default()
 }
 
 fn pr_client(http: &Client, token: Option<&str>) -> GitHubPrClient {
@@ -19,7 +24,7 @@ fn pr_client(http: &Client, token: Option<&str>) -> GitHubPrClient {
         token
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty())
-            .or_else(github_token_from_env),
+            .or_else(repo_reaper_github_token),
         "repo-reaper/0.1",
     )
 }

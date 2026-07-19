@@ -83,7 +83,8 @@ For split local runs, the backend listens on `8000` by default and the frontend 
 
 | Variable | Purpose |
 | --- | --- |
-| `BOT_GITHUB_TOKEN` | GitHub token for pull-request diff reads and optional publishing. PAT publishing uses a commit status and maintained PR comment; native check runs require a GitHub App installation token. |
+| `PATCHHIVE_GITHUB_TOKEN_RO` | Shared classic PAT for pull-request diff reads. |
+| `TRUST_GATE_GITHUB_TOKEN_RW` | Dedicated classic PAT for explicit commit-status and maintained-comment publishing; native check runs require a GitHub App. |
 | `TRUST_GITHUB_WEBHOOK_SECRET` | Optional signed webhook secret for pull request refreshes. |
 | `TRUSTGATE_PUBLIC_URL` | Optional public URL for links from GitHub artifacts back to saved decisions. |
 | `PATCHHIVE_REPO_MEMORY_URL` / `PATCHHIVE_REPO_MEMORY_API_KEY` | Optional RepoMemory context and FailGuard candidate destination. |

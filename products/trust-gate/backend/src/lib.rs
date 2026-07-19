@@ -214,6 +214,7 @@ async fn health() -> Json<serde_json::Value> {
                 .ok()
                 .map(|value| !value.trim().is_empty())
                 .unwrap_or(false),
+            "report_publish_configured": github::report_publish_configured(),
         }
     }))
 }

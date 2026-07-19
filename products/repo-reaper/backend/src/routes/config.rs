@@ -207,8 +207,8 @@ async fn get_config(State(state): State<AppState>) -> Json<Value> {
         .into();
 
     Json(json!({
-        "BOT_GITHUB_TOKEN":      "",
-        "BOT_GITHUB_TOKEN_SET":  !env("BOT_GITHUB_TOKEN").is_empty(),
+        "REPO_REAPER_GITHUB_TOKEN_RW":      "",
+        "REPO_REAPER_GITHUB_TOKEN_RW_SET":  !env("REPO_REAPER_GITHUB_TOKEN_RW").is_empty(),
         "BOT_GITHUB_USER":       env("BOT_GITHUB_USER"),
         "BOT_GITHUB_EMAIL":      env("BOT_GITHUB_EMAIL"),
         "PROVIDER_API_KEY":      "",
@@ -231,8 +231,8 @@ async fn get_ai_local_status(State(state): State<AppState>) -> Json<Value> {
 
 #[derive(Deserialize)]
 struct ConfigSave {
-    #[serde(rename = "BOT_GITHUB_TOKEN")]
-    bot_token: Option<String>,
+    #[serde(rename = "REPO_REAPER_GITHUB_TOKEN_RW")]
+    github_write_token: Option<String>,
     #[serde(rename = "BOT_GITHUB_USER")]
     bot_user: Option<String>,
     #[serde(rename = "BOT_GITHUB_EMAIL")]
@@ -253,7 +253,7 @@ struct ConfigSave {
 
 async fn save_config(Json(body): Json<ConfigSave>) -> Json<Value> {
     let pairs = [
-        ("BOT_GITHUB_TOKEN", body.bot_token),
+        ("REPO_REAPER_GITHUB_TOKEN_RW", body.github_write_token),
         ("BOT_GITHUB_USER", body.bot_user),
         ("BOT_GITHUB_EMAIL", body.bot_email),
         ("PROVIDER_API_KEY", body.api_key),
@@ -268,7 +268,7 @@ async fn save_config(Json(body): Json<ConfigSave>) -> Json<Value> {
         if let Some(v) = val {
             let is_masked_placeholder = matches!(
                 key,
-                "BOT_GITHUB_TOKEN" | "PROVIDER_API_KEY" | "WEBHOOK_SECRET"
+                "REPO_REAPER_GITHUB_TOKEN_RW" | "PROVIDER_API_KEY" | "WEBHOOK_SECRET"
             ) && (v == "(set)" || v.starts_with('*'));
             if !v.is_empty() && !is_masked_placeholder {
                 updates.push((key.to_string(), v));

@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Context, Result};
+use patchhive_product_core::github_auth::github_read_token;
 use reqwest::{
     header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, LINK, USER_AGENT},
     Client, Response, StatusCode,
@@ -74,15 +75,11 @@ async fn send_get_with_retry(
 }
 
 pub fn github_token() -> Option<String> {
-    std::env::var("BOT_GITHUB_TOKEN")
-        .ok()
-        .or_else(|| std::env::var("GITHUB_TOKEN").ok())
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
+    github_read_token()
 }
 
 pub fn github_token_required() -> Result<String> {
-    github_token().ok_or_else(|| anyhow!("[missing_token]: BOT_GITHUB_TOKEN is not set"))
+    github_token().ok_or_else(|| anyhow!("[missing_token]: PATCHHIVE_GITHUB_TOKEN_RO is not set"))
 }
 
 pub fn github_token_configured() -> bool {

@@ -176,9 +176,9 @@ pub async fn health() -> Json<serde_json::Value> {
             "webhook_secret_configured": github::webhook_secret_configured(),
             "public_url_configured": github::public_url_configured(),
             "webhook_ready": webhook_ready,
-            "comment_publish_configured": github_configured,
+            "comment_publish_configured": github::comment_publish_configured(),
             "comment_publish_scope_verified": comment_publish_verified,
-            "comment_publish_ready": github_ready && comment_publish_verified,
+            "comment_publish_ready": github::comment_publish_configured() && comment_publish_verified,
         }
     }))
 }

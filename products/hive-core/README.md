@@ -84,7 +84,7 @@ The frontend uses `@patchhivehq/ui` and `@patchhivehq/product-shell`. Generate t
 
 | Variable | Purpose |
 | --- | --- |
-| `BOT_GITHUB_TOKEN` | Optional fine-grained PAT reserved for future control-plane reads. Metadata (read) is enough. |
+| `PATCHHIVE_GITHUB_TOKEN_RO` | Optional suite-wide classic PAT reserved for future control-plane reads. Use `public_repo` for public repositories or `repo` for private repositories. |
 | `HIVE_CORE_API_KEY_HASH` | Optional pre-seeded app auth hash. Otherwise generate the first local key from the UI. |
 | `HIVE_CORE_SERVICE_TOKEN_HASH` | Optional service-token hash for HiveCore as a machine caller. |
 | `HIVE_CORE_DB_PATH` | SQLite path for suite settings, product overrides, and action events. |

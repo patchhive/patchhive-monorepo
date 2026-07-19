@@ -72,14 +72,14 @@ The standalone backend remains available as a compatibility wrapper while the su
 
 | Variable | Purpose |
 | --- | --- |
-| `BOT_GITHUB_TOKEN` or `GITHUB_TOKEN` | Optional fine-grained PAT for code scanning and Dependabot alert reads. Recommended scopes: Metadata (read), Code scanning alerts (read), Dependabot alerts (read). |
+| `PATCHHIVE_GITHUB_TOKEN_RO` | Suite-wide classic PAT with `public_repo` or `repo` plus `security_events` for protected alert reads. |
 | `VULN_TRIAGE_API_KEY_HASH` | Optional pre-seeded app auth hash. Otherwise generate the first local key from the UI. |
 | `VULN_TRIAGE_SERVICE_TOKEN_HASH` | Optional pre-seeded service-token hash for HiveCore or other PatchHive product callers. |
 | `VULN_TRIAGE_DB_PATH` | SQLite path for vulnerability triage history. |
 | `VULN_TRIAGE_PORT` | Backend port for split local runs. |
 | `RUST_LOG` | Rust logging level. |
 
-VulnTriage works best with a fine-grained GitHub token that has the matching security read permissions for the repositories being scanned. If `VULN_TRIAGE_API_KEY_HASH` is not set, generate the first local key from the UI (or `POST /auth/generate-key` from localhost). `VULN_TRIAGE_SERVICE_TOKEN_HASH` is the bootstrap credential used by HiveCore for inter-product calls via the `/scan/github/findings` dispatch path.
+VulnTriage works best with a classic GitHub token that has the matching security read permissions for the repositories being scanned. If `VULN_TRIAGE_API_KEY_HASH` is not set, generate the first local key from the UI (or `POST /auth/generate-key` from localhost). `VULN_TRIAGE_SERVICE_TOKEN_HASH` is the bootstrap credential used by HiveCore for inter-product calls via the `/scan/github/findings` dispatch path.
 
 ## Security Feed Access Boundary
 

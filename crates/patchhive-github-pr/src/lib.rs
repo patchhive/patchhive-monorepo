@@ -9,4 +9,4 @@ pub use models::{
     GitHubPullRequestDetail, GitHubPullReview, GitHubPullReviewThread,
     GitHubPullReviewThreadComment, GitHubStatusContext,
 };
-pub use webhook::{env_value, github_token_from_env, verify_github_webhook_signature};
+pub use webhook::{env_value, verify_github_webhook_signature};

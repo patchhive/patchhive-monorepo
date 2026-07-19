@@ -70,7 +70,7 @@ cd frontend-v2 && npm install && npm run dev
 
 | Variable | Purpose |
 | --- | --- |
-| `BOT_GITHUB_TOKEN` | Optional fine-grained PAT reserved for future repo metadata reads. Metadata (read) is enough. |
+| `PATCHHIVE_GITHUB_TOKEN_RO` | Suite-wide classic PAT for public GitHub clone and metadata reads. Use `public_repo` for public repositories or `repo` for private repositories. |
 | `REFACTOR_SCOUT_API_KEY_HASH` | Optional pre-seeded app auth hash. Otherwise generate the first local key from the UI. |
 | `REFACTOR_SCOUT_SERVICE_TOKEN_HASH` | Optional pre-seeded service-token hash for HiveCore or other PatchHive product callers. |
 | `REFACTOR_SCOUT_DB_PATH` | SQLite path for scan history. |

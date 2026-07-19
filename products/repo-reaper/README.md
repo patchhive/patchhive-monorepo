@@ -72,7 +72,7 @@ cd ../frontend-v2 && npm install && npm run dev
 
 | Variable | Purpose |
 | --- | --- |
-| `BOT_GITHUB_TOKEN` | Fine-grained PAT used for repo discovery, clone, push, and pull request creation. Recommended scopes: Metadata (read), Contents (read/write), Issues (read/write), Pull requests (read/write), plus Workflows (read/write) when patching `.github/workflows`. |
+| `REPO_REAPER_GITHUB_TOKEN_RW` | Dedicated classic PAT used for RepoReaper writes. Use `public_repo` for public repositories or `repo` for private repositories; add `workflow` only when workflow-file changes are allowed. |
 | `BOT_GITHUB_USER` / `BOT_GITHUB_EMAIL` | Git identity for PatchHive commits and pull requests. |
 | `PROVIDER_API_KEY` | Direct AI provider API key when not using a local OpenAI-compatible gateway. |
 | `PATCHHIVE_AI_URL` | Optional OpenAI-compatible local gateway such as `@patchhive/ai-local`. |

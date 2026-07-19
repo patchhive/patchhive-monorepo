@@ -32,6 +32,16 @@ pub async fn validate_config(client: &Client) -> Vec<StartupCheck> {
         ),
     }
 
+    if crate::github::report_publish_configured() {
+        checks.push(StartupCheck::info(
+            "MERGE_KEEPER_GITHUB_TOKEN_RW is configured for explicit per-run publishing. Target write access is verified only after a successful publish.",
+        ));
+    } else {
+        checks.push(StartupCheck::info(
+            "MERGE_KEEPER_GITHUB_TOKEN_RW is not configured. MergeKeeper remains read-only and will not fall back to the shared read credential for publishing.",
+        ));
+    }
+
     checks.push(StartupCheck::info(
         "MergeKeeper reads pull request merge pressure and returns a simple readiness state: ready, hold, or blocked.",
     ));

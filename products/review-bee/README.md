@@ -89,7 +89,8 @@ The canonical frontend uses the shared PatchHive specialist UI v3 shell.
 
 | Variable | Purpose |
 | --- | --- |
-| `BOT_GITHUB_TOKEN` or `GITHUB_TOKEN` | Optional fine-grained PAT for pull request review reads. Analysis-only scopes: Metadata (read), Pull requests (read). Add Issues (write) when ReviewBee should maintain its PR comment artifact. |
+| `PATCHHIVE_GITHUB_TOKEN_RO` | Shared classic PAT for pull-request review reads. |
+| `REVIEW_BEE_GITHUB_TOKEN_RW` | Dedicated classic PAT for explicit maintained checklist comments. |
 | `REVIEW_BEE_GITHUB_WEBHOOK_SECRET` | Optional signed webhook secret for review refreshes. |
 | `REVIEW_BEE_PUBLIC_URL` | Optional public URL for links from maintained comments back to saved runs. |
 | `REVIEW_BEE_API_KEY_HASH` | Optional pre-seeded app auth hash. Otherwise generate the first local key from the UI. |
@@ -98,7 +99,7 @@ The canonical frontend uses the shared PatchHive specialist UI v3 shell.
 | `REVIEW_BEE_PORT` | Backend port for split local runs. |
 | `RUST_LOG` | Rust logging level. |
 
-ReviewBee works best with a fine-grained GitHub token. Reading pull requests, reviews, and review
+ReviewBee works best with a classic GitHub token. Reading pull requests, reviews, and review
 threads is enough for the core product loop. Maintained checklist comments need the smallest write
 permission that supports PR comment updates in your environment.
 

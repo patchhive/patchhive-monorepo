@@ -154,7 +154,7 @@ function metricToneFromStatus(status) {
 }
 
 function githubReady(config, health) {
-  return Boolean(config?.BOT_GITHUB_TOKEN_SET || (health?.bot && health.bot !== "(not set)"));
+  return Boolean(config?.REPO_REAPER_GITHUB_TOKEN_RW_SET || (health?.bot && health.bot !== "(not set)"));
 }
 
 function aiReady(config) {
@@ -179,7 +179,7 @@ function blankAgent(config, role = "scout") {
   return {
     api_key: "",
     base_url: "",
-    bot_token: "",
+    github_write_token: "",
     bot_user: "",
     model: PROVIDER_MODELS[provider] || "",
     name: `PatchHive ${AGENT_ROLES.find((item) => item.value === role)?.label || "Agent"}`,
@@ -193,7 +193,7 @@ function blankTeamDefaults(config) {
   return {
     api_key: "",
     base_url: "",
-    bot_token: "",
+    github_write_token: "",
     bot_user: "",
     model: PROVIDER_MODELS[provider] || "",
     provider,
@@ -208,7 +208,7 @@ function applyTeamDefaults(agent, defaults = {}) {
     model,
     provider,
   };
-  ["api_key", "base_url", "bot_token", "bot_user"].forEach((key) => {
+  ["api_key", "base_url", "github_write_token", "bot_user"].forEach((key) => {
     const value = String(defaults[key] || "").trim();
     if (value) next[key] = value;
   });
@@ -225,7 +225,7 @@ function starterTeam(config) {
   return AGENT_ROLES.map((role) => ({
     api_key: "",
     base_url: "",
-    bot_token: "",
+    github_write_token: "",
     bot_user: "",
     id: `${role.value}-${Date.now()}`,
     model,
@@ -1720,7 +1720,7 @@ function AgentTeamPanel({
             </label>
             <label className="v2-field">
               Bot token override
-              <input className="v2-input" onChange={(event) => setDefault("bot_token", event.target.value)} placeholder="optional per-team override" type="password" value={defaults.bot_token} />
+              <input className="v2-input" onChange={(event) => setDefault("github_write_token", event.target.value)} placeholder="optional per-team override" type="password" value={defaults.github_write_token} />
             </label>
             <label className="v2-field">
               Bot user override

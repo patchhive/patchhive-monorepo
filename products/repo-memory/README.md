@@ -107,14 +107,14 @@ suggest/review/promote/dismiss loop. It passed final parity acceptance on
 
 | Variable | Purpose |
 | --- | --- |
-| `BOT_GITHUB_TOKEN` | Optional fine-grained PAT for merged PR, review, issue, and file hotspot reads. Recommended scopes: Metadata (read), Pull requests (read), Issues (read). |
+| `PATCHHIVE_GITHUB_TOKEN_RO` | Suite-wide classic PAT for GitHub reads. Use `public_repo` for public repositories or `repo` for private repositories. |
 | `REPO_MEMORY_API_KEY_HASH` | Optional pre-seeded app auth hash. Otherwise generate the first local key from the UI. |
 | `REPO_MEMORY_SERVICE_TOKEN_HASH` | Optional pre-seeded service-token hash for HiveCore or other PatchHive product callers. |
 | `REPO_MEMORY_DB_PATH` | SQLite path for runs and memory entries. |
 | `REPO_MEMORY_PORT` | Backend port for split local runs. |
 | `RUST_LOG` | Rust logging level. |
 
-RepoMemory works best with a fine-grained GitHub token. Reading merged pull requests, reviews,
+RepoMemory works best with a classic GitHub token. Reading merged pull requests, reviews,
 and issues is enough for the core MVP loop.
 
 ## Safety Boundary

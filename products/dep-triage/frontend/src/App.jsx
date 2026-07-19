@@ -57,7 +57,7 @@ function Fact({ label, value: factValue }) {
 
 function warningLabel(warning) {
   const text = String(warning || "");
-  if (text.includes("BOT_GITHUB_TOKEN is not set") || text.includes("GITHUB_TOKEN is not set")) {
+  if (text.includes("PATCHHIVE_GITHUB_TOKEN_RO is not set") || text.includes("BOT_GITHUB_TOKEN is not set") || text.includes("GITHUB_TOKEN is not set")) {
     return "Dependabot alerts were skipped because GitHub token access is not configured.";
   }
   if (text.includes("/dependabot/alerts") && text.includes("Dependabot alerts are disabled")) {

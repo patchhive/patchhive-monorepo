@@ -1,6 +1,6 @@
 // orchestrate.rs — Main fix_one orchestrator
 
-use patchhive_github_pr::github_token_from_env;
+use crate::github::repo_reaper_github_token;
 use patchhive_product_core::hivecore_policy::{
     check_repository_policy, commit_pr_slot, release_pr_slot, reserve_pr_slot,
     PrReservationRequest, RepositoryPolicyDecisionRequest,
@@ -321,7 +321,7 @@ pub async fn fix_one(job: FixIssueJob) {
         .bot_token
         .clone()
         .filter(|value| !value.trim().is_empty())
-        .or_else(github_token_from_env)
+        .or_else(repo_reaper_github_token)
         .unwrap_or_default();
     let bot_user = agents
         .reaper

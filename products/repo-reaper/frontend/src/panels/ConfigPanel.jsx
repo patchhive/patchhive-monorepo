@@ -5,7 +5,7 @@ import { S, Input, Btn, Divider } from "@patchhivehq/ui";
 
 export default function ConfigPanel({ existingConfig, apiKey = "", onSaved }) {
   const [cfg, setCfg] = useState({
-    BOT_GITHUB_TOKEN:"", BOT_GITHUB_USER:"", BOT_GITHUB_EMAIL:"",
+    REPO_REAPER_GITHUB_TOKEN_RW:"", BOT_GITHUB_USER:"", BOT_GITHUB_EMAIL:"",
     PROVIDER_API_KEY:"", PATCHHIVE_AI_URL:"", OLLAMA_BASE_URL:"", WEBHOOK_SECRET:"",
     COST_BUDGET_USD:"0", MIN_REVIEW_CONFIDENCE:"40",
   });
@@ -66,12 +66,12 @@ export default function ConfigPanel({ existingConfig, apiKey = "", onSaved }) {
       <div style={{ ...S.panel, display:"flex", flexDirection:"column", gap:12 }}>
         <div style={{ fontSize:11, fontWeight:700, color:"#c41e3a" }}>GitHub Bot</div>
         <div style={S.field}>
-          <label style={S.label}>Bot GitHub Token</label>
+          <label style={S.label}>RepoReaper GitHub Write Token</label>
           <Input
-            value={cfg.BOT_GITHUB_TOKEN}
-            onChange={set("BOT_GITHUB_TOKEN")}
+            value={cfg.REPO_REAPER_GITHUB_TOKEN_RW}
+            onChange={set("REPO_REAPER_GITHUB_TOKEN_RW")}
             type="password"
-            placeholder={existingConfig?.BOT_GITHUB_TOKEN_SET ? "(saved, leave blank to keep)" : "github_pat_…"}
+            placeholder={existingConfig?.REPO_REAPER_GITHUB_TOKEN_RW_SET ? "(saved, leave blank to keep)" : "ghp_…"}
           />
         </div>
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>

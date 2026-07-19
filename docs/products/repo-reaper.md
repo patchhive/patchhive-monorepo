@@ -316,7 +316,7 @@ cd ../frontend-v2 && npm install && npm run dev
 
 ```bash
 # Required
-BOT_GITHUB_TOKEN=ghp_...           # Fine-grained PAT: Metadata(ro), Contents(rw), Issues(rw), Pull requests(rw)
+REPO_REAPER_GITHUB_TOKEN_RW=ghp_...           # Classic PAT: Metadata(ro), Contents(rw), Issues(rw), Pull requests(rw)
 BOT_GITHUB_USER=patchhive-bot
 
 # Git identity
@@ -354,7 +354,7 @@ PATCHHIVE_REPO_MEMORY_API_KEY=...
 
 | Variable | Required | Default | Purpose |
 |----------|----------|---------|---------|
-| `BOT_GITHUB_TOKEN` | ✅ | — | PAT for repo discovery, clone, push, PR creation |
+| `REPO_REAPER_GITHUB_TOKEN_RW` | ✅ | — | PAT for repo discovery, clone, push, PR creation |
 | `BOT_GITHUB_USER` | ✅ | — | Git commit author |
 | `BOT_GITHUB_EMAIL` | ❌ | — | Git commit email |
 | `PROVIDER_API_KEY` | ❌ | — | Fallback AI provider API key |
@@ -501,7 +501,7 @@ The `axum::response::sse::Sse` response wraps a `tokio::sync::mpsc::Receiver` wi
 
 On boot, `startup::validate_config` runs:
 
-1. **`BOT_GITHUB_TOKEN`** — must be non-empty
+1. **`REPO_REAPER_GITHUB_TOKEN_RW`** — must be non-empty
 2. **`BOT_GITHUB_USER`** — must be non-empty
 3. **`PROVIDER_API_KEY`** — must be non-empty (unless using gateway)
 4. **GitHub API** — `GET https://api.github.com/user` to validate token
@@ -630,7 +630,7 @@ docker compose up --build
 cd backend
 docker build -t repo-reaper .
 docker run -p 8000:8000 \
-  -e BOT_GITHUB_TOKEN=... \
+  -e REPO_REAPER_GITHUB_TOKEN_RW=... \
   -e BOT_GITHUB_USER=... \
   -e PROVIDER_API_KEY=... \
   -e REAPER_DB_PATH=/data/reaper.db \

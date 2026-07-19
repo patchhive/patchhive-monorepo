@@ -128,7 +128,8 @@ All configuration is via environment variables. The backend reads `.env` automat
 
 | Variable | Required | Default | Purpose |
 |----------|----------|---------|---------|
-| `BOT_GITHUB_TOKEN` | No | — | GitHub token for PR diff reads and optional publishing. PAT publishing uses commit-status and issue-comment writes; a GitHub App installation token is required for native check runs. |
+| `PATCHHIVE_GITHUB_TOKEN_RO` | No | — | Shared classic PAT for PR diff reads. |
+| `TRUST_GATE_GITHUB_TOKEN_RW` | No | — | Dedicated classic PAT for explicit commit-status and maintained-comment publishing; native check runs require a GitHub App. |
 | `TRUST_GITHUB_WEBHOOK_SECRET` | No | — | Signed webhook secret for pull request events. Required to use `POST /webhooks/github`. |
 | `TRUSTGATE_PUBLIC_URL` | No | — | Public URL for deep-links from GitHub artifacts back to saved TrustGate decisions (`/history/{id}`). |
 | `PATCHHIVE_REPO_MEMORY_URL` | No | — | RepoMemory API base URL for context enrichment and FailGuard candidate submission. |
@@ -406,7 +407,8 @@ services:
     ports: ["8020:8020"]
     environment:
       - TRUST_DB_PATH=/data/trust-gate.db
-      - BOT_GITHUB_TOKEN=${BOT_GITHUB_TOKEN}
+      - PATCHHIVE_GITHUB_TOKEN_RO=${PATCHHIVE_GITHUB_TOKEN_RO}
+      - TRUST_GATE_GITHUB_TOKEN_RW=${TRUST_GATE_GITHUB_TOKEN_RW}
       - TRUSTGATE_PUBLIC_URL=${TRUSTGATE_PUBLIC_URL}
       - RUST_LOG=info
     volumes:
@@ -440,7 +442,7 @@ HiveCore can surface TrustGate health, capabilities, run history, and contract s
 
 | Symptom | Likely Cause | Check / Fix |
 |---------|-------------|-------------|
-| `POST /review/github/pr` returns `502` | GitHub token missing or lacks permissions | Verify `BOT_GITHUB_TOKEN` is set and has Metadata:read + Pull requests:read scopes |
+| `POST /review/github/pr` returns `502` | GitHub token missing or lacks permissions | Verify `PATCHHIVE_GITHUB_TOKEN_RO` is set and has Metadata:read + Pull requests:read scopes |
 | `POST /webhooks/github` returns `403` | Webhook secret not configured | Set `TRUST_GITHUB_WEBHOOK_SECRET` and match it in GitHub webhook settings |
 | `POST /webhooks/github` returns `401` | HMAC signature mismatch | Verify the webhook secret in `.env` matches the one configured in GitHub |
 | GitHub status or comment not appearing with a PAT | Missing write access or token not set | Give the PatchHive bot collaborator access and use a classic `public_repo` token for public repositories or `repo` for private repositories |

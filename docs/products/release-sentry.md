@@ -419,7 +419,7 @@ Scans for presence of common release files. Evaluated by pinging the GitHub Cont
 | `RELEASE_SENTRY_DB_POOL_SIZE` | — | SQLite connection pool size |
 | `RELEASE_SENTRY_API_KEY_HASH` | — | Argon2 hash for API key auth (optional) |
 | `RELEASE_SENTRY_SERVICE_TOKEN_HASH` | — | Argon2 hash for HiveCore service token (optional) |
-| `BOT_GITHUB_TOKEN` | — | GitHub personal access token for API calls |
+| `PATCHHIVE_GITHUB_TOKEN_RO` | — | GitHub personal access token for API calls |
 | `PATCHHIVE_REPO_MEMORY_URL` | — | Optional RepoMemory base URL for promoted FailGuard evidence |
 | `PATCHHIVE_REPO_MEMORY_API_KEY` | — | API key for the configured RepoMemory endpoint |
 | `RUST_LOG` | `info` | Logging level |
@@ -427,14 +427,7 @@ Scans for presence of common release files. Evaluated by pinging the GitHub Cont
 
 ### GitHub Token Scope
 
-Recommended scopes (fine-grained PAT):
-
-- **Metadata:** read
-- **Contents:** read
-- **Pull requests:** read
-- **Actions:** read
-- **Commit statuses:** read
-- **Deployments / Releases:** read
+Use `public_repo` for public repositories or `repo` for private repositories. PatchHive constrains this credential to repository, release, pull-request, status, and Actions reads.
 
 ---
 
@@ -523,7 +516,7 @@ release-sentry/
 |---|---|---|
 | `run_count` | DB | Total release checks performed |
 | `ready / watch / hold` | DB | Decision distribution — high `hold` rate signals release process issues |
-| `github_ready` | Config | Whether `BOT_GITHUB_TOKEN` is configured |
+| `github_ready` | Config | Whether `PATCHHIVE_GITHUB_TOKEN_RO` is configured |
 | `config_errors` | Startup checks | Count of failed startup validations |
 
 ---
@@ -535,7 +528,7 @@ release-sentry/
 ```bash
 cd products/release-sentry
 cp .env.example .env
-# Edit .env: set BOT_GITHUB_TOKEN and optionally configure auth
+# Edit .env: set PATCHHIVE_GITHUB_TOKEN_RO and optionally configure auth
 docker compose up --build
 ```
 
@@ -564,7 +557,7 @@ Frontend: `http://localhost:5184`
 The `docker-compose.yml` runs the backend and canonical v3 frontend by default,
 with SQLite on a mounted volume. For production:
 
-1. Set `BOT_GITHUB_TOKEN` with appropriate scopes
+1. Set `PATCHHIVE_GITHUB_TOKEN_RO` with appropriate scopes
 2. Set `RELEASE_SENTRY_API_KEY_HASH` for API auth
 3. Set `RELEASE_SENTRY_SERVICE_TOKEN_HASH` for HiveCore dispatch
 4. Configure `RELEASE_SENTRY_DB_PATH` to a persisted volume
@@ -576,7 +569,7 @@ with SQLite on a mounted volume. For production:
 
 | Symptom | Likely Cause | Check |
 |---|---|---|
-| `502 BAD_GATEWAY` on release check | GitHub API is unreachable or token invalid | Verify `BOT_GITHUB_TOKEN` is set and valid; check GitHub API rate limits |
+| `502 BAD_GATEWAY` on release check | GitHub API is unreachable or token invalid | Verify `PATCHHIVE_GITHUB_TOKEN_RO` is set and valid; check GitHub API rate limits |
 | Repository check returns `warn` for main branch | Repository has multiple branches; `branch` field may be empty | Set explicit `branch` in request or check repo `default_branch` |
 | CI health always `warn` | No workflow runs exist, or `workflow_run_limit` is too low | Increase `workflow_run_limit` (max 100) |
 | Release blockers missing | Labels don't match exactly | Blocker labels use case-insensitive substring match — check that issue labels contain one of the configured substrings |

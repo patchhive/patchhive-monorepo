@@ -30,6 +30,16 @@ pub async fn validate_config(client: &Client) -> Vec<StartupCheck> {
         ),
     }
 
+    if crate::github::comment_publish_configured() {
+        checks.push(StartupCheck::info(
+            "REVIEW_BEE_GITHUB_TOKEN_RW is configured for explicit per-run checklist publishing. Target write access is verified only after a successful comment write.",
+        ));
+    } else {
+        checks.push(StartupCheck::info(
+            "REVIEW_BEE_GITHUB_TOKEN_RW is not configured. ReviewBee remains read-only and will not fall back to the shared read credential for publishing.",
+        ));
+    }
+
     if crate::github::webhook_secret_configured() {
         checks.push(StartupCheck::info(
             "GitHub webhook secret is configured. ReviewBee can auto-refresh on supported PR review events.",

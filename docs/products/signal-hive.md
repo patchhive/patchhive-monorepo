@@ -270,7 +270,7 @@ npm run dev
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `BOT_GITHUB_TOKEN` | — | GitHub fine-grained PAT (required). Scopes: Metadata: read, Issues: read, Contents: read (for code markers) |
+| `PATCHHIVE_GITHUB_TOKEN_RO` | — | Suite-wide classic PAT. Use `public_repo` for public repositories or `repo` for private repositories |
 | `SIGNAL_DB_PATH` | `signal-hive.db` | SQLite database file path |
 | `SIGNAL_DB_POOL_SIZE` | — | SQLite connection pool size |
 | `SIGNAL_PORT` | `8010` | Backend HTTP port |
@@ -282,7 +282,7 @@ npm run dev
 
 ### GitHub Token Scopes
 
-SignalHive works best with a fine-grained GitHub token:
+SignalHive works best with a classic GitHub token:
 
 - **Metadata:** Read — required for repository discovery
 - **Issues:** Read — required for issue analysis
@@ -646,7 +646,7 @@ services:
     build: ./backend
     ports: ["8010:8010"]
     environment:
-      - BOT_GITHUB_TOKEN=${BOT_GITHUB_TOKEN}
+      - PATCHHIVE_GITHUB_TOKEN_RO=${PATCHHIVE_GITHUB_TOKEN_RO}
   frontend:
     build:
       context: ../..
@@ -656,7 +656,7 @@ services:
 
 ### Production Checklist
 
-1. Set `BOT_GITHUB_TOKEN` with appropriate scopes
+1. Set `PATCHHIVE_GITHUB_TOKEN_RO` with appropriate scopes
 2. Set `SIGNAL_API_KEY_HASH` for API auth
 3. Set `SIGNAL_SERVICE_TOKEN_HASH` for HiveCore dispatch
 4. Configure `SIGNAL_DB_PATH` to a persisted volume
@@ -676,7 +676,7 @@ services:
 | Symptom | Likely Cause | Check |
 |---------|--------------|-------|
 | `POST /scan` returns 400 | No search query, topics, languages, or allowlist configured | Provide at least one filter or add repos to the allowlist |
-| Scan discovers no repos | GitHub search returned empty; token may lack permissions | Verify `BOT_GITHUB_TOKEN` scopes (Metadata: read); try a broader query |
+| Scan discovers no repos | GitHub search returned empty; token may lack permissions | Verify `PATCHHIVE_GITHUB_TOKEN_RO` scopes (Metadata: read); try a broader query |
 | TODO/FIXME counts are zero or missing | GitHub code search limits or missing Contents: Read scope | Check `SIGNAL_MARKER_REPO_LIMIT` and verify token has Contents: Read |
 | "GitHub code search was already rate-limited" warning | GitHub code search API rate limit hit mid-scan | Reduce `SIGNAL_MARKER_REPO_LIMIT` or increase scan intervals |
 | `db_ok: false` in health response | SQLite file path wrong, disk full, or permission denied | Check `SIGNAL_DB_PATH` and verify filesystem |

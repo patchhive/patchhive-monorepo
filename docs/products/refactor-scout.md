@@ -166,7 +166,7 @@ All variables are loaded from environment (`.env` file via `dotenvy`, or system 
 | `REFACTOR_SCOUT_CLONE_TIMEOUT_SECS` | No | `120` | Timeout (seconds) for temporary public GitHub clones. |
 | `REFACTOR_SCOUT_DB_POOL_SIZE` | No | *(core default)* | SQLite connection pool size. |
 | `PATCHHIVE_ALLOW_REMOTE_BOOTSTRAP` | No | *(unset)* | Allow first-time key bootstrap from non-localhost clients. |
-| `BOT_GITHUB_TOKEN` | No | *(none)* | Optional fine-grained PAT reserved for future repo metadata reads. Metadata (read) scope is sufficient. |
+| `PATCHHIVE_GITHUB_TOKEN_RO` | No | *(none)* | Suite-wide classic PAT for public GitHub clone and metadata reads. Use `public_repo` for public repositories or `repo` for private repositories. |
 | `RUST_LOG` | No | `info` | Rust/`tracing` logging level. |
 
 > **Important:** Set `REFACTOR_SCOUT_ALLOWED_ROOTS` before pointing RefactorScout at broader checkout directories. Public GitHub repo inputs are cloned into a temporary directory, scanned, and removed after the scan. By default, filesystem scans are limited to localhost callers even when API-key auth is enabled.

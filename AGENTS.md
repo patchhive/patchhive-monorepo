@@ -159,6 +159,8 @@ Shared platform guidance:
   products, and treat a product rename as a compatibility migration rather than
   a display-text edit.
 - Shared auth/provider infrastructure should live in a shared package instead of being reimplemented per product.
+- Monorepo runtime configuration lives in one ignored root `.env`, seeded from root `.env.example`; set `PATCHHIVE_ENV_FILE` only when an explicit alternate canonical file is required. Product-local `.env` paths may be compatibility symlinks, not independent secret stores.
+- GitHub read clients use the suite-wide `PATCHHIVE_GITHUB_TOKEN_RO` classic PAT. GitHub write clients use only their explicit product-owned `*_GITHUB_TOKEN_RW` classic PAT and must never fall back to the shared read credential. `BOT_GITHUB_TOKEN` and `GITHUB_TOKEN` are temporary read-path compatibility aliases, not new configuration.
 - Keep product APIs close enough that HiveCore can orchestrate them without heavy translation layers.
 - Standardize request/response envelopes, error shapes, run/job identifiers, and async webhook/run lifecycle patterns as products are built out.
 - Standardize run triggers (`operator`, `schedule`, `webhook`, `orchestration`)
@@ -487,7 +489,7 @@ RepoReaper defaults:
 - Work dir: `/tmp/repo-reaper`
 
 Important env vars:
-- `BOT_GITHUB_TOKEN`
+- `REPO_REAPER_GITHUB_TOKEN_RW`
 - `BOT_GITHUB_USER`
 - `BOT_GITHUB_EMAIL`
 - `PROVIDER_API_KEY`

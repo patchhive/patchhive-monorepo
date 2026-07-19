@@ -322,10 +322,11 @@ struct LaunchSelection {
 
 #[tokio::main]
 async fn main() {
+    patchhive_product_core::environment::load_patchhive_env()
+        .expect("failed to load PatchHive environment");
     tracing_subscriber::fmt()
         .with_env_filter(env::var("RUST_LOG").unwrap_or_else(|_| "info".into()))
         .init();
-    let _ = dotenvy::dotenv();
 
     let repo_root = detect_repo_root();
     let app = Router::new()
@@ -1057,23 +1058,32 @@ fn image_preflight_status(
 fn credential_requirements(slug: &str) -> Vec<CredentialRequirementDefinition> {
     match slug {
         "signal-hive" => vec![CredentialRequirementDefinition {
-            key: "BOT_GITHUB_TOKEN",
+            key: "PATCHHIVE_GITHUB_TOKEN_RO",
             label: "GitHub read token",
             kind: "github_token",
             profile: "public_read",
             required: true,
             redact: true,
-            description: "Used by SignalHive for read-only repository and issue discovery. Recommended fine-grained PAT scopes: Metadata (read), Issues (read), and Contents (read) when GitHub-backed code search is needed.",
+            description: "Suite-wide classic PAT used only by PatchHive read paths. Use public_repo for public repositories or repo when private-repository reads are required.",
         }],
         "trust-gate" => vec![
             CredentialRequirementDefinition {
-                key: "BOT_GITHUB_TOKEN",
-                label: "GitHub PR token",
+                key: "PATCHHIVE_GITHUB_TOKEN_RO",
+                label: "Shared GitHub read token",
+                kind: "github_token",
+                profile: "public_read",
+                required: false,
+                redact: true,
+                description: "Suite-wide classic PAT used for TrustGate PR and diff reads. Use public_repo for public repositories or repo for private repositories.",
+            },
+            CredentialRequirementDefinition {
+                key: "TRUST_GATE_GITHUB_TOKEN_RW",
+                label: "TrustGate GitHub write token",
                 kind: "github_token",
                 profile: "diff_status_writer",
                 required: false,
                 redact: true,
-                description: "Optional for PR diff reads and GitHub status/check reporting. Analysis-only scope: Metadata (read), Pull requests (read). Add Checks (write), Commit statuses (write), and Issues (write) when TrustGate should publish results back to GitHub.",
+                description: "Dedicated classic PAT used only when a run explicitly publishes a commit status and maintained PR comment. Use public_repo or repo.",
             },
             CredentialRequirementDefinition {
                 key: "TRUST_GITHUB_WEBHOOK_SECRET",
@@ -1114,13 +1124,13 @@ fn credential_requirements(slug: &str) -> Vec<CredentialRequirementDefinition> {
         ],
         "repo-reaper" => vec![
             CredentialRequirementDefinition {
-                key: "BOT_GITHUB_TOKEN",
-                label: "PatchHive GitHub token",
+                key: "REPO_REAPER_GITHUB_TOKEN_RW",
+                label: "RepoReaper GitHub write token",
                 kind: "github_token",
                 profile: "repo_pr_writer",
                 required: true,
                 redact: true,
-                description: "Used by RepoReaper for discovery, forks, branches, commits, and pull requests. Recommended fine-grained PAT scopes: Metadata (read), Contents (read/write), Issues (read/write), Pull requests (read/write), plus Workflows (read/write) when RepoReaper should patch files under .github/workflows.",
+                description: "Dedicated classic PAT used by RepoReaper for discovery, forks, branches, commits, and pull requests. Use public_repo for public repositories or repo for private repositories; add workflow only when workflow-file changes are allowed.",
             },
             CredentialRequirementDefinition {
                 key: "BOT_GITHUB_USER",
@@ -1169,13 +1179,22 @@ fn credential_requirements(slug: &str) -> Vec<CredentialRequirementDefinition> {
             },
         ],
         "review-bee" => vec![CredentialRequirementDefinition {
-            key: "BOT_GITHUB_TOKEN",
-            label: "GitHub review token",
+            key: "PATCHHIVE_GITHUB_TOKEN_RO",
+            label: "Shared GitHub read token",
             kind: "github_token",
             profile: "pr_review_reader",
             required: true,
             redact: true,
-            description: "Used by ReviewBee for GitHub-backed pull request review analysis. Analysis-only scope: Metadata (read), Pull requests (read). Add Issues (write) when ReviewBee should maintain its PR comment artifact.",
+            description: "Suite-wide classic PAT used for pull-request review reads. Use public_repo for public repositories or repo for private repositories.",
+        },
+        CredentialRequirementDefinition {
+            key: "REVIEW_BEE_GITHUB_TOKEN_RW",
+            label: "ReviewBee GitHub write token",
+            kind: "github_token",
+            profile: "pr_comment_writer",
+            required: false,
+            redact: true,
+            description: "Dedicated classic PAT used only when a run explicitly publishes the maintained checklist comment. Use public_repo or repo.",
         },
         CredentialRequirementDefinition {
             key: "REVIEW_BEE_GITHUB_WEBHOOK_SECRET",
@@ -1197,13 +1216,22 @@ fn credential_requirements(slug: &str) -> Vec<CredentialRequirementDefinition> {
         }],
         "merge-keeper" => vec![
             CredentialRequirementDefinition {
-                key: "BOT_GITHUB_TOKEN",
-                label: "GitHub merge token",
+                key: "PATCHHIVE_GITHUB_TOKEN_RO",
+                label: "Shared GitHub read token",
                 kind: "github_token",
                 profile: "merge_readiness_reader",
                 required: true,
                 redact: true,
-                description: "Used by MergeKeeper for GitHub-backed merge readiness checks and GitHub report publishing. Analysis-only scope: Metadata (read), Pull requests (read), Checks (read), Commit statuses (read). Add Checks (write), Commit statuses (write), and Issues (write) for full GitHub publishing.",
+                description: "Suite-wide classic PAT used for pull-request, review, and check reads. Use public_repo for public repositories or repo for private repositories.",
+            },
+            CredentialRequirementDefinition {
+                key: "MERGE_KEEPER_GITHUB_TOKEN_RW",
+                label: "MergeKeeper GitHub write token",
+                kind: "github_token",
+                profile: "merge_status_writer",
+                required: false,
+                redact: true,
+                description: "Dedicated classic PAT used only when a run explicitly publishes a commit status and maintained PR comment. Use public_repo or repo.",
             },
             CredentialRequirementDefinition {
                 key: "MERGE_KEEPER_GITHUB_WEBHOOK_SECRET",
@@ -1279,40 +1307,40 @@ fn credential_requirements(slug: &str) -> Vec<CredentialRequirementDefinition> {
             },
         ],
         "repo-memory" => vec![CredentialRequirementDefinition {
-            key: "BOT_GITHUB_TOKEN",
+            key: "PATCHHIVE_GITHUB_TOKEN_RO",
             label: "GitHub history token",
             kind: "github_token",
             profile: "repo_history_reader",
             required: false,
             redact: true,
-            description: "Optional token that unlocks GitHub-backed merged PR, review feedback, and closed issue ingestion. Recommended fine-grained PAT scopes: Metadata (read), Pull requests (read), Issues (read).",
+            description: "Suite-wide classic PAT for GitHub-backed merged PR, review-feedback, and closed-issue reads. Use public_repo for public repositories or repo for private repositories.",
         }],
         "flake-sting" => vec![CredentialRequirementDefinition {
-            key: "BOT_GITHUB_TOKEN",
+            key: "PATCHHIVE_GITHUB_TOKEN_RO",
             label: "GitHub Actions token",
             kind: "github_token",
             profile: "actions_reader",
             required: false,
             redact: true,
-            description: "Optional token that improves GitHub Actions workflow and job reads with higher GitHub API rate limits. Recommended fine-grained PAT scopes: Metadata (read), Actions (read).",
+            description: "Suite-wide classic PAT for GitHub Actions workflow and job reads. Use public_repo for public repositories or repo for private repositories.",
         }],
         "dep-triage" => vec![CredentialRequirementDefinition {
-            key: "BOT_GITHUB_TOKEN",
+            key: "PATCHHIVE_GITHUB_TOKEN_RO",
             label: "GitHub dependency token",
             kind: "github_token",
             profile: "dependency_reader",
             required: false,
             redact: true,
-            description: "Optional token that unlocks healthier dependency PR reads plus Dependabot alert access. Recommended fine-grained PAT scopes: Metadata (read), Pull requests (read), Dependabot alerts (read).",
+            description: "Suite-wide classic PAT for dependency PR reads. Add security_events when Dependabot alert reads are required.",
         }],
         "vuln-triage" => vec![CredentialRequirementDefinition {
-            key: "BOT_GITHUB_TOKEN",
+            key: "PATCHHIVE_GITHUB_TOKEN_RO",
             label: "GitHub security token",
             kind: "github_token",
             profile: "security_reader",
             required: false,
             redact: true,
-            description: "Optional token that improves code scanning and dependency alert reads with healthier permissions. Recommended fine-grained PAT scopes: Metadata (read), Code scanning alerts (read), Dependabot alerts (read).",
+            description: "Suite-wide classic PAT with public_repo or repo plus security_events for code-scanning and Dependabot alert reads.",
         }],
         "refactor-scout" => vec![
             CredentialRequirementDefinition {
@@ -1325,23 +1353,23 @@ fn credential_requirements(slug: &str) -> Vec<CredentialRequirementDefinition> {
                 description: "Optional colon-separated filesystem roots such as /home/you/code:/srv/repos so RefactorScout knows where local scans are allowed.",
             },
             CredentialRequirementDefinition {
-                key: "BOT_GITHUB_TOKEN",
+                key: "PATCHHIVE_GITHUB_TOKEN_RO",
                 label: "GitHub metadata token",
                 kind: "github_token",
                 profile: "future_repo_metadata",
                 required: false,
                 redact: true,
-                description: "Optional token reserved for future GitHub-backed metadata reads. Metadata (read) is enough.",
+                description: "Suite-wide classic PAT used for public GitHub repository cloning and metadata reads. Use public_repo for public repositories or repo for private repositories.",
             },
         ],
         "release-sentry" => vec![CredentialRequirementDefinition {
-            key: "BOT_GITHUB_TOKEN",
+            key: "PATCHHIVE_GITHUB_TOKEN_RO",
             label: "GitHub release-readiness token",
             kind: "github_token",
             profile: "release_readiness_reader",
             required: false,
             redact: true,
-            description: "Optional token for GitHub-backed release readiness checks. Recommended fine-grained PAT scopes: Metadata (read), Contents (read), Pull requests (read), Actions (read), Commit statuses (read), and Releases/Deployments read access where available.",
+            description: "Suite-wide classic PAT for repository, release, pull-request, status, and Actions reads. Use public_repo for public repositories or repo for private repositories.",
         }],
         _ => Vec::new(),
     }
@@ -1444,7 +1472,10 @@ fn is_placeholder_env_value(key: &str, value: &str) -> bool {
         || normalized.contains("your-")
         || normalized.contains("replace-me")
         || normalized.contains("example")
-        || (key == "BOT_GITHUB_TOKEN" && normalized == "github_pat_xxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+        || (key == "PATCHHIVE_GITHUB_TOKEN_RO"
+            && (normalized == "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                || normalized == "github_pat_xxxxxxxxxxxxxxxxxxxxxxxxxxxx"))
+        || (key.ends_with("_GITHUB_TOKEN_RW") && normalized == "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxx")
         || (key == "BOT_GITHUB_EMAIL" && normalized == "bot@yourdomain.com")
 }
 

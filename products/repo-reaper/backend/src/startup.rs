@@ -1,6 +1,6 @@
 use crate::db::get_conn;
 use patchhive_product_core::{
-    github_auth::verify_github_token,
+    github_auth::{verify_github_write_token, REPO_REAPER_GITHUB_TOKEN_RW},
     github_permissions::GitHubPermissionProfile,
     hivecore_policy::hivecore_url,
     repo_memory::repo_memory_url,
@@ -42,7 +42,7 @@ pub async fn validate_config(http: &Client) -> Vec<StartupCheck> {
     }
 
     let github_profile = GitHubPermissionProfile::AutonomousWrite;
-    match verify_github_token(http).await {
+    match verify_github_write_token(http, REPO_REAPER_GITHUB_TOKEN_RW).await {
         Ok(_) => results.push(github_profile.ready_check()),
         Err(err) => results.push(
             github_profile.validation_failed_check(err.to_string(), StartupCheckLevel::Error),

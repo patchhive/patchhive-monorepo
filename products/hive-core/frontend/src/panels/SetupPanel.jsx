@@ -1729,7 +1729,8 @@ function ProductCard({
   const busy = Boolean(busyAction);
   const busyForProduct = busyAction.startsWith(actionPrefix);
   const hasCredentialDraft = Object.values(credentialDraft).some((value) => value?.trim?.());
-  const githubTokenDraft = credentialDraft.BOT_GITHUB_TOKEN || "";
+  const githubTokenDraft = Object.entries(credentialDraft)
+    .find(([key, value]) => key.includes("GITHUB_TOKEN") && value?.trim?.())?.[1] || "";
   const canStart = Boolean(launcher?.start_ready);
   return (
     <div
@@ -1872,7 +1873,7 @@ function ProductCard({
           <div style={{ display: "grid", gap: 8 }}>
             {credentials.some((requirement) => requirement.kind === "github_token") && (
               <div style={{ ...commandBodyStyle, fontSize: 10 }}>
-                Use a fine-grained GitHub token. The recommended minimum scopes for each product are listed under its token field.
+                Use a classic GitHub token. Prefer public_repo for public repositories, use repo only for private repositories, and keep read and write credentials separate as listed below.
               </div>
             )}
             {credentials.map((requirement) => (
@@ -2095,7 +2096,9 @@ export default function SetupPanel({ fetchEnvelope, setRunning, setError }) {
 
   async function validateGithubToken(slug) {
     const values = credentialDrafts[slug] || {};
-    if (!values.BOT_GITHUB_TOKEN?.trim()) return;
+    const token = Object.entries(values)
+      .find(([key, value]) => key.includes("GITHUB_TOKEN") && value?.trim?.())?.[1];
+    if (!token) return;
     setBusyAction(`${slug}:validate-token`);
     setRunning(true);
     setError("");
@@ -2104,7 +2107,7 @@ export default function SetupPanel({ fetchEnvelope, setRunning, setError }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          token: values.BOT_GITHUB_TOKEN,
+          token,
           expected_user: values.BOT_GITHUB_USER || "",
         }),
       });

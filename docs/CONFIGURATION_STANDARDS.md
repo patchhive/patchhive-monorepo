@@ -4,7 +4,7 @@ This document records the **de facto configuration conventions** used across Pat
 products. It is descriptive, not prescriptive: it captures what the products already do so
 new products stay consistent and existing drift is visible.
 
-The authoritative source for any variable is the product's `.env.example` and its
+The canonical monorepo source is the ignored root `.env`, seeded from [`.env.example`](../.env.example). Product `.env` paths may point to that file for standalone and Compose compatibility. The authoritative reference for any variable is the root example, the product's `.env.example`, and its
 [detailed product doc](products/README.md). The README `## Configuration` table carries the
 operator-facing essentials; the detailed doc carries the complete reference.
 
@@ -28,8 +28,12 @@ These are not product-prefixed. They appear across multiple products:
 
 | Variable | Purpose |
 | --- | --- |
-| `BOT_GITHUB_TOKEN` | Fine-grained GitHub PAT for product work. Scopes vary by product (see [github-token-scopes.md](github-token-scopes.md)). |
-| `GITHUB_TOKEN` | Alternative/secondary GitHub token used by products that also read PR review state (e.g. ReviewBee, MergeKeeper, VulnTriage). |
+| `PATCHHIVE_ENV_FILE` | Optional explicit path to the canonical suite environment file. |
+| `PATCHHIVE_GITHUB_TOKEN_RO` | Suite-wide classic PAT used only by PatchHive GitHub read clients. Prefer `public_repo`; use `repo` only for intentional private-repository access. |
+| `MERGE_KEEPER_GITHUB_TOKEN_RW` | MergeKeeper-only classic PAT for explicit status/comment publishing. |
+| `REVIEW_BEE_GITHUB_TOKEN_RW` | ReviewBee-only classic PAT for explicit maintained-comment publishing. |
+| `TRUST_GATE_GITHUB_TOKEN_RW` | TrustGate-only classic PAT for explicit status/comment publishing. |
+| `REPO_REAPER_GITHUB_TOKEN_RW` | RepoReaper-only classic PAT for branches, commits, and pull requests. |
 | `RUST_LOG` | Rust logging level. |
 | `PATCHHIVE_ALLOW_REMOTE_BOOTSTRAP` | Set `true` to allow API-key generation from non-localhost. Defaults to localhost-only. |
 | `PATCHHIVE_<OTHER>_URL` / `PATCHHIVE_<OTHER>_API_KEY` | Cross-product wiring (e.g. `PATCHHIVE_REPO_MEMORY_URL`, `PATCHHIVE_TRUST_GATE_URL`). Lets one product call another. |

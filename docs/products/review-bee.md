@@ -117,8 +117,8 @@ Unit tests cover actionability filtering, path bucketing, and webhook event supp
 
 | Variable | Required | Default | Purpose |
 |----------|----------|---------|---------|
-| `BOT_GITHUB_TOKEN` | No* | — | Fine-grained PAT for PR review reads. Scopes: Metadata (read), Pull requests (read). Add Issues (write) for maintained checklist comments. |
-| `GITHUB_TOKEN` | No | — | Fallback token if `BOT_GITHUB_TOKEN` is not set. |
+| `PATCHHIVE_GITHUB_TOKEN_RO` | No* | — | Shared classic PAT for PR review reads. |
+| `REVIEW_BEE_GITHUB_TOKEN_RW` | No | — | Dedicated classic PAT for explicit maintained checklist comments. |
 | `REVIEW_BEE_GITHUB_WEBHOOK_SECRET` | No | — | Signed webhook secret. Required for `/webhooks/github` to accept deliveries. |
 | `REVIEW_BEE_PUBLIC_URL` | No | — | Public base URL for deep-links from maintained PR comments back to ReviewBee history pages (e.g. `http://localhost:5177`). |
 | `REVIEW_BEE_API_KEY_HASH` | No | — | Pre-seeded bcrypt hash of the operator API key. Otherwise the first key is generated locally via the UI or `/auth/generate-key`. |
@@ -128,7 +128,7 @@ Unit tests cover actionability filtering, path bucketing, and webhook event supp
 | `REVIEW_BEE_DB_POOL_SIZE` | No | pool default | SQLite connection pool size. |
 | `RUST_LOG` | No | `info` | Rust tracing/logging level (`error`, `warn`, `info`, `debug`, `trace`). |
 
-> **\*** At least one of `BOT_GITHUB_TOKEN` or `GITHUB_TOKEN` is required for GitHub-backed review analysis. Without a token, the `/review/github/pr` and `/webhooks/github` endpoints return 502 Bad Gateway. The startup check marks this as a hard error.
+> **\*** `PATCHHIVE_GITHUB_TOKEN_RO` is required for GitHub-backed review analysis. Without a token, the `/review/github/pr` and `/webhooks/github` endpoints return 502 Bad Gateway. The startup check marks this as a hard error.
 
 ### API key authentication
 
@@ -400,7 +400,7 @@ docker compose up --build
 
 Before deploying:
 
-1. Set `BOT_GITHUB_TOKEN` or `GITHUB_TOKEN` with at least Metadata (read) and Pull requests (read) scopes.
+1. Set `PATCHHIVE_GITHUB_TOKEN_RO` to a classic PAT with `public_repo` or `repo`.
 2. Generate an API key via `POST /auth/generate-key` (or set `REVIEW_BEE_API_KEY_HASH`).
 3. (Optional) Set `REVIEW_BEE_GITHUB_WEBHOOK_SECRET` and configure the GitHub webhook to point at `https://your-host/webhooks/github`.
 4. (Optional) Set `REVIEW_BEE_PUBLIC_URL` so maintained comments can deep-link to history.
@@ -410,7 +410,7 @@ Before deploying:
 
 | Symptom | Likely cause | Check / fix |
 |---------|-------------|-------------|
-| `/review/github/pr` returns 502 | No GitHub token configured | Set `BOT_GITHUB_TOKEN` or `GITHUB_TOKEN`; verify via `GET /startup/checks` |
+| `/review/github/pr` returns 502 | No GitHub token configured | Set `PATCHHIVE_GITHUB_TOKEN_RO`; verify via `GET /startup/checks` |
 | `/health` shows `status: degraded` | Config errors or DB failure | Check `config_errors` count and `db_ok` field; inspect `GET /startup/checks` for detailed diagnostics |
 | Webhook returns 503 | Webhook secret not configured | Set `REVIEW_BEE_GITHUB_WEBHOOK_SECRET` |
 | Webhook returns 401 | Signature mismatch | Verify the webhook secret in GitHub settings matches `REVIEW_BEE_GITHUB_WEBHOOK_SECRET` |
