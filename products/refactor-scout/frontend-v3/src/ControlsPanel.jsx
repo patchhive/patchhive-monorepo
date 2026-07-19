@@ -17,6 +17,7 @@ import {
   ProductControlsLayout,
   ProductControlsPair,
   ProductControlsSafetyBoundary,
+  ProductTargetScopeSection,
   V3_TEXT,
   countLabel,
   readJson,
@@ -288,26 +289,26 @@ export default function ControlsPanel({
         </ProductControlSection>
       </ProductControlsPair>
 
-      <ProductControlSection>
-        <ControlPanelTitle icon={FolderSearch} subtitle="Choose a deliberate target or a discovery scope. Autonomous discovery selects a different eligible public GitHub repository after each cooldown.">Target and discovery scope</ControlPanelTitle>
-        <div className="mt-5 grid gap-3 sm:grid-cols-2">
-          <ControlSelectField label="Target mode" onChange={setTargetSelectionMode} options={TARGET_MODES} value={targetSelectionMode} />
-          <ControlField label="Maximum source files" max="1500" min="25" onChange={setMaxFiles} type="number" value={maxFiles} />
-          {targetSelectionMode === "direct" ? (
-            <div className="sm:col-span-2">
-              <ControlField label="Target repo or allowed local path" onChange={setTargetRepo} placeholder="owner/repository or /allowed/local/path" value={targetRepo} />
-            </div>
-          ) : (
-            <>
-              <div className="sm:col-span-2"><ControlField label="GitHub discovery query" onChange={setQuery} placeholder="maintenance, developer tools, agents…" value={query} /></div>
-              <ControlField label="Topics" onChange={setTopics} placeholder="developer-tools, maintenance" value={topics} />
-              <ControlField label="Languages" onChange={setLanguages} placeholder="rust, typescript, python" value={languages} />
-              <ControlField label="Minimum stars" min="1" onChange={setMinStars} type="number" value={minStars} />
-              <ControlField label="Repository cooldown days" max="365" min="1" onChange={setCooldownDays} type="number" value={cooldownDays} />
-            </>
-          )}
-        </div>
-      </ProductControlSection>
+      <ProductTargetScopeSection
+        icon={FolderSearch}
+        subtitle="Choose a deliberate target or a discovery scope. Autonomous discovery selects a different eligible public GitHub repository after each cooldown."
+      >
+        <ControlSelectField label="Target mode" onChange={setTargetSelectionMode} options={TARGET_MODES} value={targetSelectionMode} />
+        <ControlField label="Maximum source files" max="1500" min="25" onChange={setMaxFiles} type="number" value={maxFiles} />
+        {targetSelectionMode === "direct" ? (
+          <div className="sm:col-span-2">
+            <ControlField label="Target repo or allowed local path" onChange={setTargetRepo} placeholder="owner/repository or /allowed/local/path" value={targetRepo} />
+          </div>
+        ) : (
+          <>
+            <div className="sm:col-span-2"><ControlField label="GitHub discovery query" onChange={setQuery} placeholder="maintenance, developer tools, agents…" value={query} /></div>
+            <ControlField label="Topics" onChange={setTopics} placeholder="developer-tools, maintenance" value={topics} />
+            <ControlField label="Languages" onChange={setLanguages} placeholder="rust, typescript, python" value={languages} />
+            <ControlField label="Minimum stars" min="1" onChange={setMinStars} type="number" value={minStars} />
+            <ControlField label="Repository cooldown days" max="365" min="1" onChange={setCooldownDays} type="number" value={cooldownDays} />
+          </>
+        )}
+      </ProductTargetScopeSection>
 
       <ProductControlSection>
         <ControlPanelTitle icon={ListChecks} subtitle="Opt-outs and denylists always override direct and discovery scans. An allowlist narrows GitHub scans to explicitly approved repositories.">Repository controls</ControlPanelTitle>

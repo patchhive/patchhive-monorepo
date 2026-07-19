@@ -109,6 +109,20 @@ export function ProductControlSection({ children, className = "" }) {
   return <section className={`surface p-6 ${className}`.trim()}>{children}</section>;
 }
 
+export function ProductTargetScopeSection({
+  children,
+  icon,
+  subtitle,
+  title = "Target and discovery scope",
+}) {
+  return (
+    <ProductControlSection>
+      <ControlPanelTitle icon={icon} subtitle={subtitle}>{title}</ControlPanelTitle>
+      <div className="mt-5 grid gap-3 sm:grid-cols-2">{children}</div>
+    </ProductControlSection>
+  );
+}
+
 export function ProductControlsSafetyBoundary({ cards, subtitle }) {
   return (
     <ProductControlSection>

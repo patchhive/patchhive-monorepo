@@ -192,4 +192,5 @@ export {
   ProductControlsLayout,
   ProductControlsPair,
   ProductControlsSafetyBoundary,
+  ProductTargetScopeSection,
 } from "./control-surface.jsx";
