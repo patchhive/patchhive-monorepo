@@ -16,6 +16,11 @@ empty repository field. Target-repo schedules may accept a product-specific
 target shape. RefactorScout additionally accepts an allowed local path in that
 mode.
 
+In specialist v3 frontends, scheduling belongs in a **Controls** tab alongside
+presets, target/scope configuration, repository policy controls, and suite
+service integration when those capabilities exist. Products should not add a
+standalone Schedules tab.
+
 ## Shared Substrate
 
 `patchhive_product_core::scheduling` owns the repeated backend mechanics:

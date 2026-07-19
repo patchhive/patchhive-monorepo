@@ -127,6 +127,7 @@ export function ProductScheduleManager({
   apiBase,
   currentPayload,
   description = "Save the current product inputs and rerun them automatically on a bounded cadence.",
+  eyebrow = "Run controls",
   fetcher,
   onError,
   onLoadPayload,
@@ -142,6 +143,7 @@ export function ProductScheduleManager({
     { value: "direct", label: "Target repo" },
     { value: "discovery", label: "Autonomous discovery" },
   ],
+  title = "Targets, schedules, and scope.",
 }) {
   const [schedules, setSchedules] = useState([]);
   const [selectedName, setSelectedName] = useState("");
@@ -272,8 +274,8 @@ export function ProductScheduleManager({
   return (
     <div className="space-y-6">
       <section className="surface p-6 sm:p-8">
-        <div className={`flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}><CalendarClock size={12} /> Autonomous operation</div>
-        <h1 className={`mt-2 font-display text-[42px] font-semibold ${V3_TEXT.strong}`}>Schedules.</h1>
+        <div className={`flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}><CalendarClock size={12} /> {eyebrow}</div>
+        <h1 className={`mt-2 font-display text-[42px] font-semibold ${V3_TEXT.strong}`}>{title}</h1>
         <p className={`mt-3 max-w-3xl text-[13px] leading-relaxed ${V3_TEXT.body}`}>{description}</p>
         {message ? <div aria-live="polite" className={`surface-inset mt-5 rounded-xl p-3 text-[12px] ${V3_TEXT.body}`} role="status">{message}</div> : null}
       </section>

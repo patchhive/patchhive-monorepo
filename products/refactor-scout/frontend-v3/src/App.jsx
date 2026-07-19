@@ -201,7 +201,7 @@ function scheduleScopeList(value) {
     .filter(Boolean);
 }
 
-function SchedulesPanel({ apiBase, fetcher, form, onError, onLoad, onRefresh, setForm }) {
+function ControlsPanel({ apiBase, fetcher, form, onError, onLoad, onRefresh, setForm }) {
   const [targetSelectionMode, setTargetSelectionMode] = useState("direct");
   const [targetRepo, setTargetRepo] = useState(form.repo_path || "");
   const [maxFiles, setMaxFiles] = useState(form.max_files || "250");
@@ -250,6 +250,7 @@ function SchedulesPanel({ apiBase, fetcher, form, onError, onLoad, onRefresh, se
       apiBase={apiBase}
       currentPayload={currentPayload}
       description="Choose a target repo for deliberate reassessment, or save an autonomous discovery scope that selects a different eligible public repository on each run."
+      eyebrow="Scan operations"
       fetcher={fetcher}
       onError={onError}
       onLoadPayload={(payload, mode) => {
@@ -298,9 +299,9 @@ const config = {
   emptyLabel: "No refactor opportunities match this view.",
   defaultForm: { repo_path: "", max_files: "250" },
   extraTabs: [{
-    id: "schedules",
-    label: "Schedules",
-    render: (props) => <SchedulesPanel {...props} />,
+    id: "controls",
+    label: "Controls",
+    render: (props) => <ControlsPanel {...props} />,
   }],
   requiresRepo: false,
   fields: [

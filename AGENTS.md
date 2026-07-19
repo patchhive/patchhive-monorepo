@@ -220,6 +220,11 @@ Rules:
   **Autonomous discovery**. Persist those modes as `direct` and `discovery`;
   never infer discovery from a missing target. RefactorScout's Target repo mode
   may also accept an allowed local path.
+- Specialist products expose automation configuration through a **Controls**
+  tab instead of a standalone Schedules tab. Keep presets, schedules,
+  target/scope selection, repository policy controls, and suite-service
+  integration in that surface when the product supports them; omit unsupported
+  sections honestly rather than rendering placeholders.
 - Every product must persist every first-class finding produced inside its configured input scope. Input bounds are valid; post-analysis evidence truncation is not. APIs may paginate complete retained collections, and v3 should progressively render them with show-more, show-all, and collapse controls while filters operate over the complete retained set.
 - Show aggregate dashboard KPIs once. Use the shared assessment card for up to three prioritized findings instead of repeating repository, finding, run, and warning totals in multiple surfaces. Read-only products should call this an assessment and explain the factors behind labels such as review priority.
 - Product differences belong in product name/icon, accent colors, copy, tabs, data, forms, actions, and workflow-specific panels.
