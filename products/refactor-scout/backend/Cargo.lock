@@ -922,6 +922,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "patchhive-github-data"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "patchhive-product-core"
 version = "0.1.0"
 dependencies = [
@@ -1140,8 +1151,10 @@ dependencies = [
  "chrono",
  "dotenvy",
  "once_cell",
+ "patchhive-github-data",
  "patchhive-product-core",
  "regex",
+ "reqwest",
  "rusqlite",
  "serde",
  "serde_json",

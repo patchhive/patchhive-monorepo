@@ -124,10 +124,8 @@ pub async fn build_scan_result_for_input(
     repo_path: &str,
     max_files: u32,
 ) -> Result<RefactorScanResult> {
-    if !should_use_local_scan(repo_path) {
-        if let Some(target) = parse_github_repo_target(repo_path) {
-            return build_github_scan_result(target, max_files).await;
-        }
+    if let Some(target) = github_repo_target_for_input(repo_path) {
+        return build_github_scan_result(target, max_files).await;
     }
 
     build_scan_result(state, repo_path, max_files)
@@ -198,6 +196,7 @@ fn build_scan_result_from_root(
         warnings: artifacts.warnings,
         trigger_type: "operator".into(),
         schedule_name: None,
+        target_selection_mode: patchhive_product_core::contract::TargetSelectionMode::Direct,
     })
 }
 
@@ -274,10 +273,16 @@ fn clone_timeout_secs() -> u64 {
         .unwrap_or(DEFAULT_CLONE_TIMEOUT_SECS)
 }
 
-fn should_use_local_scan(repo_path: &str) -> bool {
+pub(crate) fn should_use_local_scan(repo_path: &str) -> bool {
     let trimmed = repo_path.trim();
     let path = Path::new(trimmed);
     path.exists() || path.is_absolute() || trimmed.starts_with('.') || trimmed.starts_with('~')
+}
+
+pub(crate) fn github_repo_target_for_input(input: &str) -> Option<GitHubRepoTarget> {
+    (!should_use_local_scan(input))
+        .then(|| parse_github_repo_target(input))
+        .flatten()
 }
 
 pub(crate) fn parse_github_repo_target(input: &str) -> Option<GitHubRepoTarget> {

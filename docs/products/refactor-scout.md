@@ -18,9 +18,11 @@ RefactorScout is refactor-first, read-only, and conservative. Its job is to help
 4. **Rank** — Sort candidates by evidence strength and score, with test and fixture code ranked below equivalent runtime-code leads.
 5. **Store** — Save the scan result to SQLite history.
 6. **Clean up** — Remove any temporary GitHub clone after the scan finishes.
-7. **Repeat safely** — Optionally save the same typed scan inputs as a read-only
-   schedule. Scheduled runs reuse the local-root or temporary-clone boundary and
-   record their trigger and schedule name in normal scan history.
+7. **Repeat safely** — Save either a **Target repo** schedule or an
+   **Autonomous discovery** schedule. Target-repo schedules accept an allowed
+   local path or public GitHub repository. Autonomous schedules save a bounded
+   GitHub query/topic/language scope, select one eligible repository per run,
+   and skip repositories recently selected by that schedule.
 
 Future write-capable flows (e.g., "Create refactor PR") should stay behind an explicit action: scan first, select a lead, branch in an isolated clone, run tests, pass TrustGate, then open a clearly attributed PR. A normal scan remains read-only.
 
@@ -32,6 +34,7 @@ Future write-capable flows (e.g., "Create refactor PR") should stay behind an ex
 | **Public GitHub repo slug** | e.g. `owner/repo`, or a full URL (`https://github.com/owner/repo.git`, `git@github.com:owner/repo.git`). |
 | **`max_files`** | Optional integer (25–1,500) capping the number of source files scanned. Default: 250. |
 | **Allowed roots** | Colon-separated filesystem paths set via `REFACTOR_SCOUT_ALLOWED_ROOTS`. |
+| **Autonomous discovery scope** | Optional GitHub query, topics, languages, minimum stars, and a 1–365 day per-schedule repository cooldown. |
 
 ## Outputs
 
@@ -274,7 +277,7 @@ All endpoints verified against source (`main.rs` route table and `routes.rs` han
 | `GET` | `/history` | `pipeline::history` | Last 30 scans as history items |
 | `GET` | `/history/:id` | `pipeline::history_detail` | Full scan result by ID |
 | `GET` | `/schedules` | `pipeline::scan_schedules` | List saved RefactorScout schedules and suite-facing schedule records |
-| `POST` | `/schedules` | `pipeline::save_scan_schedule` | Save typed scan inputs and a bounded cadence |
+| `POST` | `/schedules` | `pipeline::save_scan_schedule` | Save typed scan inputs, explicit `direct`/`discovery` target mode, and a bounded cadence |
 | `DELETE` | `/schedules/:name` | `pipeline::delete_scan_schedule` | Delete one saved schedule |
 | `POST` | `/schedules/:name/run` | `pipeline::run_scan_schedule_now` | Run one schedule immediately and record a scheduled scan |
 | `POST` | `/scan/local` | `pipeline::scan_local_repo` | **Trigger a scan** (see below) |

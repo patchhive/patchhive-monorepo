@@ -9,12 +9,21 @@ A schedule is therefore not synonymous with discovery. A product may schedule a
 known repository or PR, schedule a bounded discovery scope, or expose only one
 of those target modes until its engine supports both.
 
+The operator-facing names are **Target repo** and **Autonomous discovery**.
+Every schedule record stores the corresponding backend mode explicitly as
+`direct` or `discovery`; products must not infer autonomous behavior from an
+empty repository field. Target-repo schedules may accept a product-specific
+target shape. RefactorScout additionally accepts an allowed local path in that
+mode.
+
 ## Shared Substrate
 
 `patchhive_product_core::scheduling` owns the repeated backend mechanics:
 
 - `SaveProductScheduleRequest<T>` with a product-owned typed action payload;
 - `ProductSchedule` persistence in `patchhive_product_schedules`;
+- explicit `target_selection_mode` persistence with legacy schedules migrated
+  to `direct`;
 - stable conversion to `SuiteScheduleRecord`;
 - schedule-name and cadence bounds;
 - transactional due-work claims so two pollers do not claim the same run;
@@ -85,11 +94,12 @@ HiveCore eventually owns suite-wide concerns such as:
 
 - **SignalHive** — migrated to the shared store while retaining its existing
   direct/discovery schedule executor and legacy-record migration.
-- **RefactorScout** — shared schedule API and v3 manager are live for allowed
-  local paths and temporary public GitHub clones.
+- **RefactorScout** — target-repo schedules accept allowed local paths or public
+  GitHub repositories. Autonomous-discovery schedules save a bounded GitHub
+  query/topic/language scope, select one eligible repository per run, and avoid
+  repositories selected by the same schedule during its configured cooldown.
 - **Other specialist products** — should adopt this substrate as their
   operator and autonomous execution modes are finalized. Do not build another
   private schedule table or one-off schedule UI.
 - **HiveCore** — suite-level indexing and fleet controls remain a later
   integration step.
-

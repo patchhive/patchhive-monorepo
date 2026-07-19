@@ -31,8 +31,11 @@ It is a read-only scouting product inside PatchHive: a product that looks for cl
 - remove any temporary GitHub clone after the scan finishes
 - rank structural review candidates such as oversized runtime modules, long functions, and repeated string usage
 - save scan history so recurring cleanup pressure is visible over time
-- optionally schedule the same allowed local or public-GitHub target for
-  repeated read-only inspection
+- schedule a target repo for repeated read-only inspection, using either an
+  allowed local path or public GitHub repository
+- schedule autonomous GitHub discovery with bounded query/topic/language
+  inputs and a cooldown that prevents the same schedule from repeatedly
+  selecting one repository
 - copy or reload the ranked queue when it is time to schedule cleanup work
 
 ## Quick Start

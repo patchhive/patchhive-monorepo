@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   Compass,
   Database,
@@ -194,24 +194,88 @@ function SourcesDetails({ health }) {
   );
 }
 
+function scheduleScopeList(value) {
+  return String(value || "")
+    .split(/[\n,]+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
 function SchedulesPanel({ apiBase, fetcher, form, onError, onLoad, onRefresh, setForm }) {
+  const [targetSelectionMode, setTargetSelectionMode] = useState("direct");
+  const [targetRepo, setTargetRepo] = useState(form.repo_path || "");
+  const [maxFiles, setMaxFiles] = useState(form.max_files || "250");
+  const [query, setQuery] = useState("");
+  const [topics, setTopics] = useState("");
+  const [languages, setLanguages] = useState("rust, typescript, python");
+  const [minStars, setMinStars] = useState("25");
+  const [cooldownDays, setCooldownDays] = useState("30");
+  const currentPayload = {
+    repo_path: targetSelectionMode === "direct" ? targetRepo.trim() : "",
+    max_files: Number(maxFiles) || 250,
+    discovery: {
+      query: query.trim(),
+      topics: scheduleScopeList(topics),
+      languages: scheduleScopeList(languages),
+      min_stars: Number(minStars) || 25,
+      cooldown_days: Number(cooldownDays) || 30,
+    },
+  };
+  const fieldClass = `surface-inset mt-2 h-12 w-full rounded-xl bg-transparent px-4 text-[13px] outline-none ${V3_TEXT.strong}`;
+  const fieldLabel = `text-[10px] uppercase tracking-[0.2em] ${V3_TEXT.mute}`;
+  const targetConfiguration = (
+    <div className="surface-inset mt-5 rounded-xl p-4">
+      {targetSelectionMode === "direct" ? (
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="block sm:col-span-2"><span className={fieldLabel}>Target repo or allowed local path</span><input className={fieldClass} onChange={(event) => setTargetRepo(event.target.value)} placeholder="owner/repository or /allowed/local/path" value={targetRepo} /></label>
+          <label className="block"><span className={fieldLabel}>Maximum source files</span><input className={fieldClass} max="1500" min="25" onChange={(event) => setMaxFiles(event.target.value)} type="number" value={maxFiles} /></label>
+        </div>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="block sm:col-span-2"><span className={fieldLabel}>GitHub discovery query</span><input className={fieldClass} onChange={(event) => setQuery(event.target.value)} placeholder="maintenance, developer tools, agents…" value={query} /></label>
+          <label className="block"><span className={fieldLabel}>Topics</span><input className={fieldClass} onChange={(event) => setTopics(event.target.value)} placeholder="developer-tools, maintenance" value={topics} /></label>
+          <label className="block"><span className={fieldLabel}>Languages</span><input className={fieldClass} onChange={(event) => setLanguages(event.target.value)} placeholder="rust, typescript, python" value={languages} /></label>
+          <label className="block"><span className={fieldLabel}>Minimum stars</span><input className={fieldClass} min="1" onChange={(event) => setMinStars(event.target.value)} type="number" value={minStars} /></label>
+          <label className="block"><span className={fieldLabel}>Repository cooldown days</span><input className={fieldClass} max="365" min="1" onChange={(event) => setCooldownDays(event.target.value)} type="number" value={cooldownDays} /></label>
+          <label className="block"><span className={fieldLabel}>Maximum source files</span><input className={fieldClass} max="1500" min="25" onChange={(event) => setMaxFiles(event.target.value)} type="number" value={maxFiles} /></label>
+          <p className={`self-end text-[11px] leading-relaxed ${V3_TEXT.mute}`}>Each run selects one eligible public GitHub repository that this schedule has not scanned during the cooldown.</p>
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <ProductScheduleManager
       actionLabel="repository scan"
       apiBase={apiBase}
-      currentPayload={config.serialize(form)}
-      description="Save an allowed local path or public GitHub repository target and let RefactorScout rerun the same read-only structural review automatically."
+      currentPayload={currentPayload}
+      description="Choose a target repo for deliberate reassessment, or save an autonomous discovery scope that selects a different eligible public repository on each run."
       fetcher={fetcher}
       onError={onError}
-      onLoadPayload={(payload) => setForm((current) => ({
-        ...current,
-        repo_path: payload.repo_path || "",
-        max_files: String(payload.max_files || 250),
-      }))}
+      onLoadPayload={(payload, mode) => {
+        setTargetSelectionMode(mode);
+        setTargetRepo(payload.repo_path || "");
+        setMaxFiles(String(payload.max_files || 250));
+        setQuery(payload.discovery?.query || "");
+        setTopics((payload.discovery?.topics || []).join(", "));
+        setLanguages((payload.discovery?.languages || []).join(", "));
+        setMinStars(String(payload.discovery?.min_stars || 25));
+        setCooldownDays(String(payload.discovery?.cooldown_days || 30));
+        if (mode === "direct") {
+          setForm((current) => ({
+            ...current,
+            repo_path: payload.repo_path || "",
+            max_files: String(payload.max_files || 250),
+          }));
+        }
+      }}
       onRefresh={onRefresh}
       onRunComplete={(result) => result?.id && onLoad(result.id)}
+      onTargetSelectionModeChange={setTargetSelectionMode}
       productName="RefactorScout"
-      safetyNote="Scheduled RefactorScout runs remain read-only. Local paths must still be inside the configured allowlist; public GitHub targets still use disposable shallow clones. A schedule never grants broader filesystem access."
+      safetyNote="Target-repo schedules accept public GitHub repositories or allowed local paths. Autonomous discovery is GitHub-only, skips repositories recently selected by the same schedule, and still uses disposable shallow clones. Every mode remains read-only."
+      targetConfiguration={targetConfiguration}
+      targetSelectionMode={targetSelectionMode}
     />
   );
 }
@@ -233,7 +297,11 @@ const config = {
   searchPlaceholder: "Search title, path, kind, language, evidence…",
   emptyLabel: "No refactor opportunities match this view.",
   defaultForm: { repo_path: "", max_files: "250" },
-  extraTabs: [{ id: "schedules", label: "Schedules", render: SchedulesPanel }],
+  extraTabs: [{
+    id: "schedules",
+    label: "Schedules",
+    render: (props) => <SchedulesPanel {...props} />,
+  }],
   requiresRepo: false,
   fields: [
     { key: "repo_path", label: "Repository path or GitHub repository", placeholder: "/home/you/code/project or owner/repository", primary: true, fullWidth: true, help: "Local paths must be within a configured allowed root. Public GitHub repositories use a temporary shallow clone." },
@@ -320,7 +388,7 @@ const config = {
   priorityLabel: "Review priorities",
   priorityEmptyLabel: "No active refactor priorities in this scan.",
   priorityItems: (items) => [...items].sort((left, right) => safetyRank(right.safety) - safetyRank(left.safety) || right.score - left.score),
-  chips: (result, health) => [result?.repo_path || "No repository selected", result ? targetKind(result.repo_path) : "local or GitHub target", result?.trigger_type === "schedule" ? `schedule ${result.schedule_name || ""}`.trim() : "operator run", health.remote_fs_enabled ? "remote callers enabled" : "localhost only", "read only"],
+  chips: (result, health) => [result?.repo_path || "No repository selected", result?.target_selection_mode === "discovery" ? "autonomous discovery" : result ? targetKind(result.repo_path) : "local or GitHub target", result?.trigger_type === "schedule" ? `schedule ${result.schedule_name || ""}`.trim() : "operator run", health.remote_fs_enabled ? "remote callers enabled" : "localhost only", "read only"],
   targetLabel: (result, form, overview) => result?.repo_name || result?.repo_path || form.repo_path || overview.last_repo || "no repository selected",
   targetSubtitle: (result) => {
     if (!result) return "local path or public GitHub repository";
@@ -328,14 +396,14 @@ const config = {
     const retained = Number(result.metrics?.returned_opportunities || result.opportunities?.length || 0);
     return total > retained
       ? `${targetKind(result.repo_path)} · historical run retained ${retained} / ${total}`
-      : `${result.trigger_type === "schedule" ? `scheduled · ${result.schedule_name || "saved schedule"}` : "operator run"} · ${targetKind(result.repo_path)} · ${countLabel(total, "opportunity")}`;
+      : `${result.trigger_type === "schedule" ? `scheduled · ${result.schedule_name || "saved schedule"}` : "operator run"} · ${result.target_selection_mode === "discovery" ? "autonomous discovery" : targetKind(result.repo_path)} · ${countLabel(total, "opportunity")}`;
   },
   connectionName: "Filesystem",
   connectionLabel: (health) => health.db_ok ? "Filesystem ready" : "Filesystem unavailable",
   connectionValue: (health) => health.remote_fs_enabled ? "remote enabled" : "local only",
   historyTitle: (entry) => entry.repo_name || entry.repo_path || "Saved repository scan",
   historySummary: (entry) => entry.summary,
-  historyMeta: (entry) => `${entry.trigger_type === "schedule" ? `scheduled${entry.schedule_name ? ` · ${entry.schedule_name}` : ""}` : "operator run"} · ${countLabel(entry.opportunities, "opportunity")} · ${countLabel(entry.high_safety, "high-confidence candidate")} · ${countLabel(entry.medium_safety, "review candidate")}`,
+  historyMeta: (entry) => `${entry.trigger_type === "schedule" ? `scheduled${entry.schedule_name ? ` · ${entry.schedule_name}` : ""}` : "operator run"} · ${entry.target_selection_mode === "discovery" ? "autonomous discovery" : "target repo"} · ${countLabel(entry.opportunities, "opportunity")} · ${countLabel(entry.high_safety, "high-confidence candidate")} · ${countLabel(entry.medium_safety, "review candidate")}`,
   historyIdentity: (entry) => `scan ${String(entry.id || "unknown").slice(0, 8)}`,
   historySearchText: (entry) => `${entry.repo_path || ""} ${entry.trigger_type || "operator"} ${entry.schedule_name || ""} ${entry.opportunities || 0} opportunities ${entry.high_safety || 0} high safety ${entry.medium_safety || 0} medium safety`,
   historyBadges: (entry) => [{ label: countLabel(entry.high_safety, "high"), tone: entry.high_safety ? "ok" : "neutral" }, { label: countLabel(entry.medium_safety, "medium"), tone: entry.medium_safety ? "warn" : "neutral" }, { label: countLabel(entry.opportunities, "lead"), tone: entry.opportunities ? "ok" : "neutral" }],

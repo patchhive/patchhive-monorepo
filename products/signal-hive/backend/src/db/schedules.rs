@@ -34,7 +34,7 @@ pub(crate) fn migrate_legacy_scan_schedules() -> Result<()> {
     conn.execute_batch(
         r#"
         INSERT OR IGNORE INTO patchhive_product_schedules(
-            id, name, product, action_id, payload_json, cadence_hours, enabled,
+            id, name, product, action_id, payload_json, target_selection_mode, cadence_hours, enabled,
             approval_policy, created_at, updated_at, next_run_at, last_run_at,
             last_run_id, last_status, last_error
         )
@@ -44,6 +44,10 @@ pub(crate) fn migrate_legacy_scan_schedules() -> Result<()> {
             'signal-hive',
             'scan',
             params_json,
+            CASE
+                WHEN json_extract(params_json, '$.search_query') LIKE 'repo:%' THEN 'direct'
+                ELSE 'discovery'
+            END,
             cadence_hours,
             enabled,
             'read_only_auto',
@@ -55,6 +59,13 @@ pub(crate) fn migrate_legacy_scan_schedules() -> Result<()> {
             last_status,
             last_error
         FROM scan_schedules;
+
+        UPDATE patchhive_product_schedules
+        SET target_selection_mode = CASE
+            WHEN json_extract(payload_json, '$.search_query') LIKE 'repo:%' THEN 'direct'
+            ELSE 'discovery'
+        END
+        WHERE product = 'signal-hive' AND action_id = 'scan';
         "#,
     )?;
     Ok(())
@@ -90,6 +101,7 @@ pub fn save_scan_schedule(
             product: PRODUCT,
             action_id: ACTION,
             payload: &payload,
+            target_selection_mode: params.target_selection_mode(),
             cadence_hours,
             enabled,
             approval_policy: DEFAULT_SCHEDULE_APPROVAL_POLICY,

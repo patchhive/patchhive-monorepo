@@ -6,6 +6,7 @@ use serde_json::Value;
 
 use crate::contract::{
     cadence_from_hours, interval_cron_label, DispatchActionInput, SuiteScheduleRecord,
+    TargetSelectionMode,
 };
 
 pub const SCHEDULE_TABLE: &str = "patchhive_product_schedules";
@@ -18,6 +19,8 @@ pub struct SaveProductScheduleRequest<T> {
     pub name: String,
     #[serde(alias = "params")]
     pub payload: T,
+    #[serde(default)]
+    pub target_selection_mode: TargetSelectionMode,
     pub cadence_hours: u32,
     pub enabled: bool,
 }
@@ -29,6 +32,8 @@ pub struct ProductSchedule {
     pub product: String,
     pub action_id: String,
     pub payload: Value,
+    #[serde(default)]
+    pub target_selection_mode: TargetSelectionMode,
     pub cadence_hours: u32,
     pub enabled: bool,
     pub approval_policy: String,
@@ -55,14 +60,6 @@ impl ProductSchedule {
     }
 
     pub fn to_suite_schedule_record(&self) -> SuiteScheduleRecord {
-        let mut dispatch = DispatchActionInput {
-            payload: self.payload.clone(),
-            ..DispatchActionInput::default()
-        };
-        dispatch
-            .path_params
-            .insert("name".into(), self.name.clone());
-
         let mut record = SuiteScheduleRecord::new(
             self.id.clone(),
             self.name.clone(),
@@ -73,7 +70,21 @@ impl ProductSchedule {
         record.cron = interval_cron_label(self.cadence_hours);
         record.timezone = "UTC".into();
         record.enabled = self.enabled;
-        record.target_scope = self.payload.clone();
+        let mut target_scope = self.payload.clone();
+        if let Value::Object(fields) = &mut target_scope {
+            fields.insert(
+                "target_selection_mode".into(),
+                serde_json::to_value(self.target_selection_mode).unwrap_or(Value::Null),
+            );
+        }
+        let mut dispatch = DispatchActionInput {
+            payload: target_scope.clone(),
+            ..DispatchActionInput::default()
+        };
+        dispatch
+            .path_params
+            .insert("name".into(), self.name.clone());
+        record.target_scope = target_scope;
         record.approval_policy = self.approval_policy.clone();
         record.next_run_at = self.next_run_at.clone();
         record.last_run_id = self.last_run_id.clone();
@@ -91,6 +102,7 @@ pub struct SaveSchedule<'a> {
     pub product: &'a str,
     pub action_id: &'a str,
     pub payload: &'a Value,
+    pub target_selection_mode: TargetSelectionMode,
     pub cadence_hours: u32,
     pub enabled: bool,
     pub approval_policy: &'a str,
@@ -105,6 +117,7 @@ pub fn init_schema(conn: &Connection) -> Result<()> {
             product TEXT NOT NULL,
             action_id TEXT NOT NULL,
             payload_json TEXT NOT NULL,
+            target_selection_mode TEXT NOT NULL DEFAULT 'direct',
             cadence_hours INTEGER NOT NULL,
             enabled INTEGER NOT NULL DEFAULT 1,
             approval_policy TEXT NOT NULL DEFAULT 'read_only_auto',
@@ -123,13 +136,28 @@ pub fn init_schema(conn: &Connection) -> Result<()> {
         "#,
     )
     .context("failed to initialize shared product schedules")?;
+    ensure_target_selection_mode_column(conn)?;
+    Ok(())
+}
+
+fn ensure_target_selection_mode_column(conn: &Connection) -> Result<()> {
+    let mut stmt = conn.prepare("PRAGMA table_info(patchhive_product_schedules)")?;
+    let columns = stmt.query_map([], |row| row.get::<_, String>(1))?;
+    for column in columns {
+        if column? == "target_selection_mode" {
+            return Ok(());
+        }
+    }
+    conn.execute_batch(
+        "ALTER TABLE patchhive_product_schedules ADD COLUMN target_selection_mode TEXT NOT NULL DEFAULT 'direct';",
+    )?;
     Ok(())
 }
 
 pub fn list(conn: &Connection, product: &str, action_id: &str) -> Result<Vec<ProductSchedule>> {
     let mut stmt = conn.prepare(
         r#"
-        SELECT id, name, product, action_id, payload_json, cadence_hours, enabled,
+        SELECT id, name, product, action_id, payload_json, target_selection_mode, cadence_hours, enabled,
                approval_policy, created_at, updated_at, next_run_at, last_run_at,
                last_run_id, last_status, last_error
         FROM patchhive_product_schedules
@@ -150,7 +178,7 @@ pub fn get(
 ) -> Result<Option<ProductSchedule>> {
     conn.query_row(
         r#"
-        SELECT id, name, product, action_id, payload_json, cadence_hours, enabled,
+        SELECT id, name, product, action_id, payload_json, target_selection_mode, cadence_hours, enabled,
                approval_policy, created_at, updated_at, next_run_at, last_run_at,
                last_run_id, last_status, last_error
         FROM patchhive_product_schedules
@@ -193,12 +221,13 @@ pub fn save(conn: &Connection, input: SaveSchedule<'_>) -> Result<ProductSchedul
     conn.execute(
         r#"
         INSERT INTO patchhive_product_schedules(
-            id, name, product, action_id, payload_json, cadence_hours, enabled,
+            id, name, product, action_id, payload_json, target_selection_mode, cadence_hours, enabled,
             approval_policy, created_at, updated_at, next_run_at, last_run_at,
             last_run_id, last_status, last_error
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
         ON CONFLICT(product, action_id, name) DO UPDATE SET
             payload_json = excluded.payload_json,
+            target_selection_mode = excluded.target_selection_mode,
             cadence_hours = excluded.cadence_hours,
             enabled = excluded.enabled,
             approval_policy = excluded.approval_policy,
@@ -211,6 +240,7 @@ pub fn save(conn: &Connection, input: SaveSchedule<'_>) -> Result<ProductSchedul
             input.product,
             input.action_id,
             payload_json,
+            target_selection_mode_label(input.target_selection_mode),
             cadence_hours,
             if input.enabled { 1 } else { 0 },
             approval_policy,
@@ -254,7 +284,7 @@ pub fn claim_due(
     let now = Utc::now().to_rfc3339();
     let mut stmt = tx.prepare(
         r#"
-        SELECT id, name, product, action_id, payload_json, cadence_hours, enabled,
+        SELECT id, name, product, action_id, payload_json, target_selection_mode, cadence_hours, enabled,
                approval_policy, created_at, updated_at, next_run_at, last_run_at,
                last_run_id, last_status, last_error
         FROM patchhive_product_schedules
@@ -363,17 +393,32 @@ fn schedule_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ProductSchedul
         product: row.get(2)?,
         action_id: row.get(3)?,
         payload,
-        cadence_hours: row.get(5)?,
-        enabled: row.get::<_, i64>(6)? != 0,
-        approval_policy: row.get(7)?,
-        created_at: row.get(8)?,
-        updated_at: row.get(9)?,
-        next_run_at: row.get(10)?,
-        last_run_at: row.get(11)?,
-        last_run_id: row.get(12)?,
-        last_status: row.get(13)?,
-        last_error: row.get(14)?,
+        target_selection_mode: parse_target_selection_mode(&row.get::<_, String>(5)?),
+        cadence_hours: row.get(6)?,
+        enabled: row.get::<_, i64>(7)? != 0,
+        approval_policy: row.get(8)?,
+        created_at: row.get(9)?,
+        updated_at: row.get(10)?,
+        next_run_at: row.get(11)?,
+        last_run_at: row.get(12)?,
+        last_run_id: row.get(13)?,
+        last_status: row.get(14)?,
+        last_error: row.get(15)?,
     })
+}
+
+fn target_selection_mode_label(mode: TargetSelectionMode) -> &'static str {
+    match mode {
+        TargetSelectionMode::Direct => "direct",
+        TargetSelectionMode::Discovery => "discovery",
+    }
+}
+
+fn parse_target_selection_mode(value: &str) -> TargetSelectionMode {
+    match value.trim() {
+        "discovery" => TargetSelectionMode::Discovery,
+        _ => TargetSelectionMode::Direct,
+    }
 }
 
 #[cfg(test)]
@@ -394,6 +439,7 @@ mod tests {
                 product: "refactor-scout",
                 action_id: "scan",
                 payload: &json!({"repo_path": "patchhive/example", "max_files": 250}),
+                target_selection_mode: crate::contract::TargetSelectionMode::Direct,
                 cadence_hours: 24,
                 enabled: true,
                 approval_policy: DEFAULT_SCHEDULE_APPROVAL_POLICY,
@@ -425,6 +471,43 @@ mod tests {
         assert_eq!(suite.action_id, "scan");
         assert_eq!(suite.cadence, "daily");
         assert_eq!(suite.dispatch.payload["max_files"], 250);
+        assert_eq!(suite.target_scope["target_selection_mode"], "direct");
+        assert_eq!(suite.dispatch.payload["target_selection_mode"], "direct");
+    }
+
+    #[test]
+    fn legacy_schedule_tables_gain_an_explicit_direct_target_mode() {
+        let conn = Connection::open_in_memory().expect("database should open");
+        conn.execute_batch(
+            r#"
+            CREATE TABLE patchhive_product_schedules (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                product TEXT NOT NULL,
+                action_id TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                cadence_hours INTEGER NOT NULL,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                approval_policy TEXT NOT NULL DEFAULT 'read_only_auto',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                next_run_at TEXT NOT NULL,
+                last_run_at TEXT,
+                last_run_id TEXT,
+                last_status TEXT NOT NULL DEFAULT 'idle',
+                last_error TEXT,
+                UNIQUE(product, action_id, name)
+            );
+            "#,
+        )
+        .expect("legacy table should create");
+
+        init_schema(&conn).expect("schema should migrate");
+        let schedule = save_daily(&conn, "legacy-direct");
+        assert_eq!(
+            schedule.target_selection_mode,
+            crate::contract::TargetSelectionMode::Direct
+        );
     }
 
     #[test]

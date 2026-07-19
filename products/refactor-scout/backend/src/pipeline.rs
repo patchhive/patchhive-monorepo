@@ -1,4 +1,5 @@
 pub mod analysis;
+mod discovery;
 pub mod routes;
 mod scan_hygiene;
 pub mod scanning;
@@ -655,6 +656,7 @@ const C: &str = "ignored dependency or build output";
         let state = AppState {
             allowed_roots: vec![base.clone()],
             remote_fs_enabled: false,
+            ..AppState::new()
         };
         let result = build_scan_result(&state, base.to_str().expect("utf8 scan root"), 100)
             .expect("scan should succeed");
@@ -707,6 +709,7 @@ const D: &str = "repeated service boundary literal";
         let state = AppState {
             allowed_roots: vec![base.clone()],
             remote_fs_enabled: false,
+            ..AppState::new()
         };
 
         let result = build_scan_result(&state, base.to_str().expect("utf8 scan root"), 100)
@@ -746,6 +749,7 @@ fn five() { let _ = ("Content-Type", "application/vnd.github+json"); }
         let state = AppState {
             allowed_roots: vec![base.clone()],
             remote_fs_enabled: false,
+            ..AppState::new()
         };
 
         let result = build_scan_result(&state, base.to_str().expect("utf8 scan root"), 100)
@@ -785,6 +789,7 @@ fn five() { let _ = ("Content-Type", "application/vnd.github+json"); }
         let state = AppState {
             allowed_roots: vec![allowed.clone()],
             remote_fs_enabled: false,
+            ..AppState::new()
         };
 
         let err = resolve_scan_root(outside.to_str().expect("utf8 path"), &state)

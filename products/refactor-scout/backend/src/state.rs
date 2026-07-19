@@ -8,6 +8,7 @@ use std::{
 pub struct AppState {
     pub allowed_roots: Vec<PathBuf>,
     pub remote_fs_enabled: bool,
+    pub http: reqwest::Client,
 }
 
 impl Default for AppState {
@@ -21,6 +22,11 @@ impl AppState {
         Self {
             allowed_roots: configured_allowed_roots(),
             remote_fs_enabled: env_flag("REFACTOR_SCOUT_ALLOW_REMOTE_FS"),
+            http: reqwest::Client::builder()
+                .user_agent("RefactorScout by PatchHive")
+                .timeout(std::time::Duration::from_secs(30))
+                .build()
+                .expect("RefactorScout HTTP client should build"),
         }
     }
 

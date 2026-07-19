@@ -22,6 +22,11 @@ label = "Repo scan"
 description = "Scan explicitly allowed local repository paths or public GitHub repositories."
 
 [[capabilities]]
+id = "repo-discovery"
+label = "Autonomous discovery"
+description = "Select an eligible public GitHub repository from a bounded saved scope while avoiding recent repeats."
+
+[[capabilities]]
 id = "refactor-candidates"
 label = "Refactor candidates"
 description = "Surface conservative cleanup opportunities."
@@ -100,3 +105,23 @@ description = "List RefactorScout scan history."
 method = "GET"
 path = "/api/products/refactor-scout/history/:id"
 description = "Read a RefactorScout scan detail."
+
+[[routes]]
+method = "GET"
+path = "/api/products/refactor-scout/schedules"
+description = "List RefactorScout schedules and their explicit target modes."
+
+[[routes]]
+method = "POST"
+path = "/api/products/refactor-scout/schedules"
+description = "Save a target-repo or autonomous-discovery RefactorScout schedule."
+
+[[routes]]
+method = "DELETE"
+path = "/api/products/refactor-scout/schedules/:name"
+description = "Delete a RefactorScout schedule."
+
+[[routes]]
+method = "POST"
+path = "/api/products/refactor-scout/schedules/:name/run"
+description = "Run a saved RefactorScout schedule immediately."

@@ -37,9 +37,10 @@ pub enum RunTriggerMode {
     Orchestration,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum TargetSelectionMode {
+    #[default]
     Direct,
     Discovery,
 }
@@ -596,7 +597,7 @@ fn aggregate_operating_modes(actions: &[ProductAction]) -> ProductOperatingModes
             push_unique(&mut aggregate.triggers, trigger.clone());
         }
         for selection in &modes.target_selection {
-            push_unique(&mut aggregate.target_selection, selection.clone());
+            push_unique(&mut aggregate.target_selection, *selection);
         }
     }
     aggregate

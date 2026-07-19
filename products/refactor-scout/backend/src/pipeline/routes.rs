@@ -5,6 +5,7 @@ use axum::{
     Json,
 };
 use patchhive_product_core::contract;
+use patchhive_product_core::contract::{RunTriggerMode, TargetSelectionMode};
 use patchhive_product_core::startup::count_errors;
 use serde_json::json;
 
@@ -22,7 +23,10 @@ use crate::{
 };
 
 use super::analysis::scan_request_allowed;
-use super::scanning::{build_scan_result_for_input, parse_github_repo_target, MAX_SCAN_FILES};
+use super::discovery::{
+    normalize_discovery_scope, repository_policy_allows, validate_discovery_scope,
+};
+use super::scanning::{build_scan_result_for_input, github_repo_target_for_input, MAX_SCAN_FILES};
 
 type ApiError = (StatusCode, Json<serde_json::Value>);
 pub type JsonResult<T> = Result<Json<T>, ApiError>;
@@ -46,6 +50,11 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
         )
         .read_only(true)
         .scheduleable(true)
+        .trigger_modes([RunTriggerMode::Operator, RunTriggerMode::Schedule])
+        .target_selection_modes([
+            TargetSelectionMode::Direct,
+            TargetSelectionMode::Discovery,
+        ])
         .credential_requirements(["local:filesystem:read", "github:public-repo:clone"])],
         vec![
             contract::link("overview", "Overview", "/overview"),
@@ -224,6 +233,18 @@ pub async fn scan_local_repo(
     }
 
     let max_files = request.max_files.clamp(25, MAX_SCAN_FILES);
+    if let Some(target) = github_repo_target_for_input(repo_path) {
+        let label = target.label();
+        if !repository_policy_allows(&state, &label)
+            .await
+            .map_err(|error| api_error(StatusCode::BAD_GATEWAY, error.to_string()))?
+        {
+            return Err(api_error(
+                StatusCode::FORBIDDEN,
+                format!("Repository policy blocks RefactorScout from scanning `{label}`."),
+            ));
+        }
+    }
     let mut result = build_scan_result_for_input(&state, repo_path, max_files)
         .await
         .map_err(|err| api_error(StatusCode::BAD_REQUEST, err.to_string()))?;
@@ -250,22 +271,34 @@ pub async fn scan_schedules() -> Json<serde_json::Value> {
 pub async fn save_scan_schedule(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Json(body): Json<patchhive_product_core::scheduling::SaveProductScheduleRequest<ScanRequest>>,
+    Json(mut body): Json<
+        patchhive_product_core::scheduling::SaveProductScheduleRequest<ScanRequest>,
+    >,
 ) -> JsonResult<serde_json::Value> {
-    let repo_path = body.payload.repo_path.trim();
-    if repo_path.is_empty() {
-        return Err(api_error(
-            StatusCode::BAD_REQUEST,
-            "Scheduled repository target is required.",
-        ));
-    }
-    if parse_github_repo_target(repo_path).is_none()
-        && !scan_request_allowed(&headers, state.remote_fs_enabled)
-    {
-        return Err(api_error(
-            StatusCode::FORBIDDEN,
-            "Local-path schedules are limited to localhost callers unless REFACTOR_SCOUT_ALLOW_REMOTE_FS=true.",
-        ));
+    let repo_path = body.payload.repo_path.trim().to_string();
+    match body.target_selection_mode {
+        TargetSelectionMode::Direct => {
+            if repo_path.is_empty() {
+                return Err(api_error(
+                    StatusCode::BAD_REQUEST,
+                    "Target repo or allowed local path is required.",
+                ));
+            }
+            if github_repo_target_for_input(&repo_path).is_none()
+                && !scan_request_allowed(&headers, state.remote_fs_enabled)
+            {
+                return Err(api_error(
+                    StatusCode::FORBIDDEN,
+                    "Local-path schedules are limited to localhost callers unless REFACTOR_SCOUT_ALLOW_REMOTE_FS=true.",
+                ));
+            }
+        }
+        TargetSelectionMode::Discovery => {
+            body.payload.repo_path.clear();
+            body.payload.discovery = normalize_discovery_scope(&body.payload.discovery);
+            validate_discovery_scope(&body.payload.discovery)
+                .map_err(|error| api_error(StatusCode::BAD_REQUEST, error.to_string()))?;
+        }
     }
     if !(25..=MAX_SCAN_FILES).contains(&body.payload.max_files) {
         return Err(api_error(
@@ -275,8 +308,14 @@ pub async fn save_scan_schedule(
     }
     let payload = serde_json::to_value(&body.payload)
         .map_err(|error| api_error(StatusCode::BAD_REQUEST, error.to_string()))?;
-    let schedule = db::save_schedule(&body.name, &payload, body.cadence_hours, body.enabled)
-        .map_err(|error| api_error(StatusCode::BAD_REQUEST, error.to_string()))?;
+    let schedule = db::save_schedule(
+        &body.name,
+        &payload,
+        body.target_selection_mode,
+        body.cadence_hours,
+        body.enabled,
+    )
+    .map_err(|error| api_error(StatusCode::BAD_REQUEST, error.to_string()))?;
     Ok(Json(json!({ "ok": true, "schedule": schedule })))
 }
 
@@ -305,7 +344,8 @@ pub async fn run_scan_schedule_now(
     let request = schedule
         .decode_payload::<ScanRequest>()
         .map_err(|error| api_error(StatusCode::BAD_REQUEST, error.to_string()))?;
-    if parse_github_repo_target(request.repo_path.trim()).is_none()
+    if schedule.target_selection_mode == TargetSelectionMode::Direct
+        && github_repo_target_for_input(request.repo_path.trim()).is_none()
         && !scan_request_allowed(&headers, state.remote_fs_enabled)
     {
         return Err(api_error(

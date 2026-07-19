@@ -1,7 +1,42 @@
+use patchhive_product_core::contract::TargetSelectionMode;
 use serde::{Deserialize, Serialize};
 
 fn default_max_files() -> u32 {
     250
+}
+
+fn default_min_stars() -> u32 {
+    25
+}
+
+fn default_cooldown_days() -> u32 {
+    30
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiscoveryScope {
+    #[serde(default)]
+    pub query: String,
+    #[serde(default)]
+    pub topics: Vec<String>,
+    #[serde(default)]
+    pub languages: Vec<String>,
+    #[serde(default = "default_min_stars")]
+    pub min_stars: u32,
+    #[serde(default = "default_cooldown_days")]
+    pub cooldown_days: u32,
+}
+
+impl Default for DiscoveryScope {
+    fn default() -> Self {
+        Self {
+            query: String::new(),
+            topics: Vec::new(),
+            languages: vec!["rust".into(), "typescript".into(), "python".into()],
+            min_stars: default_min_stars(),
+            cooldown_days: default_cooldown_days(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -10,6 +45,8 @@ pub struct ScanRequest {
     pub repo_path: String,
     #[serde(default = "default_max_files")]
     pub max_files: u32,
+    #[serde(default)]
+    pub discovery: DiscoveryScope,
 }
 
 impl Default for ScanRequest {
@@ -17,6 +54,7 @@ impl Default for ScanRequest {
         Self {
             repo_path: String::new(),
             max_files: default_max_files(),
+            discovery: DiscoveryScope::default(),
         }
     }
 }
@@ -97,6 +135,8 @@ pub struct RefactorScanResult {
     pub trigger_type: String,
     #[serde(default)]
     pub schedule_name: Option<String>,
+    #[serde(default)]
+    pub target_selection_mode: TargetSelectionMode,
 }
 
 fn default_trigger_type() -> String {
@@ -125,6 +165,8 @@ pub struct HistoryItem {
     pub trigger_type: String,
     #[serde(default)]
     pub schedule_name: Option<String>,
+    #[serde(default)]
+    pub target_selection_mode: TargetSelectionMode,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

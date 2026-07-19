@@ -42,7 +42,8 @@ pub fn init_db() -> rusqlite::Result<()> {
           opportunities_json TEXT NOT NULL,
           warnings_json TEXT NOT NULL,
           trigger_type TEXT NOT NULL DEFAULT 'operator',
-          schedule_name TEXT
+          schedule_name TEXT,
+          target_selection_mode TEXT NOT NULL DEFAULT 'direct'
         );
 
         CREATE INDEX IF NOT EXISTS idx_refactor_scout_scans_created_at
@@ -58,6 +59,11 @@ pub fn init_db() -> rusqlite::Result<()> {
         &conn,
         "schedule_name",
         "ALTER TABLE scans ADD COLUMN schedule_name TEXT;",
+    )?;
+    ensure_scan_column(
+        &conn,
+        "target_selection_mode",
+        "ALTER TABLE scans ADD COLUMN target_selection_mode TEXT NOT NULL DEFAULT 'direct';",
     )?;
     scheduling::init_schema(&conn)
         .map_err(|error| rusqlite::Error::ToSqlConversionFailure(error.into()))?;
@@ -93,9 +99,10 @@ pub fn save_scan(scan: &RefactorScanResult) -> rusqlite::Result<()> {
         r#"
         INSERT OR REPLACE INTO scans (
           id, created_at, repo_path, repo_name, summary,
-          metrics_json, opportunities_json, warnings_json, trigger_type, schedule_name
+          metrics_json, opportunities_json, warnings_json, trigger_type, schedule_name,
+          target_selection_mode
         )
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
         "#,
         params![
             scan.id,
@@ -108,6 +115,7 @@ pub fn save_scan(scan: &RefactorScanResult) -> rusqlite::Result<()> {
             warnings_json,
             scan.trigger_type,
             scan.schedule_name,
+            target_selection_mode_label(scan.target_selection_mode),
         ],
     )?;
     Ok(())
@@ -118,7 +126,8 @@ pub fn get_scan(id: &str) -> Option<RefactorScanResult> {
     conn.query_row(
         r#"
         SELECT id, created_at, repo_path, repo_name, summary,
-               metrics_json, opportunities_json, warnings_json, trigger_type, schedule_name
+               metrics_json, opportunities_json, warnings_json, trigger_type, schedule_name,
+               target_selection_mode
         FROM scans
         WHERE id = ?1
         "#,
@@ -135,6 +144,7 @@ pub fn get_scan(id: &str) -> Option<RefactorScanResult> {
                 warnings: parse_json_column(row.get::<_, String>(7)?, 7)?,
                 trigger_type: row.get(8)?,
                 schedule_name: row.get(9)?,
+                target_selection_mode: parse_target_selection_mode(&row.get::<_, String>(10)?),
             }))
         },
     )
@@ -148,7 +158,7 @@ pub fn history(limit: usize) -> Vec<HistoryItem> {
     let Ok(mut stmt) = conn.prepare(
         r#"
         SELECT id, created_at, repo_path, repo_name, summary, metrics_json,
-               trigger_type, schedule_name
+               trigger_type, schedule_name, target_selection_mode
         FROM scans
         ORDER BY created_at DESC
         LIMIT ?1
@@ -170,6 +180,7 @@ pub fn history(limit: usize) -> Vec<HistoryItem> {
             medium_safety: metrics.medium_safety,
             trigger_type: row.get(6)?,
             schedule_name: row.get(7)?,
+            target_selection_mode: parse_target_selection_mode(&row.get::<_, String>(8)?),
         })
     }) else {
         return Vec::new();
@@ -191,6 +202,7 @@ pub fn get_schedule(name: &str) -> anyhow::Result<Option<ProductSchedule>> {
 pub fn save_schedule(
     name: &str,
     payload: &Value,
+    target_selection_mode: patchhive_product_core::contract::TargetSelectionMode,
     cadence_hours: u32,
     enabled: bool,
 ) -> anyhow::Result<ProductSchedule> {
@@ -202,11 +214,36 @@ pub fn save_schedule(
             product: "refactor-scout",
             action_id: "scan",
             payload,
+            target_selection_mode,
             cadence_hours,
             enabled,
             approval_policy: DEFAULT_SCHEDULE_APPROVAL_POLICY,
         },
     )
+}
+
+pub fn recently_scanned_repositories(
+    schedule_name: &str,
+    cooldown_days: u32,
+) -> anyhow::Result<HashSet<String>> {
+    let conn = connect()?;
+    let cutoff = (chrono::Utc::now() - chrono::Duration::days(cooldown_days.clamp(1, 365) as i64))
+        .to_rfc3339();
+    let mut stmt = conn.prepare(
+        r#"
+        SELECT DISTINCT repo_path
+        FROM scans
+        WHERE trigger_type = 'schedule'
+          AND schedule_name = ?1
+          AND target_selection_mode = 'discovery'
+          AND created_at >= ?2
+        "#,
+    )?;
+    let rows = stmt.query_map(params![schedule_name, cutoff], |row| {
+        row.get::<_, String>(0)
+    })?;
+    rows.collect::<rusqlite::Result<HashSet<_>>>()
+        .map_err(Into::into)
 }
 
 pub fn delete_schedule(name: &str) -> anyhow::Result<bool> {
@@ -308,6 +345,24 @@ fn generated_cache_warning(warning: &str) -> bool {
     warning.contains("/.vite/") || warning.contains("\\.vite\\")
 }
 
+fn target_selection_mode_label(
+    mode: patchhive_product_core::contract::TargetSelectionMode,
+) -> &'static str {
+    match mode {
+        patchhive_product_core::contract::TargetSelectionMode::Direct => "direct",
+        patchhive_product_core::contract::TargetSelectionMode::Discovery => "discovery",
+    }
+}
+
+fn parse_target_selection_mode(
+    value: &str,
+) -> patchhive_product_core::contract::TargetSelectionMode {
+    match value.trim() {
+        "discovery" => patchhive_product_core::contract::TargetSelectionMode::Discovery,
+        _ => patchhive_product_core::contract::TargetSelectionMode::Direct,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{init_db, normalize_summary, normalize_warnings};
@@ -328,7 +383,8 @@ mod tests {
               opportunities_json TEXT NOT NULL,
               warnings_json TEXT NOT NULL,
               trigger_type TEXT NOT NULL DEFAULT 'operator',
-              schedule_name TEXT
+              schedule_name TEXT,
+              target_selection_mode TEXT NOT NULL DEFAULT 'direct'
             );
             "#,
         )

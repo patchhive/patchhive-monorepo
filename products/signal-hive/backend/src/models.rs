@@ -265,7 +265,7 @@ impl ScanSchedule {
         if let Value::Object(fields) = &mut target_scope {
             fields.insert(
                 "target_selection_mode".into(),
-                serde_json::to_value(&self.target_selection_mode).unwrap_or(Value::Null),
+                serde_json::to_value(self.target_selection_mode).unwrap_or(Value::Null),
             );
         }
         let mut dispatch = DispatchActionInput {

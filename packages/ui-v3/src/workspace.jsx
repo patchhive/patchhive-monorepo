@@ -132,9 +132,16 @@ export function ProductScheduleManager({
   onLoadPayload,
   onRefresh,
   onRunComplete,
+  onTargetSelectionModeChange,
   productName,
   safetyNote = "Schedules reuse the product's existing safety and authorization boundaries.",
   schedulePayload = (schedule) => schedule.payload,
+  targetConfiguration = null,
+  targetSelectionMode = "direct",
+  targetSelectionOptions = [
+    { value: "direct", label: "Target repo" },
+    { value: "discovery", label: "Autonomous discovery" },
+  ],
 }) {
   const [schedules, setSchedules] = useState([]);
   const [selectedName, setSelectedName] = useState("");
@@ -181,6 +188,7 @@ export function ProductScheduleManager({
     setName(selected.name);
     setCadence(String(selected.cadence_hours || 24));
     setEnabled(Boolean(selected.enabled));
+    onTargetSelectionModeChange?.(selected.target_selection_mode || "direct");
   }, [selectedName, schedules]);
 
   async function perform(work) {
@@ -207,6 +215,7 @@ export function ProductScheduleManager({
         body: JSON.stringify({
           name: trimmed,
           payload: currentPayload,
+          target_selection_mode: targetSelectionMode,
           cadence_hours: Number(cadence),
           enabled,
         }),
@@ -253,7 +262,10 @@ export function ProductScheduleManager({
 
   function loadInputs() {
     if (!selected) return;
-    onLoadPayload?.(schedulePayload(selected) || {});
+    onLoadPayload?.(
+      schedulePayload(selected) || {},
+      selected.target_selection_mode || "direct",
+    );
     setMessage(`Loaded saved inputs from ${selected.name}.`);
   }
 
@@ -270,16 +282,18 @@ export function ProductScheduleManager({
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="block"><span className={`text-[10px] uppercase tracking-[0.2em] ${V3_TEXT.mute}`}>Schedule name</span><input className={`surface-inset mt-2 h-12 w-full rounded-xl bg-transparent px-4 text-[13px] outline-none ${V3_TEXT.strong}`} onChange={(event) => setName(event.target.value)} placeholder="daily-review" value={name} /></label>
           <label className="block"><span className={`text-[10px] uppercase tracking-[0.2em] ${V3_TEXT.mute}`}>Saved schedules</span><select className={`surface-inset mt-2 h-12 w-full rounded-xl bg-transparent px-4 text-[13px] outline-none ${V3_TEXT.strong}`} onChange={(event) => setSelectedName(event.target.value)} value={selectedName}><option value="">No saved schedule selected</option>{schedules.map((schedule) => <option key={schedule.id || schedule.name} value={schedule.name}>{schedule.name} · {schedule.enabled ? "enabled" : "paused"}</option>)}</select></label>
+          <label className="block"><span className={`text-[10px] uppercase tracking-[0.2em] ${V3_TEXT.mute}`}>Target mode</span><select className={`surface-inset mt-2 h-12 w-full rounded-xl bg-transparent px-4 text-[13px] outline-none ${V3_TEXT.strong}`} onChange={(event) => onTargetSelectionModeChange?.(event.target.value)} value={targetSelectionMode}>{targetSelectionOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
           <label className="block"><span className={`text-[10px] uppercase tracking-[0.2em] ${V3_TEXT.mute}`}>Cadence</span><select className={`surface-inset mt-2 h-12 w-full rounded-xl bg-transparent px-4 text-[13px] outline-none ${V3_TEXT.strong}`} onChange={(event) => setCadence(event.target.value)} value={cadence}>{SCHEDULE_CADENCES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
           <label className="block"><span className={`text-[10px] uppercase tracking-[0.2em] ${V3_TEXT.mute}`}>State</span><select className={`surface-inset mt-2 h-12 w-full rounded-xl bg-transparent px-4 text-[13px] outline-none ${V3_TEXT.strong}`} onChange={(event) => setEnabled(event.target.value === "true")} value={String(enabled)}><option value="true">Enabled</option><option value="false">Paused</option></select></label>
         </div>
+        {targetConfiguration}
         <div className="mt-5 flex flex-wrap gap-2">
           <button className="h-10 rounded-full px-4 text-[12px] font-semibold text-white disabled:opacity-40" disabled={busy || !name.trim()} onClick={saveSchedule} style={{ backgroundImage: "linear-gradient(90deg, var(--accent), var(--accent-2))" }} type="button">Save schedule</button>
           <button className={`surface-inset h-10 rounded-full px-4 text-[12px] ${V3_TEXT.body} disabled:opacity-40`} disabled={busy || !selected} onClick={loadInputs} type="button">Load inputs</button>
           <button className={`surface-inset inline-flex h-10 items-center gap-2 rounded-full px-4 text-[12px] ${V3_TEXT.body} disabled:opacity-40`} disabled={busy || !selected} onClick={runNow} type="button">{runningName ? <LoaderCircle className="animate-spin" size={13} /> : <Play size={13} />}{runningName ? "Running…" : "Run now"}</button>
           <button className="surface-inset h-10 rounded-full px-4 text-[12px] text-red-700 disabled:opacity-40 dark:text-red-300" disabled={busy || !selected} onClick={deleteSchedule} type="button"><span className="inline-flex items-center gap-2"><Trash2 size={13} />Delete</span></button>
         </div>
-        {selected ? <div className={`surface-inset mt-5 rounded-xl p-4 text-[11px] leading-relaxed ${V3_TEXT.mute}`}><strong className={V3_TEXT.strong}>{selected.name}</strong> · Next run: {selected.next_run_at ? new Date(selected.next_run_at).toLocaleString() : "not scheduled"} · Last status: {selected.last_status || "idle"}{selected.last_error ? ` · ${selected.last_error}` : ""}</div> : null}
+        {selected ? <div className={`surface-inset mt-5 rounded-xl p-4 text-[11px] leading-relaxed ${V3_TEXT.mute}`}><strong className={V3_TEXT.strong}>{selected.name}</strong> · {selected.target_selection_mode === "discovery" ? "Autonomous discovery" : "Target repo"} · Next run: {selected.next_run_at ? new Date(selected.next_run_at).toLocaleString() : "not scheduled"} · Last status: {selected.last_status || "idle"}{selected.last_error ? ` · ${selected.last_error}` : ""}</div> : null}
       </section>
 
       <section className="surface p-6">
