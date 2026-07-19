@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use chrono::Utc;
 use once_cell::sync::Lazy;
-use patchhive_product_core::sqlite::{PooledSqliteConnection, SqlitePool};
+use patchhive_product_core::sqlite::{product_db_path, PooledSqliteConnection, SqlitePool};
 use rusqlite::{params, OptionalExtension};
 
 use crate::models::{
@@ -14,7 +14,7 @@ static DB_POOL: Lazy<SqlitePool> = Lazy::new(|| {
 });
 
 pub fn db_path() -> String {
-    std::env::var("TRUST_DB_PATH").unwrap_or_else(|_| "trust-gate.db".into())
+    product_db_path("TRUST_DB_PATH", "trust-gate.db")
 }
 
 fn connect() -> Result<PooledSqliteConnection<'static>> {

@@ -10,6 +10,10 @@ repository = "https://github.com/patchhive/patchhive2"
 name = "patchhive-backend"
 path = "src/main.rs"
 
+[[bin]]
+name = "consolidate-databases"
+path = "src/bin/consolidate_databases.rs"
+
 [dependencies]
 anyhow = "1"
 axum = { version = "0.7", features = ["macros"] }

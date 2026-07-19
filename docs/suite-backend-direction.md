@@ -395,6 +395,13 @@ The first shared DB implementation now lives in `services/patchhive-backend/src/
 and is configured with `PATCHHIVE_DB_PATH`. It initializes suite-level tables
 for events, run summaries, registry overrides, and shared config.
 
+As of 2026-07-19, every in-process product resolves `PATCHHIVE_DB_PATH` before
+its standalone product-specific DB variable. The integrated product histories
+have been imported into one backend-owned database with a repeatable
+`consolidate-databases` command. The importer records per-source table counts
+in `database_consolidation_manifest`, is safe to rerun, and keeps RepoReaper
+and HiveCore out of scope until their engines move in-process.
+
 Shared tables should cover:
 
 - operator auth/session state
@@ -405,9 +412,9 @@ Shared tables should cover:
 - shared defaults
 - audit events
 
-Product modules may keep product-owned tables for product-specific evidence and detail. Table names should be namespaced by product, such as `signal_hive_scans` or `trust_gate_reviews`.
+Product modules may keep product-owned tables for product-specific evidence and detail. Table names should be namespaced by product, such as `signal_hive_scans` or `trust_gate_reviews`. Existing already-distinct tables may retain their stable names during migration, but new or colliding tables must be namespaced. RefactorScout's former generic `scans`, `scan_presets`, and `repo_lists` tables now migrate to `refactor_scout_*`; a schema-signature check prevents SignalHive's generic legacy tables from being misidentified as RefactorScout data.
 
-During migration, the unified backend can attach or import existing product SQLite files where that is safer than a one-shot migration.
+During migration, the unified backend imports existing product SQLite files into a fresh target after SQLite-consistent backups. Source databases remain available until the environment and standalone-launch strategy points every supported launch path at the consolidated file.
 
 ## Security Rules
 
@@ -473,16 +480,16 @@ filesystem work, autonomous mutation, and finally control-plane consolidation:
 12. **HiveCore** — cockpit/control-plane consolidation once enough products are actually unified.
 
 The ladder governs in-process engine migration, not whether HiveCore may use the
-unified backend earlier as a frontend and gateway client. The first eight
-products through RepoMemory are integrated as of 2026-07-12; SignalHive is
-next in the engine-migration ladder.
+unified backend earlier as a frontend and gateway client. The first ten
+specialist products through RefactorScout are integrated as of 2026-07-19.
+RepoReaper and HiveCore remain outside the consolidated in-process storage
+boundary until their engine migrations are ready.
 
 ## Open Questions
 
 - What should the first `patchhive-backend` crate/package layout be?
 - Should the shared backend image be published as `patchhive/patchhive-backend` or another image name?
-- How should product-specific migrations be versioned inside one backend binary?
-- How much existing product SQLite data needs migration versus fresh v2 storage?
+- How should product-specific schema versions converge on one shared migration registry after the current product-local migration tables?
 - What route names should become permanent for the namespaced product API?
 - What is the minimum approval contract before RepoReaper can run through the unified backend?
 

@@ -9,6 +9,7 @@ use std::{
 const DEFAULT_MAX_CONNECTIONS: usize = 4;
 const DEFAULT_BUSY_TIMEOUT_SECS: u64 = 5;
 const DEFAULT_PRAGMAS: &str = "PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;";
+const SUITE_DB_PATH_ENV: &str = "PATCHHIVE_DB_PATH";
 
 struct PoolState {
     idle: Vec<Connection>,
@@ -262,6 +263,30 @@ pub fn migration_guidance(label: impl AsRef<str>, path: impl AsRef<Path>) -> Str
     )
 }
 
+/// Resolves a product database path without letting the unified backend create
+/// a different database for every working directory.
+///
+/// `PATCHHIVE_DB_PATH` intentionally wins when it is configured because the
+/// suite backend mounts multiple product engines into one process and one
+/// backend-owned SQLite file. Standalone product processes retain their
+/// product-specific path and historical filename fallback.
+pub fn product_db_path(product_env_var: &str, standalone_default: &str) -> String {
+    product_db_path_with(product_env_var, standalone_default, |key| {
+        std::env::var(key).ok()
+    })
+}
+
+fn product_db_path_with(
+    product_env_var: &str,
+    standalone_default: &str,
+    read_env: impl Fn(&str) -> Option<String>,
+) -> String {
+    read_env(SUITE_DB_PATH_ENV)
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| read_env(product_env_var).filter(|value| !value.trim().is_empty()))
+        .unwrap_or_else(|| standalone_default.to_string())
+}
+
 impl Drop for PooledSqliteConnection<'_> {
     fn drop(&mut self) {
         let Some(conn) = self.conn.take() else {
@@ -312,7 +337,7 @@ fn read_pool_size(env_var: &str) -> Option<usize> {
 mod tests {
     use super::{
         backup_guidance, classify_error, db_path_message, operator_error_message,
-        SqliteOperatorIssue, SqlitePool,
+        product_db_path_with, SqliteOperatorIssue, SqlitePool,
     };
     use rusqlite::{ffi::ErrorCode, Error};
 
@@ -368,5 +393,30 @@ mod tests {
 
         let backup = backup_guidance("SignalHive", "signal-hive.db");
         assert!(backup.contains("signal-hive.db-wal"));
+    }
+
+    #[test]
+    fn suite_database_path_wins_over_product_and_default_paths() {
+        let lookup = |key: &str| match key {
+            "PATCHHIVE_DB_PATH" => Some("/tmp/patchhive-suite-test.db".to_string()),
+            "PRODUCT_DB_PATH" => Some("/tmp/patchhive-product-test.db".to_string()),
+            _ => None,
+        };
+        assert_eq!(
+            product_db_path_with("PRODUCT_DB_PATH", "standalone.db", lookup),
+            "/tmp/patchhive-suite-test.db"
+        );
+
+        let product_only = |key: &str| {
+            (key == "PRODUCT_DB_PATH").then(|| "/tmp/patchhive-product-test.db".to_string())
+        };
+        assert_eq!(
+            product_db_path_with("PRODUCT_DB_PATH", "standalone.db", product_only),
+            "/tmp/patchhive-product-test.db"
+        );
+        assert_eq!(
+            product_db_path_with("PRODUCT_DB_PATH", "standalone.db", |_| None),
+            "standalone.db"
+        );
     }
 }

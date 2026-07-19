@@ -40,6 +40,30 @@ The shared SQLite database defaults to `patchhive-backend.db`. Override it with:
 PATCHHIVE_DB_PATH=/tmp/patchhive-backend.db cargo run
 ```
 
+When `PATCHHIVE_DB_PATH` is set, every in-process product uses that same
+backend-owned database. Product-specific database variables remain standalone
+fallbacks only. This prevents the launch working directory from creating a new
+set of empty product databases.
+
+### Consolidating existing product databases
+
+Stop the unified backend and make SQLite backups before migrating live data.
+Then run:
+
+```bash
+cargo run --manifest-path services/patchhive-backend/Cargo.toml \
+  --bin consolidate-databases -- \
+  --target /absolute/path/to/patchhive.db
+```
+
+The importer reads the canonical databases for every currently integrated
+product, preserves SignalHive history, maps RefactorScout's formerly generic
+tables to `refactor_scout_*`, merges shared schedules by their product-aware
+keys, and records per-table source counts in
+`database_consolidation_manifest`. Re-running it is safe: rows are upserted by
+their existing keys and the manifest is refreshed. RepoReaper and HiveCore
+remain outside this importer until their engines move in-process.
+
 ## First Contract
 
 This first skeleton is intentionally control-plane-first. It gives HiveCore a stable backend to connect to before product engines are migrated.
@@ -57,12 +81,11 @@ Routes:
 - `GET /api/runs`
 - `GET /api/events`
 
-MergeKeeper, ReleaseSentry, DepTriage, and VulnTriage are mounted as in-process
-product engines under `/api/products/merge-keeper/*`,
-`/api/products/release-sentry/*`, `/api/products/dep-triage/*`, and
-`/api/products/vuln-triage/*`. Other products still use their existing backend
-engines until they are moved into this runtime or temporarily connected through
-gateway routes.
+MergeKeeper, ReleaseSentry, DepTriage, VulnTriage, FlakeSting, ReviewBee,
+TrustGate, RepoMemory, SignalHive, and RefactorScout are mounted as in-process
+product engines under their `/api/products/<product>/*` namespaces. RepoReaper
+and HiveCore still use their existing backend engines until they move into this
+runtime or temporarily connect through gateway routes.
 
 ## Product Registry
 

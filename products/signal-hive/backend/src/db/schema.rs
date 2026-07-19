@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use once_cell::sync::Lazy;
-use patchhive_product_core::sqlite::{PooledSqliteConnection, SqlitePool};
+use patchhive_product_core::sqlite::{product_db_path, PooledSqliteConnection, SqlitePool};
 use rusqlite::Connection;
 
 static DB_POOL: Lazy<SqlitePool> = Lazy::new(|| {
@@ -8,7 +8,7 @@ static DB_POOL: Lazy<SqlitePool> = Lazy::new(|| {
 });
 
 pub fn db_path() -> String {
-    std::env::var("SIGNAL_DB_PATH").unwrap_or_else(|_| "signal-hive.db".into())
+    product_db_path("SIGNAL_DB_PATH", "signal-hive.db")
 }
 
 pub fn connect() -> Result<PooledSqliteConnection<'static>> {

@@ -5,7 +5,7 @@ use patchhive_product_core::scheduling::{
     self, ProductSchedule, SaveSchedule, DEFAULT_SCHEDULE_APPROVAL_POLICY,
 };
 use patchhive_product_core::scope_policy::{normalize_repo_name, RepoListType, RepoScopePolicy};
-use patchhive_product_core::sqlite::{PooledSqliteConnection, SqlitePool};
+use patchhive_product_core::sqlite::{product_db_path, PooledSqliteConnection, SqlitePool};
 use rusqlite::{params, types::Type};
 use serde_json::Value;
 
@@ -19,7 +19,7 @@ static DB_POOL: Lazy<SqlitePool> = Lazy::new(|| {
 });
 
 pub fn db_path() -> String {
-    std::env::var("REFACTOR_SCOUT_DB_PATH").unwrap_or_else(|_| "refactor-scout.db".into())
+    product_db_path("REFACTOR_SCOUT_DB_PATH", "refactor-scout.db")
 }
 
 fn connect() -> rusqlite::Result<PooledSqliteConnection<'static>> {
@@ -34,9 +34,13 @@ pub fn health_check() -> bool {
 
 pub fn init_db() -> rusqlite::Result<()> {
     let conn = connect()?;
+    init_schema(&conn)
+}
+
+fn init_schema(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
     conn.execute_batch(
         r#"
-        CREATE TABLE IF NOT EXISTS scans (
+        CREATE TABLE IF NOT EXISTS refactor_scout_scans (
           id TEXT PRIMARY KEY,
           created_at TEXT NOT NULL,
           repo_path TEXT NOT NULL,
@@ -51,9 +55,9 @@ pub fn init_db() -> rusqlite::Result<()> {
         );
 
         CREATE INDEX IF NOT EXISTS idx_refactor_scout_scans_created_at
-        ON scans(created_at DESC);
+        ON refactor_scout_scans(created_at DESC);
 
-        CREATE TABLE IF NOT EXISTS scan_presets (
+        CREATE TABLE IF NOT EXISTS refactor_scout_scan_presets (
           name TEXT PRIMARY KEY,
           params_json TEXT NOT NULL,
           target_selection_mode TEXT NOT NULL DEFAULT 'direct',
@@ -61,31 +65,107 @@ pub fn init_db() -> rusqlite::Result<()> {
           updated_at TEXT NOT NULL
         );
 
-        CREATE TABLE IF NOT EXISTS repo_lists (
+        CREATE TABLE IF NOT EXISTS refactor_scout_repo_lists (
           repo TEXT PRIMARY KEY,
           list_type TEXT NOT NULL,
           added_at TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS refactor_scout_schema_migrations (
+          name TEXT PRIMARY KEY,
+          applied_at TEXT NOT NULL
+        );
         "#,
     )?;
     ensure_scan_column(
-        &conn,
+        conn,
         "trigger_type",
-        "ALTER TABLE scans ADD COLUMN trigger_type TEXT NOT NULL DEFAULT 'operator';",
+        "ALTER TABLE refactor_scout_scans ADD COLUMN trigger_type TEXT NOT NULL DEFAULT 'operator';",
     )?;
     ensure_scan_column(
-        &conn,
+        conn,
         "schedule_name",
-        "ALTER TABLE scans ADD COLUMN schedule_name TEXT;",
+        "ALTER TABLE refactor_scout_scans ADD COLUMN schedule_name TEXT;",
     )?;
     ensure_scan_column(
-        &conn,
+        conn,
         "target_selection_mode",
-        "ALTER TABLE scans ADD COLUMN target_selection_mode TEXT NOT NULL DEFAULT 'direct';",
+        "ALTER TABLE refactor_scout_scans ADD COLUMN target_selection_mode TEXT NOT NULL DEFAULT 'direct';",
     )?;
-    scheduling::init_schema(&conn)
+    migrate_legacy_refactor_tables(conn)?;
+    scheduling::init_schema(conn)
         .map_err(|error| rusqlite::Error::ToSqlConversionFailure(error.into()))?;
     Ok(())
+}
+
+fn migrate_legacy_refactor_tables(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
+    const MIGRATION_NAME: &str = "legacy-generic-tables-v1";
+    let already_applied: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM refactor_scout_schema_migrations WHERE name = ?1)",
+        [MIGRATION_NAME],
+        |row| row.get(0),
+    )?;
+    if already_applied {
+        return Ok(());
+    }
+
+    let legacy_scan_columns = table_columns(conn, "scans")?;
+    let is_legacy_refactor_schema = legacy_scan_columns
+        .iter()
+        .any(|column| column == "repo_path")
+        && legacy_scan_columns
+            .iter()
+            .any(|column| column == "metrics_json");
+    if is_legacy_refactor_schema {
+        migrate_legacy_table(conn, "scans", "refactor_scout_scans")?;
+        migrate_legacy_table(conn, "scan_presets", "refactor_scout_scan_presets")?;
+        migrate_legacy_table(conn, "repo_lists", "refactor_scout_repo_lists")?;
+    }
+
+    conn.execute(
+        "INSERT INTO refactor_scout_schema_migrations(name, applied_at) VALUES (?1, ?2)",
+        params![MIGRATION_NAME, chrono::Utc::now().to_rfc3339()],
+    )?;
+    Ok(())
+}
+
+fn migrate_legacy_table(
+    conn: &rusqlite::Connection,
+    source_table: &str,
+    destination_table: &str,
+) -> rusqlite::Result<()> {
+    let source_columns = table_columns(conn, source_table)?;
+    if source_columns.is_empty() {
+        return Ok(());
+    }
+    let source_columns = source_columns.into_iter().collect::<HashSet<_>>();
+    let columns = table_columns(conn, destination_table)?
+        .into_iter()
+        .filter(|column| source_columns.contains(column))
+        .collect::<Vec<_>>();
+    if columns.is_empty() {
+        return Ok(());
+    }
+    let columns = columns
+        .iter()
+        .map(|column| quote_identifier(column))
+        .collect::<Vec<_>>()
+        .join(", ");
+    conn.execute_batch(&format!(
+        "INSERT OR REPLACE INTO {} ({columns}) SELECT {columns} FROM {}",
+        quote_identifier(destination_table),
+        quote_identifier(source_table),
+    ))
+}
+
+fn table_columns(conn: &rusqlite::Connection, table: &str) -> rusqlite::Result<Vec<String>> {
+    let mut stmt = conn.prepare(&format!("PRAGMA table_info({})", quote_identifier(table)))?;
+    let columns = stmt.query_map([], |row| row.get(1))?;
+    columns.collect()
+}
+
+fn quote_identifier(identifier: &str) -> String {
+    format!("\"{}\"", identifier.replace('"', "\"\""))
 }
 
 fn ensure_scan_column(
@@ -93,7 +173,7 @@ fn ensure_scan_column(
     column_name: &str,
     migration: &str,
 ) -> rusqlite::Result<()> {
-    let mut stmt = conn.prepare("PRAGMA table_info(scans)")?;
+    let mut stmt = conn.prepare("PRAGMA table_info(refactor_scout_scans)")?;
     let columns = stmt.query_map([], |row| row.get::<_, String>(1))?;
     for column in columns {
         if column? == column_name {
@@ -115,7 +195,7 @@ pub fn save_scan(scan: &RefactorScanResult) -> rusqlite::Result<()> {
 
     conn.execute(
         r#"
-        INSERT OR REPLACE INTO scans (
+        INSERT OR REPLACE INTO refactor_scout_scans (
           id, created_at, repo_path, repo_name, summary,
           metrics_json, opportunities_json, warnings_json, trigger_type, schedule_name,
           target_selection_mode
@@ -146,7 +226,7 @@ pub fn get_scan(id: &str) -> Option<RefactorScanResult> {
         SELECT id, created_at, repo_path, repo_name, summary,
                metrics_json, opportunities_json, warnings_json, trigger_type, schedule_name,
                target_selection_mode
-        FROM scans
+        FROM refactor_scout_scans
         WHERE id = ?1
         "#,
         [id],
@@ -177,7 +257,7 @@ pub fn history(limit: usize) -> Vec<HistoryItem> {
         r#"
         SELECT id, created_at, repo_path, repo_name, summary, metrics_json,
                trigger_type, schedule_name, target_selection_mode
-        FROM scans
+        FROM refactor_scout_scans
         ORDER BY created_at DESC
         LIMIT ?1
         "#,
@@ -217,7 +297,7 @@ pub fn list_scan_presets() -> anyhow::Result<Vec<ScanPreset>> {
     let mut stmt = conn.prepare(
         r#"
         SELECT name, params_json, target_selection_mode, created_at, updated_at
-        FROM scan_presets
+        FROM refactor_scout_scan_presets
         ORDER BY updated_at DESC, name ASC
         "#,
     )?;
@@ -243,14 +323,14 @@ pub fn save_scan_preset(
     let now = chrono::Utc::now().to_rfc3339();
     let created_at = conn
         .query_row(
-            "SELECT created_at FROM scan_presets WHERE name = ?1",
+            "SELECT created_at FROM refactor_scout_scan_presets WHERE name = ?1",
             [name],
             |row| row.get::<_, String>(0),
         )
         .unwrap_or_else(|_| now.clone());
     conn.execute(
         r#"
-        INSERT OR REPLACE INTO scan_presets (
+        INSERT OR REPLACE INTO refactor_scout_scan_presets (
           name, params_json, target_selection_mode, created_at, updated_at
         )
         VALUES (?1, ?2, ?3, ?4, ?5)
@@ -274,13 +354,16 @@ pub fn save_scan_preset(
 
 pub fn delete_scan_preset(name: &str) -> anyhow::Result<bool> {
     let conn = connect()?;
-    Ok(conn.execute("DELETE FROM scan_presets WHERE name = ?1", [name])? > 0)
+    Ok(conn.execute(
+        "DELETE FROM refactor_scout_scan_presets WHERE name = ?1",
+        [name],
+    )? > 0)
 }
 
 pub fn list_repo_lists() -> anyhow::Result<Vec<RepoListItem>> {
     let conn = connect()?;
     let mut stmt = conn.prepare(
-        "SELECT repo, list_type, added_at FROM repo_lists ORDER BY list_type ASC, repo ASC",
+        "SELECT repo, list_type, added_at FROM refactor_scout_repo_lists ORDER BY list_type ASC, repo ASC",
     )?;
     let rows = stmt.query_map([], |row| {
         Ok(RepoListItem {
@@ -302,7 +385,7 @@ pub fn save_repo_list(repo: &str, list_type: &str) -> anyhow::Result<RepoListIte
     let added_at = chrono::Utc::now().to_rfc3339();
     let conn = connect()?;
     conn.execute(
-        "INSERT OR REPLACE INTO repo_lists(repo, list_type, added_at) VALUES(?1, ?2, ?3)",
+        "INSERT OR REPLACE INTO refactor_scout_repo_lists(repo, list_type, added_at) VALUES(?1, ?2, ?3)",
         params![repo, list_type, added_at],
     )?;
     Ok(RepoListItem {
@@ -317,7 +400,10 @@ pub fn delete_repo_list(repo: &str) -> anyhow::Result<bool> {
         return Ok(false);
     };
     let conn = connect()?;
-    Ok(conn.execute("DELETE FROM repo_lists WHERE repo = ?1", [repo])? > 0)
+    Ok(conn.execute(
+        "DELETE FROM refactor_scout_repo_lists WHERE repo = ?1",
+        [repo],
+    )? > 0)
 }
 
 pub fn repo_scope_policy() -> anyhow::Result<RepoScopePolicy> {
@@ -365,7 +451,7 @@ pub fn recently_scanned_repositories(
     let mut stmt = conn.prepare(
         r#"
         SELECT DISTINCT repo_path
-        FROM scans
+        FROM refactor_scout_scans
         WHERE trigger_type = 'schedule'
           AND schedule_name = ?1
           AND target_selection_mode = 'discovery'
@@ -406,7 +492,7 @@ pub fn overview_counts() -> OverviewCounts {
     let Ok(mut stmt) = conn.prepare(
         r#"
         SELECT repo_path, repo_name, metrics_json
-        FROM scans
+        FROM refactor_scout_scans
         ORDER BY created_at DESC
         "#,
     ) else {
@@ -498,11 +584,11 @@ fn parse_target_selection_mode(
 
 #[cfg(test)]
 mod tests {
-    use super::{init_db, normalize_summary, normalize_warnings};
+    use super::{init_schema, normalize_summary, normalize_warnings};
     use rusqlite::Connection;
 
     #[test]
-    fn init_db_creates_scans_table() {
+    fn legacy_refactor_scans_migrate_into_namespaced_storage() {
         let conn = Connection::open_in_memory().expect("in-memory db should open");
         conn.execute_batch(
             r#"
@@ -519,11 +605,71 @@ mod tests {
               schedule_name TEXT,
               target_selection_mode TEXT NOT NULL DEFAULT 'direct'
             );
+            INSERT INTO scans (
+              id, created_at, repo_path, repo_name, summary, metrics_json,
+              opportunities_json, warnings_json, trigger_type, target_selection_mode
+            ) VALUES (
+              'legacy', '2026-07-19', '/repo', 'repo', 'summary', '{}',
+              '[]', '[]', 'operator', 'direct'
+            );
             "#,
         )
         .expect("schema should create");
 
-        let _ = init_db;
+        init_schema(&conn).expect("schema migration should succeed");
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM refactor_scout_scans", [], |row| {
+                row.get(0)
+            })
+            .expect("migrated count should load");
+        assert_eq!(count, 1);
+
+        conn.execute(
+            "UPDATE refactor_scout_scans SET summary = 'new summary' WHERE id = 'legacy'",
+            [],
+        )
+        .expect("namespaced row should update");
+        init_schema(&conn).expect("repeat migration should succeed");
+        let summary: String = conn
+            .query_row(
+                "SELECT summary FROM refactor_scout_scans WHERE id = 'legacy'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("updated row should load");
+        assert_eq!(summary, "new summary");
+    }
+
+    #[test]
+    fn signal_hive_scans_are_not_mistaken_for_legacy_refactor_data() {
+        let conn = Connection::open_in_memory().expect("in-memory db should open");
+        conn.execute_batch(
+            r#"
+            CREATE TABLE scans (
+              id TEXT PRIMARY KEY,
+              created_at TEXT NOT NULL,
+              search_query TEXT NOT NULL,
+              topics_json TEXT NOT NULL,
+              languages_json TEXT NOT NULL,
+              min_stars INTEGER NOT NULL,
+              max_repos INTEGER NOT NULL,
+              issues_per_repo INTEGER NOT NULL,
+              stale_days INTEGER NOT NULL,
+              total_repos INTEGER NOT NULL,
+              total_signals INTEGER NOT NULL,
+              top_repo TEXT NOT NULL
+            );
+            "#,
+        )
+        .expect("SignalHive fixture should create");
+
+        init_schema(&conn).expect("shared schema should initialize");
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM refactor_scout_scans", [], |row| {
+                row.get(0)
+            })
+            .expect("refactor count should load");
+        assert_eq!(count, 0);
     }
 
     #[test]

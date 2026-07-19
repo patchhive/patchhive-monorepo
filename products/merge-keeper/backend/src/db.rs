@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use once_cell::sync::Lazy;
 use patchhive_product_core::branding::append_product_signature;
-use patchhive_product_core::sqlite::{PooledSqliteConnection, SqlitePool};
+use patchhive_product_core::sqlite::{product_db_path, PooledSqliteConnection, SqlitePool};
 use rusqlite::{params, OptionalExtension};
 
 use crate::models::{HistoryItem, MergeAssessment, OverviewCounts, OverviewPayload};
@@ -11,7 +11,7 @@ static DB_POOL: Lazy<SqlitePool> = Lazy::new(|| {
 });
 
 pub fn db_path() -> String {
-    std::env::var("MERGE_KEEPER_DB_PATH").unwrap_or_else(|_| "merge-keeper.db".into())
+    product_db_path("MERGE_KEEPER_DB_PATH", "merge-keeper.db")
 }
 
 fn connect() -> Result<PooledSqliteConnection<'static>> {

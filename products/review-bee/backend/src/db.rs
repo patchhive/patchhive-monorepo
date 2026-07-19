@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use once_cell::sync::Lazy;
-use patchhive_product_core::sqlite::{PooledSqliteConnection, SqlitePool};
+use patchhive_product_core::sqlite::{product_db_path, PooledSqliteConnection, SqlitePool};
 use rusqlite::{params, OptionalExtension};
 
 use crate::models::{HistoryItem, OverviewCounts, OverviewPayload, ReviewResult};
@@ -10,7 +10,7 @@ static DB_POOL: Lazy<SqlitePool> = Lazy::new(|| {
 });
 
 pub fn db_path() -> String {
-    std::env::var("REVIEW_BEE_DB_PATH").unwrap_or_else(|_| "review-bee.db".into())
+    product_db_path("REVIEW_BEE_DB_PATH", "review-bee.db")
 }
 
 fn connect() -> Result<PooledSqliteConnection<'static>> {
