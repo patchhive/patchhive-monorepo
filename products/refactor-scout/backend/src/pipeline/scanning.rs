@@ -513,9 +513,11 @@ pub(crate) fn analyze_file(path: &str, language: &str, content: &str) -> Vec<Ref
     if is_test_or_fixture_path(path) {
         for opportunity in &mut opportunities {
             opportunity.score = opportunity.score.saturating_sub(SUPPORT_CODE_SCORE_PENALTY);
+            if opportunity.safety == "high" {
+                opportunity.safety = "medium".into();
+            }
             opportunity.evidence.push(
-                "Test or fixture code is ranked below runtime code at the same safety level."
-                    .into(),
+                "Test or fixture code remains a closer-review candidate rather than high-confidence production refactor evidence.".into(),
             );
         }
     }
@@ -590,9 +592,10 @@ fn long_function_opportunities(
     excluded_line_ranges: &[(usize, usize)],
 ) -> Vec<RefactorOpportunity> {
     let mut opportunities = Vec::new();
+    let eligible_starts = function_start_eligibility(lines, language);
 
     for start in 0..lines.len() {
-        if line_is_in_ranges(start, excluded_line_ranges) {
+        if line_is_in_ranges(start, excluded_line_ranges) || !eligible_starts[start] {
             continue;
         }
         let Some(name) = function_name_for_line(language, lines[start]) else {
@@ -713,6 +716,22 @@ fn long_function_opportunities(
     }
 
     opportunities
+}
+
+fn function_start_eligibility(lines: &[&str], language: &str) -> Vec<bool> {
+    let mut state = BraceScanState::default();
+    let mut eligible = Vec::with_capacity(lines.len());
+
+    for line in lines {
+        eligible.push(
+            state.block_comment_depth == 0
+                && state.string_delimiter.is_none()
+                && state.rust_raw_hashes.is_none(),
+        );
+        structural_braces(line, language, &mut state);
+    }
+
+    eligible
 }
 
 fn repeated_literal_opportunity(
@@ -1516,6 +1535,8 @@ fn is_test_or_fixture_path(path: &str) -> bool {
         || normalized.contains("/fixtures/")
         || filename.contains(".test.")
         || filename.contains(".spec.")
+        || (filename.starts_with("test_") && filename.ends_with(".py"))
+        || filename.ends_with("_test.py")
         || filename.ends_with("_test.go")
 }
 

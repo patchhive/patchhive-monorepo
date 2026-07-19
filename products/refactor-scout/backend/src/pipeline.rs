@@ -614,10 +614,52 @@ const D: &str = "shared production boundary message";
             .expect("test lead should remain visible");
 
         assert_eq!(runtime.score.saturating_sub(test.score), 10);
+        assert_eq!(test.safety, "medium");
         assert!(test
             .evidence
             .iter()
-            .any(|item| item.contains("ranked below runtime code")));
+            .any(|item| item.contains("closer-review candidate")));
+    }
+
+    #[test]
+    fn python_test_files_at_the_repo_root_are_support_code() {
+        let source = r#"
+HEADERS = [
+    ("Content-Type", "application/vnd.patchhive+json"),
+    ("Content-Type", "application/vnd.patchhive+json"),
+    ("Content-Type", "application/vnd.patchhive+json"),
+    ("Content-Type", "application/vnd.patchhive+json"),
+    ("Content-Type", "application/vnd.patchhive+json"),
+]
+"#;
+
+        let opportunity = analyze_file("test_client.py", "python", source)
+            .into_iter()
+            .find(|item| item.kind == "repeated_literal")
+            .expect("test contract usage should remain visible");
+
+        assert_eq!(opportunity.safety, "medium");
+        assert!(opportunity
+            .evidence
+            .iter()
+            .any(|item| item.contains("closer-review candidate")));
+    }
+
+    #[test]
+    fn function_like_text_inside_multiline_strings_is_not_code() {
+        let mut source = String::from(
+            "fn fixture() {\n    let transcript = \"Assistant example:\\n\\\nfn fake_handler() {\\n\\\n",
+        );
+        for index in 0..90 {
+            source.push_str(&format!("    if fake_{index} {{ work(); }}\\n\\\n"));
+        }
+        source.push_str("}\\n\";\n}\n");
+
+        let opportunities = analyze_file("src/fixture.rs", "rust", &source);
+
+        assert!(!opportunities
+            .iter()
+            .any(|item| { item.kind == "long_function" && item.title.contains("fake_handler") }));
     }
 
     #[test]
