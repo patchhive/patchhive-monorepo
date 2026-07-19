@@ -95,7 +95,7 @@ export function useApiKeyAuth({ apiBase, storageKey }) {
             } else {
               setApiKey("");
               setNeedsAuth(true);
-              clearStoredKey(storageKey);
+              setAuthError("The backend rejected the stored API key. It remains saved so a corrected backend restart can verify it again.");
             }
             setChecked(true);
           })
@@ -103,7 +103,6 @@ export function useApiKeyAuth({ apiBase, storageKey }) {
             setApiKey("");
             setNeedsAuth(true);
             setAuthError("Cannot verify the stored API key with the backend.");
-            clearStoredKey(storageKey);
             setChecked(true);
           });
       })
