@@ -7,9 +7,10 @@ pub mod schedules;
 
 // Re-export all public route handlers for main.rs.
 pub use routes::{
-    auth_status, capabilities, delete_scan_schedule, gen_key, gen_service_token, health, history,
-    history_detail, login, overview, rotate_service_token, run_scan_schedule_now, runs,
-    save_scan_schedule, scan_local_repo, scan_schedules, startup_checks_route,
+    add_repo_list, auth_status, capabilities, delete_scan_preset, delete_scan_schedule, gen_key,
+    gen_service_token, health, history, history_detail, login, overview, remove_repo_list,
+    repo_lists, rotate_service_token, run_scan_schedule_now, runs, save_scan_preset,
+    save_scan_schedule, scan_local_repo, scan_presets, scan_schedules, startup_checks_route,
 };
 
 #[cfg(test)]

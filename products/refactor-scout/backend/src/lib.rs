@@ -85,6 +85,14 @@ pub fn router() -> Router {
         .route("/history", get(pipeline::history))
         .route("/history/:id", get(pipeline::history_detail))
         .route(
+            "/presets",
+            get(pipeline::scan_presets).post(pipeline::save_scan_preset),
+        )
+        .route(
+            "/presets/:name",
+            axum::routing::delete(pipeline::delete_scan_preset),
+        )
+        .route(
             "/schedules",
             get(pipeline::scan_schedules).post(pipeline::save_scan_schedule),
         )
@@ -95,6 +103,14 @@ pub fn router() -> Router {
         .route(
             "/schedules/:name/run",
             post(pipeline::run_scan_schedule_now),
+        )
+        .route(
+            "/repo-lists",
+            get(pipeline::repo_lists).post(pipeline::add_repo_list),
+        )
+        .route(
+            "/repo-lists/*repo",
+            axum::routing::delete(pipeline::remove_repo_list),
         )
         .route("/scan/local", post(pipeline::scan_local_repo))
         .layer(middleware::from_fn(auth::auth_middleware))

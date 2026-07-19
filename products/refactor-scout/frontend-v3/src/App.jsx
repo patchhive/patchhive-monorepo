@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import {
   Compass,
   Database,
@@ -13,13 +13,13 @@ import {
   countLabel,
   GuidanceNotice,
   IntegratedProductApp,
-  ProductScheduleManager,
   ProductLoginScreen,
   ProductShell,
   ScanWarnings,
   V3_TEXT,
 } from "@patchhivehq/ui-v3";
 import { API } from "./config.js";
+import ControlsPanel from "./ControlsPanel.jsx";
 
 const CHIP_TONES = {
   hot: "border-red-900/30 bg-red-900/10 text-red-800 dark:border-red-400/25 dark:bg-red-500/10 dark:text-red-300",
@@ -191,93 +191,6 @@ function SourcesDetails({ health }) {
       </div>
       <GuidanceNotice label="Result meaning">High confidence means multiple deterministic signals point to one shared concern. Review candidate means the evidence is weaker or more declarative. Neither label proves an extraction is safe or authorizes a code change.</GuidanceNotice>
     </section>
-  );
-}
-
-function scheduleScopeList(value) {
-  return String(value || "")
-    .split(/[\n,]+/)
-    .map((part) => part.trim())
-    .filter(Boolean);
-}
-
-function ControlsPanel({ apiBase, fetcher, form, onError, onLoad, onRefresh, setForm }) {
-  const [targetSelectionMode, setTargetSelectionMode] = useState("direct");
-  const [targetRepo, setTargetRepo] = useState(form.repo_path || "");
-  const [maxFiles, setMaxFiles] = useState(form.max_files || "250");
-  const [query, setQuery] = useState("");
-  const [topics, setTopics] = useState("");
-  const [languages, setLanguages] = useState("rust, typescript, python");
-  const [minStars, setMinStars] = useState("25");
-  const [cooldownDays, setCooldownDays] = useState("30");
-  const currentPayload = {
-    repo_path: targetSelectionMode === "direct" ? targetRepo.trim() : "",
-    max_files: Number(maxFiles) || 250,
-    discovery: {
-      query: query.trim(),
-      topics: scheduleScopeList(topics),
-      languages: scheduleScopeList(languages),
-      min_stars: Number(minStars) || 25,
-      cooldown_days: Number(cooldownDays) || 30,
-    },
-  };
-  const fieldClass = `surface-inset mt-2 h-12 w-full rounded-xl bg-transparent px-4 text-[13px] outline-none ${V3_TEXT.strong}`;
-  const fieldLabel = `text-[10px] uppercase tracking-[0.2em] ${V3_TEXT.mute}`;
-  const targetConfiguration = (
-    <div className="surface-inset mt-5 rounded-xl p-4">
-      {targetSelectionMode === "direct" ? (
-        <div className="grid gap-4 sm:grid-cols-2">
-          <label className="block sm:col-span-2"><span className={fieldLabel}>Target repo or allowed local path</span><input className={fieldClass} onChange={(event) => setTargetRepo(event.target.value)} placeholder="owner/repository or /allowed/local/path" value={targetRepo} /></label>
-          <label className="block"><span className={fieldLabel}>Maximum source files</span><input className={fieldClass} max="1500" min="25" onChange={(event) => setMaxFiles(event.target.value)} type="number" value={maxFiles} /></label>
-        </div>
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-2">
-          <label className="block sm:col-span-2"><span className={fieldLabel}>GitHub discovery query</span><input className={fieldClass} onChange={(event) => setQuery(event.target.value)} placeholder="maintenance, developer tools, agents…" value={query} /></label>
-          <label className="block"><span className={fieldLabel}>Topics</span><input className={fieldClass} onChange={(event) => setTopics(event.target.value)} placeholder="developer-tools, maintenance" value={topics} /></label>
-          <label className="block"><span className={fieldLabel}>Languages</span><input className={fieldClass} onChange={(event) => setLanguages(event.target.value)} placeholder="rust, typescript, python" value={languages} /></label>
-          <label className="block"><span className={fieldLabel}>Minimum stars</span><input className={fieldClass} min="1" onChange={(event) => setMinStars(event.target.value)} type="number" value={minStars} /></label>
-          <label className="block"><span className={fieldLabel}>Repository cooldown days</span><input className={fieldClass} max="365" min="1" onChange={(event) => setCooldownDays(event.target.value)} type="number" value={cooldownDays} /></label>
-          <label className="block"><span className={fieldLabel}>Maximum source files</span><input className={fieldClass} max="1500" min="25" onChange={(event) => setMaxFiles(event.target.value)} type="number" value={maxFiles} /></label>
-          <p className={`self-end text-[11px] leading-relaxed ${V3_TEXT.mute}`}>Each run selects one eligible public GitHub repository that this schedule has not scanned during the cooldown.</p>
-        </div>
-      )}
-    </div>
-  );
-
-  return (
-    <ProductScheduleManager
-      actionLabel="repository scan"
-      apiBase={apiBase}
-      currentPayload={currentPayload}
-      description="Choose a target repo for deliberate reassessment, or save an autonomous discovery scope that selects a different eligible public repository on each run."
-      eyebrow="Scan operations"
-      fetcher={fetcher}
-      onError={onError}
-      onLoadPayload={(payload, mode) => {
-        setTargetSelectionMode(mode);
-        setTargetRepo(payload.repo_path || "");
-        setMaxFiles(String(payload.max_files || 250));
-        setQuery(payload.discovery?.query || "");
-        setTopics((payload.discovery?.topics || []).join(", "));
-        setLanguages((payload.discovery?.languages || []).join(", "));
-        setMinStars(String(payload.discovery?.min_stars || 25));
-        setCooldownDays(String(payload.discovery?.cooldown_days || 30));
-        if (mode === "direct") {
-          setForm((current) => ({
-            ...current,
-            repo_path: payload.repo_path || "",
-            max_files: String(payload.max_files || 250),
-          }));
-        }
-      }}
-      onRefresh={onRefresh}
-      onRunComplete={(result) => result?.id && onLoad(result.id)}
-      onTargetSelectionModeChange={setTargetSelectionMode}
-      productName="RefactorScout"
-      safetyNote="Target-repo schedules accept public GitHub repositories or allowed local paths. Autonomous discovery is GitHub-only, skips repositories recently selected by the same schedule, and still uses disposable shallow clones. Every mode remains read-only."
-      targetConfiguration={targetConfiguration}
-      targetSelectionMode={targetSelectionMode}
-    />
   );
 }
 

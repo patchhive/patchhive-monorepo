@@ -108,6 +108,21 @@ description = "Read a RefactorScout scan detail."
 
 [[routes]]
 method = "GET"
+path = "/api/products/refactor-scout/presets"
+description = "List saved RefactorScout target and discovery presets."
+
+[[routes]]
+method = "POST"
+path = "/api/products/refactor-scout/presets"
+description = "Save a RefactorScout target or discovery preset."
+
+[[routes]]
+method = "DELETE"
+path = "/api/products/refactor-scout/presets/:name"
+description = "Delete a RefactorScout preset."
+
+[[routes]]
+method = "GET"
 path = "/api/products/refactor-scout/schedules"
 description = "List RefactorScout schedules and their explicit target modes."
 
@@ -125,3 +140,18 @@ description = "Delete a RefactorScout schedule."
 method = "POST"
 path = "/api/products/refactor-scout/schedules/:name/run"
 description = "Run a saved RefactorScout schedule immediately."
+
+[[routes]]
+method = "GET"
+path = "/api/products/refactor-scout/repo-lists"
+description = "List RefactorScout repository allowlist, denylist, and opt-out controls."
+
+[[routes]]
+method = "POST"
+path = "/api/products/refactor-scout/repo-lists"
+description = "Save a RefactorScout repository control."
+
+[[routes]]
+method = "DELETE"
+path = "/api/products/refactor-scout/repo-lists/*repo"
+description = "Remove a RefactorScout repository control."

@@ -59,6 +59,22 @@ impl Default for ScanRequest {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScanPreset {
+    pub name: String,
+    pub params: ScanRequest,
+    pub target_selection_mode: TargetSelectionMode,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RepoListItem {
+    pub repo: String,
+    pub list_type: String,
+    pub added_at: String,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ScanMetrics {
     #[serde(default)]

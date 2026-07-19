@@ -36,6 +36,21 @@ pub struct LoginBody {
     pub(crate) api_key: String,
 }
 
+#[derive(serde::Deserialize)]
+pub struct ScanPresetBody {
+    name: String,
+    #[serde(alias = "payload")]
+    params: ScanRequest,
+    #[serde(default)]
+    target_selection_mode: TargetSelectionMode,
+}
+
+#[derive(serde::Deserialize)]
+pub struct RepoListBody {
+    repo: String,
+    list_type: String,
+}
+
 pub async fn capabilities() -> Json<contract::ProductCapabilities> {
     Json(contract::capabilities(
         "refactor-scout",
@@ -59,7 +74,13 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
         vec![
             contract::link("overview", "Overview", "/overview"),
             contract::link("history", "History", "/history"),
+            contract::link("presets", "Presets", "/presets"),
             contract::link("schedules", "Schedules", "/schedules"),
+            contract::link(
+                "repository_controls",
+                "Repository controls",
+                "/repo-lists",
+            ),
         ],
     ))
 }
@@ -212,6 +233,64 @@ pub async fn history_detail(AxumPath(id): AxumPath<String>) -> JsonResult<Refact
         .ok_or_else(|| api_error(StatusCode::NOT_FOUND, "RefactorScout scan not found"))
 }
 
+pub async fn scan_presets() -> Json<serde_json::Value> {
+    Json(json!({
+        "presets": db::list_scan_presets().unwrap_or_default(),
+    }))
+}
+
+pub async fn save_scan_preset(
+    Json(mut body): Json<ScanPresetBody>,
+) -> JsonResult<serde_json::Value> {
+    let name = body.name.trim();
+    if name.is_empty() {
+        return Err(api_error(
+            StatusCode::BAD_REQUEST,
+            "Preset name is required.",
+        ));
+    }
+    normalize_and_validate_saved_payload(&mut body.params, body.target_selection_mode)?;
+    let preset = db::save_scan_preset(name, &body.params, body.target_selection_mode)
+        .map_err(|error| api_error(StatusCode::BAD_REQUEST, error.to_string()))?;
+    Ok(Json(json!({ "ok": true, "preset": preset })))
+}
+
+pub async fn delete_scan_preset(AxumPath(name): AxumPath<String>) -> JsonResult<serde_json::Value> {
+    let deleted = db::delete_scan_preset(&name)
+        .map_err(|error| api_error(StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?;
+    if !deleted {
+        return Err(api_error(
+            StatusCode::NOT_FOUND,
+            "RefactorScout preset not found.",
+        ));
+    }
+    Ok(Json(json!({ "ok": true })))
+}
+
+pub async fn repo_lists() -> Json<serde_json::Value> {
+    Json(json!({
+        "repos": db::list_repo_lists().unwrap_or_default(),
+    }))
+}
+
+pub async fn add_repo_list(Json(body): Json<RepoListBody>) -> JsonResult<serde_json::Value> {
+    let item = db::save_repo_list(&body.repo, &body.list_type)
+        .map_err(|error| api_error(StatusCode::BAD_REQUEST, error.to_string()))?;
+    Ok(Json(json!({ "ok": true, "item": item })))
+}
+
+pub async fn remove_repo_list(AxumPath(repo): AxumPath<String>) -> JsonResult<serde_json::Value> {
+    let deleted = db::delete_repo_list(&repo)
+        .map_err(|error| api_error(StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?;
+    if !deleted {
+        return Err(api_error(
+            StatusCode::NOT_FOUND,
+            "RefactorScout repository control not found.",
+        ));
+    }
+    Ok(Json(json!({ "ok": true })))
+}
+
 pub async fn scan_local_repo(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -275,35 +354,15 @@ pub async fn save_scan_schedule(
         patchhive_product_core::scheduling::SaveProductScheduleRequest<ScanRequest>,
     >,
 ) -> JsonResult<serde_json::Value> {
-    let repo_path = body.payload.repo_path.trim().to_string();
-    match body.target_selection_mode {
-        TargetSelectionMode::Direct => {
-            if repo_path.is_empty() {
-                return Err(api_error(
-                    StatusCode::BAD_REQUEST,
-                    "Target repo or allowed local path is required.",
-                ));
-            }
-            if github_repo_target_for_input(&repo_path).is_none()
-                && !scan_request_allowed(&headers, state.remote_fs_enabled)
-            {
-                return Err(api_error(
-                    StatusCode::FORBIDDEN,
-                    "Local-path schedules are limited to localhost callers unless REFACTOR_SCOUT_ALLOW_REMOTE_FS=true.",
-                ));
-            }
-        }
-        TargetSelectionMode::Discovery => {
-            body.payload.repo_path.clear();
-            body.payload.discovery = normalize_discovery_scope(&body.payload.discovery);
-            validate_discovery_scope(&body.payload.discovery)
-                .map_err(|error| api_error(StatusCode::BAD_REQUEST, error.to_string()))?;
-        }
-    }
-    if !(25..=MAX_SCAN_FILES).contains(&body.payload.max_files) {
+    normalize_and_validate_saved_payload(&mut body.payload, body.target_selection_mode)?;
+    let repo_path = body.payload.repo_path.trim();
+    if body.target_selection_mode == TargetSelectionMode::Direct
+        && github_repo_target_for_input(repo_path).is_none()
+        && !scan_request_allowed(&headers, state.remote_fs_enabled)
+    {
         return Err(api_error(
-            StatusCode::BAD_REQUEST,
-            format!("Scheduled maximum source files must be between 25 and {MAX_SCAN_FILES}."),
+            StatusCode::FORBIDDEN,
+            "Local-path schedules are limited to localhost callers unless REFACTOR_SCOUT_ALLOW_REMOTE_FS=true.",
         ));
     }
     let payload = serde_json::to_value(&body.payload)
@@ -317,6 +376,36 @@ pub async fn save_scan_schedule(
     )
     .map_err(|error| api_error(StatusCode::BAD_REQUEST, error.to_string()))?;
     Ok(Json(json!({ "ok": true, "schedule": schedule })))
+}
+
+fn normalize_and_validate_saved_payload(
+    payload: &mut ScanRequest,
+    target_selection_mode: TargetSelectionMode,
+) -> Result<(), ApiError> {
+    match target_selection_mode {
+        TargetSelectionMode::Direct => {
+            payload.repo_path = payload.repo_path.trim().to_string();
+            if payload.repo_path.is_empty() {
+                return Err(api_error(
+                    StatusCode::BAD_REQUEST,
+                    "Target repo or allowed local path is required.",
+                ));
+            }
+        }
+        TargetSelectionMode::Discovery => {
+            payload.repo_path.clear();
+            payload.discovery = normalize_discovery_scope(&payload.discovery);
+            validate_discovery_scope(&payload.discovery)
+                .map_err(|error| api_error(StatusCode::BAD_REQUEST, error.to_string()))?;
+        }
+    }
+    if !(25..=MAX_SCAN_FILES).contains(&payload.max_files) {
+        return Err(api_error(
+            StatusCode::BAD_REQUEST,
+            format!("Maximum source files must be between 25 and {MAX_SCAN_FILES}."),
+        ));
+    }
+    Ok(())
 }
 
 pub async fn delete_scan_schedule(

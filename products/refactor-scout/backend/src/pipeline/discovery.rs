@@ -104,6 +104,9 @@ pub(crate) async fn select_repository(
 }
 
 pub(crate) async fn repository_policy_allows(state: &AppState, repository: &str) -> Result<bool> {
+    if !crate::db::repo_scope_policy()?.allows(repository) {
+        return Ok(false);
+    }
     let decision = check_repository_policy(
         &state.http,
         &RepositoryPolicyDecisionRequest {

@@ -49,6 +49,13 @@ POST   /schedules/:name/run
 operator surface: save current inputs, load them, pause or enable the schedule,
 run now, inspect the next/last run, and delete it.
 
+Full Controls tabs use the shared `ProductControlsLayout`,
+`ProductControlsPair`, `ProductControlSection`, control field/button/title
+primitives, and `ProductControlsSafetyBoundary`. SignalHive defines the
+canonical hierarchy and spacing. SignalHive and RefactorScout consume these
+components directly; future products should provide only product-specific
+inputs, copy, and execution behavior.
+
 ## Product Ownership
 
 The shared layer does not execute arbitrary product work. Each product owns:

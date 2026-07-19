@@ -225,6 +225,11 @@ Rules:
   target/scope selection, repository policy controls, and suite-service
   integration in that surface when the product supports them; omit unsupported
   sections honestly rather than rendering placeholders.
+- Build Controls tabs with the shared `ProductControlsLayout`, paired control
+  row, control-section/field/button/title primitives, and shared safety boundary
+  from `@patchhivehq/ui-v3`. SignalHive defines the canonical hierarchy and
+  spacing; products supply their own scope fields, copy, and execution behavior
+  without visually forking the page.
 - Every product must persist every first-class finding produced inside its configured input scope. Input bounds are valid; post-analysis evidence truncation is not. APIs may paginate complete retained collections, and v3 should progressively render them with show-more, show-all, and collapse controls while filters operate over the complete retained set.
 - Show aggregate dashboard KPIs once. Use the shared assessment card for up to three prioritized findings instead of repeating repository, finding, run, and warning totals in multiple surfaces. Read-only products should call this an assessment and explain the factors behind labels such as review priority.
 - Product differences belong in product name/icon, accent colors, copy, tabs, data, forms, actions, and workflow-specific panels.
