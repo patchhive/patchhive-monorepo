@@ -105,11 +105,11 @@ for file in "${repo_root}"/products/*/.env "${repo_root}"/products/*/backend/.en
   backup_env "${file}"
 done
 
-# Preserve every non-GitHub setting. Root values are loaded first; product-local
-# values then fill product-specific keys and intentionally replace example
-# defaults with the operator's current runtime configuration.
+# Preserve every non-GitHub setting. Root values are loaded first. Legacy
+# backend-local files are merged next, then the product-level file wins any
+# conflict because it is the operator-facing standalone/Compose configuration.
 merge_env_file "${root_env}"
-for file in "${repo_root}"/products/*/.env "${repo_root}"/products/*/backend/.env; do
+for file in "${repo_root}"/products/*/backend/.env "${repo_root}"/products/*/.env; do
   merge_env_file "${file}"
 done
 
