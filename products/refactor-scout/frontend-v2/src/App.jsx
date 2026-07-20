@@ -293,7 +293,7 @@ function ScanForm({ error, form, onChange, onRun, running }) {
         <div className="form-grid">
           <label className="v2-field">
             Path or GitHub repo
-            <input className="v2-input" onChange={(event) => set("repo_path", event.target.value)} placeholder="/mnt/docker/code/patchhive or patchhive/patchhive2" value={form.repo_path} />
+            <input className="v2-input" onChange={(event) => set("repo_path", event.target.value)} placeholder="/path/to/your/repository or owner/repo" value={form.repo_path} />
           </label>
           <label className="v2-field">
             Max files
