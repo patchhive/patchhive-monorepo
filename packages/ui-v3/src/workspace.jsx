@@ -413,6 +413,9 @@ function startupCheckTitle(check) {
   const message = String(check.message || check.detail || check.msg || "").toLowerCase();
   if (message.includes("sqlite") || message.includes("database")) return "Database";
   if (message.includes("api-key") || message.includes("auth")) return "Authentication";
+  if (message.includes("allowed roots") || message.includes("allowed_root") || message.includes("filesystem scans are confined")) return "Local filesystem access";
+  if (message.includes("remote_fs") || message.includes("localhost callers") || message.includes("non-local clients")) return "Caller boundary";
+  if (message.includes("temporary git clone") || message.includes("temporary clone") || message.includes("git cli")) return "GitHub intake";
   if (message.includes("webhook")) return "GitHub webhook";
   if (message.includes("public url") || message.includes("_public_url") || message.includes("public details link")) return "Public URL";
   if (code.includes("github") || message.includes("github token") || message.includes("github access") || message.includes("github accepted")) return "GitHub access";
