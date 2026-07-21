@@ -320,7 +320,7 @@ const config = {
   historyMeta: (entry) => `${entry.trigger_type === "schedule" ? `scheduled${entry.schedule_name ? ` · ${entry.schedule_name}` : ""}` : "operator run"} · ${entry.target_selection_mode === "discovery" ? "autonomous discovery" : "target repo"} · ${countLabel(entry.opportunities, "opportunity")} · ${countLabel(entry.high_safety, "high-confidence candidate")} · ${countLabel(entry.medium_safety, "review candidate")}`,
   historyIdentity: (entry) => `scan ${String(entry.id || "unknown").slice(0, 8)}`,
   historySearchText: (entry) => `${entry.repo_path || ""} ${entry.trigger_type || "operator"} ${entry.schedule_name || ""} ${entry.opportunities || 0} opportunities ${entry.high_safety || 0} high safety ${entry.medium_safety || 0} medium safety`,
-  historyBadges: (entry) => [{ label: countLabel(entry.high_safety, "high"), tone: entry.high_safety ? "ok" : "neutral" }, { label: countLabel(entry.medium_safety, "medium"), tone: entry.medium_safety ? "warn" : "neutral" }, { label: countLabel(entry.opportunities, "lead"), tone: entry.opportunities ? "ok" : "neutral" }],
+  historyBadges: (entry) => [{ label: `${entry.high_safety || 0} high`, tone: entry.high_safety ? "ok" : "neutral" }, { label: `${entry.medium_safety || 0} review`, tone: entry.medium_safety ? "warn" : "neutral" }, { label: countLabel(entry.opportunities, "lead"), tone: entry.opportunities ? "ok" : "neutral" }],
   historyDashboard: {
     defaultView: { safety: "all", trigger: "all", repo: "all", sort: "newest" },
     initialCount: 6,
