@@ -152,7 +152,7 @@ function MainProduct({ auth }) {
     {activeTab === "dry" ? <RunPanel agents={agents} dry health={health} onParamsChange={setDryParams} onStart={(payload) => startStream("dry-run", payload, setDryStream)} onTargetSelectionModeChange={setDryTargetMode} params={dryParams} stream={dryStream} targetSelectionMode={dryTargetMode}/> : null}
     {activeTab === "history" ? <HistoryPanel history={history} leaderboard={leaderboard} loading={loading} onLoadRun={loadRun} onRefresh={refresh} rejected={rejected} selectedRun={selectedRun}/> : null}
     {activeTab === "prs" ? <PrPanel busy={prBusy} onRefresh={refresh} onRefreshPr={refreshPr} prs={prs}/> : null}
-    {activeTab === "squad" ? <SquadPanel agents={agents} apiBase={API} cooldowns={cooldowns} fetcher={fetcher} onError={setError} onRefresh={refresh} presets={presets}/> : null}
+    {activeTab === "squad" ? <SquadPanel agents={agents} apiBase={API} authToken={auth.apiKey} config={config} cooldowns={cooldowns} fetcher={fetcher} onError={setError} onRefresh={refresh} presets={presets}/> : null}
     {activeTab === "controls" ? <ControlsPanel apiBase={API} config={config} dryParams={dryParams} dryTargetMode={dryTargetMode} fetcher={fetcher} onError={setError} onRefresh={refresh} params={params} setDryParams={setDryParams} setDryTargetMode={setDryTargetMode} setParams={setParams} setTargetMode={setTargetMode} targetMode={targetMode} watchMode={watchMode}/> : null}
     {activeTab === "checks" ? <ChecksPanel checks={checks} config={config} health={health} onRefresh={refresh}/> : null}
   </ProductShell>;
