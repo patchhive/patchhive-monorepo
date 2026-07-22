@@ -4,7 +4,7 @@ name = "RepoReaper"
 role = "autonomous patch and PR execution"
 module_path = "crate::products::repo_reaper"
 route_prefix = "/api/products/repo-reaper"
-migration_stage = "gateway-ready"
+migration_stage = "integrated"
 
 [safety]
 read_only = false
@@ -14,10 +14,6 @@ opens_pull_requests = true
 requires_operator_approval = true
 credential_scopes = ["github:contents:write", "github:pull_requests:write", "provider:ai"]
 evidence_required = ["issue URL", "generated patch", "test result", "TrustGate decision"]
-
-[gateway]
-default_url = "http://127.0.0.1:8000"
-env_var = "REPO_REAPER_GATEWAY_URL"
 
 [health]
 endpoint = "/api/products/repo-reaper/health"

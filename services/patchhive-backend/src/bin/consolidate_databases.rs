@@ -60,6 +60,10 @@ const SOURCES: &[SourceSpec] = &[
         label: "refactor-scout",
         relative_path: "products/refactor-scout/refactor-scout.db",
     },
+    SourceSpec {
+        label: "repo-reaper",
+        relative_path: "products/repo-reaper/repo-reaper.db",
+    },
 ];
 
 fn main() -> Result<()> {
@@ -89,7 +93,14 @@ fn main() -> Result<()> {
 
     let mut total_tables = 0usize;
     let mut total_rows = 0usize;
-    for spec in SOURCES {
+    let selected_sources = SOURCES
+        .iter()
+        .filter(|spec| options.only.is_empty() || options.only.contains(spec.label))
+        .collect::<Vec<_>>();
+    if selected_sources.is_empty() {
+        bail!("no database sources matched --only");
+    }
+    for spec in selected_sources {
         let source_path = options.root.join(spec.relative_path);
         if !source_path.is_file() {
             bail!(
@@ -131,7 +142,8 @@ fn import_source(
 
     for (source_table, create_sql) in &tables {
         let destination_table = destination_table(label, source_table);
-        ensure_destination_table(&transaction, destination_table, create_sql)?;
+        let create_sql = rewrite_create_sql(label, create_sql);
+        ensure_destination_table(&transaction, destination_table, &create_sql)?;
         let rows = copy_table(&source, &transaction, source_table, destination_table)?;
         copied_rows += rows;
         transaction.execute(
@@ -163,14 +175,30 @@ fn source_tables(conn: &Connection) -> Result<Vec<(String, String)>> {
 }
 
 fn destination_table<'a>(label: &str, source_table: &'a str) -> &'a str {
-    if label != "refactor-scout" {
-        return source_table;
-    }
-    match source_table {
-        "scans" => "refactor_scout_scans",
-        "scan_presets" => "refactor_scout_scan_presets",
-        "repo_lists" => "refactor_scout_repo_lists",
+    match (label, source_table) {
+        ("refactor-scout", "scans") => "refactor_scout_scans",
+        ("refactor-scout", "scan_presets") => "refactor_scout_scan_presets",
+        ("refactor-scout", "repo_lists") => "refactor_scout_repo_lists",
+        ("repo-reaper", "runs") => "repo_reaper_runs",
+        ("repo-reaper", "issue_attempts") => "repo_reaper_issue_attempts",
+        ("repo-reaper", "rejected_patches") => "repo_reaper_rejected_patches",
+        ("repo-reaper", "agent_performance") => "repo_reaper_agent_performance",
+        ("repo-reaper", "team_presets") => "repo_reaper_team_presets",
+        ("repo-reaper", "repo_lists") => "repo_reaper_repo_lists",
+        ("repo-reaper", "scheduled_runs") => "repo_reaper_scheduled_runs",
+        ("repo-reaper", "pr_tracking") => "repo_reaper_pr_tracking",
+        ("repo-reaper", "dry_stalk_runs") => "repo_reaper_dry_stalk_runs",
+        ("repo-reaper", "run_artifacts") => "repo_reaper_run_artifacts",
+        ("repo-reaper", "settings") => "repo_reaper_settings",
         _ => source_table,
+    }
+}
+
+fn rewrite_create_sql(label: &str, create_sql: &str) -> String {
+    if label == "repo-reaper" {
+        create_sql.replace("REFERENCES runs", "REFERENCES repo_reaper_runs")
+    } else {
+        create_sql.to_string()
     }
 }
 
@@ -262,6 +290,7 @@ fn quote_identifier(identifier: &str) -> String {
 struct Options {
     root: PathBuf,
     target: PathBuf,
+    only: HashSet<String>,
 }
 
 impl Options {
@@ -272,6 +301,7 @@ impl Options {
             .context("failed to resolve PatchHive repository root")?;
         let mut root = default_root;
         let mut target = None;
+        let mut only = HashSet::new();
         let mut args = env::args().skip(1);
         while let Some(arg) = args.next() {
             match arg.as_str() {
@@ -283,9 +313,12 @@ impl Options {
                         args.next().context("--target requires a path")?,
                     ));
                 }
+                "--only" => {
+                    only.insert(args.next().context("--only requires a source label")?);
+                }
                 "--help" | "-h" => {
                     println!(
-                        "Usage: consolidate-databases [--root REPO] [--target DB]\n\nDefaults to <repo>/data/patchhive.db. Stop the unified backend and back up source DBs before running against live data."
+                        "Usage: consolidate-databases [--root REPO] [--target DB] [--only LABEL]\n\nDefaults to <repo>/data/patchhive.db. Repeat --only to import selected sources. Stop the unified backend and back up source DBs before running against live data."
                     );
                     std::process::exit(0);
                 }
@@ -293,13 +326,16 @@ impl Options {
             }
         }
         let target = target.unwrap_or_else(|| root.join("data/patchhive.db"));
-        Ok(Self { root, target })
+        Ok(Self { root, target, only })
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{copy_table, destination_table, ensure_destination_table, quote_identifier};
+    use super::{
+        copy_table, destination_table, ensure_destination_table, quote_identifier,
+        rewrite_create_sql,
+    };
     use rusqlite::Connection;
 
     #[test]
@@ -313,6 +349,22 @@ mod tests {
             "refactor_scout_scan_presets"
         );
         assert_eq!(destination_table("signal-hive", "scans"), "scans");
+    }
+
+    #[test]
+    fn repo_reaper_tables_and_foreign_keys_are_namespaced() {
+        assert_eq!(destination_table("repo-reaper", "runs"), "repo_reaper_runs");
+        assert_eq!(
+            destination_table("repo-reaper", "issue_attempts"),
+            "repo_reaper_issue_attempts"
+        );
+        assert_eq!(
+            rewrite_create_sql(
+                "repo-reaper",
+                "CREATE TABLE issue_attempts (run_id TEXT REFERENCES runs(id))"
+            ),
+            "CREATE TABLE issue_attempts (run_id TEXT REFERENCES repo_reaper_runs(id))"
+        );
     }
 
     #[test]

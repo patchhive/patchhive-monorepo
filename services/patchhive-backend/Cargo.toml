@@ -25,6 +25,7 @@ patchhive-product-core = { path = "../../crates/patchhive-product-core" }
 release-sentry = { path = "../../products/release-sentry/backend" }
 refactor-scout = { path = "../../products/refactor-scout/backend" }
 repo-memory = { path = "../../products/repo-memory/backend" }
+repo-reaper = { path = "../../products/repo-reaper/backend" }
 review-bee = { path = "../../products/review-bee/backend" }
 signal-hive = { path = "../../products/signal-hive/backend" }
 trust-gate = { path = "../../products/trust-gate/backend" }

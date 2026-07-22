@@ -121,7 +121,7 @@ fn load_filters() -> RepoScopePolicy {
         return Default::default();
     };
     let rows: Vec<(String, String)> = conn
-        .prepare("SELECT repo, list_type FROM repo_lists")
+        .prepare("SELECT repo, list_type FROM repo_reaper_repo_lists")
         .ok()
         .and_then(|mut s| {
             let mapped = s.query_map([], |r| Ok((r.get(0)?, r.get(1)?))).ok()?;
@@ -282,7 +282,7 @@ async fn finalize_run_with_summary(
                 COALESCE(SUM(CASE WHEN status='fixed' THEN 1 ELSE 0 END), 0),
                 COALESCE(SUM(CASE WHEN status IN ('error', 'failed', 'rejected', 'skipped') THEN 1 ELSE 0 END), 0),
                 COALESCE(SUM(CASE WHEN status!='fixed' THEN cost_usd ELSE 0 END), 0.0)
-             FROM issue_attempts WHERE run_id=?",
+             FROM repo_reaper_issue_attempts WHERE run_id=?",
             [run_id],
             |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?, r.get::<_, f64>(2)?)),
         ).unwrap_or((0, 0, 0.0))

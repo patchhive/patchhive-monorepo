@@ -59,6 +59,7 @@ pub fn router(state: Arc<AppState>) -> Router {
             "/api/products/refactor-scout",
             products::refactor_scout_router(),
         )
+        .nest("/api/products/repo-reaper", products::repo_reaper_router())
         .merge(suite_routes)
 }
 
@@ -270,6 +271,7 @@ mod tests {
             "trust-gate",
             "repo-memory",
             "refactor-scout",
+            "repo-reaper",
         ];
 
         for key in integrated {

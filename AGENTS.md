@@ -207,7 +207,8 @@ Location: `packages/ui-v3/`
 UI v3 is the next specialist-product interface. Its canonical visual source is
 `unified-ui-revamp-main/`, the Lovable project. MergeKeeper, ReleaseSentry,
 DepTriage, VulnTriage, FlakeSting, ReviewBee, TrustGate, RepoMemory,
-SignalHive, and RefactorScout have v3 frontends because their engines
+SignalHive, and RefactorScout have v3 frontends. RepoReaper's engine is also
+integrated and its v3 parity pass is now active. These products qualify because their engines
 are mounted in-process by the unified backend. Do not start another product's
 v3 frontend until its unified-backend engine reaches `integrated`.
 
@@ -473,17 +474,25 @@ Key features to preserve:
 - PatchHive branding in footer and PR bodies
 
 RepoReaper v2 temporary scope:
-- `products/repo-reaper/frontend-v2/` has a lightweight agent-team setup so Mission Deck and Dry Stalk can be tested honestly through gateway mode.
+- RepoReaper's engine is mounted in-process by `patchhive-backend`; the
+  standalone backend remains a thin launcher over the same library/router.
+- Its product tables use the `repo_reaper_*` namespace in the shared
+  `PATCHHIVE_DB_PATH` database. `REAPER_DB_PATH` remains a standalone
+  compatibility override when the suite path is absent.
+- `products/repo-reaper/frontend-v2/` has a lightweight agent-team setup so Mission Deck and Dry Stalk can be tested honestly against the integrated engine.
 - That v2 setup is intentionally not the full old frontend team builder. It can recruit a starter team, edit the active backend team, apply provider defaults, pull and filter provider model lists, and test selected models. Richer per-agent controls and the full preset-management UX remain deferred.
 - RepoReaper persists the active team and team presets in SQLite. Per-agent API keys and bot token overrides are encrypted at rest through `patchhive_product_core::secrets::TokenProtector` when `REAPER_ENCRYPTION_KEY` or `PATCHHIVE_ENCRYPTION_KEY` is set; without one of those keys, those secret fields stay memory-only and are not written to SQLite. Adding an encryption key later migrates existing plaintext active-team and preset secrets on boot.
 - Dry Stalk is still a no-write mode, but it needs at least a Scout agent because issue scoring and dry-run analysis use the AI agent pipeline.
 - Do not remove the old RepoReaper team/preset UI until the v2 replacement and unified-backend/HiveCore setup path cover those workflows.
-- When RepoReaper moves from gateway proxying into the unified backend, revisit credential ownership, preset migration/export behavior, approval gates, and HiveCore-driven setup.
+- The v3 parity pass must revisit preset export behavior, approval gates, and
+  HiveCore-driven setup without weakening RepoReaper's product-owned write
+  credential or validation requirements.
 
 RepoReaper defaults:
 - Backend: `VITE_API_URL` or the current browser origin
 - Frontend: `http://localhost:5173`
-- DB: `repo-reaper.db`
+- DB: `PATCHHIVE_DB_PATH` in suite mode; `REAPER_DB_PATH` or
+  `repo-reaper.db` in standalone mode
 - Work dir: `/tmp/repo-reaper`
 
 Important env vars:

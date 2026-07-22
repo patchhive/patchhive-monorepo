@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use chrono::Utc;
 use once_cell::sync::Lazy;
 use patchhive_product_core::secrets::TokenProtector;
-use patchhive_product_core::sqlite::{PooledSqliteConnection, SqlitePool};
+use patchhive_product_core::sqlite::{product_db_path, PooledSqliteConnection, SqlitePool};
 use rusqlite::params;
 use serde_json::Value;
 use std::path::PathBuf;
@@ -16,9 +16,7 @@ static DB_POOL: Lazy<SqlitePool> = Lazy::new(|| {
 });
 
 pub fn db_path() -> PathBuf {
-    std::env::var("REAPER_DB_PATH")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("repo-reaper.db"))
+    PathBuf::from(product_db_path("REAPER_DB_PATH", "repo-reaper.db"))
 }
 
 pub fn get_conn() -> Result<PooledSqliteConnection<'static>> {
@@ -41,13 +39,13 @@ pub fn health_check() -> bool {
 }
 
 const SCHEMA: &str = "
-CREATE TABLE IF NOT EXISTS runs (
+CREATE TABLE IF NOT EXISTS repo_reaper_runs (
     id TEXT PRIMARY KEY, started_at TEXT, finished_at TEXT,
     total_fixed INTEGER DEFAULT 0, total_attempted INTEGER DEFAULT 0,
     total_cost_usd REAL DEFAULT 0.0, status TEXT DEFAULT 'running',
     config_json TEXT, dry_run INTEGER DEFAULT 0
 );
-CREATE TABLE IF NOT EXISTS issue_attempts (
+CREATE TABLE IF NOT EXISTS repo_reaper_issue_attempts (
     id TEXT PRIMARY KEY, run_id TEXT, repo TEXT, issue_number INTEGER,
     issue_title TEXT, issue_url TEXT, status TEXT, skip_reason TEXT,
     pr_url TEXT, pr_number INTEGER,
@@ -55,9 +53,9 @@ CREATE TABLE IF NOT EXISTS issue_attempts (
     started_at TEXT, finished_at TEXT, duration_seconds REAL,
     cost_usd REAL DEFAULT 0.0, patch_diff TEXT, error_msg TEXT,
     confidence INTEGER DEFAULT 0,
-    FOREIGN KEY(run_id) REFERENCES runs(id)
+    FOREIGN KEY(run_id) REFERENCES repo_reaper_runs(id)
 );
-CREATE TABLE IF NOT EXISTS rejected_patches (
+CREATE TABLE IF NOT EXISTS repo_reaper_rejected_patches (
     id TEXT PRIMARY KEY,
     run_id TEXT,
     repo TEXT,
@@ -69,38 +67,38 @@ CREATE TABLE IF NOT EXISTS rejected_patches (
     patch_diff TEXT,
     created_at TEXT
 );
-CREATE TABLE IF NOT EXISTS agent_performance (
+CREATE TABLE IF NOT EXISTS repo_reaper_agent_performance (
     agent_name TEXT, provider TEXT, model TEXT, role TEXT,
     total_fixed INTEGER DEFAULT 0, total_skipped INTEGER DEFAULT 0,
     total_errors INTEGER DEFAULT 0, total_cost_usd REAL DEFAULT 0.0,
     PRIMARY KEY(agent_name, provider, model, role)
 );
-CREATE TABLE IF NOT EXISTS team_presets (
+CREATE TABLE IF NOT EXISTS repo_reaper_team_presets (
     name TEXT PRIMARY KEY, agents_json TEXT, created_at TEXT
 );
-CREATE TABLE IF NOT EXISTS repo_lists (
+CREATE TABLE IF NOT EXISTS repo_reaper_repo_lists (
     repo TEXT PRIMARY KEY, list_type TEXT, added_at TEXT
 );
-CREATE TABLE IF NOT EXISTS scheduled_runs (
+CREATE TABLE IF NOT EXISTS repo_reaper_scheduled_runs (
     id TEXT PRIMARY KEY, cron_expr TEXT, config_json TEXT,
     enabled INTEGER DEFAULT 1, last_run TEXT, next_run TEXT
 );
-CREATE TABLE IF NOT EXISTS pr_tracking (
+CREATE TABLE IF NOT EXISTS repo_reaper_pr_tracking (
     pr_number INTEGER, repo TEXT, run_id TEXT, opened_at TEXT,
     last_checked TEXT, state TEXT DEFAULT 'open',
     merged INTEGER DEFAULT 0, review_state TEXT,
     PRIMARY KEY(pr_number, repo)
 );
-CREATE TABLE IF NOT EXISTS dry_stalk_runs (
+CREATE TABLE IF NOT EXISTS repo_reaper_dry_stalk_runs (
     run_id TEXT PRIMARY KEY,
     repos_json TEXT NOT NULL,
     issues_json TEXT NOT NULL,
     report_json TEXT,
     scoring_available INTEGER DEFAULT 0,
     analysis_available INTEGER DEFAULT 0,
-    FOREIGN KEY(run_id) REFERENCES runs(id)
+    FOREIGN KEY(run_id) REFERENCES repo_reaper_runs(id)
 );
-CREATE TABLE IF NOT EXISTS run_artifacts (
+CREATE TABLE IF NOT EXISTS repo_reaper_run_artifacts (
     sequence INTEGER PRIMARY KEY AUTOINCREMENT,
     run_id TEXT NOT NULL,
     attempt_id TEXT,
@@ -110,11 +108,11 @@ CREATE TABLE IF NOT EXISTS run_artifacts (
     message TEXT NOT NULL,
     metadata_json TEXT,
     created_at TEXT NOT NULL,
-    FOREIGN KEY(run_id) REFERENCES runs(id)
+    FOREIGN KEY(run_id) REFERENCES repo_reaper_runs(id)
 );
-CREATE INDEX IF NOT EXISTS idx_run_artifacts_run_sequence
-    ON run_artifacts(run_id, sequence);
-CREATE TABLE IF NOT EXISTS settings (
+CREATE INDEX IF NOT EXISTS idx_repo_reaper_run_artifacts_run_sequence
+    ON repo_reaper_run_artifacts(run_id, sequence);
+CREATE TABLE IF NOT EXISTS repo_reaper_settings (
     key TEXT PRIMARY KEY, value TEXT
 );
 ";
@@ -122,7 +120,7 @@ CREATE TABLE IF NOT EXISTS settings (
 pub fn get_lifetime_cost() -> f64 {
     let Ok(conn) = get_conn() else { return 0.0 };
     conn.query_row(
-        "SELECT COALESCE(SUM(total_cost_usd), 0.0) FROM runs WHERE status IN ('done', 'partial', 'failed')",
+        "SELECT COALESCE(SUM(total_cost_usd), 0.0) FROM repo_reaper_runs WHERE status IN ('done', 'partial', 'failed')",
         [],
         |r| r.get::<_, f64>(0),
     )
@@ -162,7 +160,7 @@ pub fn migrate_agent_secret_storage() -> Result<()> {
 
     let conn = get_conn()?;
     let presets = {
-        let mut stmt = conn.prepare("SELECT name, agents_json FROM team_presets")?;
+        let mut stmt = conn.prepare("SELECT name, agents_json FROM repo_reaper_team_presets")?;
         let rows = stmt.query_map([], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })?;
@@ -174,7 +172,7 @@ pub fn migrate_agent_secret_storage() -> Result<()> {
             .with_context(|| format!("failed to decode RepoReaper team preset {name}"))?;
         let migrated = agents_to_storage_json(&agents)?;
         conn.execute(
-            "UPDATE team_presets SET agents_json=?1 WHERE name=?2",
+            "UPDATE repo_reaper_team_presets SET agents_json=?1 WHERE name=?2",
             params![migrated, name],
         )?;
     }
@@ -273,7 +271,7 @@ fn insert_run_artifact(conn: &rusqlite::Connection, input: RunArtifactInput<'_>)
         .transpose()
         .context("failed to encode RepoReaper run artifact metadata")?;
     conn.execute(
-        "INSERT INTO run_artifacts(run_id,attempt_id,phase,kind,status,message,metadata_json,created_at)
+        "INSERT INTO repo_reaper_run_artifacts(run_id,attempt_id,phase,kind,status,message,metadata_json,created_at)
          VALUES(?1,?2,?3,?4,?5,?6,?7,?8)",
         params![
             input.run_id,
@@ -314,7 +312,7 @@ impl RunStatus {
 pub fn start_run(input: RunStart<'_>) -> Result<()> {
     let conn = get_conn()?;
     conn.execute(
-        "INSERT INTO runs(id, started_at, status, config_json, dry_run) VALUES(?1,?2,'running',?3,?4)",
+        "INSERT INTO repo_reaper_runs(id, started_at, status, config_json, dry_run) VALUES(?1,?2,'running',?3,?4)",
         params![
             input.run_id,
             Utc::now().to_rfc3339(),
@@ -346,7 +344,7 @@ pub fn finish_run(
 ) -> Result<()> {
     let conn = get_conn()?;
     conn.execute(
-        "UPDATE runs SET finished_at=?1, total_fixed=?2, total_attempted=?3, total_cost_usd=?4, status=?5 WHERE id=?6",
+        "UPDATE repo_reaper_runs SET finished_at=?1, total_fixed=?2, total_attempted=?3, total_cost_usd=?4, status=?5 WHERE id=?6",
         params![
             Utc::now().to_rfc3339(),
             fixed,
@@ -392,7 +390,7 @@ pub fn save_dry_stalk_run(
         .transpose()
         .context("failed to encode dry stalk report")?;
     conn.execute(
-        "INSERT OR REPLACE INTO dry_stalk_runs(run_id, repos_json, issues_json, report_json, scoring_available, analysis_available) VALUES(?1,?2,?3,?4,?5,?6)",
+        "INSERT OR REPLACE INTO repo_reaper_dry_stalk_runs(run_id, repos_json, issues_json, report_json, scoring_available, analysis_available) VALUES(?1,?2,?3,?4,?5,?6)",
         params![
             run_id,
             repos_json,
@@ -455,7 +453,7 @@ pub struct IssueAttemptFinish<'a> {
 pub fn start_attempt(input: IssueAttemptStart<'_>) -> Result<()> {
     let conn = get_conn()?;
     conn.execute(
-        "INSERT INTO issue_attempts(id,run_id,repo,issue_number,issue_title,issue_url,status,reaper_agent,smith_agent,gatekeeper_agent,started_at)
+        "INSERT INTO repo_reaper_issue_attempts(id,run_id,repo,issue_number,issue_title,issue_url,status,reaper_agent,smith_agent,gatekeeper_agent,started_at)
          VALUES(?1,?2,?3,?4,?5,?6,'running',?7,?8,?9,?10)",
         params![
             input.attempt_id,
@@ -495,7 +493,7 @@ pub fn start_attempt(input: IssueAttemptStart<'_>) -> Result<()> {
 pub fn finish_attempt(input: IssueAttemptFinish<'_>) -> Result<()> {
     let conn = get_conn()?;
     conn.execute(
-        "UPDATE issue_attempts SET status=?1,pr_url=?2,pr_number=?3,finished_at=?4,
+        "UPDATE repo_reaper_issue_attempts SET status=?1,pr_url=?2,pr_number=?3,finished_at=?4,
          duration_seconds=?5,cost_usd=?6,patch_diff=?7,error_msg=?8,skip_reason=?9,confidence=?10
          WHERE id=?11",
         params![
@@ -513,7 +511,7 @@ pub fn finish_attempt(input: IssueAttemptFinish<'_>) -> Result<()> {
         ],
     )?;
     let run_id: String = conn.query_row(
-        "SELECT run_id FROM issue_attempts WHERE id=?1",
+        "SELECT run_id FROM repo_reaper_issue_attempts WHERE id=?1",
         [input.attempt_id],
         |row| row.get(0),
     )?;
@@ -557,7 +555,7 @@ pub struct RejectedPatchRecord<'a> {
 pub fn save_rejected_patch(record: RejectedPatchRecord<'_>) -> Result<()> {
     let conn = get_conn()?;
     conn.execute(
-        "INSERT INTO rejected_patches(id,run_id,repo,issue_number,issue_title,reason,smith_feedback,confidence,patch_diff,created_at)
+        "INSERT INTO repo_reaper_rejected_patches(id,run_id,repo,issue_number,issue_title,reason,smith_feedback,confidence,patch_diff,created_at)
          VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
         params![
             record.id,
@@ -578,7 +576,7 @@ pub fn save_rejected_patch(record: RejectedPatchRecord<'_>) -> Result<()> {
 pub fn track_pr(pr_number: i64, repo: &str, run_id: &str) -> Result<()> {
     let conn = get_conn()?;
     conn.execute(
-        "INSERT OR REPLACE INTO pr_tracking(pr_number,repo,run_id,opened_at,state) VALUES(?1,?2,?3,?4,'open')",
+        "INSERT OR REPLACE INTO repo_reaper_pr_tracking(pr_number,repo,run_id,opened_at,state) VALUES(?1,?2,?3,?4,'open')",
         params![pr_number, repo, run_id, Utc::now().to_rfc3339()],
     )?;
     Ok(())
@@ -594,14 +592,14 @@ pub fn update_perf(
 ) -> Result<()> {
     let conn = get_conn()?;
     conn.execute(
-        "INSERT INTO agent_performance(agent_name,provider,model,role,total_fixed,total_skipped,total_errors,total_cost_usd)
+        "INSERT INTO repo_reaper_agent_performance(agent_name,provider,model,role,total_fixed,total_skipped,total_errors,total_cost_usd)
          VALUES(?1,?2,?3,?4,0,0,0,0) ON CONFLICT(agent_name,provider,model,role) DO NOTHING",
         params![agent_name, provider, model, role],
     )?;
     match outcome {
         "fixed" => {
             conn.execute(
-                "UPDATE agent_performance
+                "UPDATE repo_reaper_agent_performance
                  SET total_fixed=total_fixed+1, total_cost_usd=total_cost_usd+?1
                  WHERE agent_name=?2 AND provider=?3 AND model=?4 AND role=?5",
                 params![cost, agent_name, provider, model, role],
@@ -609,7 +607,7 @@ pub fn update_perf(
         }
         "skipped" => {
             conn.execute(
-                "UPDATE agent_performance
+                "UPDATE repo_reaper_agent_performance
                  SET total_skipped=total_skipped+1, total_cost_usd=total_cost_usd+?1
                  WHERE agent_name=?2 AND provider=?3 AND model=?4 AND role=?5",
                 params![cost, agent_name, provider, model, role],
@@ -617,7 +615,7 @@ pub fn update_perf(
         }
         _ => {
             conn.execute(
-                "UPDATE agent_performance
+                "UPDATE repo_reaper_agent_performance
                  SET total_errors=total_errors+1, total_cost_usd=total_cost_usd+?1
                  WHERE agent_name=?2 AND provider=?3 AND model=?4 AND role=?5",
                 params![cost, agent_name, provider, model, role],
@@ -633,7 +631,7 @@ pub fn recover_orphaned_runs() -> Vec<String> {
     // that survived a brief restart shouldn't be killed.
     let cutoff = (Utc::now() - chrono::Duration::minutes(10)).to_rfc3339();
     let ids: Vec<String> = conn
-        .prepare("SELECT id FROM runs WHERE status='running' AND started_at < ?1")
+        .prepare("SELECT id FROM repo_reaper_runs WHERE status='running' AND started_at < ?1")
         .and_then(|mut s| {
             s.query_map(params![cutoff], |r| r.get(0))
                 .map(|rows| rows.flatten().collect())
@@ -641,7 +639,7 @@ pub fn recover_orphaned_runs() -> Vec<String> {
         .unwrap_or_default();
     if !ids.is_empty() {
         let _ = conn.execute(
-            "UPDATE runs SET status='crashed', finished_at=?1 WHERE status='running' AND started_at < ?2",
+            "UPDATE repo_reaper_runs SET status='crashed', finished_at=?1 WHERE status='running' AND started_at < ?2",
             params![Utc::now().to_rfc3339(), cutoff],
         );
     }
@@ -653,7 +651,7 @@ pub fn get_setting(key: &str, default: &str) -> String {
         return default.to_string();
     };
     conn.query_row(
-        "SELECT value FROM settings WHERE key=?1",
+        "SELECT value FROM repo_reaper_settings WHERE key=?1",
         params![key],
         |r| r.get::<_, String>(0),
     )
@@ -663,7 +661,7 @@ pub fn get_setting(key: &str, default: &str) -> String {
 pub fn set_setting(key: &str, value: &str) -> Result<()> {
     let conn = get_conn()?;
     conn.execute(
-        "INSERT OR REPLACE INTO settings(key,value) VALUES(?1,?2)",
+        "INSERT OR REPLACE INTO repo_reaper_settings(key,value) VALUES(?1,?2)",
         params![key, value],
     )?;
     Ok(())
@@ -680,7 +678,7 @@ mod tests {
         let conn = Connection::open_in_memory().expect("in-memory database");
         conn.execute_batch(SCHEMA).expect("RepoReaper schema");
         conn.execute(
-            "INSERT INTO runs(id,started_at,status) VALUES('run_test','now','running')",
+            "INSERT INTO repo_reaper_runs(id,started_at,status) VALUES('run_test','now','running')",
             [],
         )
         .expect("seed run");
@@ -702,7 +700,7 @@ mod tests {
 
         let (sequence, raw): (i64, String) = conn
             .query_row(
-                "SELECT sequence,metadata_json FROM run_artifacts WHERE run_id='run_test'",
+                "SELECT sequence,metadata_json FROM repo_reaper_run_artifacts WHERE run_id='run_test'",
                 [],
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
@@ -712,5 +710,35 @@ mod tests {
             serde_json::from_str::<serde_json::Value>(&raw).unwrap(),
             metadata
         );
+    }
+
+    #[test]
+    fn schema_uses_only_repo_reaper_namespaced_tables() {
+        let conn = Connection::open_in_memory().expect("in-memory database");
+        conn.execute_batch(SCHEMA).expect("RepoReaper schema");
+
+        let tables = conn
+            .prepare(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+            )
+            .and_then(|mut statement| {
+                statement
+                    .query_map([], |row| row.get::<_, String>(0))
+                    .map(|rows| rows.flatten().collect::<Vec<_>>())
+            })
+            .expect("schema tables");
+
+        assert!(tables.iter().all(|table| table.starts_with("repo_reaper_")));
+        assert!(tables.iter().any(|table| table == "repo_reaper_runs"));
+        assert!(!tables.iter().any(|table| table == "runs"));
+
+        let issue_attempts_sql: String = conn
+            .query_row(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='repo_reaper_issue_attempts'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("issue attempts schema");
+        assert!(issue_attempts_sql.contains("REFERENCES repo_reaper_runs"));
     }
 }

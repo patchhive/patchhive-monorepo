@@ -759,7 +759,7 @@ async fn list_presets() -> Json<Value> {
         return Json(json!({"presets":[]}));
     };
     let rows: Vec<Value> = conn
-        .prepare("SELECT name, agents_json, created_at FROM team_presets ORDER BY created_at DESC")
+        .prepare("SELECT name, agents_json, created_at FROM repo_reaper_team_presets ORDER BY created_at DESC")
         .ok()
         .and_then(|mut s| {
             let mapped = s
@@ -793,7 +793,7 @@ async fn save_preset(Json(body): Json<PresetSave>) -> Json<Value> {
         return Json(json!({"saved":false}));
     };
     let _ = conn.execute(
-        "INSERT OR REPLACE INTO team_presets(name, agents_json, created_at) VALUES(?1,?2,?3)",
+        "INSERT OR REPLACE INTO repo_reaper_team_presets(name, agents_json, created_at) VALUES(?1,?2,?3)",
         rusqlite::params![body.name, agents_json, Utc::now().to_rfc3339()],
     );
     Json(json!({"saved": true}))
@@ -803,7 +803,10 @@ async fn delete_preset(Path(name): Path<String>) -> Json<Value> {
     let Ok(conn) = get_conn() else {
         return Json(json!({"ok":false}));
     };
-    let _ = conn.execute("DELETE FROM team_presets WHERE name=?1", [&name]);
+    let _ = conn.execute(
+        "DELETE FROM repo_reaper_team_presets WHERE name=?1",
+        [&name],
+    );
     Json(json!({"ok": true}))
 }
 
@@ -812,7 +815,7 @@ async fn get_repo_lists() -> Json<Value> {
         return Json(json!({"repos":[]}));
     };
     let rows: Vec<Value> = conn
-        .prepare("SELECT repo, list_type, added_at FROM repo_lists")
+        .prepare("SELECT repo, list_type, added_at FROM repo_reaper_repo_lists")
         .ok()
         .and_then(|mut s| {
             let mapped = s
@@ -850,7 +853,7 @@ async fn add_repo(Json(body): Json<RepoListUpdate>) -> Json<Value> {
         return Json(json!({"ok": false, "error": "invalid list_type"}));
     };
     let _ = conn.execute(
-        "INSERT OR REPLACE INTO repo_lists(repo, list_type, added_at) VALUES(?1,?2,?3)",
+        "INSERT OR REPLACE INTO repo_reaper_repo_lists(repo, list_type, added_at) VALUES(?1,?2,?3)",
         rusqlite::params![repo, list_type.as_str(), Utc::now().to_rfc3339()],
     );
     Json(json!({"ok": true}))
@@ -863,7 +866,7 @@ async fn remove_repo(Path(repo): Path<String>) -> Json<Value> {
     let Some(repo) = normalize_repo_name(&repo) else {
         return Json(json!({"ok": false, "error": "invalid repo"}));
     };
-    let _ = conn.execute("DELETE FROM repo_lists WHERE repo=?1", [&repo]);
+    let _ = conn.execute("DELETE FROM repo_reaper_repo_lists WHERE repo=?1", [&repo]);
     Json(json!({"ok": true}))
 }
 

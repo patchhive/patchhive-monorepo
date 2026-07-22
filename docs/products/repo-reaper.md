@@ -5,7 +5,7 @@
 | Attribute | Value |
 |-----------|-------|
 | **Product Role** | Outbound autonomous contribution — find, fix, validate, and open PRs |
-| **Status** | Active development |
+| **Status** | Unified-backend engine integrated; v3 parity in progress |
 | **Standalone Repository** | [`patchhive/reporeaper`](https://github.com/patchhive/reporeaper) (mirror of this directory) |
 | **Local Port** | `8000` |
 
@@ -25,6 +25,25 @@ RepoReaper is PatchHive's outbound contribution product. It is a **multi-agent s
 8. **Publishes** a PR back to the original repo via a Gatekeeper agent
 
 RepoReaper is the **only current PatchHive product that writes code and opens pull requests**. It should be the last step in the early suite loop, after SignalHive and TrustGate have made candidate work visible.
+
+### Unified backend boundary
+
+RepoReaper is mounted in-process at `/api/products/repo-reaper` by the shared
+PatchHive backend. The standalone binary is a thin launcher over the same
+library and router, so standalone and suite deployments execute one engine.
+
+Suite mode uses `PATCHHIVE_DB_PATH` and namespaced `repo_reaper_*` tables.
+Standalone mode retains `REAPER_DB_PATH` and the historical
+`repo-reaper.db` fallback. The database consolidation tool can import only the
+preserved RepoReaper database with `--only repo-reaper`; the import is
+idempotent and records its source tables in the consolidation manifest.
+
+Integration does not broaden authority. RepoReaper still uses only
+`REPO_REAPER_GITHUB_TOKEN_RW` for GitHub writes, requires the existing
+repository policy and approval checks, consumes suite PR budgets, and permits a
+non-draft autonomous PR only after validation reports `passed`. Startup owns
+one restored agent team, worker semaphore, PR monitor, and schedule loop for the
+entire shared process.
 
 RepoReaper's agent team is also the seed implementation of the shared PatchHive
 Squad pattern. Future AI-capable products should reuse the shared Squad
@@ -233,8 +252,8 @@ Frontend: `http://localhost:5173`
 ### Frontend v2 Temporary Scope
 
 The v2 prototype has a deliberately lightweight agent-team setup. It exists so
-Mission Deck and Dry Stalk can be tested honestly through gateway mode without
-pulling the entire old frontend team builder into the new shell.
+Mission Deck and Dry Stalk can be tested honestly against the integrated engine
+without pulling the entire old frontend team builder into the new shell.
 
 Current v2 behavior:
 
@@ -264,7 +283,7 @@ Current v2 behavior:
 - Dry Stalk remains no-write, but it still needs at least a Scout agent because
   issue scoring and dry-run analysis use the AI agent pipeline.
 
-Deferred until the RepoReaper unified-backend pass:
+Required in the RepoReaper v3 parity pass:
 
 - full provider/model discovery parity with the old team builder
 - full team preset save/load/delete management in v2

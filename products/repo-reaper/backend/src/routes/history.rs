@@ -42,7 +42,7 @@ fn load_run_events(run_id: &str) -> Vec<contract::ProductRunEvent> {
     };
     conn.prepare(
         "SELECT sequence,attempt_id,phase,kind,status,message,metadata_json,created_at
-         FROM run_artifacts WHERE run_id=?1 ORDER BY sequence",
+         FROM repo_reaper_run_artifacts WHERE run_id=?1 ORDER BY sequence",
     )
     .ok()
     .and_then(|mut statement| {
@@ -110,7 +110,7 @@ async fn get_runs_contract(State(_): State<AppState>) -> Json<contract::ProductR
         return Json(contract::runs_from_values("repo-reaper", Vec::new()));
     };
     let runs: Vec<Value> = conn.prepare(
-        "SELECT id, started_at, finished_at, total_fixed, total_attempted, total_cost_usd, status, config_json, dry_run FROM runs ORDER BY started_at DESC LIMIT 30"
+        "SELECT id, started_at, finished_at, total_fixed, total_attempted, total_cost_usd, status, config_json, dry_run FROM repo_reaper_runs ORDER BY started_at DESC LIMIT 30"
     ).ok().and_then(|mut s| {
         let mapped = s.query_map([], |r| {
             let config_json = r.get::<_, Option<String>>(7)?.unwrap_or_default();
@@ -144,7 +144,7 @@ async fn get_history(State(_): State<AppState>) -> Json<Value> {
         return Json(json!({"history":[]}));
     };
     let runs: Vec<Value> = conn.prepare(
-        "SELECT id, started_at, finished_at, total_fixed, total_attempted, total_cost_usd, status, config_json, dry_run FROM runs ORDER BY started_at DESC LIMIT 30"
+        "SELECT id, started_at, finished_at, total_fixed, total_attempted, total_cost_usd, status, config_json, dry_run FROM repo_reaper_runs ORDER BY started_at DESC LIMIT 30"
     ).ok().and_then(|mut s| {
         let mapped = s.query_map([], |r| {
             let config_json = r.get::<_, Option<String>>(7)?.unwrap_or_default();
@@ -171,7 +171,7 @@ async fn get_history(State(_): State<AppState>) -> Json<Value> {
     let attempts: Vec<(String, Value)> = conn
         .prepare(
             "WITH recent_runs AS (
-                SELECT id FROM runs ORDER BY started_at DESC LIMIT 30
+                SELECT id FROM repo_reaper_runs ORDER BY started_at DESC LIMIT 30
              )
              SELECT
                 ia.run_id,
@@ -193,7 +193,7 @@ async fn get_history(State(_): State<AppState>) -> Json<Value> {
                 ia.confidence,
                 ia.error_msg,
                 ia.duration_seconds
-             FROM issue_attempts ia
+             FROM repo_reaper_issue_attempts ia
              JOIN recent_runs rr ON rr.id = ia.run_id
              ORDER BY ia.run_id, ia.started_at"
         )
@@ -240,7 +240,7 @@ async fn get_run(Path(run_id): Path<String>, State(_): State<AppState>) -> Json<
         return Json(json!({}));
     };
     let run: Option<Value> = conn.query_row(
-        "SELECT id,started_at,finished_at,total_fixed,total_attempted,total_cost_usd,status,config_json,dry_run FROM runs WHERE id=?",
+        "SELECT id,started_at,finished_at,total_fixed,total_attempted,total_cost_usd,status,config_json,dry_run FROM repo_reaper_runs WHERE id=?",
         [&run_id],
         |r| {
             let config_json = r.get::<_, Option<String>>(7)?.unwrap_or_default();
@@ -288,7 +288,7 @@ async fn get_run(Path(run_id): Path<String>, State(_): State<AppState>) -> Json<
             patch_diff,
             error_msg,
             confidence
-         FROM issue_attempts
+         FROM repo_reaper_issue_attempts
          WHERE run_id=?
          ORDER BY started_at",
         )
@@ -322,7 +322,7 @@ async fn get_run(Path(run_id): Path<String>, State(_): State<AppState>) -> Json<
         })
         .unwrap_or_default();
     let dry_stalk: Option<Value> = conn.query_row(
-        "SELECT repos_json, issues_json, report_json, scoring_available, analysis_available FROM dry_stalk_runs WHERE run_id=?",
+        "SELECT repos_json, issues_json, report_json, scoring_available, analysis_available FROM repo_reaper_dry_stalk_runs WHERE run_id=?",
         [&run_id],
         |r| {
             let repos_raw: String = r.get(0)?;
@@ -360,7 +360,7 @@ async fn get_diff(
     };
     let diff: Option<String> = conn
         .query_row(
-            "SELECT patch_diff FROM issue_attempts WHERE run_id=? AND issue_number=?",
+            "SELECT patch_diff FROM repo_reaper_issue_attempts WHERE run_id=? AND issue_number=?",
             rusqlite::params![run_id, issue_number],
             |r| r.get(0),
         )
@@ -378,7 +378,7 @@ async fn get_leaderboard(State(_): State<AppState>) -> Json<Value> {
          CASE WHEN (total_fixed+total_skipped+total_errors)>0
               THEN ROUND(100.0*total_fixed/(total_fixed+total_skipped+total_errors),1)
               ELSE 0 END AS fix_rate
-         FROM agent_performance ORDER BY fix_rate DESC, total_fixed DESC"
+         FROM repo_reaper_agent_performance ORDER BY fix_rate DESC, total_fixed DESC"
     ).ok().and_then(|mut s| {
         let mapped = s.query_map([], |r| Ok(json!({
             "agent_name":r.get::<_,String>(0)?,"provider":r.get::<_,String>(1)?,"model":r.get::<_,String>(2)?,
@@ -395,7 +395,7 @@ async fn get_rejected(State(_): State<AppState>) -> Json<Value> {
         return Json(json!({"rejected":[]}));
     };
     let rows: Vec<Value> = conn.prepare(
-        "SELECT id,run_id,repo,issue_number,issue_title,reason,smith_feedback,confidence,created_at FROM rejected_patches ORDER BY created_at DESC LIMIT 100"
+        "SELECT id,run_id,repo,issue_number,issue_title,reason,smith_feedback,confidence,created_at FROM repo_reaper_rejected_patches ORDER BY created_at DESC LIMIT 100"
     ).ok().and_then(|mut s| {
         let mapped = s.query_map([], |r| Ok(json!({
             "id":r.get::<_,String>(0)?,"run_id":r.get::<_,String>(1)?,"repo":r.get::<_,String>(2)?,
@@ -413,7 +413,7 @@ async fn get_tracked_prs(State(_): State<AppState>) -> Json<Value> {
         return Json(json!({"prs":[]}));
     };
     let rows: Vec<Value> = conn.prepare(
-        "SELECT pr_number,repo,run_id,opened_at,last_checked,state,merged,review_state FROM pr_tracking ORDER BY opened_at DESC LIMIT 50"
+        "SELECT pr_number,repo,run_id,opened_at,last_checked,state,merged,review_state FROM repo_reaper_pr_tracking ORDER BY opened_at DESC LIMIT 50"
     ).ok().and_then(|mut s| {
         let mapped = s.query_map([], |r| Ok(json!({
             "pr_number":r.get::<_,i64>(0)?,"repo":r.get::<_,String>(1)?,"run_id":r.get::<_,String>(2)?,
@@ -434,15 +434,15 @@ async fn refresh_pr(
     let issue_number: Option<i64> = if let Ok(conn) = get_conn() {
         let issue_number = conn
             .query_row(
-                "SELECT issue_number FROM issue_attempts WHERE run_id IN (
-                 SELECT run_id FROM pr_tracking WHERE pr_number=?1 AND repo=?2
+                "SELECT issue_number FROM repo_reaper_issue_attempts WHERE run_id IN (
+                 SELECT run_id FROM repo_reaper_pr_tracking WHERE pr_number=?1 AND repo=?2
              ) AND pr_number=?1 LIMIT 1",
                 rusqlite::params![pr_number, repo],
                 |r| r.get(0),
             )
             .ok();
         let _ = conn.execute(
-            "UPDATE pr_tracking SET state=?1,merged=?2,review_state=?3,last_checked=?4 WHERE pr_number=?5 AND repo=?6",
+            "UPDATE repo_reaper_pr_tracking SET state=?1,merged=?2,review_state=?3,last_checked=?4 WHERE pr_number=?5 AND repo=?6",
             rusqlite::params![
                 pr_state["state"].as_str().unwrap_or("open"), merged as i32,
                 pr_state["review_state"].as_str(), chrono::Utc::now().to_rfc3339(),

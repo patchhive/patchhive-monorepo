@@ -167,7 +167,7 @@ async fn poll_all_prs(http: &Client) {
     let prs: Vec<(i64, String, String)> = {
         let Ok(conn) = get_conn() else { return };
         conn.prepare(
-            "SELECT pr_number, repo, run_id FROM pr_tracking WHERE state != 'closed' AND merged = 0"
+            "SELECT pr_number, repo, run_id FROM repo_reaper_pr_tracking WHERE state != 'closed' AND merged = 0"
         ).ok().and_then(|mut s| {
             let mapped = s.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).ok()?;
             Some(mapped.flatten().collect())
@@ -181,7 +181,7 @@ async fn poll_all_prs(http: &Client) {
         let state_label = state["state"].as_str().unwrap_or("open");
         if let Ok(conn) = get_conn() {
             let _ = conn.execute(
-                "UPDATE pr_tracking SET state=?1, merged=?2, review_state=?3, last_checked=?4 WHERE pr_number=?5 AND repo=?6",
+                "UPDATE repo_reaper_pr_tracking SET state=?1, merged=?2, review_state=?3, last_checked=?4 WHERE pr_number=?5 AND repo=?6",
                 rusqlite::params![
                     state_label,
                     merged as i32,
@@ -218,7 +218,7 @@ async fn poll_all_prs(http: &Client) {
                 .ok()
                 .and_then(|conn| {
                     conn.query_row(
-                        "SELECT issue_number FROM issue_attempts WHERE run_id=?1 AND pr_number=?2 LIMIT 1",
+                        "SELECT issue_number FROM repo_reaper_issue_attempts WHERE run_id=?1 AND pr_number=?2 LIMIT 1",
                         rusqlite::params![run_id, pr_number],
                         |r| r.get(0),
                     ).ok()

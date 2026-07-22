@@ -33,6 +33,9 @@ pub async fn init_enabled_products(config: &Config) -> Result<()> {
     if config.product_selection.enables("refactor-scout") {
         refactor_scout::init_runtime().await?;
     }
+    if config.product_selection.enables("repo-reaper") {
+        repo_reaper::init_runtime().await?;
+    }
     Ok(())
 }
 
@@ -74,4 +77,8 @@ pub fn signal_hive_router() -> axum::Router {
 
 pub fn refactor_scout_router() -> axum::Router {
     refactor_scout::router()
+}
+
+pub fn repo_reaper_router() -> axum::Router {
+    repo_reaper::router()
 }

@@ -38,7 +38,7 @@ async fn list_schedules(State(_): State<AppState>) -> Json<Value> {
     let Ok(conn) = get_conn() else {
         return Json(json!({"schedules":[]}));
     };
-    let rows: Vec<Value> = conn.prepare("SELECT id,cron_expr,config_json,enabled,last_run,next_run FROM scheduled_runs ORDER BY next_run").ok()
+    let rows: Vec<Value> = conn.prepare("SELECT id,cron_expr,config_json,enabled,last_run,next_run FROM repo_reaper_scheduled_runs ORDER BY next_run").ok()
         .and_then(|mut s| {
             let mapped = s.query_map([], |r| Ok(json!({
                 "id":r.get::<_,String>(0)?,"cron_expr":r.get::<_,String>(1)?,"config_json":r.get::<_,String>(2)?,
@@ -71,7 +71,7 @@ async fn create_schedule(
         return Json(json!({"error":"db"}));
     };
     let _ = conn.execute(
-        "INSERT INTO scheduled_runs(id,cron_expr,config_json,enabled,next_run) VALUES(?1,?2,?3,?4,?5)",
+        "INSERT INTO repo_reaper_scheduled_runs(id,cron_expr,config_json,enabled,next_run) VALUES(?1,?2,?3,?4,?5)",
         rusqlite::params![id, body.cron_expr, body.config_json.to_string(), body.enabled as i32, nxt],
     );
     Json(json!({"id": id, "next_run": nxt}))
@@ -84,7 +84,7 @@ async fn delete_schedule(
     let Ok(conn) = get_conn() else {
         return Json(json!({"ok":false}));
     };
-    let _ = conn.execute("DELETE FROM scheduled_runs WHERE id=?1", [&id]);
+    let _ = conn.execute("DELETE FROM repo_reaper_scheduled_runs WHERE id=?1", [&id]);
     Json(json!({"ok": true}))
 }
 
@@ -97,14 +97,14 @@ async fn toggle_schedule(
     };
     let enabled: i32 = conn
         .query_row(
-            "SELECT enabled FROM scheduled_runs WHERE id=?1",
+            "SELECT enabled FROM repo_reaper_scheduled_runs WHERE id=?1",
             [&id],
             |r| r.get(0),
         )
         .unwrap_or(0);
     let new_val = if enabled == 0 { 1i32 } else { 0i32 };
     let _ = conn.execute(
-        "UPDATE scheduled_runs SET enabled=?1 WHERE id=?2",
+        "UPDATE repo_reaper_scheduled_runs SET enabled=?1 WHERE id=?2",
         rusqlite::params![new_val, id],
     );
     Json(json!({"enabled": new_val == 1}))
@@ -303,14 +303,14 @@ async fn webhook_single_fix(state: AppState, repo: &str, issue: Value) {
     let Ok(conn) = get_conn() else { return };
     let total_fixed: i64 = conn
         .query_row(
-            "SELECT COUNT(*) FROM issue_attempts WHERE run_id=?1 AND status='fixed'",
+            "SELECT COUNT(*) FROM repo_reaper_issue_attempts WHERE run_id=?1 AND status='fixed'",
             [&run_id],
             |r| r.get(0),
         )
         .unwrap_or(0);
     let total_attempted: i64 = conn
         .query_row(
-            "SELECT COUNT(*) FROM issue_attempts WHERE run_id=?1",
+            "SELECT COUNT(*) FROM repo_reaper_issue_attempts WHERE run_id=?1",
             [&run_id],
             |r| r.get(0),
         )
@@ -452,7 +452,7 @@ pub async fn scheduler_loop(state: AppState) {
         let now = Utc::now().to_rfc3339();
         let Ok(conn) = get_conn() else { continue };
         let due: Vec<(String, String, String)> = conn.prepare(
-            "SELECT id, cron_expr, config_json FROM scheduled_runs WHERE enabled=1 AND next_run<=?"
+            "SELECT id, cron_expr, config_json FROM repo_reaper_scheduled_runs WHERE enabled=1 AND next_run<=?"
         ).ok().and_then(|mut s| {
             let mapped = s.query_map([&now], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).ok()?;
             Some(mapped.flatten().collect())
@@ -461,7 +461,7 @@ pub async fn scheduler_loop(state: AppState) {
         for (id, cron, config_json) in due {
             let nxt = cron_next(&cron).to_rfc3339();
             let _ = conn.execute(
-                "UPDATE scheduled_runs SET last_run=?1, next_run=?2 WHERE id=?3",
+                "UPDATE repo_reaper_scheduled_runs SET last_run=?1, next_run=?2 WHERE id=?3",
                 rusqlite::params![now, nxt, id],
             );
             if let Ok(cfg) = serde_json::from_str::<Value>(&config_json) {

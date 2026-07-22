@@ -1011,7 +1011,6 @@ dependencies = [
 [[package]]
 name = "patchhive-github-pr"
 version = "0.1.0"
-source = "git+https://github.com/patchhive/patchhive-github-pr.git?rev=18d9e3517fa9daca2b8ddfac4ce692de7d1d0aa6#18d9e3517fa9daca2b8ddfac4ce692de7d1d0aa6"
 dependencies = [
  "anyhow",
  "hex",

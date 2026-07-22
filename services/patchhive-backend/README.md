@@ -278,6 +278,33 @@ GET  /api/products/refactor-scout/runs
 GET  /api/products/refactor-scout/history
 ```
 
+Run the suite backend with only RepoReaper enabled:
+
+```bash
+PATCHHIVE_PRODUCTS=repo-reaper cargo run
+```
+
+RepoReaper product routes are served directly by the unified backend. Its
+product-owned write token, approval boundary, test validation, PR budgets, and
+repository policy checks remain in force inside the shared process:
+
+```text
+GET  /api/products/repo-reaper/health
+POST /api/products/repo-reaper/run
+POST /api/products/repo-reaper/dry-run
+GET  /api/products/repo-reaper/runs
+GET  /api/products/repo-reaper/agents
+GET  /api/products/repo-reaper/pr-tracking
+```
+
+RepoReaper stores its state in `repo_reaper_*` tables under
+`PATCHHIVE_DB_PATH`. To import a preserved standalone database without
+re-running the full historical consolidation:
+
+```bash
+cargo run --bin consolidate-databases -- --only repo-reaper
+```
+
 When launching the suite backend with product `.env` files, avoid shell-sourcing
 unquoted JSON service-token records such as `*_SERVICE_TOKEN_HASH={...}`.
 Shell parsing can flatten the JSON and make product-core treat the value as a
