@@ -52,7 +52,7 @@ export default function PresetsPanel({ apiKey = "", currentAgents, onLoadPreset 
                 <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
                   <span style={{ fontSize:12, fontWeight:700, color:"#d4d4e8", flex:1 }}>{p.name}</span>
                   <span style={{ fontSize:9, color:"#484868" }}>{timeAgo(p.created_at)}</span>
-                  <Btn onClick={() => onLoadPreset(p.agents)} color="#c41e3a" style={{ fontSize:10 }}>Load</Btn>
+                  <Btn onClick={() => onLoadPreset(p.name)} color="#c41e3a" style={{ fontSize:10 }}>Load</Btn>
                   <Btn onClick={() => del(p.name)} color="#484868" style={{ fontSize:10 }}>Delete</Btn>
                 </div>
                 <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>

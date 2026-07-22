@@ -1,14 +1,22 @@
-use crate::db::{finish_run, get_conn, start_run, RunStart, RunStatus};
+use crate::db::{
+    delete_product_schedule, finish_run, get_conn, get_product_schedule, list_product_schedules,
+    record_product_schedule_result, save_product_schedule, start_run, RunStart, RunStatus,
+    DRY_RUN_SCHEDULE_ACTION, RUN_SCHEDULE_ACTION,
+};
+use crate::pipeline::{
+    execute_dry_run, execute_run, ActiveRunGuard, RunExecutionResult, RunRequest,
+};
 use crate::state::AppState;
 use axum::{
     body::Body,
-    extract::{Request, State},
+    extract::{Path, Request, State},
     http::{HeaderMap, StatusCode},
     routing::{delete, get, patch, post},
     Json, Router,
 };
-use chrono::{Duration, Utc};
 use patchhive_github_pr::{env_value, verify_github_webhook_signature};
+use patchhive_product_core::contract::TargetSelectionMode;
+use patchhive_product_core::scheduling::{ProductSchedule, SaveProductScheduleRequest};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -18,36 +26,59 @@ pub fn router() -> Router<AppState> {
         .route("/schedules", get(list_schedules).post(create_schedule))
         .route("/schedules/:id", delete(delete_schedule))
         .route("/schedules/:id/toggle", patch(toggle_schedule))
+        .route(
+            "/automation/:action_id/schedules",
+            get(list_action_schedules).post(save_action_schedule),
+        )
+        .route(
+            "/automation/:action_id/schedules/:name",
+            delete(delete_action_schedule),
+        )
+        .route(
+            "/automation/:action_id/schedules/:name/run",
+            post(run_action_schedule_now),
+        )
         .route("/webhook/github", post(github_webhook))
 }
 
-fn cron_next(expr: &str) -> chrono::DateTime<Utc> {
-    match expr {
-        "hourly" => Utc::now() + Duration::hours(1),
-        "nightly" => (Utc::now() + Duration::days(1))
-            .date_naive()
-            .and_hms_opt(0, 0, 0)
-            .map(|dt| dt.and_utc())
-            .unwrap_or_else(|| Utc::now() + Duration::days(1)),
-        "weekly" => Utc::now() + Duration::weeks(1),
-        _ => Utc::now() + Duration::hours(24),
+type JsonResult<T> = Result<Json<T>, (StatusCode, Json<Value>)>;
+
+fn api_error(status: StatusCode, error: impl Into<String>) -> (StatusCode, Json<Value>) {
+    (status, Json(json!({ "error": error.into() })))
+}
+
+fn legacy_cadence_hours(expr: &str) -> u32 {
+    match expr.trim() {
+        "hourly" | "0 * * * *" => 1,
+        "weekly" | "0 3 * * 0" => 168,
+        _ => 24,
     }
 }
 
 async fn list_schedules(State(_): State<AppState>) -> Json<Value> {
-    let Ok(conn) = get_conn() else {
-        return Json(json!({"schedules":[]}));
-    };
-    let rows: Vec<Value> = conn.prepare("SELECT id,cron_expr,config_json,enabled,last_run,next_run FROM repo_reaper_scheduled_runs ORDER BY next_run").ok()
-        .and_then(|mut s| {
-            let mapped = s.query_map([], |r| Ok(json!({
-                "id":r.get::<_,String>(0)?,"cron_expr":r.get::<_,String>(1)?,"config_json":r.get::<_,String>(2)?,
-                "enabled":r.get::<_,i32>(3)?,"last_run":r.get::<_,Option<String>>(4)?,"next_run":r.get::<_,String>(5)?,
-            }))).ok()?;
-            Some(mapped.flatten().collect())
+    let rows = list_product_schedules(RUN_SCHEDULE_ACTION)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|schedule| {
+            json!({
+                "id": schedule.name,
+                "cron_expr": legacy_cadence_label(schedule.cadence_hours),
+                "config_json": schedule.payload.to_string(),
+                "enabled": schedule.enabled,
+                "last_run": schedule.last_run_at,
+                "next_run": schedule.next_run_at,
+            })
         })
-    .unwrap_or_default();
+        .collect::<Vec<_>>();
     Json(json!({"schedules": rows}))
+}
+
+fn legacy_cadence_label(hours: u32) -> &'static str {
+    match hours {
+        1 => "hourly",
+        168 => "weekly",
+        _ => "nightly",
+    }
 }
 
 #[derive(Deserialize)]
@@ -66,48 +97,154 @@ async fn create_schedule(
     Json(body): Json<ScheduleCreate>,
 ) -> Json<Value> {
     let id = Uuid::new_v4().to_string()[..8].to_string();
-    let nxt = cron_next(&body.cron_expr).to_rfc3339();
-    let Ok(conn) = get_conn() else {
-        return Json(json!({"error":"db"}));
-    };
-    let _ = conn.execute(
-        "INSERT INTO repo_reaper_scheduled_runs(id,cron_expr,config_json,enabled,next_run) VALUES(?1,?2,?3,?4,?5)",
-        rusqlite::params![id, body.cron_expr, body.config_json.to_string(), body.enabled as i32, nxt],
-    );
-    Json(json!({"id": id, "next_run": nxt}))
+    let mode = infer_legacy_target_mode(&body.config_json);
+    match save_product_schedule(
+        RUN_SCHEDULE_ACTION,
+        &id,
+        &body.config_json,
+        mode,
+        legacy_cadence_hours(&body.cron_expr),
+        body.enabled,
+    ) {
+        Ok(schedule) => Json(json!({"id": id, "next_run": schedule.next_run_at})),
+        Err(error) => Json(json!({"error": error.to_string()})),
+    }
+}
+
+fn infer_legacy_target_mode(payload: &Value) -> TargetSelectionMode {
+    payload
+        .get("target_repo")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .map(|_| TargetSelectionMode::Direct)
+        .unwrap_or(TargetSelectionMode::Discovery)
 }
 
 async fn delete_schedule(
     State(_): State<AppState>,
     axum::extract::Path(id): axum::extract::Path<String>,
 ) -> Json<Value> {
-    let Ok(conn) = get_conn() else {
-        return Json(json!({"ok":false}));
-    };
-    let _ = conn.execute("DELETE FROM repo_reaper_scheduled_runs WHERE id=?1", [&id]);
-    Json(json!({"ok": true}))
+    Json(json!({
+        "ok": delete_product_schedule(RUN_SCHEDULE_ACTION, &id).unwrap_or(false)
+    }))
 }
 
 async fn toggle_schedule(
     State(_): State<AppState>,
     axum::extract::Path(id): axum::extract::Path<String>,
 ) -> Json<Value> {
-    let Ok(conn) = get_conn() else {
-        return Json(json!({"error":"db"}));
+    let Ok(Some(schedule)) = get_product_schedule(RUN_SCHEDULE_ACTION, &id) else {
+        return Json(json!({"error":"schedule not found"}));
     };
-    let enabled: i32 = conn
-        .query_row(
-            "SELECT enabled FROM repo_reaper_scheduled_runs WHERE id=?1",
-            [&id],
-            |r| r.get(0),
-        )
-        .unwrap_or(0);
-    let new_val = if enabled == 0 { 1i32 } else { 0i32 };
-    let _ = conn.execute(
-        "UPDATE repo_reaper_scheduled_runs SET enabled=?1 WHERE id=?2",
-        rusqlite::params![new_val, id],
-    );
-    Json(json!({"enabled": new_val == 1}))
+    match save_product_schedule(
+        RUN_SCHEDULE_ACTION,
+        &schedule.name,
+        &schedule.payload,
+        schedule.target_selection_mode,
+        schedule.cadence_hours,
+        !schedule.enabled,
+    ) {
+        Ok(updated) => Json(json!({"enabled": updated.enabled})),
+        Err(error) => Json(json!({"error": error.to_string()})),
+    }
+}
+
+async fn list_action_schedules(Path(action_id): Path<String>) -> JsonResult<Value> {
+    let schedules = list_product_schedules(&action_id)
+        .map_err(|error| api_error(StatusCode::BAD_REQUEST, error.to_string()))?;
+    let suite_schedules = schedules
+        .iter()
+        .map(ProductSchedule::to_suite_schedule_record)
+        .collect::<Vec<_>>();
+    Ok(Json(json!({
+        "schedules": schedules,
+        "suite_schedules": suite_schedules,
+    })))
+}
+
+async fn save_action_schedule(
+    Path(action_id): Path<String>,
+    Json(mut body): Json<SaveProductScheduleRequest<RunRequest>>,
+) -> JsonResult<Value> {
+    normalize_schedule_payload(&mut body.payload, body.target_selection_mode)?;
+    let payload = serde_json::to_value(&body.payload)
+        .map_err(|error| api_error(StatusCode::BAD_REQUEST, error.to_string()))?;
+    let schedule = save_product_schedule(
+        &action_id,
+        &body.name,
+        &payload,
+        body.target_selection_mode,
+        body.cadence_hours,
+        body.enabled,
+    )
+    .map_err(|error| api_error(StatusCode::BAD_REQUEST, error.to_string()))?;
+    Ok(Json(json!({ "ok": true, "schedule": schedule })))
+}
+
+fn normalize_schedule_payload(
+    payload: &mut RunRequest,
+    target_selection_mode: TargetSelectionMode,
+) -> Result<(), (StatusCode, Json<Value>)> {
+    payload.target_selection_mode = Some(target_selection_mode);
+    match target_selection_mode {
+        TargetSelectionMode::Direct => {
+            payload.target_repo =
+                patchhive_product_core::scope_policy::normalize_repo_name(&payload.target_repo)
+                    .ok_or_else(|| {
+                        api_error(
+                            StatusCode::BAD_REQUEST,
+                            "Target repo mode requires a repository in owner/repo format.",
+                        )
+                    })?;
+        }
+        TargetSelectionMode::Discovery => payload.target_repo.clear(),
+    }
+    if payload.max_repos == 0 || payload.max_repos > 100 {
+        return Err(api_error(
+            StatusCode::BAD_REQUEST,
+            "Maximum repositories must be between 1 and 100.",
+        ));
+    }
+    if payload.max_issues == 0 || payload.max_issues > 100 {
+        return Err(api_error(
+            StatusCode::BAD_REQUEST,
+            "Maximum issues must be between 1 and 100.",
+        ));
+    }
+    if payload.concurrency == 0 || payload.concurrency > 32 {
+        return Err(api_error(
+            StatusCode::BAD_REQUEST,
+            "Concurrency must be between 1 and 32.",
+        ));
+    }
+    Ok(())
+}
+
+async fn delete_action_schedule(
+    Path((action_id, name)): Path<(String, String)>,
+) -> JsonResult<Value> {
+    let deleted = delete_product_schedule(&action_id, &name)
+        .map_err(|error| api_error(StatusCode::BAD_REQUEST, error.to_string()))?;
+    if !deleted {
+        return Err(api_error(
+            StatusCode::NOT_FOUND,
+            "RepoReaper schedule not found.",
+        ));
+    }
+    Ok(Json(json!({ "ok": true })))
+}
+
+async fn run_action_schedule_now(
+    State(state): State<AppState>,
+    Path((action_id, name)): Path<(String, String)>,
+) -> JsonResult<RunExecutionResult> {
+    let schedule = get_product_schedule(&action_id, &name)
+        .map_err(|error| api_error(StatusCode::BAD_REQUEST, error.to_string()))?
+        .ok_or_else(|| api_error(StatusCode::NOT_FOUND, "RepoReaper schedule not found."))?;
+    execute_saved_schedule(&state, &schedule)
+        .await
+        .map(Json)
+        .map_err(|error| api_error(StatusCode::CONFLICT, error))
 }
 
 // ── Webhook handler ────────────────────────────────────────────────────────────
@@ -202,6 +339,13 @@ async fn github_webhook(
 }
 
 async fn webhook_single_fix(state: AppState, repo: &str, issue: Value) {
+    let Ok(_active_run) = ActiveRunGuard::claim(state.run_active.clone()) else {
+        tracing::info!(
+            repo,
+            "RepoReaper webhook issue skipped because another operation is active"
+        );
+        return;
+    };
     let agents_snap = state.agents.read().await.clone();
     if agents_snap.is_empty() {
         return;
@@ -269,7 +413,8 @@ async fn webhook_single_fix(state: AppState, repo: &str, issue: Value) {
         config_json: &run_config_json,
         dry_run: false,
     });
-    let (tx, _rx) = tokio::sync::mpsc::channel(32); // fire-and-forget channel
+    let (tx, mut rx) = tokio::sync::mpsc::channel(32);
+    let drain = tokio::spawn(async move { while rx.recv().await.is_some() {} });
     let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(1));
     let cancel_requested = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
 
@@ -299,6 +444,7 @@ async fn webhook_single_fix(state: AppState, repo: &str, issue: Value) {
         context,
     })
     .await;
+    let _ = drain.await;
 
     let Ok(conn) = get_conn() else { return };
     let total_fixed: i64 = conn
@@ -324,6 +470,13 @@ async fn webhook_pr_comment(state: AppState, repo: &str, issue: Value, comment: 
     use crate::git_ops::{apply_patch, collect_files_all, git_branch, git_clone, git_commit_push};
     use crate::github::{gh_comment_issue, gh_fork, gh_post};
 
+    let Ok(_active_run) = ActiveRunGuard::claim(state.run_active.clone()) else {
+        tracing::info!(
+            repo,
+            "RepoReaper PR follow-up skipped because another operation is active"
+        );
+        return;
+    };
     let _process_permit = match state.process_worker_semaphore.clone().try_acquire_owned() {
         Ok(permit) => permit,
         Err(tokio::sync::TryAcquireError::NoPermits) => {
@@ -449,41 +602,94 @@ async fn webhook_pr_comment(state: AppState, repo: &str, issue: Value, comment: 
 pub async fn scheduler_loop(state: AppState) {
     loop {
         tokio::time::sleep(std::time::Duration::from_secs(60)).await;
-        let now = Utc::now().to_rfc3339();
-        let Ok(conn) = get_conn() else { continue };
-        let due: Vec<(String, String, String)> = conn.prepare(
-            "SELECT id, cron_expr, config_json FROM repo_reaper_scheduled_runs WHERE enabled=1 AND next_run<=?"
-        ).ok().and_then(|mut s| {
-            let mapped = s.query_map([&now], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).ok()?;
-            Some(mapped.flatten().collect())
-        }).unwrap_or_default();
-
-        for (id, cron, config_json) in due {
-            let nxt = cron_next(&cron).to_rfc3339();
-            let _ = conn.execute(
-                "UPDATE repo_reaper_scheduled_runs SET last_run=?1, next_run=?2 WHERE id=?3",
-                rusqlite::params![now, nxt, id],
-            );
-            if let Ok(cfg) = serde_json::from_str::<Value>(&config_json) {
-                let state_clone = state.clone();
-                tokio::spawn(async move {
-                    if let Ok(req) = serde_json::from_value::<crate::pipeline::RunRequest>(cfg) {
-                        let (tx, _rx) = tokio::sync::mpsc::channel(32);
-                        crate::pipeline::execute_run(state_clone, req, tx).await;
-                        tracing::info!("Scheduled run {id} triggered");
-                    } else {
-                        tracing::warn!("Scheduled run {id} has invalid config_json");
-                    }
-                });
+        for action_id in [DRY_RUN_SCHEDULE_ACTION, RUN_SCHEDULE_ACTION] {
+            let due = match crate::db::claim_due_product_schedules(action_id, 4) {
+                Ok(schedules) => schedules,
+                Err(error) => {
+                    tracing::warn!(action_id, "RepoReaper scheduler claim failed: {error}");
+                    continue;
+                }
+            };
+            for schedule in due {
+                let name = schedule.name.clone();
+                match execute_saved_schedule(&state, &schedule).await {
+                    Ok(result) => tracing::info!(
+                        action_id,
+                        schedule = name,
+                        run_id = result.run_id,
+                        "RepoReaper scheduled operation completed"
+                    ),
+                    Err(error) => tracing::warn!(
+                        action_id,
+                        schedule = name,
+                        "RepoReaper scheduled operation failed: {error}"
+                    ),
+                }
             }
         }
     }
 }
 
+async fn execute_saved_schedule(
+    state: &AppState,
+    schedule: &ProductSchedule,
+) -> Result<RunExecutionResult, String> {
+    let mut request = schedule
+        .decode_payload::<RunRequest>()
+        .map_err(|error| error.to_string())?;
+    request.target_selection_mode = Some(schedule.target_selection_mode);
+    normalize_schedule_payload(&mut request, schedule.target_selection_mode).map_err(
+        |(_, payload)| {
+            payload.0["error"]
+                .as_str()
+                .unwrap_or("invalid schedule")
+                .to_string()
+        },
+    )?;
+
+    let (tx, mut rx) = tokio::sync::mpsc::channel(256);
+    let drain = tokio::spawn(async move { while rx.recv().await.is_some() {} });
+    let result = match schedule.action_id.as_str() {
+        RUN_SCHEDULE_ACTION => execute_run(state.clone(), request, tx).await,
+        DRY_RUN_SCHEDULE_ACTION => execute_dry_run(state.clone(), request, tx).await,
+        other => Err(format!("Unsupported RepoReaper schedule action `{other}`")),
+    };
+    let _ = drain.await;
+
+    match &result {
+        Ok(record) => {
+            record_product_schedule_result(
+                &schedule.action_id,
+                &schedule.name,
+                Some(&record.run_id),
+                &record.status,
+                None,
+            )
+            .map_err(|error| error.to_string())?;
+        }
+        Err(error) => {
+            record_product_schedule_result(
+                &schedule.action_id,
+                &schedule.name,
+                None,
+                "error",
+                Some(error),
+            )
+            .map_err(|record_error| record_error.to_string())?;
+        }
+    }
+    result
+}
+
 #[cfg(test)]
 mod tests {
-    use super::verify_webhook_signature_or_forbid;
+    use super::{normalize_schedule_payload, verify_webhook_signature_or_forbid};
     use axum::http::{HeaderMap, StatusCode};
+    use patchhive_product_core::contract::TargetSelectionMode;
+
+    fn request() -> crate::pipeline::RunRequest {
+        serde_json::from_value(serde_json::json!({})).expect("default request")
+    }
 
     #[test]
     fn webhook_signature_rejects_missing_secret() {
@@ -492,5 +698,33 @@ mod tests {
         let result = verify_webhook_signature_or_forbid(&headers, b"{}", None);
 
         assert_eq!(result, Err(StatusCode::FORBIDDEN));
+    }
+
+    #[test]
+    fn direct_schedule_never_falls_through_to_discovery() {
+        let mut request = request();
+
+        let result = normalize_schedule_payload(&mut request, TargetSelectionMode::Direct);
+
+        assert!(result.is_err());
+        assert_eq!(
+            request.target_selection_mode,
+            Some(TargetSelectionMode::Direct)
+        );
+    }
+
+    #[test]
+    fn discovery_schedule_clears_stale_direct_target() {
+        let mut request = request();
+        request.target_repo = "owner/repository".into();
+
+        normalize_schedule_payload(&mut request, TargetSelectionMode::Discovery)
+            .expect("valid discovery schedule");
+
+        assert!(request.target_repo.is_empty());
+        assert_eq!(
+            request.target_selection_mode,
+            Some(TargetSelectionMode::Discovery)
+        );
     }
 }

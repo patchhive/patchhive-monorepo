@@ -1,6 +1,10 @@
 use anyhow::{Context, Result};
 use chrono::Utc;
 use once_cell::sync::Lazy;
+use patchhive_product_core::contract::TargetSelectionMode;
+use patchhive_product_core::scheduling::{
+    self, ProductSchedule, SaveSchedule, DEFAULT_SCHEDULE_APPROVAL_POLICY,
+};
 use patchhive_product_core::secrets::TokenProtector;
 use patchhive_product_core::sqlite::{product_db_path, PooledSqliteConnection, SqlitePool};
 use rusqlite::params;
@@ -10,6 +14,9 @@ use std::path::PathBuf;
 use crate::state::AgentConfig;
 
 const ACTIVE_AGENTS_SETTING: &str = "active_agents_json";
+pub const RUN_SCHEDULE_ACTION: &str = "run";
+pub const DRY_RUN_SCHEDULE_ACTION: &str = "dry_run";
+const GUARDED_WRITE_SCHEDULE_APPROVAL_POLICY: &str = "guarded_write_auto";
 
 static DB_POOL: Lazy<SqlitePool> = Lazy::new(|| {
     SqlitePool::new(db_path(), "RepoReaper").with_pool_size_env("REAPER_DB_POOL_SIZE")
@@ -26,7 +33,134 @@ pub fn get_conn() -> Result<PooledSqliteConnection<'static>> {
 pub fn init_db() -> Result<()> {
     let conn = get_conn()?;
     conn.execute_batch(SCHEMA)?;
+    scheduling::init_schema(&conn)?;
+    migrate_legacy_schedules(&conn)?;
     Ok(())
+}
+
+fn migrate_legacy_schedules(conn: &rusqlite::Connection) -> Result<()> {
+    let mut statement =
+        conn.prepare("SELECT id, cron_expr, config_json, enabled FROM repo_reaper_scheduled_runs")?;
+    let rows = statement.query_map([], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, i64>(3)? != 0,
+        ))
+    })?;
+    let legacy = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+    drop(statement);
+
+    for (name, cadence, payload_json, enabled) in legacy {
+        if scheduling::get(conn, "repo-reaper", RUN_SCHEDULE_ACTION, &name)?.is_some() {
+            continue;
+        }
+        let payload: Value = serde_json::from_str(&payload_json)
+            .with_context(|| format!("legacy RepoReaper schedule `{name}` has invalid JSON"))?;
+        let target_selection_mode = payload
+            .get("target_repo")
+            .and_then(Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+            .map(|_| TargetSelectionMode::Direct)
+            .unwrap_or(TargetSelectionMode::Discovery);
+        scheduling::save(
+            conn,
+            SaveSchedule {
+                name: &name,
+                product: "repo-reaper",
+                action_id: RUN_SCHEDULE_ACTION,
+                payload: &payload,
+                target_selection_mode,
+                cadence_hours: legacy_cadence_hours(&cadence),
+                enabled,
+                approval_policy: GUARDED_WRITE_SCHEDULE_APPROVAL_POLICY,
+            },
+        )?;
+    }
+    Ok(())
+}
+
+fn legacy_cadence_hours(value: &str) -> u32 {
+    match value.trim() {
+        "hourly" | "0 * * * *" => 1,
+        "weekly" | "0 3 * * 0" => 168,
+        _ => 24,
+    }
+}
+
+pub fn schedule_action(value: &str) -> Result<&'static str> {
+    match value.trim() {
+        RUN_SCHEDULE_ACTION => Ok(RUN_SCHEDULE_ACTION),
+        DRY_RUN_SCHEDULE_ACTION | "dry-run" => Ok(DRY_RUN_SCHEDULE_ACTION),
+        _ => anyhow::bail!("RepoReaper schedule action must be `run` or `dry_run`"),
+    }
+}
+
+pub fn list_product_schedules(action_id: &str) -> Result<Vec<ProductSchedule>> {
+    let action_id = schedule_action(action_id)?;
+    let conn = get_conn()?;
+    scheduling::list(&conn, "repo-reaper", action_id)
+}
+
+pub fn get_product_schedule(action_id: &str, name: &str) -> Result<Option<ProductSchedule>> {
+    let action_id = schedule_action(action_id)?;
+    let conn = get_conn()?;
+    scheduling::get(&conn, "repo-reaper", action_id, name)
+}
+
+pub fn save_product_schedule(
+    action_id: &str,
+    name: &str,
+    payload: &Value,
+    target_selection_mode: TargetSelectionMode,
+    cadence_hours: u32,
+    enabled: bool,
+) -> Result<ProductSchedule> {
+    let action_id = schedule_action(action_id)?;
+    let approval_policy = if action_id == RUN_SCHEDULE_ACTION {
+        GUARDED_WRITE_SCHEDULE_APPROVAL_POLICY
+    } else {
+        DEFAULT_SCHEDULE_APPROVAL_POLICY
+    };
+    let conn = get_conn()?;
+    scheduling::save(
+        &conn,
+        SaveSchedule {
+            name,
+            product: "repo-reaper",
+            action_id,
+            payload,
+            target_selection_mode,
+            cadence_hours,
+            enabled,
+            approval_policy,
+        },
+    )
+}
+
+pub fn delete_product_schedule(action_id: &str, name: &str) -> Result<bool> {
+    let action_id = schedule_action(action_id)?;
+    let conn = get_conn()?;
+    scheduling::delete(&conn, "repo-reaper", action_id, name)
+}
+
+pub fn claim_due_product_schedules(action_id: &str, limit: usize) -> Result<Vec<ProductSchedule>> {
+    let action_id = schedule_action(action_id)?;
+    let mut conn = get_conn()?;
+    scheduling::claim_due(&mut conn, "repo-reaper", action_id, limit)
+}
+
+pub fn record_product_schedule_result(
+    action_id: &str,
+    name: &str,
+    run_id: Option<&str>,
+    status: &str,
+    error: Option<&str>,
+) -> Result<bool> {
+    let action_id = schedule_action(action_id)?;
+    let conn = get_conn()?;
+    scheduling::record_result(&conn, "repo-reaper", action_id, name, run_id, status, error)
 }
 
 pub fn health_check() -> bool {

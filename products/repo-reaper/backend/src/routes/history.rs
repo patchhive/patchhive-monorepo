@@ -7,6 +7,7 @@ use axum::{
     Json, Router,
 };
 use patchhive_product_core::contract;
+use serde::Deserialize;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 
@@ -22,6 +23,7 @@ pub fn router() -> Router<AppState> {
         .route("/leaderboard", get(get_leaderboard))
         .route("/rejected", get(get_rejected))
         .route("/pr-tracking", get(get_tracked_prs))
+        .route("/pr-tracking/refresh", post(refresh_pr_body))
         .route("/pr-tracking/:repo/:pr_number/refresh", post(refresh_pr))
         .route("/github/rate-limit", get(rate_limit_check))
 }
@@ -110,7 +112,7 @@ async fn get_runs_contract(State(_): State<AppState>) -> Json<contract::ProductR
         return Json(contract::runs_from_values("repo-reaper", Vec::new()));
     };
     let runs: Vec<Value> = conn.prepare(
-        "SELECT id, started_at, finished_at, total_fixed, total_attempted, total_cost_usd, status, config_json, dry_run FROM repo_reaper_runs ORDER BY started_at DESC LIMIT 30"
+        "SELECT id, started_at, finished_at, total_fixed, total_attempted, total_cost_usd, status, config_json, dry_run FROM repo_reaper_runs ORDER BY started_at DESC"
     ).ok().and_then(|mut s| {
         let mapped = s.query_map([], |r| {
             let config_json = r.get::<_, Option<String>>(7)?.unwrap_or_default();
@@ -144,7 +146,7 @@ async fn get_history(State(_): State<AppState>) -> Json<Value> {
         return Json(json!({"history":[]}));
     };
     let runs: Vec<Value> = conn.prepare(
-        "SELECT id, started_at, finished_at, total_fixed, total_attempted, total_cost_usd, status, config_json, dry_run FROM repo_reaper_runs ORDER BY started_at DESC LIMIT 30"
+        "SELECT id, started_at, finished_at, total_fixed, total_attempted, total_cost_usd, status, config_json, dry_run FROM repo_reaper_runs ORDER BY started_at DESC"
     ).ok().and_then(|mut s| {
         let mapped = s.query_map([], |r| {
             let config_json = r.get::<_, Option<String>>(7)?.unwrap_or_default();
@@ -170,12 +172,10 @@ async fn get_history(State(_): State<AppState>) -> Json<Value> {
     let mut attempts_by_run: HashMap<String, Vec<Value>> = HashMap::new();
     let attempts: Vec<(String, Value)> = conn
         .prepare(
-            "WITH recent_runs AS (
-                SELECT id FROM repo_reaper_runs ORDER BY started_at DESC LIMIT 30
-             )
-             SELECT
+            "SELECT
                 ia.run_id,
                 ia.id,
+                ia.repo,
                 ia.issue_number,
                 ia.issue_title,
                 ia.issue_url,
@@ -194,7 +194,6 @@ async fn get_history(State(_): State<AppState>) -> Json<Value> {
                 ia.error_msg,
                 ia.duration_seconds
              FROM repo_reaper_issue_attempts ia
-             JOIN recent_runs rr ON rr.id = ia.run_id
              ORDER BY ia.run_id, ia.started_at"
         )
         .ok()
@@ -203,14 +202,14 @@ async fn get_history(State(_): State<AppState>) -> Json<Value> {
                 Ok((
                     r.get::<_, String>(0)?,
                     json!({
-                        "id":r.get::<_,String>(1)?,"issue_number":r.get::<_,i64>(2)?,"issue_title":r.get::<_,String>(3)?,
-                        "issue_url":r.get::<_,Option<String>>(4)?,"status":r.get::<_,String>(5)?,
-                        "skip_reason":r.get::<_,Option<String>>(6)?,"pr_url":r.get::<_,Option<String>>(7)?,
-                        "pr_number":r.get::<_,Option<i64>>(8)?,"reaper_agent":r.get::<_,String>(9)?,
-                        "smith_agent":r.get::<_,Option<String>>(10)?,"gatekeeper_agent":r.get::<_,String>(11)?,
-                        "started_at":r.get::<_,String>(12)?,"finished_at":r.get::<_,Option<String>>(13)?,
-                        "cost_usd":r.get::<_,f64>(14)?,"patch_diff":r.get::<_,Option<String>>(15)?,"confidence":r.get::<_,i32>(16)?,
-                        "error_msg":r.get::<_,Option<String>>(17)?,"duration_seconds":r.get::<_,Option<f64>>(18)?,
+                        "id":r.get::<_,String>(1)?,"repo":r.get::<_,String>(2)?,"issue_number":r.get::<_,i64>(3)?,"issue_title":r.get::<_,String>(4)?,
+                        "issue_url":r.get::<_,Option<String>>(5)?,"status":r.get::<_,String>(6)?,
+                        "skip_reason":r.get::<_,Option<String>>(7)?,"pr_url":r.get::<_,Option<String>>(8)?,
+                        "pr_number":r.get::<_,Option<i64>>(9)?,"reaper_agent":r.get::<_,String>(10)?,
+                        "smith_agent":r.get::<_,Option<String>>(11)?,"gatekeeper_agent":r.get::<_,String>(12)?,
+                        "started_at":r.get::<_,String>(13)?,"finished_at":r.get::<_,Option<String>>(14)?,
+                        "cost_usd":r.get::<_,f64>(15)?,"patch_diff":r.get::<_,Option<String>>(16)?,"confidence":r.get::<_,i32>(17)?,
+                        "error_msg":r.get::<_,Option<String>>(18)?,"duration_seconds":r.get::<_,Option<f64>>(19)?,
                     }),
                 ))
             }).ok()?;
@@ -271,6 +270,7 @@ async fn get_run(Path(run_id): Path<String>, State(_): State<AppState>) -> Json<
         .prepare(
             "SELECT
             id,
+            repo,
             issue_number,
             issue_title,
             issue_url,
@@ -298,23 +298,24 @@ async fn get_run(Path(run_id): Path<String>, State(_): State<AppState>) -> Json<
                 .query_map([&run_id], |r| {
                     Ok(json!({
                         "id": r.get::<_, String>(0)?,
-                        "issue_number": r.get::<_, i64>(1)?,
-                        "issue_title": r.get::<_, String>(2)?,
-                        "issue_url": r.get::<_, Option<String>>(3)?,
-                        "status": r.get::<_, String>(4)?,
-                        "skip_reason": r.get::<_, Option<String>>(5)?,
-                        "pr_url": r.get::<_, Option<String>>(6)?,
-                        "pr_number": r.get::<_, Option<i64>>(7)?,
-                        "reaper_agent": r.get::<_, String>(8)?,
-                        "smith_agent": r.get::<_, Option<String>>(9)?,
-                        "gatekeeper_agent": r.get::<_, String>(10)?,
-                        "started_at": r.get::<_, String>(11)?,
-                        "finished_at": r.get::<_, Option<String>>(12)?,
-                        "duration_seconds": r.get::<_, Option<f64>>(13)?,
-                        "cost_usd": r.get::<_, f64>(14)?,
-                        "patch_diff": r.get::<_, Option<String>>(15)?,
-                        "error_msg": r.get::<_, Option<String>>(16)?,
-                        "confidence": r.get::<_, i32>(17)?,
+                        "repo": r.get::<_, String>(1)?,
+                        "issue_number": r.get::<_, i64>(2)?,
+                        "issue_title": r.get::<_, String>(3)?,
+                        "issue_url": r.get::<_, Option<String>>(4)?,
+                        "status": r.get::<_, String>(5)?,
+                        "skip_reason": r.get::<_, Option<String>>(6)?,
+                        "pr_url": r.get::<_, Option<String>>(7)?,
+                        "pr_number": r.get::<_, Option<i64>>(8)?,
+                        "reaper_agent": r.get::<_, String>(9)?,
+                        "smith_agent": r.get::<_, Option<String>>(10)?,
+                        "gatekeeper_agent": r.get::<_, String>(11)?,
+                        "started_at": r.get::<_, String>(12)?,
+                        "finished_at": r.get::<_, Option<String>>(13)?,
+                        "duration_seconds": r.get::<_, Option<f64>>(14)?,
+                        "cost_usd": r.get::<_, f64>(15)?,
+                        "patch_diff": r.get::<_, Option<String>>(16)?,
+                        "error_msg": r.get::<_, Option<String>>(17)?,
+                        "confidence": r.get::<_, i32>(18)?,
                     }))
                 })
                 .ok()?;
@@ -395,7 +396,7 @@ async fn get_rejected(State(_): State<AppState>) -> Json<Value> {
         return Json(json!({"rejected":[]}));
     };
     let rows: Vec<Value> = conn.prepare(
-        "SELECT id,run_id,repo,issue_number,issue_title,reason,smith_feedback,confidence,created_at FROM repo_reaper_rejected_patches ORDER BY created_at DESC LIMIT 100"
+        "SELECT id,run_id,repo,issue_number,issue_title,reason,smith_feedback,confidence,created_at FROM repo_reaper_rejected_patches ORDER BY created_at DESC"
     ).ok().and_then(|mut s| {
         let mapped = s.query_map([], |r| Ok(json!({
             "id":r.get::<_,String>(0)?,"run_id":r.get::<_,String>(1)?,"repo":r.get::<_,String>(2)?,
@@ -413,7 +414,7 @@ async fn get_tracked_prs(State(_): State<AppState>) -> Json<Value> {
         return Json(json!({"prs":[]}));
     };
     let rows: Vec<Value> = conn.prepare(
-        "SELECT pr_number,repo,run_id,opened_at,last_checked,state,merged,review_state FROM repo_reaper_pr_tracking ORDER BY opened_at DESC LIMIT 50"
+        "SELECT pr_number,repo,run_id,opened_at,last_checked,state,merged,review_state FROM repo_reaper_pr_tracking ORDER BY opened_at DESC"
     ).ok().and_then(|mut s| {
         let mapped = s.query_map([], |r| Ok(json!({
             "pr_number":r.get::<_,i64>(0)?,"repo":r.get::<_,String>(1)?,"run_id":r.get::<_,String>(2)?,
@@ -465,6 +466,19 @@ async fn refresh_pr(
         .await;
     }
     Json(pr_state)
+}
+
+#[derive(Deserialize)]
+struct RefreshPrRequest {
+    repo: String,
+    pr_number: i64,
+}
+
+async fn refresh_pr_body(
+    State(state): State<AppState>,
+    Json(body): Json<RefreshPrRequest>,
+) -> Json<Value> {
+    refresh_pr(Path((body.repo, body.pr_number)), State(state)).await
 }
 
 async fn rate_limit_check(State(state): State<AppState>) -> Json<Value> {

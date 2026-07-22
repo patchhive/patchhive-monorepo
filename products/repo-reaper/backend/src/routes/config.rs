@@ -32,6 +32,7 @@ pub fn router() -> Router<AppState> {
         .route("/agents/:id", delete(remove_agent))
         .route("/presets", get(list_presets).post(save_preset))
         .route("/presets/:name", delete(delete_preset))
+        .route("/presets/:name/load", post(load_preset))
         .route("/repo-lists", get(get_repo_lists).post(add_repo))
         .route("/repo-lists/*repo", delete(remove_repo))
         .route("/cooldowns", get(list_cooldowns))
@@ -183,6 +184,17 @@ fn persist_env_updates(path: &StdPath, updates: &[(String, String)]) -> std::io:
     fs::write(path, content)
 }
 
+fn canonical_env_path() -> std::path::PathBuf {
+    if let Some(path) = clean_env("PATCHHIVE_ENV_FILE") {
+        return path.into();
+    }
+    std::env::current_dir()
+        .ok()
+        .and_then(|current| patchhive_product_core::environment::find_repo_root(&current))
+        .map(|root| root.join(".env"))
+        .unwrap_or_else(|| std::path::PathBuf::from(".env"))
+}
+
 async fn get_config(State(state): State<AppState>) -> Json<Value> {
     let providers: Value = PROVIDER_MODELS
         .iter()
@@ -276,7 +288,7 @@ async fn save_config(Json(body): Json<ConfigSave>) -> Json<Value> {
         }
     }
 
-    let saved = persist_env_updates(StdPath::new(".env"), &updates).is_ok();
+    let saved = persist_env_updates(&canonical_env_path(), &updates).is_ok();
     Json(json!({"saved": saved, "restart_required": saved}))
 }
 
@@ -710,9 +722,34 @@ fn clean_model_ids(models: Vec<String>) -> Vec<String> {
 }
 
 async fn list_agents(State(state): State<AppState>) -> Json<Value> {
-    let agents: Vec<_> = state.agents.read().await.values().cloned().collect();
+    let agents = state
+        .agents
+        .read()
+        .await
+        .values()
+        .map(agent_browser_view)
+        .collect::<Vec<_>>();
     let cooldowns = get_cooldowns().await;
     Json(json!({"agents": agents, "cooldowns": cooldowns}))
+}
+
+fn agent_browser_view(agent: &AgentConfig) -> Value {
+    json!({
+        "id": agent.id,
+        "name": agent.name,
+        "role": agent.role,
+        "provider": agent.provider,
+        "model": agent.model,
+        "base_url": agent.base_url,
+        "api_key": null,
+        "api_key_set": agent.api_key.as_deref().is_some_and(|value| !value.trim().is_empty()),
+        "bot_token": null,
+        "bot_token_set": agent.bot_token.as_deref().is_some_and(|value| !value.trim().is_empty()),
+        "bot_user": agent.bot_user,
+        "status": agent.status,
+        "current_task": agent.current_task,
+        "stats": agent.stats,
+    })
 }
 
 #[derive(Deserialize)]
@@ -722,14 +759,18 @@ struct TeamBody {
 
 async fn set_team(State(state): State<AppState>, Json(body): Json<TeamBody>) -> Json<Value> {
     let mut map = state.agents.write().await;
+    let previous = map.clone();
     map.clear();
     for mut a in body.agents {
         if a.id.is_empty() {
             a.id = Uuid::new_v4().to_string()[..8].to_string();
         }
-        a.api_key = clean_optional(a.api_key.as_deref());
+        let prior = previous.get(&a.id);
+        a.api_key = clean_optional(a.api_key.as_deref())
+            .or_else(|| prior.and_then(|agent| agent.api_key.clone()));
         a.base_url = clean_optional(a.base_url.as_deref());
-        a.bot_token = clean_optional(a.bot_token.as_deref());
+        a.bot_token = clean_optional(a.bot_token.as_deref())
+            .or_else(|| prior.and_then(|agent| agent.bot_token.clone()));
         a.bot_user = clean_optional(a.bot_user.as_deref());
         a.status = "idle".into();
         a.current_task = String::new();
@@ -740,7 +781,7 @@ async fn set_team(State(state): State<AppState>, Json(body): Json<TeamBody>) -> 
     if let Err(err) = save_active_agents(&agents) {
         tracing::warn!("failed to persist RepoReaper active agent team: {err}");
     }
-    Json(json!({"agents": agents}))
+    Json(json!({"agents": agents.iter().map(agent_browser_view).collect::<Vec<_>>() }))
 }
 
 async fn remove_agent(State(state): State<AppState>, Path(id): Path<String>) -> Json<Value> {
@@ -766,9 +807,10 @@ async fn list_presets() -> Json<Value> {
                 .query_map([], |r| {
                     let raw_agents = r.get::<_, String>(1)?;
                     let agents = agents_from_storage_json(&raw_agents).unwrap_or_default();
+                    let browser_agents = agents.iter().map(agent_browser_view).collect::<Vec<_>>();
                     Ok(json!({
                         "name": r.get::<_,String>(0)?,
-                        "agents": agents,
+                        "agents": browser_agents,
                         "created_at": r.get::<_,String>(2)?
                     }))
                 })
@@ -785,7 +827,23 @@ struct PresetSave {
     agents: Vec<AgentConfig>,
 }
 
-async fn save_preset(Json(body): Json<PresetSave>) -> Json<Value> {
+async fn save_preset(
+    State(state): State<AppState>,
+    Json(mut body): Json<PresetSave>,
+) -> Json<Value> {
+    let active = state.agents.read().await;
+    for agent in &mut body.agents {
+        let prior = active.get(&agent.id);
+        agent.api_key = clean_optional(agent.api_key.as_deref())
+            .or_else(|| prior.and_then(|current| current.api_key.clone()));
+        agent.bot_token = clean_optional(agent.bot_token.as_deref())
+            .or_else(|| prior.and_then(|current| current.bot_token.clone()));
+        agent.base_url = clean_optional(agent.base_url.as_deref());
+        agent.bot_user = clean_optional(agent.bot_user.as_deref());
+        agent.status = "idle".into();
+        agent.current_task.clear();
+    }
+    drop(active);
     let Ok(conn) = get_conn() else {
         return Json(json!({"saved":false}));
     };
@@ -808,6 +866,41 @@ async fn delete_preset(Path(name): Path<String>) -> Json<Value> {
         [&name],
     );
     Json(json!({"ok": true}))
+}
+
+async fn load_preset(State(state): State<AppState>, Path(name): Path<String>) -> Json<Value> {
+    let Ok(conn) = get_conn() else {
+        return Json(json!({"ok": false, "error": "database unavailable"}));
+    };
+    let agents_json = conn
+        .query_row(
+            "SELECT agents_json FROM repo_reaper_team_presets WHERE name=?1",
+            [&name],
+            |row| row.get::<_, String>(0),
+        )
+        .ok();
+    let Some(agents_json) = agents_json else {
+        return Json(json!({"ok": false, "error": "team preset not found"}));
+    };
+    let Ok(agents) = agents_from_storage_json(&agents_json) else {
+        return Json(json!({"ok": false, "error": "team preset could not be decrypted"}));
+    };
+    let mut map = state.agents.write().await;
+    map.clear();
+    for mut agent in agents {
+        agent.status = "idle".into();
+        agent.current_task.clear();
+        map.insert(agent.id.clone(), agent);
+    }
+    let agents = map.values().cloned().collect::<Vec<_>>();
+    drop(map);
+    if let Err(error) = save_active_agents(&agents) {
+        return Json(json!({"ok": false, "error": error.to_string()}));
+    }
+    Json(json!({
+        "ok": true,
+        "agents": agents.iter().map(agent_browser_view).collect::<Vec<_>>(),
+    }))
 }
 
 async fn get_repo_lists() -> Json<Value> {
@@ -901,4 +994,37 @@ async fn set_watch_mode(
 
 async fn lifetime_cost() -> Json<Value> {
     Json(json!({"lifetime_cost_usd": get_lifetime_cost()}))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::agent_browser_view;
+    use crate::state::{AgentConfig, AgentStats};
+
+    #[test]
+    fn browser_agent_view_redacts_secret_values_but_reports_presence() {
+        let agent = AgentConfig {
+            id: "scout-one".into(),
+            name: "Scout".into(),
+            role: "scout".into(),
+            provider: "openai".into(),
+            model: "gpt-test".into(),
+            base_url: None,
+            api_key: Some("provider-secret".into()),
+            bot_token: Some("github-secret".into()),
+            bot_user: Some("patchhive".into()),
+            status: "idle".into(),
+            current_task: String::new(),
+            stats: AgentStats::default(),
+        };
+
+        let view = agent_browser_view(&agent);
+
+        assert!(view["api_key"].is_null());
+        assert!(view["bot_token"].is_null());
+        assert_eq!(view["api_key_set"], true);
+        assert_eq!(view["bot_token_set"], true);
+        assert!(!view.to_string().contains("provider-secret"));
+        assert!(!view.to_string().contains("github-secret"));
+    }
 }

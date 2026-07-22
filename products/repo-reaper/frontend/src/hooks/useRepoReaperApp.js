@@ -212,15 +212,14 @@ export function useRepoReaperApp() {
     await pushTeam(nextAgents);
   }, [agents, pushTeam]);
 
-  const loadPreset = useCallback(async list => {
-    const nextAgents = {};
-    list.forEach(agent => {
-      const normalized = normalizeAgent(agent);
-      nextAgents[normalized.id] = normalized;
+  const loadPreset = useCallback(async name => {
+    if (!name) return;
+    const response = await fetch_(`${API}/presets/${encodeURIComponent(name)}/load`, {
+      method: "POST",
     });
-    setAgents(nextAgents);
-    await pushTeam(nextAgents);
-  }, [pushTeam]);
+    if (!response.ok) throw new Error("RepoReaper could not activate that team.");
+    await refreshAgents();
+  }, [fetch_, refreshAgents]);
 
   const toggleWatchMode = useCallback(async () => {
     const next = !watchMode;

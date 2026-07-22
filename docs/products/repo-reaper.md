@@ -283,12 +283,45 @@ Current v2 behavior:
 - Dry Stalk remains no-write, but it still needs at least a Scout agent because
   issue scoring and dry-run analysis use the AI agent pipeline.
 
-Required in the RepoReaper v3 parity pass:
+The v2 frontend remains a parity source until the v3 acceptance pass completes.
+It is not the final UI and must not be removed merely because the engine is now
+mounted in the unified backend.
 
-- full provider/model discovery parity with the old team builder
-- full team preset save/load/delete management in v2
-- richer per-agent controls, cooldown visibility, and live agent logs
-- HiveCore-driven setup for RepoReaper agent teams, approvals, and write gates
+### UI v3 parity and safety matrix
+
+RepoReaper's v3 candidate must preserve every operator workflow below before it
+can replace either existing frontend. The destination tabs are intentionally
+short so the specialist header remains usable without horizontally scrolling
+at ordinary desktop widths.
+
+| Workflow | Current source | Required v3 destination | Acceptance boundary |
+|----------|----------------|-------------------------|---------------------|
+| Guarded patch hunt, direct target, and autonomous discovery | v1 Run; v2 Mission Deck | **Mission** | Explicit Target repo / Autonomous discovery mode, complete bounded inputs, preflight readiness, live SSE phase/agent/cost/issue evidence, stop reasons, and PR result links |
+| No-write candidate discovery and Scout analysis | v1 Dry Run; v2 Dry Stalk | **Dry Stalk** | Same explicit target modes and filters as Mission, clear no-write boundary, live evidence, saved result, and prompt/report preview |
+| Run list, attempt dossier, phase events, artifacts, diffs, rejection evidence, and cost | v1 History/Rejected/Leaderboard; v2 History | **History** | Search/filter/sort/saved views, progressive complete evidence, per-attempt stop point, copyable artifacts, rejected patches, and lifetime/run cost without losing persisted records |
+| Opened PR lifecycle and refreshable GitHub links | v1 PR Tracking; v2 PR monitor | **PRs** | State, merge/review status, source run, repository, opened/checked timestamps, direct links, and honest write/poll diagnostics |
+| Agent team, role assignment, provider defaults, model discovery/testing, cooldowns, and team presets | v1 Team/Presets; v2 Checks team builder | **Squad** | Add/edit/remove all roles, encrypted secret behavior, provider/model refresh and test errors, starter team, save/load/delete presets, live statuses/logs, and cooldown clearing |
+| Repository allow/deny/opt-out controls, explicit schedules, watch mode, and webhook posture | v1 Repo Lists/Schedules/Webhook/Config | **Controls** | Shared v3 controls hierarchy, separate `run` and `dry_run` schedules, explicit target mode, run-now/load/pause/delete, repository-policy precedence, watch-mode state, and webhook guidance |
+| Startup diagnostics, GitHub write identity, AI/provider readiness, sandbox/test policy, budget/approval posture, and suite integrations | v1 Config/Startup Checks; v2 Checks | **Checks** | Typed checks with actionable names, warnings visible, GitHub read/write claims distinguished, database path, auth state, worker capacity, validation states, and HiveCore/RepoMemory availability |
+
+The v3 header therefore uses **Mission**, **Dry Stalk**, **History**, **PRs**,
+**Squad**, **Controls**, and **Checks**. Intake is part of Mission and Dry Stalk;
+RepoReaper does not need a duplicate Sources tab.
+
+Scheduling is a safety contract, not only a UI feature:
+
+- schedules persist `direct` or `discovery`; an empty target never silently
+  changes a direct schedule into broad discovery;
+- `dry_run` schedules remain no-write and may run automatically within the
+  configured evidence and cost bounds;
+- `run` schedules are a distinct write-capable action. Enabling one is an
+  explicit recurring operator authorization, but every execution still passes
+  repository policy, trusted-test policy, validation, PR-budget, existing-PR,
+  and GitHub-write gates;
+- due-work claiming, last-run status, and run-now use the shared
+  `patchhive_product_core::scheduling` lifecycle;
+- one active RepoReaper operation owns the engine at a time, regardless of
+  whether it was triggered by the operator, a schedule, a webhook, or HiveCore.
 
 RepoReaper polish backlog after the first live sandbox PR tests:
 
@@ -699,7 +732,11 @@ cargo run --release
 ## Current Status
 
 - **Active development** — core workflow (scan → fix → PR) is fully implemented
-- Frontend v1 at `/frontend/`, v2 prototype at `/frontend-v2/`
+- Unified-backend engine mounted in-process at `/api/products/repo-reaper`
+- Frontend v1 at `/frontend/`, v2 prototype at `/frontend-v2/`, and the
+  functional v3 parity candidate at `/frontend-v3/`
+- The v1 and v2 frontends remain available until the v3 visual and workflow
+  acceptance pass is complete
 - CI: GitHub Actions for Rust backend (`cargo build`, `cargo test`, `cargo clippy`)
 - No Prometheus or Kubernetes integration — health checks are HTTP-based
 - Configuration is via `.env` file or environment variables

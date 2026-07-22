@@ -2,6 +2,7 @@ use axum::{
     extract::State,
     response::sse::{Event, KeepAlive, Sse},
 };
+use patchhive_product_core::contract::TargetSelectionMode;
 use patchhive_product_core::scope_policy::{
     normalize_repo_name, RepoScopeDecision, RepoScopePolicy,
 };
@@ -45,10 +46,39 @@ pub struct RunRequest {
     pub search_query: String,
     #[serde(default)]
     pub target_repo: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_selection_mode: Option<TargetSelectionMode>,
     #[serde(default)]
     pub cost_budget_usd: f64,
     #[serde(default = "default_retry_count")]
     pub retry_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RunExecutionResult {
+    pub run_id: String,
+    pub total_attempted: usize,
+    pub total_fixed: i64,
+    pub cost_usd: f64,
+    pub dry_run: bool,
+    pub status: String,
+}
+
+pub(crate) struct ActiveRunGuard(Arc<AtomicBool>);
+
+impl ActiveRunGuard {
+    pub(crate) fn claim(run_active: Arc<AtomicBool>) -> Result<Self, String> {
+        run_active
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .map_err(|_| "A RepoReaper operation is already active".to_string())?;
+        Ok(Self(run_active))
+    }
+}
+
+impl Drop for ActiveRunGuard {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::SeqCst);
+    }
 }
 
 fn default_language() -> String {
@@ -271,12 +301,11 @@ async fn finalize_run_with_summary(
     run_id: &str,
     run_cost: &Arc<AtomicI64>,
     attempted: usize,
-) {
+) -> RunExecutionResult {
     let (total_fixed, failed_attempts, nonfixed_attempt_cost): (i64, i64, f64) = {
-        let Ok(conn) = get_conn() else {
-            return;
-        };
-        conn
+        get_conn()
+            .ok()
+            .and_then(|conn| conn
             .query_row(
             "SELECT
                 COALESCE(SUM(CASE WHEN status='fixed' THEN 1 ELSE 0 END), 0),
@@ -285,7 +314,8 @@ async fn finalize_run_with_summary(
              FROM repo_reaper_issue_attempts WHERE run_id=?",
             [run_id],
             |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?, r.get::<_, f64>(2)?)),
-        ).unwrap_or((0, 0, 0.0))
+            ).ok())
+            .unwrap_or((0, 0, 0.0))
     };
 
     let rc = (run_cost.load(Ordering::Relaxed) as f64 / 1_000_000.0) + nonfixed_attempt_cost;
@@ -325,6 +355,14 @@ async fn finalize_run_with_summary(
             }),
         ))
         .await;
+    RunExecutionResult {
+        run_id: run_id.to_string(),
+        total_attempted: attempted,
+        total_fixed,
+        cost_usd: rc,
+        dry_run: false,
+        status: status.to_string(),
+    }
 }
 
 async fn run_fix_wave(input: FixWaveInput<'_>) {
@@ -409,6 +447,23 @@ async fn discover(
     filters: &RepoScopePolicy,
     tx: &mpsc::Sender<Result<Event, Infallible>>,
 ) -> (Vec<Value>, Vec<Value>) {
+    if req.target_selection_mode == Some(TargetSelectionMode::Direct)
+        && req.target_repo.trim().is_empty()
+    {
+        let _ = tx
+            .send(alog(
+                scout,
+                "Target repo mode requires an owner/repo target; autonomous discovery was not started",
+                "warn",
+            ))
+            .await;
+        return (Vec::new(), Vec::new());
+    }
+
+    if req.target_selection_mode == Some(TargetSelectionMode::Discovery) {
+        return discover_repositories(http, req, scout, filters, tx).await;
+    }
+
     if let Some(target_repo) = normalized_target_repo(req) {
         return discover_target_repo(http, req, scout, &target_repo, filters, tx).await;
     }
@@ -424,6 +479,16 @@ async fn discover(
         return (Vec::new(), Vec::new());
     }
 
+    discover_repositories(http, req, scout, filters, tx).await
+}
+
+async fn discover_repositories(
+    http: &reqwest::Client,
+    req: &RunRequest,
+    scout: &AgentConfig,
+    filters: &RepoScopePolicy,
+    tx: &mpsc::Sender<Result<Event, Infallible>>,
+) -> (Vec<Value>, Vec<Value>) {
     let query = if !req.search_query.is_empty() {
         req.search_query.clone()
     } else {
@@ -580,82 +645,96 @@ pub async fn dry_run(
     axum::Json(req): axum::Json<RunRequest>,
 ) -> Sse<impl futures::Stream<Item = Result<Event, Infallible>>> {
     let (tx, rx) = mpsc::channel(128);
-    let http = state.http.clone();
-    let agents = state.agents.clone();
+    tokio::spawn(execute_dry_run(state, req, tx));
 
-    tokio::spawn(async move {
-        let agents_snap = agents.read().await.clone();
-        let Some(team) = select_run_team(&agents_snap) else {
-            emit_no_agents(&tx).await;
-            return;
-        };
-        let filters = load_filters();
-        let run_id = Uuid::new_v4().to_string()[..12].to_string();
-        let run_cost = Arc::new(AtomicI64::new(0));
-        let run_config_json = serde_json::to_string(&req).unwrap_or_else(|_| "{}".to_string());
-        let _ = start_run(RunStart {
-            run_id: &run_id,
-            config_json: &run_config_json,
-            dry_run: true,
-        });
+    Sse::new(ReceiverStream::new(rx)).keep_alive(KeepAlive::default())
+}
 
-        let _ = tx.send(sse("phase", json!({"phase":"scan"}))).await;
-        persist_run_phase(
-            &run_id,
-            "discover",
-            "Dry Stalk repository discovery started",
-        );
+pub async fn execute_dry_run(
+    state: AppState,
+    req: RunRequest,
+    tx: mpsc::Sender<Result<Event, Infallible>>,
+) -> Result<RunExecutionResult, String> {
+    let _active = ActiveRunGuard::claim(state.run_active.clone())?;
+    let agents_snap = state.agents.read().await.clone();
+    let Some(team) = select_run_team(&agents_snap) else {
+        emit_no_agents(&tx).await;
+        return Err("No agents configured".into());
+    };
+    let filters = load_filters();
+    let run_id = Uuid::new_v4().to_string()[..12].to_string();
+    let run_cost = Arc::new(AtomicI64::new(0));
+    let run_config_json = serde_json::to_string(&req).unwrap_or_else(|_| "{}".to_string());
+    let _ = start_run(RunStart {
+        run_id: &run_id,
+        config_json: &run_config_json,
+        dry_run: true,
+    });
+
+    let _ = tx.send(sse("phase", json!({"phase":"scan"}))).await;
+    persist_run_phase(
+        &run_id,
+        "discover",
+        "Dry Stalk repository discovery started",
+    );
+    let _ = tx
+        .send(alog(
+            &team.scout,
+            "[DRY STALK] Scanning — no reaping will happen",
+            "info",
+        ))
+        .await;
+
+    let (repos, issues, fixable, scoring_available) = collect_targets(
+        &state.http,
+        &req,
+        &team.scout,
+        &filters,
+        &tx,
+        Some(&run_cost),
+    )
+    .await;
+    let _ = tx
+        .send(sse("issues", json!({"issues": issues.clone()})))
+        .await;
+    let mut analysis_available = false;
+    let mut report = None;
+    if scoring_available {
         let _ = tx
             .send(alog(
                 &team.scout,
-                "[DRY STALK] Scanning — no reaping will happen",
-                "info",
+                &format!(
+                    "[DRY STALK] Would target {} scored issues — 0 changes made",
+                    fixable.len()
+                ),
+                "success",
             ))
             .await;
 
-        let (repos, issues, fixable, scoring_available) =
-            collect_targets(&http, &req, &team.scout, &filters, &tx, Some(&run_cost)).await;
-        let _ = tx
-            .send(sse("issues", json!({"issues": issues.clone()})))
-            .await;
-        let mut analysis_available = false;
-        let mut report = None;
-        if scoring_available {
-            let _ = tx
-                .send(alog(
-                    &team.scout,
-                    &format!(
-                        "[DRY STALK] Would target {} scored issues — 0 changes made",
-                        fixable.len()
-                    ),
-                    "success",
-                ))
-                .await;
-
-            match agent_dry_run_analysis(&http, &fixable, &repos, &team.scout).await {
-                Ok((next_report, cost)) => {
-                    run_cost.fetch_add((cost * 1_000_000.0) as i64, Ordering::Relaxed);
-                    let next_report = serde_json::to_value(next_report).unwrap_or_else(|error| {
+        match agent_dry_run_analysis(&state.http, &fixable, &repos, &team.scout).await {
+            Ok((next_report, cost)) => {
+                run_cost.fetch_add((cost * 1_000_000.0) as i64, Ordering::Relaxed);
+                let next_report = serde_json::to_value(next_report).unwrap_or_else(|error| {
                         json!({"error": format!("could not encode typed dry-run report: {error}")})
                     });
-                    report = Some(next_report.clone());
-                    analysis_available = true;
-                    let _ = tx
-                        .send(sse("dry_run_report", json!({"report": next_report})))
-                        .await;
-                }
-                Err(e) => {
-                    let _ = tx
-                        .send(alog(
-                            &team.scout,
-                            &format!("Dry-run analysis failed: {e}"),
-                            "warn",
-                        ))
-                        .await;
-                }
+                report = Some(next_report.clone());
+                analysis_available = true;
+                let _ = tx
+                    .send(sse("dry_run_report", json!({"report": next_report})))
+                    .await;
             }
-        } else {
-            let _ = tx
+            Err(e) => {
+                let _ = tx
+                    .send(alog(
+                        &team.scout,
+                        &format!("Dry-run analysis failed: {e}"),
+                        "warn",
+                    ))
+                    .await;
+            }
+        }
+    } else {
+        let _ = tx
                 .send(alog(
                     &team.scout,
                     &format!(
@@ -665,36 +744,41 @@ pub async fn dry_run(
                     "warn",
                 ))
                 .await;
-        }
-        let rc = run_cost.load(Ordering::Relaxed) as f64 / 1_000_000.0;
-        let _ = save_dry_stalk_run(
-            &run_id,
-            &repos,
-            &issues,
-            report.as_ref(),
-            scoring_available,
-            analysis_available,
-        );
-        let _ = finish_run(&run_id, 0, fixable.len() as i64, rc, RunStatus::Done);
+    }
+    let rc = run_cost.load(Ordering::Relaxed) as f64 / 1_000_000.0;
+    let _ = save_dry_stalk_run(
+        &run_id,
+        &repos,
+        &issues,
+        report.as_ref(),
+        scoring_available,
+        analysis_available,
+    );
+    let _ = finish_run(&run_id, 0, fixable.len() as i64, rc, RunStatus::Done);
 
-        let _ = tx
-            .send(sse(
-                "done",
-                json!({
-                    "analysis_available": analysis_available,
-                    "dry_run": true,
-                    "scoring_available": scoring_available,
-                    "total_fixed": 0,
-                    "total_attempted": fixable.len(),
-                    "total_would_reap": fixable.len(),
-                    "run_id": run_id,
-                    "cost": rc
-                }),
-            ))
-            .await;
-    });
-
-    Sse::new(ReceiverStream::new(rx)).keep_alive(KeepAlive::default())
+    let _ = tx
+        .send(sse(
+            "done",
+            json!({
+                "analysis_available": analysis_available,
+                "dry_run": true,
+                "scoring_available": scoring_available,
+                "total_fixed": 0,
+                "total_attempted": fixable.len(),
+                "total_would_reap": fixable.len(),
+                "run_id": run_id,
+                "cost": rc
+            }),
+        ))
+        .await;
+    Ok(RunExecutionResult {
+        run_id,
+        total_attempted: fixable.len(),
+        total_fixed: 0,
+        cost_usd: rc,
+        dry_run: true,
+        status: "done".into(),
+    })
 }
 
 pub async fn run(
@@ -711,20 +795,18 @@ pub async fn execute_run(
     state: AppState,
     req: RunRequest,
     tx: mpsc::Sender<Result<Event, Infallible>>,
-) {
+) -> Result<RunExecutionResult, String> {
     let http = state.http.clone();
     let agents_arc = state.agents.clone();
-    let run_active = state.run_active.clone();
-
-    if run_active
-        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-        .is_err()
-    {
-        let _ = tx
-            .send(sse("error", json!({"msg":"A hunt is already active"})))
-            .await;
-        return;
-    }
+    let _active = match ActiveRunGuard::claim(state.run_active.clone()) {
+        Ok(active) => active,
+        Err(error) => {
+            let _ = tx
+                .send(sse("error", json!({"msg":"A hunt is already active"})))
+                .await;
+            return Err(error);
+        }
+    };
 
     let run_id = Uuid::new_v4().to_string()[..12].to_string();
     let run_cost = Arc::new(AtomicI64::new(0));
@@ -738,8 +820,7 @@ pub async fn execute_run(
     let Some(team) = select_run_team(&agents_snap) else {
         emit_no_agents(&tx).await;
         let _ = tx.send(sse("done", json!({"total_fixed":0}))).await;
-        run_active.store(false, Ordering::SeqCst);
-        return;
+        return Err("No agents configured".into());
     };
 
     let filters = load_filters();
@@ -776,8 +857,14 @@ pub async fn execute_run(
         let rc = run_cost.load(Ordering::Relaxed) as f64 / 1_000_000.0;
         let _ = finish_run(&run_id, 0, 0, rc, RunStatus::Done);
         let _ = tx.send(sse("done", json!({"total_fixed":0}))).await;
-        run_active.store(false, Ordering::SeqCst);
-        return;
+        return Ok(RunExecutionResult {
+            run_id,
+            total_attempted: 0,
+            total_fixed: 0,
+            cost_usd: rc,
+            dry_run: false,
+            status: "done".into(),
+        });
     }
 
     let _ = tx.send(sse("phase", json!({"phase":"fix"}))).await;
@@ -796,7 +883,27 @@ pub async fn execute_run(
     })
     .await;
 
-    finalize_run_with_summary(&tx, &run_id, &run_cost, fixable.len()).await;
+    Ok(finalize_run_with_summary(&tx, &run_id, &run_cost, fixable.len()).await)
+}
 
-    run_active.store(false, Ordering::SeqCst);
+#[cfg(test)]
+mod tests {
+    use super::ActiveRunGuard;
+    use std::sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    };
+
+    #[test]
+    fn active_run_guard_prevents_overlap_and_releases_on_drop() {
+        let active = Arc::new(AtomicBool::new(false));
+        let guard = ActiveRunGuard::claim(active.clone()).expect("first operation");
+
+        assert!(active.load(Ordering::SeqCst));
+        assert!(ActiveRunGuard::claim(active.clone()).is_err());
+
+        drop(guard);
+        assert!(!active.load(Ordering::SeqCst));
+        assert!(ActiveRunGuard::claim(active).is_ok());
+    }
 }

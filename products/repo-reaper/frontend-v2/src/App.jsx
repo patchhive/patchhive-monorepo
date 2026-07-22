@@ -2109,9 +2109,21 @@ export default function App() {
   }
 
   async function loadTeamPreset(preset) {
-    const presetAgents = Array.isArray(preset?.agents) ? preset.agents : [];
-    if (!presetAgents.length) return;
-    await saveAgents(presetAgents);
+    if (!preset?.name) return;
+    setSavingPresets(true);
+    setError("");
+    try {
+      await fetchJson(
+        `/presets/${encodeURIComponent(preset.name)}/load`,
+        { method: "POST" },
+        "RepoReaper could not activate that team.",
+      );
+      await refreshData();
+    } catch (err) {
+      setError(err.message || "RepoReaper could not activate that team.");
+    } finally {
+      setSavingPresets(false);
+    }
   }
 
   async function deleteTeamPreset(name) {
