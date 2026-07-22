@@ -118,38 +118,29 @@ npm install
 npm run dev
 ```
 
-The UI v2 prototype is isolated while the suite direction is still being tested:
-
-```bash
-cd products/refactor-scout/frontend-v2
-npm install
-npm run dev
-```
-
 ### Unified backend
 
 The RefactorScout engine is also mounted in-process by the shared suite backend:
 
 ```bash
-REFACTOR_SCOUT_DB_PATH="$PWD/products/refactor-scout/refactor-scout.db" \
+PATCHHIVE_DB_PATH="$PWD/data/patchhive.db" \
 PATCHHIVE_PRODUCTS=refactor-scout \
 cargo run --manifest-path services/patchhive-backend/Cargo.toml
 ```
 
 This serves the same routes under
-`/api/products/refactor-scout`. Use an absolute database path when starting from
-the monorepo root so RefactorScout reuses its current history database.
+`/api/products/refactor-scout`. The root `.env` is the canonical monorepo
+configuration source, and `PATCHHIVE_DB_PATH` selects the shared suite database.
 
-### UI v3 parity candidate
+### Canonical UI
 
-The integrated v3 candidate lives in
-`products/refactor-scout/frontend-v3/`. It deliberately coexists with
-`frontend/` and `frontend-v2/` until the operator completes the final visual
-parity audit. The candidate covers both local-path and public-GitHub intake,
+The integrated v3 frontend lives in
+`products/refactor-scout/frontend/`. It covers both local-path and public-GitHub intake,
 the ranked opportunity queue and detail surface, saved filters and sorts,
 progressive results, scan warnings, copyable Markdown, history, shared
 read-only scheduling, startup diagnostics, filesystem safety guidance,
-responsive layout, and persistent light/dark preference.
+responsive layout, and persistent light/dark preference. The v1 and v2 trees
+were removed after final acceptance on 2026-07-21.
 
 ## Configuration
 
@@ -507,19 +498,18 @@ Run once at boot via `startup::validate_config()`. Checks:
 
 ### Docker Compose
 
-The `docker-compose.yml` at `products/refactor-scout/` orchestrates three services:
+The `docker-compose.yml` at `products/refactor-scout/` orchestrates two services:
 
 | Service | Image (default) | Internal Port | Published Port |
 |---------|-----------------|---------------|----------------|
 | `backend` | `ghcr.io/patchhive/refactorscout-backend:main` | 8000 | 8090 |
 | `frontend` | `ghcr.io/patchhive/refactorscout-frontend:main` | 8080 | 5182 |
-| `frontend-v2` | `patchhive/refactorscout-frontend-v2:local` | 8080 | 5201 |
 
 Key details:
 
 - The backend listens on port **8000 inside the container** (mapped to host 8090).
 - Database is stored in `./data/refactor-scout.db` (mounted volume).
-- Image tags are configurable via `PATCHHIVE_REFACTOR_SCOUT_BACKEND_IMAGE`, `PATCHHIVE_REFACTOR_SCOUT_FRONTEND_IMAGE`, `PATCHHIVE_REFACTOR_SCOUT_FRONTEND_V2_IMAGE`, and `PATCHHIVE_IMAGE_TAG`.
+- Image tags are configurable via `PATCHHIVE_REFACTOR_SCOUT_BACKEND_IMAGE`, `PATCHHIVE_REFACTOR_SCOUT_FRONTEND_IMAGE`, and `PATCHHIVE_IMAGE_TAG`.
 - Pull policy defaults to `missing` (build if image not found locally).
 - Backend user/group IDs are configurable via `PATCHHIVE_BACKEND_UID` / `PATCHHIVE_BACKEND_GID`.
 - All services restart `unless-stopped`.
@@ -528,7 +518,6 @@ Key details:
 
 - Backend Dockerfile at `products/refactor-scout/backend/Dockerfile`
 - Frontend Dockerfile at `products/refactor-scout/frontend/Dockerfile`
-- Frontend v2 Dockerfile at `products/refactor-scout/frontend-v2/Dockerfile`
 
 ## Troubleshooting
 

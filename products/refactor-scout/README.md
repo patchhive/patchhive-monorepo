@@ -48,7 +48,6 @@ docker compose up --build
 ```
 
 Frontend: `http://localhost:5182`
-Frontend v2 prototype: `http://localhost:5201`
 Backend: `http://localhost:8090`
 
 ### Split Backend and Frontend
@@ -58,12 +57,6 @@ cp .env.example .env
 
 cd backend && cargo run
 cd ../frontend && npm install && npm run dev
-```
-
-The UI v2 prototype is isolated from the production frontend while the suite direction is still being tested:
-
-```bash
-cd frontend-v2 && npm install && npm run dev
 ```
 
 ## Configuration
@@ -89,12 +82,11 @@ RefactorScout's engine is mounted in-process by `services/patchhive-backend`.
 The standalone backend and unified runtime use the same library, routes, SQLite
 history, auth, filesystem guardrails, and temporary-clone lifecycle.
 
-When launching from the monorepo root, use an absolute database path so the
-unified process reuses the product database instead of creating a new root-level
-file:
+When launching from the monorepo root, use the canonical suite database from
+the root `.env` instead of creating another product-local database:
 
 ```bash
-REFACTOR_SCOUT_DB_PATH="$PWD/products/refactor-scout/refactor-scout.db" \
+PATCHHIVE_DB_PATH="$PWD/data/patchhive.db" \
 PATCHHIVE_PRODUCTS=refactor-scout \
 cargo run --manifest-path services/patchhive-backend/Cargo.toml
 ```
@@ -102,13 +94,12 @@ cargo run --manifest-path services/patchhive-backend/Cargo.toml
 The mounted API prefix is
 `http://127.0.0.1:8100/api/products/refactor-scout`.
 
-## UI v3 Parity Candidate
+## Canonical UI
 
-The current v3 candidate lives in `frontend-v3/` while the existing v1 and v2
-frontends remain available for the final visual parity check:
+RefactorScout's canonical v3 frontend lives in `frontend/`:
 
 ```bash
-cd products/refactor-scout/frontend-v3
+cd products/refactor-scout/frontend
 npm install
 npm run dev
 ```
@@ -118,7 +109,8 @@ It connects to the in-process API by default at
 and public-GitHub intake, ranked opportunity details, warnings, copyable
 Markdown, saved dashboard views, shared read-only schedules, history, startup
 diagnostics, filesystem guidance, responsive layout, and the suite-wide theme
-preference.
+preference. The v1 and v2 frontends were removed after final acceptance on
+2026-07-21.
 
 ## Safety Boundary
 

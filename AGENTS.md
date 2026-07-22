@@ -257,11 +257,9 @@ Rules:
 - SignalHive passed its final parity audit on 2026-07-16; its canonical v3 UI
   lives in `products/signal-hive/frontend/`, and its v1/v2 trees have been
   removed.
-- RefactorScout is integrated in-process and its parity candidate lives in
-  `products/refactor-scout/frontend-v3/`. Keep `frontend/` and `frontend-v2/`
-  until the refactor queue, local/GitHub intake, filesystem guidance, saved
-  views, history, diagnostics, responsive layout, and light/dark behavior pass
-  final acceptance.
+- RefactorScout passed its final parity audit on 2026-07-21; its canonical v3
+  UI lives in `products/refactor-scout/frontend/`, and its v1/v2 trees have
+  been removed.
 - Prefer finishing and validating v3 for the current integrated product set before moving another product engine into the unified backend.
 - HiveCore is intentionally outside the specialist-product v3 migration and keeps its control-plane UI.
 - `prototypes/vuln-triage-calm-mockup.html` is reference material only; it is not the v3 source of truth.

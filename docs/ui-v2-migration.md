@@ -147,7 +147,7 @@ cross-product handoffs rather than another single-product radar board.
 | FlakeSting | — | v2 retired after v3 parity; canonical UI is `products/flake-sting/frontend` |
 | DepTriage | — | v2 retired after v3 parity; canonical UI is `products/dep-triage/frontend` |
 | VulnTriage | — | v2 retired after v3 parity; canonical UI is `products/vuln-triage/frontend` |
-| RefactorScout | `products/refactor-scout/frontend-v2` | React prototype active |
+| RefactorScout | `products/refactor-scout/frontend` | v2 removed after final v3 promotion |
 | ReleaseSentry | — | v2 retired after v3 parity; canonical UI is `products/release-sentry/frontend` |
 | HiveCore | `products/hive-core/frontend-v2` | Control-plane demo active |
 
