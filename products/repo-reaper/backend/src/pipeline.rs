@@ -711,9 +711,11 @@ pub async fn execute_dry_run(
             ))
             .await;
 
-        match agent_dry_run_analysis(&state.http, &fixable, &repos, &team.scout).await {
-            Ok((next_report, cost)) => {
-                run_cost.fetch_add((cost * 1_000_000.0) as i64, Ordering::Relaxed);
+        let (analysis_result, analysis_cost) =
+            agent_dry_run_analysis(&state.http, &fixable, &repos, &team.scout).await;
+        run_cost.fetch_add((analysis_cost * 1_000_000.0) as i64, Ordering::Relaxed);
+        match analysis_result {
+            Ok(next_report) => {
                 let next_report = serde_json::to_value(next_report).unwrap_or_else(|error| {
                         json!({"error": format!("could not encode typed dry-run report: {error}")})
                     });
@@ -754,7 +756,13 @@ pub async fn execute_dry_run(
         scoring_available,
         analysis_available,
     );
-    let _ = finish_run(&run_id, 0, fixable.len() as i64, rc, RunStatus::Done);
+    let completed_status = if scoring_available && analysis_available {
+        RunStatus::Done
+    } else {
+        RunStatus::Partial
+    };
+    let completed_status_label = completed_status.as_str();
+    let _ = finish_run(&run_id, 0, fixable.len() as i64, rc, completed_status);
 
     let _ = tx
         .send(sse(
@@ -767,7 +775,8 @@ pub async fn execute_dry_run(
                 "total_attempted": fixable.len(),
                 "total_would_reap": fixable.len(),
                 "run_id": run_id,
-                "cost": rc
+                "cost": rc,
+                "status": completed_status_label
             }),
         ))
         .await;
@@ -777,7 +786,7 @@ pub async fn execute_dry_run(
         total_fixed: 0,
         cost_usd: rc,
         dry_run: true,
-        status: "done".into(),
+        status: completed_status_label.into(),
     })
 }
 

@@ -314,6 +314,12 @@ optional **Free only** price filter. Manual model entry always remains usable
 as an explicit operator override. The v1/v2 surfaces are not extended with new
 Squad controls during the v3 migration.
 
+Dry Stalk validates Scout summaries against a typed report contract. A malformed
+or truncated response gets one bounded repair request; if that also fails, the
+run retains its scored candidate evidence but finishes `partial` instead of
+claiming a complete analysis. Stored agents that used `custom` with the exact
+OpenRouter base URL migrate to the first-class `openrouter` provider identity.
+
 Scheduling is a safety contract, not only a UI feature:
 
 - schedules persist `direct` or `discovery`; an empty target never silently

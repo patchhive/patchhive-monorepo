@@ -644,7 +644,7 @@ pub async fn agent_dry_run_analysis(
     issues: &[Value],
     repos: &[Value],
     agent: &AgentConfig,
-) -> Result<(DryRunAnalysisResponse, f64)> {
+) -> (Result<DryRunAnalysisResponse>, f64) {
     let system = "Senior engineer reviewing GitHub issues for automated patching.\n\
         Reply ONLY with JSON (no markdown, no prose). Use this exact shape:\n\
         {\"summary\":\"max 18 words\",\"top_candidate\":{\"repo\":\"owner/name\",\"title\":\"issue title\",\"score\":0,\"why\":\"max 18 words\"},\
@@ -677,8 +677,34 @@ pub async fn agent_dry_run_analysis(
         issues.len(),
         issue_list.join("\n")
     );
-    let (text, cost) = ai_call(http, &call_params(agent, system, &prompt)).await?;
-    Ok((parse_typed_json(&text, "dry-run scout analysis")?, cost))
+    let (text, mut cost) = match ai_call(http, &call_params(agent, system, &prompt)).await {
+        Ok(response) => response,
+        Err(error) => return (Err(error), 0.0),
+    };
+    match parse_typed_json(&text, "dry-run scout analysis") {
+        Ok(report) => (Ok(report), cost),
+        Err(first_error) => {
+            let repair_system = "Repair one malformed dry-run analysis response. Reply ONLY with one complete JSON object matching the requested schema. Preserve the original facts, keep candidates to at most 3, and do not add markdown.";
+            let repair_prompt = format!(
+                "The first response failed validation: {first_error}\n\nRequired schema:\n{system}\n\nMalformed response:\n{}",
+                text.chars().take(8_000).collect::<String>()
+            );
+            let (repaired, repair_cost) = match ai_call(
+                http,
+                &call_params_with_max(agent, repair_system, &repair_prompt, 3_000),
+            )
+            .await
+            {
+                Ok(response) => response,
+                Err(error) => return (Err(error), cost),
+            };
+            cost += repair_cost;
+            (
+                parse_typed_json(&repaired, "repaired dry-run scout analysis"),
+                cost,
+            )
+        }
+    }
 }
 
 pub async fn agent_pr_comment_fix(

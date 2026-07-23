@@ -80,6 +80,11 @@ pub async fn init_runtime() -> Result<()> {
     }
 
     db::init_db()?;
+    match db::migrate_openrouter_provider_storage() {
+        Ok(count) if count > 0 => info!(count, "migrated OpenRouter-backed RepoReaper agents"),
+        Ok(_) => {}
+        Err(err) => tracing::warn!("RepoReaper OpenRouter provider migration failed: {err}"),
+    }
     if let Err(err) = db::migrate_agent_secret_storage() {
         tracing::warn!("RepoReaper agent secret migration failed: {err}");
     }

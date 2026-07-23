@@ -22,7 +22,7 @@ use crate::agents::{
 };
 use crate::db::{
     agents_from_storage_json, agents_to_storage_json, get_conn, get_lifetime_cost,
-    save_active_agents, set_setting,
+    normalize_openrouter_agent, save_active_agents, set_setting,
 };
 use crate::state::{AgentConfig, AppState};
 
@@ -875,6 +875,7 @@ async fn set_team(State(state): State<AppState>, Json(body): Json<TeamBody>) -> 
         a.bot_user = clean_optional(a.bot_user.as_deref());
         a.status = "idle".into();
         a.current_task = String::new();
+        normalize_openrouter_agent(&mut a);
         map.insert(a.id.clone(), a);
     }
     let agents = map.values().cloned().collect::<Vec<_>>();
@@ -943,6 +944,7 @@ async fn save_preset(
         agent.bot_user = clean_optional(agent.bot_user.as_deref());
         agent.status = "idle".into();
         agent.current_task.clear();
+        normalize_openrouter_agent(agent);
     }
     drop(active);
     let Ok(conn) = get_conn() else {

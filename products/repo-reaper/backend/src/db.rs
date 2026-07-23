@@ -14,6 +14,7 @@ use std::path::PathBuf;
 use crate::state::AgentConfig;
 
 const ACTIVE_AGENTS_SETTING: &str = "active_agents_json";
+const OPENROUTER_BASE_URL: &str = "https://openrouter.ai/api/v1";
 pub const RUN_SCHEDULE_ACTION: &str = "run";
 pub const DRY_RUN_SCHEDULE_ACTION: &str = "dry_run";
 const GUARDED_WRITE_SCHEDULE_APPROVAL_POLICY: &str = "guarded_write_auto";
@@ -312,6 +313,63 @@ pub fn migrate_agent_secret_storage() -> Result<()> {
     }
 
     Ok(())
+}
+
+pub fn migrate_openrouter_provider_storage() -> Result<usize> {
+    let mut migrated = 0;
+    let raw_active_agents = get_setting(ACTIVE_AGENTS_SETTING, "");
+    if !raw_active_agents.trim().is_empty() {
+        let mut agents: Vec<AgentConfig> = serde_json::from_str(&raw_active_agents)
+            .context("failed to decode RepoReaper active agents for OpenRouter migration")?;
+        let changed = normalize_openrouter_agents(&mut agents);
+        if changed > 0 {
+            set_setting(ACTIVE_AGENTS_SETTING, &serde_json::to_string(&agents)?)?;
+            migrated += changed;
+        }
+    }
+
+    let conn = get_conn()?;
+    let presets = {
+        let mut statement =
+            conn.prepare("SELECT name, agents_json FROM repo_reaper_team_presets")?;
+        let rows = statement.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()?
+    };
+    for (name, raw_agents) in presets {
+        let mut agents: Vec<AgentConfig> = serde_json::from_str(&raw_agents)
+            .with_context(|| format!("failed to decode RepoReaper preset {name}"))?;
+        let changed = normalize_openrouter_agents(&mut agents);
+        if changed == 0 {
+            continue;
+        }
+        conn.execute(
+            "UPDATE repo_reaper_team_presets SET agents_json=?1 WHERE name=?2",
+            params![serde_json::to_string(&agents)?, name],
+        )?;
+        migrated += changed;
+    }
+    Ok(migrated)
+}
+
+pub fn normalize_openrouter_agent(agent: &mut AgentConfig) -> bool {
+    let is_openrouter_base = agent
+        .base_url
+        .as_deref()
+        .is_some_and(|base| base.trim().trim_end_matches('/') == OPENROUTER_BASE_URL);
+    if agent.provider == "custom" && is_openrouter_base {
+        agent.provider = "openrouter".to_string();
+        return true;
+    }
+    false
+}
+
+fn normalize_openrouter_agents(agents: &mut [AgentConfig]) -> usize {
+    agents
+        .iter_mut()
+        .map(|agent| usize::from(normalize_openrouter_agent(agent)))
+        .sum()
 }
 
 pub fn agents_to_storage_json(agents: &[AgentConfig]) -> Result<String> {
@@ -803,7 +861,8 @@ pub fn set_setting(key: &str, value: &str) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{insert_run_artifact, RunArtifactInput, SCHEMA};
+    use super::{insert_run_artifact, normalize_openrouter_agent, RunArtifactInput, SCHEMA};
+    use crate::state::{AgentConfig, AgentStats};
     use rusqlite::Connection;
     use serde_json::json;
 
@@ -874,5 +933,27 @@ mod tests {
             )
             .expect("issue attempts schema");
         assert!(issue_attempts_sql.contains("REFERENCES repo_reaper_runs"));
+    }
+
+    #[test]
+    fn legacy_custom_openrouter_agent_becomes_first_class_provider() {
+        let mut agent = AgentConfig {
+            id: "scout".into(),
+            name: "Scout".into(),
+            role: "scout".into(),
+            provider: "custom".into(),
+            model: "cohere/north-mini-code:free".into(),
+            base_url: Some("https://openrouter.ai/api/v1/".into()),
+            api_key: None,
+            bot_token: None,
+            bot_user: None,
+            status: "idle".into(),
+            current_task: String::new(),
+            stats: AgentStats::default(),
+        };
+
+        assert!(normalize_openrouter_agent(&mut agent));
+        assert_eq!(agent.provider, "openrouter");
+        assert!(!normalize_openrouter_agent(&mut agent));
     }
 }
