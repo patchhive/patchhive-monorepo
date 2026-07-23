@@ -373,11 +373,15 @@ async fn finalize_run_with_summary(
     let status = run_status.as_str();
     let log_type = match run_status {
         RunStatus::Done => "success",
+        RunStatus::NoCandidates => "warn",
         RunStatus::Partial => "warn",
         RunStatus::Failed => "error",
     };
     let summary = match run_status {
         RunStatus::Done => format!("Hunt complete — {total_fixed}/{attempted} kills | ${rc:.4}"),
+        RunStatus::NoCandidates => {
+            format!("Hunt complete — no matching candidates found | ${rc:.4}")
+        }
         RunStatus::Partial => format!("Hunt partial — {total_fixed}/{attempted} kills, {failed_attempts} failed or held | ${rc:.4}"),
         RunStatus::Failed => format!("Hunt failed — {total_fixed}/{attempted} kills, {failed_attempts} failed or held | ${rc:.4}"),
     };
@@ -532,44 +536,58 @@ async fn discover_repositories(
     filters: &RepoScopePolicy,
     tx: &mpsc::Sender<Result<Event, Infallible>>,
 ) -> (Vec<Value>, Vec<Value>) {
-    let query = if !req.search_query.is_empty() {
-        req.search_query.clone()
-    } else {
-        format!(
-            "topic:machine-learning language:{} stars:>{} is:public",
-            req.language, req.min_stars
-        )
+    let query = discovery_query(req);
+    let search_limit = discovery_repository_search_limit(req.max_repos);
+    let discovered = match search_repos(http, &query, search_limit).await {
+        Ok(repos) => repos,
+        Err(error) => {
+            let _ = tx
+                .send(alog(
+                    scout,
+                    &format!("GitHub repository discovery failed for `{query}`: {error}"),
+                    "warn",
+                ))
+                .await;
+            return (Vec::new(), Vec::new());
+        }
     };
+    let search_result_count = discovered.len();
 
-    let mut repos = search_repos(http, &query, req.max_repos)
-        .await
-        .unwrap_or_default();
-    repos.retain(|repo| filters.allows(repo["full_name"].as_str().unwrap_or("")));
-
-    let _ = tx
-        .send(sse(
-            "repos",
-            json!({"repos": repos.iter().map(|r| json!({
-        "id": r["id"], "full_name": r["full_name"], "description": r["description"],
-        "stars": r["stargazers_count"], "language": r["language"],
-        "url": r["html_url"], "open_issues": r["open_issues_count"],
-    })).collect::<Vec<_>>()}),
-        ))
-        .await;
-
+    let mut repos = Vec::new();
     let mut all_issues = Vec::new();
-    for repo in &repos {
+    let mut inspected = 0usize;
+    for repo in discovered {
+        if repos.len() >= req.max_repos || all_issues.len() >= req.max_issues {
+            break;
+        }
         let full_name = repo["full_name"].as_str().unwrap_or("");
+        if full_name.is_empty()
+            || !filters.allows(full_name)
+            || repo["open_issues_count"].as_u64().unwrap_or(0) == 0
+        {
+            continue;
+        }
+        inspected += 1;
         let labels = req.labels.join(",");
+        let remaining = req
+            .max_issues
+            .saturating_sub(all_issues.len())
+            .clamp(1, 100);
+        let per_page = remaining.to_string();
         match gh_get(
             http,
             &format!("/repos/{full_name}/issues"),
-            &[("state", "open"), ("labels", &labels), ("per_page", "5")],
+            &[
+                ("state", "open"),
+                ("labels", &labels),
+                ("per_page", &per_page),
+            ],
             None,
         )
         .await
         {
             Ok(items) => {
+                let before = all_issues.len();
                 for iss in items.as_array().into_iter().flatten() {
                     if iss["pull_request"].is_object() {
                         continue;
@@ -583,7 +601,9 @@ async fn discover_repositories(
                         "status": "queued", "fixability_score": null, "fixability_reason": "",
                     }));
                 }
-                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                if all_issues.len() > before {
+                    repos.push(repo);
+                }
             }
             Err(e) => {
                 let _ = tx
@@ -591,8 +611,67 @@ async fn discover_repositories(
                     .await;
             }
         }
+        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
     }
+
+    let labels = if req.labels.is_empty() {
+        "any label".to_string()
+    } else {
+        req.labels.join(", ")
+    };
+    let message = if all_issues.is_empty() {
+        format!(
+            "Autonomous discovery inspected {inspected} eligible repositories from {search_result_count} repository search results but found no open issues matching: {labels}. Try a broader discovery query, different labels, or a larger repository cap."
+        )
+    } else {
+        format!(
+            "Autonomous discovery inspected {inspected} eligible repositories and found {} matching issues across {} repositories.",
+            all_issues.len(),
+            repos.len()
+        )
+    };
+    let _ = tx
+        .send(alog(
+            scout,
+            &message,
+            if all_issues.is_empty() {
+                "warn"
+            } else {
+                "success"
+            },
+        ))
+        .await;
+    let _ = tx
+        .send(sse(
+            "repos",
+            json!({"repos": repos.iter().map(|r| json!({
+                "id": r["id"], "full_name": r["full_name"], "description": r["description"],
+                "stars": r["stargazers_count"], "language": r["language"],
+                "url": r["html_url"], "open_issues": r["open_issues_count"],
+            })).collect::<Vec<_>>()}),
+        ))
+        .await;
     (repos, all_issues)
+}
+
+fn discovery_query(req: &RunRequest) -> String {
+    if !req.search_query.trim().is_empty() {
+        return req.search_query.trim().to_string();
+    }
+
+    let mut qualifiers = vec![
+        format!("stars:>{}", req.min_stars),
+        "is:public".to_string(),
+        "archived:false".to_string(),
+    ];
+    if !req.language.trim().is_empty() {
+        qualifiers.push(format!("language:{}", req.language.trim()));
+    }
+    qualifiers.join(" ")
+}
+
+fn discovery_repository_search_limit(repository_cap: usize) -> usize {
+    repository_cap.saturating_mul(10).clamp(25, 100)
 }
 
 async fn discover_target_repo(
@@ -746,9 +825,18 @@ pub async fn execute_dry_run(
     let _ = tx
         .send(sse("issues", json!({"issues": issues.clone()})))
         .await;
+    let no_candidates = scored.is_empty();
     let mut analysis_available = false;
     let mut report = None;
-    if scoring_available {
+    if no_candidates {
+        let _ = tx
+            .send(alog(
+                &team.scout,
+                "[DRY STALK] Discovery completed with no matching issues — Scout analysis was skipped and no changes were made",
+                "warn",
+            ))
+            .await;
+    } else if scoring_available {
         let _ = tx
             .send(alog(
                 &team.scout,
@@ -806,7 +894,9 @@ pub async fn execute_dry_run(
         scoring_available,
         analysis_available,
     );
-    let completed_status = if scoring_available && analysis_available {
+    let completed_status = if no_candidates {
+        RunStatus::NoCandidates
+    } else if scoring_available && analysis_available {
         RunStatus::Done
     } else {
         RunStatus::Partial
@@ -953,7 +1043,11 @@ pub async fn execute_run(
 
 #[cfg(test)]
 mod tests {
-    use super::{classify_write_eligibility, ActiveRunGuard};
+    use super::{
+        classify_write_eligibility, discovery_query, discovery_repository_search_limit,
+        ActiveRunGuard, RunRequest,
+    };
+    use patchhive_product_core::contract::TargetSelectionMode;
     use serde_json::json;
     use std::sync::{
         atomic::{AtomicBool, Ordering},
@@ -971,6 +1065,30 @@ mod tests {
         drop(guard);
         assert!(!active.load(Ordering::SeqCst));
         assert!(ActiveRunGuard::claim(active).is_ok());
+    }
+
+    #[test]
+    fn discovery_defaults_are_broad_and_search_beyond_the_output_cap() {
+        let request = RunRequest {
+            language: "python".to_string(),
+            min_stars: 50,
+            max_repos: 5,
+            max_issues: 10,
+            min_fixability_score: 60,
+            labels: vec!["bug".to_string()],
+            concurrency: 1,
+            search_query: String::new(),
+            target_repo: String::new(),
+            target_selection_mode: Some(TargetSelectionMode::Discovery),
+            cost_budget_usd: 0.5,
+            retry_count: 3,
+        };
+
+        assert_eq!(
+            discovery_query(&request),
+            "stars:>50 is:public archived:false language:python"
+        );
+        assert_eq!(discovery_repository_search_limit(request.max_repos), 50);
     }
 
     #[test]

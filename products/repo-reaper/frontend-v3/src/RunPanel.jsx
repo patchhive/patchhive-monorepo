@@ -74,6 +74,7 @@ export default function RunPanel({
   const validTarget = targetSelectionMode === "direct" ? /^[^/\s]+\/[^/\s]+$/.test(params.target_repo.trim()) : true;
   const set = (key) => (value) => onParamsChange((current) => ({ ...current, [key]: value }));
   const priority = items[0];
+  const noCandidates = stream.done?.status === "no_candidates";
 
   return <div className="mx-auto max-w-[1440px] space-y-6 px-3 py-6 sm:px-6">
     <section className="surface grid gap-6 p-6 lg:grid-cols-[1.6fr_0.9fr] lg:p-8">
@@ -85,8 +86,8 @@ export default function RunPanel({
       </div>
       <aside className="surface-inset rounded-2xl p-5">
         <div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>Current assessment</div>
-        <div className={`mt-3 font-display text-[30px] font-semibold ${V3_TEXT.strong}`}>{stream.running ? stream.phase : priority ? "candidate evidence" : ready ? "ready to scope" : "squad setup"}</div>
-        <p className={`mt-2 text-[11px] leading-relaxed ${V3_TEXT.body}`}>{priority ? `${priority.repo || "Repository"} · ${priority.title || priority.issue_title || "candidate issue"}` : ready ? "Choose an explicit target mode and bounded scope." : "Configure the required agent roles before starting."}</p>
+        <div className={`mt-3 font-display text-[30px] font-semibold ${V3_TEXT.strong}`}>{stream.running ? stream.phase : priority ? "candidate evidence" : noCandidates ? "no matching issues" : ready ? "ready to scope" : "squad setup"}</div>
+        <p className={`mt-2 text-[11px] leading-relaxed ${V3_TEXT.body}`}>{priority ? `${priority.repo || "Repository"} · ${priority.title || priority.issue_title || "candidate issue"}` : noCandidates ? "The bounded discovery search completed without matching the current repository and issue filters. Review the Scout log before widening scope." : ready ? "Choose an explicit target mode and bounded scope." : "Configure the required agent roles before starting."}</p>
         <div className="mt-5 grid grid-cols-3 gap-2"><Fact label="Candidates" value={items.length}/><Fact label="Cost" value={money(stream.runCost)}/><Fact label="Phase" value={stream.phase || "idle"}/></div>
       </aside>
     </section>
@@ -99,7 +100,7 @@ export default function RunPanel({
         <Field label="Language" onChange={set("language")} value={params.language}/>
         <Field label="Issue labels" onChange={set("labels")} value={params.labels}/>
         <Field label="Minimum stars" min="0" onChange={set("min_stars")} type="number" value={params.min_stars}/>
-        <Field label="Repository cap" min="1" max="100" onChange={set("max_repos")} type="number" value={params.max_repos}/>
+        <Field help={targetSelectionMode === "discovery" ? "Return work from at most this many repositories. Discovery may inspect additional search results to fill the bounded scope." : undefined} label="Repository cap" min="1" max="100" onChange={set("max_repos")} type="number" value={params.max_repos}/>
         <Field label="Issue cap" min="1" max="100" onChange={set("max_issues")} type="number" value={params.max_issues}/>
         <Field help={dry ? "Scores below this remain visible but held." : "Only issues meeting this Scout score may enter the write pipeline."} label="Minimum fixability score" min="0" max="100" onChange={set("min_fixability_score")} type="number" value={params.min_fixability_score}/>
         {!dry ? <Field label="Concurrent fixes" min="1" max="32" onChange={set("concurrency")} type="number" value={params.concurrency}/> : null}

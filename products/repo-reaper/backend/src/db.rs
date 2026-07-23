@@ -487,6 +487,7 @@ pub fn record_run_artifact(input: RunArtifactInput<'_>) -> Result<()> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RunStatus {
     Done,
+    NoCandidates,
     Partial,
     Failed,
 }
@@ -495,6 +496,7 @@ impl RunStatus {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Done => "done",
+            Self::NoCandidates => "no_candidates",
             Self::Partial => "partial",
             Self::Failed => "failed",
         }

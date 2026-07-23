@@ -65,10 +65,12 @@ See [Shared Squad architecture](../shared-squad-architecture.md).
 
 ### Phase 1 — Scan (Scout)
 - If `target_repo` is supplied, reads that exact `owner/repo` and collects matching open issues there
-- If `target_repo` is blank, queries GitHub search API (`GET /search/repositories`) with language, star minimum, and optional search query
+- If autonomous discovery is selected, queries GitHub search API (`GET /search/repositories`) with language, star minimum, and an optional explicit search query; a blank override does not inject a hidden topic
 - Applies allowlist / denylist / opt-out filters from the `repo_lists` table
-- For each repo, collects up to 5 open issues matching the configured labels
+- Treats `max_repos` as an output cap, not a search-effort cap: it may inspect a bounded oversample of repository results to find work in at most that many repositories
+- Collects matching open issues until the repository or issue cap is filled, or the bounded search is exhausted
 - AI-scores each issue (0–100) for fixability
+- If the bounded search finds no matching issues, records `no_candidates`, reports how many eligible repositories were inspected, and skips the Scout analysis call
 - Emits SSE events: `phase: scan`, `repos`, `issues`
 
 ### Phase 2 — Triage
@@ -158,10 +160,10 @@ Run endpoints (`/run`, `/dry-run`) return `text/event-stream` with these event t
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `target_repo` | string | `""` | Optional directed repo target in `owner/repo` format. When present, RepoReaper hunts issues only inside that repo. When blank, RepoReaper uses autonomous repo discovery. |
-| `search_query` | string | `""` | GitHub search query override (defaults to `topic:machine-learning language:{lang} stars:>{min_stars} is:public`) |
+| `search_query` | string | `""` | Optional GitHub repository-search override. Blank uses `stars:>{min_stars} is:public archived:false language:{language}`. |
 | `language` | string | `"python"` | Programming language filter |
 | `min_stars` | u32 | `100` | Minimum repo stars |
-| `max_repos` | u32 | `10` | Max repos to scan |
+| `max_repos` | u32 | `10` | Maximum repositories represented in the run. Discovery may inspect more search results, within a hard bound, to fill this scope. |
 | `max_issues` | u32 | `5` | Max issues to process |
 | `labels` | string[] | `["bug"]` | GitHub issue labels to filter by |
 | `concurrency` | u32 | `3` | Max concurrent fix jobs |
