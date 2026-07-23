@@ -268,13 +268,17 @@ pub async fn ai_call(http: &Client, p: &AgentCallParams<'_>) -> Result<(String, 
         }
     }
 
-    let (text, _cost) = result?;
-    let cost = estimate_cost(
-        &format!("{}{}", p.system, p.prompt),
-        &text,
-        p.provider,
-        p.model,
-    );
+    let (text, provider_cost) = result?;
+    let cost = if p.provider == "openrouter" {
+        provider_cost
+    } else {
+        estimate_cost(
+            &format!("{}{}", p.system, p.prompt),
+            &text,
+            p.provider,
+            p.model,
+        )
+    };
     Ok((text, cost))
 }
 
@@ -342,7 +346,7 @@ async fn openai_call(http: &Client, p: &AgentCallParams<'_>, base: &str) -> Resu
         }
         let text = openai_completion_text(&data);
         if !text.trim().is_empty() {
-            return Ok((text, 0.0));
+            return Ok((text, openai_reported_cost(&data)));
         }
         last_empty_detail = openai_empty_detail(&data);
         if attempt == 0 {
@@ -354,6 +358,13 @@ async fn openai_call(http: &Client, p: &AgentCallParams<'_>, base: &str) -> Resu
         "OpenAI/compat provider returned an empty completion for model {} ({last_empty_detail})",
         p.model
     ))
+}
+
+fn openai_reported_cost(data: &Value) -> f64 {
+    data["usage"]["cost"]
+        .as_f64()
+        .or_else(|| data["usage"]["cost"].as_str()?.parse().ok())
+        .unwrap_or(0.0)
 }
 
 fn openai_request_body(p: &AgentCallParams<'_>, max_tokens: u32) -> Value {
@@ -762,8 +773,8 @@ pub async fn agent_pr_comment_fix(
 #[cfg(test)]
 mod tests {
     use super::{
-        openai_request_body, parse_typed_json, AgentCallParams, DryRunAnalysisResponse,
-        GeneratedPatchResponse, SmithReviewResponse,
+        openai_reported_cost, openai_request_body, parse_typed_json, AgentCallParams,
+        DryRunAnalysisResponse, GeneratedPatchResponse, SmithReviewResponse,
     };
 
     #[test]
@@ -846,5 +857,17 @@ mod tests {
         params.reasoning_effort = "none";
         let scoring_body = openai_request_body(&params, 2_000);
         assert_eq!(scoring_body["reasoning"]["effort"], "none");
+    }
+
+    #[test]
+    fn openrouter_cost_uses_provider_usage_value() {
+        assert_eq!(
+            openai_reported_cost(&serde_json::json!({"usage": {"cost": 0.0123}})),
+            0.0123
+        );
+        assert_eq!(
+            openai_reported_cost(&serde_json::json!({"usage": {"cost": "0"}})),
+            0.0
+        );
     }
 }

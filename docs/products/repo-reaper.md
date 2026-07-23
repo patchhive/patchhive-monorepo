@@ -338,6 +338,10 @@ a larger bounded completion allowance. When Scout scoring still fails,
 candidates are stored as `unscored` rather than receiving a fabricated neutral
 score, and the write gate continues to fail closed.
 
+OpenRouter run cost uses the provider's returned `usage.cost` rather than the
+generic fallback estimator. Free routes therefore record zero cost, while paid
+OpenRouter routes retain the provider-reported charge.
+
 Scheduling is a safety contract, not only a UI feature:
 
 - schedules persist `direct` or `discovery`; an empty target never silently
