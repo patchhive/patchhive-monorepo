@@ -217,6 +217,7 @@ pub struct AgentCallParams<'a> {
     pub system: &'a str,
     pub prompt: &'a str,
     pub max_tokens: u32,
+    pub reasoning_effort: &'static str,
 }
 
 pub async fn ai_call(http: &Client, p: &AgentCallParams<'_>) -> Result<(String, f64)> {
@@ -367,7 +368,7 @@ fn openai_request_body(p: &AgentCallParams<'_>, max_tokens: u32) -> Value {
             ]
     });
     if p.provider == "openrouter" {
-        body["reasoning"] = json!({"effort": "low", "exclude": true});
+        body["reasoning"] = json!({"effort": p.reasoning_effort, "exclude": true});
     }
     body
 }
@@ -509,6 +510,18 @@ fn call_params_with_max<'a>(
         system,
         prompt,
         max_tokens,
+        reasoning_effort: "low",
+    }
+}
+
+fn scoring_call_params<'a>(
+    agent: &'a AgentConfig,
+    system: &'a str,
+    prompt: &'a str,
+) -> AgentCallParams<'a> {
+    AgentCallParams {
+        reasoning_effort: "none",
+        ..call_params(agent, system, prompt)
     }
 }
 
@@ -533,7 +546,7 @@ pub async fn agent_score_issues(
         .collect();
 
     let prompt = format!("Score:\n{}", serde_json::to_string(&input)?);
-    let (text, cost) = ai_call(http, &call_params(agent, system, &prompt)).await?;
+    let (text, cost) = ai_call(http, &scoring_call_params(agent, system, &prompt)).await?;
     let scores_arr = parse_json(&text)?;
 
     let scores: HashMap<i64, Value> = scores_arr
@@ -813,7 +826,7 @@ mod tests {
 
     #[test]
     fn openrouter_request_reserves_output_space_with_low_reasoning() {
-        let params = AgentCallParams {
+        let mut params = AgentCallParams {
             provider: "openrouter",
             model: "cohere/north-mini-code:free",
             base_url: None,
@@ -821,6 +834,7 @@ mod tests {
             system: "Return JSON",
             prompt: "Score issues",
             max_tokens: 2_000,
+            reasoning_effort: "low",
         };
 
         let body = openai_request_body(&params, 4_000);
@@ -828,5 +842,9 @@ mod tests {
         assert_eq!(body["max_tokens"], 4_000);
         assert_eq!(body["reasoning"]["effort"], "low");
         assert_eq!(body["reasoning"]["exclude"], true);
+
+        params.reasoning_effort = "none";
+        let scoring_body = openai_request_body(&params, 2_000);
+        assert_eq!(scoring_body["reasoning"]["effort"], "none");
     }
 }

@@ -331,11 +331,12 @@ For an eligible issue, RepoReaper maintains one status comment per attempt. The
 same comment moves from `attempting fix` to the final held, error, or pull-request
 outcome; progress and outcome must not create separate timeline comments.
 
-OpenRouter agent calls request low-effort, excluded reasoning so bounded JSON
-contracts retain output space. An empty length-limited completion receives one
-retry with a larger bounded completion allowance. When Scout scoring still
-fails, candidates are stored as `unscored` rather than receiving a fabricated
-neutral score, and the write gate continues to fail closed.
+OpenRouter patch and review calls request low-effort, excluded reasoning, while
+small deterministic Scout-scoring and connectivity contracts disable optional
+reasoning entirely. An empty length-limited completion receives one retry with
+a larger bounded completion allowance. When Scout scoring still fails,
+candidates are stored as `unscored` rather than receiving a fabricated neutral
+score, and the write gate continues to fail closed.
 
 Scheduling is a safety contract, not only a UI feature:
 

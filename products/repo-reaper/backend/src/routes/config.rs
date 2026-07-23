@@ -363,6 +363,7 @@ async fn test_model(
         system: "You are a connectivity check. Reply with exactly OK.",
         prompt: "Reply with exactly OK.",
         max_tokens: DEFAULT_MAX_TOKENS,
+        reasoning_effort: "none",
     };
 
     match ai_call(&state.http, &params).await {
