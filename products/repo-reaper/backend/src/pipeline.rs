@@ -580,7 +580,7 @@ async fn discover_repositories(
                         "labels": iss["labels"].as_array().into_iter().flatten().filter_map(|l| l["name"].as_str()).collect::<Vec<_>>(),
                         "comments": iss["comments"], "created": iss["created_at"],
                         "url": iss["html_url"], "repo": full_name, "repo_url": repo["html_url"],
-                        "status": "queued", "fixability_score": 50, "fixability_reason": "",
+                        "status": "queued", "fixability_score": null, "fixability_reason": "",
                     }));
                 }
                 tokio::time::sleep(std::time::Duration::from_millis(200)).await;
@@ -669,7 +669,7 @@ async fn discover_target_repo(
                     "labels": iss["labels"].as_array().into_iter().flatten().filter_map(|l| l["name"].as_str()).collect::<Vec<_>>(),
                     "comments": iss["comments"], "created": iss["created_at"],
                     "url": iss["html_url"], "repo": target_repo, "repo_url": repo["html_url"],
-                    "status": "queued", "fixability_score": 50, "fixability_reason": "",
+                    "status": "queued", "fixability_score": null, "fixability_reason": "",
                 }));
             }
         }

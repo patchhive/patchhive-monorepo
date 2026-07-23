@@ -309,19 +309,14 @@ async fn anthropic_call(http: &Client, p: &AgentCallParams<'_>) -> Result<(Strin
 
 async fn openai_call(http: &Client, p: &AgentCallParams<'_>, base: &str) -> Result<(String, f64)> {
     let key = agent_or_env_api_key(p);
-    let body = json!({
-        "model": p.model,
-        "max_tokens": p.max_tokens,
-        "temperature": 0.1,
-        "stream": false,
-        "messages": [
-            {"role": "system", "content": p.system},
-            {"role": "user", "content": p.prompt}
-        ]
-    });
-
     let mut last_empty_detail = String::new();
     for attempt in 0..2 {
+        let max_tokens = if attempt == 0 {
+            p.max_tokens
+        } else {
+            p.max_tokens.saturating_mul(2).min(16_000)
+        };
+        let body = openai_request_body(p, max_tokens);
         let mut req = http.post(format!("{base}/chat/completions")).json(&body);
         req = match key.as_deref() {
             Some(key) => req.bearer_auth(key),
@@ -358,6 +353,23 @@ async fn openai_call(http: &Client, p: &AgentCallParams<'_>, base: &str) -> Resu
         "OpenAI/compat provider returned an empty completion for model {} ({last_empty_detail})",
         p.model
     ))
+}
+
+fn openai_request_body(p: &AgentCallParams<'_>, max_tokens: u32) -> Value {
+    let mut body = json!({
+            "model": p.model,
+            "max_tokens": max_tokens,
+            "temperature": 0.1,
+            "stream": false,
+            "messages": [
+                {"role": "system", "content": p.system},
+                {"role": "user", "content": p.prompt}
+            ]
+    });
+    if p.provider == "openrouter" {
+        body["reasoning"] = json!({"effort": "low", "exclude": true});
+    }
+    body
 }
 
 fn openai_completion_text(data: &Value) -> String {
@@ -403,7 +415,12 @@ fn openai_empty_detail(data: &Value) -> String {
         Value::Bool(_) => "bool",
         Value::Number(_) => "number",
     };
-    format!("finish_reason={finish_reason}, content_shape={content_shape}")
+    let reasoning_tokens = data["usage"]["completion_tokens_details"]["reasoning_tokens"]
+        .as_i64()
+        .unwrap_or(0);
+    format!(
+        "finish_reason={finish_reason}, content_shape={content_shape}, reasoning_tokens={reasoning_tokens}"
+    )
 }
 
 async fn gemini_call(http: &Client, p: &AgentCallParams<'_>) -> Result<(String, f64)> {
@@ -732,7 +749,8 @@ pub async fn agent_pr_comment_fix(
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_typed_json, DryRunAnalysisResponse, GeneratedPatchResponse, SmithReviewResponse,
+        openai_request_body, parse_typed_json, AgentCallParams, DryRunAnalysisResponse,
+        GeneratedPatchResponse, SmithReviewResponse,
     };
 
     #[test]
@@ -791,5 +809,24 @@ mod tests {
                 .to_string()
                 .contains("missing field `why`")
         );
+    }
+
+    #[test]
+    fn openrouter_request_reserves_output_space_with_low_reasoning() {
+        let params = AgentCallParams {
+            provider: "openrouter",
+            model: "cohere/north-mini-code:free",
+            base_url: None,
+            api_key: None,
+            system: "Return JSON",
+            prompt: "Score issues",
+            max_tokens: 2_000,
+        };
+
+        let body = openai_request_body(&params, 4_000);
+
+        assert_eq!(body["max_tokens"], 4_000);
+        assert_eq!(body["reasoning"]["effort"], "low");
+        assert_eq!(body["reasoning"]["exclude"], true);
     }
 }
