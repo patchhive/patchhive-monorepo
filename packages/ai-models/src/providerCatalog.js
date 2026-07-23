@@ -27,14 +27,6 @@ export const AI_PROVIDERS = {
     keyHint: "gsk_...",
     liveHint: "Uses Groq's OpenAI-compatible /models endpoint.",
   },
-  openrouter: {
-    label: "OpenRouter",
-    icon: "↗",
-    color: "#7c5cff",
-    keyHint: "sk-or-v1-...",
-    liveHint: "Uses OpenRouter's OpenAI-compatible model catalog and API.",
-    defaultBaseUrl: "https://openrouter.ai/api/v1",
-  },
   custom: {
     label: "Custom OpenAI-Compatible",
     icon: "◇",
@@ -91,10 +83,6 @@ export const DEFAULT_PROVIDER_MODELS = {
     "llama-3.1-8b-instant",
     "mixtral-8x7b-32768",
   ],
-  openrouter: [
-    "openrouter/free",
-    "openai/gpt-oss-20b:free",
-  ],
   custom: [
     "gpt-4.1-mini",
     "qwen2.5-coder",
@@ -117,10 +105,6 @@ export function providerOptions(providers = AI_PROVIDERS) {
 
 export function defaultModelForProvider(provider, fallbackModels = DEFAULT_PROVIDER_MODELS) {
   return fallbackModels?.[provider]?.[0] || "";
-}
-
-export function defaultBaseUrlForProvider(provider, providers = AI_PROVIDERS) {
-  return providers?.[provider]?.defaultBaseUrl || "";
 }
 
 export function modelListForProvider(provider, liveModels = {}, fallbackModels = DEFAULT_PROVIDER_MODELS) {

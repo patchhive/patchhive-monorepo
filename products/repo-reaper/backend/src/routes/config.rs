@@ -6,6 +6,7 @@ use axum::{
 use chrono::Utc;
 use patchhive_product_core::scope_policy::{normalize_repo_name, RepoListType};
 use serde::Deserialize;
+use serde::Serialize;
 use serde_json::{json, Value};
 use std::{
     collections::HashSet,
@@ -403,6 +404,28 @@ async fn model_discovery_response(
         }));
     }
 
+    if provider == "openrouter" {
+        return match discover_openrouter_models(http, body).await {
+            Ok((models, source, metadata)) if !models.is_empty() => Json(json!({
+                "models": models,
+                "model_metadata": metadata,
+                "source": source,
+            })),
+            Ok((_, source, _)) => Json(json!({
+                "models": fallback_models,
+                "model_metadata": {},
+                "source": "static_fallback",
+                "error": format!("{source} returned no models"),
+            })),
+            Err(error) => Json(json!({
+                "models": fallback_models,
+                "model_metadata": {},
+                "source": "static_fallback",
+                "error": error.to_string(),
+            })),
+        };
+    }
+
     match discover_provider_models(http, provider, body).await {
         Ok((models, source)) if !models.is_empty() => Json(json!({
             "models": models,
@@ -431,7 +454,6 @@ async fn discover_provider_models(
         "anthropic" => discover_anthropic_models(http, body).await,
         "gemini" => discover_gemini_models(http, body).await,
         "groq" => discover_groq_models(http, body).await,
-        "openrouter" => discover_openrouter_models(http, body).await,
         "custom" => discover_custom_models(http, body).await,
         "ollama" => discover_ollama_models(http, body).await,
         _ => anyhow::bail!("Unknown provider: {provider}"),
@@ -483,16 +505,14 @@ async fn discover_groq_models(
 async fn discover_openrouter_models(
     http: &reqwest::Client,
     body: Option<ModelDiscoveryBody>,
-) -> anyhow::Result<(Vec<String>, &'static str)> {
+) -> anyhow::Result<(Vec<String>, &'static str, Value)> {
     let base = clean_optional(body.as_ref().and_then(|b| b.base_url.as_deref()))
         .or_else(|| clean_env("OPENROUTER_BASE_URL"))
         .unwrap_or_else(|| OPENROUTER_BASE_URL.to_string());
     let key = clean_optional(body.as_ref().and_then(|b| b.api_key.as_deref()))
         .or_else(|| provider_api_key("openrouter"));
-    Ok((
-        fetch_openai_compatible_models(http, &base, key.as_deref()).await?,
-        "provider-api",
-    ))
+    let (models, metadata) = fetch_openrouter_models(http, &base, key.as_deref()).await?;
+    Ok((models, "provider-api", metadata))
 }
 
 async fn discover_custom_models(
@@ -635,9 +655,29 @@ async fn discover_ollama_models(
     Ok((clean_model_ids(models), "ollama"))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 struct ProviderModel {
     id: String,
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    context_length: Option<u64>,
+    #[serde(default)]
+    architecture: Option<ProviderModelArchitecture>,
+    #[serde(default)]
+    supported_parameters: Vec<String>,
+    #[serde(default)]
+    expiration_date: Option<String>,
+}
+
+#[derive(Deserialize, Serialize)]
+struct ProviderModelArchitecture {
+    #[serde(default)]
+    input_modalities: Vec<String>,
+    #[serde(default)]
+    output_modalities: Vec<String>,
+    #[serde(default)]
+    instruct_type: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -676,6 +716,43 @@ async fn fetch_openai_compatible_models(
         .map(|model| model.id)
         .collect();
     Ok(clean_model_ids(models))
+}
+
+async fn fetch_openrouter_models(
+    http: &reqwest::Client,
+    base: &str,
+    api_key: Option<&str>,
+) -> anyhow::Result<(Vec<String>, Value)> {
+    let key = api_key
+        .ok_or_else(|| anyhow::anyhow!("No OpenRouter API key available for model discovery"))?;
+    let response = http
+        .get(format!("{}/models", base.trim_end_matches('/')))
+        .timeout(Duration::from_secs(8))
+        .bearer_auth(key)
+        .send()
+        .await?;
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        anyhow::bail!("OpenRouter model discovery returned {status}: {body}");
+    }
+
+    let provider_models = response.json::<OpenAiModels>().await?.data;
+    Ok(openrouter_catalog(provider_models))
+}
+
+fn openrouter_catalog(provider_models: Vec<ProviderModel>) -> (Vec<String>, Value) {
+    let model_ids = clean_model_ids(
+        provider_models
+            .iter()
+            .map(|model| model.id.clone())
+            .collect(),
+    );
+    let metadata = provider_models
+        .into_iter()
+        .map(|model| (model.id.clone(), json!(model)))
+        .collect::<serde_json::Map<_, _>>();
+    (model_ids, Value::Object(metadata))
 }
 
 fn static_provider_models(provider: &str) -> Vec<String> {
@@ -1022,7 +1099,7 @@ async fn lifetime_cost() -> Json<Value> {
 
 #[cfg(test)]
 mod tests {
-    use super::{agent_browser_view, static_provider_models};
+    use super::{agent_browser_view, openrouter_catalog, static_provider_models, OpenAiModels};
     use crate::state::{AgentConfig, AgentStats};
 
     #[test]
@@ -1058,5 +1135,33 @@ mod tests {
 
         assert_eq!(models.first().map(String::as_str), Some("openrouter/free"));
         assert!(models.iter().any(|model| model.ends_with(":free")));
+    }
+
+    #[test]
+    fn openrouter_catalog_preserves_agent_capability_metadata() {
+        let response: OpenAiModels = serde_json::from_value(serde_json::json!({
+            "data": [{
+                "id": "vendor/coder:free",
+                "name": "Coder",
+                "context_length": 131072,
+                "architecture": {
+                    "input_modalities": ["text"],
+                    "output_modalities": ["text"],
+                    "instruct_type": "chatml"
+                },
+                "supported_parameters": ["max_tokens", "tools", "structured_outputs"],
+                "expiration_date": null
+            }]
+        }))
+        .expect("OpenRouter model fixture should deserialize");
+
+        let (models, metadata) = openrouter_catalog(response.data);
+
+        assert_eq!(models, vec!["vendor/coder:free"]);
+        assert_eq!(metadata["vendor/coder:free"]["context_length"], 131072);
+        assert_eq!(
+            metadata["vendor/coder:free"]["supported_parameters"][1],
+            "tools"
+        );
     }
 }

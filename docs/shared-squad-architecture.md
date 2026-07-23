@@ -168,10 +168,13 @@ The shared model-discovery path should remain provider-neutral:
 - Report sanitized `kind` values such as `ok`, `auth_error`, `rate_limited`,
   `timeout`, and `provider_error`.
 - Filter noisy provider catalogs to PatchHive-suitable text/chat models.
+- Keep **Agent-ready only** separate from price filtering. Products opt into it
+  explicitly; capability metadata should drive text modality, context, output
+  control, tool, and structured-output checks where the provider exposes them.
 - Do not hide free models by default; expose a free-only narrowing option for
   catalogs such as OpenRouter where free and paid models are mixed together.
-- Keep manual model entry available for provider catalogs with incomplete or
-  unusually named model IDs.
+- Keep manual model entry outside both filters for provider catalogs with
+  incomplete metadata or unusually named model IDs.
 
 This matters for providers such as OpenRouter or NIM where a single `/models`
 response can include hundreds of entries that PatchHive products should never

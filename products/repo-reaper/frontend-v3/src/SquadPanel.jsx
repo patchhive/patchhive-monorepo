@@ -1,13 +1,18 @@
 import { useEffect, useState } from "react";
 import { Bot, LoaderCircle, Save, Sparkles, Trash2, Users } from "lucide-react";
 import { useProviderModelDiscovery } from "@patchhivehq/ai-models/model-discovery";
-import { AI_PROVIDERS, defaultBaseUrlForProvider } from "@patchhivehq/ai-models";
 import { GuidanceNotice, ProgressiveList, V3_TEXT } from "@patchhivehq/ui-v3";
 import { Chip, readResponse, statusTone } from "./shared.jsx";
 
 const ROLES = ["scout", "judge", "reaper", "smith", "gatekeeper"];
 const PROVIDERS = ["openai", "anthropic", "gemini", "groq", "openrouter", "custom", "ollama"];
 const DEFAULT_MODELS = { openai: "gpt-5.4-mini", anthropic: "claude-sonnet-4-6", gemini: "gemini-2.5-pro", groq: "llama-3.3-70b-versatile", openrouter: "openrouter/free", custom: "gpt-4.1-mini", ollama: "llama3.2" };
+const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
+const PROVIDER_LABELS = { openai: "OpenAI / Compatible", anthropic: "Anthropic", gemini: "Gemini", groq: "Groq", openrouter: "OpenRouter", custom: "Custom OpenAI-Compatible", ollama: "Ollama" };
+
+function defaultBaseUrlForProvider(provider) {
+  return provider === "openrouter" ? OPENROUTER_BASE_URL : "";
+}
 
 function nextProviderState(current, provider) {
   const priorDefault = defaultBaseUrlForProvider(current.provider);
@@ -33,6 +38,7 @@ export default function SquadPanel({ agents, apiBase, authToken, config, cooldow
   const [presetName, setPresetName] = useState("");
   const [selectedPreset, setSelectedPreset] = useState("");
   const [defaults, setDefaults] = useState({ provider: "openai", model: DEFAULT_MODELS.openai, base_url: "", api_key: "", bot_token: "", bot_user: "" });
+  const [agentReadyOnly, setAgentReadyOnly] = useState(true);
   const [freeOnly, setFreeOnly] = useState(false);
   const [working, setWorking] = useState(false);
   useEffect(() => setDraft(agents), [agents]);
@@ -46,6 +52,7 @@ export default function SquadPanel({ agents, apiBase, authToken, config, cooldow
     providerKey: defaults.api_key,
     baseUrl: defaults.base_url,
     fallbackModels: config?.providers,
+    agentReadyOnly,
     freeOnly,
     localGatewayConfigured: Boolean(config?.PATCHHIVE_AI_URL || config?.AI_LOCAL_STATUS?.ok || config?.AI_LOCAL_STATUS?.status === "ok"),
     globalKeyConfigured: Boolean(config?.PROVIDER_API_KEY_SET),
@@ -80,7 +87,7 @@ export default function SquadPanel({ agents, apiBase, authToken, config, cooldow
           <label>
             <span className={`text-[9px] uppercase tracking-wider ${V3_TEXT.mute}`}>Provider</span>
             <select className={`surface-inset mt-1.5 h-10 w-full rounded-xl bg-transparent px-3 text-[12px] ${V3_TEXT.strong}`} value={defaults.provider} onChange={(event) => setDefaults((current) => nextProviderState(current, event.target.value))}>
-              {PROVIDERS.map((provider) => <option key={provider} value={provider}>{AI_PROVIDERS[provider]?.label || provider}</option>)}
+              {PROVIDERS.map((provider) => <option key={provider} value={provider}>{PROVIDER_LABELS[provider] || provider}</option>)}
             </select>
           </label>
           <label>
@@ -101,6 +108,10 @@ export default function SquadPanel({ agents, apiBase, authToken, config, cooldow
           <button className="surface-inset h-9 rounded-full px-4 text-[11px]" disabled={working || modelDiscovery.testing || !defaults.model} onClick={modelDiscovery.testModel} type="button">{modelDiscovery.testing ? "Testing…" : "Test model"}</button>
           <button className="h-9 rounded-full px-4 text-[11px] font-semibold text-white" disabled={working || !defaults.model} onClick={applyDefaults} style={{ backgroundImage: "linear-gradient(90deg, var(--accent), var(--accent-2))" }} type="button">Apply to draft</button>
           <label className="surface-inset inline-flex h-9 cursor-pointer items-center gap-2 rounded-full px-3 text-[11px]">
+            <input checked={agentReadyOnly} onChange={(event) => setAgentReadyOnly(event.target.checked)} type="checkbox"/>
+            Agent-ready only
+          </label>
+          <label className="surface-inset inline-flex h-9 cursor-pointer items-center gap-2 rounded-full px-3 text-[11px]">
             <input checked={freeOnly} onChange={(event) => setFreeOnly(event.target.checked)} type="checkbox"/>
             Free only
           </label>
@@ -109,6 +120,7 @@ export default function SquadPanel({ agents, apiBase, authToken, config, cooldow
         <div className={`mt-4 space-y-1 text-[11px] ${V3_TEXT.mute}`}>
           {modelDiscovery.statusText ? <div>{modelDiscovery.statusText}</div> : null}
           {modelDiscovery.filteredStatusText ? <div>{modelDiscovery.filteredStatusText}</div> : null}
+          {modelDiscovery.agentFilteredStatusText ? <div>{modelDiscovery.agentFilteredStatusText}</div> : null}
           {modelDiscovery.freeFilteredStatusText ? <div>{modelDiscovery.freeFilteredStatusText}</div> : null}
           {modelDiscovery.testStatusText ? <div>{modelDiscovery.testStatusText}</div> : null}
         </div>

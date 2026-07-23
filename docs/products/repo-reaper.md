@@ -308,6 +308,12 @@ The v3 header therefore uses **Mission**, **Dry Stalk**, **History**, **PRs**,
 **Squad**, **Controls**, and **Checks**. Intake is part of Mission and Dry Stalk;
 RepoReaper does not need a duplicate Sources tab.
 
+RepoReaper v3's Squad picker enables **Agent-ready only** by default. It uses
+provider capability metadata when available and remains independent from the
+optional **Free only** price filter. Manual model entry always remains usable
+as an explicit operator override. The v1/v2 surfaces are not extended with new
+Squad controls during the v3 migration.
+
 Scheduling is a safety contract, not only a UI feature:
 
 - schedules persist `direct` or `discovery`; an empty target never silently

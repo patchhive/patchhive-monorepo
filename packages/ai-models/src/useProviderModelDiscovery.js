@@ -85,6 +85,11 @@ function filteredModelStatusText(filteredCount) {
   return `${filteredCount} non-text/provider utility models hidden.`;
 }
 
+function agentFilteredStatusText(filteredCount) {
+  if (!filteredCount) return "";
+  return `${filteredCount} models hidden because their capabilities or metadata are not agent-ready.`;
+}
+
 export function useProviderModelDiscovery({
   apiBase,
   authToken = "",
@@ -94,6 +99,7 @@ export function useProviderModelDiscovery({
   providerKey = "",
   baseUrl = "",
   fallbackModels,
+  agentReadyOnly = false,
   freeOnly = false,
   modelsPath = "/models",
   localGatewayConfigured = false,
@@ -105,15 +111,17 @@ export function useProviderModelDiscovery({
     [fallbackModels],
   );
   const [liveModels, setLiveModels] = useState({});
+  const [liveModelMetadata, setLiveModelMetadata] = useState({});
   const [modelStatus, setModelStatus] = useState({});
   const [loadingModels, setLoadingModels] = useState({});
   const [testStatus, setTestStatus] = useState({});
   const [testingModels, setTestingModels] = useState({});
 
   const rawModels = modelListForProvider(provider, liveModels, mergedFallbackModels);
+  const modelMetadata = liveModelMetadata[provider] || {};
   const filteredModels = useMemo(
-    () => filterPatchHiveTextModels(rawModels, { freeOnly }),
-    [freeOnly, rawModels],
+    () => filterPatchHiveTextModels(rawModels, { agentReadyOnly, freeOnly, metadata: modelMetadata }),
+    [agentReadyOnly, freeOnly, modelMetadata, rawModels],
   );
   const models = filteredModels.models;
   const loading = !!loadingModels[provider];
@@ -143,19 +151,25 @@ export function useProviderModelDiscovery({
       const rawModels = Array.isArray(data.models) && data.models.length
         ? data.models
         : (mergedFallbackModels[provider] || []);
-      const filtered = filterPatchHiveTextModels(rawModels, { freeOnly });
+      const metadata = data.model_metadata && typeof data.model_metadata === "object"
+        ? data.model_metadata
+        : {};
+      const filtered = filterPatchHiveTextModels(rawModels, { agentReadyOnly, freeOnly, metadata });
       const nextModels = filtered.models;
 
       setLiveModels((current) => ({ ...current, [provider]: rawModels }));
+      setLiveModelMetadata((current) => ({ ...current, [provider]: metadata }));
       setModelStatus((current) => ({
         ...current,
         [provider]: {
           source: data.source || "static",
           error: data.error
             || (rawModels.length && !nextModels.length
-              ? (freeOnly
-                ? "No free models matched PatchHive text/chat filters. Turn off Free only or use manual model entry if needed."
-                : "No pulled models matched PatchHive text/chat filters. Use manual model entry if needed.")
+              ? (agentReadyOnly
+                ? "No models matched Agent-ready only. Turn it off or use manual model entry if needed."
+                : freeOnly
+                  ? "No free models matched PatchHive text/chat filters. Turn off Free only or use manual model entry if needed."
+                  : "No pulled models matched PatchHive text/chat filters. Use manual model entry if needed.")
               : ""),
         },
       }));
@@ -236,6 +250,9 @@ export function useProviderModelDiscovery({
       globalKeyConfigured,
     ),
     filteredStatusText: filteredModelStatusText(filteredModels.dropped.length),
+    agentFilteredStatusText: agentReadyOnly
+      ? agentFilteredStatusText(filteredModels.agentHidden.length)
+      : "",
     freeFilteredStatusText: freeOnly && filteredModels.freeHidden.length
       ? `${filteredModels.freeHidden.length} paid/metered models hidden by Free only.`
       : "",

@@ -22,6 +22,10 @@ provider safety rules.
 - Free models are not hidden by default. Products may expose a `freeOnly`
   picker option to narrow noisy provider catalogs to model IDs marked as free
   while keeping manual model entry available.
+- Products may opt into `agentReadyOnly` independently of `freeOnly`. When a
+  provider returns capability metadata, the filter checks text input/output,
+  context size, output limiting, and tool or structured-output support. Manual
+  model entry remains outside both filters.
 
 Prefer `@patchhivehq/ai-models/model-discovery` for new v2 surfaces so they do
 not inherit old UI components while the suite is migrating.
@@ -52,6 +56,16 @@ The endpoint should return:
 ```json
 {
   "models": ["model-id"],
+  "model_metadata": {
+    "model-id": {
+      "context_length": 131072,
+      "architecture": {
+        "input_modalities": ["text"],
+        "output_modalities": ["text"]
+      },
+      "supported_parameters": ["max_tokens", "tools", "structured_outputs"]
+    }
+  },
   "source": "provider-api",
   "error": ""
 }
