@@ -38,6 +38,8 @@ pub struct RunRequest {
     pub max_repos: usize,
     #[serde(default = "default_max_issues")]
     pub max_issues: usize,
+    #[serde(default = "default_min_fixability_score")]
+    pub min_fixability_score: i64,
     #[serde(default = "default_labels")]
     pub labels: Vec<String>,
     #[serde(default = "default_concurrency")]
@@ -92,6 +94,9 @@ fn default_max_repos() -> usize {
 }
 fn default_max_issues() -> usize {
     10
+}
+fn default_min_fixability_score() -> i64 {
+    60
 }
 fn default_labels() -> Vec<String> {
     vec!["bug".into()]
@@ -270,6 +275,44 @@ async fn collect_targets(
         .collect::<Vec<_>>();
 
     (repos, issues, fixable, scoring_available)
+}
+
+fn classify_write_eligibility(
+    issues: &mut [Value],
+    scoring_available: bool,
+    min_fixability_score: i64,
+    max_issues: usize,
+) -> Vec<Value> {
+    let threshold = min_fixability_score.clamp(0, 100);
+    for issue in issues.iter_mut() {
+        let score = issue["fixability_score"].as_i64().unwrap_or(0);
+        let (status, reason) = if !scoring_available {
+            (
+                "held",
+                "Scout scoring was unavailable, so write eligibility could not be established."
+                    .to_string(),
+            )
+        } else if score < threshold {
+            (
+                "held",
+                format!("Below the {threshold}/100 write eligibility threshold."),
+            )
+        } else {
+            (
+                "eligible",
+                format!("Meets the {threshold}/100 write eligibility threshold."),
+            )
+        };
+        issue["status"] = json!(status);
+        issue["eligibility_reason"] = json!(reason);
+    }
+
+    issues
+        .iter()
+        .filter(|issue| issue["status"] == "eligible")
+        .take(max_issues)
+        .cloned()
+        .collect()
 }
 
 async fn emit_queued_targets(
@@ -685,7 +728,7 @@ pub async fn execute_dry_run(
         ))
         .await;
 
-    let (repos, issues, fixable, scoring_available) = collect_targets(
+    let (repos, mut issues, scored, scoring_available) = collect_targets(
         &state.http,
         &req,
         &team.scout,
@@ -694,6 +737,12 @@ pub async fn execute_dry_run(
         Some(&run_cost),
     )
     .await;
+    let eligible = classify_write_eligibility(
+        &mut issues,
+        scoring_available,
+        req.min_fixability_score,
+        req.max_issues,
+    );
     let _ = tx
         .send(sse("issues", json!({"issues": issues.clone()})))
         .await;
@@ -704,15 +753,16 @@ pub async fn execute_dry_run(
             .send(alog(
                 &team.scout,
                 &format!(
-                    "[DRY STALK] Would target {} scored issues — 0 changes made",
-                    fixable.len()
+                    "[DRY STALK] Found {} scored issues; {} meet the write threshold — 0 changes made",
+                    scored.len(),
+                    eligible.len()
                 ),
                 "success",
             ))
             .await;
 
         let (analysis_result, analysis_cost) =
-            agent_dry_run_analysis(&state.http, &fixable, &repos, &team.scout).await;
+            agent_dry_run_analysis(&state.http, &scored, &repos, &team.scout).await;
         run_cost.fetch_add((analysis_cost * 1_000_000.0) as i64, Ordering::Relaxed);
         match analysis_result {
             Ok(next_report) => {
@@ -741,7 +791,7 @@ pub async fn execute_dry_run(
                     &team.scout,
                     &format!(
                         "[DRY STALK] Found {} candidates, but Scout scoring and analysis could not run — 0 changes made",
-                        fixable.len()
+                        scored.len()
                     ),
                     "warn",
                 ))
@@ -762,7 +812,7 @@ pub async fn execute_dry_run(
         RunStatus::Partial
     };
     let completed_status_label = completed_status.as_str();
-    let _ = finish_run(&run_id, 0, fixable.len() as i64, rc, completed_status);
+    let _ = finish_run(&run_id, 0, scored.len() as i64, rc, completed_status);
 
     let _ = tx
         .send(sse(
@@ -772,8 +822,8 @@ pub async fn execute_dry_run(
                 "dry_run": true,
                 "scoring_available": scoring_available,
                 "total_fixed": 0,
-                "total_attempted": fixable.len(),
-                "total_would_reap": fixable.len(),
+                "total_attempted": scored.len(),
+                "total_would_reap": eligible.len(),
                 "run_id": run_id,
                 "cost": rc,
                 "status": completed_status_label
@@ -782,7 +832,7 @@ pub async fn execute_dry_run(
         .await;
     Ok(RunExecutionResult {
         run_id,
-        total_attempted: fixable.len(),
+        total_attempted: scored.len(),
         total_fixed: 0,
         cost_usd: rc,
         dry_run: true,
@@ -851,8 +901,14 @@ pub async fn execute_run(
     );
     let _ = tx.send(astatus(&team.scout.id, "working", "Hunting")).await;
 
-    let (repos, all_issues, fixable, _scoring_available) =
+    let (repos, mut all_issues, _ranked, scoring_available) =
         collect_targets(&http, &req, &team.scout, &filters, &tx, Some(&run_cost)).await;
+    let fixable = classify_write_eligibility(
+        &mut all_issues,
+        scoring_available,
+        req.min_fixability_score,
+        req.max_issues,
+    );
 
     let _ = tx.send(sse("phase", json!({"phase":"triage"}))).await;
     persist_run_phase(&run_id, "triage", "Candidate issue triage started");
@@ -897,7 +953,8 @@ pub async fn execute_run(
 
 #[cfg(test)]
 mod tests {
-    use super::ActiveRunGuard;
+    use super::{classify_write_eligibility, ActiveRunGuard};
+    use serde_json::json;
     use std::sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
@@ -914,5 +971,38 @@ mod tests {
         drop(guard);
         assert!(!active.load(Ordering::SeqCst));
         assert!(ActiveRunGuard::claim(active).is_ok());
+    }
+
+    #[test]
+    fn write_eligibility_holds_low_scoring_candidates() {
+        let mut issues = vec![
+            json!({"id": 1, "fixability_score": 75, "status": "queued"}),
+            json!({"id": 2, "fixability_score": 25, "status": "queued"}),
+        ];
+
+        let eligible = classify_write_eligibility(&mut issues, true, 60, 10);
+
+        assert_eq!(eligible.len(), 1);
+        assert_eq!(eligible[0]["id"], 1);
+        assert_eq!(issues[0]["status"], "eligible");
+        assert_eq!(issues[1]["status"], "held");
+        assert_eq!(
+            issues[1]["eligibility_reason"],
+            "Below the 60/100 write eligibility threshold."
+        );
+    }
+
+    #[test]
+    fn write_eligibility_fails_closed_without_scout_scores() {
+        let mut issues = vec![json!({
+            "id": 1,
+            "fixability_score": 100,
+            "status": "queued"
+        })];
+
+        let eligible = classify_write_eligibility(&mut issues, false, 0, 10);
+
+        assert!(eligible.is_empty());
+        assert_eq!(issues[0]["status"], "held");
     }
 }

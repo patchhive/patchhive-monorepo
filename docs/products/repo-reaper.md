@@ -320,6 +320,13 @@ run retains its scored candidate evidence but finishes `partial` instead of
 claiming a complete analysis. Stored agents that used `custom` with the exact
 OpenRouter base URL migrate to the first-class `openrouter` provider identity.
 
+Scout ranking is evidence, not write authorization. Patch missions default to a
+60/100 minimum fixability score, and candidates below the configured per-run
+threshold remain visible as `held` without receiving an issue comment, clone,
+patch attempt, or other repository write. If Scout scoring is unavailable, the
+write pipeline fails closed regardless of the configured threshold. Dry Stalk
+continues to retain and analyze the complete bounded candidate set.
+
 Scheduling is a safety contract, not only a UI feature:
 
 - schedules persist `direct` or `discovery`; an empty target never silently
