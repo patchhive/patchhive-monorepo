@@ -9,7 +9,7 @@ const PROVIDERS = ["openai", "anthropic", "gemini", "groq", "custom", "ollama"];
 const DEFAULT_MODELS = { openai: "gpt-5.4-mini", anthropic: "claude-sonnet-4-6", gemini: "gemini-2.5-pro", groq: "llama-3.3-70b-versatile", custom: "gpt-4.1-mini", ollama: "llama3.2" };
 
 function blankAgent(role = "scout") {
-  return { id: `${role}-${crypto.randomUUID().slice(0, 8)}`, name: `PatchHive ${role[0].toUpperCase()}${role.slice(1)}`, role, provider: "openai", model: DEFAULT_MODELS.openai, base_url: "", api_key: "", bot_token: "", bot_user: "", status: "idle", current_task: "", stats: {} };
+  return { id: `${role}-${crypto.randomUUID().slice(0, 8)}`, name: `PatchHive ${role[0].toUpperCase()}${role.slice(1)}`, role, provider: "openai", model: DEFAULT_MODELS.openai, base_url: "", api_key: "", bot_token: "", bot_user: "", status: "idle", current_task: "", stats: { fixed: 0, skipped: 0, errors: 0, cost: 0 } };
 }
 
 function Input({ label, onChange, placeholder, type = "text", value }) {

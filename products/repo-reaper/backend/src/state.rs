@@ -25,6 +25,7 @@ pub struct AgentConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
 pub struct AgentStats {
     pub fixed: u32,
     pub skipped: u32,
@@ -68,5 +69,34 @@ impl AppState {
 impl Default for AppState {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::AgentConfig;
+
+    #[test]
+    fn browser_created_agent_accepts_sparse_stats() {
+        let agent: AgentConfig = serde_json::from_value(serde_json::json!({
+            "id": "scout-test",
+            "name": "PatchHive Scout",
+            "role": "scout",
+            "provider": "custom",
+            "model": "openai/gpt-oss-20b:free",
+            "base_url": "https://openrouter.ai/api/v1",
+            "api_key": null,
+            "bot_token": null,
+            "bot_user": null,
+            "status": "idle",
+            "current_task": "",
+            "stats": {}
+        }))
+        .expect("sparse browser stats should use typed defaults");
+
+        assert_eq!(agent.stats.fixed, 0);
+        assert_eq!(agent.stats.skipped, 0);
+        assert_eq!(agent.stats.errors, 0);
+        assert_eq!(agent.stats.cost, 0.0);
     }
 }
