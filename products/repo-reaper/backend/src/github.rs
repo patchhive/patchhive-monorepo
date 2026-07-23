@@ -400,15 +400,11 @@ fn markdown_code_field(body: &str, label: &str) -> Option<String> {
     Some(rest[..value_end].trim().to_string())
 }
 
-fn repo_reaper_issue_comment_stage(body: &str) -> &'static str {
-    if body.contains("**Status:** attempting fix") {
-        "attempt"
-    } else {
-        "outcome"
-    }
+fn repo_reaper_issue_marker(repo: &str, number: i64, run: &str, attempt: &str) -> String {
+    format!("<!-- patchhive:repo-reaper:{repo}#{number}:{run}:{attempt} -->")
 }
 
-fn repo_reaper_issue_marker(
+fn legacy_repo_reaper_issue_marker(
     repo: &str,
     number: i64,
     stage: &str,
@@ -420,18 +416,15 @@ fn repo_reaper_issue_marker(
 
 const REPO_REAPER_OLD_COMMENT_FOOTER: &str = "Generated autonomously by **RepoReaper by [PatchHive](https://github.com/patchhive)**. This managed comment is updated instead of posting a new status comment on each retry.";
 const REPO_REAPER_TIMELINE_COMMENT_FOOTER: &str = "Generated autonomously by **RepoReaper by [PatchHive](https://github.com/patchhive)**. This managed comment records RepoReaper status updates for this issue instead of posting a new comment on each retry.";
-const REPO_REAPER_COMMENT_FOOTER: &str = "Generated autonomously by **RepoReaper by [PatchHive](https://github.com/patchhive)**. RepoReaper posts progress and outcome updates separately so maintainers can follow the run.";
+const REPO_REAPER_COMMENT_FOOTER: &str = "Generated autonomously by **RepoReaper by [PatchHive](https://github.com/patchhive)**. This managed comment is updated as the attempt moves from progress to outcome.";
 
-fn is_repo_reaper_managed_comment(comment: &Value, marker: &str, stage: &str) -> bool {
+fn is_repo_reaper_managed_comment(comment: &Value, markers: &[&str]) -> bool {
     let body = comment["body"].as_str().unwrap_or("");
-    if body.contains(marker) {
+    if markers.iter().any(|marker| body.contains(marker)) {
         return true;
     }
     let author = comment["user"]["login"].as_str().unwrap_or("");
-    stage == "attempt"
-        && author == "patchhive"
-        && body.contains("RepoReaper")
-        && body.contains("hunting this bug")
+    author == "patchhive" && body.contains("RepoReaper") && body.contains("hunting this bug")
 }
 
 fn clean_repo_reaper_comment_body(body: &str, marker: &str) -> String {
@@ -457,11 +450,14 @@ pub async fn gh_upsert_repo_reaper_issue_comment(
     body: &str,
     token: Option<&str>,
 ) -> Result<Value> {
-    let stage = repo_reaper_issue_comment_stage(body);
     let run = markdown_code_field(body, "Run").unwrap_or_else(|| "unknown-run".to_string());
     let attempt =
         markdown_code_field(body, "Attempt").unwrap_or_else(|| "unknown-attempt".to_string());
-    let marker = repo_reaper_issue_marker(repo, number, stage, &run, &attempt);
+    let marker = repo_reaper_issue_marker(repo, number, &run, &attempt);
+    let legacy_attempt_marker =
+        legacy_repo_reaper_issue_marker(repo, number, "attempt", &run, &attempt);
+    let legacy_outcome_marker =
+        legacy_repo_reaper_issue_marker(repo, number, "outcome", &run, &attempt);
     let managed_body = repo_reaper_managed_comment_body(&marker, body);
     let comments = gh_get(
         http,
@@ -471,12 +467,12 @@ pub async fn gh_upsert_repo_reaper_issue_comment(
     )
     .await?;
 
-    if let Some(existing) = comments
-        .as_array()
-        .into_iter()
-        .flatten()
-        .find(|comment| is_repo_reaper_managed_comment(comment, &marker, stage))
-    {
+    if let Some(existing) = comments.as_array().into_iter().flatten().find(|comment| {
+        is_repo_reaper_managed_comment(
+            comment,
+            &[&marker, &legacy_attempt_marker, &legacy_outcome_marker],
+        )
+    }) {
         let id = existing["id"]
             .as_i64()
             .ok_or_else(|| anyhow!("Existing RepoReaper issue comment was missing an id"))?;
@@ -668,8 +664,9 @@ pub async fn search_repos(http: &Client, query: &str, max_repos: usize) -> Resul
 #[cfg(test)]
 mod tests {
     use super::{
-        collect_linked_pr_candidates, gh_headers, open_linked_pr_from_timeline_event,
-        validated_token,
+        collect_linked_pr_candidates, gh_headers, is_repo_reaper_managed_comment,
+        legacy_repo_reaper_issue_marker, open_linked_pr_from_timeline_event,
+        repo_reaper_issue_marker, validated_token,
     };
     use serde_json::json;
     use std::collections::BTreeSet;
@@ -735,5 +732,27 @@ mod tests {
         assert!(open_linked_pr_from_timeline_event(&event).is_none());
         collect_linked_pr_candidates(&event, &mut candidates);
         assert!(candidates.contains(&42));
+    }
+
+    #[test]
+    fn issue_comment_marker_is_stable_across_attempt_lifecycle() {
+        let marker = repo_reaper_issue_marker("acme/project", 10, "run-1", "attempt-1");
+
+        assert_eq!(
+            marker,
+            "<!-- patchhive:repo-reaper:acme/project#10:run-1:attempt-1 -->"
+        );
+    }
+
+    #[test]
+    fn lifecycle_upsert_recognizes_legacy_attempt_marker() {
+        let legacy =
+            legacy_repo_reaper_issue_marker("acme/project", 10, "attempt", "run-1", "attempt-1");
+        let comment = json!({
+            "body": format!("{legacy}\nRepoReaper is working on this issue."),
+            "user": {"login": "patchhive"}
+        });
+
+        assert!(is_repo_reaper_managed_comment(&comment, &[&legacy]));
     }
 }

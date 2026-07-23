@@ -152,7 +152,7 @@ fn issue_comment_attempting(issue: &serde_json::Value, run_id: &str, attempt_id:
         **Run:** `{run_id}`\n\
         **Attempt:** `{attempt_id}`\n\
         {}\n\n\
-        RepoReaper will open a pull request for review if it produces a commit-ready diff. If it cannot, a separate outcome comment will explain why.",
+        RepoReaper will update this managed comment with the final outcome. It opens a pull request only if it produces a commit-ready diff.",
         issue_fixability_line(issue),
     )
 }

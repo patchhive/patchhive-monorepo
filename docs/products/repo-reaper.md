@@ -327,6 +327,10 @@ patch attempt, or other repository write. If Scout scoring is unavailable, the
 write pipeline fails closed regardless of the configured threshold. Dry Stalk
 continues to retain and analyze the complete bounded candidate set.
 
+For an eligible issue, RepoReaper maintains one status comment per attempt. The
+same comment moves from `attempting fix` to the final held, error, or pull-request
+outcome; progress and outcome must not create separate timeline comments.
+
 Scheduling is a safety contract, not only a UI feature:
 
 - schedules persist `direct` or `discovery`; an empty target never silently
