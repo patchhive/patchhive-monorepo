@@ -67,6 +67,7 @@ const PROVIDER_MODELS = {
   openai: "gpt-5.4-mini",
   gemini: "gemini-2.5-pro",
   groq: "llama-3.3-70b-versatile",
+  openrouter: "openrouter/free",
   custom: "gpt-4.1-mini",
   ollama: "llama3.2",
 };
@@ -76,9 +77,25 @@ const PROVIDER_LABELS = {
   openai: "OpenAI / local gateway",
   gemini: "Gemini",
   groq: "Groq",
+  openrouter: "OpenRouter",
   custom: "Custom compatible",
   ollama: "Ollama",
 };
+
+const PROVIDER_BASE_URLS = {
+  openrouter: "https://openrouter.ai/api/v1",
+};
+
+function withProviderDefaults(current, provider) {
+  const priorDefault = PROVIDER_BASE_URLS[current.provider] || "";
+  const keepCustomBase = current.base_url && current.base_url !== priorDefault;
+  return {
+    ...current,
+    provider,
+    model: PROVIDER_MODELS[provider] || current.model,
+    base_url: PROVIDER_BASE_URLS[provider] || (keepCustomBase ? current.base_url : ""),
+  };
+}
 
 function asCount(value) {
   const number = Number(value || 0);
@@ -1629,7 +1646,7 @@ function AgentTeamPanel({
   const fallbackModels = useMemo(() => config?.providers || undefined, [config?.providers]);
   const setDefault = (key, value) => setDefaults((current) => {
     if (key === "provider") {
-      return { ...current, provider: value, model: PROVIDER_MODELS[value] || current.model };
+      return withProviderDefaults(current, value);
     }
     return { ...current, [key]: value };
   });
@@ -1648,7 +1665,7 @@ function AgentTeamPanel({
   });
   const set = (key, value) => setDraft((current) => {
     if (key === "provider") {
-      return { ...current, provider: value, model: PROVIDER_MODELS[value] || current.model };
+      return withProviderDefaults(current, value);
     }
     return { ...current, [key]: value };
   });
@@ -1832,10 +1849,10 @@ function AgentTeamPanel({
                 Model
                 <input className="v2-input" onChange={(event) => set("model", event.target.value)} value={draft.model} />
               </label>
-              {draft.provider === "custom" && (
+              {(draft.provider === "custom" || draft.provider === "openrouter") && (
                 <label className="v2-field">
                   Base URL
-                  <input className="v2-input" onChange={(event) => set("base_url", event.target.value)} placeholder="https://api.example.com/v1" value={draft.base_url} />
+                  <input className="v2-input" onChange={(event) => set("base_url", event.target.value)} placeholder={PROVIDER_BASE_URLS[draft.provider] || "https://api.example.com/v1"} value={draft.base_url} />
                 </label>
               )}
               <label className="v2-field">

@@ -1,12 +1,24 @@
 import { useEffect, useState } from "react";
 import { Bot, LoaderCircle, Save, Sparkles, Trash2, Users } from "lucide-react";
 import { useProviderModelDiscovery } from "@patchhivehq/ai-models/model-discovery";
+import { AI_PROVIDERS, defaultBaseUrlForProvider } from "@patchhivehq/ai-models";
 import { GuidanceNotice, ProgressiveList, V3_TEXT } from "@patchhivehq/ui-v3";
 import { Chip, readResponse, statusTone } from "./shared.jsx";
 
 const ROLES = ["scout", "judge", "reaper", "smith", "gatekeeper"];
-const PROVIDERS = ["openai", "anthropic", "gemini", "groq", "custom", "ollama"];
-const DEFAULT_MODELS = { openai: "gpt-5.4-mini", anthropic: "claude-sonnet-4-6", gemini: "gemini-2.5-pro", groq: "llama-3.3-70b-versatile", custom: "gpt-4.1-mini", ollama: "llama3.2" };
+const PROVIDERS = ["openai", "anthropic", "gemini", "groq", "openrouter", "custom", "ollama"];
+const DEFAULT_MODELS = { openai: "gpt-5.4-mini", anthropic: "claude-sonnet-4-6", gemini: "gemini-2.5-pro", groq: "llama-3.3-70b-versatile", openrouter: "openrouter/free", custom: "gpt-4.1-mini", ollama: "llama3.2" };
+
+function nextProviderState(current, provider) {
+  const priorDefault = defaultBaseUrlForProvider(current.provider);
+  const keepCustomBase = current.base_url && current.base_url !== priorDefault;
+  return {
+    ...current,
+    provider,
+    model: DEFAULT_MODELS[provider] || "",
+    base_url: defaultBaseUrlForProvider(provider) || (keepCustomBase ? current.base_url : ""),
+  };
+}
 
 function blankAgent(role = "scout") {
   return { id: `${role}-${crypto.randomUUID().slice(0, 8)}`, name: `PatchHive ${role[0].toUpperCase()}${role.slice(1)}`, role, provider: "openai", model: DEFAULT_MODELS.openai, base_url: "", api_key: "", bot_token: "", bot_user: "", status: "idle", current_task: "", stats: { fixed: 0, skipped: 0, errors: 0, cost: 0 } };
@@ -41,7 +53,7 @@ export default function SquadPanel({ agents, apiBase, authToken, config, cooldow
   });
 
   function updateAgent(id, key, value) {
-    setDraft((current) => current.map((agent) => agent.id === id ? { ...agent, [key]: value, ...(key === "provider" ? { model: DEFAULT_MODELS[value] || "" } : {}) } : agent));
+    setDraft((current) => current.map((agent) => agent.id === id ? (key === "provider" ? nextProviderState(agent, value) : { ...agent, [key]: value }) : agent));
   }
 
   async function perform(action, fallback) {
@@ -67,8 +79,8 @@ export default function SquadPanel({ agents, apiBase, authToken, config, cooldow
         <div className="mt-5 grid gap-3 sm:grid-cols-2">
           <label>
             <span className={`text-[9px] uppercase tracking-wider ${V3_TEXT.mute}`}>Provider</span>
-            <select className={`surface-inset mt-1.5 h-10 w-full rounded-xl bg-transparent px-3 text-[12px] ${V3_TEXT.strong}`} value={defaults.provider} onChange={(event) => setDefaults((current) => ({ ...current, provider: event.target.value, model: DEFAULT_MODELS[event.target.value] || "" }))}>
-              {PROVIDERS.map((provider) => <option key={provider}>{provider}</option>)}
+            <select className={`surface-inset mt-1.5 h-10 w-full rounded-xl bg-transparent px-3 text-[12px] ${V3_TEXT.strong}`} value={defaults.provider} onChange={(event) => setDefaults((current) => nextProviderState(current, event.target.value))}>
+              {PROVIDERS.map((provider) => <option key={provider} value={provider}>{AI_PROVIDERS[provider]?.label || provider}</option>)}
             </select>
           </label>
           <label>

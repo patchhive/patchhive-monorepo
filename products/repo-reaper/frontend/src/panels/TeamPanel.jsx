@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { API } from "../config.js";
-import { AIModelSelector, AI_PROVIDERS, DEFAULT_PROVIDER_MODELS, defaultModelForProvider } from "@patchhivehq/ai-models";
+import { AIModelSelector, AI_PROVIDERS, DEFAULT_PROVIDER_MODELS, defaultBaseUrlForProvider, defaultModelForProvider } from "@patchhivehq/ai-models";
 import { S, Input, Sel, Btn, EmptyState, ROLE_META } from "@patchhivehq/ui";
 import { AgentCard } from "@patchhivehq/ui";
 
@@ -19,6 +19,15 @@ export default function TeamPanel({ agents, logs, running, cooldowns, onAdd, onR
   const [form, setForm] = useState(BLANK);
   const [showForm, setShowForm] = useState(false);
   const set = k => v => setForm(f => ({ ...f, [k]: v }));
+  const setProvider = provider => setForm(current => {
+    const priorDefault = defaultBaseUrlForProvider(current.provider);
+    const keepCustomBase = current.base_url && current.base_url !== priorDefault;
+    return {
+      ...current,
+      provider,
+      base_url: defaultBaseUrlForProvider(provider) || (keepCustomBase ? current.base_url : ""),
+    };
+  });
 
   const hasCooldown = Object.keys(cooldowns||{}).length > 0;
   const agentList = Object.values(agents);
@@ -83,16 +92,16 @@ export default function TeamPanel({ agents, logs, running, cooldowns, onAdd, onR
               fallbackModels={fallbackModels}
               localGatewayConfigured={!!existingConfig?.PATCHHIVE_AI_URL}
               globalKeyConfigured={!!existingConfig?.PROVIDER_API_KEY_SET}
-              onProviderChange={set("provider")}
+              onProviderChange={setProvider}
               onModelChange={set("model")}
             />
-            {form.provider === "custom" && (
+            {(form.provider === "custom" || form.provider === "openrouter") && (
               <div style={{ gridColumn:"1/-1", ...S.field }}>
-                <label style={S.label}>Custom Base URL</label>
+                <label style={S.label}>{form.provider === "openrouter" ? "OpenRouter Base URL" : "Custom Base URL"}</label>
                 <Input
                   value={form.base_url}
                   onChange={set("base_url")}
-                  placeholder="http://localhost:8787/v1 or https://api.example.com/v1"
+                  placeholder={defaultBaseUrlForProvider(form.provider) || "http://localhost:8787/v1 or https://api.example.com/v1"}
                 />
                 <div style={{ fontSize:10, color:"#484868", marginTop:4 }}>
                   Must speak the OpenAI-compatible chat and models APIs.

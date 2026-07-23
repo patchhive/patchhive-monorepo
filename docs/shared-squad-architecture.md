@@ -120,7 +120,7 @@ Products can keep compatibility aliases such as RepoReaper's existing
   "id": "scout-01",
   "name": "PatchHive Scout",
   "role": "scout",
-  "provider": "custom",
+  "provider": "openrouter",
   "model": "openai/gpt-4.1-mini",
   "base_url": "https://openrouter.ai/api/v1",
   "api_key": "",

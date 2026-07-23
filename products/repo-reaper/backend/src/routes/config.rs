@@ -15,7 +15,10 @@ use std::{
 };
 use uuid::Uuid;
 
-use crate::agents::{ai_call, clear_cooldown, get_cooldowns, AgentCallParams, DEFAULT_MAX_TOKENS};
+use crate::agents::{
+    ai_call, clear_cooldown, get_cooldowns, AgentCallParams, DEFAULT_MAX_TOKENS,
+    OPENROUTER_BASE_URL,
+};
 use crate::db::{
     agents_from_storage_json, agents_to_storage_json, get_conn, get_lifetime_cost,
     save_active_agents, set_setting,
@@ -91,6 +94,10 @@ const PROVIDER_MODELS: &[(&str, &[&str])] = &[
             "llama-3.1-8b-instant",
             "mixtral-8x7b-32768",
         ],
+    ),
+    (
+        "openrouter",
+        &["openrouter/free", "openai/gpt-oss-20b:free"],
     ),
     ("custom", &["gpt-4.1-mini", "qwen2.5-coder", "llama3.2"]),
     (
@@ -424,6 +431,7 @@ async fn discover_provider_models(
         "anthropic" => discover_anthropic_models(http, body).await,
         "gemini" => discover_gemini_models(http, body).await,
         "groq" => discover_groq_models(http, body).await,
+        "openrouter" => discover_openrouter_models(http, body).await,
         "custom" => discover_custom_models(http, body).await,
         "ollama" => discover_ollama_models(http, body).await,
         _ => anyhow::bail!("Unknown provider: {provider}"),
@@ -466,6 +474,21 @@ async fn discover_groq_models(
         .unwrap_or_else(|| "https://api.groq.com/openai/v1".to_string());
     let key = clean_optional(body.as_ref().and_then(|b| b.api_key.as_deref()))
         .or_else(|| provider_api_key("groq"));
+    Ok((
+        fetch_openai_compatible_models(http, &base, key.as_deref()).await?,
+        "provider-api",
+    ))
+}
+
+async fn discover_openrouter_models(
+    http: &reqwest::Client,
+    body: Option<ModelDiscoveryBody>,
+) -> anyhow::Result<(Vec<String>, &'static str)> {
+    let base = clean_optional(body.as_ref().and_then(|b| b.base_url.as_deref()))
+        .or_else(|| clean_env("OPENROUTER_BASE_URL"))
+        .unwrap_or_else(|| OPENROUTER_BASE_URL.to_string());
+    let key = clean_optional(body.as_ref().and_then(|b| b.api_key.as_deref()))
+        .or_else(|| provider_api_key("openrouter"));
     Ok((
         fetch_openai_compatible_models(http, &base, key.as_deref()).await?,
         "provider-api",
@@ -704,6 +727,7 @@ fn provider_api_key(provider: &str) -> Option<String> {
         "openai" => clean_env("OPENAI_API_KEY"),
         "gemini" => clean_env("GEMINI_API_KEY").or_else(|| clean_env("GOOGLE_API_KEY")),
         "groq" => clean_env("GROQ_API_KEY"),
+        "openrouter" => clean_env("OPENROUTER_API_KEY"),
         "custom" => clean_env("CUSTOM_AI_API_KEY").or_else(|| clean_env("OPENAI_API_KEY")),
         _ => None,
     };
@@ -998,7 +1022,7 @@ async fn lifetime_cost() -> Json<Value> {
 
 #[cfg(test)]
 mod tests {
-    use super::agent_browser_view;
+    use super::{agent_browser_view, static_provider_models};
     use crate::state::{AgentConfig, AgentStats};
 
     #[test]
@@ -1026,5 +1050,13 @@ mod tests {
         assert_eq!(view["bot_token_set"], true);
         assert!(!view.to_string().contains("provider-secret"));
         assert!(!view.to_string().contains("github-secret"));
+    }
+
+    #[test]
+    fn openrouter_is_a_supported_model_provider() {
+        let models = static_provider_models("openrouter");
+
+        assert_eq!(models.first().map(String::as_str), Some("openrouter/free"));
+        assert!(models.iter().any(|model| model.ends_with(":free")));
     }
 }

@@ -416,6 +416,8 @@ PATCHHIVE_REPO_MEMORY_API_KEY=...
 | `OPENAI_API_KEY` | ❌ | — | Provider-specific API key |
 | `GEMINI_API_KEY` | ❌ | — | Provider-specific API key |
 | `GROQ_API_KEY` | ❌ | — | Provider-specific API key |
+| `OPENROUTER_API_KEY` | ❌ | — | OpenRouter API key |
+| `OPENROUTER_BASE_URL` | ❌ | `https://openrouter.ai/api/v1` | Optional OpenRouter-compatible endpoint override |
 | `CUSTOM_AI_API_KEY` | ❌ | — | Provider-specific API key |
 | `CUSTOM_AI_BASE_URL` | ❌ | — | Provider-specific base URL |
 | `COST_BUDGET_USD` | ❌ | `0` (uncapped) | Per-run AI cost cap |
@@ -505,7 +507,7 @@ Agents are configured via the `/agents` API endpoint. Each agent has:
 - `id` (auto-generated UUID8 if empty)
 - `name` (human-readable)
 - `role` (one of the five above)
-- `provider` (anthropic, openai, gemini, groq, custom, ollama)
+- `provider` (anthropic, openai, gemini, groq, openrouter, custom, ollama)
 - `model` (specific model name)
 - `base_url`, `api_key`, `bot_token`, `bot_user` (per-agent overrides)
 - `status` (idle/working)
@@ -519,6 +521,7 @@ Agents are configured via the `/agents` API endpoint. Each agent has:
 | **OpenAI** | `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.4-nano`, `gpt-5.3-codex`, `gpt-5.2-codex`, `gpt-5.1`, `gpt-5-mini`, `gpt-5-nano`, `gpt-5.1-codex`, `gpt-5.1-codex-mini`, `gpt-5.1-codex-max`, `gpt-5-codex`, `gpt-5`, `gpt-4.1`, `gpt-4.1-mini`, `gpt-4.1-nano`, `o3`, `o4-mini`, `o3-mini` | `GET {base}/models` |
 | **Gemini** | `gemini-2.0-flash`, `gemini-2.0-flash-lite`, `gemini-1.5-pro`, `gemini-2.5-pro` | `GET https://generativelanguage.googleapis.com/v1beta/models` |
 | **Groq** | `llama-3.3-70b-versatile`, `llama-3.1-8b-instant`, `mixtral-8x7b-32768` | `GET {base}/models` |
+| **OpenRouter** | `openrouter/free`, `openai/gpt-oss-20b:free` | `GET https://openrouter.ai/api/v1/models` |
 | **Custom** | `gpt-4.1-mini`, `qwen2.5-coder`, `llama3.2` | `GET {base}/models` |
 | **Ollama** | `llama3.2`, `codellama`, `deepseek-coder`, `qwen2.5-coder` | `GET {base}/api/tags` |
 | **PatchHive AI** (local gateway) | — | Via `PATCHHIVE_AI_URL/status` |

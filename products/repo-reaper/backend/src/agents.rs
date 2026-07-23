@@ -12,6 +12,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 
 pub const DEFAULT_MAX_TOKENS: u32 = 2000;
+pub const OPENROUTER_BASE_URL: &str = "https://openrouter.ai/api/v1";
 const PATCH_MAX_TOKENS: u32 = 8000;
 const REVIEW_MAX_TOKENS: u32 = 5000;
 
@@ -157,6 +158,7 @@ fn provider_api_key(provider: &str) -> Option<String> {
         "anthropic" => clean_env("ANTHROPIC_API_KEY"),
         "gemini" => clean_env("GEMINI_API_KEY").or_else(|| clean_env("GOOGLE_API_KEY")),
         "groq" => clean_env("GROQ_API_KEY"),
+        "openrouter" => clean_env("OPENROUTER_API_KEY"),
         "custom" => clean_env("CUSTOM_AI_API_KEY").or_else(|| clean_env("OPENAI_API_KEY")),
         _ => None,
     };
@@ -232,6 +234,16 @@ pub async fn ai_call(http: &Client, p: &AgentCallParams<'_>) -> Result<(String, 
         "groq" => {
             let base = std::env::var("GROQ_BASE_URL")
                 .unwrap_or_else(|_| "https://api.groq.com/openai/v1".into());
+            openai_call(http, p, &base).await
+        }
+        "openrouter" => {
+            let base = p
+                .base_url
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
+                .or_else(|| clean_env("OPENROUTER_BASE_URL"))
+                .unwrap_or_else(|| OPENROUTER_BASE_URL.into());
             openai_call(http, p, &base).await
         }
         "custom" => {
