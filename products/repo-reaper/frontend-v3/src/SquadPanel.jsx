@@ -77,6 +77,9 @@ export default function SquadPanel({ agents, apiBase, authToken, config, cooldow
   }
 
   const missingRoles = ROLES.filter((role) => !draft.some((agent) => agent.role === role));
+  const modelStatusText = !modelDiscovery.status?.source && modelDiscovery.models.length
+    ? `Built-in catalog loaded. ${modelDiscovery.statusText}`
+    : modelDiscovery.statusText;
   return <div className="mx-auto max-w-[1440px] space-y-6 px-3 py-6 sm:px-6">
     <section className="surface p-6 sm:p-8"><div className={`flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}><Users size={12}/> PatchHive squad</div><h1 className={`mt-2 font-display text-[42px] font-semibold ${V3_TEXT.strong}`}>Agents, models, and credentials.</h1><p className={`mt-3 max-w-3xl text-[13px] leading-relaxed ${V3_TEXT.body}`}>Configure the active multi-agent team, test its provider path, reuse encrypted presets, and inspect cooldowns before authorizing a mission.</p><div className="mt-5 flex flex-wrap gap-2"><Chip tone={missingRoles.length ? "warn" : "ok"}>{draft.length} agents</Chip><Chip tone={missingRoles.length ? "warn" : "ok"}>{missingRoles.length ? `missing ${missingRoles.join(", ")}` : "all roles covered"}</Chip><Chip tone={Object.keys(cooldowns).length ? "warn" : "ok"}>{Object.keys(cooldowns).length ? `${Object.keys(cooldowns).length} cooldowns` : "no cooldowns"}</Chip></div></section>
 
@@ -118,7 +121,7 @@ export default function SquadPanel({ agents, apiBase, authToken, config, cooldow
           <Chip>{modelDiscovery.models.length} selectable models</Chip>
         </div>
         <div className={`mt-4 space-y-1 text-[11px] ${V3_TEXT.mute}`}>
-          {modelDiscovery.statusText ? <div>{modelDiscovery.statusText}</div> : null}
+          {modelStatusText ? <div>{modelStatusText}</div> : null}
           {modelDiscovery.filteredStatusText ? <div>{modelDiscovery.filteredStatusText}</div> : null}
           {modelDiscovery.agentFilteredStatusText ? <div>{modelDiscovery.agentFilteredStatusText}</div> : null}
           {modelDiscovery.freeFilteredStatusText ? <div>{modelDiscovery.freeFilteredStatusText}</div> : null}
