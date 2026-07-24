@@ -619,13 +619,15 @@ async fn discover_repositories(
     } else {
         req.labels.join(", ")
     };
+    let inspected_noun = repository_noun(inspected);
+    let matched_noun = repository_noun(repos.len());
     let message = if all_issues.is_empty() {
         format!(
-            "Autonomous discovery inspected {inspected} eligible repositories from {search_result_count} repository search results but found no open issues matching: {labels}. Try a broader discovery query, different labels, or a larger repository cap."
+            "Autonomous discovery inspected {inspected} eligible {inspected_noun} from {search_result_count} repository search results but found no open issues matching: {labels}. Try a broader discovery query, different labels, or a larger repository cap."
         )
     } else {
         format!(
-            "Autonomous discovery inspected {inspected} eligible repositories and found {} matching issues across {} repositories.",
+            "Autonomous discovery inspected {inspected} eligible {inspected_noun} and found {} matching issues across {} {matched_noun}.",
             all_issues.len(),
             repos.len()
         )
@@ -672,6 +674,14 @@ fn discovery_query(req: &RunRequest) -> String {
 
 fn discovery_repository_search_limit(repository_cap: usize) -> usize {
     repository_cap.saturating_mul(10).clamp(25, 100)
+}
+
+fn repository_noun(count: usize) -> &'static str {
+    if count == 1 {
+        "repository"
+    } else {
+        "repositories"
+    }
 }
 
 async fn discover_target_repo(
@@ -1045,7 +1055,7 @@ pub async fn execute_run(
 mod tests {
     use super::{
         classify_write_eligibility, discovery_query, discovery_repository_search_limit,
-        ActiveRunGuard, RunRequest,
+        repository_noun, ActiveRunGuard, RunRequest,
     };
     use patchhive_product_core::contract::TargetSelectionMode;
     use serde_json::json;
@@ -1089,6 +1099,8 @@ mod tests {
             "stars:>50 is:public archived:false language:python"
         );
         assert_eq!(discovery_repository_search_limit(request.max_repos), 50);
+        assert_eq!(repository_noun(1), "repository");
+        assert_eq!(repository_noun(3), "repositories");
     }
 
     #[test]
