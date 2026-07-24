@@ -30,7 +30,7 @@ function ScopeFields({ mode, params, setParams, writeCapable = false }) {
     <ControlField label="Minimum stars" min="0" onChange={set("min_stars")} type="number" value={params.min_stars}/>
     <ControlField label="Repository cap" max="100" min="1" onChange={set("max_repos")} type="number" value={params.max_repos}/>
     <ControlField label="Issue cap" max="100" min="1" onChange={set("max_issues")} type="number" value={params.max_issues}/>
-    <ControlField label="Minimum fixability score" max="100" min="0" onChange={set("min_fixability_score")} type="number" value={params.min_fixability_score}/>
+    <ControlField label="Minimum score" max="100" min="0" onChange={set("min_fixability_score")} type="number" value={params.min_fixability_score}/>
     {writeCapable ? <ControlField label="Concurrency" max="32" min="1" onChange={set("concurrency")} type="number" value={params.concurrency}/> : null}
     <ControlField label="Cost budget USD" min="0" onChange={set("cost_budget_usd")} step="0.01" type="number" value={params.cost_budget_usd}/>
   </div>;
