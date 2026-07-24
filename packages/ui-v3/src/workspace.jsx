@@ -413,6 +413,11 @@ function startupCheckTitle(check) {
   const message = String(check.message || check.detail || check.msg || "").toLowerCase();
   if (message.includes("sqlite") || message.includes("database")) return "Database";
   if (message.includes("api-key") || message.includes("auth")) return "Authentication";
+  if (message.includes("bot_github_user") || message.includes("github bot username")) return "GitHub identity";
+  if (message.includes("patch/test worker capacity") || message.includes("reaper_max_active_workers")) return "Worker capacity";
+  if (message.includes("hivecore repository policy") || message.includes("patchhive_hivecore_url")) return "HiveCore enforcement";
+  if (message.includes("encryption_key") || message.includes("encrypted at rest") || message.includes("key material")) return "Secret encryption";
+  if (message.includes("provider_api_key") || message.includes("patchhive_ai_url") || message.includes("ai gateway")) return "AI providers";
   if (message.includes("allowed roots") || message.includes("allowed_root") || message.includes("filesystem scans are confined")) return "Local filesystem access";
   if (message.includes("remote_fs") || message.includes("localhost callers") || message.includes("non-local clients")) return "Caller boundary";
   if (message.includes("temporary git clone") || message.includes("temporary clone") || message.includes("git cli")) return "GitHub intake";
