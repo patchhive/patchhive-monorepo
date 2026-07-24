@@ -93,7 +93,10 @@ back here instead of living in parallel long-term.
 - Add historical compare mode so operators can see which findings are new, which were cleared, and which keep surviving scan after scan.
 - Add time-to-patch tracking so PatchHive can measure how quickly monitored repos move from advisory to merged fix.
 - Add public repository fallback intelligence for outbound discovery where GitHub security alert feeds are unavailable: OSV and GHSA advisory lookup, manifest and lockfile parsing, public dependency inference, and lightweight vulnerable-usage heuristics.
-- Add a real-time CVE response workflow where VulnTriage identifies affected monitored repos, assesses severity and exploitability, queues fix candidates, and sends them through TrustGate before RepoReaper acts.
+- Add a real-time CVE response workflow where VulnTriage identifies affected
+  monitored repos, assesses severity and exploitability, and queues typed fix
+  candidates for RepoReaper revalidation and patch generation. TrustGate then
+  reviews the generated diff before guarded delivery.
 - Add coordinated disclosure mode for vulnerabilities PatchHive discovers directly, including private reporting, embargo-aware handling, and CVE filing assistance where appropriate.
 - Consider AI-assisted finding summaries later through `patchhive-ai-local`, but keep the base ranking loop useful without AI.
 
@@ -110,6 +113,11 @@ back here instead of living in parallel long-term.
 - Add maintainer pacing awareness so PatchHive can back off when maintainers are slow, avoid bad timing, and respect repo-specific review cadence.
 - Add follow-up outcome tracking so merged RepoReaper fixes feed back into later PatchHive decisions, including downstream effects, maintainer refactors, follow-up issues, and related failures.
 - Add DepTriage -> RepoReaper dependency migration execution for cases where the right next step is not just ranking an update, but making the version bump, fixing breakage, running tests, and opening the PR.
+- Accept typed work-candidate handoffs from read-only specialists instead of
+  requiring every fix to begin as a GitHub issue hunt. RepoReaper must re-read
+  and revalidate the finding against the current target before planning a patch;
+  source-product confidence is evidence, not write authorization. See
+  `docs/suite-runs-and-fix-capabilities.md`.
 
 ## HiveCore
 
@@ -120,7 +128,34 @@ back here instead of living in parallel long-term.
 - Add the documented `patchhive.dev` repository-owner opt-out API and form,
   HiveCore trusted-repository policy, and atomic per-product plus suite-wide PR
   budgets. See `docs/hivecore-repository-safety-and-pr-budgets.md`.
-- Add cross-product handoff flows such as SignalHive -> TrustGate -> RepoReaper after approval and safety controls are visible in HiveCore.
+- Add cross-product handoff flows such as SignalHive -> RepoReaper candidate
+  revalidation and patch planning -> TrustGate diff review -> guarded delivery,
+  after approval and safety controls are visible in HiveCore.
+- Add a deterministic repository-profile intake that records a pinned commit,
+  languages, manifests, CI, tests, docs, entry-point signals, coverage limits,
+  and unavailable inputs, then recommends capability-advertised specialist
+  actions with evidence, freshness, expected cost, and safety posture.
+- Add an exported **Maintenance Brief** after cross-product orchestration exists.
+  It should assemble product-owned results into one repository view with source
+  run links, per-section freshness and coverage, warnings, and next-action
+  guidance. Do not replace specialist decisions with one opaque repository
+  health score.
+- Allow an operator to publish an explicitly sanitized Maintenance Brief through
+  the PatchHive Registry. The public website should render saved immutable
+  snapshots; a public `?repo=` URL must not directly reach private product APIs
+  or trigger unlimited AI work. Curated public-repository examples may provide
+  the shareable showcase once commit, scan date, coverage, and missing evidence
+  remain visible.
+- Keep public brief hosting split by responsibility: HiveCore assembles private
+  evidence, the operator approves a sanitized payload, the Registry stores
+  versioned snapshots, and `patchhive.dev` renders reports, downloads, trends,
+  showcases, and freshness-aware badges. If public visitors can later request a
+  scan, route it to a separate bounded hosted runner; the Registry must not
+  execute work or remotely control local suites. See `docs/patchhive-registry.md`.
+- Keep the Archiview-derived repository profile and Maintenance Brief as a
+  provisional HiveCore direction rather than a standalone product. Compare its
+  exact routing, API, and UI shape with other orchestration proposals before
+  implementation; see `docs/future-product-opportunities.md`.
 - Extend contract drift reporting later with field-level schema validation once product contracts start versioning beyond `patchhive.product.contract.v1`.
 - Add a PatchHive status view or public status page later that shows product availability, recent activity, and suite health once PatchHive is trusted as an ongoing contributor.
 
@@ -131,12 +166,21 @@ back here instead of living in parallel long-term.
 - Revisit more `patchhive-product-core` helpers only after another backend repeats the same seam.
 - Use `patchhive-github-pr` for the next product that needs PR diff fetch, webhook verification, check/status publishing, or maintained PR comments.
 - Use `patchhive-github-data` for the next product that needs GitHub repo search, issue history, merged PR history, review/comment history, or Actions reads.
+- If repository profiling creates a second need for GitHub tree, manifest, or
+  pinned-content reads, extract those reads into `patchhive-github-data` instead
+  of copying ReleaseSentry's product-local content client.
 - Use `patchhive-github-security` for the next product that needs code scanning alerts, Dependabot alerts, or advisory metadata.
 - Consider LiteLLM later only as an optional upstream behind `patchhive-ai-local`, not as the product-facing contract.
 - Add a `ph` CLI later so PatchHive’s analysis layer can be used locally without running the full platform: `ph scan`, `ph triage`, `ph review`, and `ph check`.
 - Add git hook integration for local TrustGate and ReviewBee checks so teams can catch issues before they hit GitHub.
 - Add IDE extension support later for VS Code, Zed, and JetBrains so PatchHive signals can surface near the code instead of only in reports.
 - Add better shared test coverage around auth, webhook verification, repo validation, and GitHub client behavior before the product count gets much larger.
+- Define a shared typed work-candidate handoff for cases where a specialist
+  finds work but RepoReaper owns execution. Preserve the source product, source
+  run and finding IDs, assessed commit, evidence, affected paths, suggested
+  validation, risk, requested approval policy, idempotency key, and the eventual
+  revalidation and terminal outcome. Actual approval remains a separate HiveCore
+  record and never arrives as trusted source-product evidence.
 
 ## PatchHive Identity & Reputation
 

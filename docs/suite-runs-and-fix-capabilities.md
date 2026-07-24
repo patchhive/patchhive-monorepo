@@ -152,6 +152,107 @@ Minimum fields:
 
 Products can return richer product-specific data in `raw`, but HiveCore should not need product-specific translation to know whether a finding is actionable.
 
+## Cross-Product Work-Candidate Handoff
+
+A finding does not need to originate as a GitHub issue, and the product that
+finds work does not always own the write path. RefactorScout, VulnTriage,
+DepTriage, FlakeSting, ReviewBee, SignalHive, and future read-only specialists
+should be able to request evaluation by RepoReaper or another advertised fix
+owner without duplicating patch execution.
+
+The handoff is a typed work candidate, not a patch instruction or authorization:
+
+```json
+{
+  "schema_version": "patchhive.work-candidate.v1",
+  "candidate_id": "01JZ8Y7Q3N6S5Y2M0K4T9D1C8A",
+  "idempotency_key": "refactor-scout:run_123:finding_01:0123456789abcdef:repo-reaper:evaluate_work_candidate",
+  "created_at": "2026-07-24T22:30:00Z",
+  "source": {
+    "product": "refactor-scout",
+    "run_id": "run_123",
+    "finding_id": "finding_01"
+  },
+  "target": {
+    "repo": "owner/repo",
+    "branch": "main",
+    "assessed_commit": "0123456789abcdef"
+  },
+  "problem": {
+    "title": "Extract duplicated validation helper",
+    "summary": "The same validation branch appears in three runtime paths.",
+    "affected_paths": ["src/api.rs", "src/worker.rs"]
+  },
+  "evidence": {
+    "refs": [
+      {
+        "kind": "product_finding",
+        "product": "refactor-scout",
+        "run_id": "run_123",
+        "finding_id": "finding_01"
+      }
+    ],
+    "confidence": 0.82,
+    "risk": "medium",
+    "suggested_validation": ["cargo test", "cargo clippy --all-targets -- -D warnings"]
+  },
+  "requested_action": {
+    "product": "repo-reaper",
+    "action_id": "evaluate_work_candidate",
+    "requires_approval": true
+  }
+}
+```
+
+Required behavior:
+
+- The source product remains read-only and records that it emitted the handoff.
+- Candidate IDs must be globally unique. HiveCore and the receiver deduplicate
+  dispatch with `idempotency_key`; replaying one candidate must return the
+  existing dispatch or terminal outcome instead of starting another patch or PR.
+- Evidence references are typed suite-local identifiers. Receivers resolve them
+  through authenticated product contracts and must never fetch an arbitrary URL
+  supplied by a candidate.
+- HiveCore verifies repository policy, advertised capability, action scopes,
+  approval state, budgets, and product readiness before dispatch.
+- Approval is a separate HiveCore record bound to the candidate ID,
+  idempotency key, assessed commit, action, approver, timestamp, and optional
+  expiration. A source product may request approval but cannot assert that its
+  candidate has been approved.
+- The receiving product fetches current repository evidence and compares it with
+  `assessed_commit`. Stale, missing, contradicted, or already-fixed candidates
+  stop without patch generation.
+- Source confidence and suggested validation are inputs only. The receiving
+  product owns plan confidence, test selection, isolation, TrustGate review,
+  and the final no-write/draft/non-draft decision.
+- The receiving run records the candidate ID and source run/finding IDs so the
+  full chain remains navigable in HiveCore and future Maintenance Briefs.
+- A handoff never grants GitHub write permission or weakens the receiving
+  product's validation and approval policy.
+
+Every dispatch records a normalized outcome alongside the receiving product's
+normal run:
+
+```json
+{
+  "candidate_id": "01JZ8Y7Q3N6S5Y2M0K4T9D1C8A",
+  "idempotency_key": "refactor-scout:run_123:finding_01:0123456789abcdef:repo-reaper:evaluate_work_candidate",
+  "receiving_run_id": "run_456",
+  "status": "stale",
+  "revalidated_commit": "fedcba9876543210",
+  "reason": "The duplicated validation branches changed after assessment."
+}
+```
+
+`status` is one of `accepted`, `stale`, `already_fixed`, `duplicate`,
+`contradicted`, `rejected`, `failed`, or `completed`. Product-specific detail
+remains in the receiving run, while the normalized outcome lets HiveCore close
+the handoff and correlate it with later Maintenance Briefs.
+
+Start with one selected candidate per dispatch. Batch handoffs should wait until
+single-candidate revalidation, approval, stop reasons, and outcome correlation
+are proven trustworthy.
+
 ## Fix Action Contract
 
 Fix actions should build on the existing `/capabilities` action dispatch contract.

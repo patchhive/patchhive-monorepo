@@ -194,8 +194,12 @@ Candidate endpoints:
 POST /v1/installs/register
 POST /v1/installs/:install_id/heartbeat
 POST /v1/installs/:install_id/smoke
+POST /v1/installs/:install_id/briefs
+POST /v1/installs/:install_id/briefs/:snapshot_id/unpublish
 GET  /v1/public/installs
 GET  /v1/public/installs/:public_slug
+GET  /v1/public/briefs/:owner/:repo
+GET  /v1/public/briefs/:owner/:repo/versions/:snapshot_id
 ```
 
 Registration should return a registry token that HiveCore stores locally. The
@@ -204,6 +208,92 @@ token should only allow that install to update its own registry record.
 Heartbeats should be idempotent and rate-limited. The registry should tolerate
 offline installs and show stale status clearly instead of pretending the fleet is
 still live.
+
+The brief endpoints are future contract direction, not part of the current
+hosted-service MVP. Publishing a brief should use the installation's scoped
+registry token plus an explicit per-brief approval record. The latest brief
+endpoint may resolve a current public pointer, but every stored version should
+remain addressable by an immutable snapshot ID.
+
+Snapshot immutability means published content is never edited in place; it does
+not mean publication is irreversible. An authenticated unpublish action should
+remove the snapshot from public indexes and latest pointers, return `410 Gone`
+for its former public version route, and retain a tombstone plus audit record.
+Registry administrators need a narrowly controlled hard-delete path for leaked
+secrets, legal requirements, repository-owner opt-outs, and compromised
+installations. An active repository opt-out blocks new publication and
+unpublishes existing latest pointers without rewriting snapshot history.
+
+## Maintenance Brief Hosting Architecture
+
+Public Maintenance Briefs should use the same private-to-public boundary as
+other Registry data:
+
+```text
+Specialist products
+    -> HiveCore suite run and private Maintenance Brief
+    -> operator preview, redaction, and publication approval
+    -> PatchHive Registry versioned public snapshot
+    -> patchhive.dev report, download, trend, showcase, and badge views
+```
+
+Responsibilities remain separate:
+
+- **Specialist products** own analysis, product-specific evidence, findings,
+  scores, warnings, and run history.
+- **HiveCore** owns cross-product orchestration, private evidence links,
+  coverage/freshness calculation, suggested-action state, and construction of
+  the complete private brief.
+- **The operator** previews the exact public payload, removes or suppresses
+  fields when needed, and explicitly approves each published brief.
+- **The Registry** authenticates publication, enforces a public schema and size
+  limits, stores immutable/versioned sanitized snapshots, exposes public reads,
+  and marks the latest snapshot stale when its freshness window expires.
+- **`patchhive.dev`** renders the polished public experience. It does not receive
+  local product credentials, read private product APIs, or reconstruct missing
+  evidence in the browser.
+
+The public schema is an allowlist, not a recursive copy of the private brief.
+It must reject arbitrary HTML or executable content, private or loopback URLs,
+local filesystem paths, credentials, private product API references, and
+unrecognized embedded fields. Public links must use typed link kinds and
+allowed HTTPS hosts. Product/run/finding identifiers may be retained for audit
+correlation only when the operator explicitly marks them public; otherwise the
+snapshot carries non-resolvable public references.
+
+Candidate public website routes:
+
+```text
+/briefs/:owner/:repo
+/briefs/:owner/:repo/versions/:snapshot_id
+/briefs/:owner/:repo/download.html
+/briefs/:owner/:repo/badge.svg
+/analyze?repo=:owner/:repo
+```
+
+The latest brief route should show the assessed commit, publication time,
+evidence freshness, coverage, missing feeds, and a link to immutable versions.
+HTML downloads and print-to-PDF should render the same sanitized snapshot rather
+than a separate report truth. A badge should link to the brief and degrade to
+`stale` or `incomplete evidence` when appropriate; it should not preserve an old
+positive status indefinitely.
+
+`/analyze?repo=...` may initially prefill an intake form or explain how to run
+PatchHive locally. It must not cause the public website or Registry to call a
+private installation. If public visitors can eventually request a fresh scan,
+execution belongs to a separate PatchHive-owned hosted runner or hosted HiveCore
+deployment with:
+
+- public-repository-only targeting and repository opt-out enforcement;
+- strict anonymous and account-level rate limits, queues, and cost budgets;
+- pinned-commit inputs and bounded, visible coverage;
+- no GitHub write credentials or mutating product actions in the public lane;
+- untrusted-repository and prompt-injection handling;
+- an explicit rule for whether a completed result is private to the requester,
+  operator-reviewed, or eligible for public publication.
+
+The Registry must remain a snapshot store and public read service. It must not
+become the job scheduler, AI executor, or remote-control path for local suites.
 
 ## Website Surfaces
 
@@ -216,8 +306,30 @@ Possible website sections:
 - Latest smoke evidence
 - Public demo launch links
 - Release readiness status
+- Operator-published Maintenance Briefs for public repositories, pinned to the
+  assessed commit and carrying only explicitly sanitized specialist evidence
 - Anonymous install/version adoption charts
 - GHCR image freshness
+
+Maintenance Brief publication must be snapshot-based. HiveCore should assemble
+the authenticated cross-product brief, show the operator the exact sanitized
+payload, and publish an immutable or versioned snapshot only after explicit
+approval. The public website may offer a shareable repository or brief URL, but
+that URL must read saved Registry data rather than directly reaching a local
+PatchHive product or triggering a new scan.
+
+Every public brief should show:
+
+- repository, assessed commit, scan time, and snapshot freshness;
+- which specialists contributed and links or public references permitted by the
+  operator;
+- coverage bounds, unavailable feeds, and warnings;
+- prioritized evidence and any later public PatchHive PR outcome;
+- a clear distinction between observed maintenance pressure and certification.
+
+A curated public-repository showcase is acceptable when PatchHive owns the scan
+and publication decision. Arbitrary unauthenticated scans, private evidence, and
+unbounded public AI execution do not belong in the Registry.
 
 For marketing, the most important effect is emotional: PatchHive should look
 like a live system with a pulse, not a static set of screenshots.
@@ -231,6 +343,8 @@ Minimum expectations:
 - Heartbeats are signed or authenticated.
 - HiveCore owns the allowlist of fields that can leave the machine.
 - Operators can preview the exact JSON before enabling publishing.
+- Maintenance Brief publication requires an explicit per-brief preview and
+  approval even when the installation is already in public-demo mode.
 - Public mode requires an explicit confirmation.
 - The website never receives registry data directly from browsers on local
   networks.
@@ -303,6 +417,7 @@ Add website components that read public registry records and show:
 - latest suite smoke
 - product versions
 - release readiness
+- explicitly published public-repository Maintenance Brief snapshots
 
 ## Relationship To MaintainerBot
 
@@ -330,4 +445,3 @@ The first implementation should be local-only:
 2. The website consumes sample/local snapshots.
 3. Only after the privacy boundary feels solid should HiveCore publish to a
    hosted registry.
-

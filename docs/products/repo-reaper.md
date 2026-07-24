@@ -766,7 +766,7 @@ cargo run --release
 | Product | Relationship |
 |---------|-------------|
 | **SignalHive** | Precedes RepoReaper — surfaces candidate issues and signals |
-| **TrustGate** | Precedes RepoReaper — manages trust and review layers |
+| **TrustGate** | Reviews RepoReaper's generated diff before guarded delivery |
 | **HiveCore** | Orchestrator — can dispatch runs and display results via the capabilities contract |
 | **@patchhive/ai-local** | Local AI gateway — optional drop-in for direct provider calls |
 | **RepoMemory** | Optional context store — loads remembered conventions and queues FailGuard candidates from Smith rejections |

@@ -1,8 +1,8 @@
 # Future Product Opportunities
 
-This document evaluates product concepts recovered from an older Lovable UI
-against the current PatchHive lineup. It is a planning record, not a commitment
-to create every concept as a standalone product.
+This document evaluates product concepts recovered from older projects and an
+older Lovable UI against the current PatchHive lineup. It is a planning record,
+not a commitment to create every concept as a standalone product.
 
 The main test is whether a concept owns a distinct maintenance question, data
 model, safety boundary, and workflow. If it does not, it should strengthen an
@@ -21,6 +21,7 @@ another product surface.
 | SecretShade | Secret leak detection and rotation | Strong new-product candidate | SecretSentry |
 | MergePilot | Merge queue and conflict resolution | Extend existing product | MergeKeeper |
 | AuditMesh | Evidence vault and audit replay | Shared platform capability | Shared evidence ledger + HiveCore + FailGuard |
+| Archiview | Whole-repository AI audit, score, report, and fix PR | Shared orchestration and reporting capability | HiveCore repository profile + Maintenance Brief |
 | HiveMail | Agentic operator webmail, inbound intake, safe replies, and product dispatch | Native capability; final product boundary open | Shared mail engine plus HiveCore or a specialist product surface |
 
 The clearest additions are BuildSentry, a performance-regression product, and
@@ -196,6 +197,95 @@ reconstruction, lesson extraction, and preventative guardrails, with durable
 lessons flowing into RepoMemory. A separately packaged compliance product
 should only be reconsidered if external audit workflows become a real customer
 need.
+
+### Archiview
+
+Archiview combined a fast repository-structure pass, sampled LLM code review,
+five-axis health scoring, scan history, downloadable reports, and generation of
+a candidate fix pull request. The single-entry experience is useful: one
+repository becomes one understandable assessment instead of a collection of
+unrelated tool runs. Most of the underlying responsibilities, however, already
+belong to PatchHive specialists:
+
+- **SignalHive** discovers repositories and maintenance pressure.
+- **RefactorScout** finds structural review candidates.
+- **VulnTriage** and **DepTriage** own security and dependency pressure.
+- **RepoMemory** retains repository conventions and historical context.
+- **TrustGate** evaluates change risk.
+- **RepoReaper** owns validated patch and pull-request execution.
+
+Creating an Archiview product would duplicate those products and reintroduce a
+broad AI reviewer beside evidence-focused specialists. Its most valuable missing
+capability is instead a lightweight repository profile that helps HiveCore
+decide which specialists should run next.
+
+The proposed profile should inspect repository metadata, languages, manifests,
+CI configuration, test layout, documentation, and entry-point signals at one
+pinned commit. It should produce typed routing evidence such as:
+
+- recommended product and advertised action;
+- the repository evidence that triggered the recommendation;
+- target mode and exact commit assessed;
+- configured coverage limits and unavailable inputs;
+- freshness, expected cost, and whether the action is read-only or write-capable.
+
+Deterministic detection should be the primary path. Optional AI may summarize
+or cluster the evidence through `patchhive-ai-local`, but the profile must remain
+useful without a model and must not let model opinion silently widen the set of
+actions HiveCore may dispatch.
+
+After the recommended specialists run, HiveCore can assemble a **Maintenance
+Brief** from their product-owned results. The brief should preserve links to the
+underlying run and finding evidence, state coverage and freshness per section,
+show warnings and missing feeds, and support print-friendly or self-contained
+export. It may prioritize the next maintenance action, but it should not collapse
+unrelated specialist evidence into one opaque repository score.
+
+The authenticated analysis surface and public presentation surface should stay
+separate. HiveCore owns orchestration and the private brief. An operator may
+explicitly publish a sanitized, immutable brief snapshot through the PatchHive
+Registry for rendering on the public website. A shareable repository URL should
+resolve a saved snapshot; it should not directly expose a local product, reveal
+private evidence, or let an unauthenticated visitor trigger unbounded model and
+GitHub work. Curated public-repository briefs can replace Archiview's famous-repo
+showcase while keeping the assessed commit, scan time, coverage, and unavailable
+feeds visible.
+
+If a visualization materially helps comparison, the brief may show a
+multi-domain **maintenance pressure profile**. Every axis must come from one
+named specialist decision, link to its evidence, expose unavailable or stale
+states, and retain that specialist's meaning. The axes must not be averaged into
+an A-F grade or universal 0-100 health certification.
+
+Archiview also exposes a real execution gap: RepoReaper currently begins with a
+GitHub issue hunt, while read-only specialists can identify valid maintenance
+work that has no issue. PatchHive should define a typed work-candidate handoff
+that carries source product/run/finding identity, repository and assessed
+commit, problem statement, evidence, affected paths, suggested validation,
+risk, requested approval policy, and a replay-safe idempotency key. Actual
+approval remains a separate HiveCore record. RepoReaper must fetch current evidence and
+independently revalidate the candidate before patch planning. A handoff requests
+evaluation; it never inherits permission to write from the source product.
+
+Archiview's implementation is reference material rather than code to port. In
+particular, PatchHive should not adopt forced-finding prompts, whole-repository
+claims based on a top-N file sample, popularity-weighted architecture scores,
+or a publisher that treats a generated validation command as if it had run.
+Read and write GitHub credentials must remain separated, and every proposed
+write must continue through the product-owned validation and approval boundary.
+
+A public badge should be considered only after the evidence model is stable. If
+added, it should communicate freshness, coverage, and verified living thresholds
+and link to the supporting brief; it must not present a stale AI-generated score
+as certification.
+
+**Decision:** Do not create Archiview as a standalone product and do not merge
+its audit or PR-publishing code into a specialist. Preserve the repository
+profile, evidence-based specialist routing, and combined Maintenance Brief as a
+provisional HiveCore orchestration direction, with sanitized public snapshots
+routed through the Registry. Preserve the typed specialist-to-RepoReaper work
+handoff as a shared suite contract. Re-evaluate the exact API and UI shape
+alongside other orchestration proposals before implementation.
 
 ### HiveMail
 
