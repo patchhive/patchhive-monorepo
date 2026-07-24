@@ -7,7 +7,9 @@ import {
   ChevronUp,
   Clock,
   Cpu,
+  Database,
   ExternalLink,
+  GitBranch,
   Github,
   KeyRound,
   ShieldAlert,
@@ -60,7 +62,7 @@ const DEFAULT_HISTORY_VIEW = {
 const TIMELINE_TYPES = ["status", "priority", "owner", "notes"];
 const PRIORITY_RANK = { "fix now": 3, "plan next": 2, watch: 1 };
 const SEVERITY_RANK = { critical: 5, high: 4, medium: 3, moderate: 3, low: 2, unknown: 1 };
-const SECURITY_SCOPE_HINT = "Fine-grained PAT: select this repository and grant Metadata read, Code scanning alerts read, and Dependabot alerts read. The token owner must have security-alert access.";
+const SECURITY_SCOPE_HINT = "Use a classic PAT with public_repo (recommended for public repositories) or repo (private repositories), plus security_events. The token owner must have security-alert access.";
 
 const METRIC_TONES = {
   fix_now: "from-orange-700/70 to-red-900/60",
@@ -750,7 +752,7 @@ function HistoryTab({ dashboard, filters, history, items, loadScan, loading, onQ
 }
 
 function ChecksTab({ checks, health, onRefresh }) {
-  return <div className="grid grid-cols-12 items-start gap-6"><section className="surface col-span-12 lg:col-span-8 p-6"><div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>Startup evidence</div><h1 className={`font-display mt-2 text-[42px] tracking-tight font-semibold ${V3_TEXT.strong}`}>System checks.</h1><div className="mt-7"><StartupCheckList checks={checks} /></div></section><aside className="surface col-span-12 lg:col-span-4 p-6"><div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>Backend</div><div className={`mt-3 font-display text-[46px] font-semibold ${V3_TEXT.strong}`}>{health.status || "unknown"}</div><dl className="mt-6 space-y-3"><SideValue label="Database" value={health.db_ok ? "ready" : "unavailable"} /><SideValue label="GitHub" value={health.github_ready ? "verified" : health.github?.token_configured ? "verification failed" : "token missing"} /><SideValue label="Saved scans" value={String(health.scan_count || 0)} /></dl><button onClick={onRefresh} className={`surface-inset mt-6 h-10 w-full rounded-full text-[12px] ${V3_TEXT.body}`} type="button">Refresh checks</button></aside></div>;
+  return <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]"><section className="surface p-6"><div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>Startup evidence</div><h1 className={`font-display mt-2 text-[42px] tracking-tight font-semibold ${V3_TEXT.strong}`}>System checks.</h1><div className="mt-7"><StartupCheckList checks={checks} /></div></section><aside className="space-y-6"><section className="surface p-6"><div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>Unified backend</div><div className={`mt-3 font-display text-[46px] font-semibold ${V3_TEXT.strong}`}>{health.status || "unknown"}</div><dl className="mt-6 space-y-3"><SideValue label="Database" value={health.db_ok ? "ready" : "unavailable"} /><SideValue label="GitHub" value={health.github_ready ? "verified" : health.github?.token_configured ? "verification failed" : "token missing"} /><SideValue label="Saved scans" value={String(health.scan_count || 0)} /></dl><button onClick={onRefresh} className={`surface-inset mt-6 h-10 w-full rounded-full text-[12px] ${V3_TEXT.body}`} type="button">Refresh checks</button></section><section className="surface p-6"><div className={`flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}><GitBranch size={12}/> GitHub security-read path</div><dl className="mt-5 space-y-3"><SideValue label="Token" value={health.github_ready ? "verified" : health.github?.token_configured ? "unverified" : "missing"}/><SideValue label="Code scanning" value="per target"/><SideValue label="Dependabot" value="per target"/><SideValue label="Mode" value="read only"/></dl><GitHubPermissionGuidance>{SECURITY_SCOPE_HINT}</GitHubPermissionGuidance></section><section className="surface p-6"><div className={`flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}><Database size={12}/> Product state</div><div className="surface-inset mt-5 rounded-xl p-3"><div className={`text-[10px] uppercase tracking-wider ${V3_TEXT.mute}`}>Database path</div><div className={`mt-1 break-all text-[12px] ${V3_TEXT.strong}`}>{health.db_path || "unknown"}</div></div><dl className="mt-4 space-y-3"><SideValue label="Authentication" value={health.auth_enabled ? "enabled" : "disabled"}/><SideValue label="Repositories" value={String(health.repo_count || 0)}/></dl></section></aside></div>;
 }
 
 function SourcesTab({ form, health, onChange, onRun, repoInput, running }) {

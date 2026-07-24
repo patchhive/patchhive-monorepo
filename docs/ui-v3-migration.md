@@ -71,6 +71,10 @@ typography scale, spacing system, or theme implementation.
 - Scan warning surfaces, GitHub permission guidance, and Markdown-copy feedback
   are shared v3 controls; products supply warning interpretation, required
   scopes, and report content.
+- Checks pages use independent evidence columns on wide screens. Startup checks
+  remain the primary column; backend health, access paths, runtime state, and
+  product state stack in the secondary rail. Do not stretch a compact summary
+  to match the startup list or fill diagnostic space with decorative content.
 - Specialist footers preserve the v2 identity wording: `<Product> by
   PatchHive`, the product subtitle, and `Autonomous maintenance suite`.
 
