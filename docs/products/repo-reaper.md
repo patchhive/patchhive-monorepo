@@ -354,7 +354,8 @@ Scheduling is a safety contract, not only a UI feature:
 - schedules persist `direct` or `discovery`; an empty target never silently
   changes a direct schedule into broad discovery;
 - `dry_run` schedules remain no-write and may run automatically within the
-  configured evidence and cost bounds;
+  configured evidence and cost bounds. Their UI and persisted payload omit
+  patch-worker concurrency because Dry Stalk never starts a fix wave;
 - `run` schedules are a distinct write-capable action. Enabling one is an
   explicit recurring operator authorization, but every execution still passes
   repository policy, trusted-test policy, validation, PR-budget, existing-PR,

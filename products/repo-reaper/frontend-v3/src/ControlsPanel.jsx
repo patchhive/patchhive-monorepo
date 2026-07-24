@@ -21,7 +21,7 @@ const REPO_LISTS = [
   { value: "opt_out", label: "Opt-out" },
 ];
 
-function ScopeFields({ mode, params, setParams }) {
+function ScopeFields({ mode, params, setParams, writeCapable = false }) {
   const set = (key) => (value) => setParams((current) => ({ ...current, [key]: value }));
   return <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
     {mode === "direct" ? <ControlField label="Target repository" onChange={set("target_repo")} placeholder="owner/repository" value={params.target_repo}/> : <ControlField label="Discovery query" onChange={set("search_query")} placeholder="topic:rust is:public" value={params.search_query}/>} 
@@ -31,9 +31,14 @@ function ScopeFields({ mode, params, setParams }) {
     <ControlField label="Repository cap" max="100" min="1" onChange={set("max_repos")} type="number" value={params.max_repos}/>
     <ControlField label="Issue cap" max="100" min="1" onChange={set("max_issues")} type="number" value={params.max_issues}/>
     <ControlField label="Minimum fixability score" max="100" min="0" onChange={set("min_fixability_score")} type="number" value={params.min_fixability_score}/>
-    <ControlField label="Concurrency" max="32" min="1" onChange={set("concurrency")} type="number" value={params.concurrency}/>
+    {writeCapable ? <ControlField label="Concurrency" max="32" min="1" onChange={set("concurrency")} type="number" value={params.concurrency}/> : null}
     <ControlField label="Cost budget USD" min="0" onChange={set("cost_budget_usd")} step="0.01" type="number" value={params.cost_budget_usd}/>
   </div>;
+}
+
+function serializeDryScheduleParams(params, targetMode) {
+  const { concurrency: _concurrency, ...payload } = serializeRunParams(params, targetMode);
+  return payload;
 }
 
 export default function ControlsPanel({
@@ -106,10 +111,10 @@ export default function ControlsPanel({
   }
 
   return <div className="mx-auto max-w-[1440px] px-3 py-6 sm:px-6">
-    <ProductControlsLayout eyebrow="Mission operations" description="Configure explicit direct or autonomous work, schedules, repository boundaries, watch mode, and restart-backed runtime defaults." message={message}>
+    <ProductControlsLayout eyebrow="Mission operations" title="Schedules, policy, and runtime." description="Configure explicit direct or autonomous work, schedules, repository boundaries, watch mode, and restart-backed runtime defaults." message={message}>
       <ProductControlsPair>
-        <ProductScheduleManager actionLabel="patch mission" apiBase={`${apiBase}/automation/run`} currentPayload={serializeRunParams(params, targetMode)} description="Recurring write-capable missions remain bounded by repository policy, test proof, review confidence, existing-PR checks, and suite PR budgets." eyebrow="Write schedules" fetcher={fetcher} onError={onError} onLoadPayload={loadSchedule(setParams, setTargetMode)} onRefresh={onRefresh} onRunComplete={onRefresh} onTargetSelectionModeChange={setTargetMode} productName="RepoReaper" safetyNote="Enabling this schedule is recurring authorization to attempt a bounded mission. It is never authorization to bypass a failed gate." targetConfiguration={<ScopeFields mode={targetMode} params={params} setParams={setParams}/>} targetSelectionMode={targetMode} title="Patch mission schedules."/>
-        <ProductScheduleManager actionLabel="Dry Stalk" apiBase={`${apiBase}/automation/dry_run`} currentPayload={serializeRunParams(dryParams, dryTargetMode)} description="Schedule no-write issue discovery and Scout analysis independently from patch execution." eyebrow="Read-only schedules" fetcher={fetcher} onError={onError} onLoadPayload={loadSchedule(setDryParams, setDryTargetMode)} onRefresh={onRefresh} onRunComplete={onRefresh} onTargetSelectionModeChange={setDryTargetMode} productName="RepoReaper" safetyNote="Dry Stalk schedules discover and score evidence. They never clone for editing, run tests, push branches, or open pull requests." targetConfiguration={<ScopeFields mode={dryTargetMode} params={dryParams} setParams={setDryParams}/>} targetSelectionMode={dryTargetMode} title="Dry Stalk schedules."/>
+        <ProductScheduleManager actionLabel="patch mission" apiBase={`${apiBase}/automation/run`} currentPayload={serializeRunParams(params, targetMode)} description="Recurring write-capable missions remain bounded by repository policy, test proof, review confidence, existing-PR checks, and suite PR budgets." eyebrow="Write schedules" fetcher={fetcher} onError={onError} onLoadPayload={loadSchedule(setParams, setTargetMode)} onRefresh={onRefresh} onRunComplete={onRefresh} onTargetSelectionModeChange={setTargetMode} productName="RepoReaper" safetyNote="Enabling this schedule is recurring authorization to attempt a bounded mission. It is never authorization to bypass a failed gate." targetConfiguration={<ScopeFields mode={targetMode} params={params} setParams={setParams} writeCapable/>} targetSelectionMode={targetMode} title="Patch mission schedules."/>
+        <ProductScheduleManager actionLabel="Dry Stalk" apiBase={`${apiBase}/automation/dry_run`} currentPayload={serializeDryScheduleParams(dryParams, dryTargetMode)} description="Schedule no-write issue discovery and Scout analysis independently from patch execution." eyebrow="Read-only schedules" fetcher={fetcher} onError={onError} onLoadPayload={loadSchedule(setDryParams, setDryTargetMode)} onRefresh={onRefresh} onRunComplete={onRefresh} onTargetSelectionModeChange={setDryTargetMode} productName="RepoReaper" safetyNote="Dry Stalk schedules discover and score evidence. They never clone for editing, run tests, push branches, or open pull requests." targetConfiguration={<ScopeFields mode={dryTargetMode} params={dryParams} setParams={setDryParams}/>} targetSelectionMode={dryTargetMode} title="Dry Stalk schedules."/>
       </ProductControlsPair>
 
       <ProductControlSection>
