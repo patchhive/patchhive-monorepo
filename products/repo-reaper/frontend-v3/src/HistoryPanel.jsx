@@ -13,14 +13,25 @@ import ScoutReport, { scoutReportMarkdown } from "./ScoutReport.jsx";
 
 function runMarkdown(run) {
   if (!run) return "";
-  const lines = [`# RepoReaper run ${run.id}`, "", `- Status: ${run.status}`, `- Mode: ${run.dry_run ? "Dry Stalk" : "Patch mission"}`, `- Target: ${run.target_repo || "Autonomous discovery"}`, `- Fixed / attempted: ${run.total_fixed || 0} / ${run.total_attempted || 0}`, `- Cost: ${money(run.total_cost_usd)}`];
-  if (run.attempts?.length) {
+  const dryIssues = run.dry_stalk?.issues || [];
+  const eligible = dryIssues.filter((issue) => issue.status === "eligible").length;
+  const lines = [`# RepoReaper run ${run.id}`, "", `- Status: ${run.status}`, `- Mode: ${run.dry_run ? "Dry Stalk" : "Patch mission"}`, `- Target: ${run.target_repo || "Autonomous discovery"}`];
+  if (run.dry_run) lines.push(`- Candidates scored: ${run.total_attempted || dryIssues.length || 0}`, `- Write-eligible by score: ${eligible}`);
+  else lines.push(`- Fixed / attempted: ${run.total_fixed || 0} / ${run.total_attempted || 0}`);
+  lines.push(`- Cost: ${money(run.total_cost_usd)}`);
+  if (!run.dry_run && run.attempts?.length) {
     lines.push("", "## Attempts", "");
     run.attempts.forEach((attempt) => lines.push(`- ${attempt.repo || "repository"}#${attempt.issue_number}: ${attempt.status} — ${attempt.skip_reason || attempt.error_msg || attempt.pr_url || "saved evidence"}`));
   }
   if (run.dry_stalk?.report) lines.push("", scoutReportMarkdown(run.dry_stalk.report));
   lines.push("", "*RepoReaper by [PatchHive](https://github.com/patchhive)*");
   return lines.join("\n");
+}
+
+function runOutcome(run) {
+  return run.dry_run
+    ? `${run.total_attempted || 0} candidates scored`
+    : `${run.total_fixed || 0}/${run.total_attempted || 0} fixed`;
 }
 
 export default function HistoryPanel({ history, leaderboard, loading, onLoadRun, onRefresh, rejected, selectedRun }) {
@@ -39,16 +50,22 @@ export default function HistoryPanel({ history, leaderboard, loading, onLoadRun,
     });
   }, [dashboard.view, history]);
   const statuses = [...new Set(history.map((run) => run.status).filter(Boolean))];
-  const events = (selectedRun?.events || []).map((event, index) => ({ id: event.id || `${event.source}-${index}`, kind: event.phase || event.source || "status", at: event.occurred_at || event.created_at || selectedRun.started_at, message: event.message || event.summary || "Saved run event", actor: event.actor || "RepoReaper" }));
+  const savedEvents = (selectedRun?.events || []).map((event, index) => ({ id: event.id || `${event.source}-${index}`, kind: event.phase || event.source || "status", at: event.occurred_at || event.created_at || selectedRun.started_at, message: event.message || event.summary || "Saved run event", actor: event.actor || "RepoReaper" }));
+  const dryIssues = selectedRun?.dry_stalk?.issues || [];
+  const eligibleDryIssues = dryIssues.filter((issue) => issue.status === "eligible").length;
+  const events = [...savedEvents];
+  if (selectedRun?.dry_run && dryIssues.length && !events.some((event) => event.kind === "scoring")) events.push({ id: `${selectedRun.id}-scoring`, kind: "scoring", at: selectedRun.finished_at || selectedRun.started_at, message: `${dryIssues.length} candidate issues scored; ${eligibleDryIssues} met the configured write threshold`, actor: "PatchHive Scout" });
+  if (selectedRun?.dry_run && selectedRun.dry_stalk?.report && !events.some((event) => event.kind === "analysis")) events.push({ id: `${selectedRun.id}-analysis`, kind: "analysis", at: selectedRun.finished_at || selectedRun.started_at, message: selectedRun.dry_stalk.report.summary || "Scout assessment completed", actor: "PatchHive Scout" });
+  events.sort((left, right) => new Date(left.at) - new Date(right.at));
   const eventTypes = [...new Set(events.map((event) => event.kind))];
 
   return <div className="mx-auto max-w-[1440px] space-y-6 px-3 py-6 sm:px-6">
-    <HistoryDashboard dashboard={dashboard} filters={[{ key: "mode", label: "Mode", value: dashboard.view.mode, options: [{ value: "all", label: "All" }, { value: "write", label: "Patch missions" }, { value: "dry", label: "Dry Stalk" }] }, { key: "status", label: "Status", value: dashboard.view.status, options: [{ value: "all", label: "All" }, ...statuses.map((status) => ({ value: status, label: status }))] }]} items={items} loading={loading} onQueryChange={(value) => dashboard.updateView("query", value)} onRefresh={onRefresh} query={dashboard.view.query} renderItem={(run) => <button className="surface-inset w-full rounded-xl p-4 text-left" key={run.id} onClick={() => onLoadRun(run.id)} type="button"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><div className={`font-display text-[17px] font-semibold ${V3_TEXT.strong}`}>{run.target_repo || (run.dry_run ? "Autonomous Dry Stalk" : "Autonomous patch mission")}</div><p className={`mt-1 text-[11px] ${V3_TEXT.mute}`}>{formatDate(run.started_at)} · run {run.id} · {run.total_fixed || 0}/{run.total_attempted || 0} fixed · {money(run.total_cost_usd)}</p></div><div className="flex gap-2"><Chip tone={statusTone(run.status)}>{run.status}</Chip><Chip>{run.dry_run ? "dry stalk" : "write"}</Chip></div></div></button>} searchPlaceholder="Search repository, issue, run, failure…" sortOptions={[{ value: "newest", label: "Newest first" }, { value: "oldest", label: "Oldest first" }, { value: "cost", label: "Highest cost" }, { value: "attempts", label: "Most attempts" }]} totalCount={history.length}/>
+    <HistoryDashboard dashboard={dashboard} filters={[{ key: "mode", label: "Mode", value: dashboard.view.mode, options: [{ value: "all", label: "All" }, { value: "write", label: "Patch missions" }, { value: "dry", label: "Dry Stalk" }] }, { key: "status", label: "Status", value: dashboard.view.status, options: [{ value: "all", label: "All" }, ...statuses.map((status) => ({ value: status, label: status }))] }]} items={items} loading={loading} onQueryChange={(value) => dashboard.updateView("query", value)} onRefresh={onRefresh} query={dashboard.view.query} renderItem={(run) => <button className="surface-inset w-full rounded-xl p-4 text-left" key={run.id} onClick={() => onLoadRun(run.id)} type="button"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><div className={`font-display text-[17px] font-semibold ${V3_TEXT.strong}`}>{run.target_repo || (run.dry_run ? "Autonomous Dry Stalk" : "Autonomous patch mission")}</div><p className={`mt-1 text-[11px] ${V3_TEXT.mute}`}>{formatDate(run.started_at)} · run {run.id} · {runOutcome(run)} · {money(run.total_cost_usd)}</p></div><div className="flex gap-2"><Chip tone={statusTone(run.status)}>{run.status}</Chip><Chip>{run.dry_run ? "dry stalk" : "write"}</Chip></div></div></button>} searchPlaceholder="Search repository, issue, run, failure…" sortOptions={[{ value: "newest", label: "Newest first" }, { value: "oldest", label: "Oldest first" }, { value: "cost", label: "Highest cost" }, { value: "attempts", label: "Most attempts" }]} totalCount={history.length}/>
 
     {selectedRun ? <>
       <section className="surface p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div><div className={`text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}>Run dossier</div><h2 className={`mt-2 font-display text-[30px] font-semibold ${V3_TEXT.strong}`}>{selectedRun.target_repo || "Autonomous discovery"}</h2><p className={`mt-2 text-[12px] ${V3_TEXT.body}`}>Run {selectedRun.id} · {selectedRun.dry_run ? "Dry Stalk / no writes" : "Guarded patch mission"} · {formatDate(selectedRun.started_at)}</p></div><CopyMarkdownButton content={runMarkdown(selectedRun)} label="Copy run Markdown"/></div>
-        <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6"><Fact label="Status" value={selectedRun.status}/><Fact label="Fixed" value={selectedRun.total_fixed || 0}/><Fact label="Attempted" value={selectedRun.total_attempted || 0}/><Fact label="Cost" value={money(selectedRun.total_cost_usd)}/><Fact label="Started" value={formatDate(selectedRun.started_at)}/><Fact label="Finished" value={formatDate(selectedRun.finished_at)}/></div>
+        <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6"><Fact label="Status" value={selectedRun.status}/>{selectedRun.dry_run ? <><Fact label="Candidates" value={selectedRun.total_attempted || dryIssues.length || 0}/><Fact label="Eligible" value={eligibleDryIssues}/></> : <><Fact label="Fixed" value={selectedRun.total_fixed || 0}/><Fact label="Attempted" value={selectedRun.total_attempted || 0}/></>}<Fact label="Cost" value={money(selectedRun.total_cost_usd)}/><Fact label="Started" value={formatDate(selectedRun.started_at)}/><Fact label="Finished" value={formatDate(selectedRun.finished_at)}/></div>
       </section>
       <ActivityTimeline caption={`Run ${selectedRun.id}`} eventTypes={eventTypes} events={events}/>
       <ScoutReport report={selectedRun.dry_stalk?.report}/>

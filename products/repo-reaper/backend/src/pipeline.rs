@@ -832,6 +832,21 @@ pub async fn execute_dry_run(
         req.min_fixability_score,
         req.max_issues,
     );
+    let scoring_evidence = if scored.is_empty() {
+        "Discovery produced no candidate issues to score".to_string()
+    } else if scoring_available {
+        format!(
+            "PatchHive Scout scored {} candidate issues; {} met the configured write threshold",
+            scored.len(),
+            eligible.len()
+        )
+    } else {
+        format!(
+            "Scout scoring was unavailable for {} candidate issues; all candidates were held",
+            scored.len()
+        )
+    };
+    persist_run_phase(&run_id, "scoring", &scoring_evidence);
     let _ = tx
         .send(sse("issues", json!({"issues": issues.clone()})))
         .await;
@@ -869,6 +884,7 @@ pub async fn execute_dry_run(
                     });
                 report = Some(next_report.clone());
                 analysis_available = true;
+                persist_run_phase(&run_id, "analysis", "Scout assessment completed");
                 let _ = tx
                     .send(sse("dry_run_report", json!({"report": next_report})))
                     .await;

@@ -322,7 +322,9 @@ run retains its scored candidate evidence but finishes `partial` instead of
 claiming a complete analysis. The v3 UI renders a valid report as a human
 assessment with recommendation, success band, risk, top candidate, and shortlist;
 raw JSON remains collapsed troubleshooting evidence, while copied Markdown uses
-the human-readable structure. Stored agents that used `custom` with the exact
+the human-readable structure. Dry Stalk history uses candidate and score-threshold
+language instead of fix/attempt language, and its saved timeline records discovery,
+scoring availability, and Scout assessment completion. Stored agents that used `custom` with the exact
 OpenRouter base URL migrate to the first-class `openrouter` provider identity.
 
 Scout ranking is evidence, not write authorization. Patch missions default to a
