@@ -9,6 +9,7 @@ import {
   useSavedDashboardViews,
 } from "@patchhivehq/ui-v3";
 import { Chip, Fact, formatDate, money, statusTone } from "./shared.jsx";
+import ScoutReport, { scoutReportMarkdown } from "./ScoutReport.jsx";
 
 function runMarkdown(run) {
   if (!run) return "";
@@ -17,6 +18,7 @@ function runMarkdown(run) {
     lines.push("", "## Attempts", "");
     run.attempts.forEach((attempt) => lines.push(`- ${attempt.repo || "repository"}#${attempt.issue_number}: ${attempt.status} — ${attempt.skip_reason || attempt.error_msg || attempt.pr_url || "saved evidence"}`));
   }
+  if (run.dry_stalk?.report) lines.push("", scoutReportMarkdown(run.dry_stalk.report));
   lines.push("", "*RepoReaper by [PatchHive](https://github.com/patchhive)*");
   return lines.join("\n");
 }
@@ -49,6 +51,7 @@ export default function HistoryPanel({ history, leaderboard, loading, onLoadRun,
         <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6"><Fact label="Status" value={selectedRun.status}/><Fact label="Fixed" value={selectedRun.total_fixed || 0}/><Fact label="Attempted" value={selectedRun.total_attempted || 0}/><Fact label="Cost" value={money(selectedRun.total_cost_usd)}/><Fact label="Started" value={formatDate(selectedRun.started_at)}/><Fact label="Finished" value={formatDate(selectedRun.finished_at)}/></div>
       </section>
       <ActivityTimeline caption={`Run ${selectedRun.id}`} eventTypes={eventTypes} events={events}/>
+      <ScoutReport report={selectedRun.dry_stalk?.report}/>
       <section className="surface p-6"><div className={`flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}><ShieldCheck size={12}/> Issue attempts</div><div className="mt-5"><ProgressiveList initialCount={6} batchCount={30} itemLabel="attempts" items={selectedRun.attempts || []} empty={<div className={`surface-inset rounded-xl p-8 text-center text-[12px] ${V3_TEXT.mute}`}>No write attempts were recorded for this run.</div>} renderItem={(attempt) => <article className="surface-inset rounded-xl p-4" key={attempt.id}><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><h3 className={`font-display text-[17px] font-semibold ${V3_TEXT.strong}`}>{attempt.issue_title || `Issue #${attempt.issue_number}`}</h3><p className={`mt-1 text-[11px] ${V3_TEXT.mute}`}>{attempt.repo} · #{attempt.issue_number} · {attempt.reaper_agent} / {attempt.smith_agent || "no Smith"} / {attempt.gatekeeper_agent}</p><p className={`mt-2 text-[12px] leading-relaxed ${V3_TEXT.body}`}>{attempt.skip_reason || attempt.error_msg || (attempt.pr_url ? "Pull request delivered." : "Saved attempt evidence.")}</p></div><div className="flex shrink-0 gap-2"><Chip tone={statusTone(attempt.status)}>{attempt.status}</Chip><Chip>{attempt.confidence || 0}% confidence</Chip><Chip>{money(attempt.cost_usd)}</Chip></div></div><div className="mt-3 flex flex-wrap gap-3">{attempt.issue_url ? <a className="inline-flex items-center gap-1 text-[11px] underline" href={attempt.issue_url} rel="noreferrer" target="_blank">Issue <ExternalLink size={11}/></a> : null}{attempt.pr_url ? <a className="inline-flex items-center gap-1 text-[11px] underline" href={attempt.pr_url} rel="noreferrer" target="_blank">PR #{attempt.pr_number} <ExternalLink size={11}/></a> : null}{attempt.patch_diff ? <details className="w-full"><summary className={`cursor-pointer text-[11px] ${V3_TEXT.body}`}>Patch diff</summary><pre className={`surface mt-3 max-h-96 overflow-auto whitespace-pre-wrap p-4 text-[10px] ${V3_TEXT.body}`}>{attempt.patch_diff}</pre></details> : null}</div></article>}/></div></section>
     </> : null}
 
