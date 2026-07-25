@@ -1,7 +1,9 @@
-# AGENTS.md — PatchHive Project Context For Codex
+# AGENTS.md — PatchHive Project Context For Coding Agents
 
-This file gives Codex the repo context that was previously captured in `CLAUDE.md`.
+This file is the canonical repo context for every coding agent working in PatchHive.
 Keep it up to date when the architecture, conventions, or product inventory changes.
+`CLAUDE.md` is a shorter Claude Code working summary derived from this file; update
+this file first, then reconcile that summary if it drifts.
 
 When a PatchHive discussion, phone note, email, or external conversation reaches
 a concrete architecture, product, contract, workflow, or safety decision, write
@@ -102,8 +104,8 @@ patchhive/
     hive-core/
   package.json              npm workspaces root
   README.md
-  CLAUDE.md                 legacy Claude-oriented context file
-  AGENTS.md                 Codex-oriented context file
+  AGENTS.md                 canonical agent-facing project context
+  CLAUDE.md                 Claude Code working summary; defers to AGENTS.md
 ```
 
 ## Tech Stack
