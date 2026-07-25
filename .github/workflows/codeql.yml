@@ -27,7 +27,7 @@ jobs:
           - language: javascript-typescript
             build-mode: none
           - language: rust
-            build-mode: manual
+            build-mode: none
 
     steps:
       - name: Check out repository
@@ -42,10 +42,6 @@ jobs:
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
-
-      - name: Build every Rust package for CodeQL
-        if: matrix.language == 'rust'
-        run: bash scripts/check-rust-packages.sh
 
       - name: Analyze
         uses: github/codeql-action/analyze@v4
