@@ -39,8 +39,9 @@ export interface ObservedState {
   status: ProductStatus;
   /** Advertised by GET /capabilities at runtime — compared against `declared`. */
   actions: string[];
-  startupErrors: number;
-  startupWarns: number;
+  /** null means not fetched, which is not the same as zero. */
+  startupErrors: number | null;
+  startupWarns: number | null;
   driftCount: number;
   runCount: number;
   /** ISO timestamp of the last successful poll, or null if never observed. */
@@ -74,8 +75,8 @@ const readOnly = (scopes: string[], evidence: string[]): ProductSafety => ({
 const unobserved = (): ObservedState => ({
   status: "unknown",
   actions: [],
-  startupErrors: 0,
-  startupWarns: 0,
+  startupErrors: null,
+  startupWarns: null,
   driftCount: 0,
   runCount: 0,
   observedAt: null,

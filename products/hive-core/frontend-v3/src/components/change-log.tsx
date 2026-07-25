@@ -1,6 +1,7 @@
+import { useState } from "react";
 import { ScrollText } from "lucide-react";
 
-import { SUITE_EVENTS, type SuiteEvent } from "@/lib/suite-state";
+import type { SuiteEvent } from "@/lib/suite-state";
 import { Chip, EmptyDeck, Section, type ChipTone } from "./deck-ui";
 
 /**
@@ -15,25 +16,30 @@ const tone: Record<SuiteEvent["level"], ChipTone> = {
   crit: "crit",
 };
 
-export function ChangeLog() {
-  const entries = SUITE_EVENTS.filter(
+const PAGE = 20;
+
+export function ChangeLog({ events }: { events: SuiteEvent[] }) {
+  const [limit, setLimit] = useState(PAGE);
+  const all = events.filter(
     (event) => event.kind === "operator" || event.kind === "dispatch",
   );
+  const entries = all.slice(0, limit);
 
   return (
     <Section
       id="changelog"
       title="Change log"
       kicker="Every operator action and dispatch, with the actor and the request that carried it."
-      actions={<Chip tone="neutral">{entries.length} entries</Chip>}
+      actions={<Chip tone="neutral">{all.length} entries</Chip>}
     >
-      {entries.length === 0 ? (
+      {all.length === 0 ? (
         <EmptyDeck
           title="No operator actions recorded"
           detail="HiveCore already records its own dispatches in product_action_events. Folding that into the shared event ledger makes it queryable alongside policy decisions and budget grants."
           source="GET /events"
         />
       ) : (
+        <>
         <ul className="divide-y divide-border/40">
           {entries.map((event) => (
             <li key={event.id} className="flex items-center gap-3 py-2 text-xs">
@@ -50,6 +56,15 @@ export function ChangeLog() {
             </li>
           ))}
         </ul>
+        {all.length > limit && (
+          <button
+            onClick={() => setLimit((value) => value + PAGE)}
+            className="mt-3 rounded border border-border px-3 py-1.5 font-display text-[10px] uppercase tracking-wider text-muted-foreground transition hover:text-foreground"
+          >
+            Show {Math.min(PAGE, all.length - limit)} more of {all.length}
+          </button>
+        )}
+        </>
       )}
     </Section>
   );

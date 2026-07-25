@@ -2,8 +2,9 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMemo } from "react";
 import { Hexagon } from "lucide-react";
 
-import { PRODUCTS, isWriteCapable, type ProductStatus } from "@/lib/hive-data";
-import { BUDGETS, SUITE_EVENTS, capabilityDrift } from "@/lib/suite-state";
+import { isWriteCapable, type Product, type ProductStatus } from "@/lib/hive-data";
+import { BUDGETS, capabilityDrift } from "@/lib/suite-state";
+import { useSuiteData } from "@/lib/use-suite";
 import { API } from "@/config";
 import { HEX, Metric } from "@/components/deck-ui";
 import { PauseControl } from "@/components/pause-control";
@@ -67,25 +68,32 @@ const NAV: { id: string; label: string }[] = [
 ];
 
 function Deck() {
+  const { products, events, runs, live, error } = useSuiteData();
   const stats = useMemo(() => {
     const byStatus = (status: ProductStatus) =>
-      PRODUCTS.filter((product) => product.observed.status === status).length;
+      products.filter((product) => product.observed.status === status).length;
     return {
-      total: PRODUCTS.length,
+      total: products.length,
       online: byStatus("online"),
       degraded: byStatus("degraded"),
-      unobserved: PRODUCTS.filter((p) => p.observed.observedAt === null).length,
-      writeCapable: PRODUCTS.filter(isWriteCapable).length,
-      drift: PRODUCTS.map(capabilityDrift).filter(Boolean).length,
-      events: SUITE_EVENTS.length,
+      unobserved: products.filter((p) => p.observed.observedAt === null).length,
+      writeCapable: products.filter(isWriteCapable).length,
+      drift: products.map(capabilityDrift).filter(Boolean).length,
+      events: events.length,
     };
-  }, []);
+  }, [products, events]);
 
   return (
     <main className="relative min-h-screen pb-20">
       <div className="relative mx-auto max-w-[1400px] px-6 py-8 lg:px-10">
-        <TopBar />
-        <Hero unobserved={stats.unobserved} total={stats.total} />
+        <TopBar live={live} />
+        {error && <ConnectionNotice error={error} />}
+        <Hero
+          products={products}
+          unobserved={stats.unobserved}
+          total={stats.total}
+          online={stats.online}
+        />
 
         <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <Metric label="Products" value={stats.total} detail={`${stats.writeCapable} write-capable`} />
@@ -108,33 +116,34 @@ function Deck() {
             detail="suite ceiling"
           />
           <Metric
-            label="Suite events"
-            value={stats.events}
-            detail="append-only ledger"
+            label="Online"
+            value={stats.online}
+            tone={stats.online > 0 ? "ok" : "neutral"}
+            detail={`${stats.events} suite events`}
           />
         </div>
 
-        <ProductRegistry />
-        <LiveRuns />
-        <SuiteTimeline />
-        <ContractDrift />
-        <CapabilityMatrix />
+        <ProductRegistry products={products} />
+        <LiveRuns runs={runs} />
+        <SuiteTimeline events={events} />
+        <ContractDrift products={products} events={events} />
+        <CapabilityMatrix products={products} />
         <BudgetPanel />
         <ApprovalsQueue />
         <PolicyPanel />
         <MandatesPanel />
-        <BlastRadius />
-        <RunHeatmap />
+        <BlastRadius products={products} />
+        <RunHeatmap products={products} events={events} />
         <ProcedureHistory />
         <AskHive />
-        <ChangeLog />
+        <ChangeLog events={events} />
         <Footer />
       </div>
     </main>
   );
 }
 
-function TopBar() {
+function TopBar({ live }: { live: boolean }) {
   return (
     <header className="flex flex-wrap items-center justify-between gap-4 border-b border-border/60 pb-4">
       <div className="flex items-center gap-3">
@@ -164,14 +173,36 @@ function TopBar() {
         ))}
       </nav>
       <div className="flex items-center gap-2">
-        <span className="hidden font-mono text-[10px] text-muted-foreground sm:inline">{API}</span>
+        <span
+          className="hidden items-center gap-1.5 font-mono text-[10px] text-muted-foreground sm:inline-flex"
+          title={live ? "Control plane reachable" : "Control plane unreachable — showing registry defaults"}
+        >
+          <span
+            className="inline-block h-1.5 w-1.5 rounded-full"
+            style={{
+              background: live ? "var(--ok)" : "var(--crit)",
+              boxShadow: `0 0 8px ${live ? "var(--ok)" : "var(--crit)"}`,
+            }}
+          />
+          {API}
+        </span>
         <PauseControl />
       </div>
     </header>
   );
 }
 
-function Hero({ unobserved, total }: { unobserved: number; total: number }) {
+function Hero({
+  products,
+  unobserved,
+  total,
+  online,
+}: {
+  products: Product[];
+  unobserved: number;
+  total: number;
+  online: number;
+}) {
   const wired = unobserved < total;
   return (
     <section className="mt-10 grid gap-8 lg:grid-cols-[1.5fr_1fr]">
@@ -181,7 +212,7 @@ function Hero({ unobserved, total }: { unobserved: number; total: number }) {
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--honey)] opacity-60" />
             <span className="relative inline-flex h-2 w-2 rounded-full bg-[var(--honey)]" />
           </span>
-          {wired ? `${total - unobserved}/${total} products observed` : "Registry loaded · not yet polling"}
+          {wired ? `${online}/${total} products online` : "Registry loaded · control plane unreachable"}
         </div>
         <h1 className="font-display text-5xl font-bold leading-[1.05] tracking-tight md:text-6xl">
           One hive.
@@ -195,19 +226,33 @@ function Hero({ unobserved, total }: { unobserved: number; total: number }) {
           the record of every decision. Products are its capabilities.
         </p>
       </div>
-      <Honeycomb />
+      <Honeycomb products={products} />
     </section>
   );
 }
 
-function Honeycomb() {
+function ConnectionNotice({ error }: { error: string }) {
+  return (
+    <div className="mt-4 rounded-lg border border-[var(--crit)]/40 bg-[var(--crit)]/[0.06] px-4 py-2.5">
+      <div className="font-display text-[10px] font-bold uppercase tracking-wider text-[var(--crit)]">
+        Control plane unreachable
+      </div>
+      <p className="mt-0.5 text-xs text-muted-foreground">
+        {error} Showing the registry defaults compiled into the deck — status, capabilities, and
+        events are not live.
+      </p>
+    </div>
+  );
+}
+
+function Honeycomb({ products }: { products: Product[] }) {
   const layout: string[][] = [
     ["repo-reaper", "signal-hive", "trust-gate"],
     ["repo-memory", "hive-core", "review-bee"],
     ["merge-keeper", "flake-sting", "dep-triage"],
     ["vuln-triage", "refactor-scout", "release-sentry"],
   ];
-  const byKey = Object.fromEntries(PRODUCTS.map((product) => [product.key, product]));
+  const byKey = Object.fromEntries(products.map((product) => [product.key, product]));
 
   return (
     <div className="relative overflow-hidden rounded-2xl border border-border bg-card/40 backdrop-blur-sm">
@@ -217,7 +262,7 @@ function Honeycomb() {
           Suite mesh
         </span>
         <span className="font-display text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-          {PRODUCTS.length} registered
+          {products.length} registered
         </span>
       </div>
       <div className="relative flex flex-col items-center px-4 py-8">

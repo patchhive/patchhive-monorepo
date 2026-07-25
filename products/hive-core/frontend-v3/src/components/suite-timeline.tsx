@@ -1,12 +1,7 @@
 import { useMemo, useState } from "react";
 import { AlertTriangle, Clock, Coins, Gavel, Power, Rocket } from "lucide-react";
 
-import {
-  SUITE_EVENTS,
-  type SuiteEvent,
-  type SuiteEventKind,
-  type SuiteEventLevel,
-} from "@/lib/suite-state";
+import type { SuiteEvent, SuiteEventKind, SuiteEventLevel } from "@/lib/suite-state";
 import { Chip, EmptyDeck, Panel, Section, type ChipTone } from "./deck-ui";
 
 // Not an on-call incident feed. PatchHive has no pagers and no MTTR; it has
@@ -36,13 +31,42 @@ const FILTERS: { id: "all" | SuiteEventKind; label: string }[] = [
   { id: "mandate", label: "Mandates" },
 ];
 
-export function SuiteTimeline() {
+/**
+ * Collapse consecutive identical events into one row. A restart loop that emits the
+ * same line 50 times is one fact, not 50 — and left ungrouped it buries every event
+ * that actually differs.
+ */
+interface TimelineEntry {
+  event: SuiteEvent;
+  count: number;
+  firstTs: string;
+}
+
+function collapse(events: SuiteEvent[]): TimelineEntry[] {
+  const entries: TimelineEntry[] = [];
+  for (const event of events) {
+    const previous = entries[entries.length - 1];
+    if (previous && previous.event.kind === event.kind && previous.event.summary === event.summary) {
+      previous.count += 1;
+      previous.firstTs = event.ts;
+      continue;
+    }
+    entries.push({ event, count: 1, firstTs: event.ts });
+  }
+  return entries;
+}
+
+const PAGE = 25;
+
+export function SuiteTimeline({ events: all }: { events: SuiteEvent[] }) {
   const [filter, setFilter] = useState<"all" | SuiteEventKind>("all");
-  const events = useMemo(
-    () => (filter === "all" ? SUITE_EVENTS : SUITE_EVENTS.filter((e) => e.kind === filter)),
-    [filter],
+  const [limit, setLimit] = useState(PAGE);
+  const entries = useMemo(
+    () => collapse(filter === "all" ? all : all.filter((e) => e.kind === filter)),
+    [filter, all],
   );
-  const open = SUITE_EVENTS.filter((e) => e.level === "crit").length;
+  const events = entries.slice(0, limit);
+  const open = all.filter((e) => e.level === "crit").length;
 
   return (
     <Section
@@ -75,18 +99,29 @@ export function SuiteTimeline() {
           source="suite_events (architecture doc §3.3)"
         />
       ) : (
-        <ol className="relative space-y-2 border-l border-border/60 pl-5">
-          {events.map((event) => (
-            <TimelineRow key={event.id} event={event} />
-          ))}
-        </ol>
+        <>
+          <ol className="relative space-y-2 border-l border-border/60 pl-5">
+            {events.map((entry) => (
+              <TimelineRow key={entry.event.id} entry={entry} />
+            ))}
+          </ol>
+          {entries.length > limit && (
+            <button
+              onClick={() => setLimit((value) => value + PAGE)}
+              className="mt-3 rounded border border-border px-3 py-1.5 font-display text-[10px] uppercase tracking-wider text-muted-foreground transition hover:text-foreground"
+            >
+              Show {Math.min(PAGE, entries.length - limit)} more of {entries.length}
+            </button>
+          )}
+        </>
       )}
     </Section>
   );
 }
 
-function TimelineRow({ event }: { event: SuiteEvent }) {
+function TimelineRow({ entry }: { entry: TimelineEntry }) {
   const [open, setOpen] = useState(false);
+  const { event, count, firstTs } = entry;
   const Icon = kindIcon[event.kind];
   return (
     <li className="relative">
@@ -102,11 +137,16 @@ function TimelineRow({ event }: { event: SuiteEvent }) {
       >
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-mono text-[10px] text-muted-foreground">
-            {new Date(event.ts).toLocaleTimeString()}
+            {new Date(event.ts).toLocaleString()}
           </span>
           <Chip tone={levelTone[event.level]}>{event.kind.replace("_", " ")}</Chip>
           {event.productKey && <Chip tone="neutral">{event.productKey}</Chip>}
           <span className="text-xs text-foreground">{event.summary}</span>
+          {count > 1 && (
+            <Chip tone="neutral" title={`repeated through ${new Date(firstTs).toLocaleString()}`}>
+              ×{count}
+            </Chip>
+          )}
         </div>
       </button>
       {open && event.reasonChain.length > 0 && (

@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
 import { Activity } from "lucide-react";
 
-import { PRODUCTS } from "@/lib/hive-data";
-import { SUITE_EVENTS } from "@/lib/suite-state";
+import type { Product } from "@/lib/hive-data";
+import type { SuiteEvent } from "@/lib/suite-state";
 import { Chip, EmptyDeck, Section } from "./deck-ui";
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -16,9 +16,9 @@ type Lens = "dispatch" | "denial";
  * GitHub rate-limit pressure concentrate. Denials share the grid so throttling is
  * visible rather than showing up as absence.
  */
-function grid(lens: Lens, productKey: string): number[][] {
+function grid(lens: Lens, productKey: string, events: SuiteEvent[]): number[][] {
   const cells = DAYS.map(() => HOURS.map(() => 0));
-  for (const event of SUITE_EVENTS) {
+  for (const event of events) {
     if (productKey !== "all" && event.productKey !== productKey) continue;
     const isDenial = event.kind === "policy_decision" || event.kind === "budget";
     if (lens === "denial" ? !isDenial : event.kind !== "dispatch") continue;
@@ -28,10 +28,16 @@ function grid(lens: Lens, productKey: string): number[][] {
   return cells;
 }
 
-export function RunHeatmap() {
+export function RunHeatmap({
+  products,
+  events,
+}: {
+  products: Product[];
+  events: SuiteEvent[];
+}) {
   const [lens, setLens] = useState<Lens>("dispatch");
   const [productKey, setProductKey] = useState("all");
-  const cells = useMemo(() => grid(lens, productKey), [lens, productKey]);
+  const cells = useMemo(() => grid(lens, productKey, events), [lens, productKey, events]);
   const max = Math.max(...cells.flat(), 1);
   const total = cells.flat().reduce((sum, value) => sum + value, 0);
   const accent = lens === "denial" ? "var(--warn)" : "var(--honey)";
@@ -64,7 +70,7 @@ export function RunHeatmap() {
             className="rounded border border-border bg-background/60 px-2 py-1 font-display text-[10px] uppercase tracking-wider text-muted-foreground outline-none"
           >
             <option value="all">All products</option>
-            {PRODUCTS.map((product) => (
+            {products.map((product) => (
               <option key={product.key} value={product.key}>
                 {product.name}
               </option>

@@ -2,7 +2,6 @@ import { useMemo, useState } from "react";
 import { ExternalLink, Filter, ShieldAlert, ShieldCheck } from "lucide-react";
 
 import {
-  PRODUCTS,
   isWriteCapable,
   safetyLabel,
   type Product,
@@ -49,9 +48,9 @@ function observedLabel(product: Product): string {
   return `${Math.round(age / 3_600_000)}h ago`;
 }
 
-export function ProductRegistry() {
+export function ProductRegistry({ products }: { products: Product[] }) {
   const [lens, setLens] = useState<Lens>("all");
-  const rows = useMemo(() => PRODUCTS.filter((p) => matches(p, lens)), [lens]);
+  const rows = useMemo(() => products.filter((p) => matches(p, lens)), [lens, products]);
 
   return (
     <Section
@@ -142,8 +141,14 @@ export function ProductRegistry() {
                     {product.declared.length}
                   </td>
                   <td className="py-2.5 pr-3 font-mono text-[11px]">
-                    {product.observed.observedAt === null ? (
-                      <span className="text-muted-foreground">—</span>
+                    {product.observed.startupErrors === null ||
+                    product.observed.startupWarns === null ? (
+                      <span
+                        className="text-muted-foreground"
+                        title="Startup checks are not carried by /api/products; needs a per-product /startup/checks poll."
+                      >
+                        —
+                      </span>
                     ) : (
                       <>
                         <span
@@ -200,12 +205,12 @@ export function ProductRegistry() {
         </div>
       )}
       <p className="mt-4 text-[11px] text-muted-foreground">
-        Posture, stage, and declared capabilities mirror{" "}
-        <code className="rounded bg-muted px-1 py-0.5 font-mono text-[10px]">
-          registry/products/*.toml
-        </code>
-        . Observed columns stay empty until the deck is wired to{" "}
-        <code className="rounded bg-muted px-1 py-0.5 font-mono text-[10px]">GET /products</code>.
+        Identity, posture, stage, capabilities, and status come from{" "}
+        <code className="rounded bg-muted px-1 py-0.5 font-mono text-[10px]">GET /api/products</code>,
+        which serves the backend product manifests. Startup counts need a separate
+        per-product{" "}
+        <code className="rounded bg-muted px-1 py-0.5 font-mono text-[10px]">/startup/checks</code>{" "}
+        poll and show as —.
       </p>
     </Section>
   );

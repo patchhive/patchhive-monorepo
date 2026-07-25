@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Cpu, Search } from "lucide-react";
 
-import { PRODUCTS, isWriteCapable } from "@/lib/hive-data";
+import { isWriteCapable, type Product } from "@/lib/hive-data";
 import { Chip, EmptyDeck, Section } from "./deck-ui";
 
 interface Row {
@@ -19,8 +19,8 @@ interface Row {
  * Every capability the suite declares, in one searchable table, with whether the
  * product has actually advertised it at runtime.
  */
-function buildRows(): Row[] {
-  return PRODUCTS.flatMap((product) =>
+function buildRows(products: Product[]): Row[] {
+  return products.flatMap((product) =>
     product.declared.map((capability) => ({
       id: capability.id,
       label: capability.label,
@@ -34,9 +34,9 @@ function buildRows(): Row[] {
   );
 }
 
-export function CapabilityMatrix() {
+export function CapabilityMatrix({ products }: { products: Product[] }) {
   const [query, setQuery] = useState("");
-  const rows = useMemo(buildRows, []);
+  const rows = useMemo(() => buildRows(products), [products]);
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (!needle) return rows;

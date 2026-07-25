@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Terminal } from "lucide-react";
 
-import { PRODUCTS_BY_KEY, RUNS, type RunSummary } from "@/lib/hive-data";
+import { PRODUCTS_BY_KEY, type RunSummary } from "@/lib/hive-data";
 import { Chip, EmptyDeck, Section, type ChipTone } from "./deck-ui";
 
 const statusTone: Record<RunSummary["status"], ChipTone> = {
@@ -12,11 +12,17 @@ const statusTone: Record<RunSummary["status"], ChipTone> = {
   cancelled: "neutral",
 };
 
-export function LiveRuns({ onSelect }: { onSelect?: (run: RunSummary) => void }) {
+export function LiveRuns({
+  runs,
+  onSelect,
+}: {
+  runs: RunSummary[];
+  onSelect?: (run: RunSummary) => void;
+}) {
   const [only, setOnly] = useState<"all" | RunSummary["status"]>("all");
   const rows = useMemo(
-    () => (only === "all" ? RUNS : RUNS.filter((run) => run.status === only)),
-    [only],
+    () => (only === "all" ? runs : runs.filter((run) => run.status === only)),
+    [only, runs],
   );
 
   return (

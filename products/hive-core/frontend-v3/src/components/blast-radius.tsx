@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { GitBranch } from "lucide-react";
 
-import { PRODUCTS, PRODUCTS_BY_KEY } from "@/lib/hive-data";
+import type { Product } from "@/lib/hive-data";
 import { blastRadius } from "@/lib/suite-state";
 import { Chip, EmptyDeck, Panel, Section } from "./deck-ui";
 
@@ -11,10 +11,10 @@ import { Chip, EmptyDeck, Panel, Section } from "./deck-ui";
  * supplies context, the kernel authorizes. So the question this answers is "what
  * stalls if this product goes away", which is §3.12 made visible.
  */
-export function BlastRadius() {
-  const [productKey, setProductKey] = useState(PRODUCTS[0]?.key ?? "");
+export function BlastRadius({ products }: { products: Product[] }) {
+  const [productKey, setProductKey] = useState(products[0]?.key ?? "");
   const impact = useMemo(() => blastRadius(productKey), [productKey]);
-  const product = PRODUCTS_BY_KEY[productKey];
+  const product = products.find((item) => item.key === productKey);
 
   return (
     <Section
@@ -27,7 +27,7 @@ export function BlastRadius() {
           onChange={(event) => setProductKey(event.target.value)}
           className="rounded border border-border bg-background/60 px-2 py-1 font-display text-[10px] uppercase tracking-wider text-muted-foreground outline-none"
         >
-          {PRODUCTS.map((item) => (
+          {products.map((item) => (
             <option key={item.key} value={item.key}>
               {item.name}
             </option>
@@ -76,7 +76,7 @@ export function BlastRadius() {
           )}
         </Panel>
       </div>
-      {PRODUCTS.length > 0 && impact.blockedWork.length === 0 && impact.stalledMandates.length === 0 && (
+      {products.length > 0 && impact.blockedWork.length === 0 && impact.stalledMandates.length === 0 && (
         <div className="mt-4">
           <EmptyDeck
             title="Nothing to stall yet"

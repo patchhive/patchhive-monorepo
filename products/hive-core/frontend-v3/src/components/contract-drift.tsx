@@ -1,8 +1,8 @@
 import { useMemo } from "react";
 import { GitCompare, Minus, Plus, ShieldX } from "lucide-react";
 
-import { PRODUCTS } from "@/lib/hive-data";
-import { SUITE_EVENTS, capabilityDrift, safetyViolations } from "@/lib/suite-state";
+import type { Product } from "@/lib/hive-data";
+import { capabilityDrift, safetyViolations, type SuiteEvent } from "@/lib/suite-state";
 import { Chip, EmptyDeck, Panel, Section } from "./deck-ui";
 
 /**
@@ -10,13 +10,19 @@ import { Chip, EmptyDeck, Panel, Section } from "./deck-ui";
  * disagrees with its observed behavior is a failure, not a warning
  * (docs/hivecore-architecture.md §3.14).
  */
-export function ContractDrift() {
+export function ContractDrift({
+  products,
+  events,
+}: {
+  products: Product[];
+  events: SuiteEvent[];
+}) {
   const findings = useMemo(
-    () => PRODUCTS.map(capabilityDrift).filter((finding) => finding !== null),
-    [],
+    () => products.map(capabilityDrift).filter((finding) => finding !== null),
+    [products],
   );
-  const violations = useMemo(() => safetyViolations(SUITE_EVENTS), []);
-  const observed = PRODUCTS.filter((p) => p.observed.observedAt !== null).length;
+  const violations = useMemo(() => safetyViolations(events), [events]);
+  const observed = products.filter((p) => p.observed.observedAt !== null).length;
 
   return (
     <Section
@@ -24,8 +30,8 @@ export function ContractDrift() {
       title="Contract drift inspector"
       kicker="Declared in the manifest vs advertised at runtime. Absence of observation is not drift."
       actions={
-        <Chip tone={observed === PRODUCTS.length ? "ok" : "neutral"}>
-          {observed}/{PRODUCTS.length} polled
+        <Chip tone={observed === products.length ? "ok" : "neutral"}>
+          {observed}/{products.length} polled
         </Chip>
       }
     >
