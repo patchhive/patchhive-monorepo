@@ -1,79 +1,51 @@
 import type { RunEvent } from "./hive-data";
 
+/**
+ * Failure detail for a run.
+ *
+ * The contract-v1 run *summary* carries no failure payload — no error code, no
+ * stage, no request id, no retry budget. The mock deck invented all of those, which
+ * was harmless against fake runs and actively misleading against real ones: a real
+ * RepoReaper failure would have been labelled UPSTREAM_TIMEOUT_504 with an 8000ms
+ * budget it never had.
+ *
+ * So nothing is synthesised here. Only fields the run actually carries are
+ * reported, and everything else is absent. Rich failure detail belongs behind
+ * GET /runs/:id, which returns the product's own run events and artifacts —
+ * wiring the drawer to that is the correct source, not guesswork in the browser.
+ */
 export interface FailureDetail {
-  code: string;
-  httpStatus: number;
-  stage: string;
+  /** Present only when the product reported one. */
+  code: string | null;
+  stage: string | null;
   message: string;
-  hint: string;
   requestId: string;
-  traceId: string;
-  attempts: number;
-  budgetMs: number;
-  inputs: Record<string, string | number | boolean>;
-}
-
-export function seededRand(seed: string) {
-  let h = 2166136261;
-  for (let i = 0; i < seed.length; i++) {
-    h ^= seed.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return () => {
-    h ^= h << 13;
-    h ^= h >>> 17;
-    h ^= h << 5;
-    return ((h >>> 0) % 10000) / 10000;
-  };
-}
-
-export function buildPayload(run: RunEvent) {
-  const rand = seededRand(run.id);
-  return {
-    run_id: run.id,
-    product: run.product,
-    capability: run.capability,
-    status: run.status,
-    duration_ms: run.durationMs,
-    started_at: new Date(Date.now() - Math.floor(rand() * 600_000)).toISOString(),
-    actor: "hivecore:dispatcher",
-    request: {
-      trace_id: `t_${run.id.slice(2)}${Math.floor(rand() * 9999)}`,
-      args: {
-        target: run.product.toLowerCase(),
-        mode: rand() > 0.5 ? "incremental" : "full",
-        retries: Math.floor(rand() * 3),
-      },
-    },
-    response:
-      run.status === "failed"
-        ? { error: "upstream_timeout", code: 504, retriable: true }
-        : run.status === "running"
-        ? { state: "in_progress", progress: Math.floor(rand() * 80) + 10 }
-        : { ok: true, items_processed: Math.floor(rand() * 500) },
-  };
+  /** True when the product exposes a detail route for this run. */
+  hasDetail: boolean;
 }
 
 export function deriveFailure(run: RunEvent): FailureDetail | null {
   if (run.status !== "failed") return null;
-  const rand = seededRand(run.id + "_tl");
-  const payload = buildPayload(run);
-  const args = payload.request.args;
   return {
-    code: "UPSTREAM_TIMEOUT_504",
-    httpStatus: 504,
-    stage: `${run.capability} → upstream.dispatch`,
-    message: `${run.product} did not respond to ${run.capability} within the 8000ms budget.`,
-    hint: "Retried 2× with backoff. Check the target service's /health and re-dispatch once it stabilises.",
-    requestId: `req_${run.id.slice(2)}${Math.floor(rand() * 9999).toString().padStart(4, "0")}`,
-    traceId: payload.request.trace_id,
-    attempts: 3,
-    budgetMs: 8000,
-    inputs: {
-      target: args.target,
-      mode: args.mode,
-      retries: args.retries,
-      capability: run.capability,
-    },
+    code: null,
+    stage: null,
+    // The feed carries the product's own summary text; that is the only
+    // description of the failure available at this level.
+    message: `${run.product} reported a failed run for ${run.capability}.`,
+    requestId: run.id,
+    hasDetail: true,
+  };
+}
+
+/** The run as the deck knows it. Detail beyond this comes from GET /runs/:id. */
+export function buildPayload(run: RunEvent) {
+  return {
+    run_id: run.id,
+    product: run.product,
+    subject: run.capability,
+    status: run.status,
+    duration_ms: run.durationMs || null,
+    observed: run.ts,
+    detail_source: "GET /runs/:id (not yet wired)",
   };
 }

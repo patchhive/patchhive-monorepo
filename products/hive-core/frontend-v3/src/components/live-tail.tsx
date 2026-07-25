@@ -1,34 +1,32 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Pause, Play, Radio } from "lucide-react";
-import { PRODUCTS, RUNS, type RunEvent } from "@/lib/hive-data";
+import { RUNS, type RunEvent } from "@/lib/hive-data";
 
-const STATUS_POOL: RunEvent["status"][] = ["success", "success", "success", "success", "running", "failed"];
-
-function randomTick(seed: number): RunEvent {
-  const p = PRODUCTS[Math.floor(((seed * 9301 + 49297) % 233280) / 233280 * PRODUCTS.length)];
-  const cap = p.capabilities[Math.floor(((seed * 1103515245 + 12345) % 2147483647) / 2147483647 * p.capabilities.length)];
-  const status = STATUS_POOL[seed % STATUS_POOL.length];
-  return {
-    id: `r_${(0x8b00 + seed).toString(16)}`,
-    product: p.name,
-    capability: cap,
-    status,
-    durationMs: status === "running" ? 0 : 40 + (seed * 17) % 4200,
-    ts: "just now",
-  };
-}
-
+/**
+ * The ticker streams the real run index rather than inventing events.
+ *
+ * It previously synthesised a fake run every 1.8s, which read as constant activity
+ * whether or not the suite was doing anything — the single most misleading thing on
+ * the deck once the rest became live. Now it cycles the newest real runs, so an idle
+ * suite looks idle.
+ */
 export function LiveTail() {
   const [paused, setPaused] = useState(false);
-  const seedRef = useRef(1);
-  const [items, setItems] = useState<RunEvent[]>(() => RUNS.slice(0, 14));
+  const offsetRef = useRef(0);
+  const [items, setItems] = useState<RunEvent[]>(() => RUNS.slice(0, 24));
 
   useEffect(() => {
     if (paused) return;
     const i = window.setInterval(() => {
-      seedRef.current += 1;
-      setItems((cur) => [randomTick(seedRef.current), ...cur].slice(0, 30));
-    }, 1800);
+      // Rotate the window over real runs so the marquee keeps moving without
+      // implying new work has happened.
+      offsetRef.current = RUNS.length > 0 ? (offsetRef.current + 1) % RUNS.length : 0;
+      const start = offsetRef.current;
+      const window_ = RUNS.length
+        ? Array.from({ length: Math.min(24, RUNS.length) }, (_, index) => RUNS[(start + index) % RUNS.length])
+        : [];
+      setItems(window_);
+    }, 2400);
     return () => window.clearInterval(i);
   }, [paused]);
 

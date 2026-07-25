@@ -64,7 +64,9 @@ type IndexSearch = { run?: string; filter?: "all" | "warn" | "crit" };
 
 const VALID_FILTERS = new Set(["all", "warn", "crit"]);
 const RUN_ID_RE = /^[a-zA-Z0-9_-]{1,64}$/;
-const VALID_RUN_IDS = new Set(RUNS.map((r) => r.id));
+// RUNS is replaced on every sync, so membership must be checked when the link is
+// read rather than snapshotted at module load.
+const isKnownRunId = (id: string) => RUNS.some((run) => run.id === id);
 
 // Runs on the client on every navigation.
 // Anything that fails validation is silently dropped, so a hand-crafted
@@ -73,7 +75,7 @@ const VALID_RUN_IDS = new Set(RUNS.map((r) => r.id));
 function sanitizeSearch(s: Record<string, unknown>): IndexSearch {
   const rawRun = typeof s.run === "string" ? s.run : undefined;
   const run =
-    rawRun && RUN_ID_RE.test(rawRun) && VALID_RUN_IDS.has(rawRun) ? rawRun : undefined;
+    rawRun && RUN_ID_RE.test(rawRun) && isKnownRunId(rawRun) ? rawRun : undefined;
 
   const rawFilter = typeof s.filter === "string" ? s.filter : undefined;
   const filter =
@@ -159,10 +161,10 @@ function DeckInner() {
         </section>
         <section id="registry" className="mt-8 grid scroll-mt-24 gap-6 rounded-md lg:grid-cols-[1fr_380px]">
           <Registry />
-          <div id="runs" className="scroll-mt-24"><RunsFeed /></div>
+          <div id="runs" className="scroll-mt-24"><RunsFeed syncVersion={suite.version} /></div>
         </section>
-        <IncidentTimeline />
-        <ContractDrift />
+        <IncidentTimeline syncVersion={suite.version} />
+        <ContractDrift syncVersion={suite.version} />
         <CapabilitySearch />
         <TokenVault />
         <RunHeatmap />
@@ -231,7 +233,7 @@ function SanitizedSearchBanner() {
     const rawRun = params.get("run");
     if (rawRun !== null) {
       if (!RUN_ID_RE.test(rawRun)) bad.push({ key: "run", value: rawRun, reason: "malformed id" });
-      else if (!VALID_RUN_IDS.has(rawRun)) bad.push({ key: "run", value: rawRun, reason: "unknown run" });
+      else if (!isKnownRunId(rawRun)) bad.push({ key: "run", value: rawRun, reason: "unknown run" });
     }
     const rawFilter = params.get("filter");
     if (rawFilter !== null && !VALID_FILTERS.has(rawFilter)) {
@@ -833,12 +835,12 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: Sta
   );
 }
 
-function RunsFeed() {
+function RunsFeed({ syncVersion }: { syncVersion: number }) {
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
   const activeRun = useMemo(
     () => (search.run ? RUNS.find((r) => r.id === search.run) ?? null : null),
-    [search.run],
+    [search.run, syncVersion],
   );
   // Strip invalid ?run= from the URL so a bad deep-link doesn't leave a phantom
   // param that confuses subsequent navigation.
@@ -862,14 +864,19 @@ function RunsFeed() {
   const [stageFilter, setStageFilter] = useState<string>("all");
   const [reqIdFilter, setReqIdFilter] = useState<string>("");
 
+  // RUNS is replaced wholesale on every sync, so this must recompute with it.
   const enriched = useMemo(
     () => RUNS.map((r) => ({ run: r, failure: deriveFailure(r) })),
-    [],
+    [syncVersion],
   );
   const codeOptions = useMemo(
     () =>
       Array.from(
-        new Set(enriched.map((e) => e.failure?.code).filter((c): c is string => !!c)),
+        new Set(
+          enriched
+            .map((e) => (e.failure ? (e.failure.code ?? "failed") : null))
+            .filter((c): c is string => !!c),
+        ),
       ),
     [enriched],
   );
@@ -887,8 +894,8 @@ function RunsFeed() {
   const visible = enriched.filter(({ failure }) => {
     if (!failureFiltersActive) return true;
     if (!failure) return false;
-    if (codeFilter !== "all" && failure.code !== codeFilter) return false;
-    if (stageFilter !== "all" && failure.stage !== stageFilter) return false;
+    if (codeFilter !== "all" && (failure.code ?? "failed") !== codeFilter) return false;
+    if (stageFilter !== "all" && (failure.stage ?? "") !== stageFilter) return false;
     if (
       reqIdFilter.trim() !== "" &&
       !failure.requestId.toLowerCase().includes(reqIdFilter.trim().toLowerCase())
@@ -1007,10 +1014,11 @@ function RunsFeed() {
                 {failure && (
                   <div className="mt-1 flex flex-wrap items-center gap-1">
                     <span className="rounded border border-[var(--crit)]/40 bg-[var(--crit)]/10 px-1.5 py-0.5 font-display text-[9px] uppercase tracking-wider text-[var(--crit)]">
-                      {failure.code}
+                      {failure.code ?? "failed"}
                     </span>
                     <span className="truncate font-display text-[9px] text-muted-foreground">
-                      {failure.stage} · {failure.requestId}
+                      {failure.stage ? `${failure.stage} · ` : ""}
+                      {failure.requestId}
                     </span>
                   </div>
                 )}

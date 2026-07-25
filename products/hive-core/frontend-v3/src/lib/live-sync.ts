@@ -12,7 +12,7 @@
 import { useEffect, useState } from "react";
 
 import { API } from "@/config";
-import { PRODUCTS, type Status } from "./hive-data";
+import { PRODUCTS, RUNS, type RunEvent, type Status } from "./hive-data";
 
 interface ApiProduct {
   key: string;
@@ -56,6 +56,72 @@ function toStatus(item: ApiProduct): Status {
   }
 }
 
+interface ApiRunSummary {
+  id: string;
+  lifecycle_status: string;
+  status: string;
+  title: string;
+  summary: string;
+  created_at: string;
+  updated_at: string;
+}
+
+interface ApiProductRuns {
+  key: string;
+  runs: { runs: ApiRunSummary[] } | null;
+}
+
+const NAME_BY_SLUG: Record<string, string> = {
+  "repo-reaper": "RepoReaper",
+  "signal-hive": "SignalHive",
+  "trust-gate": "TrustGate",
+  "repo-memory": "RepoMemory",
+  "review-bee": "ReviewBee",
+  "merge-keeper": "MergeKeeper",
+  "flake-sting": "FlakeSting",
+  "dep-triage": "DepTriage",
+  "vuln-triage": "VulnTriage",
+  "refactor-scout": "RefactorScout",
+  "release-sentry": "ReleaseSentry",
+  "hive-core": "HiveCore",
+};
+
+function toRunStatus(summary: ApiRunSummary): RunEvent["status"] {
+  switch (summary.lifecycle_status || summary.status) {
+    case "completed":
+      return "success";
+    case "queued":
+    case "running":
+      return "running";
+    default:
+      return "failed";
+  }
+}
+
+/** Coarse relative age. The feed reads as a stream, so exact stamps are noise. */
+function relativeAge(iso: string): string {
+  const at = Date.parse(iso);
+  if (Number.isNaN(at)) return "—";
+  const seconds = Math.max(0, Math.round((Date.now() - at) / 1000));
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `${hours}h ago`;
+  return `${Math.round(hours / 24)}d ago`;
+}
+
+/**
+ * Duration is only real when a run recorded both ends. Products that never write
+ * updated_at report 0, which the feed renders as blank rather than as "instant".
+ */
+function durationMs(summary: ApiRunSummary): number {
+  const start = Date.parse(summary.created_at);
+  const end = Date.parse(summary.updated_at);
+  if (Number.isNaN(start) || Number.isNaN(end) || end <= start) return 0;
+  return end - start;
+}
+
 export interface LiveSuite {
   /** True once a poll has succeeded; false means the deck is showing seed values. */
   live: boolean;
@@ -63,6 +129,44 @@ export interface LiveSuite {
   lastSyncedAt: Date | null;
   /** Bumped on every successful poll so consumers re-render. */
   version: number;
+}
+
+/**
+ * Replace the run feed with the suite-wide index.
+ *
+ * One request to the backend's in-process aggregate rather than eleven calls from
+ * the browser — the same shape as the auth-status aggregate, for the same reason.
+ */
+async function syncRuns(signal: AbortSignal): Promise<void> {
+  const response = await fetch(`${API}/api/products/runs`, { signal });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const rows = (await response.json()) as ApiProductRuns[];
+
+  const collected: { summary: ApiRunSummary; product: string }[] = [];
+  for (const row of rows) {
+    if (!row.runs) continue;
+    const product = NAME_BY_SLUG[row.key] ?? row.key;
+    for (const summary of row.runs.runs) collected.push({ summary, product });
+  }
+
+  // Run ids are UUIDs, so they carry no ordering. Sort on the recorded start.
+  collected.sort(
+    (left, right) =>
+      (Date.parse(right.summary.created_at) || 0) - (Date.parse(left.summary.created_at) || 0),
+  );
+
+  const events: RunEvent[] = collected.map(({ summary, product }) => ({
+    id: summary.id,
+    product,
+    // Products title runs with their subject (a repo, a PR); that is the most
+    // useful label the contract actually carries.
+    capability: summary.title || summary.summary || product,
+    status: toRunStatus(summary),
+    durationMs: durationMs(summary),
+    ts: relativeAge(summary.created_at),
+  }));
+  RUNS.length = 0;
+  RUNS.push(...events);
 }
 
 export function useLiveSuite(pollMs = 10_000): LiveSuite {
@@ -91,6 +195,9 @@ export function useLiveSuite(pollMs = 10_000): LiveSuite {
           product.status = toStatus(row);
           if (row.capabilities.length > 0) product.capabilities = row.capabilities;
         }
+
+        await syncRuns(controller.signal);
+        if (cancelled) return;
 
         setState((current) => ({
           live: true,

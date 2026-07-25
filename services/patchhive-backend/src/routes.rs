@@ -41,6 +41,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/setup/first-stack", get(first_stack_status))
         .route("/api/setup/first-stack/pair", post(pair_first_stack))
         .route("/api/runs", get(runs))
+        .route("/api/products/runs", get(products_runs))
         .route("/api/events", get(events))
         .with_state(state);
 
@@ -251,6 +252,11 @@ async fn pair_first_stack(State(state): State<Arc<AppState>>) -> Json<SetupRespo
 
 async fn runs(State(state): State<Arc<AppState>>) -> Json<Vec<crate::models::RunSummary>> {
     Json(state.runs())
+}
+
+/// Server-side aggregate of every mounted engine's run history.
+async fn products_runs(State(state): State<Arc<AppState>>) -> Json<Vec<products::ProductRuns>> {
+    Json(products::all_runs(&state.config).await)
 }
 
 async fn events(State(state): State<Arc<AppState>>) -> Json<Vec<crate::models::SuiteEvent>> {

@@ -3,8 +3,8 @@ import { AlertTriangle, GitCompare, Minus, Plus } from "lucide-react";
 import { PRODUCTS } from "@/lib/hive-data";
 import { DRIFT_SCHEMAS } from "@/lib/hive-extra";
 
-export function ContractDrift() {
-  const byId = useMemo(() => Object.fromEntries(PRODUCTS.map((p) => [p.id, p])), []);
+export function ContractDrift({ syncVersion = 0 }: { syncVersion?: number }) {
+  const byId = useMemo(() => Object.fromEntries(PRODUCTS.map((p) => [p.id, p])), [syncVersion]);
   const drifted = PRODUCTS.filter((p) => p.contractDrift > 0);
   const schemaById = useMemo(
     () => Object.fromEntries(DRIFT_SCHEMAS.map((s) => [s.productId, s])),

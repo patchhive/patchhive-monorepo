@@ -1,8 +1,26 @@
 // Deterministic derived metrics — sparklines, heatmap, capability aggregates, anomaly z-scores.
 import { PRODUCTS, RUNS, type Product, type RunEvent } from "./hive-data";
-import { seededRand } from "./run-failure";
+
 
 /** 60 samples of latency history per product (oldest → newest). */
+/**
+ * Deterministic pseudo-random source for the sampled sparklines and heatmap.
+ * Lives here because everything it feeds is explicitly sampled, not measured.
+ */
+function seededRand(seed: string) {
+  let h = 2166136261;
+  for (let i = 0; i < seed.length; i++) {
+    h ^= seed.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return () => {
+    h ^= h << 13;
+    h ^= h >>> 17;
+    h ^= h << 5;
+    return ((h >>> 0) % 10000) / 10000;
+  };
+}
+
 export function latencyHistory(product: Product, n = 60): number[] {
   const rand = seededRand(product.id + "_hist");
   const base = product.latencyMs || 40;

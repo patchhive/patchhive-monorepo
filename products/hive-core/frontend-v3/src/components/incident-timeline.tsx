@@ -21,7 +21,7 @@ function fmtDur(fromIso: string, toIso: string | null, now: number) {
   return `${h}h ${mins % 60}m`;
 }
 
-export function IncidentTimeline() {
+export function IncidentTimeline({ syncVersion = 0 }: { syncVersion?: number }) {
   const { openRunbook } = useHiveCommand();
   const [now, setNow] = useState<number | null>(null);
   useEffect(() => {
@@ -30,7 +30,7 @@ export function IncidentTimeline() {
     return () => window.clearInterval(i);
   }, []);
 
-  const byProduct = useMemo(() => Object.fromEntries(PRODUCTS.map((p) => [p.id, p])), []);
+  const byProduct = useMemo(() => Object.fromEntries(PRODUCTS.map((p) => [p.id, p])), [syncVersion]);
   const sorted = useMemo(
     () => [...INCIDENTS].sort((a, b) => Date.parse(b.from) - Date.parse(a.from)),
     [],
