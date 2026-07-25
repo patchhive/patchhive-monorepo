@@ -12,6 +12,17 @@
 // mutating / opens_pr / requires_approval / credential_requirements flags. A product
 // declaring read_only while advertising a mutating action is a real conformance
 // failure — the exact case docs/hivecore-architecture.md §3.14 calls out.
+//
+// The two directions are not symmetric, and conflating them produced a false
+// positive (architecture doc § 6a):
+//
+//   posture is a CEILING  — an action exceeding it is critical. read_only means no
+//                           action may mutate; that genuinely is a universal.
+//   posture is an EXISTENCE claim for capabilities the product offers — declaring
+//                           approval or PR capability means *some* action has it,
+//                           not all of them. RepoMemory gates four curation actions
+//                           and deliberately leaves its unattended FailGuard intake
+//                           ungated; requiring approval there would stall the loop.
 
 import { API } from "@/config";
 
@@ -103,17 +114,6 @@ function compare(product: ApiProduct, actions: ApiAction[]): ConformanceFinding[
       });
     }
 
-    if (safety.requires_operator_approval && isMutating(action) && !action.requires_approval) {
-      findings.push({
-        productKey: product.key,
-        severity: "warning",
-        kind: "approval gap",
-        detail: `Mutating action \`${action.id}\` does not require approval.`,
-        declared: "requires_operator_approval = true",
-        advertised: "requires_approval = false",
-      });
-    }
-
     for (const requirement of action.credential_requirements ?? []) {
       if (!scopes.has(requirement)) {
         findings.push({
@@ -128,7 +128,7 @@ function compare(product: ApiProduct, actions: ApiAction[]): ConformanceFinding[
     }
   }
 
-  // Declared-but-not-offered: the manifest promises a boundary the engine never uses.
+  // Existence claims: the manifest promises a capability no action provides.
   if (safety.opens_pull_requests && !actions.some((action) => action.opens_pr)) {
     findings.push({
       productKey: product.key,
@@ -137,6 +137,34 @@ function compare(product: ApiProduct, actions: ApiAction[]): ConformanceFinding[
       detail: "Manifest claims pull-request capability; no advertised action opens one.",
       declared: "opens_pull_requests = true",
       advertised: "no opens_pr action",
+    });
+  }
+
+  if (
+    safety.requires_operator_approval &&
+    actions.length > 0 &&
+    !actions.some((action) => action.requires_approval)
+  ) {
+    findings.push({
+      productKey: product.key,
+      severity: "warning",
+      kind: "approval not implemented",
+      detail:
+        "Manifest declares operator approval; no advertised action carries requires_approval. Expected until the suite approval flow exists — HiveCore refuses approval-gated dispatch today.",
+      declared: "requires_operator_approval = true",
+      advertised: "no approval-gated action",
+    });
+  }
+
+  // Under-claim: an action is gated but the manifest never says approval applies.
+  if (!safety.requires_operator_approval && actions.some((action) => action.requires_approval)) {
+    findings.push({
+      productKey: product.key,
+      severity: "warning",
+      kind: "posture under-declared",
+      detail: "An advertised action requires approval; the manifest does not say so.",
+      declared: "requires_operator_approval = false",
+      advertised: "approval-gated action",
     });
   }
 

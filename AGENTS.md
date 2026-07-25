@@ -620,6 +620,23 @@ Important env vars:
 - It should complement MergeKeeper instead of overlapping it: MergeKeeper decides if a PR can merge, while ReleaseSentry decides if the resulting release should go out.
 - Early future integrations worth keeping in mind: generated release notes, release checklist presets, package publish guards, GHCR image alignment, and HiveCore suite release verification.
 
+## Manifest Safety Semantics
+
+- `[safety]` in a product manifest is **posture**: the outer boundary of what the
+  product may ever do. Per-action flags on `/capabilities` describe what a specific
+  dispatch does. They are different scopes.
+- `requires_operator_approval = true` means the product *has* approval-gated actions,
+  not that every mutating action is gated. RepoMemory is the clarifying case: four
+  curation actions are gated, while `suggest_failguard_candidate` is the unattended
+  intake path TrustGate and RepoReaper call mid-run, and gating it would stall the
+  FailGuard loop silently.
+- Per-action flags are authoritative for dispatch. Product-level flags are
+  authoritative for registry and operator-facing posture.
+- Conformance compares them as existence claims, not universals. The inverse is still
+  a hard failure: an action exceeding the declared posture — mutating under
+  `read_only`, or `opens_pr` the manifest denies — is critical.
+- See `docs/hivecore-architecture.md` § 6a.
+
 ## HiveCore Notes
 
 - The canonical HiveCore design is `docs/hivecore-architecture.md`. It defines the four layers

@@ -451,6 +451,51 @@ seconds.
 
 ---
 
+## 6a. Manifest safety flags are posture, not per-action promises
+
+Settled 2026-07-25, after the conformance check produced a false positive.
+
+`[safety]` in a product manifest describes the product's **posture** — the outer
+boundary of what it may ever do. Per-action flags on `/capabilities` describe what a
+**specific dispatch** does. They are different scopes, and the manifest is not a
+promise that every action behaves identically.
+
+Concretely, `requires_operator_approval = true` means *this product has actions that
+require operator approval*, not *every mutating action requires approval*. Reading it
+the strict way produced a false conformance failure against RepoMemory, which is the
+clarifying case:
+
+| Action | `requires_approval` | Role |
+| --- | --- | --- |
+| `capture_failguard_lesson` | yes | operator writes durable memory |
+| `curate_memory` | yes | operator pins, softens, suppresses |
+| `promote_failguard_candidate` | yes | operator promotes a candidate |
+| `dismiss_failguard_candidate` | yes | operator rejects a candidate |
+| `suggest_failguard_candidate` | **no** | machine queues for later review |
+
+The first four change what RepoMemory durably believes and are correctly gated. The
+fifth is the intake path: it creates a candidate that an operator must still promote
+or dismiss, so the approval exists — one step later in the pipeline.
+
+It also *cannot* require approval. `patchhive_product_core::repo_memory::submit_failguard_candidate`
+is called unattended by TrustGate on `warn`/`block` reviews and by RepoReaper when
+Smith rejects below `MIN_REVIEW_CONFIDENCE`. Gating it would stall the FailGuard loop
+— incident → captured lesson → durable memory → future policy — at the first arrow,
+silently, in the middle of autonomous runs.
+
+**Rules that follow:**
+
+- Per-action flags are authoritative for dispatch decisions. The kernel evaluates the
+  action, never the product-level flag.
+- Product-level flags are authoritative for registry, discovery, and operator-facing
+  posture — "can this product ever open a PR", not "will this call open one".
+- Conformance compares them as *existence* claims, not universals: a product claiming
+  a capability none of its actions offer is drift; a product claiming a capability
+  some of its actions offer is consistent.
+- The inverse remains a real failure: an action exceeding the product's declared
+  posture — mutating under `read_only`, or `opens_pr` when the manifest denies it —
+  is a critical finding, because the outer boundary genuinely is a universal.
+
 ## 7. Open questions
 
 - Does first-run host bring-up stay an HTTP daemon (`patchhive-launcher`) or become documented
