@@ -316,23 +316,18 @@ async fn github_webhook(
         ));
     }
 
-    if event == "issue_comment" && payload["action"].as_str() == Some("created") {
-        let issue = &payload["issue"];
-        let comment = &payload["comment"];
-        let bot = std::env::var("BOT_GITHUB_USER").unwrap_or_default();
-        if issue["pull_request"].is_object() && comment["user"]["login"].as_str() != Some(&bot) {
-            let repo = payload["repository"]["full_name"]
-                .as_str()
-                .unwrap_or("")
-                .to_string();
-            let state_clone = state.clone();
-            let issue_c = issue.clone();
-            let comment_c = comment.clone();
-            tokio::spawn(async move {
-                webhook_pr_comment(state_clone, &repo, issue_c, comment_c).await;
-            });
-            return Ok(Json(json!({"triggered":true,"type":"pr_comment"})));
-        }
+    // Maintainer-feedback follow-ups are withdrawn until they run through the
+    // gated write pipeline. The previous implementation cloned, patched,
+    // pushed, and opened a ready-for-review pull request straight from an
+    // untrusted comment body: no watch-mode gate, no repository policy, no
+    // suite PR budget, no test validation, no review-confidence floor, and no
+    // run record. Re-enable it only through the evidence-gated write path.
+    if event == "issue_comment" {
+        return Ok(Json(json!({
+            "triggered": false,
+            "event": event,
+            "reason": "pr_comment_follow_up_disabled",
+        })));
     }
 
     Ok(Json(json!({"triggered":false,"event":event})))
@@ -463,138 +458,6 @@ async fn webhook_single_fix(state: AppState, repo: &str, issue: Value) {
         .unwrap_or(0);
     let rc = run_cost.load(std::sync::atomic::Ordering::Relaxed) as f64 / 1_000_000.0;
     let _ = finish_run(&run_id, total_fixed, total_attempted, rc, RunStatus::Done);
-}
-
-async fn webhook_pr_comment(state: AppState, repo: &str, issue: Value, comment: Value) {
-    use crate::agents::agent_pr_comment_fix;
-    use crate::git_ops::{apply_patch, collect_files_all, git_branch, git_clone, git_commit_push};
-    use crate::github::{gh_comment_issue, gh_fork, gh_post};
-
-    let Ok(_active_run) = ActiveRunGuard::claim(state.run_active.clone()) else {
-        tracing::info!(
-            repo,
-            "RepoReaper PR follow-up skipped because another operation is active"
-        );
-        return;
-    };
-    let _process_permit = match state.process_worker_semaphore.clone().try_acquire_owned() {
-        Ok(permit) => permit,
-        Err(tokio::sync::TryAcquireError::NoPermits) => {
-            tracing::info!("RepoReaper follow-up is waiting for process worker capacity");
-            let Ok(permit) = state.process_worker_semaphore.clone().acquire_owned().await else {
-                return;
-            };
-            permit
-        }
-        Err(tokio::sync::TryAcquireError::Closed) => return,
-    };
-    let agents_snap = state.agents.read().await.clone();
-    let Some(reaper) = agents_snap
-        .values()
-        .find(|a| a.role == "reaper")
-        .or_else(|| agents_snap.values().next())
-        .cloned()
-    else {
-        return;
-    };
-
-    let bot_token = reaper
-        .bot_token
-        .as_deref()
-        .filter(|value| !value.trim().is_empty())
-        .map(|s| s.to_string())
-        .or_else(crate::github::repo_reaper_github_token)
-        .unwrap_or_default();
-    let bot_user = reaper
-        .bot_user
-        .as_deref()
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| std::env::var("BOT_GITHUB_USER").unwrap_or_default());
-    let pr_number = issue["number"].as_i64().unwrap_or(0);
-    let branch = format!("reaper/followup-{pr_number}");
-    let work_dir = std::path::PathBuf::from(format!("/tmp/repo-reaper/followup-{pr_number}"));
-
-    let Ok(fork) = gh_fork(&state.http, repo, Some(&bot_token), Some(&bot_user)).await else {
-        return;
-    };
-    if work_dir.exists() {
-        let _ = tokio::fs::remove_dir_all(&work_dir).await;
-    }
-    if git_clone(
-        fork["clone_url"].as_str().unwrap_or(""),
-        &work_dir,
-        Some(&bot_user),
-        Some(&bot_token),
-    )
-    .await
-    .is_err()
-    {
-        return;
-    }
-    if git_branch(&work_dir, &branch).await.is_err() {
-        return;
-    }
-
-    let codebase = collect_files_all(&work_dir, 60_000).await;
-    let Ok((result, _)) = agent_pr_comment_fix(
-        &state.http,
-        issue["title"].as_str().unwrap_or(""),
-        comment["body"].as_str().unwrap_or(""),
-        &codebase,
-        &reaper,
-    )
-    .await
-    else {
-        return;
-    };
-    let Some(patch) = result["patch"].as_str() else {
-        return;
-    };
-
-    let (applied, _) = apply_patch(&work_dir, patch).await;
-    if !applied {
-        return;
-    }
-
-    let msg = format!(
-        "fix: follow-up based on maintainer feedback (re #{})",
-        pr_number
-    );
-    if git_commit_push(&work_dir, &branch, &msg, Some(&bot_user), Some(&bot_token))
-        .await
-        .is_err()
-    {
-        return;
-    }
-
-    let base_branch = if let Some(branch_name) =
-        crate::github::gh_pr_base_branch(&state.http, repo, pr_number, Some(&bot_token)).await
-    {
-        branch_name
-    } else {
-        crate::github::gh_default_branch(&state.http, repo, Some(&bot_token))
-            .await
-            .unwrap_or_else(|| "main".to_string())
-    };
-
-    let _ = gh_post(&state.http, &format!("/repos/{repo}/pulls"), &json!({
-        "title": msg,
-        "body": format!("Follow-up fix based on maintainer feedback on #{}.\n\nGenerated autonomously by **RepoReaper by [PatchHive](https://github.com/patchhive)**.\n\n**Maintainer:** {}\n\n**What changed:** {}\n\n*RepoReaper by [PatchHive](https://github.com/patchhive)*",
-            pr_number, comment["body"].as_str().unwrap_or("").chars().take(500).collect::<String>(), result["explanation"].as_str().unwrap_or("")),
-        "head": format!("{bot_user}:{branch}"), "base": base_branch, "draft": false,
-    }), Some(&bot_token)).await;
-
-    gh_comment_issue(
-        &state.http,
-        repo,
-        pr_number,
-        "🔱 RepoReaper opened a follow-up PR based on your feedback. *by [PatchHive](https://github.com/patchhive)*",
-        Some(&bot_token),
-    )
-    .await;
-    if work_dir.exists() {
-        let _ = tokio::fs::remove_dir_all(&work_dir).await;
-    }
 }
 
 // ── Background scheduler ───────────────────────────────────────────────────────

@@ -120,7 +120,8 @@ Optional integrations:
 - host test execution requires both `REAPER_ENABLE_UNTRUSTED_TESTS=true` and `REAPER_ALLOW_HOST_TESTS=true`
 - validation commands time out after `REAPER_TEST_TIMEOUT_SECONDS` seconds, defaulting to `600`
 - validation uses the shared `disabled` / `skipped` / `failed` / `passed` vocabulary; only `passed` allows RepoReaper to open a non-draft pull request
-- patch and test work shares the `REAPER_MAX_ACTIVE_WORKERS` process-wide capacity gate, including webhook follow-ups
+- patch and test work shares the `REAPER_MAX_ACTIVE_WORKERS` process-wide capacity gate
+- webhook maintainer-feedback follow-ups are disabled while they are rebuilt on the gated write path; the webhook accepts `issues` events under watch mode only
 - failed normal patch application tries `git apply --3way` before provider-backed self-healing
 - validation and pull request publication are treated as explicit gates, not incidental side effects
 - FailGuard is cross-cutting: RepoReaper can suggest candidates from Smith rejections, but RepoMemory owns review and promotion
