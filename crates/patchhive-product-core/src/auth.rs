@@ -76,7 +76,11 @@ impl ApiKeyAuthConfig {
         Self {
             hash_env_var: hash_env_var.into(),
             key_prefix: key_prefix.into(),
-            env_path: PathBuf::from(".env"),
+            // Write where we read. A bare relative ".env" resolves against the
+            // process working directory, which silently creates a second secret
+            // store when a service is started from its own subdirectory.
+            env_path: crate::environment::canonical_env_path()
+                .unwrap_or_else(|| PathBuf::from(".env")),
             public_paths: Vec::new(),
             unauthorized_message: "Unauthorized — provide X-API-Key header".into(),
             service: None,

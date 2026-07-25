@@ -66,6 +66,29 @@ fn same_file(left: &Path, right: &Path) -> bool {
     }
 }
 
+/// The file PatchHive configuration should be *written* to.
+///
+/// Mirrors `load_patchhive_env`'s resolution so a value is persisted to the same
+/// file it will later be read from: `PATCHHIVE_ENV_FILE` when set, otherwise the
+/// monorepo root `.env`.
+///
+/// The fallback is deliberately the repo-root path even when that file does not
+/// exist yet — creating the canonical file is correct, whereas defaulting to a
+/// bare relative `.env` writes into whatever directory the process happens to be
+/// started from. That is how a stray `services/patchhive-backend/.env` appeared:
+/// the value was loaded from the root file and saved next to the binary, leaving
+/// two secret stores when CLAUDE.md allows exactly one.
+///
+/// Returns `None` only outside a monorepo checkout with no explicit override, where
+/// the caller's own default is the best available answer.
+pub fn canonical_env_path() -> Option<PathBuf> {
+    if let Some(path) = nonempty_env(EXPLICIT_ENV_FILE).map(PathBuf::from) {
+        return Some(path);
+    }
+    let current_dir = env::current_dir().ok()?;
+    find_repo_root(&current_dir).map(|root| root.join(".env"))
+}
+
 pub fn find_repo_root(start: &Path) -> Option<PathBuf> {
     start.ancestors().find_map(|candidate| {
         let has_repo_marker = candidate.join(".git").exists();
