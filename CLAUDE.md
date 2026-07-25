@@ -394,7 +394,8 @@ typography scale, spacing system, or theme implementation.
 - HiveCore owns operator-managed repository exclusions/trust and atomic per-product plus
   suite-wide concurrent PR budgets. **The suite ceiling always wins, and enforcing clients
   fail closed when a configured policy service is unavailable.**
-  ([docs/hivecore-repository-safety-and-pr-budgets.md](docs/hivecore-repository-safety-and-pr-budgets.md))
+  ([docs/hivecore-repository-safety-and-pr-budgets.md](docs/hivecore-repository-safety-and-pr-budgets.md);
+  target design and known gaps in [docs/hivecore-architecture.md](docs/hivecore-architecture.md))
 - Scheduling never widens an action's safety boundary.
 - Local filesystem scanning (RefactorScout pattern) uses explicit allowlists
   (`REFACTOR_SCOUT_ALLOWED_ROOTS`) and localhost-only defaults so repo analysis never becomes
@@ -483,3 +484,8 @@ standalone lockfile before the first export.
   PR-budget adoption by future write-capable products, the email/webmail module boundary
   ([docs/inbound-email-architecture.md](docs/inbound-email-architecture.md)), and the shared
   Squad substrate extraction.
+- HiveCore's target design is [docs/hivecore-architecture.md](docs/hivecore-architecture.md)
+  (Fleet / Kernel / Conductor / Cockpit). Two blockers there are live defects, not future work:
+  committed PR-budget slots never expire and leak the suite ceiling toward zero when RepoReaper
+  misses a release, and every HiveCore overview read fans out ~50 sequential product HTTP calls
+  with no snapshot table behind it.

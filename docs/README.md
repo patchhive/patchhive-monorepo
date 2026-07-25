@@ -44,6 +44,7 @@ The product documentation set is in [products/](products/).
 
 - [Platform guardrails](platform-guardrails.md)
 - [Suite stabilization plan](suite-stabilization-plan.md)
+- [HiveCore architecture](hivecore-architecture.md) — canonical HiveCore design
 - [HiveCore first-stack readiness audit](hivecore-first-stack-readiness.md)
 - [HiveCore suite bootstrap wizard](hivecore-suite-bootstrap-wizard.md)
 - [HiveCore repository safety and PR budgets](hivecore-repository-safety-and-pr-budgets.md)

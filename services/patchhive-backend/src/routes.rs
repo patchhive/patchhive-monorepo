@@ -28,6 +28,11 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/auth/status", get(auth_status))
         .route("/api/auth/session", get(session))
         .route("/api/products", get(products))
+        .route("/api/products/auth-status", get(products_auth_status))
+        .route(
+            "/api/products/:product_key/service-token",
+            post(provision_service_token),
+        )
         .route("/api/products/:product_key/health", get(product_health))
         .route(
             "/api/products/:product_key/*gateway_path",
@@ -36,6 +41,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/setup/first-stack", get(first_stack_status))
         .route("/api/setup/first-stack/pair", post(pair_first_stack))
         .route("/api/runs", get(runs))
+        .route("/api/products/runs", get(products_runs))
         .route("/api/events", get(events))
         .with_state(state);
 
@@ -117,6 +123,76 @@ async fn products(State(state): State<Arc<AppState>>) -> Json<Vec<ProductRespons
     )
 }
 
+/// Server-side aggregate of every mounted engine's auth posture.
+async fn products_auth_status(
+    State(state): State<Arc<AppState>>,
+) -> Json<Vec<products::ProductAuthStatus>> {
+    Json(products::auth_statuses(&state.config))
+}
+
+#[derive(serde::Deserialize, Default)]
+#[serde(default)]
+struct ProvisionRequest {
+    rotate: bool,
+}
+
+/// Mint or rotate a product's service token. Returns the resulting posture only —
+/// the token is written to the product's own storage and never sent to the browser.
+async fn provision_service_token(
+    State(state): State<Arc<AppState>>,
+    Path(product_key): Path<String>,
+    peer: Option<ConnectInfo<SocketAddr>>,
+    headers: axum::http::HeaderMap,
+    body: Option<Json<ProvisionRequest>>,
+) -> Response {
+    let rotate = body.map(|Json(request)| request.rotate).unwrap_or(false);
+    let peer_addr = peer.map(|ConnectInfo(addr)| addr);
+
+    match products::provision_service_token(&state.config, &product_key, &headers, peer_addr, rotate)
+    {
+        products::ProvisionOutcome::Provisioned(status) => Json(serde_json::json!({
+            "key": product_key,
+            "provisioned": true,
+            "status": status,
+        }))
+        .into_response(),
+        products::ProvisionOutcome::Forbidden => (
+            StatusCode::FORBIDDEN,
+            Json(ErrorResponse {
+                error: "provisioning-forbidden",
+                message: format!(
+                    "{product_key} refused this caller. Provisioning is localhost-only unless an operator key or the suite bootstrap secret is supplied."
+                ),
+            }),
+        )
+            .into_response(),
+        products::ProvisionOutcome::NotEnabled => (
+            StatusCode::CONFLICT,
+            Json(ErrorResponse {
+                error: "product-not-enabled",
+                message: format!("`{product_key}` is not enabled in this runtime."),
+            }),
+        )
+            .into_response(),
+        products::ProvisionOutcome::Unknown => (
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: "unknown-product",
+                message: format!("No PatchHive product is registered with key `{product_key}`."),
+            }),
+        )
+            .into_response(),
+        products::ProvisionOutcome::Failed(message) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: "provisioning-failed",
+                message: format!("Could not provision a service token for {product_key}: {message}"),
+            }),
+        )
+            .into_response(),
+    }
+}
+
 async fn product_health(
     State(state): State<Arc<AppState>>,
     Path(product_key): Path<String>,
@@ -176,6 +252,11 @@ async fn pair_first_stack(State(state): State<Arc<AppState>>) -> Json<SetupRespo
 
 async fn runs(State(state): State<Arc<AppState>>) -> Json<Vec<crate::models::RunSummary>> {
     Json(state.runs())
+}
+
+/// Server-side aggregate of every mounted engine's run history.
+async fn products_runs(State(state): State<Arc<AppState>>) -> Json<Vec<products::ProductRuns>> {
+    Json(products::all_runs(&state.config).await)
 }
 
 async fn events(State(state): State<Arc<AppState>>) -> Json<Vec<crate::models::SuiteEvent>> {

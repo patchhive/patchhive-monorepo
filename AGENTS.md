@@ -622,12 +622,22 @@ Important env vars:
 
 ## HiveCore Notes
 
-- HiveCore should stay control-plane-first before it becomes orchestration-heavy.
+- The canonical HiveCore design is `docs/hivecore-architecture.md`. It defines the four layers
+  (Fleet, Kernel, Conductor, Cockpit), records the current implementation's blockers, and owns the
+  build order. Read it before changing HiveCore; the notes below remain true but are narrower.
+- **HiveCore's purpose is to run the whole suite.** The operator declares standing intent and
+  HiveCore keeps the suite satisfying it — discovering work, dispatching product actions, enforcing
+  policy, staying inside budgets, and stopping when something is wrong. The specialist products are
+  its capabilities.
+- HiveCore should be control-plane-first *in sequence*: visibility and authority must be correct
+  before orchestration is added. That is a build order, not a ceiling on what HiveCore becomes.
 - Its first job is to make the PatchHive suite legible in one place: product health, launch links, shared defaults, and operational checks.
 - The control-plane v1 surface polls health, startup checks, capabilities, product-owned `/runs` history, and server-side `/runs/:id` detail; stored product service tokens unlock protected run reads and capability-driven action dispatch without exposing machine credentials to the browser. Service-token records are now scoped and rotatable, HiveCore can encrypt saved downstream service tokens at rest with `HIVECORE_ENCRYPTION_KEY`, and legacy operator API keys remain only a temporary fallback.
 - HiveCore should push the suite toward shared contracts instead of hiding differences forever. It should reveal where products drift and help standardize them.
 - HiveCore now reports per-product contract drift for health, startup checks, capabilities, run lists, and run detail support.
 - HiveCore's Setup tab should adapt to already-running products first, then use `patchhive-launcher` only for missing local stack pieces. Browser UX stays in HiveCore; Docker and `.env` mutation belong in the launcher service.
+- `patchhive-launcher` is not part of the target architecture's steady state. It exists because each product is its own Docker service; under one shared `patchhive-backend` with `PATCHHIVE_PRODUCTS`, per-product container lifecycle and the twelve-way service-token mesh largely disappear. Keep the launcher for gateway-mode migration and host-level `.env` writes, and do not invest further in the per-product container lifecycle path. See `docs/hivecore-architecture.md` → `## 5`.
+- HiveCore currently duplicates the product registry: `products/hive-core/backend/src/state.rs` hardcodes a twelve-entry `PRODUCT_CATALOG` with no safety metadata, while `services/patchhive-backend/registry/products/*.toml` owns the real declarative truth. HiveCore must read the manifests; a control plane that cannot state a product's safety posture from its own records cannot govern it.
 - HiveCore-enabled mode means HiveCore owns suite lifecycle coordination, but each product must remain standalone and expose product-owned APIs for that coordination.
 - Early future integrations worth keeping in mind: shared run history, suite-wide schedules, global allowlist and denylist propagation, and cross-product handoffs like SignalHive -> TrustGate -> RepoReaper.
 

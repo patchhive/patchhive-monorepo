@@ -107,9 +107,14 @@ async fn get_run_artifacts(Path(run_id): Path<String>) -> Json<contract::Product
     get_run_events(Path(run_id)).await
 }
 
-async fn get_runs_contract(State(_): State<AppState>) -> Json<contract::ProductRunsResponse> {
+/// Contract-shaped run summaries.
+///
+/// Extracted from the route handler so the unified backend can aggregate runs
+/// in-process rather than issuing an HTTP call to a router mounted in its own
+/// binary. The route below is now a thin wrapper over this.
+pub fn run_summaries() -> contract::ProductRunsResponse {
     let Ok(conn) = get_conn() else {
-        return Json(contract::runs_from_values("repo-reaper", Vec::new()));
+        return contract::runs_from_values("repo-reaper", Vec::new());
     };
     let runs: Vec<Value> = conn.prepare(
         "SELECT id, started_at, finished_at, total_fixed, total_attempted, total_cost_usd, status, config_json, dry_run FROM repo_reaper_runs ORDER BY started_at DESC"
@@ -138,7 +143,11 @@ async fn get_runs_contract(State(_): State<AppState>) -> Json<contract::ProductR
         Some(mapped.flatten().collect())
     }).unwrap_or_default();
 
-    Json(contract::runs_from_values("repo-reaper", runs))
+    contract::runs_from_values("repo-reaper", runs)
+}
+
+async fn get_runs_contract(State(_): State<AppState>) -> Json<contract::ProductRunsResponse> {
+    Json(run_summaries())
 }
 
 async fn get_history(State(_): State<AppState>) -> Json<Value> {
