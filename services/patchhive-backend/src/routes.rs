@@ -28,6 +28,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/auth/status", get(auth_status))
         .route("/api/auth/session", get(session))
         .route("/api/products", get(products))
+        .route("/api/products/auth-status", get(products_auth_status))
         .route("/api/products/:product_key/health", get(product_health))
         .route(
             "/api/products/:product_key/*gateway_path",
@@ -115,6 +116,13 @@ async fn products(State(state): State<Arc<AppState>>) -> Json<Vec<ProductRespons
             .map(|product| product.to_response(state.product_enabled(product.key.as_str())))
             .collect(),
     )
+}
+
+/// Server-side aggregate of every mounted engine's auth posture.
+async fn products_auth_status(
+    State(state): State<Arc<AppState>>,
+) -> Json<Vec<products::ProductAuthStatus>> {
+    Json(products::auth_statuses(&state.config))
 }
 
 async fn product_health(

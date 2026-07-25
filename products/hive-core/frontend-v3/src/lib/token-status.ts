@@ -6,9 +6,12 @@
 // returns only posture: is a service token configured, is it scoped or legacy, has
 // it expired, which scopes does it carry, when was it rotated. No token values.
 //
-// The fan-out is per product because the backend has no aggregate endpoint yet.
-// That is the same N-call problem the architecture doc calls blocker B2; when a
-// server-side snapshot exists this collapses to one request.
+// One request. GET /api/products/auth-status is a server-side aggregate: every
+// product engine is compiled into the unified backend, so it reads each engine's
+// auth posture in-process and returns them together. The browser previously fanned
+// out one call per product, which is N requests per refresh and enough traffic to
+// trip the sensitive-route rate limiter — blocker B2 in the architecture doc, fixed
+// at the source rather than papered over with a smaller client-side pool.
 
 import { API } from "@/config";
 import { PRODUCTS } from "./hive-data";
@@ -117,80 +120,89 @@ function classify(body: AuthStatusBody): { state: TokenState; detail: string } {
   return { state: "healthy", detail: "Scoped token active." };
 }
 
+function blank(productId: string, productName: string): Omit<TokenStatus, "state" | "detail"> {
+  return {
+    productId,
+    productName,
+    slug: SLUGS[productId] ?? productId,
+    scopes: [],
+    knownScopes: [],
+    name: "",
+    rotatedAt: null,
+    expiresAt: null,
+    fingerprint: "",
+    suiteBootstrap: false,
+  };
+}
+
 /** Fingerprints identify a token; still truncated so nothing long-lived is shown. */
 function shortFingerprint(raw: string | null | undefined): string {
   if (!raw) return "";
   return raw.replace(/[^A-Za-z0-9_-]/g, "").slice(0, 10);
 }
 
-/** Small pool: responsive enough, low enough to stay under the sensitive-route budget. */
-const CONCURRENCY = 3;
-
-async function pooled<T, R>(items: T[], worker: (item: T) => Promise<R>, limit = CONCURRENCY): Promise<R[]> {
-  const results = new Array<R>(items.length);
-  let cursor = 0;
-  const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (cursor < items.length) {
-      const index = cursor;
-      cursor += 1;
-      results[index] = await worker(items[index]);
-    }
-  });
-  await Promise.all(runners);
-  return results;
+interface AggregateRow {
+  key: string;
+  /** null when the engine is not enabled in this runtime. */
+  status: AuthStatusBody | null;
 }
 
 export async function fetchTokenStatuses(signal?: AbortSignal): Promise<TokenStatus[]> {
-  const results = await pooled(
-    PRODUCTS,
-    async (product): Promise<TokenStatus> => {
-      const slug = SLUGS[product.id] ?? product.id;
-      const base: Omit<TokenStatus, "state" | "detail"> = {
-        productId: product.id,
-        productName: product.name,
-        slug,
-        scopes: [],
-        knownScopes: [],
-        name: "",
-        rotatedAt: null,
-        expiresAt: null,
-        fingerprint: "",
-        suiteBootstrap: false,
+  let rows: AggregateRow[];
+  try {
+    const response = await fetch(`${API}/api/products/auth-status`, { signal });
+    if (!response.ok) {
+      return PRODUCTS.map((product) => ({
+        ...blank(product.id, product.name),
+        state: "unreachable" as const,
+        detail: `HTTP ${response.status} from /api/products/auth-status.`,
+      }));
+    }
+    rows = (await response.json()) as AggregateRow[];
+  } catch (cause) {
+    if (cause instanceof DOMException && cause.name === "AbortError") throw cause;
+    return PRODUCTS.map((product) => ({
+      ...blank(product.id, product.name),
+      state: "unreachable" as const,
+      detail: "Could not reach the control plane.",
+    }));
+  }
+
+  const bySlug = new Map(rows.map((row) => [row.key, row]));
+
+  return PRODUCTS.map((product) => {
+    const slug = SLUGS[product.id] ?? product.id;
+    const base = { ...blank(product.id, product.name), slug };
+    const row = bySlug.get(slug);
+
+    if (!row) {
+      return {
+        ...base,
+        state: "unsupported" as const,
+        detail: "Engine is not mounted in this runtime.",
       };
+    }
+    if (!row.status) {
+      return {
+        ...base,
+        state: "unsupported" as const,
+        detail: "Product is not enabled in this runtime.",
+      };
+    }
 
-      try {
-        const response = await fetch(`${API}/api/products/${slug}/auth/status`, { signal });
-        if (response.status === 429) {
-          return {
-            ...base,
-            state: "rate_limited",
-            detail:
-              "Rate limited. /auth/status counts against the sensitive-route budget; this panel needs a server-side aggregate.",
-          };
-        }
-        if (!response.ok) {
-          return { ...base, state: "unreachable", detail: `HTTP ${response.status} from /auth/status.` };
-        }
-        const body = (await response.json()) as AuthStatusBody;
-        const { state, detail } = classify(body);
-        return {
-          ...base,
-          state,
-          detail,
-          scopes: body.service_auth_scopes ?? [],
-          knownScopes: body.service_auth_known_scopes ?? [],
-          name: body.service_auth_token?.name ?? "",
-          rotatedAt: body.service_auth_token?.rotated_at ?? body.service_auth_token?.created_at ?? null,
-          expiresAt: body.service_auth_token?.expires_at ?? null,
-          fingerprint: shortFingerprint(body.service_auth_token?.fingerprint),
-          suiteBootstrap: Boolean(body.suite_bootstrap_enabled),
-        };
-      } catch (cause) {
-        if (cause instanceof DOMException && cause.name === "AbortError") throw cause;
-        return { ...base, state: "unreachable", detail: "Could not reach /auth/status." };
-      }
-    },
-  );
-
-  return results;
+    const body = row.status;
+    const { state, detail } = classify(body);
+    return {
+      ...base,
+      state,
+      detail,
+      scopes: body.service_auth_scopes ?? [],
+      knownScopes: body.service_auth_known_scopes ?? [],
+      name: body.service_auth_token?.name ?? "",
+      rotatedAt: body.service_auth_token?.rotated_at ?? body.service_auth_token?.created_at ?? null,
+      expiresAt: body.service_auth_token?.expires_at ?? null,
+      fingerprint: shortFingerprint(body.service_auth_token?.fingerprint),
+      suiteBootstrap: Boolean(body.suite_bootstrap_enabled),
+    };
+  });
 }

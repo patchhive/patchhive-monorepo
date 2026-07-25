@@ -101,6 +101,8 @@ const statusDot: Record<Status, string> = {
   offline: "bg-muted-foreground",
 };
 
+/** Operator-local wall clock, 12-hour. The deck is a single-operator console; UTC
+ * was the wrong default and the seconds field is what makes polling feel live. */
 function useClock() {
   const [t, setT] = useState<Date | null>(null);
   useEffect(() => {
@@ -378,7 +380,14 @@ function TopBar({ now }: { now: Date | null }) {
         </button>
         <div className="hidden font-display text-xs text-muted-foreground sm:block" suppressHydrationWarning>
           <span className="text-[var(--honey)]">●</span>{" "}
-          {now ? `${now.toUTCString().split(" ").slice(4, 5)[0]} UTC` : "—"}
+          {now
+            ? now.toLocaleTimeString(undefined, {
+                hour: "numeric",
+                minute: "2-digit",
+                second: "2-digit",
+                hour12: true,
+              })
+            : "—"}
         </div>
         <button
           onClick={() => setDispatchPreviewOpen(true)}
