@@ -83,6 +83,25 @@ impl Drop for ActiveRunGuard {
     }
 }
 
+/// Claim the single-operation lock and report the refusal on the stream.
+///
+/// The SSE response has already been returned with `200` by the time a run
+/// task starts, so a claim failure that only returns `Err` closes the stream
+/// with zero events and leaves the operator with no explanation. Every run
+/// entry point must emit the refusal before giving up.
+async fn claim_active_run(
+    run_active: Arc<AtomicBool>,
+    tx: &mpsc::Sender<Result<Event, Infallible>>,
+) -> Result<ActiveRunGuard, String> {
+    match ActiveRunGuard::claim(run_active) {
+        Ok(active) => Ok(active),
+        Err(error) => {
+            let _ = tx.send(sse("error", json!({ "msg": error.clone() }))).await;
+            Err(error)
+        }
+    }
+}
+
 fn default_language() -> String {
     "python".into()
 }
@@ -787,7 +806,7 @@ pub async fn execute_dry_run(
     req: RunRequest,
     tx: mpsc::Sender<Result<Event, Infallible>>,
 ) -> Result<RunExecutionResult, String> {
-    let _active = ActiveRunGuard::claim(state.run_active.clone())?;
+    let _active = claim_active_run(state.run_active.clone(), &tx).await?;
     let agents_snap = state.agents.read().await.clone();
     let Some(team) = select_run_team(&agents_snap) else {
         emit_no_agents(&tx).await;
@@ -973,15 +992,7 @@ pub async fn execute_run(
 ) -> Result<RunExecutionResult, String> {
     let http = state.http.clone();
     let agents_arc = state.agents.clone();
-    let _active = match ActiveRunGuard::claim(state.run_active.clone()) {
-        Ok(active) => active,
-        Err(error) => {
-            let _ = tx
-                .send(sse("error", json!({"msg":"A hunt is already active"})))
-                .await;
-            return Err(error);
-        }
-    };
+    let _active = claim_active_run(state.run_active.clone(), &tx).await?;
 
     let run_id = Uuid::new_v4().to_string()[..12].to_string();
     let run_cost = Arc::new(AtomicI64::new(0));
@@ -1070,8 +1081,8 @@ pub async fn execute_run(
 #[cfg(test)]
 mod tests {
     use super::{
-        classify_write_eligibility, discovery_query, discovery_repository_search_limit,
-        repository_noun, ActiveRunGuard, RunRequest,
+        claim_active_run, classify_write_eligibility, discovery_query,
+        discovery_repository_search_limit, repository_noun, ActiveRunGuard, RunRequest,
     };
     use patchhive_product_core::contract::TargetSelectionMode;
     use serde_json::json;
@@ -1091,6 +1102,24 @@ mod tests {
         drop(guard);
         assert!(!active.load(Ordering::SeqCst));
         assert!(ActiveRunGuard::claim(active).is_ok());
+    }
+
+    #[tokio::test]
+    async fn contended_claim_reports_the_refusal_on_the_run_stream() {
+        let active = Arc::new(AtomicBool::new(false));
+        let _held = ActiveRunGuard::claim(active.clone()).expect("first operation");
+        let (tx, mut rx) = tokio::sync::mpsc::channel(4);
+
+        let claimed = claim_active_run(active, &tx).await;
+
+        assert!(
+            claimed.is_err(),
+            "a contended claim must not hand out a guard"
+        );
+        assert!(
+            rx.try_recv().is_ok(),
+            "a contended claim must emit a stream event; closing the stream silently leaves the operator with no explanation"
+        );
     }
 
     #[test]

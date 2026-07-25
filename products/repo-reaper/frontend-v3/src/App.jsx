@@ -42,7 +42,7 @@ function applyIssueEvent(current, event, payload) {
 
 function MainProduct({ auth }) {
   const fetcher = useMemo(() => createApiFetcher(auth.apiKey), [auth.apiKey]);
-  const abortRef = useRef(null);
+  const abortRefs = useRef({});
   const [activeTab, setActiveTab] = useState(() => localStorage.getItem("repo-reaper.v3.tab") || "mission");
   const [params, setParams] = useState(DEFAULT_PARAMS);
   const [dryParams, setDryParams] = useState(DEFAULT_DRY_PARAMS);
@@ -87,7 +87,7 @@ function MainProduct({ auth }) {
 
   useEffect(() => { refresh({ loadLatest: true }); }, [refresh]);
   useEffect(() => { localStorage.setItem("repo-reaper.v3.tab", activeTab); }, [activeTab]);
-  useEffect(() => () => abortRef.current?.abort(), []);
+  useEffect(() => () => Object.values(abortRefs.current).forEach((controller) => controller.abort()), []);
 
   async function loadRun(id) {
     setError("");
@@ -95,10 +95,10 @@ function MainProduct({ auth }) {
     catch (nextError) { setError(nextError.message); }
   }
 
-  function startStream(path, payload, setter) {
-    abortRef.current?.abort();
+  function startStream(streamKey, path, payload, setter) {
+    abortRefs.current[streamKey]?.abort();
     const controller = new AbortController();
-    abortRef.current = controller;
+    abortRefs.current[streamKey] = controller;
     setter({ ...createStreamState(), running: true, phase: "starting" });
     setError("");
     fetcher(`${API}/${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload), signal: controller.signal })
@@ -135,7 +135,7 @@ function MainProduct({ auth }) {
         }
       })
       .catch((streamError) => { if (streamError.name !== "AbortError") setError(streamError.message || "RepoReaper stream ended unexpectedly."); })
-      .finally(async () => { if (abortRef.current === controller) abortRef.current = null; setter((current) => ({ ...current, running: false })); await refresh(); });
+      .finally(async () => { if (abortRefs.current[streamKey] === controller) delete abortRefs.current[streamKey]; setter((current) => ({ ...current, running: false })); await refresh(); });
   }
 
   async function refreshPr(pr) {
@@ -145,11 +145,13 @@ function MainProduct({ auth }) {
     finally { setPrBusy(false); }
   }
 
+  const engineBusy = missionStream.running || dryStream.running;
+
   return <ProductShell productKey="repo-reaper">
-    <ProductHeader activeTab={activeTab} githubLabel={health.github_ready ? "GitHub verified" : health.github?.token_configured ? "GitHub unverified" : "Write token missing"} icon={Skull} onRun={() => setActiveTab("mission")} onSignOut={auth.logout} onTabChange={setActiveTab} productName="RepoReaper" runDisabled={missionStream.running || dryStream.running} runLabel="Scope mission" subtitle="autonomous patch execution" tabs={TABS}/>
+    <ProductHeader activeTab={activeTab} githubLabel={health.github_ready ? "GitHub verified" : health.github?.token_configured ? "GitHub unverified" : "Write token missing"} icon={Skull} onRun={() => setActiveTab("mission")} onSignOut={auth.logout} onTabChange={setActiveTab} productName="RepoReaper" runDisabled={engineBusy} runLabel="Scope mission" subtitle="autonomous patch execution" tabs={TABS}/>
     {error ? <div className="mx-auto mt-5 max-w-[1400px] px-3 sm:px-6"><div className="surface px-5 py-4 text-[12px] text-red-800 dark:text-red-300">{error}</div></div> : null}
-    {activeTab === "mission" ? <RunPanel agents={agents} health={health} onParamsChange={setParams} onStart={(payload) => startStream("run", payload, setMissionStream)} onTargetSelectionModeChange={setTargetMode} params={params} stream={missionStream} targetSelectionMode={targetMode}/> : null}
-    {activeTab === "dry" ? <RunPanel agents={agents} dry health={health} onParamsChange={setDryParams} onStart={(payload) => startStream("dry-run", payload, setDryStream)} onTargetSelectionModeChange={setDryTargetMode} params={dryParams} stream={dryStream} targetSelectionMode={dryTargetMode}/> : null}
+    {activeTab === "mission" ? <RunPanel agents={agents} engineBusy={engineBusy} health={health} onParamsChange={setParams} onStart={(payload) => startStream("mission", "run", payload, setMissionStream)} onTargetSelectionModeChange={setTargetMode} params={params} stream={missionStream} targetSelectionMode={targetMode}/> : null}
+    {activeTab === "dry" ? <RunPanel agents={agents} dry engineBusy={engineBusy} health={health} onParamsChange={setDryParams} onStart={(payload) => startStream("dry", "dry-run", payload, setDryStream)} onTargetSelectionModeChange={setDryTargetMode} params={dryParams} stream={dryStream} targetSelectionMode={dryTargetMode}/> : null}
     {activeTab === "history" ? <HistoryPanel history={history} leaderboard={leaderboard} loading={loading} onLoadRun={loadRun} onRefresh={refresh} rejected={rejected} selectedRun={selectedRun}/> : null}
     {activeTab === "prs" ? <PrPanel busy={prBusy} onRefresh={refresh} onRefreshPr={refreshPr} prs={prs}/> : null}
     {activeTab === "squad" ? <SquadPanel agents={agents} apiBase={API} authToken={auth.apiKey} config={config} cooldowns={cooldowns} fetcher={fetcher} onError={setError} onRefresh={refresh} presets={presets}/> : null}

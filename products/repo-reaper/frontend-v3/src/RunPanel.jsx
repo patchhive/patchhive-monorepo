@@ -46,6 +46,7 @@ function reportMarkdown({ dry, stream, targetSelectionMode }) {
 export default function RunPanel({
   agents,
   dry = false,
+  engineBusy = false,
   health,
   onParamsChange,
   onStart,
@@ -77,6 +78,7 @@ export default function RunPanel({
   const priority = items[0];
   const noCandidates = stream.done?.status === "no_candidates";
   const livePhaseLabel = phaseLabel(stream.phase);
+  const blockedByOtherRun = engineBusy && !stream.running;
 
   return <div className="mx-auto max-w-[1440px] space-y-6 px-3 py-6 sm:px-6">
     <section className="surface grid gap-6 p-6 lg:grid-cols-[1.6fr_0.9fr] lg:p-8">
@@ -110,9 +112,10 @@ export default function RunPanel({
         <Field label="Cost budget USD" min="0" step="0.01" onChange={set("cost_budget_usd")} type="number" value={params.cost_budget_usd}/>
       </div>
       <div className="mt-5 flex flex-wrap items-center gap-3">
-        <button className="h-11 rounded-full px-5 text-[12px] font-semibold text-white disabled:opacity-40" disabled={stream.running || !ready || !validTarget} onClick={() => onStart(serializeRunParams(params, targetSelectionMode))} style={{ backgroundImage: "linear-gradient(90deg, var(--accent), var(--accent-2))", boxShadow: "var(--accent-glow)" }} type="button">{stream.running ? `${livePhaseLabel}…` : dry ? "Run Dry Stalk" : "Launch mission"}</button>
+        <button className="h-11 rounded-full px-5 text-[12px] font-semibold text-white disabled:opacity-40" disabled={stream.running || engineBusy || !ready || !validTarget} onClick={() => onStart(serializeRunParams(params, targetSelectionMode))} style={{ backgroundImage: "linear-gradient(90deg, var(--accent), var(--accent-2))", boxShadow: "var(--accent-glow)" }} type="button">{stream.running ? `${livePhaseLabel}…` : dry ? "Run Dry Stalk" : "Launch mission"}</button>
         <CopyMarkdownButton content={reportMarkdown({ dry, stream, targetSelectionMode })} label="Copy evidence Markdown"/>
       </div>
+      {blockedByOtherRun ? <GuidanceNotice label="Operation already active">RepoReaper runs one operation at a time. {dry ? "A patch mission" : "Another operation"} is still streaming; starting this one would abandon that live evidence while the engine keeps working. Wait for it to finish, or read it in History.</GuidanceNotice> : null}
       {!ready ? <GuidanceNotice label="Squad not ready">{dry ? "Dry Stalk needs at least one Scout agent." : "A write mission needs Scout, Judge, Reaper, Smith, and Gatekeeper roles."} Configure them in Squad.</GuidanceNotice> : null}
       {!validTarget ? <GuidanceNotice label="Target required">Enter a repository in owner/repository format. RepoReaper will not fall through to autonomous discovery.</GuidanceNotice> : null}
       {!dry ? <GuidanceNotice label="Write boundary">Launching authorizes this bounded mission, not unrestricted GitHub writes. Repo policy, existing-PR detection, trusted-test policy, Smith confidence, validation status, and HiveCore PR budgets still decide whether a PR may be opened.</GuidanceNotice> : null}
