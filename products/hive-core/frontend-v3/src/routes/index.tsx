@@ -180,7 +180,7 @@ function DeckInner() {
         <CapabilityGrid />
         <AskHive />
         <RunbookHistory />
-        <AuditLog />
+        <AuditLog syncVersion={suite.version} />
         <Footer />
       </div>
       <LiveTail />

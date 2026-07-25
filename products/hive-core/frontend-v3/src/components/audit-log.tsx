@@ -1,5 +1,13 @@
-import { Clock, ScrollText, Trash2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Clock, Loader2, ScrollText, Server, Trash2, User } from "lucide-react";
+
 import { useHiveCommand, type AuditKind } from "./hive-command";
+import {
+  fetchSuiteEvents,
+  groupEvents,
+  type SuiteEvent,
+  type SuiteEventGroup,
+} from "@/lib/suite-events";
 
 const toneCls: Record<AuditKind, string> = {
   info: "border-border text-muted-foreground",
@@ -8,18 +16,102 @@ const toneCls: Record<AuditKind, string> = {
   ai: "border-[var(--ok)]/40 text-[var(--ok)]",
 };
 
-export function AuditLog() {
+const eventTone: Record<SuiteEvent["tone"], string> = {
+  info: "border-border text-muted-foreground",
+  warn: "border-[var(--warn)]/40 text-[var(--warn)]",
+  crit: "border-[var(--crit)]/40 text-[var(--crit)]",
+};
+
+const PAGE = 20;
+
+/**
+ * Two records, deliberately not merged.
+ *
+ * Suite events are what the control plane persisted; they survive a reload. Session
+ * actions are what you did in this tab and are lost on refresh. Presenting them as
+ * one list would imply the local half is durable, which is exactly the thing an
+ * audit surface must not get wrong.
+ */
+export function AuditLog({ syncVersion = 0 }: { syncVersion?: number }) {
   const { auditLog, clearAudit } = useHiveCommand();
+  const [events, setEvents] = useState<SuiteEvent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [limit, setLimit] = useState(PAGE);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchSuiteEvents(controller.signal)
+      .then((next) => {
+        setEvents(next);
+        setError("");
+      })
+      .catch((cause) => {
+        if (cause instanceof DOMException && cause.name === "AbortError") return;
+        setError(cause instanceof Error ? cause.message : "Could not read suite events.");
+      })
+      .finally(() => setLoading(false));
+    return () => controller.abort();
+  }, [syncVersion]);
+
+  const groups = groupEvents(events);
+  const visible = groups.slice(0, limit);
+
   return (
-    <section id="audit" className="mt-8 scroll-mt-24 rounded-xl border border-border bg-card/50 p-6 backdrop-blur">
-      <div className="mb-4 flex items-end justify-between gap-3">
+    <section
+      id="audit"
+      className="mt-8 scroll-mt-24 rounded-xl border border-border bg-card/50 p-6 backdrop-blur"
+    >
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="flex items-center gap-2 font-display text-sm font-bold uppercase tracking-[0.2em]">
             <ScrollText className="h-4 w-4 text-[var(--honey)]" /> Change Log
           </h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            Every operator action from the palette, drawer, or hotkeys — actor, target, and diff.
+            What the control plane recorded, and what you did in this session.
           </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {loading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+          <span className="rounded border border-border px-2 py-1 font-display text-[10px] uppercase tracking-wider text-muted-foreground">
+            {events.length} recorded
+          </span>
+        </div>
+      </div>
+
+      <div className="mb-2 flex items-center gap-1.5 font-display text-[10px] uppercase tracking-wider text-muted-foreground">
+        <Server className="h-3 w-3 text-[var(--honey)]" /> Suite events · persisted
+      </div>
+
+      {error ? (
+        <div className="rounded-lg border border-[var(--crit)]/40 bg-[var(--crit)]/[0.06] p-3 text-xs text-muted-foreground">
+          {error}
+        </div>
+      ) : groups.length === 0 && !loading ? (
+        <div className="rounded-lg border border-dashed border-border p-6 text-center font-display text-[11px] uppercase tracking-wider text-muted-foreground">
+          No suite events recorded yet.
+        </div>
+      ) : (
+        <>
+          <ol className="space-y-1.5">
+            {visible.map((group) => (
+              <EventRow key={group.event.id} group={group} />
+            ))}
+          </ol>
+          {groups.length > limit && (
+            <button
+              onClick={() => setLimit((value) => value + PAGE)}
+              className="mt-3 rounded border border-border px-3 py-1.5 font-display text-[10px] uppercase tracking-wider text-muted-foreground transition hover:border-[var(--honey)]/50 hover:text-[var(--honey)]"
+            >
+              Show {Math.min(PAGE, groups.length - limit)} more of {groups.length}
+            </button>
+          )}
+        </>
+      )}
+
+      <div className="mb-2 mt-6 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 font-display text-[10px] uppercase tracking-wider text-muted-foreground">
+          <User className="h-3 w-3 text-[var(--honey)]" /> This session · not persisted
         </div>
         <button
           onClick={clearAudit}
@@ -31,8 +123,8 @@ export function AuditLog() {
       </div>
 
       {auditLog.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-border p-8 text-center font-display text-[11px] uppercase tracking-wider text-muted-foreground">
-          No actions yet. Fire something from the ⌘K palette.
+        <div className="rounded-lg border border-dashed border-border p-6 text-center font-display text-[11px] uppercase tracking-wider text-muted-foreground">
+          Nothing this session. Actions from the ⌘K palette land here until you reload.
         </div>
       ) : (
         <ol className="space-y-2">
@@ -40,7 +132,9 @@ export function AuditLog() {
             <li key={e.id} className="rounded-lg border border-border bg-background/40 p-3">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
-                  <span className={`rounded border px-1.5 py-0.5 font-display text-[9px] uppercase tracking-wider ${toneCls[e.kind]}`}>
+                  <span
+                    className={`rounded border px-1.5 py-0.5 font-display text-[9px] uppercase tracking-wider ${toneCls[e.kind]}`}
+                  >
                     {e.kind}
                   </span>
                   <span className="font-display text-xs font-bold">{e.title}</span>
@@ -49,7 +143,9 @@ export function AuditLog() {
                   <Clock className="h-3 w-3" /> {e.actor} · {timeAgo(e.at)}
                 </span>
               </div>
-              {e.detail && <div className="mt-1 font-display text-[11px] text-muted-foreground">{e.detail}</div>}
+              {e.detail && (
+                <div className="mt-1 font-display text-[11px] text-muted-foreground">{e.detail}</div>
+              )}
               {e.diff && (
                 <div className="mt-2 flex items-center gap-2 rounded border border-border/60 bg-muted/20 p-1.5 font-display text-[10px]">
                   <span className="text-[var(--crit)]/80">− {e.diff.before}</span>
@@ -62,6 +158,29 @@ export function AuditLog() {
         </ol>
       )}
     </section>
+  );
+}
+
+function EventRow({ group }: { group: SuiteEventGroup }) {
+  const { event, count, since } = group;
+  return (
+    <li className="flex flex-wrap items-center gap-2 rounded border border-border/60 bg-background/40 px-2.5 py-1.5">
+      <span className={`rounded border px-1.5 py-0.5 font-mono text-[9px] ${eventTone[event.tone]}`}>
+        {event.kind}
+      </span>
+      <span className="flex-1 truncate text-xs text-foreground">{event.message}</span>
+      {count > 1 && (
+        <span
+          title={`Repeated through ${new Date(since).toLocaleString()}`}
+          className="rounded border border-border px-1.5 py-0.5 font-display text-[9px] uppercase tracking-wider text-muted-foreground"
+        >
+          ×{count}
+        </span>
+      )}
+      <span className="font-mono text-[10px] text-muted-foreground">
+        {new Date(event.createdAt).toLocaleString()}
+      </span>
+    </li>
   );
 }
 
