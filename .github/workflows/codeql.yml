@@ -18,6 +18,8 @@ jobs:
     name: Analyze (${{ matrix.language }})
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    env:
+      CODEQL_EXTRACTOR_RUST_OPTION_CARGO_ALL_TARGETS: "true"
     strategy:
       fail-fast: false
       matrix:
