@@ -8,7 +8,7 @@ import {
   V3_TEXT,
   useSavedDashboardViews,
 } from "@patchhivehq/ui-v3";
-import { Chip, Fact, money, normalizeCollection, phaseHeadline, phaseLabel, reasonLabel, roleLabel, serializeRunParams, statusLabel, statusTone } from "./shared.jsx";
+import { Chip, Fact, LIVE_LOG_LIMIT, money, normalizeCollection, phaseHeadline, phaseLabel, reasonLabel, roleLabel, serializeRunParams, statusLabel, statusTone } from "./shared.jsx";
 import ScoutReport, { scoutReportMarkdown } from "./ScoutReport.jsx";
 
 const TARGET_MODES = [
@@ -36,8 +36,9 @@ function reportMarkdown({ dry, stream, targetSelectionMode }) {
   if (stream.done?.run_id) lines.push(`- Run: ${stream.done.run_id}`);
   if (stream.report) lines.push("", scoutReportMarkdown(stream.report));
   if (stream.logs.length) {
-    lines.push("", "## Recent evidence", "");
-    stream.logs.slice(-20).forEach((entry) => lines.push(`- ${entry.msg || JSON.stringify(entry)}`));
+    lines.push("", `## Evidence (${stream.logs.length} retained events)`, "");
+    if (stream.droppedLogs) lines.push(`> ${stream.droppedLogs} earlier live events exceeded this browser's buffer. The complete record is this run's saved evidence in History.`, "");
+    stream.logs.forEach((entry) => lines.push(`- ${entry.msg || JSON.stringify(entry)}`));
   }
   lines.push("", "*RepoReaper by [PatchHive](https://github.com/patchhive)*");
   return lines.join("\n");
@@ -131,7 +132,7 @@ export default function RunPanel({
 
     <section className="surface p-6">
       <div className={`flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}><Bot size={12}/> {reattached ? "Saved run evidence" : "Live agent evidence"}</div>
-      <div className="mt-4 grid gap-3 lg:grid-cols-[0.8fr_1.2fr]"><div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1">{agents.map((agent) => { const live = stream.agentStatuses[agent.id] || {}; return <div className="surface-inset rounded-xl p-3" key={agent.id}><div className="flex items-center justify-between gap-2"><span className={`font-display text-[14px] ${V3_TEXT.strong}`}>{agent.name}</span><Chip tone={statusTone(live.status || agent.status)}>{statusLabel(live.status || agent.status || "idle")}</Chip></div><div className={`mt-1 text-[10px] ${V3_TEXT.mute}`}>{roleLabel(agent.role)} · {agent.provider}/{agent.model}</div>{live.task ? <div className={`mt-2 text-[11px] ${V3_TEXT.body}`}>{live.task}</div> : null}</div>; })}</div><div><ProgressiveList initialCount={8} batchCount={30} itemLabel="events" items={stream.logs} empty={<div className={`surface-inset rounded-xl p-8 text-center text-[12px] ${V3_TEXT.mute}`}>Live logs appear here after the operation starts.</div>} renderItem={(entry, index) => <div className="surface-inset rounded-xl p-3" key={`${entry.ts || "log"}-${index}`}><div className="flex items-start gap-3"><ClipboardCopy className={V3_TEXT.dim} size={13}/><div><div className={`text-[11px] leading-relaxed ${V3_TEXT.body}`}>{entry.msg || JSON.stringify(entry)}</div><div className={`mt-1 text-[9px] uppercase tracking-wider ${V3_TEXT.mute}`}>{entry.agent || roleLabel(entry.role) || "RepoReaper"}{entry.type === "error" ? " · error" : entry.type === "warn" ? " · warning" : ""}</div></div></div></div>}/></div></div>
+      <div className="mt-4 grid gap-3 lg:grid-cols-[0.8fr_1.2fr]"><div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1">{agents.map((agent) => { const live = stream.agentStatuses[agent.id] || {}; return <div className="surface-inset rounded-xl p-3" key={agent.id}><div className="flex items-center justify-between gap-2"><span className={`font-display text-[14px] ${V3_TEXT.strong}`}>{agent.name}</span><Chip tone={statusTone(live.status || agent.status)}>{statusLabel(live.status || agent.status || "idle")}</Chip></div><div className={`mt-1 text-[10px] ${V3_TEXT.mute}`}>{roleLabel(agent.role)} · {agent.provider}/{agent.model}</div>{live.task ? <div className={`mt-2 text-[11px] ${V3_TEXT.body}`}>{live.task}</div> : null}</div>; })}</div><div>{stream.droppedLogs ? <div className={`surface-inset mb-3 rounded-xl p-3 text-[11px] ${V3_TEXT.mute}`}>{stream.droppedLogs} earlier live events exceeded this browser's {LIVE_LOG_LIMIT}-event buffer and are not shown here. The complete record is saved with the run in History.</div> : null}<ProgressiveList initialCount={8} batchCount={30} itemLabel="events" items={stream.logs} empty={<div className={`surface-inset rounded-xl p-8 text-center text-[12px] ${V3_TEXT.mute}`}>Live logs appear here after the operation starts.</div>} renderItem={(entry, index) => <div className="surface-inset rounded-xl p-3" key={`${entry.ts || "log"}-${index}`}><div className="flex items-start gap-3"><ClipboardCopy className={V3_TEXT.dim} size={13}/><div><div className={`text-[11px] leading-relaxed ${V3_TEXT.body}`}>{entry.msg || JSON.stringify(entry)}</div><div className={`mt-1 text-[9px] uppercase tracking-wider ${V3_TEXT.mute}`}>{entry.agent || roleLabel(entry.role) || "RepoReaper"}{entry.type === "error" ? " · error" : entry.type === "warn" ? " · warning" : ""}</div></div></div></div>}/></div></div>
       <ScoutReport report={stream.report}/>
     </section>
   </div>;

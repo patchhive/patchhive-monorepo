@@ -52,8 +52,19 @@ export function serializeRunParams(params, targetSelectionMode) {
   };
 }
 
+// The browser keeps a bounded live buffer; the complete record is the run's
+// durable saved evidence. Whatever this buffer drops must be stated, never
+// silently discarded.
+export const LIVE_LOG_LIMIT = 300;
+
 export function createStreamState() {
-  return { agentStatuses: {}, done: null, issues: [], logs: [], phase: "idle", reattached: false, report: null, repos: [], runCost: 0, running: false };
+  return { agentStatuses: {}, done: null, droppedLogs: 0, issues: [], logs: [], phase: "idle", reattached: false, report: null, repos: [], runCost: 0, running: false };
+}
+
+export function appendLiveLog(current, entry) {
+  const logs = [...current.logs, entry];
+  const overflow = Math.max(0, logs.length - LIVE_LOG_LIMIT);
+  return { ...current, droppedLogs: current.droppedLogs + overflow, logs: overflow ? logs.slice(overflow) : logs };
 }
 
 // Saved run events replace live agent evidence when the browser was not

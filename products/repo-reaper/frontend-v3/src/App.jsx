@@ -9,7 +9,7 @@ import HistoryPanel from "./HistoryPanel.jsx";
 import PrPanel from "./PrPanel.jsx";
 import RunPanel from "./RunPanel.jsx";
 import SquadPanel from "./SquadPanel.jsx";
-import { createStreamState, DEFAULT_DRY_PARAMS, DEFAULT_PARAMS, readResponse, runEventsToLogs } from "./shared.jsx";
+import { appendLiveLog, createStreamState, DEFAULT_DRY_PARAMS, DEFAULT_PARAMS, readResponse, runEventsToLogs } from "./shared.jsx";
 
 const PRODUCT = { productKey: "repo-reaper", name: "RepoReaper", subtitle: "autonomous patch execution", icon: Skull };
 const TABS = [
@@ -125,11 +125,11 @@ function MainProduct({ auth }) {
                 if (event === "phase") return { ...current, phase: data.phase || current.phase };
                 if (event === "issues" || event.startsWith("issue_")) return { ...current, issues: applyIssueEvent(current.issues, event, data) };
                 if (event === "agent_status") return { ...current, agentStatuses: { ...current.agentStatuses, [data.agent_id]: data } };
-                if (event === "agent_log" || event === "log") return { ...current, logs: [...current.logs.slice(-299), data] };
+                if (event === "agent_log" || event === "log") return appendLiveLog(current, data);
                 if (event === "cost_update") return { ...current, runCost: Number(data.run_cost || data.cost || current.runCost) };
                 if (event === "dry_run_report") return { ...current, report: data.report || data };
                 if (event === "done") return { ...current, done: data, phase: data.status || "done", runCost: Number(data.cost || current.runCost), running: false };
-                if (event === "error") return { ...current, logs: [...current.logs, { ...data, type: "error" }], phase: "error", running: false };
+                if (event === "error") return { ...appendLiveLog(current, { ...data, type: "error" }), phase: "error", running: false };
                 return current;
               });
             } catch { setError("RepoReaper emitted a malformed live event; the saved run remains available in History."); }
