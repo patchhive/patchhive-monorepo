@@ -133,12 +133,22 @@ function DeckInner() {
   const suite = useLiveSuite();
   const ok = PRODUCTS.filter((p) => p.status === "ok").length;
   const warn = PRODUCTS.filter((p) => p.status === "warn").length;
-  const crit = PRODUCTS.filter((p) => p.status === "crit").length;
-  const totalRuns = PRODUCTS.reduce((a, p) => a + p.runs24h, 0);
-  const avgLatency = Math.round(
-    PRODUCTS.filter((p) => p.latencyMs > 0).reduce((a, p) => a + p.latencyMs, 0) /
-      PRODUCTS.filter((p) => p.latencyMs > 0).length,
-  );
+  // "offline" covers both unreachable and engine-pending. Counting only `crit`
+  // left products missing from the strip entirely — 11/0/0 across twelve products.
+  const down = PRODUCTS.filter((p) => p.status === "crit" || p.status === "offline").length;
+
+  // Both derived from the real run index rather than seeded per-product numbers.
+  const runStats = useMemo(() => {
+    const cutoff = Date.now() - 24 * 3_600_000;
+    let recent = 0;
+    let failed = 0;
+    for (const run of RUNS) {
+      const at = Date.parse(run.startedAt);
+      if (!Number.isNaN(at) && at >= cutoff) recent += 1;
+      if (run.status === "failed") failed += 1;
+    }
+    return { total: RUNS.length, recent, failed };
+  }, [suite.version]);
 
   return (
     <main className="hex-grid relative min-h-screen pb-16">
@@ -153,9 +163,8 @@ function DeckInner() {
           <KpiStrip
             ok={ok}
             warn={warn}
-            crit={crit}
-            totalRuns={totalRuns}
-            avgLatency={avgLatency}
+            down={down}
+            runStats={runStats}
             live={suite.live}
           />
         </section>
@@ -610,26 +619,59 @@ function HiveOrb() {
 function KpiStrip({
   ok,
   warn,
-  crit,
-  totalRuns,
-  avgLatency,
+  down,
+  runStats,
   live,
 }: {
   ok: number;
   warn: number;
-  crit: number;
-  totalRuns: number;
-  avgLatency: number;
+  down: number;
+  runStats: { total: number; recent: number; failed: number };
   live: boolean;
 }) {
-  // Health counts derive from the synced registry. Runs and latency do not exist
-  // anywhere in the suite yet, so they are flagged rather than passed off as measured.
+  // Every card is now derived from live state: health from the synced registry,
+  // run counts from the suite-wide run index. Nothing here is seeded.
   const kpis = [
-    { label: "Healthy", value: ok, icon: CheckCircle2, accent: "var(--ok)", sampled: false, live },
-    { label: "Degraded", value: warn, icon: AlertTriangle, accent: "var(--warn)", sampled: false, live },
-    { label: "Down", value: crit, icon: CircleDot, accent: "var(--crit)", sampled: false, live },
-    { label: "Runs / 24h", value: totalRuns.toLocaleString(), icon: Activity, accent: "var(--honey)", sampled: true, live: false },
-    { label: "Avg latency", value: `${avgLatency}ms`, icon: Sparkles, accent: "var(--honey)", sampled: true, live: false },
+    {
+      label: "Healthy",
+      value: ok,
+      icon: CheckCircle2,
+      accent: "var(--ok)",
+      detail: `of ${PRODUCTS.length} products`,
+      live,
+    },
+    {
+      label: "Degraded",
+      value: warn,
+      icon: AlertTriangle,
+      accent: "var(--warn)",
+      detail: "startup or health errors",
+      live,
+    },
+    {
+      label: "Down",
+      value: down,
+      icon: CircleDot,
+      accent: "var(--crit)",
+      detail: "unreachable or not mounted",
+      live,
+    },
+    {
+      label: "Runs / 24h",
+      value: runStats.recent.toLocaleString(),
+      icon: Activity,
+      accent: "var(--honey)",
+      detail: `${runStats.total.toLocaleString()} retained`,
+      live,
+    },
+    {
+      label: "Failed runs",
+      value: runStats.failed.toLocaleString(),
+      icon: Sparkles,
+      accent: runStats.failed > 0 ? "var(--crit)" : "var(--honey)",
+      detail: "across retained history",
+      live,
+    },
   ];
   return (
     <div className="mt-10 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
@@ -649,18 +691,15 @@ function KpiStrip({
           <div className="mt-3 font-display text-3xl font-bold tracking-tight" style={{ color: k.accent }}>
             {k.value}
           </div>
-          <div className="mt-1 font-display text-[9px] uppercase tracking-wider">
-            {k.sampled ? (
-              <span className="text-muted-foreground/70" title="Seeded sample value — the suite does not measure this yet">
-                sampled
-              </span>
-            ) : k.live ? (
+          <div className="mt-1 flex items-center gap-1.5 font-display text-[9px] uppercase tracking-wider">
+            {k.live ? (
               <span className="text-[var(--ok)]/80">live</span>
             ) : (
-              <span className="text-muted-foreground/70" title="Control plane unreachable; showing seed values">
-                offline
+              <span className="text-muted-foreground/70" title="Control plane unreachable; showing last known values">
+                stale
               </span>
             )}
+            <span className="normal-case tracking-normal text-muted-foreground/60">{k.detail}</span>
           </div>
         </div>
       ))}
@@ -748,7 +787,9 @@ function ProductCard({ product, index, pulse }: { product: Product; index: numbe
           </div>
           <div className="mt-3 rounded border border-border/60 bg-background/40 p-2">
             <div className="mb-1 flex items-center justify-between font-display text-[9px] uppercase tracking-[0.18em] text-muted-foreground">
-              <span>latency · 60s</span>
+              <span title="Seeded sample series — the suite records no per-request latency">
+                latency · 60s · sampled
+              </span>
               <span style={{ color: sparkColor }}>
                 {product.status === "crit" ? "—" : `${product.latencyMs}ms`}
               </span>
@@ -762,7 +803,7 @@ function ProductCard({ product, index, pulse }: { product: Product; index: numbe
           </div>
           <div className="mt-3 grid grid-cols-3 gap-2 font-display text-[10px]">
             <Stat label="latency" value={product.status === "crit" ? "—" : `${product.latencyMs}ms`} tone={product.status} />
-            <Stat label="uptime" value={`${(product.uptime * 100).toFixed(1)}%`} />
+            <Stat label="uptime · sampled" value={`${(product.uptime * 100).toFixed(1)}%`} />
             <Stat label="runs 24h" value={product.runs24h.toLocaleString()} />
           </div>
           <div className="mt-3 flex flex-wrap gap-1">
@@ -967,7 +1008,7 @@ function RunsFeed({ syncVersion }: { syncVersion: number }) {
           />
         </div>
       </div>
-      <ul className="divide-y divide-border/40">
+      <ul className="max-h-[560px] divide-y divide-border/40 overflow-y-auto overscroll-contain">
         {visible.length === 0 && (
           <li className="px-4 py-8">
             <EmptyHex title="no runs match these filters" hint="clear filters or widen your search" />
@@ -1045,7 +1086,7 @@ function RunsFeed({ syncVersion }: { syncVersion: number }) {
 
       <div className="border-t border-border/60 px-4 py-2 text-center">
         <button className="font-display text-[10px] uppercase tracking-wider text-muted-foreground transition hover:text-[var(--honey)]">
-          View all runs →
+          {visible.length} of {RUNS.length} runs →
         </button>
       </div>
       <RunDetailDrawer run={activeRun} onClose={() => setActiveRun(null)} />

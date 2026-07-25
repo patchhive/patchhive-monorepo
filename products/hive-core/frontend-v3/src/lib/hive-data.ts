@@ -44,20 +44,23 @@ export interface RunEvent {
   capability: string;
   status: "success" | "running" | "failed";
   durationMs: number;
+  /** Human-relative age, rendered directly. */
   ts: string;
+  /** ISO start, for windowing and sorting. Empty on seed rows. */
+  startedAt: string;
 }
 
 export const RUNS: RunEvent[] = [
-  { id: "r_8af5", product: "ReleaseSentry", capability: "check.github.release", status: "success", durationMs: 318, ts: "4s ago" },
-  { id: "r_8af4", product: "ReleaseSentry", capability: "blockers.scan", status: "running", durationMs: 0, ts: "9s ago" },
-  { id: "r_8af3", product: "SignalHive", capability: "alert.dispatch", status: "success", durationMs: 142, ts: "12s ago" },
-  { id: "r_8af2", product: "ReviewBee", capability: "pr.review", status: "running", durationMs: 0, ts: "18s ago" },
-  { id: "r_8af1", product: "RepoReaper", capability: "scan.repo", status: "success", durationMs: 2810, ts: "44s ago" },
-  { id: "r_8af0", product: "VulnTriage", capability: "cve.ingest", status: "failed", durationMs: 9211, ts: "1m ago" },
-  { id: "r_8aef", product: "MergeKeeper", capability: "merge.gate", status: "success", durationMs: 88, ts: "1m ago" },
-  { id: "r_8aee", product: "FlakeSting", capability: "test.classify", status: "success", durationMs: 1640, ts: "2m ago" },
-  { id: "r_8aed", product: "DepTriage", capability: "dep.audit", status: "success", durationMs: 740, ts: "3m ago" },
-  { id: "r_8aec", product: "RepoMemory", capability: "embed.commit", status: "success", durationMs: 4220, ts: "3m ago" },
-  { id: "r_8aeb", product: "SignalHive", capability: "signal.normalize", status: "success", durationMs: 61, ts: "4m ago" },
-  { id: "r_8aea", product: "TrustGate", capability: "token.rotate", status: "success", durationMs: 210, ts: "5m ago" },
+  { id: "r_8af5", product: "ReleaseSentry", capability: "check.github.release", status: "success", durationMs: 318, ts: "4s ago", startedAt: "" },
+  { id: "r_8af4", product: "ReleaseSentry", capability: "blockers.scan", status: "running", durationMs: 0, ts: "9s ago", startedAt: "" },
+  { id: "r_8af3", product: "SignalHive", capability: "alert.dispatch", status: "success", durationMs: 142, ts: "12s ago", startedAt: "" },
+  { id: "r_8af2", product: "ReviewBee", capability: "pr.review", status: "running", durationMs: 0, ts: "18s ago", startedAt: "" },
+  { id: "r_8af1", product: "RepoReaper", capability: "scan.repo", status: "success", durationMs: 2810, ts: "44s ago", startedAt: "" },
+  { id: "r_8af0", product: "VulnTriage", capability: "cve.ingest", status: "failed", durationMs: 9211, ts: "1m ago", startedAt: "" },
+  { id: "r_8aef", product: "MergeKeeper", capability: "merge.gate", status: "success", durationMs: 88, ts: "1m ago", startedAt: "" },
+  { id: "r_8aee", product: "FlakeSting", capability: "test.classify", status: "success", durationMs: 1640, ts: "2m ago", startedAt: "" },
+  { id: "r_8aed", product: "DepTriage", capability: "dep.audit", status: "success", durationMs: 740, ts: "3m ago", startedAt: "" },
+  { id: "r_8aec", product: "RepoMemory", capability: "embed.commit", status: "success", durationMs: 4220, ts: "3m ago", startedAt: "" },
+  { id: "r_8aeb", product: "SignalHive", capability: "signal.normalize", status: "success", durationMs: 61, ts: "4m ago", startedAt: "" },
+  { id: "r_8aea", product: "TrustGate", capability: "token.rotate", status: "success", durationMs: 210, ts: "5m ago", startedAt: "" },
 ];

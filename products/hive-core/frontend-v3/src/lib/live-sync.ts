@@ -164,9 +164,23 @@ async function syncRuns(signal: AbortSignal): Promise<void> {
     status: toRunStatus(summary),
     durationMs: durationMs(summary),
     ts: relativeAge(summary.created_at),
+    startedAt: summary.created_at,
   }));
   RUNS.length = 0;
   RUNS.push(...events);
+
+  // Per-product 24h counts come from the same index, so a product card can never
+  // disagree with the suite total.
+  const cutoff = Date.now() - 24 * 3_600_000;
+  const recent = new Map<string, number>();
+  for (const event of events) {
+    const at = Date.parse(event.startedAt);
+    if (Number.isNaN(at) || at < cutoff) continue;
+    recent.set(event.product, (recent.get(event.product) ?? 0) + 1);
+  }
+  for (const product of PRODUCTS) {
+    product.runs24h = recent.get(product.name) ?? 0;
+  }
 }
 
 export function useLiveSuite(pollMs = 10_000): LiveSuite {
