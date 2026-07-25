@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { KeyRound, Loader2, RefreshCw, ShieldAlert } from "lucide-react";
+import { KeyRound, Loader2, RefreshCw, RotateCw, ShieldAlert, Wand2 } from "lucide-react";
+import { toast } from "sonner";
 
 import {
   fetchTokenStatuses,
+  provisionServiceToken,
   TOKEN_STATE_LABEL,
   type TokenState,
   type TokenStatus,
@@ -57,6 +59,19 @@ export function TokenVault() {
   const [rows, setRows] = useState<TokenStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [nonce, setNonce] = useState(0);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  async function provision(row: TokenStatus, rotate: boolean) {
+    setBusy(row.productId);
+    const result = await provisionServiceToken(row.slug, rotate);
+    setBusy(null);
+    if (result.ok) {
+      toast.success(row.productName, { description: result.message });
+      setNonce((value) => value + 1);
+    } else {
+      toast.error(`${row.productName} provisioning failed`, { description: result.message });
+    }
+  }
 
   useEffect(() => {
     const controller = new AbortController();
@@ -177,6 +192,28 @@ export function TokenVault() {
                   </div>
                 )}
 
+                {(row.state === "missing" ||
+                  row.state === "legacy" ||
+                  row.state === "expired" ||
+                  row.state === "expiring") && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    <button
+                      onClick={() => provision(row, row.state !== "missing")}
+                      disabled={busy === row.productId}
+                      className="inline-flex items-center gap-1 rounded border border-[var(--honey)]/50 bg-[var(--honey)]/10 px-2 py-1 font-display text-[9px] uppercase tracking-wider text-[var(--honey)] transition hover:brightness-125 disabled:opacity-50"
+                    >
+                      {busy === row.productId ? (
+                        <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                      ) : row.state === "missing" ? (
+                        <Wand2 className="h-2.5 w-2.5" />
+                      ) : (
+                        <RotateCw className="h-2.5 w-2.5" />
+                      )}
+                      {row.state === "missing" ? "Provision" : "Rotate"}
+                    </button>
+                  </div>
+                )}
+
                 <div className="mt-2 flex flex-wrap gap-3 font-mono text-[9px] text-muted-foreground">
                   {row.rotatedAt && (
                     <span>rotated {new Date(row.rotatedAt).toLocaleDateString()}</span>
@@ -198,8 +235,9 @@ export function TokenVault() {
       )}
 
       <p className="mt-4 text-[11px] text-muted-foreground">
-        Provisioning and rotation are server-side operations owned by HiveCore. This panel reports
-        posture; it does not hold, display, or transmit tokens.
+        Provisioning and rotation run in the control plane and return only the resulting posture.
+        The token is written to the product's own storage — it is never sent to, held by, or
+        displayed in the browser.
       </p>
     </section>
   );

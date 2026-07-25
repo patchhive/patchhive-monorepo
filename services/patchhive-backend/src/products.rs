@@ -124,3 +124,82 @@ pub fn auth_statuses(config: &Config) -> Vec<ProductAuthStatus> {
         status_for!("repo-reaper", repo_reaper),
     ]
 }
+
+/// Outcome of a provisioning attempt. The minted token is deliberately absent:
+/// it is written to the product's own storage and never travels to the caller.
+pub enum ProvisionOutcome {
+    /// New posture after the mint or rotation.
+    Provisioned(serde_json::Value),
+    /// The product's own guard refused this caller.
+    Forbidden,
+    /// The engine is not enabled in this runtime.
+    NotEnabled,
+    /// No engine is registered under that key.
+    Unknown,
+    Failed(String),
+}
+
+/// Mint or rotate a product's service token, in-process.
+///
+/// Authorization is delegated to the product's own auth module rather than
+/// re-implemented here, so the suite route cannot be a softer door than the
+/// product's own `/auth/generate-service-token`. Same guard, same answer.
+pub fn provision_service_token(
+    config: &Config,
+    key: &str,
+    headers: &axum::http::HeaderMap,
+    peer: Option<std::net::SocketAddr>,
+    rotate: bool,
+) -> ProvisionOutcome {
+    macro_rules! provision_with {
+        ($module:ident) => {{
+            let allowed = if rotate {
+                $module::auth::service_token_rotation_allowed_from_peer(headers, peer)
+            } else {
+                $module::auth::service_token_generation_allowed_from_peer(headers, peer)
+            };
+            if !allowed {
+                return ProvisionOutcome::Forbidden;
+            }
+
+            // Rotation is the correct verb once a token exists; minting again would
+            // leave the previous one valid.
+            let should_rotate = rotate || $module::auth::service_auth_enabled();
+            let result = if should_rotate {
+                $module::auth::rotate_and_save_service_token()
+            } else {
+                $module::auth::generate_and_save_service_token()
+            };
+
+            match result {
+                // The token itself is dropped here on purpose.
+                Ok(_) => ProvisionOutcome::Provisioned($module::auth::auth_status_payload()),
+                Err(error) => ProvisionOutcome::Failed(error.to_string()),
+            }
+        }};
+    }
+
+    if !config.product_selection.enables(key) {
+        return match key {
+            "merge-keeper" | "release-sentry" | "dep-triage" | "vuln-triage" | "flake-sting"
+            | "review-bee" | "trust-gate" | "repo-memory" | "signal-hive" | "refactor-scout"
+            | "repo-reaper" => ProvisionOutcome::NotEnabled,
+            _ => ProvisionOutcome::Unknown,
+        };
+    }
+
+    match key {
+        "merge-keeper" => provision_with!(merge_keeper),
+        "release-sentry" => provision_with!(release_sentry),
+        "dep-triage" => provision_with!(dep_triage),
+        "vuln-triage" => provision_with!(vuln_triage),
+        "flake-sting" => provision_with!(flake_sting),
+        "review-bee" => provision_with!(review_bee),
+        "trust-gate" => provision_with!(trust_gate),
+        "repo-memory" => provision_with!(repo_memory),
+        "signal-hive" => provision_with!(signal_hive),
+        "refactor-scout" => provision_with!(refactor_scout),
+        "repo-reaper" => provision_with!(repo_reaper),
+        _ => ProvisionOutcome::Unknown,
+    }
+}

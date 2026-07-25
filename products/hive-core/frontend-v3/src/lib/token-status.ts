@@ -13,7 +13,7 @@
 // trip the sensitive-route rate limiter — blocker B2 in the architecture doc, fixed
 // at the source rather than papered over with a smaller client-side pool.
 
-import { API } from "@/config";
+import { API, API_KEY_STORAGE } from "@/config";
 import { PRODUCTS } from "./hive-data";
 
 /** Slugs are kebab-case in the API; the deck's product ids are not. */
@@ -205,4 +205,52 @@ export async function fetchTokenStatuses(signal?: AbortSignal): Promise<TokenSta
       suiteBootstrap: Boolean(body.suite_bootstrap_enabled),
     };
   });
+}
+
+export interface ProvisionResult {
+  ok: boolean;
+  message: string;
+}
+
+/**
+ * Mint or rotate a product's service token.
+ *
+ * The backend does the work in-process and returns only the resulting posture —
+ * the token is written to the product's own storage and never reaches the browser.
+ * Authorization is the product's own guard, so this is not a softer door than its
+ * native /auth/generate-service-token route.
+ *
+ * The operator key travels as X-API-Key because that is the guard's intended path.
+ * If a product uses a different key than the deck session, it refuses — which is
+ * correct, and better than the control plane holding a master credential.
+ */
+export async function provisionServiceToken(
+  slug: string,
+  rotate: boolean,
+): Promise<ProvisionResult> {
+  try {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    const operatorKey =
+      typeof window === "undefined" ? "" : (window.localStorage.getItem(API_KEY_STORAGE) ?? "");
+    if (operatorKey) headers["X-API-Key"] = operatorKey;
+
+    const response = await fetch(`${API}/api/products/${slug}/service-token`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ rotate }),
+    });
+    if (response.ok) {
+      return {
+        ok: true,
+        message: rotate ? "Service token rotated." : "Service token provisioned.",
+      };
+    }
+    const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+    return {
+      ok: false,
+      message: payload?.message ?? `HiveCore returned HTTP ${response.status}.`,
+    };
+  } catch {
+    return { ok: false, message: "Could not reach the control plane." };
+  }
 }
