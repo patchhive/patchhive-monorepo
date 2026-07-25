@@ -1,90 +1,67 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { GitBranch } from "lucide-react";
+import { DEPENDENCIES } from "@/lib/hive-extra";
+import { PRODUCTS } from "@/lib/hive-data";
 
-import type { Product } from "@/lib/hive-data";
-import { blastRadius } from "@/lib/suite-state";
-import { Chip, EmptyDeck, Panel, Section } from "./deck-ui";
+/** Downstreams a given product transitively calls. */
+function downstreams(productId: string): string[] {
+  const seen = new Set<string>();
+  const queue = [productId];
+  while (queue.length) {
+    const cur = queue.shift()!;
+    for (const e of DEPENDENCIES) {
+      if (e.from === cur && !seen.has(e.to) && e.to !== productId) {
+        seen.add(e.to);
+        queue.push(e.to);
+      }
+    }
+  }
+  return [...seen];
+}
 
-/**
- * Not an RPC call graph — PatchHive products do not call each other in a request
- * path. The real dependency is safety-gating: TrustGate gates diffs, RepoMemory
- * supplies context, the kernel authorizes. So the question this answers is "what
- * stalls if this product goes away", which is §3.12 made visible.
- */
-export function BlastRadius({ products }: { products: Product[] }) {
-  const [productKey, setProductKey] = useState(products[0]?.key ?? "");
-  const impact = useMemo(() => blastRadius(productKey), [productKey]);
-  const product = products.find((item) => item.key === productKey);
+export function BlastRadius({ productName }: { productName: string }) {
+  const product = PRODUCTS.find((p) => p.name === productName);
+  const ids = useMemo(() => (product ? downstreams(product.id) : []), [product]);
+  const byId = Object.fromEntries(PRODUCTS.map((p) => [p.id, p]));
+
+  if (!product || ids.length === 0) {
+    return (
+      <div className="rounded-lg border border-border bg-muted/20 p-3">
+        <div className="mb-1 flex items-center gap-2 font-display text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+          <GitBranch className="h-3 w-3 text-[var(--honey)]" /> Blast radius
+        </div>
+        <div className="font-display text-[11px] text-muted-foreground">Isolated — no downstream services.</div>
+      </div>
+    );
+  }
 
   return (
-    <Section
-      id="blast-radius"
-      title="Blast radius"
-      kicker="If this product is unavailable, gated work stops. It never proceeds ungated and it is never rerouted."
-      actions={
-        <select
-          value={productKey}
-          onChange={(event) => setProductKey(event.target.value)}
-          className="rounded border border-border bg-background/60 px-2 py-1 font-display text-[10px] uppercase tracking-wider text-muted-foreground outline-none"
-        >
-          {products.map((item) => (
-            <option key={item.key} value={item.key}>
-              {item.name}
-            </option>
-          ))}
-        </select>
-      }
-    >
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Panel>
-          <div className="flex items-center gap-2 font-display text-[10px] uppercase tracking-wider text-muted-foreground">
-            <GitBranch className="h-3 w-3" /> Work blocked
-          </div>
-          {impact.blockedWork.length === 0 ? (
-            <p className="mt-2 text-xs text-muted-foreground">
-              No work items are currently gated on {product?.name ?? productKey}.
-            </p>
-          ) : (
-            <ul className="mt-2 space-y-1">
-              {impact.blockedWork.map((item) => (
-                <li key={item.id} className="flex items-center gap-2 text-xs">
-                  <Chip tone="warn">{item.state}</Chip>
-                  <span className="truncate font-mono text-[11px] text-foreground">
-                    {item.repository}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Panel>
-        <Panel>
-          <div className="font-display text-[10px] uppercase tracking-wider text-muted-foreground">
-            Mandates stalled
-          </div>
-          {impact.stalledMandates.length === 0 ? (
-            <p className="mt-2 text-xs text-muted-foreground">
-              No active mandate declares {product?.name ?? productKey} as a gate.
-            </p>
-          ) : (
-            <ul className="mt-2 space-y-1">
-              {impact.stalledMandates.map((mandate) => (
-                <li key={mandate.id} className="text-xs text-foreground">
-                  {mandate.name}
-                </li>
-              ))}
-            </ul>
-          )}
-        </Panel>
-      </div>
-      {products.length > 0 && impact.blockedWork.length === 0 && impact.stalledMandates.length === 0 && (
-        <div className="mt-4">
-          <EmptyDeck
-            title="Nothing to stall yet"
-            detail="Blast radius is computed over live work items and mandates. Both arrive with the conductor."
-            source="work_items · mandates (architecture doc §3.8, §3.6)"
-          />
+    <div className="rounded-lg border border-border bg-muted/20 p-3">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 font-display text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+          <GitBranch className="h-3 w-3 text-[var(--honey)]" /> Blast radius
         </div>
-      )}
-    </Section>
+        <span className="rounded border border-[var(--warn)]/40 bg-[var(--warn)]/10 px-1.5 py-0.5 font-display text-[9px] uppercase tracking-wider text-[var(--warn)]">
+          {ids.length} downstream
+        </span>
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {ids.map((id) => {
+          const p = byId[id];
+          if (!p) return null;
+          const tone =
+            p.status === "crit" ? "var(--crit)" : p.status === "warn" ? "var(--warn)" : "var(--ok)";
+          return (
+            <span
+              key={id}
+              className="inline-flex items-center gap-1 rounded border border-border bg-background/60 px-2 py-0.5 font-display text-[10px]"
+            >
+              <span className="h-1.5 w-1.5 rounded-full" style={{ background: tone, boxShadow: `0 0 6px ${tone}` }} />
+              {p.name}
+            </span>
+          );
+        })}
+      </div>
+    </div>
   );
 }

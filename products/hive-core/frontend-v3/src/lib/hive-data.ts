@@ -1,473 +1,86 @@
-// PatchHive suite registry.
-//
-// Identity, safety posture, and declared capabilities mirror
-// services/patchhive-backend/registry/products/*.toml — the declarative source of
-// truth. Ports mirror scripts/suite-common.sh. Nothing here is invented; when this
-// deck is wired to HiveCore, this file is replaced by GET /products and the manifest
-// becomes the only registry (see docs/hivecore-architecture.md, blocker B1).
-//
-// The split that matters: `declared` comes from the manifest, `observed` comes from
-// polling the product. Contract drift is the difference between them.
-
-export type ProductStatus =
-  | "online"
-  | "degraded"
-  | "offline"
-  | "unconfigured"
-  | "disabled"
-  | "unknown";
-export type MigrationStage = "integrated" | "in-progress" | "not-started";
-
-export interface ProductSafety {
-  readOnly: boolean;
-  writesExternalState: boolean;
-  mutatesRepositories: boolean;
-  opensPullRequests: boolean;
-  requiresOperatorApproval: boolean;
-  credentialScopes: string[];
-  evidenceRequired: string[];
-}
-
-export interface DeclaredCapability {
-  id: string;
-  label: string;
-  description: string;
-}
-
-/** What polling the product told us. Empty until the deck is wired to HiveCore. */
-export interface ObservedState {
-  status: ProductStatus;
-  /** Advertised by GET /capabilities at runtime — compared against `declared`. */
-  actions: string[];
-  /** null means not fetched, which is not the same as zero. */
-  startupErrors: number | null;
-  startupWarns: number | null;
-  driftCount: number;
-  runCount: number;
-  /** ISO timestamp of the last successful poll, or null if never observed. */
-  observedAt: string | null;
-}
+export type Status = "ok" | "warn" | "crit" | "offline";
 
 export interface Product {
-  key: string;
-  code: string;
+  id: string;
   name: string;
-  role: string;
-  routePrefix: string;
-  migrationStage: MigrationStage;
-  frontendPort: number;
-  apiPort: number;
-  safety: ProductSafety;
-  declared: DeclaredCapability[];
-  observed: ObservedState;
+  tagline: string;
+  frontend: string;
+  api: string;
+  status: Status;
+  latencyMs: number;
+  uptime: number; // 0-1
+  runs24h: number;
+  capabilities: string[];
+  contractDrift: number;
 }
 
-const readOnly = (scopes: string[], evidence: string[]): ProductSafety => ({
-  readOnly: true,
-  writesExternalState: false,
-  mutatesRepositories: false,
-  opensPullRequests: false,
-  requiresOperatorApproval: false,
-  credentialScopes: scopes,
-  evidenceRequired: evidence,
-});
-
-const unobserved = (): ObservedState => ({
-  status: "unknown",
-  actions: [],
-  startupErrors: null,
-  startupWarns: null,
-  driftCount: 0,
-  runCount: 0,
-  observedAt: null,
-});
-
-const cap = (id: string, label: string, description: string): DeclaredCapability => ({
-  id,
-  label,
-  description,
-});
-
+// Identity, taglines, and capability ids mirror
+// services/patchhive-backend/registry/products/*.toml. Ports mirror
+// scripts/suite-common.sh. Status is refreshed from GET /api/products at runtime.
+//
+// latencyMs / uptime / runs24h are SEEDED SAMPLE VALUES, not measurements — the
+// backend does not expose per-product latency or uptime, and PatchHive products are
+// not request-serving services. They drive the sparklines and heatmap until real
+// run telemetry exists. The deck labels them as sampled.
 export const PRODUCTS: Product[] = [
-  {
-    key: "signal-hive",
-    code: "SH",
-    name: "SignalHive",
-    role: "maintenance signal reconnaissance",
-    routePrefix: "/api/products/signal-hive",
-    migrationStage: "integrated",
-    frontendPort: 5174,
-    apiPort: 8010,
-    safety: readOnly(
-      ["github:repo:read", "github:issues:read", "github:code:read"],
-      ["scan parameters", "repo sample list"],
-    ),
-    declared: [
-      cap("repo-discovery", "Repo discovery", "Discover repositories from broad operator scopes."),
-      cap(
-        "signal-scan",
-        "Signal scan",
-        "Scan repos for stale issues, recurring patterns, and maintenance pressure.",
-      ),
-      cap("read-only", "Read-only", "Does not mutate repositories or open pull requests."),
-    ],
-    observed: unobserved(),
-  },
-  {
-    key: "repo-memory",
-    code: "RM",
-    name: "RepoMemory",
-    role: "durable repo memory and prompt packs",
-    routePrefix: "/api/products/repo-memory",
-    migrationStage: "integrated",
-    frontendPort: 5176,
-    apiPort: 8030,
-    safety: {
-      readOnly: false,
-      writesExternalState: false,
-      mutatesRepositories: false,
-      opensPullRequests: false,
-      requiresOperatorApproval: true,
-      credentialScopes: [
-        "github:repo:read",
-        "github:pull_requests:read",
-        "github:issues:read",
-      ],
-      evidenceRequired: ["repo identity", "source event", "memory summary"],
-    },
-    declared: [
-      cap("memory-ingest", "Memory ingest", "Capture durable repo conventions and lessons."),
-      cap("prompt-pack", "Prompt pack", "Assemble consumer-aware context for other products."),
-      cap("failguard", "FailGuard", "Review, promote, or dismiss bad-outcome lesson candidates."),
-    ],
-    observed: unobserved(),
-  },
-  {
-    key: "trust-gate",
-    code: "TG",
-    name: "TrustGate",
-    role: "diff policy and risk review",
-    routePrefix: "/api/products/trust-gate",
-    migrationStage: "integrated",
-    frontendPort: 5175,
-    apiPort: 8020,
-    safety: {
-      readOnly: false,
-      writesExternalState: true,
-      mutatesRepositories: false,
-      opensPullRequests: false,
-      requiresOperatorApproval: true,
-      credentialScopes: ["github:pull_requests:read", "github:checks:write"],
-      evidenceRequired: ["diff", "policy pack", "decision report"],
-    },
-    declared: [
-      cap("review-diff", "Review diff", "Score a supplied diff against repo-specific safety rules."),
-      cap(
-        "review-pr",
-        "Review pull request",
-        "Score a GitHub pull request diff and publish a decision report.",
-      ),
-      cap(
-        "failguard-submit",
-        "FailGuard submit",
-        "Submit warn/block reviews as lesson candidates to RepoMemory.",
-      ),
-    ],
-    observed: unobserved(),
-  },
-  {
-    key: "repo-reaper",
-    code: "RR",
-    name: "RepoReaper",
-    role: "autonomous patch and PR execution",
-    routePrefix: "/api/products/repo-reaper",
-    migrationStage: "integrated",
-    frontendPort: 5173,
-    apiPort: 8000,
-    safety: {
-      readOnly: false,
-      writesExternalState: true,
-      mutatesRepositories: true,
-      opensPullRequests: true,
-      requiresOperatorApproval: true,
-      credentialScopes: [
-        "github:contents:write",
-        "github:pull_requests:write",
-        "provider:ai",
-      ],
-      evidenceRequired: [
-        "issue URL",
-        "generated patch",
-        "test result",
-        "TrustGate decision",
-      ],
-    },
-    declared: [
-      cap(
-        "hunt",
-        "Hunt",
-        "Discover candidate bug issues, generate patches, and open pull requests.",
-      ),
-      cap("dry-run", "Dry stalk", "Score and plan without writing anything."),
-      cap("watch-mode", "Watch mode", "Start hunts from authenticated webhook events."),
-    ],
-    observed: unobserved(),
-  },
-  {
-    key: "review-bee",
-    code: "RB",
-    name: "ReviewBee",
-    role: "PR review feedback checklist",
-    routePrefix: "/api/products/review-bee",
-    migrationStage: "integrated",
-    frontendPort: 5177,
-    apiPort: 8040,
-    safety: {
-      readOnly: false,
-      writesExternalState: true,
-      mutatesRepositories: false,
-      opensPullRequests: false,
-      requiresOperatorApproval: true,
-      credentialScopes: ["github:pull_requests:read", "github:issues:write"],
-      evidenceRequired: ["PR URL", "review thread snapshot", "comment preview"],
-    },
-    declared: [
-      cap(
-        "review-pr",
-        "Review pull request",
-        "Turn review-thread churn into a concrete follow-up checklist.",
-      ),
-      cap(
-        "maintained-comment",
-        "Maintained comment",
-        "Publish and update a single managed PR comment.",
-      ),
-    ],
-    observed: unobserved(),
-  },
-  {
-    key: "merge-keeper",
-    code: "MK",
-    name: "MergeKeeper",
-    role: "merge readiness assessment",
-    routePrefix: "/api/products/merge-keeper",
-    migrationStage: "integrated",
-    frontendPort: 5178,
-    apiPort: 8050,
-    safety: {
-      readOnly: false,
-      writesExternalState: true,
-      mutatesRepositories: false,
-      opensPullRequests: false,
-      requiresOperatorApproval: true,
-      credentialScopes: [
-        "github:pull_requests:read",
-        "github:checks:read",
-        "github:checks:write",
-        "github:statuses:write",
-        "github:issues:write",
-      ],
-      evidenceRequired: ["PR URL", "review state", "check state", "mergeability state"],
-    },
-    declared: [
-      cap(
-        "assess-pr",
-        "Assess pull request",
-        "Decide whether a PR is merge-ready, blocked, or on hold.",
-      ),
-      cap(
-        "publish-status",
-        "Publish status",
-        "Write the assessment back as a commit status or check.",
-      ),
-    ],
-    observed: unobserved(),
-  },
-  {
-    key: "flake-sting",
-    code: "FS",
-    name: "FlakeSting",
-    role: "CI flake detection",
-    routePrefix: "/api/products/flake-sting",
-    migrationStage: "integrated",
-    frontendPort: 5179,
-    apiPort: 8060,
-    safety: readOnly(
-      ["github:actions:read"],
-      ["repo identity", "workflow run sample", "lookback window"],
-    ),
-    declared: [
-      cap("scan-actions", "Scan Actions", "Detect flaky workflow behavior across recent runs."),
-      cap("read-only", "Read-only", "Does not mutate repositories or open pull requests."),
-    ],
-    observed: unobserved(),
-  },
-  {
-    key: "dep-triage",
-    code: "DT",
-    name: "DepTriage",
-    role: "dependency update triage",
-    routePrefix: "/api/products/dep-triage",
-    migrationStage: "integrated",
-    frontendPort: 5180,
-    apiPort: 8070,
-    safety: readOnly(
-      ["github:pull_requests:read", "github:dependabot:read"],
-      ["dependency PRs", "alert sample", "scoring inputs"],
-    ),
-    declared: [
-      cap(
-        "scan-dependencies",
-        "Scan dependencies",
-        "Rank dependency update noise into act, watch, or ignore.",
-      ),
-      cap("read-only", "Read-only", "Does not mutate repositories or open pull requests."),
-    ],
-    observed: unobserved(),
-  },
-  {
-    key: "vuln-triage",
-    code: "VT",
-    name: "VulnTriage",
-    role: "security finding triage",
-    routePrefix: "/api/products/vuln-triage",
-    migrationStage: "integrated",
-    frontendPort: 5181,
-    apiPort: 8110,
-    safety: readOnly(
-      ["github:security_events:read", "github:dependabot:read"],
-      ["security alert snapshot", "severity inputs", "reachability hints"],
-    ),
-    declared: [
-      cap(
-        "scan-security",
-        "Scan security feeds",
-        "Turn security alerts into a practical engineering queue.",
-      ),
-      cap("read-only", "Read-only", "Does not mutate repositories or open pull requests."),
-    ],
-    observed: unobserved(),
-  },
-  {
-    key: "refactor-scout",
-    code: "RS",
-    name: "RefactorScout",
-    role: "conservative refactor discovery",
-    routePrefix: "/api/products/refactor-scout",
-    migrationStage: "integrated",
-    frontendPort: 5182,
-    apiPort: 8090,
-    safety: readOnly(
-      ["local:filesystem:read", "github:public-repo:clone"],
-      [
-        "local path allowlist or temporary GitHub clone",
-        "file metrics",
-        "ranking reason",
-      ],
-    ),
-    declared: [
-      cap(
-        "scan-repo",
-        "Scan repository",
-        "Surface safe refactor opportunities before code health drift compounds.",
-      ),
-      cap("read-only", "Read-only", "Does not mutate repositories or open pull requests."),
-    ],
-    observed: unobserved(),
-  },
-  {
-    key: "release-sentry",
-    code: "RSY",
-    name: "ReleaseSentry",
-    role: "release readiness evidence",
-    routePrefix: "/api/products/release-sentry",
-    migrationStage: "integrated",
-    frontendPort: 5184,
-    apiPort: 8120,
-    safety: readOnly(
-      ["github:repo:read", "github:actions:read", "github:releases:read"],
-      ["release target", "CI state", "blocker summary"],
-    ),
-    declared: [
-      cap(
-        "check-release",
-        "Check release",
-        "Decide whether a repo or product is actually ready to ship.",
-      ),
-      cap("read-only", "Read-only", "Does not mutate repositories or open pull requests."),
-    ],
-    observed: unobserved(),
-  },
-  {
-    key: "hive-core",
-    code: "HC",
-    name: "HiveCore",
-    role: "control plane and suite cockpit",
-    routePrefix: "/api/products/hive-core",
-    migrationStage: "not-started",
-    frontendPort: 5183,
-    apiPort: 8100,
-    safety: {
-      readOnly: false,
-      writesExternalState: false,
-      mutatesRepositories: false,
-      opensPullRequests: false,
-      requiresOperatorApproval: true,
-      credentialScopes: ["suite:control", "products:configure"],
-      evidenceRequired: ["operator session", "capability dispatch log"],
-    },
-    declared: [
-      cap(
-        "suite-settings",
-        "Suite settings",
-        "Persist suite-wide defaults and per-product overrides.",
-      ),
-      cap(
-        "repository-policy",
-        "Repository policy",
-        "Own operator exclusions and trusted-repository elevations.",
-      ),
-      cap(
-        "pr-budgets",
-        "PR budgets",
-        "Own per-product limits and the suite-wide outbound PR ceiling.",
-      ),
-    ],
-    observed: unobserved(),
-  },
+  { id: "reporeaper", name: "RepoReaper", tagline: "Autonomous patch and PR execution", frontend: "http://localhost:5173", api: "http://localhost:8000", status: "ok", latencyMs: 42, uptime: 0.999, runs24h: 184, capabilities: ["hunt", "dry-run", "watch-mode"], contractDrift: 0 },
+  { id: "signalhive", name: "SignalHive", tagline: "Maintenance signal reconnaissance", frontend: "http://localhost:5174", api: "http://localhost:8010", status: "ok", latencyMs: 38, uptime: 0.998, runs24h: 1240, capabilities: ["repo-discovery", "signal-scan", "read-only"], contractDrift: 0 },
+  { id: "trustgate", name: "TrustGate", tagline: "Diff policy and risk review", frontend: "http://localhost:5175", api: "http://localhost:8020", status: "ok", latencyMs: 71, uptime: 0.997, runs24h: 42, capabilities: ["review-diff", "review-pr", "failguard-submit"], contractDrift: 0 },
+  { id: "repomemory", name: "RepoMemory", tagline: "Durable repo memory and prompt packs", frontend: "http://localhost:5176", api: "http://localhost:8030", status: "warn", latencyMs: 312, uptime: 0.982, runs24h: 92, capabilities: ["memory-ingest", "prompt-pack", "failguard"], contractDrift: 1 },
+  { id: "reviewbee", name: "ReviewBee", tagline: "PR review feedback checklist", frontend: "http://localhost:5177", api: "http://localhost:8040", status: "ok", latencyMs: 58, uptime: 0.996, runs24h: 311, capabilities: ["review-pr", "maintained-comment"], contractDrift: 0 },
+  { id: "mergekeeper", name: "MergeKeeper", tagline: "Merge readiness assessment", frontend: "http://localhost:5178", api: "http://localhost:8050", status: "ok", latencyMs: 49, uptime: 0.999, runs24h: 76, capabilities: ["assess-pr", "publish-status"], contractDrift: 0 },
+  { id: "flakesting", name: "FlakeSting", tagline: "CI flake detection", frontend: "http://localhost:5179", api: "http://localhost:8060", status: "warn", latencyMs: 188, uptime: 0.984, runs24h: 53, capabilities: ["scan-actions", "read-only"], contractDrift: 0 },
+  { id: "deptriage", name: "DepTriage", tagline: "Dependency update triage", frontend: "http://localhost:5180", api: "http://localhost:8070", status: "ok", latencyMs: 64, uptime: 0.997, runs24h: 22, capabilities: ["scan-dependencies", "read-only"], contractDrift: 0 },
+  { id: "vulntriage", name: "VulnTriage", tagline: "Security finding triage", frontend: "http://localhost:5181", api: "http://localhost:8110", status: "crit", latencyMs: 0, uptime: 0.871, runs24h: 0, capabilities: ["scan-security", "read-only"], contractDrift: 2 },
+  { id: "refactorscout", name: "RefactorScout", tagline: "Conservative refactor discovery", frontend: "http://localhost:5182", api: "http://localhost:8090", status: "ok", latencyMs: 95, uptime: 0.995, runs24h: 18, capabilities: ["scan-repo", "read-only"], contractDrift: 0 },
+  { id: "hivecore", name: "HiveCore", tagline: "Control plane and suite cockpit", frontend: "http://localhost:5183", api: "http://localhost:8100", status: "ok", latencyMs: 12, uptime: 1.0, runs24h: 0, capabilities: ["suite-settings", "repository-policy", "pr-budgets"], contractDrift: 0 },
+  { id: "releasesentry", name: "ReleaseSentry", tagline: "Release readiness evidence", frontend: "http://localhost:5184", api: "http://localhost:8120", status: "ok", latencyMs: 54, uptime: 0.994, runs24h: 37, capabilities: ["check-release", "read-only"], contractDrift: 0 },
 ];
 
-export const PRODUCTS_BY_KEY: Record<string, Product> = Object.fromEntries(
-  PRODUCTS.map((p) => [p.key, p]),
-);
+// IDs the live mesh currently reports as participating.
+// Anything in PRODUCTS but not in LIVE_MESH is treated as "missing from mesh".
+export const LIVE_MESH: string[] = [
+  "reporeaper",
+  "signalhive",
+  "trustgate",
+  "repomemory",
+  "reviewbee",
+  "mergekeeper",
+  "flakesting",
+  "deptriage",
+  "vulntriage",
+  "hivecore",
+  "releasesentry",
+];
 
-/** Highest-privilege label for a product, used for the posture chip. */
-export function safetyLabel(safety: ProductSafety): string {
-  if (safety.opensPullRequests) return "opens PRs";
-  if (safety.mutatesRepositories) return "mutates repos";
-  if (safety.writesExternalState) return "writes external state";
-  if (safety.readOnly) return "read-only";
-  return "local writes only";
+export type MeshPresence = "online" | "offline" | "missing";
+
+export function meshPresence(product: Product): MeshPresence {
+  if (!LIVE_MESH.includes(product.id)) return "missing";
+  if (product.status === "crit" || product.status === "offline") return "offline";
+  return "online";
 }
 
-export function isWriteCapable(product: Product): boolean {
-  return product.safety.writesExternalState || product.safety.mutatesRepositories;
-}
-
-/**
- * Run summaries as they arrive from the contract-v1 run index.
- * Populated from GET /products/:slug/runs; empty until the deck is wired.
- */
-export interface RunSummary {
+export interface RunEvent {
   id: string;
-  productKey: string;
-  title: string;
-  summary: string;
-  status: "queued" | "running" | "completed" | "failed" | "cancelled";
-  triggerMode: "operator" | "schedule" | "webhook" | "orchestration";
-  targetSelectionMode: "direct" | "discovery";
-  createdAt: string;
-  updatedAt: string;
+  product: string;
+  capability: string;
+  status: "success" | "running" | "failed";
+  durationMs: number;
+  ts: string;
 }
 
-export const RUNS: RunSummary[] = [];
+export const RUNS: RunEvent[] = [
+  { id: "r_8af5", product: "ReleaseSentry", capability: "check.github.release", status: "success", durationMs: 318, ts: "4s ago" },
+  { id: "r_8af4", product: "ReleaseSentry", capability: "blockers.scan", status: "running", durationMs: 0, ts: "9s ago" },
+  { id: "r_8af3", product: "SignalHive", capability: "alert.dispatch", status: "success", durationMs: 142, ts: "12s ago" },
+  { id: "r_8af2", product: "ReviewBee", capability: "pr.review", status: "running", durationMs: 0, ts: "18s ago" },
+  { id: "r_8af1", product: "RepoReaper", capability: "scan.repo", status: "success", durationMs: 2810, ts: "44s ago" },
+  { id: "r_8af0", product: "VulnTriage", capability: "cve.ingest", status: "failed", durationMs: 9211, ts: "1m ago" },
+  { id: "r_8aef", product: "MergeKeeper", capability: "merge.gate", status: "success", durationMs: 88, ts: "1m ago" },
+  { id: "r_8aee", product: "FlakeSting", capability: "test.classify", status: "success", durationMs: 1640, ts: "2m ago" },
+  { id: "r_8aed", product: "DepTriage", capability: "dep.audit", status: "success", durationMs: 740, ts: "3m ago" },
+  { id: "r_8aec", product: "RepoMemory", capability: "embed.commit", status: "success", durationMs: 4220, ts: "3m ago" },
+  { id: "r_8aeb", product: "SignalHive", capability: "signal.normalize", status: "success", durationMs: 61, ts: "4m ago" },
+  { id: "r_8aea", product: "TrustGate", capability: "token.rotate", status: "success", durationMs: 210, ts: "5m ago" },
+];

@@ -1,130 +1,300 @@
-import { useState, type FormEvent } from "react";
-import { Loader2, Sparkles } from "lucide-react";
+import { useRef, useState } from "react";
+import { AlertCircle, CheckCircle2, Loader2, Play, Repeat, Send, Sparkles, Square, Trash2 } from "lucide-react";
+import { PRODUCTS, RUNS } from "@/lib/hive-data";
+import { INCIDENTS } from "@/lib/hive-extra";
+import { toast } from "sonner";
+import { useHiveCommand } from "./hive-command";
+import { API } from "@/config";
 
-import { apiFetch, HiveApiError } from "@/lib/api";
-import { EmptyDeck, Panel, Section } from "./deck-ui";
-
-/**
- * Grounded question answering over the suite's own state.
- *
- * The model call lives in the Rust backend behind PATCHHIVE_AI_URL — the browser
- * never talks to a provider and never holds a provider key. This is read-only by
- * construction: it explains what the ledger says and it cannot dispatch anything.
- */
-interface AskResponse {
-  answer: string;
-  /** Event, run, or policy ids the answer was drawn from. */
-  citations: string[];
+function buildContext() {
+  return JSON.stringify(
+    {
+      products: PRODUCTS.map((p) => ({
+        id: p.id,
+        name: p.name,
+        status: p.status,
+        latencyMs: p.latencyMs,
+        uptime: p.uptime,
+        runs24h: p.runs24h,
+        capabilities: p.capabilities,
+        contractDrift: p.contractDrift,
+      })),
+      recentRuns: RUNS.map((r) => ({
+        id: r.id,
+        product: r.product,
+        capability: r.capability,
+        status: r.status,
+        durationMs: r.durationMs,
+        ts: r.ts,
+      })),
+      incidents: INCIDENTS.map((i) => ({
+        productId: i.productId,
+        severity: i.severity,
+        summary: i.summary,
+        openedAt: i.from,
+        closedAt: i.to,
+      })),
+    },
+    null,
+    2,
+  );
 }
 
 const SUGGESTIONS = [
-  "Why did nothing ship yesterday?",
-  "Which products are drifting from their manifests?",
-  "What is holding the last three PR slots?",
-  "Which repositories were denied this week, and by which rule?",
+  "Which products are currently degraded?",
+  "What failed in the last hour?",
+  "Who has capabilities to rotate tokens?",
+  "What's the fleet MTTR trend?",
 ];
 
 export function AskHive() {
-  const [question, setQuestion] = useState("");
-  const [pending, setPending] = useState(false);
-  const [answer, setAnswer] = useState<AskResponse | null>(null);
-  const [error, setError] = useState("");
+  const { logAudit } = useHiveCommand();
+  const [q, setQ] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [answer, setAnswer] = useState<string | null>(null);
+  const [streaming, setStreaming] = useState(false);
+  const [lastQ, setLastQ] = useState<string | null>(null);
+  const [stopped, setStopped] = useState(false);
 
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    const trimmed = question.trim();
-    if (trimmed.length < 2 || pending) return;
 
-    setPending(true);
-    setError("");
-    setAnswer(null);
-    try {
-      const result = await apiFetch<AskResponse>("/ask", {
-        method: "POST",
-        body: JSON.stringify({ question: trimmed }),
-      });
-      setAnswer(result);
-    } catch (cause) {
-      setError(
-        cause instanceof HiveApiError
-          ? cause.message
-          : "HiveCore could not answer that question.",
-      );
-    } finally {
-      setPending(false);
+
+
+  const abortRef = useRef<AbortController | null>(null);
+
+  const stop = () => {
+    if (abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
     }
-  }
+  };
+
+  const runQuery = async (question: string, opts?: { resumeFrom?: string }) => {
+    if (!question.trim() || loading || streaming) return;
+    setLoading(true);
+    setStopped(false);
+    setLastQ(question);
+    const resuming = !!opts?.resumeFrom;
+    if (!resuming) setAnswer(null);
+    const controller = new AbortController();
+    abortRef.current = controller;
+    try {
+      const body: Record<string, string> = {
+        question,
+        context: buildContext(),
+      };
+      if (opts?.resumeFrom) body.resumeFrom = opts.resumeFrom;
+      const res = await fetch(`${API}/ask`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+      if (!res.ok || !res.body) {
+        const txt = await res.text().catch(() => res.statusText);
+        throw new Error(txt || `HTTP ${res.status}`);
+      }
+      setLoading(false);
+      setStreaming(true);
+      let acc = resuming && opts?.resumeFrom ? `${opts.resumeFrom} ` : "";
+      setAnswer(acc);
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        acc += decoder.decode(value, { stream: true });
+        setAnswer(acc);
+      }
+      acc += decoder.decode();
+      setAnswer(acc);
+      setStreaming(false);
+      logAudit({
+        kind: "ai",
+        title: resuming ? "Resumed answer" : "Asked the hive",
+        detail: question,
+      });
+    } catch (e) {
+      const aborted =
+        (e instanceof DOMException && e.name === "AbortError") ||
+        (e instanceof Error && e.name === "AbortError");
+      if (aborted) {
+        setStopped(true);
+        setAnswer((prev) => (prev ? `${prev}\n\n_Stopped._` : "_Stopped._"));
+        toast("Stopped", { description: "Streaming interrupted — resume or re-run below" });
+        logAudit({ kind: "ai", title: "Ask cancelled", detail: question });
+      } else {
+        const msg = e instanceof Error ? e.message : String(e);
+        toast.error("AI request failed", { description: msg });
+        setAnswer(`AI request failed: ${msg}`);
+      }
+      setStreaming(false);
+    } finally {
+      abortRef.current = null;
+      setLoading(false);
+    }
+  };
+
+  const ask = (question: string) => runQuery(question);
+
+  const resume = () => {
+    if (!lastQ) return;
+    const partial = (answer ?? "").replace(/\n?_Stopped\._$/, "").trim();
+    runQuery(lastQ, { resumeFrom: partial });
+  };
+
+  const rerun = () => {
+    if (!lastQ) return;
+    setAnswer(null);
+    runQuery(lastQ);
+  };
+
+  const clearContext = () => {
+    setLastQ(null);
+    setAnswer(null);
+    setStopped(false);
+    toast.info("Cached context cleared");
+    logAudit({ kind: "ai", title: "Cleared cached context", detail: "" });
+  };
+
+
+
 
   return (
-    <Section
-      id="ask"
-      title="Ask the hive"
-      kicker="Natural-language questions answered from the suite's own event ledger. Read-only, grounded, and cited."
-    >
-      <form onSubmit={submit} className="flex gap-2">
+    <section id="ask" className="mt-8 scroll-mt-24 rounded-xl border border-border bg-card/50 p-6 backdrop-blur">
+      <div className="mb-4 flex items-end justify-between gap-3">
+        <div>
+          <h2 className="flex items-center gap-2 font-display text-sm font-bold uppercase tracking-[0.2em]">
+            <Sparkles className="h-4 w-4 text-[var(--honey)]" /> Ask the Hive
+          </h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Natural-language query grounded on the live registry, runs, and incidents.
+          </p>
+        </div>
+      </div>
+
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          ask(q);
+        }}
+        className="flex gap-2"
+      >
         <input
-          value={question}
-          onChange={(event) => setQuestion(event.target.value)}
-          placeholder="Ask about runs, drift, policy, or budgets…"
-          className="flex-1 rounded border border-border bg-background/60 px-3 py-2 text-sm text-foreground outline-none focus:border-[var(--honey)]/50"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder='e.g. "which products failed a token.rotate in the last hour?"'
+          className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-[var(--honey)]/60 focus:outline-none"
         />
-        <button
-          type="submit"
-          disabled={pending || question.trim().length < 2}
-          className="inline-flex items-center gap-2 rounded bg-[var(--honey)] px-4 py-2 font-display text-[10px] font-bold uppercase tracking-wider text-primary-foreground transition hover:brightness-110 disabled:opacity-40"
-        >
-          {pending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-          Ask
-        </button>
+        {loading || streaming ? (
+          <button
+            type="button"
+            onClick={stop}
+            className="inline-flex items-center gap-2 rounded-lg border border-[var(--crit)]/50 bg-[var(--crit)]/10 px-4 py-2 font-display text-xs font-bold uppercase tracking-wider text-[var(--crit)] transition hover:brightness-110"
+          >
+            <Square className="h-3.5 w-3.5 fill-current" />
+            Stop
+          </button>
+        ) : (
+          <button
+            type="submit"
+            disabled={!q.trim()}
+            className="inline-flex items-center gap-2 rounded-lg bg-[var(--honey)] px-4 py-2 font-display text-xs font-bold uppercase tracking-wider text-primary-foreground transition hover:brightness-110 disabled:opacity-50"
+          >
+            <Send className="h-3.5 w-3.5" />
+            Ask
+          </button>
+        )}
       </form>
 
-      <div className="mt-2 flex flex-wrap gap-1.5">
-        {SUGGESTIONS.map((suggestion) => (
+      <div className="mt-3 flex flex-wrap gap-1.5">
+        {SUGGESTIONS.map((s) => (
           <button
-            key={suggestion}
-            onClick={() => setQuestion(suggestion)}
-            className="rounded border border-border px-2 py-1 text-[11px] text-muted-foreground transition hover:border-[var(--honey)]/40 hover:text-foreground"
+            key={s}
+            onClick={() => {
+              setQ(s);
+              ask(s);
+            }}
+            className="rounded-full border border-border bg-card/60 px-2.5 py-1 font-display text-[10px] text-muted-foreground transition hover:border-[var(--honey)]/50 hover:text-[var(--honey)]"
           >
-            {suggestion}
+            {s}
           </button>
         ))}
       </div>
 
-      <div className="mt-4">
-        {error && (
-          <Panel className="border-[var(--warn)]/40 bg-[var(--warn)]/[0.06]">
-            <p className="text-xs text-foreground">{error}</p>
-            <p className="mt-1 text-[11px] text-muted-foreground">
-              The answer endpoint is not implemented yet. It belongs in the Rust backend, calling
-              the local gateway at PATCHHIVE_AI_URL — never a provider from the browser.
-            </p>
-          </Panel>
-        )}
-        {answer && (
-          <Panel>
-            <p className="text-sm text-foreground">{answer.answer}</p>
-            {answer.citations.length > 0 && (
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {answer.citations.map((citation) => (
-                  <code
-                    key={citation}
-                    className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
-                  >
-                    {citation}
-                  </code>
-                ))}
-              </div>
-            )}
-          </Panel>
-        )}
-        {!error && !answer && !pending && (
-          <EmptyDeck
-            title="Grounded on the ledger, not on vibes"
-            detail="Answers are drawn only from suite events, runs, policy decisions, and budgets, and cite what they used. If the ledger does not contain the answer, it says so."
-            source="POST /ask"
-          />
-        )}
-      </div>
-    </Section>
+      {(answer || loading) && (
+        <div className="mt-4 rounded-lg border border-[var(--honey)]/30 bg-[var(--honey)]/[0.04] p-4">
+          {lastQ && (
+            <div className="mb-2 font-display text-[10px] uppercase tracking-wider text-muted-foreground">
+              → {lastQ}
+            </div>
+          )}
+          {loading ? (
+            <div className="flex items-center gap-2 font-display text-xs text-muted-foreground">
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-[var(--honey)]" /> Querying the hive…
+            </div>
+          ) : (
+            <>
+              <p className="text-sm leading-relaxed text-foreground">
+                {answer}
+                {streaming && <span className="ml-0.5 inline-block h-3 w-1.5 -translate-y-px animate-pulse bg-[var(--honey)] align-middle" />}
+              </p>
+              {stopped && !streaming && (() => {
+                const partial = (answer ?? "").replace(/\n?_Stopped\._$/, "").trim();
+                const canResume = !!lastQ && partial.length > 0;
+                const canRerun = !!lastQ;
+                if (!canResume && !canRerun) {
+                  return (
+                    <div className="mt-3 font-display text-[10px] uppercase tracking-wider text-muted-foreground/70">
+                      No cached context to resume — ask a new question above.
+                    </div>
+                  );
+                }
+                return (
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <button
+                      onClick={resume}
+                      disabled={!canResume}
+                      className="inline-flex items-center gap-1 rounded border border-[var(--honey)]/40 bg-[var(--honey)]/10 px-2 py-0.5 font-display text-[10px] uppercase tracking-wider text-[var(--honey)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:border-border disabled:bg-transparent disabled:text-muted-foreground/50 disabled:hover:brightness-100"
+                      title={canResume ? "Continue from where the stream stopped" : "Nothing was streamed yet — nothing to resume"}
+                    >
+                      <Play className="h-3 w-3" /> Resume
+                    </button>
+                    <button
+                      onClick={rerun}
+                      disabled={!canRerun}
+                      className="inline-flex items-center gap-1 rounded border border-border bg-card/60 px-2 py-0.5 font-display text-[10px] uppercase tracking-wider text-muted-foreground transition hover:border-[var(--honey)]/50 hover:text-[var(--honey)] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-border disabled:hover:text-muted-foreground"
+                      title={canRerun ? "Re-run the same question from scratch" : "No previous question to re-run"}
+                    >
+                      <Repeat className="h-3 w-3" /> Re-run
+                    </button>
+                    <button
+                      onClick={clearContext}
+                      className="inline-flex items-center gap-1 rounded border border-border bg-card/60 px-2 py-0.5 font-display text-[10px] uppercase tracking-wider text-muted-foreground transition hover:border-[var(--crit)]/40 hover:text-[var(--crit)]"
+                      title="Discard cached answer and start fresh"
+                    >
+                      <Trash2 className="h-3 w-3" /> Clear
+                    </button>
+                    {canResume ? (
+                      <span className="inline-flex items-center gap-1 font-display text-[10px] uppercase tracking-wider text-ok/90">
+                        <CheckCircle2 className="h-3 w-3" /> Cached context ready
+                      </span>
+                    ) : canRerun ? (
+                      <span className="inline-flex items-center gap-1 font-display text-[10px] uppercase tracking-wider text-muted-foreground/60">
+                        <AlertCircle className="h-3 w-3" /> No partial answer — resume unavailable
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 font-display text-[10px] uppercase tracking-wider text-muted-foreground/60">
+                        <AlertCircle className="h-3 w-3" /> No cached context
+                      </span>
+                    )}
+                  </div>
+                );
+              })()}
+            </>
+          )}
+        </div>
+      )}
+    </section>
   );
 }
