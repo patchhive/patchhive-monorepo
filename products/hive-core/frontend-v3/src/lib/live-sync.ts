@@ -13,6 +13,7 @@ import { useEffect, useState } from "react";
 
 import { API } from "@/config";
 import { PRODUCTS, RUNS, type RunEvent, type Status } from "./hive-data";
+import { fetchConformance } from "./conformance";
 
 interface ApiProduct {
   key: string;
@@ -20,6 +21,24 @@ interface ApiProduct {
   status: string;
   capabilities: string[];
 }
+
+/** Deck ids back to API keys, for joining against endpoints keyed by slug. */
+const SLUG_BY_ID: Record<string, string> = Object.fromEntries(
+  Object.entries({
+    "repo-reaper": "reporeaper",
+    "signal-hive": "signalhive",
+    "trust-gate": "trustgate",
+    "repo-memory": "repomemory",
+    "review-bee": "reviewbee",
+    "merge-keeper": "mergekeeper",
+    "flake-sting": "flakesting",
+    "dep-triage": "deptriage",
+    "vuln-triage": "vulntriage",
+    "refactor-scout": "refactorscout",
+    "release-sentry": "releasesentry",
+    "hive-core": "hivecore",
+  }).map(([slug, id]) => [id, slug]),
+);
 
 /** API product keys are kebab-case; the deck's ids are not. */
 const ID_BY_SLUG: Record<string, string> = {
@@ -212,6 +231,24 @@ export function useLiveSuite(pollMs = 10_000): LiveSuite {
 
         await syncRuns(controller.signal);
         if (cancelled) return;
+
+        // Drift badges on the product cards come from the same conformance check
+        // the inspector runs, so a badge cannot claim drift the panel disagrees with.
+        try {
+          const conformance = await fetchConformance(controller.signal);
+          if (cancelled) return;
+          const byKey = new Map(conformance.map((row) => [row.productKey, row]));
+          for (const product of PRODUCTS) {
+            const slug = SLUG_BY_ID[product.id] ?? product.id;
+            product.contractDrift = byKey.get(slug)?.findings.length ?? 0;
+          }
+        } catch (conformanceError) {
+          if (conformanceError instanceof DOMException && conformanceError.name === "AbortError") {
+            return;
+          }
+          // Conformance is supplementary; a failure here must not blank the deck.
+          for (const product of PRODUCTS) product.contractDrift = 0;
+        }
 
         setState((current) => ({
           live: true,

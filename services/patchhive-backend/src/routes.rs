@@ -42,6 +42,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/setup/first-stack/pair", post(pair_first_stack))
         .route("/api/runs", get(runs))
         .route("/api/products/runs", get(products_runs))
+        .route("/api/products/capabilities", get(products_capabilities))
         .route("/api/events", get(events))
         .with_state(state);
 
@@ -257,6 +258,14 @@ async fn runs(State(state): State<Arc<AppState>>) -> Json<Vec<crate::models::Run
 /// Server-side aggregate of every mounted engine's run history.
 async fn products_runs(State(state): State<Arc<AppState>>) -> Json<Vec<products::ProductRuns>> {
     Json(products::all_runs(&state.config).await)
+}
+
+/// Runtime-advertised capabilities per engine, for drift comparison against the
+/// manifest data already served by /api/products.
+async fn products_capabilities(
+    State(state): State<Arc<AppState>>,
+) -> Json<Vec<products::ProductCapabilityReport>> {
+    Json(products::advertised_capabilities(&state.config).await)
 }
 
 async fn events(State(state): State<Arc<AppState>>) -> Json<Vec<crate::models::SuiteEvent>> {

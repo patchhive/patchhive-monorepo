@@ -273,8 +273,12 @@ async fn startup_checks_route() -> Json<serde_json::Value> {
     Json(json!({"checks": STARTUP_CHECKS.get().cloned().unwrap_or_default()}))
 }
 
-async fn capabilities() -> Json<contract::ProductCapabilities> {
-    Json(contract::capabilities(
+/// Advertised capabilities, callable in-process.
+///
+/// Exposed so the unified backend can compare declared (manifest) against
+/// advertised (runtime) without an HTTP round trip to its own router.
+pub fn advertised_capabilities() -> contract::ProductCapabilities {
+    contract::capabilities(
         "repo-reaper",
         "RepoReaper",
         vec![
@@ -321,5 +325,9 @@ async fn capabilities() -> Json<contract::ProductCapabilities> {
             contract::link("rejected", "Rejected patches", "/rejected"),
             contract::link("pr_tracking", "PR tracking", "/pr-tracking"),
         ],
-    ))
+    )
+}
+
+async fn capabilities() -> Json<contract::ProductCapabilities> {
+    Json(advertised_capabilities())
 }

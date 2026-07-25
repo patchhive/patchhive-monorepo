@@ -260,3 +260,57 @@ pub async fn all_runs(config: &Config) -> Vec<ProductRuns> {
 
     out
 }
+
+/// Declared-vs-advertised capability comparison for one engine.
+///
+/// `declared` is the manifest's `[[capabilities]]`; `advertised` is what the engine's
+/// own `/capabilities` handler returns at runtime. Drift is the difference, and this
+/// is the only place both sides are known without a network round trip.
+#[derive(serde::Serialize)]
+pub struct ProductCapabilityReport {
+    pub key: &'static str,
+    /// None when the engine is not enabled in this runtime.
+    pub advertised: Option<serde_json::Value>,
+}
+
+pub async fn advertised_capabilities(config: &Config) -> Vec<ProductCapabilityReport> {
+    macro_rules! caps_for {
+        ($key:literal, $module:ident) => {
+            ProductCapabilityReport {
+                key: $key,
+                advertised: if config.product_selection.enables($key) {
+                    Some(
+                        serde_json::to_value($module::pipeline::capabilities().await.0)
+                            .unwrap_or_default(),
+                    )
+                } else {
+                    None
+                },
+            }
+        };
+    }
+
+    let mut out = vec![
+        caps_for!("merge-keeper", merge_keeper),
+        caps_for!("release-sentry", release_sentry),
+        caps_for!("dep-triage", dep_triage),
+        caps_for!("vuln-triage", vuln_triage),
+        caps_for!("flake-sting", flake_sting),
+        caps_for!("review-bee", review_bee),
+        caps_for!("trust-gate", trust_gate),
+        caps_for!("repo-memory", repo_memory),
+        caps_for!("signal-hive", signal_hive),
+        caps_for!("refactor-scout", refactor_scout),
+    ];
+
+    out.push(ProductCapabilityReport {
+        key: "repo-reaper",
+        advertised: if config.product_selection.enables("repo-reaper") {
+            Some(serde_json::to_value(repo_reaper::advertised_capabilities()).unwrap_or_default())
+        } else {
+            None
+        },
+    });
+
+    out
+}

@@ -119,27 +119,6 @@ export const DEPENDENCIES: SafetyEdge[] = [
   },
 ];
 
-// Contract drift schemas — expected vs actual advertised capabilities.
-export interface DriftSchema {
-  productId: string;
-  expected: string[];
-  actual: string[];
-  notes?: string;
-}
-export const DRIFT_SCHEMAS: DriftSchema[] = [
-  {
-    productId: "repomemory",
-    expected: ["embed.commit", "search.semantic", "purge.index"],
-    actual: ["embed.commit", "search.semantic"],
-    notes: "purge.index advertised in v0.4 manifest but not in /capabilities response",
-  },
-  {
-    productId: "vulntriage",
-    expected: ["cve.ingest", "cve.score", "cve.notify", "audit.read"],
-    actual: ["cve.ingest", "cve.score"],
-    notes: "cve.notify + audit.read missing — worker pool down",
-  },
-];
 
 
 // Schemas for capability inputs/outputs, surfaced in the run drawer.
