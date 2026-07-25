@@ -12,7 +12,9 @@ writes_external_state = true
 mutates_repositories = true
 opens_pull_requests = true
 requires_operator_approval = true
-credential_scopes = ["github:contents:write", "github:pull_requests:write", "provider:ai"]
+# github:issues:read is required by dry_run, which hunts candidate issues without
+# writing. It was missing here while the engine advertised it.
+credential_scopes = ["github:contents:write", "github:pull_requests:write", "provider:ai", "github:issues:read"]
 evidence_required = ["issue URL", "generated patch", "test result", "TrustGate decision"]
 
 [health]

@@ -8,7 +8,9 @@ migration_stage = "integrated"
 
 [safety]
 read_only = true
-credential_scopes = ["github:repo:read", "github:actions:read", "github:releases:read"]
+# github:issues:read is required by check_github_release, which scans blocker
+# issues. It was missing here while the engine advertised it.
+credential_scopes = ["github:repo:read", "github:actions:read", "github:releases:read", "github:issues:read"]
 evidence_required = ["release target", "CI state", "blocker summary"]
 
 [health]
