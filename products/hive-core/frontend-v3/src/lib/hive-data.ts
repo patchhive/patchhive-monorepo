@@ -37,29 +37,6 @@ export const PRODUCTS: Product[] = [
   { id: "releasesentry", name: "ReleaseSentry", tagline: "Release readiness evidence", frontend: "http://localhost:5184", api: "http://localhost:8120", status: "ok", latencyMs: 54, uptime: 0.994, runs24h: 37, capabilities: ["check-release", "read-only"], contractDrift: 0 },
 ];
 
-// IDs the live mesh currently reports as participating.
-// Anything in PRODUCTS but not in LIVE_MESH is treated as "missing from mesh".
-export const LIVE_MESH: string[] = [
-  "reporeaper",
-  "signalhive",
-  "trustgate",
-  "repomemory",
-  "reviewbee",
-  "mergekeeper",
-  "flakesting",
-  "deptriage",
-  "vulntriage",
-  "hivecore",
-  "releasesentry",
-];
-
-export type MeshPresence = "online" | "offline" | "missing";
-
-export function meshPresence(product: Product): MeshPresence {
-  if (!LIVE_MESH.includes(product.id)) return "missing";
-  if (product.status === "crit" || product.status === "offline") return "offline";
-  return "online";
-}
 
 export interface RunEvent {
   id: string;

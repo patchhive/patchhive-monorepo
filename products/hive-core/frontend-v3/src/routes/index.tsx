@@ -24,7 +24,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { PRODUCTS, RUNS, LIVE_MESH, meshPresence, type Product, type RunEvent, type Status, type MeshPresence } from "@/lib/hive-data";
+import { PRODUCTS, RUNS, type Product, type RunEvent, type Status } from "@/lib/hive-data";
 import { Compass, FlaskConical, Users } from "lucide-react";
 import {
   HiveCommand,
@@ -34,13 +34,9 @@ import {
 import { RunDetailDrawer } from "@/components/run-detail-drawer";
 import { deriveFailure } from "@/lib/run-failure";
 import { IncidentTimeline } from "@/components/incident-timeline";
-import { DependencyGraph } from "@/components/dependency-graph";
-import { SLOPanel } from "@/components/slo-panel";
 import { ContractDrift } from "@/components/contract-drift";
 import { CapabilitySearch } from "@/components/capability-search";
-import { TokenVault } from "@/components/token-vault";
 import { LiveTail } from "@/components/live-tail";
-import { CapabilityMatrix } from "@/components/capability-matrix";
 import { RunHeatmap } from "@/components/run-heatmap";
 import { AuditLog } from "@/components/audit-log";
 import { AskHive } from "@/components/ask-hive";
@@ -151,14 +147,9 @@ function DeckInner() {
           <div id="runs" className="scroll-mt-24"><RunsFeed /></div>
         </section>
         <IncidentTimeline />
-        <SLOPanel />
-        <DependencyGraph />
         <ContractDrift />
         <CapabilitySearch />
-        <TokenVault />
-        <div id="products" className="scroll-mt-24"><ProductsMesh /></div>
         <RunHeatmap />
-        <CapabilityMatrix />
         <CapabilityGrid />
         <AskHive />
         <RunbookHistory />
@@ -984,129 +975,6 @@ function RunsFeed() {
       </div>
       <RunDetailDrawer run={activeRun} onClose={() => setActiveRun(null)} />
     </div>
-  );
-}
-
-const presenceMeta: Record<MeshPresence, { label: string; dot: string; text: string; ring: string; bg: string }> = {
-  online: {
-    label: "online",
-    dot: "bg-[var(--ok)] shadow-[0_0_10px_var(--ok)]",
-    text: "text-[var(--ok)]",
-    ring: "border-[var(--ok)]/40",
-    bg: "bg-[var(--ok)]/10",
-  },
-  offline: {
-    label: "offline",
-    dot: "bg-muted-foreground",
-    text: "text-muted-foreground",
-    ring: "border-border",
-    bg: "bg-muted/30",
-  },
-  missing: {
-    label: "missing from mesh",
-    dot: "bg-[var(--crit)] shadow-[0_0_10px_var(--crit)] animate-pulse-dot",
-    text: "text-[var(--crit)]",
-    ring: "border-[var(--crit)]/50",
-    bg: "bg-[var(--crit)]/10",
-  },
-};
-
-function ProductsMesh() {
-  const rows = useMemo(
-    () => PRODUCTS.map((p) => ({ product: p, presence: meshPresence(p) })),
-    [],
-  );
-  const missing = rows.filter((r) => r.presence === "missing");
-  const online = rows.filter((r) => r.presence === "online").length;
-  const offline = rows.filter((r) => r.presence === "offline").length;
-  // Stray mesh ids reported but not in registry — also flagged.
-  const unknown = useMemo(
-    () => LIVE_MESH.filter((id) => !PRODUCTS.some((p) => p.id === id)),
-    [],
-  );
-
-  return (
-    <section className="mt-8 rounded-xl border border-border bg-card/50 p-6 backdrop-blur">
-      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h2 className="font-display text-sm font-bold uppercase tracking-[0.2em]">Products vs Live Mesh</h2>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Cross-checks the HiveCore registry against products currently reporting into the live mesh.
-          </p>
-        </div>
-        <div className="flex items-center gap-4 font-display text-[10px] uppercase tracking-wider text-muted-foreground">
-          <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-[var(--ok)]" /> {online} online</span>
-          <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-muted-foreground" /> {offline} offline</span>
-          <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-[var(--crit)]" /> {missing.length} missing</span>
-        </div>
-      </div>
-
-      {(missing.length > 0 || unknown.length > 0) && (
-        <div className="mb-5 flex items-start gap-3 rounded-lg border border-[var(--crit)]/50 bg-[var(--crit)]/10 p-3">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-[var(--crit)]" />
-          <div className="min-w-0 flex-1">
-            <div className="font-display text-[11px] font-bold uppercase tracking-wider text-[var(--crit)]">
-              Mesh drift detected
-            </div>
-            <div className="mt-1 text-xs text-foreground/90">
-              {missing.length > 0 && (
-                <span>
-                  {missing.length} registered product{missing.length === 1 ? "" : "s"} not reporting into the live mesh:{" "}
-                  {missing.map((m, i) => (
-                    <span key={m.product.id}>
-                      <code className="rounded bg-background/60 px-1 py-0.5 font-display text-[var(--honey)]">{m.product.name}</code>
-                      {i < missing.length - 1 ? ", " : ""}
-                    </span>
-                  ))}
-                  .
-                </span>
-              )}
-              {unknown.length > 0 && (
-                <span className="ml-1">
-                  Mesh reports unknown id{unknown.length === 1 ? "" : "s"}:{" "}
-                  {unknown.map((id, i) => (
-                    <span key={id}>
-                      <code className="rounded bg-background/60 px-1 py-0.5 font-display text-[var(--honey)]">{id}</code>
-                      {i < unknown.length - 1 ? ", " : ""}
-                    </span>
-                  ))}
-                  .
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div className="grid gap-px overflow-hidden rounded-lg bg-border/40 sm:grid-cols-2 lg:grid-cols-3">
-        {rows.map(({ product, presence }) => {
-          const meta = presenceMeta[presence];
-          return (
-            <div
-              key={product.id}
-              className={`flex items-start justify-between gap-3 border ${meta.ring} ${meta.bg} bg-card/80 p-3`}
-            >
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className={`h-2 w-2 rounded-full ${meta.dot}`} />
-                  <h3 className="truncate font-display text-xs font-bold tracking-tight">{product.name}</h3>
-                </div>
-                <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{product.tagline}</p>
-                <div className="mt-1.5 font-display text-[9px] uppercase tracking-wider text-muted-foreground">
-                  {product.status === "crit" || product.status === "offline" ? "—" : `${product.latencyMs}ms`} ·{" "}
-                  {product.runs24h.toLocaleString()} runs/24h
-                </div>
-              </div>
-              <span
-                className={`shrink-0 rounded border ${meta.ring} ${meta.bg} px-1.5 py-0.5 font-display text-[9px] uppercase tracking-wider ${meta.text}`}
-              >
-                {meta.label}
-              </span>
-            </div>
-          );
-        })}
-      </div>
-    </section>
   );
 }
 

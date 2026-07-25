@@ -34,7 +34,8 @@ export function mttrMinutes(productId: string): number | null {
   return Math.round(total / closed.length);
 }
 
-// Dependency edges — caller → callee.
+// Safety-gating edges — caller → the product that gates or contextualises it.
+// The graph panel is gone; blast radius and dispatch preview still read these.
 export const DEPENDENCIES: Array<{ from: string; to: string }> = [
   { from: "reviewbee", to: "trustgate" },
   { from: "reviewbee", to: "signalhive" },
@@ -54,26 +55,6 @@ export const DEPENDENCIES: Array<{ from: string; to: string }> = [
   { from: "reporeaper", to: "signalhive" },
   { from: "hivecore", to: "trustgate" },
 ];
-
-// Service Level Objectives: per-product uptime target.
-export interface SLO {
-  productId: string;
-  target: number; // e.g. 0.995
-  window: string; // human label
-}
-export const SLOS: SLO[] = PRODUCTS.map((p) => ({
-  productId: p.id,
-  target: p.id === "hivecore" ? 0.999 : p.id === "vulntriage" ? 0.99 : 0.995,
-  window: "30d",
-}));
-
-export function errorBudgetBurn(actual: number, target: number): number {
-  // Fraction of error budget consumed. 0 = healthy, 1 = budget fully spent, >1 = breached.
-  const allowed = 1 - target;
-  if (allowed <= 0) return 0;
-  const spent = Math.max(0, 1 - actual);
-  return spent / allowed;
-}
 
 // Contract drift schemas — expected vs actual advertised capabilities.
 export interface DriftSchema {
@@ -97,31 +78,6 @@ export const DRIFT_SCHEMAS: DriftSchema[] = [
   },
 ];
 
-// Token vault state
-export type TokenStatus = "active" | "expiring" | "rotated" | "revoked";
-export interface VaultToken {
-  id: string;
-  name: string;
-  scope: string;
-  status: TokenStatus;
-  issuedAt: string; // ISO
-  expiresAt: string; // ISO
-  lastUsedAt: string;
-}
-const dPast = (days: number) => new Date(NOW - days * 86_400_000).toISOString();
-const dFuture = (days: number) => new Date(NOW + days * 86_400_000).toISOString();
-export const TOKENS: VaultToken[] = [
-  { id: "tok_8af3", name: "reviewbee → github", scope: "repo:write", status: "active", issuedAt: dPast(18), expiresAt: dFuture(72), lastUsedAt: m(2) },
-  { id: "tok_8af2", name: "mergekeeper → ci", scope: "ci:dispatch", status: "active", issuedAt: dPast(11), expiresAt: dFuture(79), lastUsedAt: m(8) },
-  { id: "tok_8af1", name: "signalhive → pagerduty", scope: "incident:write", status: "active", issuedAt: dPast(40), expiresAt: dFuture(50), lastUsedAt: m(1) },
-  { id: "tok_8af0", name: "vulntriage → nvd", scope: "feed:read", status: "expiring", issuedAt: dPast(83), expiresAt: dFuture(4), lastUsedAt: m(74) },
-  { id: "tok_8aef", name: "releasesentry → github", scope: "release:read", status: "expiring", issuedAt: dPast(85), expiresAt: dFuture(2), lastUsedAt: m(11) },
-  { id: "tok_8aee", name: "repomemory → openai", scope: "embeddings", status: "active", issuedAt: dPast(5), expiresAt: dFuture(85), lastUsedAt: m(3) },
-  { id: "tok_8aed", name: "trustgate → vault-root", scope: "kms:sign", status: "rotated", issuedAt: dPast(91), expiresAt: dPast(1), lastUsedAt: dPast(1) },
-  { id: "tok_8aec", name: "deptriage → snyk", scope: "audit:read", status: "active", issuedAt: dPast(22), expiresAt: dFuture(68), lastUsedAt: m(180) },
-  { id: "tok_8aeb", name: "reporeaper → github-app", scope: "repo:read", status: "active", issuedAt: dPast(60), expiresAt: dFuture(30), lastUsedAt: m(45) },
-  { id: "tok_8aea", name: "old-mergekeeper", scope: "ci:dispatch", status: "revoked", issuedAt: dPast(120), expiresAt: dPast(30), lastUsedAt: dPast(31) },
-];
 
 // Schemas for capability inputs/outputs, surfaced in the run drawer.
 export interface CapabilitySchema {

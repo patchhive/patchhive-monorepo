@@ -56,45 +56,6 @@ export function runHeatmap(productId?: string): number[][] {
   return grid;
 }
 
-export interface CapabilityAgg {
-  capability: string;
-  product: string;
-  calls: number;
-  avgMs: number;
-  p95Ms: number;
-  failRate: number;
-}
-export function capabilityMatrix(): CapabilityAgg[] {
-  const map = new Map<string, { product: string; durs: number[]; fails: number; calls: number }>();
-  for (const p of PRODUCTS) {
-    for (const cap of p.capabilities) {
-      const rand = seededRand(p.id + cap);
-      const calls = Math.max(3, Math.floor(rand() * p.runs24h * 0.4) + 8);
-      const durs: number[] = [];
-      for (let i = 0; i < Math.min(60, calls); i++) {
-        durs.push(Math.round(p.latencyMs * (0.5 + rand() * 2.2)));
-      }
-      const failRate =
-        p.status === "crit" ? 0.45 + rand() * 0.3 : p.status === "warn" ? 0.05 + rand() * 0.1 : rand() * 0.02;
-      map.set(`${p.id}:${cap}`, { product: p.name, durs, fails: Math.round(calls * failRate), calls });
-    }
-  }
-  const rows: CapabilityAgg[] = [];
-  map.forEach((v, key) => {
-    const cap = key.split(":")[1];
-    const sorted = [...v.durs].sort((a, b) => a - b);
-    const avg = v.durs.reduce((a, b) => a + b, 0) / v.durs.length;
-    rows.push({
-      capability: cap,
-      product: v.product,
-      calls: v.calls,
-      avgMs: Math.round(avg),
-      p95Ms: percentile(sorted, 95),
-      failRate: v.fails / v.calls,
-    });
-  });
-  return rows;
-}
 
 /** Baseline mean/std per capability for anomaly scoring. */
 const baselineCache = new Map<string, { mean: number; stdev: number }>();

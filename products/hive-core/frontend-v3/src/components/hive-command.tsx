@@ -321,13 +321,10 @@ export function HiveCommandProvider({ children }: { children: ReactNode }) {
           r: "registry",
           u: "runs",
           c: "capabilities",
-          t: "tokens",
           i: "incidents",
-          s: "slo",
           x: "drift",
           p: "products",
           q: "cap-search",
-          y: "dependencies",
         };
         const target = map[e.key.toLowerCase()];
         if (target) {
@@ -523,11 +520,8 @@ export function HiveCommand() {
     { id: "registry", label: "Registry", icon: Radio },
     { id: "runs", label: "Runs", icon: Terminal },
     { id: "incidents", label: "Incidents", icon: AlertTriangle },
-    { id: "dependencies", label: "Dependencies", icon: GitBranch },
-    { id: "slo", label: "SLOs", icon: Gauge },
     { id: "drift", label: "Contract drift", icon: GitCompare },
     { id: "cap-search", label: "Capability search", icon: Search },
-    { id: "tokens", label: "Token vault", icon: KeyRound },
     { id: "capabilities", label: "Capabilities", icon: Cpu },
     { id: "products", label: "Products vs Mesh", icon: Hexagon },
     { id: "setup", label: "Setup", icon: Settings },
