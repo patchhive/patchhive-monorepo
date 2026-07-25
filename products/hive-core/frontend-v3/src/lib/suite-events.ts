@@ -9,7 +9,7 @@
 // indistinguishable list: a durable server event and an unsaved local action are
 // different kinds of fact, and collapsing them would imply the local ones survive.
 
-import { API } from "@/config";
+import { apiFetch } from "./http";
 
 export type SuiteEventTone = "info" | "warn" | "crit";
 
@@ -63,7 +63,7 @@ export function groupEvents(events: SuiteEvent[]): SuiteEventGroup[] {
 }
 
 export async function fetchSuiteEvents(signal?: AbortSignal): Promise<SuiteEvent[]> {
-  const response = await fetch(`${API}/api/events`, { signal });
+  const response = await apiFetch("/api/events", { signal });
   if (!response.ok) throw new Error(`HTTP ${response.status} from /api/events`);
   const rows = (await response.json()) as ApiEvent[];
   return rows

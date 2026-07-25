@@ -11,13 +11,13 @@
 // that says so rather than failing silently.
 
 import { API } from "@/config";
+import { apiFetch } from "./http";
 
 async function post<T>(path: string, body: unknown): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(`${API}${path}`, {
+    response = await apiFetch(path, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
   } catch {

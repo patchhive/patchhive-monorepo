@@ -11,7 +11,7 @@
 
 import { useEffect, useState } from "react";
 
-import { API } from "@/config";
+import { apiFetch } from "./http";
 import { PRODUCTS, RUNS, type RunEvent, type Status } from "./hive-data";
 import { fetchConformance } from "./conformance";
 
@@ -157,7 +157,7 @@ export interface LiveSuite {
  * the browser — the same shape as the auth-status aggregate, for the same reason.
  */
 async function syncRuns(signal: AbortSignal): Promise<void> {
-  const response = await fetch(`${API}/api/products/runs`, { signal });
+  const response = await apiFetch("/api/products/runs", { signal });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   const rows = (await response.json()) as ApiProductRuns[];
 
@@ -216,7 +216,7 @@ export function useLiveSuite(pollMs = 10_000): LiveSuite {
 
     async function sync() {
       try {
-        const response = await fetch(`${API}/api/products`, { signal: controller.signal });
+        const response = await apiFetch("/api/products", { signal: controller.signal });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const rows = (await response.json()) as ApiProduct[];
         if (cancelled) return;

@@ -4,7 +4,7 @@ import { PRODUCTS, RUNS } from "@/lib/hive-data";
 import { INCIDENTS } from "@/lib/hive-extra";
 import { toast } from "sonner";
 import { useHiveCommand } from "./hive-command";
-import { API } from "@/config";
+import { apiFetch } from "@/lib/http";
 
 function buildContext() {
   return JSON.stringify(
@@ -83,9 +83,8 @@ export function AskHive() {
         context: buildContext(),
       };
       if (opts?.resumeFrom) body.resumeFrom = opts.resumeFrom;
-      const res = await fetch(`${API}/ask`, {
+      const res = await apiFetch("/ask", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
         signal: controller.signal,
       });

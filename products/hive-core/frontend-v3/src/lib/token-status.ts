@@ -13,7 +13,7 @@
 // trip the sensitive-route rate limiter — blocker B2 in the architecture doc, fixed
 // at the source rather than papered over with a smaller client-side pool.
 
-import { API, API_KEY_STORAGE } from "@/config";
+import { apiFetch } from "./http";
 import { PRODUCTS } from "./hive-data";
 
 /** Slugs are kebab-case in the API; the deck's product ids are not. */
@@ -150,7 +150,7 @@ interface AggregateRow {
 export async function fetchTokenStatuses(signal?: AbortSignal): Promise<TokenStatus[]> {
   let rows: AggregateRow[];
   try {
-    const response = await fetch(`${API}/api/products/auth-status`, { signal });
+    const response = await apiFetch("/api/products/auth-status", { signal });
     if (!response.ok) {
       return PRODUCTS.map((product) => ({
         ...blank(product.id, product.name),
@@ -229,14 +229,8 @@ export async function provisionServiceToken(
   rotate: boolean,
 ): Promise<ProvisionResult> {
   try {
-    const headers: Record<string, string> = { "Content-Type": "application/json" };
-    const operatorKey =
-      typeof window === "undefined" ? "" : (window.localStorage.getItem(API_KEY_STORAGE) ?? "");
-    if (operatorKey) headers["X-API-Key"] = operatorKey;
-
-    const response = await fetch(`${API}/api/products/${slug}/service-token`, {
+    const response = await apiFetch(`/api/products/${slug}/service-token`, {
       method: "POST",
-      headers,
       body: JSON.stringify({ rotate }),
     });
     if (response.ok) {

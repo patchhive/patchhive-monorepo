@@ -24,7 +24,7 @@
 //                           and deliberately leaves its unattended FailGuard intake
 //                           ungated; requiring approval there would stall the loop.
 
-import { API } from "@/config";
+import { apiFetch } from "./http";
 
 export type Severity = "critical" | "warning";
 
@@ -173,8 +173,8 @@ function compare(product: ApiProduct, actions: ApiAction[]): ConformanceFinding[
 
 export async function fetchConformance(signal?: AbortSignal): Promise<ProductConformance[]> {
   const [productsResponse, capabilitiesResponse] = await Promise.all([
-    fetch(`${API}/api/products`, { signal }),
-    fetch(`${API}/api/products/capabilities`, { signal }),
+    apiFetch("/api/products", { signal }),
+    apiFetch("/api/products/capabilities", { signal }),
   ]);
   if (!productsResponse.ok || !capabilitiesResponse.ok) {
     throw new Error(`HTTP ${productsResponse.status}/${capabilitiesResponse.status}`);

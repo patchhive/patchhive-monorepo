@@ -26,6 +26,8 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/health", get(health))
         .route("/api/health", get(health))
         .route("/api/auth/status", get(auth_status))
+        .route("/api/auth/login", post(login))
+        .route("/api/auth/generate-key", post(generate_key))
         .route("/api/auth/session", get(session))
         .route("/api/products", get(products))
         .route("/api/products/auth-status", get(products_auth_status))
@@ -95,19 +97,105 @@ async fn health(State(state): State<Arc<AppState>>) -> Json<HealthResponse> {
 }
 
 async fn auth_status() -> Json<AuthStatusResponse> {
+    let enabled = crate::auth::auth_enabled();
     Json(AuthStatusResponse {
-        auth_enabled: false,
-        bootstrap_required: false,
+        auth_enabled: enabled,
+        // Nothing is protected until a key exists, so an unconfigured suite tells
+        // the operator to bootstrap rather than silently running open.
+        bootstrap_required: !enabled,
         service_auth_enabled: false,
         suite_bootstrap_enabled: false,
     })
 }
 
+#[derive(serde::Deserialize)]
+struct LoginRequest {
+    api_key: String,
+}
+
+async fn login(Json(body): Json<LoginRequest>) -> Response {
+    if !crate::auth::auth_enabled() {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(ErrorResponse {
+                error: "auth-not-configured",
+                message: "No suite API key is configured. Generate one from localhost first."
+                    .into(),
+            }),
+        )
+            .into_response();
+    }
+    if !crate::auth::verify_token(&body.api_key) {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(ErrorResponse {
+                error: "invalid-key",
+                message: "That key is not valid for this suite.".into(),
+            }),
+        )
+            .into_response();
+    }
+    Json(serde_json::json!({ "ok": true, "auth_enabled": true })).into_response()
+}
+
+/// First-key bootstrap. Localhost-only unless PATCHHIVE_ALLOW_REMOTE_BOOTSTRAP is
+/// set, and refuses once a key already exists so it cannot be used to reset auth.
+async fn generate_key(
+    headers: axum::http::HeaderMap,
+    peer: Option<ConnectInfo<SocketAddr>>,
+) -> Response {
+    if crate::auth::auth_enabled() {
+        return (
+            StatusCode::CONFLICT,
+            Json(ErrorResponse {
+                error: "auth-already-configured",
+                message: "A suite API key already exists. Rotate it by editing PATCHHIVE_SUITE_API_KEY_HASH."
+                    .into(),
+            }),
+        )
+            .into_response();
+    }
+
+    let peer_addr = peer.map(|ConnectInfo(addr)| addr);
+    if !crate::auth::bootstrap_request_allowed_from_peer(&headers, peer_addr) {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(ErrorResponse {
+                error: "bootstrap-local-only",
+                message: "First-key generation is localhost-only. Set PATCHHIVE_ALLOW_REMOTE_BOOTSTRAP=true to override."
+                    .into(),
+            }),
+        )
+            .into_response();
+    }
+
+    match crate::auth::generate_and_save_key() {
+        Ok(key) => Json(serde_json::json!({
+            "api_key": key,
+            "message": "Store this — it will not be shown again."
+        }))
+        .into_response(),
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: "key-generation-failed",
+                message: format!("Could not save the suite API key: {error}"),
+            }),
+        )
+            .into_response(),
+    }
+}
+
 async fn session(State(state): State<Arc<AppState>>) -> Json<SessionResponse> {
+    let configured = crate::auth::auth_enabled();
     Json(SessionResponse {
         service: "patchhive-backend",
-        authenticated: true,
-        auth_configured: false,
+        // This route is behind the auth middleware, so reaching it means the request
+        // was authenticated — or that no key is configured and nothing is enforced.
+        // Reporting `true` unconditionally, as this did, told the deck it had a
+        // session on a suite with no auth at all.
+        authenticated: configured,
+        auth_configured: configured,
         mode: state.config.product_selection.mode_label(),
         enabled_products: state.enabled_product_count(),
     })
@@ -120,10 +208,16 @@ async fn session(State(state): State<Arc<AppState>>) -> Json<SessionResponse> {
 /// bypasses that middleware, which is correct for a same-process read but must not
 /// become a remotely readable hole if the backend is bound beyond localhost.
 ///
-/// The suite layer has no operator auth of its own yet (`/api/auth/status` reports
-/// auth_enabled: false), so loopback is the only honest boundary available. When
-/// suite auth lands this becomes an operator-key check instead.
+/// With suite auth configured, the middleware has already verified the operator key
+/// before a request reaches here, so this adds nothing and defers.
+///
+/// With auth unconfigured the suite API is open, and loopback is the only boundary
+/// left — so the aggregates stay local-only until a key exists. That makes the
+/// unconfigured state safe by default rather than quietly readable.
 fn aggregate_access_allowed(peer: Option<SocketAddr>) -> bool {
+    if crate::auth::auth_enabled() {
+        return true;
+    }
     if std::env::var("PATCHHIVE_ALLOW_REMOTE_AGGREGATES")
         .map(|value| value.trim().eq_ignore_ascii_case("true"))
         .unwrap_or(false)
@@ -142,8 +236,9 @@ fn aggregate_forbidden() -> Response {
         StatusCode::FORBIDDEN,
         Json(ErrorResponse {
             error: "aggregate-local-only",
-            message: "Suite aggregates read product-protected data and are limited to localhost. \
-Set PATCHHIVE_ALLOW_REMOTE_AGGREGATES=true only behind your own authenticated proxy."
+            message: "Suite aggregates read product-protected data. Configure a suite API key \
+(POST /api/auth/generate-key from localhost), or set PATCHHIVE_ALLOW_REMOTE_AGGREGATES=true \
+only behind your own authenticated proxy."
                 .into(),
         }),
     )

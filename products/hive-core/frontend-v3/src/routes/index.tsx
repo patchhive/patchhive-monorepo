@@ -58,6 +58,7 @@ import {
 } from "@/components/ui/context-menu";
 import { BookOpen } from "lucide-react";
 import { useLiveSuite } from "@/lib/live-sync";
+import { SessionGate } from "@/components/session-gate";
 
 
 type IndexSearch = { run?: string; filter?: "all" | "warn" | "crit" };
@@ -118,10 +119,12 @@ function useClock() {
 
 function Deck() {
   return (
-    <HiveCommandProvider>
-      <DeckInner />
-      <HiveCommand />
-    </HiveCommandProvider>
+    <SessionGate>
+      <HiveCommandProvider>
+        <DeckInner />
+        <HiveCommand />
+      </HiveCommandProvider>
+    </SessionGate>
   );
 }
 
