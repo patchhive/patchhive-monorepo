@@ -113,9 +113,50 @@ function titleCase(value) {
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+// Engine skip/hold reasons are stable machine tokens. `eligibility_reason` and
+// `error_msg` already carry prose and must not be run through this.
+const REASON_LABELS = {
+  blocked: "Blocked by policy",
+  cancelled: "Cancelled before completion",
+  duplicate: "Skipped as a duplicate of another candidate",
+  existing_pr: "Skipped because a pull request already exists for this issue",
+  linked_pr_check_failed: "Skipped because the existing pull request check could not run",
+  no_changes: "The generated patch changed no files",
+  no_patch: "No patch was generated",
+  patch_error: "Patch generation failed",
+  policy: "Blocked by repository policy",
+  suite_policy_unavailable: "Skipped because the HiveCore policy service could not be reached",
+  watch_mode_disabled: "Ignored because watch mode is disabled",
+};
+
+export function reasonLabel(reason) {
+  const value = String(reason || "").trim();
+  if (!value) return "";
+  if (/\s/.test(value)) return value;
+  const confidence = value.match(/^confidence_(\d+)$/);
+  if (confidence) return `Held because Smith review confidence was ${confidence[1]}%, below the configured minimum`;
+  return REASON_LABELS[value.toLowerCase()] || titleCase(value);
+}
+
 export function statusLabel(status) {
   const value = String(status || "idle").toLowerCase();
   return STATUS_LABELS[value] || titleCase(value) || "Unknown";
+}
+
+// Agent roles are their own vocabulary. Routing them through statusLabel works
+// only for as long as no role name collides with a run status.
+const ROLE_LABELS = {
+  gatekeeper: "Gatekeeper",
+  judge: "Judge",
+  reaper: "Reaper",
+  scout: "Scout",
+  smith: "Smith",
+};
+
+export function roleLabel(role) {
+  const value = String(role || "").trim().toLowerCase();
+  if (!value) return "";
+  return ROLE_LABELS[value] || titleCase(value);
 }
 
 export function phaseLabel(phase) {
