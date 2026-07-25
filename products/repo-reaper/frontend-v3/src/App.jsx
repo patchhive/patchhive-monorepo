@@ -119,6 +119,8 @@ function MainProduct({ auth }) {
             if (!event || !raw) return;
             try {
               const data = JSON.parse(raw);
+              // `error` is only emitted when the operation never started, so it belongs in the banner, not buried in the evidence list.
+              if (event === "error") setError(data.msg || data.message || data.error || "RepoReaper could not start the operation.");
               setter((current) => {
                 if (event === "phase") return { ...current, phase: data.phase || current.phase };
                 if (event === "issues" || event.startsWith("issue_")) return { ...current, issues: applyIssueEvent(current.issues, event, data) };
