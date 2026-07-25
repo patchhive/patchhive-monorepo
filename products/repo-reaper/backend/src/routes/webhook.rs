@@ -3,6 +3,7 @@ use crate::db::{
     record_product_schedule_result, save_product_schedule, start_run, RunStart, RunStatus,
     DRY_RUN_SCHEDULE_ACTION, RUN_SCHEDULE_ACTION,
 };
+use crate::fix_worker::{run_follow_up, FollowUpRequest};
 use crate::pipeline::{
     execute_dry_run, execute_run, ActiveRunGuard, RunExecutionResult, RunRequest,
 };
@@ -316,18 +317,67 @@ async fn github_webhook(
         ));
     }
 
-    // Maintainer-feedback follow-ups are withdrawn until they run through the
-    // gated write pipeline. The previous implementation cloned, patched,
-    // pushed, and opened a ready-for-review pull request straight from an
-    // untrusted comment body: no watch-mode gate, no repository policy, no
-    // suite PR budget, no test validation, no review-confidence floor, and no
-    // run record. Re-enable it only through the evidence-gated write path.
-    if event == "issue_comment" {
-        return Ok(Json(json!({
-            "triggered": false,
-            "event": event,
-            "reason": "pr_comment_follow_up_disabled",
-        })));
+    if event == "issue_comment" && payload["action"].as_str() == Some("created") {
+        let issue = &payload["issue"];
+        let comment = &payload["comment"];
+        let bot = std::env::var("BOT_GITHUB_USER").unwrap_or_default();
+        let author = comment["user"]["login"].as_str().unwrap_or("");
+
+        if !issue["pull_request"].is_object() {
+            return Ok(Json(
+                json!({"triggered":false,"reason":"not_a_pull_request"}),
+            ));
+        }
+        if author == bot {
+            return Ok(Json(json!({"triggered":false,"reason":"own_comment"})));
+        }
+        // Watch mode governs every webhook-triggered write, not just new issues.
+        if !state.watch_mode.load(std::sync::atomic::Ordering::SeqCst) {
+            return Ok(Json(
+                json!({"triggered":false,"reason":"watch_mode_disabled"}),
+            ));
+        }
+
+        let request = FollowUpRequest {
+            repo: payload["repository"]["full_name"]
+                .as_str()
+                .unwrap_or("")
+                .to_string(),
+            pr_number: issue["number"].as_i64().unwrap_or(0),
+            issue_title: issue["title"].as_str().unwrap_or("").to_string(),
+            comment_body: comment["body"].as_str().unwrap_or("").to_string(),
+            comment_author: author.to_string(),
+        };
+
+        // Ownership and the per-pull-request cap are checked inside the run so
+        // the refusal is recorded as evidence, but they are answered
+        // synchronously here so GitHub sees why nothing happened.
+        let state_clone = state.clone();
+        tokio::spawn(async move {
+            let Ok(_active_run) = ActiveRunGuard::claim(state_clone.run_active.clone()) else {
+                tracing::info!("RepoReaper follow-up skipped because another operation is active");
+                return;
+            };
+            let permit = match state_clone
+                .process_worker_semaphore
+                .clone()
+                .acquire_owned()
+                .await
+            {
+                Ok(permit) => permit,
+                Err(_) => return,
+            };
+            let repo = request.repo.clone();
+            if let Err(refusal) = run_follow_up(state_clone, request).await {
+                tracing::info!(
+                    repo,
+                    reason = refusal.reason(),
+                    "RepoReaper follow-up refused"
+                );
+            }
+            drop(permit);
+        });
+        return Ok(Json(json!({"triggered":true,"type":"pr_follow_up"})));
     }
 
     Ok(Json(json!({"triggered":false,"event":event})))

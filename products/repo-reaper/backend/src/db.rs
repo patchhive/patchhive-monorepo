@@ -36,6 +36,24 @@ pub fn init_db() -> Result<()> {
     conn.execute_batch(SCHEMA)?;
     scheduling::init_schema(&conn)?;
     migrate_legacy_schedules(&conn)?;
+    migrate_pr_follow_up_count(&conn)?;
+    Ok(())
+}
+
+/// Existing installs predate follow-up tracking; add the counter in place
+/// rather than resetting anyone's pull request history.
+fn migrate_pr_follow_up_count(conn: &rusqlite::Connection) -> Result<()> {
+    let existing: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM pragma_table_info('repo_reaper_pr_tracking') WHERE name = 'follow_up_count'",
+        [],
+        |row| row.get(0),
+    )?;
+    if existing == 0 {
+        conn.execute(
+            "ALTER TABLE repo_reaper_pr_tracking ADD COLUMN follow_up_count INTEGER DEFAULT 0",
+            [],
+        )?;
+    }
     Ok(())
 }
 
@@ -222,6 +240,7 @@ CREATE TABLE IF NOT EXISTS repo_reaper_pr_tracking (
     pr_number INTEGER, repo TEXT, run_id TEXT, opened_at TEXT,
     last_checked TEXT, state TEXT DEFAULT 'open',
     merged INTEGER DEFAULT 0, review_state TEXT,
+    follow_up_count INTEGER DEFAULT 0,
     PRIMARY KEY(pr_number, repo)
 );
 CREATE TABLE IF NOT EXISTS repo_reaper_dry_stalk_runs (
@@ -490,6 +509,9 @@ pub enum RunStatus {
     NoCandidates,
     Partial,
     Failed,
+    /// A gate deliberately refused the work. Distinct from `Failed`, which
+    /// means RepoReaper tried and something broke.
+    Skipped,
 }
 
 impl RunStatus {
@@ -499,6 +521,7 @@ impl RunStatus {
             Self::NoCandidates => "no_candidates",
             Self::Partial => "partial",
             Self::Failed => "failed",
+            Self::Skipped => "skipped",
         }
     }
 }
@@ -776,6 +799,68 @@ pub fn track_pr(pr_number: i64, repo: &str, run_id: &str) -> Result<()> {
     Ok(())
 }
 
+/// How many maintainer-feedback follow-ups RepoReaper will attempt on one
+/// pull request before it stops and leaves the thread to a human.
+pub const MAX_PR_FOLLOW_UPS: i64 = 3;
+
+#[derive(Debug, Clone)]
+pub struct TrackedPullRequest {
+    pub run_id: String,
+    pub state: String,
+    pub merged: bool,
+    pub follow_up_count: i64,
+}
+
+impl TrackedPullRequest {
+    /// A follow-up is only appropriate on a pull request RepoReaper still owns
+    /// and has not already argued with several times.
+    pub fn accepts_follow_up(&self) -> bool {
+        self.state == "open" && !self.merged && self.follow_up_count < MAX_PR_FOLLOW_UPS
+    }
+}
+
+/// Look up a pull request RepoReaper opened.
+///
+/// Returning `None` means RepoReaper did not open it, which is the difference
+/// between answering its own review threads and turning up uninvited in
+/// someone else's pull request.
+pub fn tracked_pull_request(repo: &str, pr_number: i64) -> Result<Option<TrackedPullRequest>> {
+    let conn = get_conn()?;
+    let mut statement = conn.prepare(
+        "SELECT run_id, state, merged, COALESCE(follow_up_count, 0)
+         FROM repo_reaper_pr_tracking WHERE repo=?1 AND pr_number=?2",
+    )?;
+    let mut rows = statement.query(params![repo, pr_number])?;
+    let Some(row) = rows.next()? else {
+        return Ok(None);
+    };
+    Ok(Some(TrackedPullRequest {
+        run_id: row.get::<_, Option<String>>(0)?.unwrap_or_default(),
+        state: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
+        merged: row.get::<_, i64>(2)? != 0,
+        follow_up_count: row.get(3)?,
+    }))
+}
+
+/// Count a follow-up attempt against the pull request's cap.
+///
+/// Recorded when the attempt starts, so a crashed or failed follow-up still
+/// consumes its budget and cannot be retried indefinitely.
+pub fn record_pr_follow_up(repo: &str, pr_number: i64) -> Result<i64> {
+    let conn = get_conn()?;
+    conn.execute(
+        "UPDATE repo_reaper_pr_tracking
+         SET follow_up_count = COALESCE(follow_up_count, 0) + 1
+         WHERE repo=?1 AND pr_number=?2",
+        params![repo, pr_number],
+    )?;
+    Ok(conn.query_row(
+        "SELECT COALESCE(follow_up_count, 0) FROM repo_reaper_pr_tracking WHERE repo=?1 AND pr_number=?2",
+        params![repo, pr_number],
+        |row| row.get(0),
+    )?)
+}
+
 pub fn update_perf(
     agent_name: &str,
     provider: &str,
@@ -863,10 +948,73 @@ pub fn set_setting(key: &str, value: &str) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{insert_run_artifact, normalize_openrouter_agent, RunArtifactInput, SCHEMA};
+    use super::{
+        insert_run_artifact, normalize_openrouter_agent, RunArtifactInput, TrackedPullRequest,
+        MAX_PR_FOLLOW_UPS, SCHEMA,
+    };
     use crate::state::{AgentConfig, AgentStats};
     use rusqlite::Connection;
     use serde_json::json;
+
+    fn tracked(state: &str, merged: bool, follow_up_count: i64) -> TrackedPullRequest {
+        TrackedPullRequest {
+            run_id: "run_test".into(),
+            state: state.into(),
+            merged,
+            follow_up_count,
+        }
+    }
+
+    #[test]
+    fn follow_ups_stop_at_the_cap_and_on_a_finished_pull_request() {
+        assert!(tracked("open", false, 0).accepts_follow_up());
+        assert!(tracked("open", false, MAX_PR_FOLLOW_UPS - 1).accepts_follow_up());
+
+        assert!(
+            !tracked("open", false, MAX_PR_FOLLOW_UPS).accepts_follow_up(),
+            "the cap must stop RepoReaper arguing with a maintainer indefinitely"
+        );
+        assert!(
+            !tracked("closed", false, 0).accepts_follow_up(),
+            "a closed pull request cannot take a follow-up commit"
+        );
+        assert!(
+            !tracked("open", true, 0).accepts_follow_up(),
+            "a merged pull request cannot take a follow-up commit"
+        );
+    }
+
+    #[test]
+    fn follow_up_counter_survives_an_upgrade_from_an_older_schema() {
+        let conn = Connection::open_in_memory().expect("in-memory database");
+        // The pre-follow-up table shape, as an existing install would have it.
+        conn.execute_batch(
+            "CREATE TABLE repo_reaper_pr_tracking (
+                pr_number INTEGER, repo TEXT, run_id TEXT, opened_at TEXT,
+                last_checked TEXT, state TEXT DEFAULT 'open',
+                merged INTEGER DEFAULT 0, review_state TEXT,
+                PRIMARY KEY(pr_number, repo)
+            );",
+        )
+        .expect("legacy schema");
+        conn.execute(
+            "INSERT INTO repo_reaper_pr_tracking(pr_number,repo,run_id,state) VALUES(7,'patchhive/demo','run_a','open')",
+            [],
+        )
+        .expect("seed tracked pull request");
+
+        super::migrate_pr_follow_up_count(&conn).expect("migration");
+        super::migrate_pr_follow_up_count(&conn).expect("migration is idempotent");
+
+        let count: i64 = conn
+            .query_row(
+                "SELECT COALESCE(follow_up_count, 0) FROM repo_reaper_pr_tracking WHERE pr_number=7",
+                [],
+                |row| row.get(0),
+            )
+            .expect("column exists after migration");
+        assert_eq!(count, 0, "existing pull requests start with no follow-ups");
+    }
 
     #[test]
     fn run_artifacts_are_ordered_and_keep_structured_metadata() {

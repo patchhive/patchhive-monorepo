@@ -689,7 +689,28 @@ RepoReaper accepts GitHub webhooks for **watch mode**:
 2. Set `WEBHOOK_SECRET` to match the GitHub secret
 3. Enable watch mode via `POST /watch-mode {"enabled": true}`
 
-When a webhook arrives, RepoReaper verifies the signature using `patchhive_github_pr::verify_github_webhook_signature`. If watch mode is enabled and a run is not already active, it automatically triggers a new hunt with the last-used configuration.
+When a webhook arrives, RepoReaper verifies the signature using `patchhive_github_pr::verify_github_webhook_signature`. An empty or missing secret is rejected with `403` before the payload is parsed. Watch mode gates every webhook-triggered write.
+
+Two events are handled:
+
+**`issues` (opened, labelled `bug`)** — triggers a new hunt with the last-used configuration through the full pipeline, if a run is not already active.
+
+**`issue_comment` (created, on a pull request)** — triggers a maintainer-feedback follow-up. This **adds a commit to the existing pull request** and never opens a competing one, so it consumes no HiveCore PR budget. It refuses unless every one of these holds:
+
+| Gate | Refusal reason |
+|------|----------------|
+| Watch mode is enabled | `watch_mode_disabled` |
+| The comment is not RepoReaper's own | `own_comment` |
+| RepoReaper opened the pull request (present in `repo_reaper_pr_tracking`) | `not_our_pull_request` |
+| The pull request is open and unmerged | `pull_request_closed` |
+| Fewer than three follow-ups already attempted on it | `follow_up_cap_reached` |
+| Repository policy permits automated writes | `repository_blocked` |
+| A Reaper agent is configured | `no_reaper_agent` |
+| The corrected patch reaches `MIN_REVIEW_CONFIDENCE` | `confidence_below_floor` |
+
+Every refusal is recorded as run evidence, so a follow-up that does not happen is visible in History and to HiveCore rather than silent. The cap is consumed when the attempt starts, so a failed follow-up cannot be retried indefinitely by re-commenting.
+
+Validation runs before the commit is pushed. If it does not pass and the pull request is currently ready for review, RepoReaper returns it to draft via the GraphQL `convertPullRequestToDraft` mutation — GitHub's REST API only accepts `draft` at creation time. The pull request comment states the validation outcome and the draft change.
 
 ### Scheduled Runs
 

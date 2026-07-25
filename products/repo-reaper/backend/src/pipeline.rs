@@ -395,6 +395,7 @@ async fn finalize_run_with_summary(
         RunStatus::NoCandidates => "warn",
         RunStatus::Partial => "warn",
         RunStatus::Failed => "error",
+        RunStatus::Skipped => "warn",
     };
     let summary = match run_status {
         RunStatus::Done => format!("Hunt complete — {total_fixed}/{attempted} kills | ${rc:.4}"),
@@ -403,6 +404,7 @@ async fn finalize_run_with_summary(
         }
         RunStatus::Partial => format!("Hunt partial — {total_fixed}/{attempted} kills, {failed_attempts} failed or held | ${rc:.4}"),
         RunStatus::Failed => format!("Hunt failed — {total_fixed}/{attempted} kills, {failed_attempts} failed or held | ${rc:.4}"),
+        RunStatus::Skipped => format!("Hunt skipped by a safety gate | ${rc:.4}"),
     };
     let _ = tx.send(sse("phase", json!({"phase": status}))).await;
     let _ = tx

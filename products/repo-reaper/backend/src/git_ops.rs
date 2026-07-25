@@ -158,6 +158,21 @@ pub async fn git_branch(dest: &Path, branch: &str) -> Result<()> {
     Ok(())
 }
 
+/// Check out a branch that already exists on the remote.
+///
+/// Clones are shallow, so the branch has to be fetched explicitly before it can
+/// be checked out. Used when adding a commit to a pull request that is already
+/// open rather than starting a new one.
+pub async fn git_checkout_remote_branch(dest: &Path, branch: &str) -> Result<()> {
+    runcmd_ok(
+        &["git", "fetch", "--depth=10", "origin", branch],
+        Some(dest),
+    )
+    .await?;
+    runcmd_ok(&["git", "checkout", "-B", branch, "FETCH_HEAD"], Some(dest)).await?;
+    Ok(())
+}
+
 pub async fn has_changes(dest: &Path) -> Result<bool> {
     let status = runcmd_ok(&["git", "status", "--porcelain"], Some(dest)).await?;
     Ok(!status.trim().is_empty())

@@ -754,11 +754,13 @@ pub async fn agent_pr_comment_fix(
     maintainer_comment: &str,
     codebase: &str,
     agent: &AgentConfig,
-) -> Result<(Value, f64)> {
+) -> Result<(GeneratedPatchResponse, f64)> {
     let system = "Expert software engineer. A maintainer says the previous fix is wrong.\n\
         Read their feedback carefully and produce a corrected patch.\n\
+        Report `confidence` as 0-100 for how confident you are that the corrected\n\
+        patch addresses the feedback without breaking anything else.\n\
         Reply ONLY with JSON (no markdown):\n\
-        {\"explanation\":\"what changed and why\",\"files_changed\":[\"path\"],\"patch\":\"<unified diff>\"}";
+        {\"explanation\":\"what changed and why\",\"files_changed\":[\"path\"],\"patch\":\"<unified diff>\",\"confidence\":0}";
     let prompt = format!(
         "Original issue: {issue_title}\nMaintainer: {maintainer_comment}\nCode:\n{codebase}"
     );
@@ -767,7 +769,10 @@ pub async fn agent_pr_comment_fix(
         &call_params_with_max(agent, system, &prompt, PATCH_MAX_TOKENS),
     )
     .await?;
-    Ok((parse_json(&text)?, cost))
+    Ok((
+        parse_typed_json::<GeneratedPatchResponse>(&text, "follow-up patch response")?,
+        cost,
+    ))
 }
 
 #[cfg(test)]

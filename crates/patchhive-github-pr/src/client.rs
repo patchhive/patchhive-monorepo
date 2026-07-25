@@ -433,16 +433,7 @@ query PatchHiveReviewThreads($owner: String!, $name: String!, $number: Int!) {
             )
             .await?;
 
-        if let Some(errors) = value["errors"].as_array() {
-            if !errors.is_empty() {
-                let messages = errors
-                    .iter()
-                    .filter_map(|error| error["message"].as_str())
-                    .collect::<Vec<_>>()
-                    .join("; ");
-                return Err(anyhow!("GitHub GraphQL error: {messages}"));
-            }
-        }
+        graphql_result(&value)?;
 
         let threads = value["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"]
             .as_array()
@@ -475,6 +466,58 @@ query PatchHiveReviewThreads($owner: String!, $name: String!, $number: Int!) {
                     .unwrap_or_default(),
             })
             .collect())
+    }
+
+    /// Convert an open pull request back to draft.
+    ///
+    /// GitHub's REST API only accepts `draft` when a pull request is created,
+    /// so demoting one afterwards requires the GraphQL mutation. Products need
+    /// this when new evidence invalidates a change that is already published as
+    /// ready for review.
+    ///
+    /// Returns whether the pull request is a draft once the call completes, and
+    /// is a no-op when it already is.
+    pub async fn convert_pull_request_to_draft(&self, repo: &str, pr_number: i64) -> Result<bool> {
+        validate_repo(repo)?;
+        let (owner, name) = split_repo(repo)?;
+
+        let lookup = self
+            .post_json_with_headers(
+                "/graphql",
+                &json!({
+                    "query": "query PatchHivePullRequestId($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { id isDraft } } }",
+                    "variables": { "owner": owner, "name": name, "number": pr_number },
+                }),
+                "application/vnd.github+json",
+            )
+            .await?;
+        graphql_result(&lookup)?;
+
+        let pull_request = &lookup["data"]["repository"]["pullRequest"];
+        if pull_request["isDraft"].as_bool().unwrap_or(false) {
+            return Ok(true);
+        }
+        let node_id = pull_request["id"]
+            .as_str()
+            .ok_or_else(|| anyhow!("GitHub did not return a pull request node ID"))?;
+
+        let mutation = self
+            .post_json_with_headers(
+                "/graphql",
+                &json!({
+                    "query": "mutation PatchHiveConvertToDraft($id: ID!) { convertPullRequestToDraft(input: { pullRequestId: $id }) { pullRequest { isDraft } } }",
+                    "variables": { "id": node_id },
+                }),
+                "application/vnd.github+json",
+            )
+            .await?;
+        graphql_result(&mutation)?;
+
+        Ok(
+            mutation["data"]["convertPullRequestToDraft"]["pullRequest"]["isDraft"]
+                .as_bool()
+                .unwrap_or(false),
+        )
     }
 
     pub async fn create_check_run(
@@ -575,6 +618,23 @@ query PatchHiveReviewThreads($owner: String!, $name: String!, $number: Int!) {
             html_url: created["html_url"].as_str().unwrap_or("").to_string(),
         })
     }
+}
+
+/// GitHub answers GraphQL failures with HTTP 200 and an `errors` array, so a
+/// successful response is not a successful query.
+fn graphql_result(value: &Value) -> Result<()> {
+    let Some(errors) = value["errors"].as_array() else {
+        return Ok(());
+    };
+    if errors.is_empty() {
+        return Ok(());
+    }
+    let messages = errors
+        .iter()
+        .filter_map(|error| error["message"].as_str())
+        .collect::<Vec<_>>()
+        .join("; ");
+    Err(anyhow!("GitHub GraphQL error: {messages}"))
 }
 
 fn validate_repo(repo: &str) -> Result<()> {
