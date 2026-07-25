@@ -56,6 +56,82 @@ export function createStreamState() {
   return { agentStatuses: {}, done: null, issues: [], logs: [], phase: "idle", report: null, repos: [], runCost: 0, running: false };
 }
 
+const STATUS_LABELS = {
+  assigned: "Fix in progress",
+  cancelled: "Cancelled",
+  done: "Complete",
+  eligible: "Eligible",
+  error: "Stopped with an error",
+  failed: "Failed",
+  fixed: "Fixed",
+  held: "Held for review",
+  idle: "Idle",
+  no_candidates: "No matching issues",
+  open: "Open",
+  partial: "Completed with holds",
+  passed: "Passed",
+  queued: "Queued",
+  rejected: "Rejected",
+  running: "In progress",
+  skipped: "Skipped",
+  starting: "Starting",
+  success: "Succeeded",
+  working: "In progress",
+};
+
+const PHASE_LABELS = {
+  cleanup: "Cleaning up",
+  deliver: "Preparing delivery",
+  discover: "Finding candidate work",
+  fix: "Building fixes",
+  idle: "Ready",
+  judge: "Selecting relevant files",
+  pr: "Opening pull requests",
+  review: "Reviewing patches",
+  score: "Scoring candidates",
+  smith: "Reviewing patches",
+  test: "Validating changes",
+  validate: "Validating changes",
+};
+
+function titleCase(value) {
+  return String(value || "")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+export function statusLabel(status) {
+  const value = String(status || "idle").toLowerCase();
+  return STATUS_LABELS[value] || titleCase(value) || "Unknown";
+}
+
+export function phaseLabel(phase) {
+  const value = String(phase || "idle").toLowerCase();
+  return PHASE_LABELS[value] || STATUS_LABELS[value] || titleCase(value) || "Working";
+}
+
+export function phaseHeadline(phase, dry = false) {
+  const value = String(phase || "starting").toLowerCase();
+  const subject = dry ? "Dry Stalk" : "RepoReaper";
+  const actions = {
+    cleanup: "is cleaning up the workspace.",
+    deliver: "is preparing the validated work for delivery.",
+    discover: "is finding candidate work.",
+    fix: "is building the fixes.",
+    judge: "is selecting the relevant files.",
+    pr: "is opening the approved pull requests.",
+    review: "is reviewing the proposed patches.",
+    score: "is scoring the candidate issues.",
+    smith: "is reviewing the proposed patches.",
+    starting: "is starting the operation.",
+    test: "is validating the changes.",
+    validate: "is validating the changes.",
+  };
+  return `${subject} ${actions[value] || "is working on the operation."}`;
+}
+
 export function statusTone(status) {
   const value = String(status || "").toLowerCase();
   if (["fixed", "done", "success", "passed", "merged", "open"].includes(value)) return "ok";
