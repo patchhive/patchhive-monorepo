@@ -5,7 +5,7 @@
 | Attribute | Value |
 |-----------|-------|
 | **Product Role** | Outbound autonomous contribution — find, fix, validate, and open PRs |
-| **Status** | Unified-backend engine integrated; v3 parity in progress |
+| **Status** | Unified-backend engine integrated; v3 functional parity verified, final operator visual acceptance pending |
 | **Standalone Repository** | [`patchhive/reporeaper`](https://github.com/patchhive/reporeaper) (mirror of this directory) |
 | **Local Port** | `8000` |
 
@@ -251,13 +251,13 @@ docker compose up --build
 Backend: `http://localhost:8000`
 Frontend: `http://localhost:5173`
 
-### Frontend v2 Temporary Scope
+### Legacy frontend parity reference
 
-The v2 prototype has a deliberately lightweight agent-team setup. It exists so
-Mission Deck and Dry Stalk can be tested honestly against the integrated engine
-without pulling the entire old frontend team builder into the new shell.
+The v3 frontend is the active acceptance target. The v1 and v2 frontends remain
+temporary parity references until the operator completes the final visual pass;
+new product UI work belongs in v3 only.
 
-Current v2 behavior:
+Legacy behavior retained in v3:
 
 - Checks can recruit a starter team and edit the backend's current in-memory
   agent team through `/agents`.
@@ -269,14 +269,16 @@ Current v2 behavior:
   custom providers with incomplete model-list support. The shared picker filters
   obvious non-text models such as embeddings, rerankers, STT/TTS/audio,
   image/video, moderation, and provider utility entries from noisy catalogs.
-  Free provider models remain visible by default, and RepoReaper v2 can narrow
+  Free provider models remain visible by default, and RepoReaper v3 can narrow
   the picker to free-marked model IDs when the operator enables Free only.
 - Provider defaults can also test the selected model through
   `/models/:provider/test`, which sends a tiny prompt through RepoReaper's real
   provider runtime and reports auth, rate limit, timeout, or provider errors.
 - Mission Deck and Dry Stalk are gated until an agent team exists, so the UI no
   longer lets a run fail with a bare `No agents configured` backend error.
-- RepoReaper persists the active team and saved team presets in SQLite.
+- RepoReaper persists the active team and saved team presets in SQLite. The
+  legacy preset lifecycle is save, activate/load, and delete; there was no
+  preset file export workflow to preserve.
   Per-agent API keys and bot token overrides are encrypted at rest when
   `REAPER_ENCRYPTION_KEY` or `PATCHHIVE_ENCRYPTION_KEY` is set. Without one of
   those keys, secret fields stay memory-only and are not written to SQLite.
@@ -285,14 +287,14 @@ Current v2 behavior:
 - Dry Stalk remains no-write, but it still needs at least a Scout agent because
   issue scoring and dry-run analysis use the AI agent pipeline.
 
-The v2 frontend remains a parity source until the v3 acceptance pass completes.
-It is not the final UI and must not be removed merely because the engine is now
-mounted in the unified backend.
+The v3 Squad surface now covers role editing, provider defaults, live model
+discovery and testing, Agent-ready and Free filters, encrypted credential
+posture, cooldown clearing, and the complete legacy preset lifecycle.
 
 ### UI v3 parity and safety matrix
 
-RepoReaper's v3 candidate must preserve every operator workflow below before it
-can replace either existing frontend. The destination tabs are intentionally
+RepoReaper's v3 acceptance frontend must preserve every operator workflow below
+before it can replace either existing frontend. The destination tabs are intentionally
 short so the specialist header remains usable without horizontally scrolling
 at ordinary desktop widths.
 
@@ -367,34 +369,25 @@ Scheduling is a safety contract, not only a UI feature:
 
 RepoReaper polish backlog after the first live sandbox PR tests:
 
-- Keep strengthening the History tab as the operator's first diagnostic surface.
-  It should show where each attempt stopped: Judge/context selection, Reaper
-  no-patch decision, patch apply/self-heal, Smith review, validation, GitHub
-  branch/fork/PR delivery, or final PR tracking.
-- Mirror the most important no-patch, patch-error, and no-changes reasons on
-  the Mission Deck so the operator does not have to open History for the basic
-  answer to "why did this not open a PR?"
 - Add links from attempts to the GitHub issue status comments and PR comments
   RepoReaper posted. The current UI links to the issue and PR, but does not
   persist individual comment URLs.
-- Persist a compact per-run log artifact instead of relying on stdout, live SSE
-  messages, or UI summaries when debugging a failed run later. Use the shared
-  `ProductRunEvent` / `ProductRunArtifact` contract so History can show Judge,
-  Reaper, apply, Smith, validation, branch, fork, PR, and issue-comment events
-  without inventing a RepoReaper-only format.
-- Surface provider/runtime failures more clearly, including rejected API keys,
-  empty model responses, rate limits, timeouts, and model output that cannot be
-  parsed into a patch.
+- Complete the operator visual acceptance pass for the maintainer-feedback
+  follow-up workflow on a RepoReaper-owned pull request. The guarded backend
+  path is implemented and covered by tests; exercising it performs a real
+  write and therefore remains an explicit operator action.
 - Standardize the suite-wide write/test policy. RepoReaper already treats
   disabled untrusted tests as "not proven" rather than a failure worth retrying,
   but future write-capable products need the same distinction between
   untrusted-disabled, sandboxed-passed, sandboxed-failed, and host-approved test
   execution.
-- Keep draft PR behavior conservative until HiveCore owns write approvals and
-  MergeKeeper/TrustGate can participate in the final gate.
+- Add HiveCore's scoped, single-use approval records before it dispatches
+  RepoReaper's approval-required write action. Operator-started missions and
+  explicitly enabled write schedules remain RepoReaper-owned authorization;
+  HiveCore correctly refuses the write action until that suite flow exists.
 
-Do not remove the old RepoReaper team/preset UI until the v2 replacement and the
-unified backend/HiveCore setup path cover those workflows.
+Do not remove the legacy RepoReaper frontends until the operator completes the
+final v3 visual acceptance pass.
 
 ### Split Backend + Frontend
 
@@ -799,10 +792,9 @@ cargo run --release
 
 - **Active development** — core workflow (scan → fix → PR) is fully implemented
 - Unified-backend engine mounted in-process at `/api/products/repo-reaper`
-- Frontend v1 at `/frontend/`, v2 prototype at `/frontend-v2/`, and the
-  functional v3 parity candidate at `/frontend-v3/`
-- The v1 and v2 frontends remain available until the v3 visual and workflow
-  acceptance pass is complete
+- The active acceptance frontend is v3 at `/frontend-v3/`
+- The v1 `/frontend/` and v2 `/frontend-v2/` trees remain temporary parity
+  references until the final operator visual pass is complete
 - CI: GitHub Actions for Rust backend (`cargo build`, `cargo test`, `cargo clippy`)
 - No Prometheus or Kubernetes integration — health checks are HTTP-based
 - Configuration is via `.env` file or environment variables

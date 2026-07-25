@@ -475,20 +475,28 @@ Key features to preserve:
 - PR monitor
 - PatchHive branding in footer and PR bodies
 
-RepoReaper v2 temporary scope:
+RepoReaper v3 acceptance scope:
 - RepoReaper's engine is mounted in-process by `patchhive-backend`; the
   standalone backend remains a thin launcher over the same library/router.
 - Its product tables use the `repo_reaper_*` namespace in the shared
   `PATCHHIVE_DB_PATH` database. `REAPER_DB_PATH` remains a standalone
   compatibility override when the suite path is absent.
-- `products/repo-reaper/frontend-v2/` has a lightweight agent-team setup so Mission Deck and Dry Stalk can be tested honestly against the integrated engine.
-- That v2 setup is intentionally not the full old frontend team builder. It can recruit a starter team, edit the active backend team, apply provider defaults, pull and filter provider model lists, and test selected models. Richer per-agent controls and the full preset-management UX remain deferred.
+- `products/repo-reaper/frontend-v3/` is the active acceptance frontend. The v1
+  and v2 trees are parity references only; do not add new product UI work to
+  them.
+- V3 covers role editing, provider defaults, live model discovery and testing,
+  Agent-ready and Free filters, encrypted credential posture, cooldown
+  clearing, and the legacy preset lifecycle of save, activate/load, and delete.
+  No legacy preset file export workflow existed.
 - RepoReaper persists the active team and team presets in SQLite. Per-agent API keys and bot token overrides are encrypted at rest through `patchhive_product_core::secrets::TokenProtector` when `REAPER_ENCRYPTION_KEY` or `PATCHHIVE_ENCRYPTION_KEY` is set; without one of those keys, those secret fields stay memory-only and are not written to SQLite. Adding an encryption key later migrates existing plaintext active-team and preset secrets on boot.
 - Dry Stalk is still a no-write mode, but it needs at least a Scout agent because issue scoring and dry-run analysis use the AI agent pipeline.
-- Do not remove the old RepoReaper team/preset UI until the v2 replacement and unified-backend/HiveCore setup path cover those workflows.
-- The v3 parity pass must revisit preset export behavior, approval gates, and
-  HiveCore-driven setup without weakening RepoReaper's product-owned write
-  credential or validation requirements.
+- Do not remove the legacy RepoReaper frontends until the operator completes
+  the final v3 visual acceptance pass.
+- Operator-started missions and explicitly enabled write schedules are
+  RepoReaper-owned authorization. RepoReaper advertises the write action as
+  approval-required, and HiveCore must not dispatch it until HiveCore has
+  scoped, single-use approval records. This keeps the product-owned write
+  credential and validation requirements intact.
 
 RepoReaper defaults:
 - Backend: `VITE_API_URL` or the current browser origin

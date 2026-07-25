@@ -142,8 +142,8 @@ The PatchHive monorepo is the source of truth for RepoReaper development. The st
 
 Local Notes:
 
-- The v2 prototype lives in `frontend-v2/` while the suite UI direction is being settled.
-- The v2 agent-team setup is intentionally lightweight for gateway testing. It can recruit a starter team and update the current backend team, but the fuller old team builder, full team preset management, and richer provider/model controls are deferred until the RepoReaper unified-backend/HiveCore setup pass.
+- `frontend-v3/` is the active acceptance frontend. The v1 and v2 trees remain temporary parity references until the final operator visual pass; do not add new product UI features to them.
+- The v3 Squad surface covers the complete legacy preset lifecycle (save, activate/load, and delete), role editing, provider defaults, live model discovery/testing, model filters, encrypted credential posture, and cooldown clearing. No legacy preset file export workflow existed.
 - Active teams and team presets persist in SQLite. Per-agent API keys and bot token overrides are encrypted at rest when `REAPER_ENCRYPTION_KEY` or `PATCHHIVE_ENCRYPTION_KEY` is set; without one of those keys, those secret fields stay memory-only and are not written to SQLite. Adding an encryption key later migrates existing plaintext active-team and preset secrets on boot.
 - Dry Stalk is no-write, but it still needs at least a Scout agent because scoring and dry-run analysis use the AI agent pipeline.
-- Do not remove the old team/preset UI until v2 and the unified backend cover those workflows.
+- Do not remove the legacy frontends until v3 receives final operator visual acceptance.
