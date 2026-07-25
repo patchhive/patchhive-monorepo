@@ -217,7 +217,11 @@ export async function readResponse(response, fallback = "Request failed") {
   const text = await response.text();
   let payload = {};
   try { payload = text ? JSON.parse(text) : {}; } catch { payload = {}; }
-  if (!response.ok) throw new Error(payload.error || payload.message || `${fallback}: ${response.status}`);
+  if (!response.ok) {
+    const error = new Error(payload.error || payload.message || `${fallback}: ${response.status}`);
+    error.status = response.status;
+    throw error;
+  }
   return payload;
 }
 

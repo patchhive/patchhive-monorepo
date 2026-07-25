@@ -282,12 +282,7 @@ function LoginScreen({ auth }) {
     setBusy(true);
     setError("");
     try {
-      await readJson(await fetch(`${API}/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ api_key: key.trim() }),
-      }));
-      auth.login(key.trim());
+      await auth.authenticate(key);
     } catch (err) {
       setError(err.message || "Invalid API key.");
     } finally {

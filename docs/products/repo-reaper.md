@@ -246,16 +246,14 @@ docker compose up --build
 |---------|-----|
 | Backend | `http://localhost:8000` |
 | Frontend | `http://localhost:5173` |
-| Frontend v2 | `http://localhost:5195` |
 
 Backend: `http://localhost:8000`
 Frontend: `http://localhost:5173`
 
-### Legacy frontend parity reference
+### Canonical v3 frontend
 
-The v3 frontend is the active acceptance target. The v1 and v2 frontends remain
-temporary parity references until the operator completes the final visual pass;
-new product UI work belongs in v3 only.
+The v3 frontend passed final operator acceptance on 2026-07-25 and now lives at
+`products/repo-reaper/frontend/`. The legacy v1 and v2 trees were removed.
 
 Legacy behavior retained in v3:
 
@@ -293,8 +291,7 @@ posture, cooldown clearing, and the complete legacy preset lifecycle.
 
 ### UI v3 parity and safety matrix
 
-RepoReaper's v3 acceptance frontend must preserve every operator workflow below
-before it can replace either existing frontend. The destination tabs are intentionally
+RepoReaper's canonical v3 frontend preserves every operator workflow below. The tabs are intentionally
 short so the specialist header remains usable without horizontally scrolling
 at ordinary desktop widths.
 
@@ -386,9 +383,6 @@ RepoReaper polish backlog after the first live sandbox PR tests:
   explicitly enabled write schedules remain RepoReaper-owned authorization;
   HiveCore correctly refuses the write action until that suite flow exists.
 
-Do not remove the legacy RepoReaper frontends until the operator completes the
-final v3 visual acceptance pass.
-
 ### Split Backend + Frontend
 
 ```bash
@@ -396,7 +390,6 @@ cp .env.example .env
 
 cd backend && cargo run
 cd ../frontend && npm install && npm run dev
-cd ../frontend-v2 && npm install && npm run dev
 ```
 
 ### Environment
@@ -792,9 +785,8 @@ cargo run --release
 
 - **Active development** — core workflow (scan → fix → PR) is fully implemented
 - Unified-backend engine mounted in-process at `/api/products/repo-reaper`
-- The active acceptance frontend is v3 at `/frontend-v3/`
-- The v1 `/frontend/` and v2 `/frontend-v2/` trees remain temporary parity
-  references until the final operator visual pass is complete
+- The canonical frontend is v3 at `/frontend/`; the legacy v1/v2 trees were
+  removed after final operator acceptance on 2026-07-25
 - CI: GitHub Actions for Rust backend (`cargo build`, `cargo test`, `cargo clippy`)
 - No Prometheus or Kubernetes integration — health checks are HTTP-based
 - Configuration is via `.env` file or environment variables

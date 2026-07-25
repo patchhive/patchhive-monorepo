@@ -20,7 +20,7 @@ export function ControlField({
           onChange={(event) => onChange(event.target.value)}
           placeholder={placeholder}
           type={type}
-          value={value}
+          value={value ?? ""}
         />
       </div>
     </label>
@@ -35,7 +35,7 @@ export function ControlSelectField({ label, onChange, options, value }) {
         <select
           className={`w-full bg-transparent text-[12px] outline-none ${V3_TEXT.strong}`}
           onChange={(event) => onChange(event.target.value)}
-          value={value}
+          value={value ?? ""}
         >
           {options.map((option) => (
             <option key={option.value} value={option.value}>{option.label}</option>

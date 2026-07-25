@@ -209,8 +209,8 @@ Location: `packages/ui-v3/`
 UI v3 is the next specialist-product interface. Its canonical visual source is
 `unified-ui-revamp-main/`, the Lovable project. MergeKeeper, ReleaseSentry,
 DepTriage, VulnTriage, FlakeSting, ReviewBee, TrustGate, RepoMemory,
-SignalHive, and RefactorScout have v3 frontends. RepoReaper's engine is also
-integrated and its v3 parity pass is now active. These products qualify because their engines
+SignalHive, RefactorScout, and RepoReaper have v3 frontends. These products
+qualify because their engines
 are mounted in-process by the unified backend. Do not start another product's
 v3 frontend until its unified-backend engine reaches `integrated`.
 
@@ -263,6 +263,9 @@ Rules:
 - RefactorScout passed its final parity audit on 2026-07-21; its canonical v3
   UI lives in `products/refactor-scout/frontend/`, and its v1/v2 trees have
   been removed.
+- RepoReaper passed its final parity audit on 2026-07-25; its canonical v3 UI
+  lives in `products/repo-reaper/frontend/`, and its v1/v2 trees have been
+  removed.
 - Prefer finishing and validating v3 for the current integrated product set before moving another product engine into the unified backend.
 - HiveCore is intentionally outside the specialist-product v3 migration and keeps its control-plane UI.
 - `prototypes/vuln-triage-calm-mockup.html` is reference material only; it is not the v3 source of truth.
@@ -475,23 +478,20 @@ Key features to preserve:
 - PR monitor
 - PatchHive branding in footer and PR bodies
 
-RepoReaper v3 acceptance scope:
+RepoReaper v3 scope:
 - RepoReaper's engine is mounted in-process by `patchhive-backend`; the
   standalone backend remains a thin launcher over the same library/router.
 - Its product tables use the `repo_reaper_*` namespace in the shared
   `PATCHHIVE_DB_PATH` database. `REAPER_DB_PATH` remains a standalone
   compatibility override when the suite path is absent.
-- `products/repo-reaper/frontend-v3/` is the active acceptance frontend. The v1
-  and v2 trees are parity references only; do not add new product UI work to
-  them.
+- `products/repo-reaper/frontend/` is the canonical v3 frontend. The v1 and v2
+  trees were removed after final operator acceptance on 2026-07-25.
 - V3 covers role editing, provider defaults, live model discovery and testing,
   Agent-ready and Free filters, encrypted credential posture, cooldown
   clearing, and the legacy preset lifecycle of save, activate/load, and delete.
   No legacy preset file export workflow existed.
 - RepoReaper persists the active team and team presets in SQLite. Per-agent API keys and bot token overrides are encrypted at rest through `patchhive_product_core::secrets::TokenProtector` when `REAPER_ENCRYPTION_KEY` or `PATCHHIVE_ENCRYPTION_KEY` is set; without one of those keys, those secret fields stay memory-only and are not written to SQLite. Adding an encryption key later migrates existing plaintext active-team and preset secrets on boot.
 - Dry Stalk is still a no-write mode, but it needs at least a Scout agent because issue scoring and dry-run analysis use the AI agent pipeline.
-- Do not remove the legacy RepoReaper frontends until the operator completes
-  the final v3 visual acceptance pass.
 - Operator-started missions and explicitly enabled write schedules are
   RepoReaper-owned authorization. RepoReaper advertises the write action as
   approval-required, and HiveCore must not dispatch it until HiveCore has

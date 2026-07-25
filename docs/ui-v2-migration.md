@@ -139,7 +139,7 @@ cross-product handoffs rather than another single-product radar board.
 | Product | v2 folder | Status |
 | --- | --- | --- |
 | SignalHive | — | v2 retired after v3 parity; canonical UI is `products/signal-hive/frontend` |
-| RepoReaper | `products/repo-reaper/frontend-v2` | React prototype active |
+| RepoReaper | — | v2 retired after v3 parity; canonical UI is `products/repo-reaper/frontend` |
 | ReviewBee | `products/review-bee/frontend-v2` | React prototype active |
 | TrustGate | — | v2 retired after v3 parity; canonical UI is `products/trust-gate/frontend` |
 | RepoMemory | — | v2 retired after v3 parity; canonical UI is `products/repo-memory/frontend` |

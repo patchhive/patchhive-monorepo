@@ -43,7 +43,14 @@ function clearStoredKey(storageKey) {
   sessionStore()?.removeItem(storageKey);
 }
 
+function resolveAuthBase(apiBase) {
+  const productMarker = "/api/products/";
+  const markerIndex = apiBase.indexOf(productMarker);
+  return markerIndex === -1 ? apiBase : `${apiBase.slice(0, markerIndex)}/api`;
+}
+
 export function useApiKeyAuth({ apiBase, storageKey }) {
+  const authBase = resolveAuthBase(apiBase);
   const [apiKey, setApiKey] = useState(() => readStoredKey(storageKey));
   const [checked, setChecked] = useState(false);
   const [needsAuth, setNeedsAuth] = useState(false);
@@ -53,7 +60,7 @@ export function useApiKeyAuth({ apiBase, storageKey }) {
   useEffect(() => {
     setChecked(false);
     setAuthError("");
-    fetch(`${apiBase}/auth/status`)
+    fetch(`${authBase}/auth/status`)
       .then((res) => res.json())
       .then((data) => {
         if (!data.auth_enabled && !data.bootstrap_required) {
@@ -82,7 +89,7 @@ export function useApiKeyAuth({ apiBase, storageKey }) {
           return;
         }
 
-        fetch(`${apiBase}/auth/login`, {
+        fetch(`${authBase}/auth/login`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ api_key: stored }),
@@ -113,7 +120,7 @@ export function useApiKeyAuth({ apiBase, storageKey }) {
         setAuthError("Cannot reach the backend.");
         setChecked(true);
       });
-  }, [apiBase, storageKey]);
+  }, [authBase, storageKey]);
 
   const login = (key) => {
     writeStoredKey(storageKey, key);
@@ -121,6 +128,21 @@ export function useApiKeyAuth({ apiBase, storageKey }) {
     setNeedsAuth(false);
     setBootstrapRequired(false);
     setAuthError("");
+  };
+
+  const authenticate = async (key) => {
+    const normalizedKey = key.trim();
+    const res = await fetch(`${authBase}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ api_key: normalizedKey }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.error || data.message || "Invalid API key.");
+    }
+    login(normalizedKey);
+    return data;
   };
 
   const logout = () => {
@@ -131,7 +153,7 @@ export function useApiKeyAuth({ apiBase, storageKey }) {
   };
 
   const generateKey = async ({ autoLogin = true } = {}) => {
-    const res = await fetch(`${apiBase}/auth/generate-key`, { method: "POST" });
+    const res = await fetch(`${authBase}/auth/generate-key`, { method: "POST" });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.api_key) {
       throw new Error(data.error || "Could not generate an API key.");
@@ -144,6 +166,7 @@ export function useApiKeyAuth({ apiBase, storageKey }) {
 
   return {
     apiKey,
+    authenticate,
     checked,
     needsAuth,
     login,

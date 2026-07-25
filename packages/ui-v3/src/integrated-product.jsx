@@ -65,7 +65,7 @@ function tone(value) {
   return STATUS_CLASSES[value] ? value : "neutral";
 }
 
-export function ProductLoginScreen({ apiBase, auth, config }) {
+export function ProductLoginScreen({ auth, config }) {
   const [key, setKey] = useState("");
   const [error, setError] = useState(auth.authError || "");
   const [busy, setBusy] = useState(false);
@@ -77,12 +77,7 @@ export function ProductLoginScreen({ apiBase, auth, config }) {
     setBusy(true);
     setError("");
     try {
-      await readJson(await fetch(`${apiBase}/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ api_key: key.trim() }),
-      }));
-      auth.login(key.trim());
+      await auth.authenticate(key);
     } catch (err) {
       setError(err.message || "Invalid API key.");
     } finally {

@@ -17,11 +17,11 @@ const TARGET_MODES = [
 ];
 
 function Field({ help, label, onChange, type = "text", value, ...props }) {
-  return <label className="block"><span className={`text-[10px] uppercase tracking-[0.2em] ${V3_TEXT.mute}`}>{label}</span><input className={`surface-inset mt-2 h-11 w-full rounded-xl bg-transparent px-4 text-[13px] outline-none ${V3_TEXT.strong}`} onChange={(event) => onChange(event.target.value)} type={type} value={value} {...props}/>{help ? <span className={`mt-1.5 block text-[10px] leading-relaxed ${V3_TEXT.mute}`}>{help}</span> : null}</label>;
+  return <label className="block"><span className={`text-[10px] uppercase tracking-[0.2em] ${V3_TEXT.mute}`}>{label}</span><input className={`surface-inset mt-2 h-11 w-full rounded-xl bg-transparent px-4 text-[13px] outline-none ${V3_TEXT.strong}`} onChange={(event) => onChange(event.target.value)} type={type} value={value ?? ""} {...props}/>{help ? <span className={`mt-1.5 block text-[10px] leading-relaxed ${V3_TEXT.mute}`}>{help}</span> : null}</label>;
 }
 
 function Select({ label, onChange, options, value }) {
-  return <label className="block"><span className={`text-[10px] uppercase tracking-[0.2em] ${V3_TEXT.mute}`}>{label}</span><select className={`surface-inset mt-2 h-11 w-full rounded-xl bg-transparent px-4 text-[13px] outline-none ${V3_TEXT.strong}`} onChange={(event) => onChange(event.target.value)} value={value}>{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>;
+  return <label className="block"><span className={`text-[10px] uppercase tracking-[0.2em] ${V3_TEXT.mute}`}>{label}</span><select className={`surface-inset mt-2 h-11 w-full rounded-xl bg-transparent px-4 text-[13px] outline-none ${V3_TEXT.strong}`} onChange={(event) => onChange(event.target.value)} value={value ?? ""}>{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>;
 }
 
 function reportMarkdown({ dry, stream, targetSelectionMode }) {

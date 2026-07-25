@@ -318,7 +318,7 @@ directly.
 
 - Promoted v3 lives at `products/<slug>/frontend/` (v1/v2 removed). In-progress work lives
   at `products/<slug>/frontend-v3/`; v2 stays functional until parity passes and is never
-  rewritten in place. **RepoReaper is the active parity pass.**
+  rewritten in place. **RepoReaper passed final parity on 2026-07-25.**
 - Do not start a product's v3 frontend until its engine is `integrated` in-process.
 - Automation config lives in a **Controls** tab, not a Schedules tab — presets, schedules,
   target/scope selection, repository policy, suite-service integration. Build it with
@@ -441,10 +441,9 @@ Key env: `REPO_REAPER_GITHUB_TOKEN_RW`, `BOT_GITHUB_USER`, `BOT_GITHUB_EMAIL`,
 `REAPER_TEST_TIMEOUT_SECONDS`, `WEBHOOK_SECRET`, `REAPER_DB_PATH`, `REAPER_WORK_DIR`
 (default `/tmp/repo-reaper`).
 
-Don't remove the old team/preset UI until the replacement plus the unified-backend/HiveCore
-setup path cover those workflows. The v3 parity pass must revisit preset export, approval
-gates, and HiveCore-driven setup without weakening the product-owned write credential or
-validation requirements.
+RepoReaper's canonical v3 Squad covers the legacy team and preset workflows. HiveCore-driven
+setup must continue to preserve the product-owned write credential, scoped approval gates,
+and validation requirements.
 
 ---
 
@@ -474,12 +473,9 @@ standalone lockfile before the first export.
 - Eleven specialist engines are `integrated` in `patchhive-backend`; HiveCore stays a
   separate control plane. Finish and validate v3 across the integrated set before moving
   another engine into the unified backend.
-- Ten products have promoted v3 frontends at `products/<slug>/frontend/` with v1/v2 removed.
-  **RepoReaper's v3 parity pass is the active work**, in
-  [products/repo-reaper/frontend-v3/](products/repo-reaper/frontend-v3/).
-- Uncommitted: status/phase label humanization in
-  [shared.jsx](products/repo-reaper/frontend-v3/src/shared.jsx) (`statusLabel`, `phaseLabel`)
-  consumed by the run, history, PR, and squad panels.
+- Eleven products have promoted v3 frontends at `products/<slug>/frontend/` with v1/v2
+  removed. RepoReaper's canonical interface is
+  [products/repo-reaper/frontend/](products/repo-reaper/frontend/).
 - Open/incomplete by design: the verified public repo-owner opt-out on `patchhive.dev`,
   PR-budget adoption by future write-capable products, the email/webmail module boundary
   ([docs/inbound-email-architecture.md](docs/inbound-email-architecture.md)), and the shared
