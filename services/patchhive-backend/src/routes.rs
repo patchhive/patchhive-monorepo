@@ -113,6 +113,43 @@ async fn session(State(state): State<Arc<AppState>>) -> Json<SessionResponse> {
     })
 }
 
+/// Loopback guard for the in-process aggregates.
+///
+/// These read data each product protects behind its own auth middleware — run
+/// history, auth posture, advertised capabilities. Calling the handlers directly
+/// bypasses that middleware, which is correct for a same-process read but must not
+/// become a remotely readable hole if the backend is bound beyond localhost.
+///
+/// The suite layer has no operator auth of its own yet (`/api/auth/status` reports
+/// auth_enabled: false), so loopback is the only honest boundary available. When
+/// suite auth lands this becomes an operator-key check instead.
+fn aggregate_access_allowed(peer: Option<SocketAddr>) -> bool {
+    if std::env::var("PATCHHIVE_ALLOW_REMOTE_AGGREGATES")
+        .map(|value| value.trim().eq_ignore_ascii_case("true"))
+        .unwrap_or(false)
+    {
+        return true;
+    }
+    match peer {
+        Some(addr) => addr.ip().is_loopback(),
+        // No peer information: refuse rather than assume local.
+        None => false,
+    }
+}
+
+fn aggregate_forbidden() -> Response {
+    (
+        StatusCode::FORBIDDEN,
+        Json(ErrorResponse {
+            error: "aggregate-local-only",
+            message: "Suite aggregates read product-protected data and are limited to localhost. \
+Set PATCHHIVE_ALLOW_REMOTE_AGGREGATES=true only behind your own authenticated proxy."
+                .into(),
+        }),
+    )
+        .into_response()
+}
+
 async fn products(State(state): State<Arc<AppState>>) -> Json<Vec<ProductResponse>> {
     Json(
         state
@@ -127,8 +164,12 @@ async fn products(State(state): State<Arc<AppState>>) -> Json<Vec<ProductRespons
 /// Server-side aggregate of every mounted engine's auth posture.
 async fn products_auth_status(
     State(state): State<Arc<AppState>>,
-) -> Json<Vec<products::ProductAuthStatus>> {
-    Json(products::auth_statuses(&state.config))
+    peer: Option<ConnectInfo<SocketAddr>>,
+) -> Response {
+    if !aggregate_access_allowed(peer.map(|ConnectInfo(addr)| addr)) {
+        return aggregate_forbidden();
+    }
+    Json(products::auth_statuses(&state.config)).into_response()
 }
 
 #[derive(serde::Deserialize, Default)]
@@ -256,16 +297,26 @@ async fn runs(State(state): State<Arc<AppState>>) -> Json<Vec<crate::models::Run
 }
 
 /// Server-side aggregate of every mounted engine's run history.
-async fn products_runs(State(state): State<Arc<AppState>>) -> Json<Vec<products::ProductRuns>> {
-    Json(products::all_runs(&state.config).await)
+async fn products_runs(
+    State(state): State<Arc<AppState>>,
+    peer: Option<ConnectInfo<SocketAddr>>,
+) -> Response {
+    if !aggregate_access_allowed(peer.map(|ConnectInfo(addr)| addr)) {
+        return aggregate_forbidden();
+    }
+    Json(products::all_runs(&state.config).await).into_response()
 }
 
 /// Runtime-advertised capabilities per engine, for drift comparison against the
 /// manifest data already served by /api/products.
 async fn products_capabilities(
     State(state): State<Arc<AppState>>,
-) -> Json<Vec<products::ProductCapabilityReport>> {
-    Json(products::advertised_capabilities(&state.config).await)
+    peer: Option<ConnectInfo<SocketAddr>>,
+) -> Response {
+    if !aggregate_access_allowed(peer.map(|ConnectInfo(addr)| addr)) {
+        return aggregate_forbidden();
+    }
+    Json(products::advertised_capabilities(&state.config).await).into_response()
 }
 
 async fn events(State(state): State<Arc<AppState>>) -> Json<Vec<crate::models::SuiteEvent>> {
