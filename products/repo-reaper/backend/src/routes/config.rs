@@ -271,7 +271,15 @@ struct ConfigSave {
     min_conf: Option<String>,
 }
 
-async fn save_config(Json(body): Json<ConfigSave>) -> Json<Value> {
+/// Credentials the browser can never read back, so a blank field means
+/// "preserve" rather than "clear".
+const SECRET_CONFIG_KEYS: [&str; 3] = [
+    "REPO_REAPER_GITHUB_TOKEN_RW",
+    "PROVIDER_API_KEY",
+    "WEBHOOK_SECRET",
+];
+
+fn config_updates(body: ConfigSave) -> Vec<(String, String)> {
     let pairs = [
         ("REPO_REAPER_GITHUB_TOKEN_RW", body.github_write_token),
         ("BOT_GITHUB_USER", body.bot_user),
@@ -285,19 +293,28 @@ async fn save_config(Json(body): Json<ConfigSave>) -> Json<Value> {
     ];
     let mut updates = Vec::new();
     for (key, val) in pairs {
-        if let Some(v) = val {
-            let is_masked_placeholder = matches!(
-                key,
-                "REPO_REAPER_GITHUB_TOKEN_RW" | "PROVIDER_API_KEY" | "WEBHOOK_SECRET"
-            ) && (v == "(set)" || v.starts_with('*'));
-            if !v.is_empty() && !is_masked_placeholder {
-                updates.push((key.to_string(), v));
-            }
+        // An absent field is never touched. A blank secret preserves the stored
+        // credential; a blank non-secret clears the value, because otherwise an
+        // operator has no way to remove a setting from the UI at all.
+        let Some(value) = val else { continue };
+        if SECRET_CONFIG_KEYS.contains(&key)
+            && (value.is_empty() || value == "(set)" || value.starts_with('*'))
+        {
+            continue;
         }
+        updates.push((key.to_string(), value));
     }
+    updates
+}
 
+async fn save_config(Json(body): Json<ConfigSave>) -> Json<Value> {
+    let updates = config_updates(body);
     let saved = persist_env_updates(&canonical_env_path(), &updates).is_ok();
-    Json(json!({"saved": saved, "restart_required": saved}))
+    Json(json!({
+        "saved": saved,
+        "restart_required": saved && !updates.is_empty(),
+        "updated_keys": updates.iter().map(|(key, _)| key.as_str()).collect::<Vec<_>>(),
+    }))
 }
 
 #[derive(Deserialize)]
@@ -1102,8 +1119,56 @@ async fn lifetime_cost() -> Json<Value> {
 
 #[cfg(test)]
 mod tests {
-    use super::{agent_browser_view, openrouter_catalog, static_provider_models, OpenAiModels};
+    use super::{
+        agent_browser_view, config_updates, openrouter_catalog, static_provider_models, ConfigSave,
+        OpenAiModels,
+    };
     use crate::state::{AgentConfig, AgentStats};
+
+    #[test]
+    fn blank_secrets_are_preserved_but_blank_plain_values_are_cleared() {
+        let updates = config_updates(ConfigSave {
+            github_write_token: Some(String::new()),
+            api_key: Some("(set)".into()),
+            webhook_secret: Some("****".into()),
+            bot_user: Some(String::new()),
+            bot_email: Some("bot@patchhive.dev".into()),
+            patchhive_ai_url: None,
+            ollama_url: Some(String::new()),
+            cost_budget: Some("0.50".into()),
+            min_conf: None,
+        });
+
+        for key in [
+            "REPO_REAPER_GITHUB_TOKEN_RW",
+            "PROVIDER_API_KEY",
+            "WEBHOOK_SECRET",
+        ] {
+            assert!(
+                !updates.iter().any(|(name, _)| name == key),
+                "{key} must keep its stored value when the field is blank or masked"
+            );
+        }
+        for key in ["PATCHHIVE_AI_URL", "MIN_REVIEW_CONFIDENCE"] {
+            assert!(
+                !updates.iter().any(|(name, _)| name == key),
+                "{key} was absent from the request and must not be touched"
+            );
+        }
+        assert_eq!(
+            updates,
+            vec![
+                ("BOT_GITHUB_USER".to_string(), String::new()),
+                (
+                    "BOT_GITHUB_EMAIL".to_string(),
+                    "bot@patchhive.dev".to_string()
+                ),
+                ("OLLAMA_BASE_URL".to_string(), String::new()),
+                ("COST_BUDGET_USD".to_string(), "0.50".to_string()),
+            ],
+            "blank plain fields must be written through so an operator can clear them"
+        );
+    }
 
     #[test]
     fn browser_agent_view_redacts_secret_values_but_reports_presence() {

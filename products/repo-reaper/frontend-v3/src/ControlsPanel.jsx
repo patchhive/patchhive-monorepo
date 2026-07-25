@@ -91,7 +91,12 @@ export default function ControlsPanel({
 
   async function perform(work, success) {
     setBusy(true); setMessage("");
-    try { await work(); setMessage(success); await refreshControls(); await onRefresh(); }
+    try {
+      const outcome = await work();
+      setMessage(typeof outcome === "string" && outcome ? outcome : success);
+      await refreshControls();
+      await onRefresh();
+    }
     catch (error) { onError(error.message || "RepoReaper control update failed."); }
     finally { setBusy(false); }
   }
@@ -138,10 +143,10 @@ export default function ControlsPanel({
       </ProductControlsPair>
 
       <ProductControlSection>
-        <ControlPanelTitle icon={Save} subtitle="Runtime configuration is written to the canonical PatchHive .env and takes effect after backend restart.">Runtime defaults</ControlPanelTitle>
+        <ControlPanelTitle icon={Save} subtitle="Runtime configuration is written to the canonical PatchHive .env and takes effect after backend restart. Emptying a plain field clears it; leaving a credential field blank keeps the stored secret.">Runtime defaults</ControlPanelTitle>
         <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <ControlField label="Bot GitHub user" onChange={(value) => setSettings((current) => ({ ...current, BOT_GITHUB_USER: value }))} value={settings.BOT_GITHUB_USER}/><ControlField label="Bot Git email" onChange={(value) => setSettings((current) => ({ ...current, BOT_GITHUB_EMAIL: value }))} value={settings.BOT_GITHUB_EMAIL}/><ControlField label="Cost budget USD" onChange={(value) => setSettings((current) => ({ ...current, COST_BUDGET_USD: value }))} type="number" value={settings.COST_BUDGET_USD}/><ControlField label="Minimum review confidence" onChange={(value) => setSettings((current) => ({ ...current, MIN_REVIEW_CONFIDENCE: value }))} type="number" value={settings.MIN_REVIEW_CONFIDENCE}/><ControlField label="PatchHive AI URL" onChange={(value) => setSettings((current) => ({ ...current, PATCHHIVE_AI_URL: value }))} value={settings.PATCHHIVE_AI_URL}/><ControlField label="Ollama URL" onChange={(value) => setSettings((current) => ({ ...current, OLLAMA_BASE_URL: value }))} value={settings.OLLAMA_BASE_URL}/><ControlField label={`GitHub write PAT${config?.REPO_REAPER_GITHUB_TOKEN_RW_SET ? " · configured" : ""}`} onChange={(value) => setSettings((current) => ({ ...current, REPO_REAPER_GITHUB_TOKEN_RW: value }))} placeholder="Leave blank to preserve" type="password" value={settings.REPO_REAPER_GITHUB_TOKEN_RW}/><ControlField label={`Provider key${config?.PROVIDER_API_KEY_SET ? " · configured" : ""}`} onChange={(value) => setSettings((current) => ({ ...current, PROVIDER_API_KEY: value }))} placeholder="Leave blank to preserve" type="password" value={settings.PROVIDER_API_KEY}/><ControlField label={`Webhook secret${config?.WEBHOOK_SECRET_SET ? " · configured" : ""}`} onChange={(value) => setSettings((current) => ({ ...current, WEBHOOK_SECRET: value }))} placeholder="Leave blank to preserve" type="password" value={settings.WEBHOOK_SECRET}/>
-        </div><div className="mt-5"><ControlButton disabled={busy} onClick={() => perform(async () => readResponse(await fetcher(`${apiBase}/config`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(settings) }), "Configuration could not save"), "Configuration saved. Restart the unified backend before relying on the new values.")} primary>Save configuration</ControlButton></div>
+        </div><div className="mt-5"><ControlButton disabled={busy} onClick={() => perform(async () => { const payload = await readResponse(await fetcher(`${apiBase}/config`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(settings) }), "Configuration could not save"); const changed = payload.updated_keys?.length || 0; return changed ? `Wrote ${changed} value${changed === 1 ? "" : "s"} to the canonical .env. Restart the unified backend before relying on them.` : "No configuration values changed."; }, "Configuration saved.")} primary>Save configuration</ControlButton></div>
       </ProductControlSection>
 
       <ProductControlsSafetyBoundary cards={[{ title: "Explicit target mode", body: "Target repo never falls through to broad discovery. Autonomous discovery is selected and stored deliberately." }, { title: "One active operation", body: "Operator, schedule, webhook, and suite dispatch share one RepoReaper operation lock." }, { title: "Guarded writes", body: "A mission may open a PR only after policy, testing, review confidence, existing-PR, attribution, and suite-budget checks pass." }]} subtitle="These controls authorize bounded work. They do not bypass RepoReaper's write, test, or repository safety gates."/>
