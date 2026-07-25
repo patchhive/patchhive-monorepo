@@ -1,6 +1,7 @@
 // patch.rs — Patch application, self-heal, and PR publishing
 
 use anyhow::Result as AnyhowResult;
+use patchhive_product_core::write_authorization::{PrBudget, ValidatedChange};
 use serde_json::{json, Value};
 
 use crate::agents::{agent_patch_retry, GeneratedPatchResponse};
@@ -126,13 +127,22 @@ pub struct PullRequestPublishInput<'a> {
     pub bot_user: &'a str,
     pub result: &'a GeneratedPatchResponse,
     pub smith_note: &'a str,
-    pub confidence: i32,
-    pub test: &'a crate::git_ops::TestResult,
+    /// The validation evidence for this change. The draft decision is derived
+    /// from it here; callers cannot pass a draft flag of their own.
+    pub change: &'a ValidatedChange<&'a crate::git_ops::TestResult>,
 }
 
+/// The one place RepoReaper creates a pull request.
+///
+/// Publication requires validation evidence and a budget outcome from
+/// [`patchhive_product_core::write_authorization::request_pr_budget`], and the
+/// reservation is settled here where the pull request URL is known. Do not add
+/// a second `POST /repos/{repo}/pulls` call site; route new delivery shapes
+/// through this function instead.
 pub async fn publish_pull_request(
     http: &reqwest::Client,
     input: PullRequestPublishInput<'_>,
+    budget: PrBudget,
 ) -> AnyhowResult<(Value, i64)> {
     let PullRequestPublishInput {
         issue,
@@ -142,9 +152,20 @@ pub async fn publish_pull_request(
         bot_user,
         result,
         smith_note,
-        confidence,
-        test,
+        change,
     } = input;
+    let confidence = change.confidence();
+    let test = *change.payload();
+    let budget_guard = match budget {
+        PrBudget::Granted(guard) => Some(guard),
+        PrBudget::Unconfigured => None,
+        PrBudget::Denied(response) => {
+            return Err(anyhow::anyhow!(
+                "HiveCore refused pull request capacity: {}",
+                response.reason
+            ))
+        }
+    };
     let commit_msg = format!(
         "fix: {} (closes #{})",
         issue["title"]
@@ -208,7 +229,7 @@ pub async fn publish_pull_request(
     let base_branch = gh_default_branch(http, &scope.repo, Some(bot_token))
         .await
         .unwrap_or_else(|| "main".to_string());
-    let pr = gh_post(
+    let pr = match gh_post(
         http,
         &format!("/repos/{}/pulls", scope.repo),
         &json!({
@@ -216,11 +237,127 @@ pub async fn publish_pull_request(
             "body": pr_body,
             "head": format!("{bot_user}:{}", scope.branch),
             "base": base_branch,
-            "draft": test.requires_draft(),
+            // Derived from recorded validation, never supplied by a caller.
+            "draft": change.requires_draft(),
         }),
         Some(bot_token),
     )
-    .await?;
+    .await
+    {
+        Ok(pr) => pr,
+        Err(error) => {
+            if let Some(guard) = budget_guard {
+                if let Err(release_error) = guard.release("GitHub PR creation failed.").await {
+                    tracing::warn!("could not release PR reservation: {release_error:#}");
+                }
+            }
+            return Err(error);
+        }
+    };
+
+    if let Some(guard) = budget_guard {
+        let pr_url = pr["html_url"].as_str().unwrap_or("");
+        if let Err(error) = guard.commit(pr_url).await {
+            tracing::warn!("could not commit PR reservation: {error:#}");
+        }
+    }
 
     Ok((pr.clone(), pr["number"].as_i64().unwrap_or(0)))
+}
+
+#[cfg(test)]
+mod tests {
+    /// Blank out `#[cfg(test)]` modules, preserving line numbering and any
+    /// production code that follows them.
+    ///
+    /// Truncating at the attribute instead would hide a call site written
+    /// below a test module, which is exactly the kind of blind spot this
+    /// guard exists to prevent.
+    fn strip_test_modules(source: &str) -> String {
+        let mut output = source.to_string();
+        while let Some(start) = output.find("#[cfg(test)]") {
+            let Some(open) = output[start..].find('{').map(|offset| start + offset) else {
+                output.replace_range(start.., "");
+                break;
+            };
+            let mut depth = 0usize;
+            let mut end = None;
+            for (offset, character) in output[open..].char_indices() {
+                match character {
+                    '{' => depth += 1,
+                    '}' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            end = Some(open + offset + 1);
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            let end = end.unwrap_or(output.len());
+            let blanked = output[start..end]
+                .chars()
+                .map(|character| if character == '\n' { '\n' } else { ' ' })
+                .collect::<String>();
+            output.replace_range(start..end, &blanked);
+        }
+        output
+    }
+
+    /// RepoReaper's write gates are only as good as the number of places that
+    /// can open a pull request. A previous webhook path reimplemented the flow
+    /// and shipped unvalidated, ready-for-review pull requests because it never
+    /// touched `publish_pull_request`. Adding a second creation site must fail
+    /// here rather than in production.
+    #[test]
+    fn pull_request_creation_has_exactly_one_call_site() {
+        let source_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut creation_sites = Vec::new();
+        let mut draft_flags = Vec::new();
+
+        let mut pending = vec![source_root];
+        while let Some(dir) = pending.pop() {
+            for entry in std::fs::read_dir(&dir).expect("readable source directory") {
+                let path = entry.expect("readable entry").path();
+                if path.is_dir() {
+                    pending.push(path);
+                    continue;
+                }
+                if path.extension().and_then(|ext| ext.to_str()) != Some("rs") {
+                    continue;
+                }
+                let file = std::fs::read_to_string(&path).expect("readable source file");
+                let source = strip_test_modules(&file);
+                for (index, line) in source.lines().enumerate() {
+                    let location = format!("{}:{}", path.display(), index + 1);
+                    if line.contains("gh_post(") && source.contains("/pulls") {
+                        // Narrow to the actual creation call rather than any
+                        // POST in a file that also mentions the pulls API.
+                        if source
+                            .lines()
+                            .skip(index)
+                            .take(6)
+                            .any(|following| following.contains("/pulls"))
+                        {
+                            creation_sites.push(location.clone());
+                        }
+                    }
+                    if line.contains("\"draft\":") && !line.contains("requires_draft()") {
+                        draft_flags.push(location);
+                    }
+                }
+            }
+        }
+
+        assert_eq!(
+            creation_sites.len(),
+            1,
+            "pull request creation must stay behind publish_pull_request; found: {creation_sites:?}"
+        );
+        assert!(
+            draft_flags.iter().all(|site| site.contains("github.rs")),
+            "a draft flag must be derived from validation evidence, never written literally: {draft_flags:?}"
+        );
+    }
 }

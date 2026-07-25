@@ -2,9 +2,9 @@
 
 use crate::github::repo_reaper_github_token;
 use patchhive_product_core::hivecore_policy::{
-    check_repository_policy, commit_pr_slot, release_pr_slot, reserve_pr_slot,
-    PrReservationRequest, RepositoryPolicyDecisionRequest,
+    check_repository_policy, PrReservationRequest, RepositoryPolicyDecisionRequest,
 };
+use patchhive_product_core::write_authorization::{request_pr_budget, PrBudget, ValidatedChange};
 use serde_json::json;
 use uuid::Uuid;
 
@@ -1236,8 +1236,8 @@ pub async fn fix_one(job: FixIssueJob) {
         ))
         .await;
 
-    let reservation_id = match reserve_pr_slot(
-        &http,
+    let budget = match request_pr_budget(
+        http.clone(),
         &PrReservationRequest {
             product: "repo-reaper".into(),
             repository: scope.repo.clone(),
@@ -1247,32 +1247,9 @@ pub async fn fix_one(job: FixIssueJob) {
     )
     .await
     {
-        Ok(Some(response)) if response.granted => {
-            let Some(reservation) = response.reservation else {
-                let detail = "HiveCore granted PR capacity without returning a reservation ID.";
-                artifact(
-                    &params.run_id,
-                    &attempt_id,
-                    "policy",
-                    "hivecore.pr_budget.invalid_response",
-                    "blocked",
-                    detail,
-                    json!({"repo": scope.repo}),
-                );
-                attempt_finisher
-                    .skipped_with_error(
-                        "pr_budget_unavailable",
-                        Some(detail),
-                        cost,
-                        Some(&smith_review.final_patch),
-                        confidence,
-                    )
-                    .await;
-                return;
-            };
-            reservation.id
-        }
-        Ok(Some(response)) => {
+        Ok(granted @ PrBudget::Granted(_)) => granted,
+        Ok(PrBudget::Unconfigured) => PrBudget::Unconfigured,
+        Ok(PrBudget::Denied(response)) => {
             artifact(
                 &params.run_id,
                 &attempt_id,
@@ -1308,7 +1285,6 @@ pub async fn fix_one(job: FixIssueJob) {
                 .await;
             return;
         }
-        Ok(None) => String::new(),
         Err(error) => {
             let detail = format!("HiveCore PR reservation failed: {error}");
             artifact(
@@ -1349,6 +1325,7 @@ pub async fn fix_one(job: FixIssueJob) {
         "Preparing commit, push, and pull request",
         json!({"repo": scope.repo, "issue_number": scope.issue_num}),
     );
+    let validated = ValidatedChange::new(&test, test.status, confidence);
     let (pr, pr_number) = match publish_pull_request(
         &http,
         PullRequestPublishInput {
@@ -1359,9 +1336,9 @@ pub async fn fix_one(job: FixIssueJob) {
             bot_user: &bot_user,
             result: &result,
             smith_note: &smith_review.smith_note,
-            confidence,
-            test: &test,
+            change: &validated,
         },
+        budget,
     )
     .await
     {
@@ -1378,16 +1355,8 @@ pub async fn fix_one(job: FixIssueJob) {
             outcome
         }
         Err(e) => {
-            if !reservation_id.is_empty() {
-                if let Err(release_error) =
-                    release_pr_slot(&http, &reservation_id, "GitHub PR creation failed.").await
-                {
-                    tracing::warn!(
-                        reservation_id,
-                        "could not release HiveCore PR reservation: {release_error:#}"
-                    );
-                }
-            }
+            // The reservation is settled inside publish_pull_request, and the
+            // guard releases it even on a path that never reaches that code.
             artifact(
                 &params.run_id,
                 &attempt_id,
@@ -1411,37 +1380,6 @@ pub async fn fix_one(job: FixIssueJob) {
             return;
         }
     };
-
-    if !reservation_id.is_empty() {
-        let pr_url = pr["html_url"].as_str().unwrap_or("");
-        match commit_pr_slot(&http, &reservation_id, pr_url).await {
-            Ok(Some(_)) => artifact(
-                &params.run_id,
-                &attempt_id,
-                "policy",
-                "hivecore.pr_budget.committed",
-                "succeeded",
-                "HiveCore committed the PR budget reservation.",
-                json!({"reservation_id": reservation_id, "pr_url": pr_url}),
-            ),
-            Ok(None) => {}
-            Err(error) => {
-                tracing::warn!(
-                    reservation_id,
-                    "could not commit HiveCore PR reservation: {error:#}"
-                );
-                artifact(
-                    &params.run_id,
-                    &attempt_id,
-                    "policy",
-                    "hivecore.pr_budget.commit_failed",
-                    "failed",
-                    &error.to_string(),
-                    json!({"reservation_id": reservation_id, "pr_url": pr_url}),
-                );
-            }
-        }
-    }
 
     let _ = track_pr(pr_number, &scope.repo, &params.run_id);
     let duration = t_start.elapsed().as_secs_f64();
@@ -1505,7 +1443,7 @@ pub async fn fix_one(job: FixIssueJob) {
                 "pr": {
                     "number": pr_number,
                     "url": pr["html_url"],
-                    "draft": test.requires_draft(),
+                    "draft": validated.requires_draft(),
                     "repo": scope.repo,
                     "title": issue["title"],
                     "fix": result.explanation,

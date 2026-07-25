@@ -19,8 +19,6 @@
 //! Products keep ownership of the actual write: the GitHub call, branch
 //! mechanics, report text, and policy interpretation all stay outside.
 
-use std::sync::Arc;
-
 use anyhow::Result;
 use reqwest::Client;
 
@@ -79,6 +77,11 @@ impl<T> ValidatedChange<T> {
 }
 
 /// The outcome of asking HiveCore for permission to open a pull request.
+///
+/// `Granted` is the only variant that can be fabricated in a meaningful way,
+/// and it requires a [`PrBudgetGuard`], which only [`request_pr_budget`] can
+/// build. The guarantee that a publisher consulted the budget rests on that
+/// plus keeping publication to a single call site.
 pub enum PrBudget {
     /// HiveCore granted capacity. The slot is held until committed or dropped.
     Granted(PrBudgetGuard),
@@ -94,7 +97,7 @@ pub enum PrBudget {
 /// slot in the background, so an early return or a panic between reservation
 /// and publication cannot consume suite capacity indefinitely.
 pub struct PrBudgetGuard {
-    client: Arc<Client>,
+    client: Client,
     reservation_id: String,
     settled: bool,
 }
@@ -156,10 +159,7 @@ impl Drop for PrBudgetGuard {
 ///
 /// A transport failure is an error, never an implicit grant: a configured
 /// policy service that cannot be reached must block the write.
-pub async fn request_pr_budget(
-    client: Arc<Client>,
-    request: &PrReservationRequest,
-) -> Result<PrBudget> {
+pub async fn request_pr_budget(client: Client, request: &PrReservationRequest) -> Result<PrBudget> {
     match reserve_pr_slot(&client, request).await? {
         None => Ok(PrBudget::Unconfigured),
         Some(response) if !response.granted => Ok(PrBudget::Denied(Box::new(response))),
