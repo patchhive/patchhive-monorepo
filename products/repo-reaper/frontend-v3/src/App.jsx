@@ -9,7 +9,7 @@ import HistoryPanel from "./HistoryPanel.jsx";
 import PrPanel from "./PrPanel.jsx";
 import RunPanel from "./RunPanel.jsx";
 import SquadPanel from "./SquadPanel.jsx";
-import { createStreamState, DEFAULT_DRY_PARAMS, DEFAULT_PARAMS, readResponse } from "./shared.jsx";
+import { createStreamState, DEFAULT_DRY_PARAMS, DEFAULT_PARAMS, readResponse, runEventsToLogs } from "./shared.jsx";
 
 const PRODUCT = { productKey: "repo-reaper", name: "RepoReaper", subtitle: "autonomous patch execution", icon: Skull };
 const TABS = [
@@ -139,6 +139,47 @@ function MainProduct({ auth }) {
       .catch((streamError) => { if (streamError.name !== "AbortError") setError(streamError.message || "RepoReaper stream ended unexpectedly."); })
       .finally(async () => { if (abortRefs.current[streamKey] === controller) delete abortRefs.current[streamKey]; setter((current) => ({ ...current, running: false })); await refresh(); });
   }
+
+  // A run task outlives the response stream that started it, so a reload or a
+  // schedule/webhook/HiveCore dispatch leaves an operation running with no
+  // browser attached to it. Recover from the durable run events instead of
+  // showing an idle panel while the engine is working.
+  // `run_active` is the engine's in-process lock, so a run row left at
+  // "running" by a crashed backend never produces a phantom reattachment.
+  const activeRun = useMemo(() => (health.run_active ? history.find((run) => run.status === "running" && !run.finished_at) || null : null), [health.run_active, history]);
+  const missionLive = missionStream.running && !missionStream.reattached;
+  const dryLive = dryStream.running && !dryStream.reattached;
+  const recoverStream = !activeRun ? "" : activeRun.dry_run ? (dryLive ? "" : "dry") : (missionLive ? "" : "mission");
+  const recoverRunId = recoverStream ? activeRun.id : "";
+
+  useEffect(() => {
+    if (!recoverRunId) return undefined;
+    const setter = recoverStream === "dry" ? setDryStream : setMissionStream;
+    let cancelled = false;
+    let timer = null;
+    async function pullSavedEvidence() {
+      try {
+        const saved = await readResponse(await fetcher(`${API}/runs/${encodeURIComponent(recoverRunId)}/events`), "Could not read saved run evidence");
+        const detail = await readResponse(await fetcher(`${API}/history/${encodeURIComponent(recoverRunId)}`), "Could not read the active run");
+        if (cancelled) return;
+        const events = saved.events || [];
+        setter((current) => ({ ...current, logs: runEventsToLogs(events), phase: events[events.length - 1]?.phase || current.phase, reattached: true, running: true }));
+        if (detail.finished_at || (detail.status && detail.status !== "running")) {
+          clearInterval(timer);
+          await refresh({ loadLatest: true });
+        }
+      } catch (nextError) {
+        if (!cancelled) setError(nextError.message);
+      }
+    }
+    pullSavedEvidence();
+    timer = setInterval(pullSavedEvidence, 4000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      setter((current) => current.reattached ? { ...current, reattached: false, running: false } : current);
+    };
+  }, [fetcher, recoverRunId, recoverStream, refresh]);
 
   async function refreshPr(pr) {
     setPrBusy(true); setError("");

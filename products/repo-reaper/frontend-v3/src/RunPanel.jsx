@@ -79,6 +79,7 @@ export default function RunPanel({
   const noCandidates = stream.done?.status === "no_candidates";
   const livePhaseLabel = phaseLabel(stream.phase);
   const blockedByOtherRun = engineBusy && !stream.running;
+  const reattached = Boolean(stream.reattached);
 
   return <div className="mx-auto max-w-[1440px] space-y-6 px-3 py-6 sm:px-6">
     <section className="surface grid gap-6 p-6 lg:grid-cols-[1.6fr_0.9fr] lg:p-8">
@@ -115,6 +116,7 @@ export default function RunPanel({
         <button className="h-11 rounded-full px-5 text-[12px] font-semibold text-white disabled:opacity-40" disabled={stream.running || engineBusy || !ready || !validTarget} onClick={() => onStart(serializeRunParams(params, targetSelectionMode))} style={{ backgroundImage: "linear-gradient(90deg, var(--accent), var(--accent-2))", boxShadow: "var(--accent-glow)" }} type="button">{stream.running ? `${livePhaseLabel}…` : dry ? "Run Dry Stalk" : "Launch mission"}</button>
         <CopyMarkdownButton content={reportMarkdown({ dry, stream, targetSelectionMode })} label="Copy evidence Markdown"/>
       </div>
+      {reattached ? <GuidanceNotice label="Reattached to a running operation">This operation was started without this browser attached, so the live agent stream is gone. RepoReaper is showing the run's saved evidence, refreshed every few seconds; the candidate queue and per-agent status stay empty until the run is saved to History.</GuidanceNotice> : null}
       {blockedByOtherRun ? <GuidanceNotice label="Operation already active">RepoReaper runs one operation at a time. {dry ? "A patch mission" : "Another operation"} is still streaming; starting this one would abandon that live evidence while the engine keeps working. Wait for it to finish, or read it in History.</GuidanceNotice> : null}
       {!ready ? <GuidanceNotice label="Squad not ready">{dry ? "Dry Stalk needs at least one Scout agent." : "A write mission needs Scout, Judge, Reaper, Smith, and Gatekeeper roles."} Configure them in Squad.</GuidanceNotice> : null}
       {!validTarget ? <GuidanceNotice label="Target required">Enter a repository in owner/repository format. RepoReaper will not fall through to autonomous discovery.</GuidanceNotice> : null}
@@ -128,7 +130,7 @@ export default function RunPanel({
     </section>
 
     <section className="surface p-6">
-      <div className={`flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}><Bot size={12}/> Live agent evidence</div>
+      <div className={`flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] ${V3_TEXT.mute}`}><Bot size={12}/> {reattached ? "Saved run evidence" : "Live agent evidence"}</div>
       <div className="mt-4 grid gap-3 lg:grid-cols-[0.8fr_1.2fr]"><div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1">{agents.map((agent) => { const live = stream.agentStatuses[agent.id] || {}; return <div className="surface-inset rounded-xl p-3" key={agent.id}><div className="flex items-center justify-between gap-2"><span className={`font-display text-[14px] ${V3_TEXT.strong}`}>{agent.name}</span><Chip tone={statusTone(live.status || agent.status)}>{statusLabel(live.status || agent.status || "idle")}</Chip></div><div className={`mt-1 text-[10px] ${V3_TEXT.mute}`}>{statusLabel(agent.role)} · {agent.provider}/{agent.model}</div>{live.task ? <div className={`mt-2 text-[11px] ${V3_TEXT.body}`}>{live.task}</div> : null}</div>; })}</div><div><ProgressiveList initialCount={8} batchCount={30} itemLabel="events" items={stream.logs} empty={<div className={`surface-inset rounded-xl p-8 text-center text-[12px] ${V3_TEXT.mute}`}>Live logs appear here after the operation starts.</div>} renderItem={(entry, index) => <div className="surface-inset rounded-xl p-3" key={`${entry.ts || "log"}-${index}`}><div className="flex items-start gap-3"><ClipboardCopy className={V3_TEXT.dim} size={13}/><div><div className={`text-[11px] leading-relaxed ${V3_TEXT.body}`}>{entry.msg || JSON.stringify(entry)}</div><div className={`mt-1 text-[9px] uppercase tracking-wider ${V3_TEXT.mute}`}>{entry.agent || (entry.role || entry.type ? statusLabel(entry.role || entry.type) : "RepoReaper")}</div></div></div></div>}/></div></div>
       <ScoutReport report={stream.report}/>
     </section>

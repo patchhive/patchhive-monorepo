@@ -53,7 +53,18 @@ export function serializeRunParams(params, targetSelectionMode) {
 }
 
 export function createStreamState() {
-  return { agentStatuses: {}, done: null, issues: [], logs: [], phase: "idle", report: null, repos: [], runCost: 0, running: false };
+  return { agentStatuses: {}, done: null, issues: [], logs: [], phase: "idle", reattached: false, report: null, repos: [], runCost: 0, running: false };
+}
+
+// Saved run events replace live agent evidence when the browser was not
+// attached to the operation that produced them.
+export function runEventsToLogs(events) {
+  return (Array.isArray(events) ? events : []).map((event) => ({
+    agent: event.actor || "RepoReaper",
+    msg: event.message || event.artifact?.label || "Saved run event",
+    ts: event.created_at,
+    type: event.level || "info",
+  }));
 }
 
 const STATUS_LABELS = {
