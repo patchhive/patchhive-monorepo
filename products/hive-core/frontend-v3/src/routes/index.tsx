@@ -57,6 +57,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { BookOpen } from "lucide-react";
+import { useLiveSuite } from "@/lib/live-sync";
 
 
 type IndexSearch = { run?: string; filter?: "all" | "warn" | "crit" };
@@ -125,6 +126,9 @@ function Deck() {
 function DeckInner() {
   const now = useClock();
   const { scanlineOn } = useHiveCommand();
+  // Patches PRODUCTS in place and bumps `version`; this component re-rendering is
+  // what carries the refreshed status down to every panel below.
+  const suite = useLiveSuite();
   const ok = PRODUCTS.filter((p) => p.status === "ok").length;
   const warn = PRODUCTS.filter((p) => p.status === "warn").length;
   const crit = PRODUCTS.filter((p) => p.status === "crit").length;
@@ -141,9 +145,17 @@ function DeckInner() {
       {scanlineOn && <div className="pointer-events-none absolute inset-0 scanline opacity-40" />}
       <div className="relative mx-auto max-w-[1400px] px-6 py-8 lg:px-10">
         <TopBar now={now} />
+        {suite.error && <SyncNotice error={suite.error} />}
         <section id="deck" className="scroll-mt-24 rounded-md">
           <Hero />
-          <KpiStrip ok={ok} warn={warn} crit={crit} totalRuns={totalRuns} avgLatency={avgLatency} />
+          <KpiStrip
+            ok={ok}
+            warn={warn}
+            crit={crit}
+            totalRuns={totalRuns}
+            avgLatency={avgLatency}
+            live={suite.live}
+          />
         </section>
         <section id="registry" className="mt-8 grid scroll-mt-24 gap-6 rounded-md lg:grid-cols-[1fr_380px]">
           <Registry />
@@ -166,6 +178,19 @@ function DeckInner() {
       <PresenceCursors />
       <DispatchPreviewWrapper />
     </main>
+  );
+}
+
+function SyncNotice({ error }: { error: string }) {
+  return (
+    <div className="mt-4 rounded-lg border border-[var(--crit)]/40 bg-[var(--crit)]/[0.06] px-4 py-2.5 backdrop-blur">
+      <div className="font-display text-[10px] font-bold uppercase tracking-wider text-[var(--crit)]">
+        Not syncing
+      </div>
+      <p className="mt-0.5 text-xs text-muted-foreground">
+        {error} Product status is showing seed values, not live state.
+      </p>
+    </div>
   );
 }
 
@@ -572,19 +597,37 @@ function HiveOrb() {
             Mesh health
           </span>
         </div>
-        <span className="font-mono text-[10px] text-[var(--honey)]/90">▲ 99.4% uptime</span>
+        <span className="font-mono text-[10px] text-[var(--honey)]/90">
+          {PRODUCTS.filter((p) => p.status === "ok").length}/{PRODUCTS.length} responding
+        </span>
       </div>
     </div>
   );
 }
 
-function KpiStrip({ ok, warn, crit, totalRuns, avgLatency }: { ok: number; warn: number; crit: number; totalRuns: number; avgLatency: number }) {
+function KpiStrip({
+  ok,
+  warn,
+  crit,
+  totalRuns,
+  avgLatency,
+  live,
+}: {
+  ok: number;
+  warn: number;
+  crit: number;
+  totalRuns: number;
+  avgLatency: number;
+  live: boolean;
+}) {
+  // Health counts derive from the synced registry. Runs and latency do not exist
+  // anywhere in the suite yet, so they are flagged rather than passed off as measured.
   const kpis = [
-    { label: "Healthy", value: ok, icon: CheckCircle2, accent: "var(--ok)" },
-    { label: "Degraded", value: warn, icon: AlertTriangle, accent: "var(--warn)" },
-    { label: "Down", value: crit, icon: CircleDot, accent: "var(--crit)" },
-    { label: "Runs / 24h", value: totalRuns.toLocaleString(), icon: Activity, accent: "var(--honey)" },
-    { label: "Avg latency", value: `${avgLatency}ms`, icon: Sparkles, accent: "var(--honey)" },
+    { label: "Healthy", value: ok, icon: CheckCircle2, accent: "var(--ok)", sampled: false, live },
+    { label: "Degraded", value: warn, icon: AlertTriangle, accent: "var(--warn)", sampled: false, live },
+    { label: "Down", value: crit, icon: CircleDot, accent: "var(--crit)", sampled: false, live },
+    { label: "Runs / 24h", value: totalRuns.toLocaleString(), icon: Activity, accent: "var(--honey)", sampled: true, live: false },
+    { label: "Avg latency", value: `${avgLatency}ms`, icon: Sparkles, accent: "var(--honey)", sampled: true, live: false },
   ];
   return (
     <div className="mt-10 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
@@ -603,6 +646,19 @@ function KpiStrip({ ok, warn, crit, totalRuns, avgLatency }: { ok: number; warn:
           </div>
           <div className="mt-3 font-display text-3xl font-bold tracking-tight" style={{ color: k.accent }}>
             {k.value}
+          </div>
+          <div className="mt-1 font-display text-[9px] uppercase tracking-wider">
+            {k.sampled ? (
+              <span className="text-muted-foreground/70" title="Seeded sample value — the suite does not measure this yet">
+                sampled
+              </span>
+            ) : k.live ? (
+              <span className="text-[var(--ok)]/80">live</span>
+            ) : (
+              <span className="text-muted-foreground/70" title="Control plane unreachable; showing seed values">
+                offline
+              </span>
+            )}
           </div>
         </div>
       ))}
