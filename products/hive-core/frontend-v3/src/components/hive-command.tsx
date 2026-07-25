@@ -520,6 +520,7 @@ export function HiveCommand() {
     { id: "registry", label: "Registry", icon: Radio },
     { id: "runs", label: "Runs", icon: Terminal },
     { id: "incidents", label: "Incidents", icon: AlertTriangle },
+    { id: "tokens", label: "Service tokens", icon: KeyRound },
     { id: "drift", label: "Contract drift", icon: GitCompare },
     { id: "cap-search", label: "Capability search", icon: Search },
     { id: "capabilities", label: "Capabilities", icon: Cpu },

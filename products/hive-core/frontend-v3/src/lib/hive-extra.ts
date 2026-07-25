@@ -34,26 +34,89 @@ export function mttrMinutes(productId: string): number | null {
   return Math.round(total / closed.length);
 }
 
-// Safety-gating edges — caller → the product that gates or contextualises it.
-// The graph panel is gone; blast radius and dispatch preview still read these.
-export const DEPENDENCIES: Array<{ from: string; to: string }> = [
-  { from: "reviewbee", to: "trustgate" },
-  { from: "reviewbee", to: "signalhive" },
-  { from: "reviewbee", to: "repomemory" },
-  { from: "mergekeeper", to: "reviewbee" },
-  { from: "mergekeeper", to: "flakesting" },
-  { from: "repomemory", to: "reporeaper" },
-  { from: "vulntriage", to: "deptriage" },
-  { from: "vulntriage", to: "signalhive" },
-  { from: "releasesentry", to: "mergekeeper" },
-  { from: "releasesentry", to: "signalhive" },
-  { from: "releasesentry", to: "vulntriage" },
-  { from: "refactorscout", to: "repomemory" },
-  { from: "flakesting", to: "signalhive" },
-  { from: "trustgate", to: "signalhive" },
-  { from: "deptriage", to: "signalhive" },
-  { from: "reporeaper", to: "signalhive" },
-  { from: "hivecore", to: "trustgate" },
+// Safety-gating edges — who a product depends on before it may act.
+//
+// These are NOT RPC calls: PatchHive products do not sit in each other's request
+// paths. The real coupling is authority and evidence, which is what makes "blast
+// radius" a safety question rather than a topology diagram. Sourced from AGENTS.md,
+// docs/hivecore-architecture.md, and the FailGuard notes.
+export type EdgeKind = "authority" | "gate" | "context" | "handoff";
+
+export interface SafetyEdge {
+  /** The product that cannot proceed if `to` is unavailable. */
+  from: string;
+  to: string;
+  kind: EdgeKind;
+  /** What actually stops. */
+  effect: string;
+  /** false = documented intent, not yet wired. */
+  live: boolean;
+}
+
+export const EDGE_LABEL: Record<EdgeKind, string> = {
+  authority: "authorises",
+  gate: "gates",
+  context: "informs",
+  handoff: "feeds",
+};
+
+export const DEPENDENCIES: SafetyEdge[] = [
+  {
+    from: "reporeaper",
+    to: "hivecore",
+    kind: "authority",
+    effect: "Repository policy check and PR slot reservation fail closed; no pull request opens.",
+    live: true,
+  },
+  {
+    from: "reporeaper",
+    to: "trustgate",
+    kind: "gate",
+    effect: "Generated patches lose their risk review before write actions proceed.",
+    live: true,
+  },
+  {
+    from: "reporeaper",
+    to: "repomemory",
+    kind: "context",
+    effect: "Smith rejections stop becoming FailGuard lesson candidates.",
+    live: true,
+  },
+  {
+    from: "trustgate",
+    to: "repomemory",
+    kind: "context",
+    effect: "warn/block reviews stop submitting FailGuard candidates.",
+    live: true,
+  },
+  {
+    from: "signalhive",
+    to: "reporeaper",
+    kind: "handoff",
+    effect: "Discovered maintenance pressure has nowhere to be acted on.",
+    live: false,
+  },
+  {
+    from: "mergekeeper",
+    to: "hivecore",
+    kind: "authority",
+    effect: "Status and comment writes lose suite policy enforcement.",
+    live: false,
+  },
+  {
+    from: "reviewbee",
+    to: "hivecore",
+    kind: "authority",
+    effect: "Maintained-comment publishing loses suite policy enforcement.",
+    live: false,
+  },
+  {
+    from: "trustgate",
+    to: "hivecore",
+    kind: "authority",
+    effect: "Check writes lose suite policy enforcement.",
+    live: false,
+  },
 ];
 
 // Contract drift schemas — expected vs actual advertised capabilities.

@@ -36,6 +36,7 @@ import { deriveFailure } from "@/lib/run-failure";
 import { IncidentTimeline } from "@/components/incident-timeline";
 import { ContractDrift } from "@/components/contract-drift";
 import { CapabilitySearch } from "@/components/capability-search";
+import { TokenVault } from "@/components/token-vault";
 import { LiveTail } from "@/components/live-tail";
 import { RunHeatmap } from "@/components/run-heatmap";
 import { AuditLog } from "@/components/audit-log";
@@ -149,6 +150,7 @@ function DeckInner() {
         <IncidentTimeline />
         <ContractDrift />
         <CapabilitySearch />
+        <TokenVault />
         <RunHeatmap />
         <CapabilityGrid />
         <AskHive />
