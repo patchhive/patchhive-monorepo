@@ -13,3 +13,4 @@ pub mod secrets;
 pub mod sqlite;
 pub mod startup;
 pub mod validation;
+pub mod write_authorization;
