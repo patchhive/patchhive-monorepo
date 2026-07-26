@@ -605,6 +605,11 @@ Important env vars:
   FailGuard loop silently.
 - Per-action flags are authoritative for dispatch. Product-level flags are
   authoritative for registry and operator-facing posture.
+- `mutating` describes what the product itself changes, not what its call causes
+  elsewhere. TrustGate's `review_diff` is read-only despite submitting a FailGuard
+  candidate — nothing leaves PatchHive and TrustGate writes nothing it owns — while
+  RepoMemory's `suggest_failguard_candidate`, which receives it, is mutating because
+  it writes RepoMemory's own store. Both are right; the subject differs.
 - Conformance compares them as existence claims, not universals. The inverse is still
   a hard failure: an action exceeding the declared posture — mutating under
   `read_only`, or `opens_pr` the manifest denies — is critical.

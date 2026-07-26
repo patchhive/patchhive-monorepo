@@ -483,6 +483,20 @@ Smith rejects below `MIN_REVIEW_CONFIDENCE`. Gating it would stall the FailGuard
 — incident → captured lesson → durable memory → future policy — at the first arrow,
 silently, in the middle of autonomous runs.
 
+**`mutating` describes what the product itself changes.** Settled 2026-07-26.
+
+A call that causes another product to write is not what makes an action mutating.
+TrustGate's `review_diff` submits a FailGuard candidate to RepoMemory on `warn` or
+`block`, and it is correctly `read_only`: nothing leaves PatchHive, TrustGate changes
+no state it owns, and the candidate is queued for operator review rather than acted
+on. RepoMemory's `suggest_failguard_candidate`, which receives it, is correctly
+`mutating` — it writes RepoMemory's own durable store.
+
+The two are not in conflict once the subject is fixed: each action declares what *it*
+changes, not what its call causes downstream. Reading it the other way would make
+every product that talks to another product mutating, which erases the distinction
+that matters — whether external state, meaning state outside PatchHive, was touched.
+
 **Rules that follow:**
 
 - Per-action flags are authoritative for dispatch decisions. The kernel evaluates the

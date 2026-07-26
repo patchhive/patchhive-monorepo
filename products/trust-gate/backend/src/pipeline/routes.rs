@@ -32,6 +32,13 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
                 "Review a submitted diff against repo-specific safety and policy rules.",
                 true,
             )
+            // Read-only is correct even though this submits a FailGuard candidate to
+            // RepoMemory on warn/block. `mutating` describes what this product
+            // changes, not what its call causes elsewhere: nothing leaves PatchHive,
+            // TrustGate writes no state it owns, and the candidate is queued for
+            // operator review rather than acted on. RepoMemory's receiving action is
+            // mutating for the same reason — it writes its own store.
+            // See docs/hivecore-architecture.md § 6a.
             .read_only(true)
             .scheduleable(true),
             contract::action(
