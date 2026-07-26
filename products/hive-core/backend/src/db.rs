@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 use once_cell::sync::Lazy;
 use patchhive_product_core::secrets::TokenProtector;
-use patchhive_product_core::sqlite::{PooledSqliteConnection, SqlitePool};
+use patchhive_product_core::sqlite::{product_db_path, PooledSqliteConnection, SqlitePool};
 use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBehavior};
 
 use crate::models::{
@@ -34,8 +34,15 @@ pub struct PrReservationAttempt {
     pub reservation: Option<PrBudgetReservation>,
 }
 
+/// Suite-first, exactly as every other integrated product resolves it.
+///
+/// In suite mode the tables belong in PATCHHIVE_DB_PATH alongside the rest;
+/// HIVE_CORE_DB_PATH remains the standalone compatibility override. Reading only the
+/// product variable left a bare relative default, which wrote hive-core.db into
+/// whatever directory the process started from — a second database beside the
+/// suite's own.
 pub fn db_path() -> String {
-    std::env::var("HIVE_CORE_DB_PATH").unwrap_or_else(|_| "hive-core.db".into())
+    product_db_path("HIVE_CORE_DB_PATH", "hive-core.db")
 }
 
 fn connect() -> rusqlite::Result<PooledSqliteConnection<'static>> {

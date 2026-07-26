@@ -10,15 +10,55 @@ patchhive_product_core::define_api_key_auth_module! {
         .with_unauthorized_message(
             "Unauthorized — provide X-API-Key. Generate the first key from localhost via POST /api/auth/generate-key.",
         )
-        .with_public_paths([
-            "/",
-            "/health",
-            "/api/health",
-            "/api/auth/status",
-            "/api/auth/login",
-            "/api/auth/generate-key",
-        ])
+        .with_public_paths(crate::suite_public_paths())
     }
+}
+
+/// Paths served without an operator key.
+///
+/// Beyond the suite's own health and bootstrap routes, this includes each product's
+/// genuinely public contract endpoints. Products already declare `/health`,
+/// `/capabilities`, and `/startup/checks` public in their own auth config, and the
+/// suite layer must not be stricter than the engine it fronts — HiveCore polls those
+/// endpoints in-process and has no suite key to present.
+///
+/// Everything with real data behind it — runs, auth posture, settings, dispatch,
+/// the aggregates — stays protected.
+fn suite_public_paths() -> Vec<String> {
+    const PRODUCT_KEYS: [&str; 12] = [
+        "hive-core",
+        "signal-hive",
+        "review-bee",
+        "trust-gate",
+        "repo-memory",
+        "merge-keeper",
+        "flake-sting",
+        "dep-triage",
+        "vuln-triage",
+        "refactor-scout",
+        "release-sentry",
+        "repo-reaper",
+    ];
+
+    let mut paths: Vec<String> = [
+        "/",
+        "/health",
+        "/api/health",
+        "/api/auth/status",
+        "/api/auth/login",
+        "/api/auth/generate-key",
+    ]
+    .iter()
+    .map(|path| path.to_string())
+    .collect();
+
+    for key in PRODUCT_KEYS {
+        for suffix in ["health", "capabilities", "startup/checks", "auth/status"] {
+            paths.push(format!("/api/products/{key}/{suffix}"));
+        }
+    }
+
+    paths
 }
 
 mod config;

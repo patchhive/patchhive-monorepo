@@ -18,7 +18,7 @@ use crate::{
 
 use super::{
     api_error, authorized_request, build_target_url, fetch_product_auth_status,
-    fetch_product_capabilities, parse_response_body, pick_url, DispatchActionInput,
+    fetch_product_capabilities, parse_response_body, resolve_api_url, DispatchActionInput,
     ProductAuthStatusBody, ProductStoredAuth,
 };
 
@@ -58,10 +58,7 @@ pub(super) async fn dispatch_product_action(
         ));
     }
 
-    let api_url = pick_url(
-        override_item.map(|item| item.api_url.as_str()),
-        definition.default_api_url,
-    );
+    let api_url = resolve_api_url(override_item.map(|item| item.api_url.as_str()), definition);
     if api_url.trim().is_empty() {
         return Err(api_error(
             StatusCode::BAD_REQUEST,

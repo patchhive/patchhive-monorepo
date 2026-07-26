@@ -22,8 +22,8 @@ use super::{
     api_error, authorized_get, build_target_url, contract_check, contract_checks_for_failed_health,
     contract_checks_for_unavailable_product, contract_checks_with_health_error,
     contract_drift_count, fetch_product_capabilities, fetch_product_runs,
-    hive_core_action_run_values, parse_response_body, pick_url, resolved_auth_mode,
-    resolved_legacy_api_key_configured, resolved_machine_auth_configured,
+    hive_core_action_run_values, parse_response_body, pick_url, resolve_api_url,
+    resolved_auth_mode, resolved_legacy_api_key_configured, resolved_machine_auth_configured,
     resolved_service_token_configured, ProductHealthBody, ProductProbeSnapshot, ProductStoredAuth,
     StartupChecksBody,
 };
@@ -63,10 +63,7 @@ pub(super) async fn product_runs(
         .ok_or_else(|| api_error(StatusCode::NOT_FOUND, "unknown_product", "Unknown product."))?;
     let overrides = db::product_overrides();
     let override_item = overrides.get(definition.slug);
-    let api_url = pick_url(
-        override_item.map(|item| item.api_url.as_str()),
-        definition.default_api_url,
-    );
+    let api_url = resolve_api_url(override_item.map(|item| item.api_url.as_str()), definition);
     let auth = ProductStoredAuth::from_override(override_item);
 
     if definition.slug == "hive-core" {
@@ -115,10 +112,7 @@ pub(super) async fn product_run_detail(
         .ok_or_else(|| api_error(StatusCode::NOT_FOUND, "unknown_product", "Unknown product."))?;
     let overrides = db::product_overrides();
     let override_item = overrides.get(definition.slug);
-    let api_url = pick_url(
-        override_item.map(|item| item.api_url.as_str()),
-        definition.default_api_url,
-    );
+    let api_url = resolve_api_url(override_item.map(|item| item.api_url.as_str()), definition);
     let auth = ProductStoredAuth::from_override(override_item);
 
     if definition.slug == "hive-core" {
@@ -254,10 +248,7 @@ pub(super) async fn build_product_runtime(
         override_item.map(|item| item.frontend_url.as_str()),
         definition.default_frontend_url,
     );
-    let api_url = pick_url(
-        override_item.map(|item| item.api_url.as_str()),
-        definition.default_api_url,
-    );
+    let api_url = resolve_api_url(override_item.map(|item| item.api_url.as_str()), definition);
     let notes = override_item
         .map(|item| item.notes.clone())
         .unwrap_or_default();

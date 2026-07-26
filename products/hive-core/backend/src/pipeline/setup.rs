@@ -21,7 +21,7 @@ use crate::{
 
 use super::overview::build_runtime_products;
 use super::provision::provision_service_token_for_product;
-use super::{api_error, fetch_product_auth_status, pick_url};
+use super::{api_error, fetch_product_auth_status, resolve_api_url};
 
 pub(super) const DOWNSTREAM_FIRST_STACK_SLUGS: [&str; 3] =
     ["signal-hive", "trust-gate", "repo-reaper"];
@@ -1321,9 +1321,9 @@ async fn wait_for_product_slug(state: &AppState, slug: &str) -> (bool, String) {
             format!("HiveCore could not find product metadata for {slug}."),
         );
     };
-    let api_url = pick_url(
+    let api_url = resolve_api_url(
         overrides.get(slug).map(|item| item.api_url.as_str()),
-        definition.default_api_url,
+        definition,
     );
     let ok = wait_for_health(state, &api_url).await;
     let message = if ok {

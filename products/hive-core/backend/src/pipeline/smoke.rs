@@ -18,7 +18,7 @@ use crate::{
 
 use super::{
     authorized_get, authorized_request, build_target_url, fetch_product_auth_status,
-    fetch_product_capabilities, fetch_product_runs, parse_response_body, pick_url,
+    fetch_product_capabilities, fetch_product_runs, parse_response_body, resolve_api_url,
     setup::{
         build_first_stack_response, prepare_first_stack_for_verification,
         prepare_products_for_service_token_verification, DOWNSTREAM_FIRST_STACK_SLUGS,
@@ -267,10 +267,7 @@ async fn execute_smoke_tier(
             continue;
         };
         let override_item = overrides.get(slug);
-        let api_url = pick_url(
-            override_item.map(|item| item.api_url.as_str()),
-            definition.default_api_url,
-        );
+        let api_url = resolve_api_url(override_item.map(|item| item.api_url.as_str()), definition);
         let auth = ProductStoredAuth::from_override(override_item);
 
         match tier {

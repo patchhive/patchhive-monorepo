@@ -21,10 +21,10 @@ pub use types::{
     contract_checks_for_failed_health, contract_checks_for_unavailable_product,
     contract_checks_with_health_error, contract_drift_count, fetch_product_auth_status,
     fetch_product_capabilities, fetch_product_runs, parse_response_body, persist_product_override,
-    pick_url, remote_error_message, resolved_auth_mode, resolved_legacy_api_key_configured,
-    resolved_machine_auth_configured, resolved_service_token_configured, DispatchActionInput,
-    ProductAuthStatusBody, ProductHealthBody, ProductProbeSnapshot, ProductStoredAuth,
-    StartupChecksBody,
+    pick_url, remote_error_message, resolve_api_url, resolved_auth_mode,
+    resolved_legacy_api_key_configured, resolved_machine_auth_configured,
+    resolved_service_token_configured, DispatchActionInput, ProductAuthStatusBody,
+    ProductHealthBody, ProductProbeSnapshot, ProductStoredAuth, StartupChecksBody,
 };
 
 #[cfg(test)]

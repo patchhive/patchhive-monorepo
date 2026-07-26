@@ -17,8 +17,8 @@ use crate::{
 
 use super::settings::build_settings_product_item;
 use super::{
-    api_error, fetch_product_auth_status, parse_response_body, persist_product_override, pick_url,
-    remote_error_message,
+    api_error, fetch_product_auth_status, parse_response_body, persist_product_override,
+    remote_error_message, resolve_api_url,
 };
 use crate::db;
 use patchhive_product_core::auth::SUITE_BOOTSTRAP_HEADER;
@@ -79,10 +79,7 @@ pub(super) async fn provision_service_token_for_product(
     suite_bootstrap_secret: Option<&str>,
 ) -> Result<(ProductSettingsItem, String), (StatusCode, Json<crate::models::ApiEnvelope<Value>>)> {
     let effective_api_url = if api_url_override.trim().is_empty() {
-        pick_url(
-            override_item.map(|item| item.api_url.as_str()),
-            definition.default_api_url,
-        )
+        resolve_api_url(override_item.map(|item| item.api_url.as_str()), definition)
     } else {
         api_url_override.trim().to_string()
     };

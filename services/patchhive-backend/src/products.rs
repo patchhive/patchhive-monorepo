@@ -37,9 +37,35 @@ pub async fn init_enabled_products(config: &Config) -> Result<()> {
         repo_reaper::init_runtime().await?;
     }
     if config.product_selection.enables("hive-core") {
+        // HiveCore reaches other products over HTTP. Mounted in this process they
+        // live at <suite>/api/products/<slug>, not on their standalone ports, so it
+        // needs to know where "here" is before it resolves any product URL.
+        //
+        // SAFETY: single-threaded startup, before the server accepts connections.
+        unsafe {
+            std::env::set_var("PATCHHIVE_SUITE_BASE_URL", suite_base_url(config));
+        }
         hive_core::init_runtime().await?;
     }
     Ok(())
+}
+
+/// The address other in-process engines should use to reach this runtime.
+///
+/// A wildcard bind is not dialable, so it resolves to loopback on the same port.
+fn suite_base_url(config: &Config) -> String {
+    if let Ok(explicit) = std::env::var("PATCHHIVE_SUITE_BASE_URL") {
+        if !explicit.trim().is_empty() {
+            return explicit.trim().to_string();
+        }
+    }
+    let addr = config.bind_addr;
+    let host = if addr.ip().is_unspecified() {
+        "127.0.0.1".to_string()
+    } else {
+        addr.ip().to_string()
+    };
+    format!("http://{host}:{}", addr.port())
 }
 
 pub fn hive_core_router() -> axum::Router {

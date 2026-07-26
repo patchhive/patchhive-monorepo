@@ -143,6 +143,43 @@ pub fn resolved_legacy_api_key_configured(
     definition.slug != "hive-core" && auth.legacy_api_key_configured()
 }
 
+/// Where HiveCore should reach a product's API.
+///
+/// An operator override always wins. Otherwise, when HiveCore is running inside
+/// patchhive-backend, the product is mounted in the same process at
+/// `<suite>/api/products/<slug>` — not on its standalone port. Defaulting to the
+/// standalone port there would send every dispatch, health poll, and smoke check to
+/// a port nothing is listening on.
+///
+/// PATCHHIVE_SUITE_BASE_URL is set by the unified backend at startup. Unset means
+/// HiveCore is running standalone, so the per-product ports are correct.
+pub fn resolve_api_url(
+    override_url: Option<&str>,
+    definition: &crate::state::ProductDefinition,
+) -> String {
+    let override_url = override_url.unwrap_or("").trim();
+    if !override_url.is_empty() {
+        return override_url.to_string();
+    }
+
+    match suite_base_url() {
+        Some(base) => format!(
+            "{}/api/products/{}",
+            base.trim_end_matches('/'),
+            definition.slug
+        ),
+        None => definition.default_api_url.to_string(),
+    }
+}
+
+/// Base URL of the unified backend when HiveCore is mounted inside it.
+pub fn suite_base_url() -> Option<String> {
+    std::env::var("PATCHHIVE_SUITE_BASE_URL")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
 pub fn pick_url(override_url: Option<&str>, default_url: &str) -> String {
     let override_url = override_url.unwrap_or("").trim();
     if override_url.is_empty() {
