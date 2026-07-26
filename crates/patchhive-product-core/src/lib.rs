@@ -7,6 +7,7 @@ pub mod github_permissions;
 pub mod hivecore_policy;
 pub mod rate_limit;
 pub mod repo_memory;
+pub mod repo_policy;
 pub mod scheduling;
 pub mod scope_policy;
 pub mod secrets;
