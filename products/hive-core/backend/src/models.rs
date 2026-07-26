@@ -663,3 +663,49 @@ pub struct DispatchActionResponse {
     pub event: ProductActionEvent,
     pub started_run: bool,
 }
+
+/// One step of a suite run: a single product action, dispatched in order.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SuiteRunStep {
+    pub product: String,
+    pub action: String,
+    /// queued | dispatched | failed | skipped
+    pub status: String,
+    pub message: String,
+    pub remote_status: Option<u16>,
+    /// The dispatch event this step produced, so a step is traceable to its evidence.
+    pub event_id: String,
+    pub started_at: String,
+    pub finished_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SuiteRun {
+    pub id: String,
+    pub name: String,
+    /// running | completed | failed | halted
+    pub status: String,
+    pub started_at: String,
+    pub finished_at: String,
+    pub summary: String,
+    pub steps: Vec<SuiteRunStep>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SuiteRunStepInput {
+    pub product: String,
+    pub action: String,
+    #[serde(default)]
+    pub payload: Value,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct StartSuiteRunRequest {
+    #[serde(default)]
+    pub name: String,
+    pub steps: Vec<SuiteRunStepInput>,
+    /// Keep going after a step fails. Off by default: a suite run that continues
+    /// past a failed gate is how a partial result gets mistaken for a clean one.
+    #[serde(default)]
+    pub continue_on_failure: bool,
+}

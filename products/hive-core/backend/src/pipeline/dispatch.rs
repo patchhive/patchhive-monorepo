@@ -34,6 +34,23 @@ pub(super) async fn dispatch_product_action(
     Json<crate::models::ApiEnvelope<DispatchActionResponse>>,
     (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
 > {
+    dispatch_once(&state, &slug, &action_id, body)
+        .await
+        .map(|response| Json(ok(response)))
+}
+
+/// One dispatch, callable without an HTTP request.
+///
+/// Suite runs execute steps through this rather than re-implementing dispatch, so a
+/// step is refused for exactly the same reasons a manual dispatch is — destructive,
+/// approval-gated, PR-opening, missing or unscoped service token. A second code path
+/// would be a second place for those guards to drift.
+pub(super) async fn dispatch_once(
+    state: &AppState,
+    slug: &str,
+    action_id: &str,
+    body: Value,
+) -> Result<DispatchActionResponse, (StatusCode, Json<crate::models::ApiEnvelope<Value>>)> {
     let definition = product_catalog()
         .iter()
         .find(|product| product.slug == slug)
@@ -185,11 +202,10 @@ pub(super) async fn dispatch_product_action(
         tracing::warn!("failed to record HiveCore product action event: {err}");
     }
 
-    let response = DispatchActionResponse {
+    Ok(DispatchActionResponse {
         event,
         started_run: action.starts_run,
-    };
-    Ok(Json(ok(response)))
+    })
 }
 
 pub(super) fn dispatch_service_token_issue(

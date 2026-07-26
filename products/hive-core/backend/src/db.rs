@@ -581,6 +581,22 @@ fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
           steps_json TEXT NOT NULL
         );
 
+        -- Namespaced: patchhive-backend already owns a suite-level `suite_runs`
+        -- table with a different schema, and the suite database is shared. New
+        -- product tables must be product-namespaced (CLAUDE.md § SQLite).
+        CREATE TABLE IF NOT EXISTS hive_core_suite_runs (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          status TEXT NOT NULL,
+          started_at TEXT NOT NULL,
+          finished_at TEXT NOT NULL DEFAULT '',
+          summary TEXT NOT NULL DEFAULT '',
+          steps_json TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_hive_core_suite_runs_started
+          ON hive_core_suite_runs (started_at DESC);
+
         CREATE TABLE IF NOT EXISTS repository_policies (
           repository TEXT PRIMARY KEY,
           trusted INTEGER NOT NULL DEFAULT 0,
@@ -1169,6 +1185,79 @@ fn decode_pr_reservation(row: &rusqlite::Row<'_>) -> rusqlite::Result<PrBudgetRe
         created_at: row.get(8)?,
         expires_at: row.get(9)?,
         updated_at: row.get(10)?,
+    })
+}
+
+pub fn record_suite_run(run: &crate::models::SuiteRun) -> rusqlite::Result<()> {
+    let conn = connect()?;
+    conn.execute(
+        r#"
+        INSERT INTO hive_core_suite_runs (id, name, status, started_at, finished_at, summary, steps_json)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+        ON CONFLICT(id) DO UPDATE SET
+          status = excluded.status,
+          finished_at = excluded.finished_at,
+          summary = excluded.summary,
+          steps_json = excluded.steps_json
+        "#,
+        params![
+            &run.id,
+            &run.name,
+            &run.status,
+            &run.started_at,
+            &run.finished_at,
+            &run.summary,
+            serde_json::to_string(&run.steps).unwrap_or_else(|_| "[]".into()),
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn suite_runs(limit: u32) -> Vec<crate::models::SuiteRun> {
+    let Ok(conn) = connect() else {
+        return Vec::new();
+    };
+    let Ok(mut stmt) = conn.prepare(
+        r#"
+        SELECT id, name, status, started_at, finished_at, summary, steps_json
+        FROM hive_core_suite_runs
+        ORDER BY started_at DESC
+        LIMIT ?1
+        "#,
+    ) else {
+        return Vec::new();
+    };
+    let rows = stmt.query_map([limit.clamp(1, 200)], decode_suite_run);
+    rows.map(|items| items.flatten().collect())
+        .unwrap_or_default()
+}
+
+pub fn suite_run(id: &str) -> Option<crate::models::SuiteRun> {
+    let conn = connect().ok()?;
+    conn.query_row(
+        r#"
+        SELECT id, name, status, started_at, finished_at, summary, steps_json
+        FROM hive_core_suite_runs
+        WHERE id = ?1
+        "#,
+        [id],
+        decode_suite_run,
+    )
+    .optional()
+    .ok()
+    .flatten()
+}
+
+fn decode_suite_run(row: &rusqlite::Row<'_>) -> rusqlite::Result<crate::models::SuiteRun> {
+    let steps_json: String = row.get(6)?;
+    Ok(crate::models::SuiteRun {
+        id: row.get(0)?,
+        name: row.get(1)?,
+        status: row.get(2)?,
+        started_at: row.get(3)?,
+        finished_at: row.get(4)?,
+        summary: row.get(5)?,
+        steps: serde_json::from_str(&steps_json).unwrap_or_default(),
     })
 }
 

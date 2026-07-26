@@ -12,6 +12,8 @@ patchhive_product_core::define_api_key_auth_module! {
                 "/pr-budgets/reservations/{id}/commit",
                 "/pr-budgets/reservations/{id}/release",
                 "/pr-budgets/releases",
+                "/suite-runs",
+                "/api/products/hive-core/suite-runs",
                 "/api/products/hive-core/settings",
                 "/api/products/hive-core/repository-policy/check",
                 "/api/products/hive-core/pr-budgets/reservations",
@@ -153,6 +155,11 @@ pub fn router() -> Router {
             axum::routing::post(pipeline::provision_service_token),
         )
         .route("/actions/recent", get(pipeline::recent_actions))
+        .route(
+            "/suite-runs",
+            get(pipeline::list_suite_runs).post(pipeline::start_suite_run),
+        )
+        .route("/suite-runs/:id", get(pipeline::suite_run_detail))
         .route(
             "/products/:slug/actions/:action_id",
             axum::routing::post(pipeline::dispatch_product_action),

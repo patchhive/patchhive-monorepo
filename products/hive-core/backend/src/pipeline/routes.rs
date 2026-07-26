@@ -233,6 +233,30 @@ pub async fn settings() -> Json<crate::models::ApiEnvelope<SettingsResponse>> {
     super::settings::settings().await
 }
 
+/// Suite runs: an ordered sequence of dispatches recorded as one unit.
+pub async fn start_suite_run(
+    State(state): State<AppState>,
+    Json(body): Json<crate::models::StartSuiteRunRequest>,
+) -> Result<
+    Json<crate::models::ApiEnvelope<crate::models::SuiteRun>>,
+    (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
+> {
+    super::suite_runs::start_suite_run(State(state), Json(body)).await
+}
+
+pub async fn list_suite_runs() -> Json<crate::models::ApiEnvelope<Vec<crate::models::SuiteRun>>> {
+    super::suite_runs::list_suite_runs().await
+}
+
+pub async fn suite_run_detail(
+    Path(id): Path<String>,
+) -> Result<
+    Json<crate::models::ApiEnvelope<crate::models::SuiteRun>>,
+    (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
+> {
+    super::suite_runs::suite_run_detail(id).await
+}
+
 pub async fn recent_actions() -> Json<crate::models::ApiEnvelope<Vec<ProductActionEvent>>> {
     super::dispatch::recent_actions().await
 }

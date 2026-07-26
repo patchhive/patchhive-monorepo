@@ -14,6 +14,7 @@ pub mod routes;
 pub mod settings;
 mod setup;
 mod smoke;
+mod suite_runs;
 pub mod types;
 
 pub use types::{
@@ -32,14 +33,16 @@ pub(crate) use patchhive_product_core::auth::SERVICE_TOKEN_HEADER;
 
 pub use routes::{
     auth_status, capabilities, commit_pr_budget_reservation, dispatch_product_action,
-    first_stack_status, gen_key, gen_service_token, health, login, overview, pair_first_stack,
-    pr_budget_status, product_run_detail, product_runs, products, provision_service_token,
-    recent_actions, release_pr_budget_reservation, release_pr_budget_reservations_for_run,
-    repository_policies, repository_policy_check, reserve_pr_budget, restart_setup_product,
-    rotate_service_token, run_detail, run_first_stack_smoke, run_setup_smoke_tier, runs,
-    save_pr_budgets, save_repository_policies, save_settings, save_setup_product_env, settings,
-    setup_product_logs, start_all_fleet, start_first_stack, start_ready_fleet, start_setup_product,
-    startup_checks_route, stop_first_stack, stop_setup_product, validate_github_token,
+    first_stack_status, gen_key, gen_service_token, health, list_suite_runs, login, overview,
+    pair_first_stack, pr_budget_status, product_run_detail, product_runs, products,
+    provision_service_token, recent_actions, release_pr_budget_reservation,
+    release_pr_budget_reservations_for_run, repository_policies, repository_policy_check,
+    reserve_pr_budget, restart_setup_product, rotate_service_token, run_detail,
+    run_first_stack_smoke, run_setup_smoke_tier, runs, save_pr_budgets, save_repository_policies,
+    save_settings, save_setup_product_env, settings, setup_product_logs, start_all_fleet,
+    start_first_stack, start_ready_fleet, start_setup_product, start_suite_run,
+    startup_checks_route, stop_first_stack, stop_setup_product, suite_run_detail,
+    validate_github_token,
 };
 
 fn hive_core_action_run_values(limit: u32) -> Vec<Value> {
