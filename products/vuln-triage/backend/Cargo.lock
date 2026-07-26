@@ -941,7 +941,6 @@ dependencies = [
  "patchhive-github-data",
  "reqwest",
  "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -1782,7 +1781,6 @@ dependencies = [
  "anyhow",
  "axum",
  "chrono",
- "dotenvy",
  "once_cell",
  "patchhive-github-security",
  "patchhive-product-core",
@@ -1791,7 +1789,6 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
- "tower-http 0.5.2",
  "tracing",
  "tracing-subscriber",
  "uuid",

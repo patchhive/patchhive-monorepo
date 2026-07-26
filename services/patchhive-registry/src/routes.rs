@@ -3,7 +3,6 @@ use std::sync::Arc;
 use axum::{
     extract::{Path, State},
     http::{header::AUTHORIZATION, HeaderMap, StatusCode},
-    response::IntoResponse,
     routing::{get, post},
     Json, Router,
 };
@@ -153,12 +152,4 @@ fn error(status: StatusCode, code: &'static str, message: String) -> ApiError {
             message,
         }),
     )
-}
-
-#[allow(dead_code)]
-fn into_response<T: serde::Serialize>(result: ApiResult<T>) -> axum::response::Response {
-    match result {
-        Ok(json) => json.into_response(),
-        Err(err) => err.into_response(),
-    }
 }
