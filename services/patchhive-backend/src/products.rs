@@ -155,6 +155,7 @@ pub fn auth_statuses(config: &Config) -> Vec<ProductAuthStatus> {
         status_for!("signal-hive", signal_hive),
         status_for!("refactor-scout", refactor_scout),
         status_for!("repo-reaper", repo_reaper),
+        status_for!("hive-core", hive_core),
     ]
 }
 
@@ -277,6 +278,7 @@ pub async fn all_runs(config: &Config) -> Vec<ProductRuns> {
         runs_for!("repo-memory", repo_memory),
         runs_for!("signal-hive", signal_hive),
         runs_for!("refactor-scout", refactor_scout),
+        runs_for!("hive-core", hive_core),
     ];
 
     out.push(ProductRuns {
@@ -334,6 +336,7 @@ pub async fn advertised_capabilities(config: &Config) -> Vec<ProductCapabilityRe
         caps_for!("repo-memory", repo_memory),
         caps_for!("signal-hive", signal_hive),
         caps_for!("refactor-scout", refactor_scout),
+        caps_for!("hive-core", hive_core),
     ];
 
     out.push(ProductCapabilityReport {
