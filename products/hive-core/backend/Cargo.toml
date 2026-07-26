@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT"
 
+[lib]
+name = "hive_core"
+path = "src/lib.rs"
+
 [[bin]]
 name = "hive-core"
 path = "src/main.rs"

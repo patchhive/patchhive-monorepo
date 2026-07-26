@@ -36,7 +36,14 @@ pub async fn init_enabled_products(config: &Config) -> Result<()> {
     if config.product_selection.enables("repo-reaper") {
         repo_reaper::init_runtime().await?;
     }
+    if config.product_selection.enables("hive-core") {
+        hive_core::init_runtime().await?;
+    }
     Ok(())
+}
+
+pub fn hive_core_router() -> axum::Router {
+    hive_core::router()
 }
 
 pub fn merge_keeper_router() -> axum::Router {

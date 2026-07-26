@@ -69,6 +69,7 @@ pub fn router(state: Arc<AppState>) -> Router {
             products::refactor_scout_router(),
         )
         .nest("/api/products/repo-reaper", products::repo_reaper_router())
+        .nest("/api/products/hive-core", products::hive_core_router())
         .merge(suite_routes)
 }
 

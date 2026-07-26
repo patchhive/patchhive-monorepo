@@ -1,0 +1,195 @@
+patchhive_product_core::define_api_key_auth_module! {
+    pub mod auth {
+        patchhive_product_core::auth::ApiKeyAuthConfig::new("HIVE_CORE_API_KEY_HASH", "hive-core-")
+            .with_service_token("HIVE_CORE_SERVICE_TOKEN_HASH", "hc-svc-")
+            .with_service_default_name("hivecore")
+            // Both spellings: routes must behave identically bare and nested under
+            // the suite prefix, so every path is enumerated twice.
+            .with_service_dispatch_paths([
+                "/settings",
+                "/repository-policy/check",
+                "/pr-budgets/reservations",
+                "/pr-budgets/reservations/{id}/commit",
+                "/pr-budgets/reservations/{id}/release",
+                "/pr-budgets/releases",
+                "/api/products/hive-core/settings",
+                "/api/products/hive-core/repository-policy/check",
+                "/api/products/hive-core/pr-budgets/reservations",
+                "/api/products/hive-core/pr-budgets/reservations/{id}/commit",
+                "/api/products/hive-core/pr-budgets/reservations/{id}/release",
+                "/api/products/hive-core/pr-budgets/releases",
+            ])
+            .with_unauthorized_message("Unauthorized — provide X-API-Key or X-PatchHive-Service-Token.")
+            .with_public_paths([
+                "/health",
+                "/auth/login",
+                "/auth/status",
+                "/auth/generate-key",
+                "/auth/generate-service-token",
+                "/auth/rotate-service-token",
+                "/startup/checks",
+                "/capabilities",
+                "/api/products/hive-core/health",
+                "/api/products/hive-core/auth/login",
+                "/api/products/hive-core/auth/status",
+                "/api/products/hive-core/auth/generate-key",
+                "/api/products/hive-core/auth/generate-service-token",
+                "/api/products/hive-core/auth/rotate-service-token",
+                "/api/products/hive-core/startup/checks",
+                "/api/products/hive-core/capabilities",
+            ])
+    }
+}
+
+// Engine-as-library. `init_runtime` and `router` are the contract every PatchHive
+// product exposes so the unified backend can mount it in-process; main.rs is a thin
+// launcher over the same two calls. HiveCore was the last product still binary-only,
+// which is why it could not be mounted alongside the others.
+pub mod db;
+pub mod models;
+pub mod pipeline;
+pub mod startup;
+pub mod state;
+
+use anyhow::Result;
+use axum::{middleware, routing::get, Router};
+use patchhive_product_core::rate_limit::rate_limit_middleware;
+use patchhive_product_core::startup::log_checks;
+
+use crate::state::AppState;
+
+/// Schema, startup diagnostics, and any background work. Idempotent: the unified
+/// backend calls this once per enabled engine at boot.
+pub async fn init_runtime() -> Result<()> {
+    db::init_db()?;
+    let checks = startup::validate_config().await;
+    log_checks(&checks);
+    startup::set_startup_checks(checks);
+    Ok(())
+}
+
+/// Fully self-contained router with auth and rate limiting already layered, so it
+/// behaves the same nested under /api/products/hive-core as it does standalone.
+pub fn router() -> Router {
+    Router::new()
+        .route("/auth/status", get(pipeline::auth_status))
+        .route("/auth/login", axum::routing::post(pipeline::login))
+        .route("/auth/generate-key", axum::routing::post(pipeline::gen_key))
+        .route(
+            "/auth/generate-service-token",
+            axum::routing::post(pipeline::gen_service_token),
+        )
+        .route(
+            "/auth/rotate-service-token",
+            axum::routing::post(pipeline::rotate_service_token),
+        )
+        .route("/health", get(pipeline::health))
+        .route("/startup/checks", get(pipeline::startup_checks_route))
+        .route("/capabilities", get(pipeline::capabilities))
+        .route("/runs", get(pipeline::runs))
+        .route("/runs/:id", get(pipeline::run_detail))
+        .route("/overview", get(pipeline::overview))
+        .route("/products", get(pipeline::products))
+        .route("/setup/first-stack", get(pipeline::first_stack_status))
+        .route(
+            "/setup/first-stack/start",
+            axum::routing::post(pipeline::start_first_stack),
+        )
+        .route(
+            "/setup/first-stack/pair",
+            axum::routing::post(pipeline::pair_first_stack),
+        )
+        .route(
+            "/setup/first-stack/smoke",
+            axum::routing::post(pipeline::run_first_stack_smoke),
+        )
+        .route(
+            "/setup/smoke/:tier",
+            axum::routing::post(pipeline::run_setup_smoke_tier),
+        )
+        .route(
+            "/setup/first-stack/stop",
+            axum::routing::post(pipeline::stop_first_stack),
+        )
+        .route(
+            "/setup/fleet/start-ready",
+            axum::routing::post(pipeline::start_ready_fleet),
+        )
+        .route(
+            "/setup/fleet/start-all",
+            axum::routing::post(pipeline::start_all_fleet),
+        )
+        .route(
+            "/setup/products/:slug/start",
+            axum::routing::post(pipeline::start_setup_product),
+        )
+        .route(
+            "/setup/products/:slug/stop",
+            axum::routing::post(pipeline::stop_setup_product),
+        )
+        .route(
+            "/setup/products/:slug/restart",
+            axum::routing::post(pipeline::restart_setup_product),
+        )
+        .route(
+            "/setup/products/:slug/logs",
+            get(pipeline::setup_product_logs),
+        )
+        .route(
+            "/setup/products/:slug/env",
+            axum::routing::post(pipeline::save_setup_product_env),
+        )
+        .route(
+            "/setup/credentials/github/validate",
+            axum::routing::post(pipeline::validate_github_token),
+        )
+        .route("/products/:slug/runs", get(pipeline::product_runs))
+        .route(
+            "/products/:slug/runs/:id",
+            get(pipeline::product_run_detail),
+        )
+        .route(
+            "/products/:slug/provision-service-token",
+            axum::routing::post(pipeline::provision_service_token),
+        )
+        .route("/actions/recent", get(pipeline::recent_actions))
+        .route(
+            "/products/:slug/actions/:action_id",
+            axum::routing::post(pipeline::dispatch_product_action),
+        )
+        .route(
+            "/settings",
+            get(pipeline::settings).put(pipeline::save_settings),
+        )
+        .route(
+            "/repository-policies",
+            get(pipeline::repository_policies).put(pipeline::save_repository_policies),
+        )
+        .route(
+            "/repository-policy/check",
+            axum::routing::post(pipeline::repository_policy_check),
+        )
+        .route(
+            "/pr-budgets",
+            get(pipeline::pr_budget_status).put(pipeline::save_pr_budgets),
+        )
+        .route(
+            "/pr-budgets/reservations",
+            axum::routing::post(pipeline::reserve_pr_budget),
+        )
+        .route(
+            "/pr-budgets/reservations/:id/commit",
+            axum::routing::post(pipeline::commit_pr_budget_reservation),
+        )
+        .route(
+            "/pr-budgets/reservations/:id/release",
+            axum::routing::post(pipeline::release_pr_budget_reservation),
+        )
+        .route(
+            "/pr-budgets/releases",
+            axum::routing::post(pipeline::release_pr_budget_reservations_for_run),
+        )
+        .layer(middleware::from_fn(auth::auth_middleware))
+        .layer(middleware::from_fn(rate_limit_middleware))
+        .with_state(AppState::new())
+}

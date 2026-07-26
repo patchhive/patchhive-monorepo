@@ -33,7 +33,15 @@ pub struct ApiEnvelope<T> {
     pub meta: ApiMeta,
 }
 
+impl Default for ApiMeta {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ApiMeta {
+    /// Every envelope gets a fresh request id and timestamp, so this is not a
+    /// constant value despite taking no arguments.
     pub fn new() -> Self {
         Self {
             product: PRODUCT_SLUG,

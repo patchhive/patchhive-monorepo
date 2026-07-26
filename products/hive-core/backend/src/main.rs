@@ -1,193 +1,28 @@
-patchhive_product_core::define_api_key_auth_module! {
-    pub mod auth {
-        patchhive_product_core::auth::ApiKeyAuthConfig::new("HIVE_CORE_API_KEY_HASH", "hive-core-")
-            .with_service_token("HIVE_CORE_SERVICE_TOKEN_HASH", "hc-svc-")
-            .with_service_default_name("hivecore")
-            .with_service_dispatch_paths([
-                "/settings",
-                "/repository-policy/check",
-                "/pr-budgets/reservations",
-                "/pr-budgets/reservations/{id}/commit",
-                "/pr-budgets/reservations/{id}/release",
-                "/pr-budgets/releases",
-            ])
-            .with_unauthorized_message("Unauthorized — provide X-API-Key or X-PatchHive-Service-Token.")
-            .with_public_paths([
-                "/health",
-                "/auth/login",
-                "/auth/status",
-                "/auth/generate-key",
-                "/auth/generate-service-token",
-                "/auth/rotate-service-token",
-                "/startup/checks",
-                "/capabilities",
-            ])
-    }
-}
-
-mod db;
-mod models;
-mod pipeline;
-mod startup;
-mod state;
-
-use axum::{middleware, routing::get, Router};
-use patchhive_product_core::rate_limit::rate_limit_middleware;
-use patchhive_product_core::startup::{cors_layer, listen_addr, log_checks};
+use anyhow::Result;
+use axum::Router;
+use patchhive_product_core::startup::{cors_layer, listen_addr};
 use tracing::info;
 
-use crate::state::AppState;
-
+/// Thin launcher. All behaviour lives in the library so the unified backend mounts
+/// exactly what this binary serves — one engine, two entry points.
 #[tokio::main]
-async fn main() {
-    patchhive_product_core::environment::load_patchhive_env()
-        .expect("failed to load PatchHive environment");
+async fn main() -> Result<()> {
+    patchhive_product_core::environment::load_patchhive_env()?;
     tracing_subscriber::fmt()
         .with_env_filter(std::env::var("RUST_LOG").unwrap_or_else(|_| "info".into()))
         .init();
 
-    if let Err(err) = db::init_db() {
-        eprintln!("DB init failed: {err}");
-        std::process::exit(1);
-    }
+    hive_core::init_runtime().await?;
 
-    let state = AppState::new();
-    let checks = startup::validate_config().await;
-    log_checks(&checks);
-    startup::set_startup_checks(checks);
-
-    let app = Router::new()
-        .route("/auth/status", get(pipeline::auth_status))
-        .route("/auth/login", axum::routing::post(pipeline::login))
-        .route("/auth/generate-key", axum::routing::post(pipeline::gen_key))
-        .route(
-            "/auth/generate-service-token",
-            axum::routing::post(pipeline::gen_service_token),
-        )
-        .route(
-            "/auth/rotate-service-token",
-            axum::routing::post(pipeline::rotate_service_token),
-        )
-        .route("/health", get(pipeline::health))
-        .route("/startup/checks", get(pipeline::startup_checks_route))
-        .route("/capabilities", get(pipeline::capabilities))
-        .route("/runs", get(pipeline::runs))
-        .route("/runs/:id", get(pipeline::run_detail))
-        .route("/overview", get(pipeline::overview))
-        .route("/products", get(pipeline::products))
-        .route("/setup/first-stack", get(pipeline::first_stack_status))
-        .route(
-            "/setup/first-stack/start",
-            axum::routing::post(pipeline::start_first_stack),
-        )
-        .route(
-            "/setup/first-stack/pair",
-            axum::routing::post(pipeline::pair_first_stack),
-        )
-        .route(
-            "/setup/first-stack/smoke",
-            axum::routing::post(pipeline::run_first_stack_smoke),
-        )
-        .route(
-            "/setup/smoke/:tier",
-            axum::routing::post(pipeline::run_setup_smoke_tier),
-        )
-        .route(
-            "/setup/first-stack/stop",
-            axum::routing::post(pipeline::stop_first_stack),
-        )
-        .route(
-            "/setup/fleet/start-ready",
-            axum::routing::post(pipeline::start_ready_fleet),
-        )
-        .route(
-            "/setup/fleet/start-all",
-            axum::routing::post(pipeline::start_all_fleet),
-        )
-        .route(
-            "/setup/products/:slug/start",
-            axum::routing::post(pipeline::start_setup_product),
-        )
-        .route(
-            "/setup/products/:slug/stop",
-            axum::routing::post(pipeline::stop_setup_product),
-        )
-        .route(
-            "/setup/products/:slug/restart",
-            axum::routing::post(pipeline::restart_setup_product),
-        )
-        .route(
-            "/setup/products/:slug/logs",
-            get(pipeline::setup_product_logs),
-        )
-        .route(
-            "/setup/products/:slug/env",
-            axum::routing::post(pipeline::save_setup_product_env),
-        )
-        .route(
-            "/setup/credentials/github/validate",
-            axum::routing::post(pipeline::validate_github_token),
-        )
-        .route("/products/:slug/runs", get(pipeline::product_runs))
-        .route(
-            "/products/:slug/runs/:id",
-            get(pipeline::product_run_detail),
-        )
-        .route(
-            "/products/:slug/provision-service-token",
-            axum::routing::post(pipeline::provision_service_token),
-        )
-        .route("/actions/recent", get(pipeline::recent_actions))
-        .route(
-            "/products/:slug/actions/:action_id",
-            axum::routing::post(pipeline::dispatch_product_action),
-        )
-        .route(
-            "/settings",
-            get(pipeline::settings).put(pipeline::save_settings),
-        )
-        .route(
-            "/repository-policies",
-            get(pipeline::repository_policies).put(pipeline::save_repository_policies),
-        )
-        .route(
-            "/repository-policy/check",
-            axum::routing::post(pipeline::repository_policy_check),
-        )
-        .route(
-            "/pr-budgets",
-            get(pipeline::pr_budget_status).put(pipeline::save_pr_budgets),
-        )
-        .route(
-            "/pr-budgets/reservations",
-            axum::routing::post(pipeline::reserve_pr_budget),
-        )
-        .route(
-            "/pr-budgets/reservations/:id/commit",
-            axum::routing::post(pipeline::commit_pr_budget_reservation),
-        )
-        .route(
-            "/pr-budgets/reservations/:id/release",
-            axum::routing::post(pipeline::release_pr_budget_reservation),
-        )
-        .route(
-            "/pr-budgets/releases",
-            axum::routing::post(pipeline::release_pr_budget_reservations_for_run),
-        )
-        .layer(middleware::from_fn(auth::auth_middleware))
-        .layer(middleware::from_fn(rate_limit_middleware))
-        .layer(cors_layer())
-        .with_state(state);
+    let app = Router::new().merge(hive_core::router()).layer(cors_layer());
 
     let addr = listen_addr("HIVE_CORE_PORT", 8100);
     info!("⬢ HiveCore by PatchHive — listening on {addr}");
-    let listener = tokio::net::TcpListener::bind(&addr)
-        .await
-        .unwrap_or_else(|err| panic!("failed to bind HiveCore to {addr}: {err}"));
+    let listener = tokio::net::TcpListener::bind(&addr).await?;
     axum::serve(
         listener,
         app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
     )
-    .await
-    .unwrap_or_else(|err| panic!("HiveCore server failed: {err}"));
+    .await?;
+    Ok(())
 }

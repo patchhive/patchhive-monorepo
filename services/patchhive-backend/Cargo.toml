@@ -27,6 +27,7 @@ refactor-scout = { path = "../../products/refactor-scout/backend" }
 repo-memory = { path = "../../products/repo-memory/backend" }
 repo-reaper = { path = "../../products/repo-reaper/backend" }
 review-bee = { path = "../../products/review-bee/backend" }
+hive-core = { path = "../../products/hive-core/backend" }
 signal-hive = { path = "../../products/signal-hive/backend" }
 trust-gate = { path = "../../products/trust-gate/backend" }
 vuln-triage = { path = "../../products/vuln-triage/backend" }

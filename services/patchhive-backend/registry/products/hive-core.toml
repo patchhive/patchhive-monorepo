@@ -4,7 +4,7 @@ name = "HiveCore"
 role = "control plane and suite cockpit"
 module_path = "crate::products::hive_core"
 route_prefix = "/api/products/hive-core"
-migration_stage = "not-started"
+migration_stage = "integrated"
 
 [safety]
 read_only = false
