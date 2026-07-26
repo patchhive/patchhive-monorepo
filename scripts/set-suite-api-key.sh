@@ -17,6 +17,10 @@ What it does:
   1. Prompts once for the raw password you want to use across PatchHive products
   2. Hashes it with SHA-256
   3. Writes the matching *_API_KEY_HASH value into each target product's .env file
+  4. Writes PATCHHIVE_SUITE_API_KEY_HASH into the root .env, so the same password
+     unlocks the unified backend's suite API and the HiveCore deck
+
+Pass --no-suite to leave the suite key alone.
 
 Use the original raw password in each product's login form.
 Only the hash is stored in .env.
@@ -82,6 +86,7 @@ write_hash() {
 
 ROOT_DIR="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 STDIN_MODE=0
+SKIP_SUITE=0
 STACK="all"
 PRODUCTS_CSV=""
 
@@ -130,6 +135,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --stdin)
       STDIN_MODE=1
+      shift
+      ;;
+    --no-suite)
+      SKIP_SUITE=1
       shift
       ;;
     --stack)
@@ -220,10 +229,20 @@ for product in "${TARGET_PRODUCTS[@]}"; do
   write_hash "$env_file" "$hash_var" "$HASH"
 done
 
+# The suite API layer in patchhive-backend is a separate credential from any
+# product's. Seeding it here keeps one password for the whole system rather than
+# leaving the operator to bootstrap a second key by hand.
+if [[ "${SKIP_SUITE:-0}" -eq 0 ]]; then
+  write_hash "$ROOT_DIR/.env" "PATCHHIVE_SUITE_API_KEY_HASH" "$HASH"
+fi
+
 echo "Updated API-key hashes for:"
 for product in "${TARGET_PRODUCTS[@]}"; do
   printf '  - %s (%s)\n' "$product" "${PRODUCT_HASH_VARS[$product]}"
 done
+if [[ "${SKIP_SUITE:-0}" -eq 0 ]]; then
+  printf '  - suite control plane (PATCHHIVE_SUITE_API_KEY_HASH in root .env)\n'
+fi
 
 echo
 echo "Restart the updated products so they reload the new hash."
