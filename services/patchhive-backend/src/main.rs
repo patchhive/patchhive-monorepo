@@ -16,31 +16,11 @@ patchhive_product_core::define_api_key_auth_module! {
 
 /// Paths served without an operator key.
 ///
-/// Beyond the suite's own health and bootstrap routes, this includes each product's
-/// genuinely public contract endpoints. Products already declare `/health`,
-/// `/capabilities`, and `/startup/checks` public in their own auth config, and the
-/// suite layer must not be stricter than the engine it fronts — HiveCore polls those
-/// endpoints in-process and has no suite key to present.
-///
-/// Everything with real data behind it — runs, auth posture, settings, dispatch,
-/// the aggregates — stays protected.
+/// Suite routes only — product routes are not gated by this layer at all, so they
+/// need no entries here. Health and the auth bootstrap trio stay open so an
+/// unconfigured suite can be inspected and bootstrapped.
 fn suite_public_paths() -> Vec<String> {
-    const PRODUCT_KEYS: [&str; 12] = [
-        "hive-core",
-        "signal-hive",
-        "review-bee",
-        "trust-gate",
-        "repo-memory",
-        "merge-keeper",
-        "flake-sting",
-        "dep-triage",
-        "vuln-triage",
-        "refactor-scout",
-        "release-sentry",
-        "repo-reaper",
-    ];
-
-    let mut paths: Vec<String> = [
+    [
         "/",
         "/health",
         "/api/health",
@@ -50,33 +30,7 @@ fn suite_public_paths() -> Vec<String> {
     ]
     .iter()
     .map(|path| path.to_string())
-    .collect();
-
-    for key in PRODUCT_KEYS {
-        // Exactly the set each product declares public in its own auth config. The
-        // bootstrap routes matter as much as the contract ones: HiveCore provisions
-        // downstream tokens by calling a product's generate/rotate endpoint through
-        // this runtime, and that internal call carries no suite key — so gating them
-        // here made provisioning fail with the suite's own 401.
-        //
-        // Safe because the product's guard is the real one: generate and rotate are
-        // localhost-only unless an operator key or the suite bootstrap secret is
-        // supplied. This layer simply stops being stricter than the engine it fronts.
-        for suffix in [
-            "health",
-            "capabilities",
-            "startup/checks",
-            "auth/status",
-            "auth/login",
-            "auth/generate-key",
-            "auth/generate-service-token",
-            "auth/rotate-service-token",
-        ] {
-            paths.push(format!("/api/products/{key}/{suffix}"));
-        }
-    }
-
-    paths
+    .collect()
 }
 
 mod config;
@@ -107,12 +61,9 @@ async fn main() -> Result<()> {
     products::init_enabled_products(&config).await?;
     let state = Arc::new(AppState::new(config)?);
 
+    // Auth is applied inside routes::router, to the suite routes only.
     let app = Router::new()
         .merge(routes::router(state))
-        // Auth wraps the suite API. Product routers are nested inside and keep their
-        // own guards, so a request crossing into a product is checked twice — once
-        // for the suite operator, once for the product's own credential rules.
-        .layer(axum::middleware::from_fn(auth::auth_middleware))
         .layer(CorsLayer::permissive());
 
     let listener = tokio::net::TcpListener::bind(bind_addr).await?;

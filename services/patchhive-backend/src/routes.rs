@@ -46,7 +46,17 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/products/runs", get(products_runs))
         .route("/api/products/capabilities", get(products_capabilities))
         .route("/api/events", get(events))
-        .with_state(state);
+        .with_state(state)
+        // Operator auth guards the *suite* API only. Product routers nest below and
+        // enforce their own credentials, which is the correct gate for them: they
+        // accept X-API-Key or X-PatchHive-Service-Token and know their own scopes.
+        //
+        // Wrapping them as well double-gated every product route, so HiveCore's
+        // in-runtime calls — provisioning a token, dispatching an action — were
+        // refused by this layer before reaching the product that would have
+        // authenticated them. Patching the public-path list product by product only
+        // chased the symptom; the layer was simply in the wrong place.
+        .layer(axum::middleware::from_fn(crate::auth::auth_middleware));
 
     Router::new()
         .nest(
