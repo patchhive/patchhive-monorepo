@@ -95,7 +95,11 @@ function isMutating(action: ApiAction): boolean {
  * and a commit status to GitHub. Both declarations agreed with each other; only the
  * credentials gave it away.
  */
-const WRITE_SCOPE = /(:write|:dispatch\b|contents:write|provider:ai)/;
+// Only genuine external-state writes. An earlier version also matched provider:ai,
+// which flagged RepoReaper's dry stalk — an action that truly writes nothing but
+// does spend AI credit. Cost is a real concern and a different one; folding it in
+// here would have made the check cry wolf on a correct declaration.
+const WRITE_SCOPE = /:write\b/;
 
 function writeScopes(action: ApiAction): string[] {
   return (action.credential_requirements ?? []).filter((scope) => WRITE_SCOPE.test(scope));

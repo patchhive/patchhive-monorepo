@@ -69,9 +69,19 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
                 "Process a signed GitHub pull request webhook for readiness updates.",
                 true,
             )
-            .read_only(true)
+            // Also not read-only, and less conditionally so than the assess action:
+            // the webhook handler passes publish_report: true unconditionally, so
+            // every delivery writes a maintained comment and commit status back to
+            // GitHub. That is the intended behaviour — maintained comments have to
+            // stay current — but it must be declared, not hidden behind read_only.
+            .mutating(true)
             .trigger_modes([contract::RunTriggerMode::Webhook])
-            .credential_requirements(["github:pull_requests:read", "github:checks:read"]),
+            .credential_requirements([
+                "github:pull_requests:read",
+                "github:checks:read",
+                "github:checks:write",
+                "github:statuses:write",
+            ]),
         ],
         vec![
             contract::link("overview", "Overview", "/overview"),

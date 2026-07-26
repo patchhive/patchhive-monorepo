@@ -207,6 +207,18 @@ export function DispatchPreview({ open, onOpenChange }: Props) {
                 <Ban className="mt-0.5 h-3 w-3 flex-shrink-0 text-[var(--warn)]" />
                 <span className="text-[11px] text-muted-foreground">{refusal}</span>
               </div>
+            ) : active.action.mutating ? (
+              // Not refused is not the same as safe. This line said "Read-only and
+              // dispatchable" for anything HiveCore would accept, so a mutating
+              // action read as harmless — the exact claim that hid MergeKeeper's
+              // GitHub write.
+              <div className="mt-3 flex items-start gap-2 rounded border border-[var(--warn)]/40 bg-[var(--warn)]/[0.06] px-2 py-1.5">
+                <AlertTriangle className="mt-0.5 h-3 w-3 flex-shrink-0 text-[var(--warn)]" />
+                <span className="text-[11px] text-muted-foreground">
+                  Mutating — this action writes external state. Dispatchable, but check the
+                  request body before firing.
+                </span>
+              </div>
             ) : (
               <div className="mt-3 flex items-center gap-2 text-[11px] text-[var(--ok)]">
                 <ShieldCheck className="h-3 w-3" /> Read-only and dispatchable.
@@ -290,7 +302,11 @@ function ActionChip({
             : "border-border text-foreground hover:border-[var(--honey)]/50"
       }`}
     >
-      {blocked && <Ban className="h-2.5 w-2.5 text-[var(--warn)]" />}
+      {blocked ? (
+        <Ban className="h-2.5 w-2.5 text-[var(--warn)]" />
+      ) : action.mutating ? (
+        <AlertTriangle className="h-2.5 w-2.5 text-[var(--warn)]" />
+      ) : null}
       {action.id}
     </button>
   );
