@@ -40,6 +40,8 @@ export function DispatchPreview({ open, onOpenChange }: Props) {
   const [selected, setSelected] = useState<{ product: string; action: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<DispatchOutcome | null>(null);
+  const [payload, setPayload] = useState("{}");
+  const [payloadError, setPayloadError] = useState("");
 
   useEffect(() => {
     if (!open) return;
@@ -70,8 +72,22 @@ export function DispatchPreview({ open, onOpenChange }: Props) {
 
   async function fire() {
     if (!active || refusal || busy) return;
+
+    // Dispatching a blind {} is how an action with a dangerous default gets fired
+    // without the operator ever seeing the field that mattered. MergeKeeper's
+    // assess action defaulted publish_report to true, so an empty body wrote to
+    // GitHub from something labelled read-only.
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(payload.trim() || "{}");
+    } catch {
+      setPayloadError("Request body must be valid JSON.");
+      return;
+    }
+    setPayloadError("");
+
     setBusy(true);
-    const result = await dispatchAction(active.product.productKey, active.action.id);
+    const result = await dispatchAction(active.product.productKey, active.action.id, parsed);
     setBusy(false);
     setOutcome(result);
     logAudit({
@@ -125,8 +141,12 @@ export function DispatchPreview({ open, onOpenChange }: Props) {
                         selected?.product === product.productKey && selected?.action === action.id
                       }
                       onSelect={() =>
-                        setSelected({ product: product.productKey, action: action.id })
-                      }
+                        {
+                        setSelected({ product: product.productKey, action: action.id });
+                        setPayload("{}");
+                        setPayloadError("");
+                        setOutcome(null);
+                      }}
                     />
                   ))}
                 </div>
@@ -157,6 +177,30 @@ export function DispatchPreview({ open, onOpenChange }: Props) {
                 credentials: {active.action.credentialRequirements.join(", ")}
               </div>
             )}
+
+            <div className="mt-3">
+              <label
+                htmlFor="dispatch-payload"
+                className="font-display text-[10px] uppercase tracking-wider text-muted-foreground"
+              >
+                Request body
+              </label>
+              <textarea
+                id="dispatch-payload"
+                value={payload}
+                onChange={(event) => setPayload(event.target.value)}
+                spellCheck={false}
+                rows={4}
+                className="mt-1 w-full rounded border border-border bg-background/60 px-2 py-1.5 font-mono text-[11px] text-foreground outline-none focus:border-[var(--honey)]/50"
+              />
+              <p className="mt-1 text-[10px] text-muted-foreground">
+                Sent verbatim. Omitted fields take the product's own defaults, which are not
+                always the safe option — check the product's docs before dispatching blind.
+              </p>
+              {payloadError && (
+                <p className="mt-1 text-[10px] text-[var(--crit)]">{payloadError}</p>
+              )}
+            </div>
 
             {refusal ? (
               <div className="mt-3 flex items-start gap-2 rounded border border-[var(--warn)]/40 bg-[var(--warn)]/[0.06] px-2 py-1.5">

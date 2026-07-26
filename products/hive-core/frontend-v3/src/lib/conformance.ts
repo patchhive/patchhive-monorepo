@@ -85,6 +85,22 @@ function isMutating(action: ApiAction): boolean {
   return Boolean(action.mutating) || action.read_only === false;
 }
 
+/**
+ * Credential scopes that only make sense if something is being written.
+ *
+ * A read-only action requiring one of these is contradicting itself, and that
+ * contradiction is not visible to any declaration-versus-declaration check.
+ * MergeKeeper's assess_github_pr declared read_only while its request body
+ * defaulted publish_report to true, so dispatching it with no body wrote a comment
+ * and a commit status to GitHub. Both declarations agreed with each other; only the
+ * credentials gave it away.
+ */
+const WRITE_SCOPE = /(:write|:dispatch\b|contents:write|provider:ai)/;
+
+function writeScopes(action: ApiAction): string[] {
+  return (action.credential_requirements ?? []).filter((scope) => WRITE_SCOPE.test(scope));
+}
+
 function compare(product: ApiProduct, actions: ApiAction[]): ConformanceFinding[] {
   const findings: ConformanceFinding[] = [];
   const safety = product.safety;
@@ -112,6 +128,22 @@ function compare(product: ApiProduct, actions: ApiAction[]): ConformanceFinding[
         declared: "opens_pull_requests = false",
         advertised: "opens_pr = true",
       });
+    }
+
+    // Behaviour check, not a declaration check: read-only plus a write credential
+    // means one of the two is lying, and the credential is the harder thing to fake.
+    if (!isMutating(action)) {
+      const writes = writeScopes(action);
+      if (writes.length > 0) {
+        findings.push({
+          productKey: product.key,
+          severity: "critical",
+          kind: "read-only needs write credential",
+          detail: `Action \`${action.id}\` declares read-only but requires ${writes.join(", ")}.`,
+          declared: "read_only action",
+          advertised: writes.join(", "),
+        });
+      }
     }
 
     for (const requirement of action.credential_requirements ?? []) {

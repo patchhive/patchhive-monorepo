@@ -4,14 +4,17 @@ use serde::{Deserialize, Serialize};
 pub struct AssessmentRequest {
     pub repo: String,
     pub pr_number: i64,
-    #[serde(default = "default_publish_report")]
+    /// Write the outcome back to GitHub as a maintained comment and commit status.
+    ///
+    /// Defaults to false. The `assess_github_pr` action declares itself read-only,
+    /// and it defaulted to true — so an operator dispatching it with no body got an
+    /// external write from an action labelled read-only. Publishing is a separate
+    /// decision from assessing, so it is opt-in. The webhook path still opts in
+    /// explicitly, which is how maintained comments stay current.
+    #[serde(default)]
     pub publish_report: bool,
     #[serde(default)]
     pub require_approval: Option<bool>,
-}
-
-fn default_publish_report() -> bool {
-    true
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

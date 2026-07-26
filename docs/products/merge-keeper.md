@@ -298,7 +298,13 @@ backend process. Every publish attempt returns its concrete GitHub result.
 
 - `repo`: required, must be in `owner/name` format.
 - `pr_number`: required, must be > 0.
-- `publish_report`: optional, defaults to `true`.
+- `publish_report`: optional, defaults to `false`. When true, MergeKeeper writes the
+  outcome back to GitHub as a maintained comment and commit status using
+  `MERGE_KEEPER_GITHUB_TOKEN_RW`. It previously defaulted to `true`, which meant the
+  `assess_github_pr` action — which advertises itself as read-only — performed an
+  external write when dispatched with no body. Assessing and publishing are separate
+  decisions, so publishing is opt-in. The webhook path opts in explicitly, so
+  maintained comments still stay current.
 - `require_approval`: optional (`null` = use `MERGE_KEEPER_REQUIRE_APPROVAL` env default).
 
 **Response**: a full `MergeAssessment` object (see Outputs section for structure).

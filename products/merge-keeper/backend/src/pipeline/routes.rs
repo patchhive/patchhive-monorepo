@@ -47,9 +47,20 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
                 "Evaluate whether a GitHub pull request is merge-ready, blocked, or on hold.",
                 true,
             )
-            .read_only(true)
+            // Not read-only: `publish_report` writes a maintained comment and a
+            // commit status back to GitHub. It is opt-in and defaults to false, so
+            // the common path performs no write — but the action *can* write, and
+            // declaring read_only made HiveCore advertise it to operators as safe.
+            // The write credential is declared for the same reason: an action that
+            // reaches for MERGE_KEEPER_GITHUB_TOKEN_RW must say so.
+            .mutating(true)
             .scheduleable(true)
-            .credential_requirements(["github:pull_requests:read", "github:checks:read"]),
+            .credential_requirements([
+                "github:pull_requests:read",
+                "github:checks:read",
+                "github:checks:write",
+                "github:statuses:write",
+            ]),
             contract::action(
                 "github_webhook",
                 "Receive GitHub webhook",
