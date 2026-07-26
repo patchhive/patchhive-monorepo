@@ -447,8 +447,7 @@ MergeKeeper can eventually use ReviewBee output as one input to merge readiness,
 
 ReviewBee is an integrated PatchHive product. It analyzes GitHub pull request
 review state with deterministic text heuristics through the unified backend.
-Its canonical specialist UI v3 frontend lives in `frontend/`; the superseded
-v1/v2 trees were removed after final parity acceptance on 2026-07-12.
+Its canonical specialist frontend lives in `frontend/`.
 
 ### Known limitations
 

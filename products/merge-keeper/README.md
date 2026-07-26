@@ -53,7 +53,7 @@ cd backend && cargo run
 cd ../frontend && npm install && npm run dev
 ```
 
-> The v1 and v2 frontends were removed after the v3 parity audit, live ready and blocked acceptance runs, and an explicitly authorized GitHub publish test all passed on 2026-07-11. The canonical UI lives in `frontend/`; retired v1 and v2 implementations are no longer packaged or kept in the tree.
+The canonical specialist UI lives in `frontend/`.
 
 ## Configuration
 

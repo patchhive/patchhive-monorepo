@@ -89,19 +89,15 @@ cargo run --manifest-path services/patchhive-backend/Cargo.toml
 npm --prefix products/merge-keeper/frontend run dev
 ```
 
-The standalone backend at `products/merge-keeper/backend` remains as a
-compatibility wrapper around the same product module while the migration is
-tested. Once product-mode packaging runs the shared backend image with only
-MergeKeeper enabled, the old separate backend service can be moved to legacy or
-removed.
+The standalone backend at `products/merge-keeper/backend` is a thin launcher
+around the same product module mounted by the unified backend.
 
-### UI v1/v2 to v3 Parity Audit
+### Canonical specialist UI
 
-Re-audited on 2026-07-11 using v1 and v2 together as the behavioral source for
+Re-audited on 2026-07-11 using the prior interfaces as the behavioral source for
 the canonical `products/merge-keeper/frontend/` implementation.
 
-The audit found that the initial generic v3 workspace omitted several important
-surfaces that v1 or v2 already exposed. The parity implementation now includes:
+The canonical specialist workspace includes:
 
 - API-key login, first-key generation, sign-out, persistent suite theme, and
   mobile navigation.
@@ -123,7 +119,7 @@ surfaces that v1 or v2 already exposed. The parity implementation now includes:
 - Startup messages using the backend's actual `msg` field, backend/DB state,
   GitHub token/webhook/public-URL/publish posture, integration state, and
   GitHub permission guidance.
-- The v2 footer identity wording through the shared v3 shell.
+- The specialist footer identity wording through the shared shell.
 
 Final acceptance on 2026-07-11 covered a live blocked PR with failing checks, a
 live ready PR with approval intentionally optional and six passing checks,
@@ -133,9 +129,8 @@ status and a maintained PR comment under the PatchHive GitHub identity. The
 native check-run attempt returned GitHub's expected PAT limitation and cleanly
 fell back to the commit status.
 
-The v3 UI received operator sign-off and is now the packaged canonical frontend.
-The retired v1 and v2 source trees and Docker profiles were removed after this
-gate passed.
+The specialist UI received operator sign-off and is the packaged canonical
+frontend.
 
 ## Configuration
 
@@ -399,9 +394,8 @@ cp .env.example .env
 docker compose up --build
 ```
 
-The Docker Compose setup starts the backend (port 8050) and active v2 frontend
-(port 5178). The old v1 frontend is available only with the `legacy-ui` profile
-on port 5197 while it remains useful as parity reference material.
+The Docker Compose setup starts the backend on port 8050 and the canonical
+frontend on port 5178.
 
 ### Minimal Standalone
 

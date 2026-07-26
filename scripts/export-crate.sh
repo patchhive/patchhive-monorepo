@@ -17,8 +17,8 @@ What it does:
 
 Notes:
   - The monorepo remains the source of truth.
-  - Standalone crate repositories are mirrors for visibility, package-focused
-    issues, and reuse from exported product repositories.
+  - Standalone crate repositories are mirrors for visibility and
+    package-focused issues. Product exports carry tested crate snapshots.
   - If the default export branch already exists, a timestamped branch name is used
     instead of overwriting anything.
 EOF

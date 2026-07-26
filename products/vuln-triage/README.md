@@ -64,9 +64,9 @@ cargo run --manifest-path services/patchhive-backend/Cargo.toml
 npm --prefix products/vuln-triage/frontend run dev
 ```
 
-The standalone backend remains available as a compatibility wrapper while the suite backend migration is tested.
+The standalone backend is a thin launcher around the same product module.
 
-> **UI:** The canonical UI lives in `frontend/` and uses `@patchhivehq/ui-v3`. The v1 and v2 implementations were removed after the final parity audit, and Docker's default `frontend` service builds the canonical UI.
+> **UI:** The canonical specialist UI lives in `frontend/`, uses `@patchhivehq/ui-v3`, and is the default Docker frontend.
 
 ## Configuration
 

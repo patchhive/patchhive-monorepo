@@ -64,7 +64,7 @@ ReleaseSentry Backend
 
 ```json
 {
-  "repo": "patchhive/patchhive2",
+  "repo": "patchhive/patchhive-monorepo",
   "branch": "main",
   "target_version": "0.2.0",
   "target_tag": "v0.2.0",
@@ -95,15 +95,15 @@ ReleaseSentry Backend
   "id": "550e8400-e29b-41d4-a716-446655440000",
   "created_at": "2026-05-15T10:30:00Z",
   "updated_at": "2026-05-15T10:30:00Z",
-  "repo": "patchhive/patchhive2",
+  "repo": "patchhive/patchhive-monorepo",
   "branch": "main",
   "target_version": "0.2.0",
   "target_tag": "v0.2.0",
   "status": "watch",
   "decision": "watch",
   "score": 92,
-  "title": "patchhive/patchhive2 release readiness",
-  "summary": "ReleaseSentry says watch v0.2.0 for patchhive/patchhive2: 5 passed, 1 warned, 0 blocked.",
+  "title": "patchhive/patchhive-monorepo release readiness",
+  "summary": "ReleaseSentry says watch v0.2.0 for patchhive/patchhive-monorepo: 5 passed, 1 warned, 0 blocked.",
   "metrics": {
     "checks": 7,
     "passed": 5,
@@ -125,7 +125,7 @@ ReleaseSentry Backend
       "status": "pass",
       "detail": "Repository is reachable and active.",
       "evidence": ["Default branch: main", "Last push: 2026-05-14T20:00:00Z"],
-      "links": [{ "label": "Repository", "url": "https://github.com/patchhive/patchhive2" }]
+      "links": [{ "label": "Repository", "url": "https://github.com/patchhive/patchhive-monorepo" }]
     },
     {
       "key": "release-history",
@@ -133,7 +133,7 @@ ReleaseSentry Backend
       "status": "pass",
       "detail": "Target release v0.2.0 exists in GitHub releases.",
       "evidence": ["tag: v0.2.0", "draft: false", "prerelease: false", "published: 2026-05-13T00:00:00Z"],
-      "links": [{ "label": "Release", "url": "https://github.com/patchhive/patchhive2/releases/tag/v0.2.0" }]
+      "links": [{ "label": "Release", "url": "https://github.com/patchhive/patchhive-monorepo/releases/tag/v0.2.0" }]
     },
     {
       "key": "tags",
@@ -149,7 +149,7 @@ ReleaseSentry Backend
       "status": "warn",
       "detail": "12 successes, 1 failing, 1 pending across 14 recent runs on main.",
       "evidence": ["Test Suite #847 · success", "Lint #846 · failure", "Build #845 · success"],
-      "links": [{ "label": "Latest workflow run", "url": "https://github.com/patchhive/patchhive2/actions/runs/12345" }]
+      "links": [{ "label": "Latest workflow run", "url": "https://github.com/patchhive/patchhive-monorepo/actions/runs/12345" }]
     },
     {
       "key": "release-blockers",
@@ -165,7 +165,7 @@ ReleaseSentry Backend
       "status": "pass",
       "detail": "CHANGELOG.md mentions the target version or tag.",
       "evidence": ["1243 bytes decoded from CHANGELOG.md"],
-      "links": [{ "label": "CHANGELOG.md", "url": "https://github.com/patchhive/patchhive2/blob/main/CHANGELOG.md" }]
+      "links": [{ "label": "CHANGELOG.md", "url": "https://github.com/patchhive/patchhive-monorepo/blob/main/CHANGELOG.md" }]
     },
     {
       "key": "release-surface",
@@ -237,32 +237,14 @@ The canonical frontend API base is:
 http://127.0.0.1:8100/api/products/release-sentry
 ```
 
-The standalone backend at `products/release-sentry/backend` remains as a
-compatibility wrapper around the same product module while the migration is
-tested. Once product-mode packaging runs the shared backend image with only
-ReleaseSentry enabled, the old separate backend service can be moved to legacy
-or removed.
+The standalone backend at `products/release-sentry/backend` is a thin launcher
+around the same product module mounted by the unified backend.
 
 ---
 
-## Historical v1 to v2 Audit
+## Canonical specialist UI
 
-The 2026-07-03 audit established the behavioral checklist later carried into
-v3: authenticated release intake, configurable release targets and blocker
-labels, ready/watch/hold decisions, complete CI and release metrics, evidence
-links, history detail, and startup/health visibility. The v1 and v2 source trees
-were removed after the final v3 acceptance gate passed.
-
----
-
-## UI v1 and v2 to v3 Parity Audit
-
-Re-audited on 2026-07-11 using v1 and v2 as the behavioral source for the
-canonical `products/release-sentry/frontend/` implementation.
-
-The initial generic v3 workspace covered the basic release form and decision
-queue, but it did not yet preserve all established ReleaseSentry behavior. The
-parity implementation now includes:
+The canonical `products/release-sentry/frontend/` implementation includes:
 
 - API-key login, first-key generation, sign-out, persistent suite theme, and
   responsive specialist-product navigation.
@@ -283,15 +265,14 @@ parity implementation now includes:
 - Startup messages, backend/DB/auth state, verified GitHub identity, saved
   ready/watch/hold counts, read-only permission guidance, and source safety
   boundaries.
-- The v2 footer identity wording through the shared v3 shell.
+- The specialist footer identity wording through the shared shell.
 
 Final acceptance on 2026-07-11 covered a live `ready` and `watch` assessment for
 `starship/starship`, a saved `hold` assessment for `vitejs/vite`, full workflow
 accounting including skipped/neutral runs, history filtering and saved views,
 startup/health evidence, verified GitHub identity, the source form and safety
-guidance, and the v2 footer identity. The v3 UI received operator sign-off and
-is now the packaged canonical frontend; the retired v1 and v2 trees and Docker
-profiles were removed.
+guidance, and the specialist footer identity. The packaged canonical frontend
+received operator sign-off.
 
 ---
 
@@ -505,7 +486,7 @@ release-sentry/
     "hold": 4
   },
   "recent_runs": [
-    { "id": "...", "repo": "patchhive/patchhive2", "decision": "ready", "score": 100, ... }
+    { "id": "...", "repo": "patchhive/patchhive-monorepo", "decision": "ready", "score": 100, ... }
   ]
 }
 ```

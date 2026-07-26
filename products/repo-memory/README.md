@@ -97,11 +97,11 @@ infallible policy.
 ### Canonical UI
 
 RepoMemory is mounted in-process by the unified backend. Its Lovable-derived
-v3 frontend lives in `frontend/` and preserves GitHub history ingest,
+specialist frontend lives in `frontend/` and preserves GitHub history ingest,
 filterable memory evidence, curation, consumer context preview, run diffs,
 prompt-pack copy, saved views, and the complete FailGuard
 suggest/review/promote/dismiss loop. It passed final parity acceptance on
-2026-07-14; the v1 and v2 frontends have been removed.
+2026-07-14.
 
 ## Configuration
 

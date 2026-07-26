@@ -56,17 +56,11 @@ check_frontend_dependencies() {
   local label="$2"
   local expected_ui="^$(patchhive_version_from_package_json "$ROOT_DIR/packages/ui/package.json")"
   local expected_shell="^$(patchhive_version_from_package_json "$ROOT_DIR/packages/product-shell/package.json")"
-  local actual_ui actual_ui_v2 actual_ui_v3 actual_shell
+  local actual_ui actual_ui_v3 actual_shell
 
   actual_ui="$(json_field "$package_json" "dependencies.@patchhivehq/ui")"
-  actual_ui_v2="$(json_field "$package_json" "dependencies.@patchhivehq/ui-v2")"
   actual_ui_v3="$(json_field "$package_json" "dependencies.@patchhivehq/ui-v3")"
   actual_shell="$(json_field "$package_json" "dependencies.@patchhivehq/product-shell")"
-
-  if [[ -n "$actual_ui_v2" ]]; then
-    [[ -n "$actual_shell" ]] || fail "$label uses @patchhivehq/ui-v2 but is missing @patchhivehq/product-shell"
-    return
-  fi
 
   if [[ -n "$actual_ui_v3" ]]; then
     [[ -n "$actual_shell" ]] || fail "$label uses @patchhivehq/ui-v3 but is missing @patchhivehq/product-shell"
@@ -77,17 +71,18 @@ check_frontend_dependencies() {
   [[ "$actual_shell" == "$expected_shell" ]] || fail "$label uses @patchhivehq/product-shell ${actual_shell:-<missing>}, expected ${expected_shell}"
 }
 
-check_theme_inventory() {
+check_specialist_theme_inventory() {
   local output
-  output="$(node - "$ROOT_DIR/packages/ui/src/theme.js" "${PATCHHIVE_PRODUCTS[@]}" <<'NODE'
+  output="$(node - "$ROOT_DIR/packages/ui-v3/src/styles.css" "${PATCHHIVE_PRODUCTS[@]}" <<'NODE'
 const fs = require("fs");
-const [themePath, ...products] = process.argv.slice(2);
-const source = fs.readFileSync(themePath, "utf8");
+const [stylesPath, ...allProducts] = process.argv.slice(2);
+const products = allProducts.filter((product) => product !== "hive-core");
+const source = fs.readFileSync(stylesPath, "utf8");
 const entries = new Map();
-const regex = /"([^"]+)":\s*\{\s*"--accent":\s*"([^"]+)"/g;
+const regex = /html\[data-product="([^"]+)"\]\s*\{[^}]*--accent:\s*([^;]+);/g;
 let match;
 while ((match = regex.exec(source))) {
-  entries.set(match[1], match[2].toLowerCase());
+  entries.set(match[1], match[2].trim().toLowerCase());
 }
 for (const product of products) {
   if (!entries.has(product)) {
@@ -124,17 +119,6 @@ check_product() {
   local readme_path="$product_dir/README.md"
   local workflow_path="$product_dir/.github/workflows/ci.yml"
   local frontend_dir="$product_dir/frontend"
-  local frontend_kind="v1"
-
-  if [[ ! -f "$frontend_dir/package.json" && -f "$product_dir/frontend-v2/package.json" ]]; then
-    frontend_dir="$product_dir/frontend-v2"
-    frontend_kind="v2"
-  elif [[ ! -f "$frontend_dir/package.json" && -f "$product_dir/frontend-v3/package.json" ]]; then
-    frontend_dir="$product_dir/frontend-v3"
-    frontend_kind="v3"
-  elif [[ -f "$frontend_dir/package.json" ]] && grep -q '"@patchhivehq/ui-v3"' "$frontend_dir/package.json"; then
-    frontend_kind="v3"
-  fi
 
   require_dir "$product_dir"
   require_file "$readme_path"
@@ -161,22 +145,34 @@ check_product() {
 
   require_contains "README.md" "$repo" "root README entry for ${product}"
   require_contains "docs/products/README.md" "${product}.md" "product docs index entry for ${product}"
-  require_contains "packages/ui/src/theme.js" "\"${product}\":" "theme key ${product}"
-
-  if [[ "$frontend_kind" == "v2" || "$frontend_kind" == "v3" ]]; then
+  if [[ "$product" != "hive-core" ]]; then
+    require_contains "packages/ui-v3/src/index.jsx" "\"${product}\":" "specialist brand ${product}"
+    require_contains "packages/ui-v3/src/styles.css" "html[data-product=\"${product}\"]" "specialist accent ${product}"
+    for legacy_dir in frontend-v2 frontend-v3 frontend-legacy; do
+      if [[ -e "$product_dir/$legacy_dir" ]]; then
+        fail "$product still carries retired specialist UI tree $legacy_dir"
+      fi
+    done
+    require_contains "$frontend_dir/package.json" '"@patchhivehq/ui-v3"' "canonical specialist UI dependency"
     if command -v rg >/dev/null 2>&1; then
       if ! rg -q "productKey[=:][[:space:]]*[\"']${product}[\"']" "$frontend_dir/src"; then
-        fail "$product frontend-${frontend_kind} does not declare productKey ${product}"
+        fail "$product frontend does not declare productKey ${product}"
       fi
     elif ! grep -R -Eq "productKey[=:][[:space:]]*[\"']${product}[\"']" "$frontend_dir/src"; then
-      fail "$product frontend-${frontend_kind} does not declare productKey ${product}"
+      fail "$product frontend does not declare productKey ${product}"
     fi
-  elif command -v rg >/dev/null 2>&1; then
-    if ! rg -q "applyTheme\\([\"']${product}[\"']" "$frontend_dir/src"; then
+  else
+    require_contains "packages/ui/src/theme.js" "\"${product}\":" "control-plane theme ${product}"
+  fi
+
+  if [[ "$product" == "hive-core" ]]; then
+    if command -v rg >/dev/null 2>&1; then
+      if ! rg -q "applyTheme\\([\"']${product}[\"']" "$frontend_dir/src"; then
+        fail "$product frontend does not apply theme ${product}"
+      fi
+    elif ! grep -R -Eq "applyTheme\\([\"']${product}[\"']" "$frontend_dir/src"; then
       fail "$product frontend does not apply theme ${product}"
     fi
-  elif ! grep -R -Eq "applyTheme\\([\"']${product}[\"']" "$frontend_dir/src"; then
-    fail "$product frontend does not apply theme ${product}"
   fi
 
   check_frontend_dependencies "$frontend_dir/package.json" "$product"
@@ -197,16 +193,26 @@ check_template() {
   require_file "$template/frontend/package.json"
   require_file "$template/.github/workflows/ci.yml"
   check_frontend_dependencies "$template/frontend/package.json" "product-starter scaffold"
-  require_contains "$template/frontend/src/App.jsx" "ProductSessionGate" "template shared session gate"
-  require_contains "$template/frontend/src/App.jsx" "ProductAppFrame" "template shared app frame"
+  require_contains "$template/frontend/src/App.jsx" "ProductShell" "template specialist shell"
+  require_contains "$template/frontend/src/App.jsx" "ProductLoginScreen" "template v3 login screen"
+  require_contains "$template/frontend/package.json" '"@patchhivehq/ui-v3"' "template specialist UI dependency"
+  require_contains "$template/frontend/package.json" '__MONOREPO_PREFIX__/packages/ui-v3' "generated shared-package path placeholder"
+  require_contains "$template/backend/Cargo.toml" '__MONOREPO_PREFIX__/crates/patchhive-product-core' "generated shared-core path placeholder"
+  require_contains "$template/docker-compose.yml" 'dockerfile: products/__PRODUCT_SLUG__/frontend/Dockerfile' "root-context frontend build"
+  require_file "$template/backend/src/lib.rs"
+  require_contains "$template/backend/src/lib.rs" "pub fn router()" "template mountable router"
+  require_contains "$template/backend/src/lib.rs" "rate_limit_middleware" "template shared rate limiter"
   require_contains "$template/.github/workflows/ci.yml" "uses: actions/checkout@v5" "template checkout v5"
   require_contains "$template/.github/workflows/ci.yml" "uses: actions/setup-node@v5" "template setup-node v5"
   require_contains "$template/.github/workflows/ci.yml" "node-version: 24" "template Node 24"
+  require_contains "$template/.github/workflows/ci.yml" "cargo clippy --all-targets -- -D warnings" "template warning-free Rust check"
 }
 
 check_release_docs() {
   require_file "scripts/release-suite.sh"
   require_file "scripts/smoke-frontend-package-deps.sh"
+  require_file "scripts/prepare-standalone-cargo-manifest.sh"
+  require_file "scripts/prepare-standalone-product.sh"
   require_file "docs/release-checklist.md"
   require_file "docs/product-export-workflow.md"
   require_contains "README.md" "npm run release:suite" "suite release command"
@@ -228,7 +234,7 @@ check_github_message_branding() {
     "RepoReaper by [PatchHive](https://github.com/patchhive)" "RepoReaper GitHub signature"
 }
 
-check_theme_inventory
+check_specialist_theme_inventory
 for product in "${PATCHHIVE_PRODUCTS[@]}"; do
   check_product "$product"
 done

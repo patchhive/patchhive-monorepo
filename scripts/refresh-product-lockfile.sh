@@ -12,11 +12,13 @@ Example:
 
 What it does:
   1. Copies products/<product-slug> to a temporary directory outside the monorepo
-  2. Regenerates backend/Cargo.lock there without the monorepo's local crate patch
-  3. Copies the standalone-safe lockfile back into the product directory
+  2. Copies the current shared-crate snapshot used by standalone exports
+  3. Rewrites shared PatchHive dependencies to that snapshot
+  4. Regenerates backend/Cargo.lock there without monorepo-only paths
+  5. Copies the standalone-safe lockfile back into the product directory
 
-Use this before the first export, or whenever a product backend's shared git crate
-dependencies change and the standalone repo needs a fresh lockfile.
+Use this before the first export, or whenever a product backend or shared crate
+dependency changes and the standalone repo needs a fresh lockfile.
 EOF
 }
 
@@ -43,7 +45,18 @@ fi
 TMP_DIR="$(mktemp -d /tmp/patchhive-lockfile-XXXXXX)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
-cp -R "$PRODUCT_DIR" "$TMP_DIR/product"
+mkdir -p "$TMP_DIR/product"
+rsync -a --exclude target/ --exclude node_modules/ "$PRODUCT_DIR/" "$TMP_DIR/product/"
+mkdir -p "$TMP_DIR/product/shared-crates"
+for crate in \
+  patchhive-product-core \
+  patchhive-github-pr \
+  patchhive-github-data \
+  patchhive-github-security; do
+  mkdir -p "$TMP_DIR/product/shared-crates/$crate"
+  rsync -a --exclude target/ "$ROOT_DIR/crates/$crate/" "$TMP_DIR/product/shared-crates/$crate/"
+done
+"$ROOT_DIR/scripts/prepare-standalone-cargo-manifest.sh" "$TMP_DIR/product/backend/Cargo.toml"
 rm -f "$TMP_DIR/product/backend/Cargo.lock"
 (
   cd "$TMP_DIR/product/backend"

@@ -19,7 +19,9 @@ services:
 
   frontend:
     image: "${PATCHHIVE_REPO_REAPER_FRONTEND_IMAGE:-ghcr.io/patchhive/reporeaper-frontend}:${PATCHHIVE_IMAGE_TAG:-main}"
-    build: ./frontend
+    build:
+      context: ../..
+      dockerfile: products/repo-reaper/frontend/Dockerfile
     pull_policy: "${PATCHHIVE_IMAGE_PULL_POLICY:-missing}"
     ports:
       - "5173:8080"

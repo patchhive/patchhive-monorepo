@@ -207,7 +207,7 @@ visibility, setup, policy, and orchestration.
    working while the shared `/squad` contract appears.
 5. Add HiveCore Squad setup once two products expose the shared contract.
 6. Retire product-specific team-builder UI paths after HiveCore can configure
-   squads and each product v2 frontend can still manage its own active team.
+   squads while each canonical product frontend can still manage its own active team.
 
 ## Current RepoReaper Status
 

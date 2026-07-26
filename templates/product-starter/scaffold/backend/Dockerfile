@@ -1,8 +1,9 @@
 FROM rust:1.87-slim AS builder
 WORKDIR /app
 RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
-COPY Cargo.toml .
-COPY src ./src
+COPY crates/patchhive-product-core ./crates/patchhive-product-core
+COPY products/__PRODUCT_SLUG__/backend ./products/__PRODUCT_SLUG__/backend
+WORKDIR /app/products/__PRODUCT_SLUG__/backend
 RUN cargo build --release
 
 FROM debian:bookworm-slim

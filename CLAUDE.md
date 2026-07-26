@@ -32,14 +32,11 @@ Products are developed here and exported to standalone mirror repos under
 ```text
 products/<slug>/
   backend/          standalone Cargo package; lib.rs is the real engine, main.rs a launcher
-  frontend/         canonical (promoted) frontend
-  frontend-v2/      legacy, only where v3 hasn't been promoted
-  frontend-v3/      in-progress v3 migration
+  frontend/         canonical specialist frontend
   docker-compose.yml, README.md, data/
 packages/
-  ui/               @patchhivehq/ui        v1 components + theme.js (accent keys)
-  ui-v2/            @patchhivehq/ui-v2     superseded prototype track
-  ui-v3/            @patchhivehq/ui-v3     current shared shell/controls/workspace
+  ui/               @patchhivehq/ui        control-plane/shared compatibility primitives
+  ui-v3/            @patchhivehq/ui-v3     specialist shell/controls/workspace
   product-shell/    @patchhivehq/product-shell   auth bootstrap, session gate, app frame
   ai-models/        @patchhivehq/ai-models       provider catalog + model selector
   ai-local/         @patchhive/ai-local          localhost OpenAI-compatible gateway (+ rust-gateway)
@@ -62,9 +59,8 @@ scripts/                              export, mirror, release, drift, lockfile t
 lockfile; the authoritative list is [scripts/check-rust-packages.sh](scripts/check-rust-packages.sh).
 Never run a bare workspace-wide `cargo` command — always `--manifest-path`.
 
-**npm workspaces cover `packages/*` and `products/*/frontend` only.** `frontend-v2` and
-`frontend-v3` are outside the workspace and resolve shared packages through `file:` deps,
-so they need their own `npm install` in-directory.
+**npm workspaces cover active packages and `products/*/frontend`.** Specialist
+products do not use versioned frontend directories.
 
 ### Product table
 
@@ -102,7 +98,7 @@ bash scripts/check-rust-packages.sh          # exactly what CI runs (cargo check
 
 # Frontend
 npm --prefix products/<slug>/frontend run build
-npm --prefix products/<slug>/frontend-v3 run dev      # v3 dev ports are 53xx, preview 43xx
+npm --prefix products/<slug>/frontend run dev
 npm run smoke:frontend-deps
 
 # Suite
@@ -292,8 +288,8 @@ export const API = import.meta.env.VITE_API_URL || "http://localhost:8000";
   Controls surface — `ProductControlsLayout`, `ProductControlsPair`, `ProductControlSection`,
   `ProductTargetScopeSection`, `ProductControlsSafetyBoundary`, `ControlField`,
   `ControlSelectField`, `ControlButton`, `ControlPanelTitle`.
-- **`@patchhivehq/ui`** — v1 track: `theme.js` (`applyTheme("<product-key>")` + accent keys),
-  primitives, `AgentCard`, `DiffViewer`, `IssueRow`, `LoginPage`, `PanelErrorBoundary`.
+- **`@patchhivehq/ui`** — compatibility and control-plane primitives still used
+  outside the specialist shell. Do not remove it until those consumers move.
 - **`@patchhivehq/ai-models`** — `AIModelSelector` + provider catalog. Backends expose
   `GET/POST /models/:provider`. Browser code never calls a third-party AI provider directly;
   it may pass a user-entered key to the local product backend for one-time model discovery.
@@ -306,7 +302,7 @@ persists tab/repo/dashboard state under `<productKey>.v3.*`, and polls `/health`
 
 Reuse rule: shared across 2+ products → shared package; product-specific → stays in product.
 
-### UI v3 rules
+### Specialist UI rules
 
 `unified-ui-revamp-main/` is executable design source. Use its real component structure,
 tokens, typography, spacing, radii, glass surfaces, shadows, backgrounds, motion, and
@@ -316,10 +312,8 @@ Tailwind utilities are correct here — do not translate them back into the olde
 CSS-variable-only convention. JSX is fine; TypeScript only when lifting Lovable code
 directly.
 
-- Promoted v3 lives at `products/<slug>/frontend/` (v1/v2 removed). In-progress work lives
-  at `products/<slug>/frontend-v3/`; v2 stays functional until parity passes and is never
-  rewritten in place. **RepoReaper passed final parity on 2026-07-25.**
-- Do not start a product's v3 frontend until its engine is `integrated` in-process.
+- Canonical specialist UI lives at `products/<slug>/frontend/`. Do not create
+  `frontend-v2`, `frontend-v3`, or `frontend-legacy` migration trees.
 - Automation config lives in a **Controls** tab, not a Schedules tab — presets, schedules,
   target/scope selection, repository policy, suite-service integration. Build it with
   `ProductControlsLayout` + control primitives + shared safety boundary; SignalHive defines
@@ -344,7 +338,9 @@ directly.
   tabs, shared suite-wide.
 - Footer identity: `<Product> by PatchHive`, the product subtitle, and
   `Autonomous maintenance suite`.
-- HiveCore is intentionally outside the v3 migration.
+- HiveCore is intentionally outside the specialist UI architecture.
+
+See [docs/specialist-ui-architecture.md](docs/specialist-ui-architecture.md).
 
 Product variation belongs in name/icon/subtitle/accent, nav labels, metrics, evidence types,
 queues, forms, actions, and workflow panels — never in a forked card system, shell,
@@ -463,7 +459,7 @@ and validation requirements.
 
 New products come from `./scripts/new-product.sh <slug>` (scaffold at
 `templates/product-starter/scaffold/`) — never by copying a product directory by hand.
-Replace placeholder starter routes early. If the backend uses shared git crates, refresh the
+Replace placeholder starter routes early. Preflight the vendored shared-crate snapshot and
 standalone lockfile before the first export.
 
 ---
@@ -471,10 +467,9 @@ standalone lockfile before the first export.
 ## 9. Current state
 
 - Eleven specialist engines are `integrated` in `patchhive-backend`; HiveCore stays a
-  separate control plane. Finish and validate v3 across the integrated set before moving
-  another engine into the unified backend.
-- Eleven products have promoted v3 frontends at `products/<slug>/frontend/` with v1/v2
-  removed. RepoReaper's canonical interface is
+  separate control plane.
+- Eleven products use canonical specialist frontends at `products/<slug>/frontend/`.
+  RepoReaper's canonical interface is
   [products/repo-reaper/frontend/](products/repo-reaper/frontend/).
 - Open/incomplete by design: the verified public repo-owner opt-out on `patchhive.dev`,
   PR-budget adoption by future write-capable products, the email/webmail module boundary

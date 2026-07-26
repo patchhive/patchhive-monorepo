@@ -1,7 +1,13 @@
 # PatchHive UI v3
 
-UI v3 is the shared visual system for PatchHive specialist products. Its
-canonical visual source is `unified-ui-revamp-main/`, the Lovable project.
+UI v3 is the canonical shared visual system for PatchHive specialist products.
+Its visual reference is `unified-ui-revamp-main/`, the Lovable project. The
+current architecture contract lives in
+[`docs/specialist-ui-architecture.md`](../../docs/specialist-ui-architecture.md).
+
+The monorepo package is the source of truth. Specialist products use local
+workspace paths during development; standalone exports consume the published
+`@patchhivehq/ui-v3` version prepared by the suite release workflow.
 
 Rules:
 
@@ -20,4 +26,6 @@ Rules:
 - Render GitHub as verified only when `github_ready` or
   `github.token_verified` is true. A configured token that failed or could not
   complete identity verification is unverified, not ready.
-- HiveCore is not part of the specialist-product v3 migration.
+- Specialist products use `products/<product>/frontend/`; versioned migration
+  directories are not active product targets.
+- HiveCore is not part of the specialist UI architecture.

@@ -18,7 +18,9 @@ services:
 
   frontend:
     image: "${PATCHHIVE_REVIEW_BEE_FRONTEND_IMAGE:-ghcr.io/patchhive/reviewbee-frontend}:${PATCHHIVE_IMAGE_TAG:-main}"
-    build: ./frontend
+    build:
+      context: ../..
+      dockerfile: products/review-bee/frontend/Dockerfile
     pull_policy: "${PATCHHIVE_IMAGE_PULL_POLICY:-missing}"
     ports:
       - "5177:8080"

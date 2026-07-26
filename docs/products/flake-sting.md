@@ -90,50 +90,13 @@ The canonical frontend default API base is:
 http://127.0.0.1:8100/api/products/flake-sting
 ```
 
-The standalone backend at `products/flake-sting/backend` remains as a
-compatibility wrapper around the same product module while this migration is
-tested. Once standalone packaging uses the shared backend image with only
-FlakeSting enabled, the separate backend service can be moved to legacy or
-removed.
+The standalone backend at `products/flake-sting/backend` is a thin launcher
+around the same product module mounted by the unified backend.
 
-## UI v1 to v2 Parity Audit
+## Canonical specialist UI
 
-Audited on 2026-07-09 against the following source trees, which were retired
-after the v3 promotion gate passed:
-
-- `products/flake-sting/frontend-legacy/src/App.jsx`
-- `products/flake-sting/frontend-legacy/src/panels/ScanPanel.jsx`
-- `products/flake-sting/frontend-legacy/src/panels/HistoryPanel.jsx`
-- `products/flake-sting/frontend-legacy/src/panels/ChecksPanel.jsx`
-- `products/flake-sting/frontend-v2/src/App.jsx`
-
-V2 covers the directed GitHub Actions scan form, branch/workflow/lookback
-controls, health and startup checks, saved scan history, selected-scan loading,
-filterable history, scan metrics, queue sorting, copyable Markdown summaries,
-trend deltas and previous-scan loading, evidence links, runner hints, and
-GitHub-readiness messaging.
-
-Intentional v2 changes:
-
-- The old Setup wizard is covered by the shared v2 login and Checks surfaces;
-  FlakeSting has no separate product configuration workflow beyond GitHub
-  Actions-read readiness and a narrow first scan.
-- Loading a history row stays on the Scan History tab and renders the selected
-  radar, queue, and trend detail above the recent-scan ledger.
-- The old overview card wall is condensed into the metric band, rail, radar,
-  and recent-scan queue.
-
-The browser pass completed on 2026-07-09 with a quarantine signal, evidence
-links, trend comparison, history filtering/loading, and Checks-tab GitHub and
-database state verified. The v1 UI was moved to `frontend-legacy/` for that
-audit and was retired after the final v3 acceptance pass.
-
----
-
-## UI v1 and v2 to v3 Parity Audit
-
-Audited and implemented on 2026-07-12 against the legacy and v2 workflow scan,
-history, trend, evidence, and startup surfaces. The v3 frontend now preserves:
+Audited and implemented on 2026-07-12 against the prior workflow scan,
+history, trend, evidence, and startup surfaces. The canonical frontend preserves:
 
 - validated repository intake, optional branch/workflow filters, and the
   server's 5–40 workflow-run lookback boundary;
@@ -150,9 +113,9 @@ history, trend, evidence, and startup surfaces. The v3 frontend now preserves:
   context plus full scan restoration;
 - verified GitHub Actions-read posture, database/auth/product state, startup
   evidence, and explicit read-only Sources guidance; and
-- the suite-wide persisted theme and v2 footer identity.
+- the suite-wide persisted theme and specialist footer identity.
 
-Local verification passed for all five v3 frontend consumers, suite drift, the
+Local verification passed for the frontend consumers, suite drift, the
 standalone FlakeSting tests and strict Clippy run, and the unified-backend tests
 and strict Clippy run.
 
@@ -160,9 +123,9 @@ Final acceptance on 2026-07-12 covered a live 25-run Actions scan with one
 score-100 quarantine signal, nine failures and two passes, six representative
 run/outcome evidence links, a steady comparable-scan trend, five saved history
 runs with filter/sort/saved-view controls, verified startup and GitHub Actions
-read state, and the complete read-only Sources boundary. The v3 UI is now the
+  read state, and the complete read-only Sources boundary. The UI is the
 packaged canonical `products/flake-sting/frontend/` implementation. The retired
-v1 and v2 source trees and Docker profiles were removed after this gate passed.
+superseded source trees and Docker profiles were removed after this gate passed.
 
 ---
 

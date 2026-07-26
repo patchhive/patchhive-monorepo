@@ -2,7 +2,10 @@
 
 The PatchHive Product Starter is the monorepo-first scaffold for new PatchHive products.
 
-It gives new products the parts that should already be solved on day one: a shared frontend shell, shared backend auth and startup wiring, Docker support, API-key bootstrap, and standalone CI.
+It gives new products the parts that should already be solved on day one: the
+canonical specialist UI shell, a unified-backend-mountable engine, shared auth,
+startup, SQLite, environment and rate-limit wiring, Docker support, API-key
+bootstrap, and standalone CI.
 
 ## What Lives Here
 

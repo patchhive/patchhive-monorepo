@@ -96,7 +96,7 @@ The mounted API prefix is
 
 ## Canonical UI
 
-RefactorScout's canonical v3 frontend lives in `frontend/`:
+RefactorScout's canonical specialist frontend lives in `frontend/`:
 
 ```bash
 cd products/refactor-scout/frontend
@@ -109,8 +109,7 @@ It connects to the in-process API by default at
 and public-GitHub intake, ranked opportunity details, warnings, copyable
 Markdown, saved dashboard views, shared read-only schedules, history, startup
 diagnostics, filesystem guidance, responsive layout, and the suite-wide theme
-preference. The v1 and v2 frontends were removed after final acceptance on
-2026-07-21.
+preference.
 
 ## Safety Boundary
 

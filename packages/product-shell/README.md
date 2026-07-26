@@ -1,16 +1,17 @@
 # @patchhivehq/product-shell
 
-`@patchhivehq/product-shell` is the shared frontend shell layer for PatchHive products.
+`@patchhivehq/product-shell` is the shared browser auth and runtime layer for PatchHive products.
 
-It holds the cross-product browser behavior that should feel identical everywhere: API-key bootstrap, session handling, authenticated fetch helpers, and the common product frame that wraps individual product panels.
+It holds cross-product API-key bootstrap, session handling, authenticated fetch
+helpers, and compatibility frames. Canonical specialist visual structure lives
+in `@patchhivehq/ui-v3`.
 
 ## What It Includes
 
 - `useApiKeyAuth` for shared API-key bootstrap and session handling
 - `createApiFetcher` for authenticated requests to product backends
-- `ProductSessionGate` for the shared login and loading boundary
-- `ProductAppFrame` for the common PatchHive app frame and per-panel error boundary
-- `ProductSetupWizard` for the shared post-login setup and readiness flow used by every product except HiveCore
+- compatibility `ProductSessionGate`, `ProductAppFrame`, and
+  `ProductSetupWizard` components for remaining non-v3 consumers
 
 ## Example
 

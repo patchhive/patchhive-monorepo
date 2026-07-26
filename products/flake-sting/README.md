@@ -6,7 +6,7 @@ test-like jobs and steps, and turns that churn into a ranked queue of likely
 flaky problems so teams can focus on the unstable parts of their delivery
 pipeline.
 
-The canonical Lovable-derived v3 frontend lives in `frontend/` and targets the
+The canonical specialist frontend lives in `frontend/` and targets the
 in-process unified-backend route at `/api/products/flake-sting`.
 
 ## Documentation
@@ -84,8 +84,8 @@ FlakeSting's product engine is mounted in-process by
 http://127.0.0.1:8100/api/products/flake-sting
 ```
 
-The standalone backend remains a compatibility wrapper around the same shared
-product module while the migration and packaging work are completed.
+The standalone backend is a thin launcher around the same shared product
+module.
 
 ## Safety Boundary
 

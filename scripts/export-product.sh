@@ -101,10 +101,12 @@ if [[ -n "$STANDALONE_LOCKFILE" ]]; then
   EXPORT_WORKTREE="$(mktemp -d "/tmp/patchhive-${SANITIZED_NAME}-export-XXXXXX")"
   TMP_PATHS+=("$EXPORT_WORKTREE")
   git worktree add "$EXPORT_WORKTREE" "$EXPORT_BRANCH" >/dev/null
+  PATCHHIVE_SOURCE_ROOT="$ROOT_DIR" \
+    "$ROOT_DIR/scripts/prepare-standalone-product.sh" "$EXPORT_WORKTREE" "$PRODUCT_NAME"
   cp "$STANDALONE_LOCKFILE" "$EXPORT_WORKTREE/backend/Cargo.lock"
-  if ! git -C "$EXPORT_WORKTREE" diff --quiet -- backend/Cargo.lock; then
-    git -C "$EXPORT_WORKTREE" add backend/Cargo.lock
-    git -C "$EXPORT_WORKTREE" commit -m "chore: refresh standalone lockfile"
+  if ! git -C "$EXPORT_WORKTREE" diff --quiet; then
+    git -C "$EXPORT_WORKTREE" add -A
+    git -C "$EXPORT_WORKTREE" commit -m "chore: prepare standalone dependencies"
   fi
   git worktree remove "$EXPORT_WORKTREE" >/dev/null
 fi
@@ -130,5 +132,5 @@ fi
 echo
 echo "Next steps:"
 echo "  1. Create or confirm a standalone repo for ${PRODUCT_NAME}."
-echo "  2. Publish shared packages such as @patchhivehq/ui and @patchhivehq/product-shell before wiring the exported frontend."
+echo "  2. Confirm the exported frontend uses published PatchHive package versions and a standalone Docker context."
 echo "  3. Keep developing in the monorepo, then re-export when needed."

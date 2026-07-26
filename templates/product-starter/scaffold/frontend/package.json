@@ -10,13 +10,16 @@
     "preview": "vite preview --port __FRONTEND_PORT__"
   },
   "dependencies": {
-    "@patchhivehq/product-shell": "^0.1.4",
-    "@patchhivehq/ui": "^0.1.3",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "@patchhivehq/product-shell": "file:__MONOREPO_PREFIX__/packages/product-shell",
+    "@patchhivehq/ui-v3": "file:__MONOREPO_PREFIX__/packages/ui-v3",
+    "lucide-react": "^0.575.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
   },
   "devDependencies": {
-    "@vitejs/plugin-react": "^6.0.3",
-    "vite": "^8.1.2"
+    "@tailwindcss/vite": "^4.2.1",
+    "@vitejs/plugin-react": "^5.2.0",
+    "tailwindcss": "^4.2.1",
+    "vite": "^8.0.16"
   }
 }

@@ -24,15 +24,17 @@ Options:
   -h, --help                 Show this help message
 
 What it does:
-  1. Copies the shared product starter template
+  1. Copies the canonical specialist-product starter
   2. Replaces placeholders with product-specific values
-  3. Optionally generates a backend Cargo.lock inside the new product
+  3. Generates a mountable Rust engine plus thin standalone launcher
+  4. Resolves shared crate and package paths for the generated monorepo location
+  5. Optionally generates a backend Cargo.lock inside the new product
 
 Notes:
   - This is for monorepo-first product creation.
   - Exported standalone repos should still be treated as mirrors of the monorepo.
-  - If the product uses patchhive-product-core, refresh its standalone lockfile
-    before the first export with ./scripts/refresh-product-lockfile.sh <slug>
+  - Before the first export, preflight the vendored shared-crate snapshot with
+    ./scripts/refresh-product-lockfile.sh <slug>
 EOF
 }
 
@@ -180,7 +182,9 @@ FRONTEND_PORT_ESCAPED="$(escape_sed "$FRONTEND_PORT")"
 TAGLINE_ESCAPED="$(escape_sed "$TAGLINE")"
 ENV_PREFIX_ESCAPED="$(escape_sed "$ENV_PREFIX")"
 PACKAGE_NAME_ESCAPED="$(escape_sed "${SLUG}-ui")"
+PRODUCT_CRATE_ESCAPED="$(escape_sed "$(printf '%s' "$SLUG" | tr '-' '_')")"
 DB_FILE_ESCAPED="$(escape_sed "${SLUG}.db")"
+MONOREPO_PREFIX_ESCAPED="$(escape_sed "$(realpath --relative-to="$TARGET_DIR/backend" "$ROOT_DIR")")"
 
 while IFS= read -r file; do
   sed -i \
@@ -193,18 +197,24 @@ while IFS= read -r file; do
     -e "s|__PRODUCT_TAGLINE__|$TAGLINE_ESCAPED|g" \
     -e "s|__ENV_PREFIX__|$ENV_PREFIX_ESCAPED|g" \
     -e "s|__FRONTEND_PACKAGE_NAME__|$PACKAGE_NAME_ESCAPED|g" \
+    -e "s|__PRODUCT_CRATE__|$PRODUCT_CRATE_ESCAPED|g" \
     -e "s|__DB_FILE__|$DB_FILE_ESCAPED|g" \
+    -e "s|__MONOREPO_PREFIX__|$MONOREPO_PREFIX_ESCAPED|g" \
     "$file"
 done < <(find "$TARGET_DIR" -type f | sort)
 
 if [[ "$SKIP_LOCKFILE" -eq 0 ]]; then
   cargo generate-lockfile --manifest-path "$TARGET_DIR/backend/Cargo.toml"
 fi
+npm --prefix "$TARGET_DIR/frontend" install --package-lock-only --ignore-scripts --no-audit --no-fund
 
 echo
 echo "Created $TARGET_DIR"
 echo
 echo "Next steps:"
-echo "  1. Fill in the README, overview panel, and backend routes with real product logic."
-echo "  2. Add a product theme entry in packages/ui/src/theme.js if this is a brand new theme key."
-echo "  3. Before the first standalone export, run ./scripts/refresh-product-lockfile.sh $SLUG if the backend uses patchhive-product-core."
+echo "  1. Replace starter copy and routes with the real product workflow immediately."
+echo "  2. Add the product brand to packages/ui-v3/src/index.jsx and its accent tokens to packages/ui-v3/src/styles.css."
+echo "  3. Add a declarative manifest in services/patchhive-backend/registry/products/$SLUG.toml."
+echo "  4. Mount init_runtime() and router() in services/patchhive-backend without duplicating product behavior."
+echo "  5. Add the product to scripts/suite-common.sh, root .env.example, and canonical docs."
+echo "  6. Before the first standalone export, run ./scripts/refresh-product-lockfile.sh $SLUG."

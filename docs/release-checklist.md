@@ -74,12 +74,12 @@ npm run version:ui -- patch
 
 2. Review the changed files:
 
-- `packages/ui/package.json`
+- `packages/ui/package.json` or `packages/ui-v3/package.json`
 - `package-lock.json`
 - any dependents updated to the new `^version`
 
 3. Commit and push the monorepo changes.
-4. Run the `Publish UI Package` workflow in `patchhive/patchhive2`.
+4. Run the matching UI publish workflow in `patchhive/patchhive-monorepo`.
 5. Sync the standalone mirror:
 
 ```bash
@@ -113,7 +113,7 @@ npm run version:product-shell -- patch
 - any dependents updated to the new `^version`
 
 3. Commit and push the monorepo changes.
-4. Run the `Publish Product Shell Package` workflow in `patchhive/patchhive2`.
+4. Run the `Publish Product Shell Package` workflow in `patchhive/patchhive-monorepo`.
 5. Sync the standalone mirror:
 
 ```bash

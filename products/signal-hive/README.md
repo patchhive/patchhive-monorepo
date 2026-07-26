@@ -32,13 +32,11 @@ It is the read-only reconnaissance layer in PatchHive: a product that scans repo
 - rank repositories into a maintenance queue with explainable score drivers
 - save presets, schedules, trend history, and shareable reports
 
-## Canonical UI
+## Canonical specialist UI
 
-SignalHive passed its final UI v3 parity audit on 2026-07-16. The canonical
-frontend lives in `frontend/`; the former v1 and v2 trees were removed after
-direct and discovery scans, scheduled runs, presets, repository controls,
-history, trend/timeline evidence, reports, diagnostics, responsive behavior,
-and light/dark behavior were accepted.
+The canonical frontend lives in `frontend/` and covers direct and discovery
+scans, scheduled runs, presets, repository controls, history, trend/timeline
+evidence, reports, diagnostics, responsive behavior, and light/dark behavior.
 
 ## Quick Start
 

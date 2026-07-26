@@ -1,8 +1,10 @@
 # @patchhivehq/ui
 
-`@patchhivehq/ui` is the shared React component library for PatchHive products.
+`@patchhivehq/ui` is PatchHive's control-plane and compatibility React package.
+Canonical specialist products use `@patchhivehq/ui-v3`.
 
-It provides the common visual layer behind the PatchHive suite: themes, layout primitives, shared navigation, status components, and product-facing UI elements that let individual products feel related without looking copy-pasted.
+It preserves the primitives still used by HiveCore, product-shell compatibility
+components, and ai-models. Do not add new specialist product surfaces here.
 
 ## What It Includes
 
@@ -28,6 +30,6 @@ import {
 
 ## Publishing Model
 
-`@patchhivehq/ui` is published to the public npm registry so standalone PatchHive product repositories can install it without private package registry auth.
+`@patchhivehq/ui` is published to the public npm registry so its remaining standalone consumers can install it without private package registry auth.
 
 The monorepo is the source of truth for development and releases. The standalone `patchhive/patchhive-ui` repository is a mirror for visibility, package-level CI, and external consumption.

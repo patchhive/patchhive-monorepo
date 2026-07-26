@@ -74,6 +74,7 @@ RepoReaper was built first because it descended from Jeremy's earlier GitFix exp
 patchhive/
   packages/
     ui/                     @patchhivehq/ui shared React component library
+    ui-v2/                  quarantined HiveCore compatibility package; not an active workspace
     ui-v3/                  @patchhivehq/ui-v3 Lovable-derived specialist product UI
     product-shell/          @patchhivehq/product-shell shared frontend shell/auth helpers
     ai-models/              @patchhivehq/ai-models shared AI provider/model selector UX
@@ -177,42 +178,26 @@ Shared platform guidance:
 - When the same Rust backend seam exists in 2 or more products, prefer extracting it into `crates/patchhive-product-core` before starting another product.
 - See [docs/platform-guardrails.md](docs/platform-guardrails.md) and [docs/product-api-contract-v1.md](docs/product-api-contract-v1.md).
 
-## Shared UI Package
+## Compatibility UI Package
 
 Location: `packages/ui/`
 
-Every product frontend should import shared theme, primitives, layout shell, and reusable components from `@patchhivehq/ui`.
+`@patchhivehq/ui` remains active for control-plane and shared compatibility
+consumers. Specialist products use `@patchhivehq/ui-v3` instead.
 
 Rules:
 - If a component will appear in 2 or more products, put it in `packages/ui/src/components/` and re-export it from `packages/ui/src/index.js`.
 - If a component is product-specific, keep it inside that product.
-- Product apps should call `applyTheme("<product-key>")` from `App.jsx`.
+- Do not add new specialist product surfaces here.
 
-## UI v2 Track
-
-Location: `packages/ui-v2/`
-
-PatchHive is prototyping a suite-wide UI v2 direction separately from the current production frontends.
-
-Rules:
-- Keep v2 experiments in `products/<product>/frontend-v2/` until the new design system is ready to replace production UI code.
-- Keep current production frontends in `products/<product>/frontend/` during the transition.
-- Do not mix v2 work into old UI code while the direction is still being tested.
-- HiveCore does not currently follow the v2 direction, but it should converge before old UI code is legacy or removed.
-- Once every product has moved to v2, old UI code should either move to a clearly named legacy path or be removed.
-- See [docs/ui-v2-migration.md](docs/ui-v2-migration.md).
-
-## UI v3 Track
+## Specialist UI
 
 Location: `packages/ui-v3/`
 
-UI v3 is the next specialist-product interface. Its canonical visual source is
-`unified-ui-revamp-main/`, the Lovable project. MergeKeeper, ReleaseSentry,
-DepTriage, VulnTriage, FlakeSting, ReviewBee, TrustGate, RepoMemory,
-SignalHive, RefactorScout, and RepoReaper have v3 frontends. These products
-qualify because their engines
-are mounted in-process by the unified backend. Do not start another product's
-v3 frontend until its unified-backend engine reaches `integrated`.
+This is the canonical shared interface for PatchHive's eleven specialist
+products. Their production frontends live in `products/<product>/frontend/`
+and their engines are mounted in-process by the unified backend. The specialist
+UI is steady-state architecture, not an active migration track.
 
 Rules:
 - Use the actual Lovable component structure, theme tokens, typography, spacing, radii, glass surfaces, shadows, backgrounds, and responsive behavior. Do not approximate it from screenshots or replace it with a static mockup.
@@ -238,38 +223,14 @@ Rules:
 - Every product must persist every first-class finding produced inside its configured input scope. Input bounds are valid; post-analysis evidence truncation is not. APIs may paginate complete retained collections, and v3 should progressively render them with show-more, show-all, and collapse controls while filters operate over the complete retained set.
 - Show aggregate dashboard KPIs once. Use the shared assessment card for up to three prioritized findings instead of repeating repository, finding, run, and warning totals in multiple surfaces. Read-only products should call this an assessment and explain the factors behind labels such as review priority.
 - Product differences belong in product name/icon, accent colors, copy, tabs, data, forms, actions, and workflow-specific panels.
-- Keep the specialist footer identity aligned with v2: `<Product> by PatchHive`, the product subtitle, and `Autonomous maintenance suite`.
+- Keep the specialist footer identity as `<Product> by PatchHive`, the product subtitle, and `Autonomous maintenance suite`.
 - Preserve the suite-wide light/dark preference under the `patchhive.theme` localStorage key and apply it before React mounts to prevent a theme flash.
-- Keep current v2 frontends functional until each product's v3 parity audit passes. Do not rewrite v2 in place.
-- VulnTriage passed its final parity audit on 2026-07-10; its canonical v3 UI lives in `products/vuln-triage/frontend/`, and its v1/v2 trees have been removed.
-- MergeKeeper and ReleaseSentry passed their final parity audits on 2026-07-11;
-  their canonical v3 UIs live in `products/<product>/frontend/`, and their
-  v1/v2 trees have been removed.
-- DepTriage and FlakeSting passed their final parity audits on 2026-07-12;
-  their canonical v3 UIs live in `products/<product>/frontend/`, and their
-  v1/v2 trees have been removed.
-- ReviewBee passed its final parity audit on 2026-07-12; its canonical v3 UI
-  lives in `products/review-bee/frontend/`, and its v1/v2 trees have been
-  removed.
-- TrustGate passed its final parity audit on 2026-07-12; its canonical v3 UI
-  lives in `products/trust-gate/frontend/`, and its v1/v2 trees have been
-  removed.
-- RepoMemory passed its final parity audit on 2026-07-14; its canonical v3 UI
-  lives in `products/repo-memory/frontend/`, and its v1/v2 trees have been
-  removed.
-- SignalHive passed its final parity audit on 2026-07-16; its canonical v3 UI
-  lives in `products/signal-hive/frontend/`, and its v1/v2 trees have been
-  removed.
-- RefactorScout passed its final parity audit on 2026-07-21; its canonical v3
-  UI lives in `products/refactor-scout/frontend/`, and its v1/v2 trees have
-  been removed.
-- RepoReaper passed its final parity audit on 2026-07-25; its canonical v3 UI
-  lives in `products/repo-reaper/frontend/`, and its v1/v2 trees have been
-  removed.
-- Prefer finishing and validating v3 for the current integrated product set before moving another product engine into the unified backend.
-- HiveCore is intentionally outside the specialist-product v3 migration and keeps its control-plane UI.
+- Do not create `frontend-v2`, `frontend-v3`, or `frontend-legacy` trees for a
+  specialist product. Change and verify the canonical `frontend/` directly.
+- HiveCore is intentionally outside the specialist UI architecture and keeps
+  its control-plane UI.
 - `prototypes/vuln-triage-calm-mockup.html` is reference material only; it is not the v3 source of truth.
-- See [docs/ui-v3-migration.md](docs/ui-v3-migration.md).
+- See [docs/specialist-ui-architecture.md](docs/specialist-ui-architecture.md).
 
 ## Shared Product Shell Package
 
@@ -368,9 +329,12 @@ Rules:
 - The starter should hold only the repeated shell: auth wiring, health/startup checks, Docker, CI, frontend shell, and placeholder overview route.
 - Product-specific logic should replace starter copy early. Do not let placeholder starter routes linger once a product loop is real.
 - Use `./scripts/new-product.sh <product-slug>` to create new products from the starter.
-- If a new product backend uses shared git crates, refresh its standalone `Cargo.lock` with `./scripts/refresh-product-lockfile.sh <product-slug>` before the first standalone export.
+- Before a product's first standalone export, preflight its vendored shared-crate
+  snapshot and lockfile with
+  `./scripts/refresh-product-lockfile.sh <product-slug>`.
 
-Product accent keys live in `packages/ui/src/theme.js`:
+Specialist product brand labels live in `packages/ui-v3/src/index.jsx`, and
+their accent tokens live in `packages/ui-v3/src/styles.css`:
 - `repo-reaper`
 - `signal-hive`
 - `review-bee`
@@ -382,7 +346,9 @@ Product accent keys live in `packages/ui/src/theme.js`:
 - `vuln-triage`
 - `refactor-scout`
 - `release-sentry`
-- `hive-core`
+
+Compatibility and control-plane themes, including HiveCore, remain in
+`packages/ui/src/theme.js`.
 
 ## Frontend Convention
 
@@ -478,18 +444,17 @@ Key features to preserve:
 - PR monitor
 - PatchHive branding in footer and PR bodies
 
-RepoReaper v3 scope:
+RepoReaper specialist UI scope:
 - RepoReaper's engine is mounted in-process by `patchhive-backend`; the
   standalone backend remains a thin launcher over the same library/router.
 - Its product tables use the `repo_reaper_*` namespace in the shared
   `PATCHHIVE_DB_PATH` database. `REAPER_DB_PATH` remains a standalone
   compatibility override when the suite path is absent.
-- `products/repo-reaper/frontend/` is the canonical v3 frontend. The v1 and v2
-  trees were removed after final operator acceptance on 2026-07-25.
-- V3 covers role editing, provider defaults, live model discovery and testing,
+- `products/repo-reaper/frontend/` is the canonical frontend and passed final
+  operator acceptance on 2026-07-25.
+- The Squad surface covers role editing, provider defaults, live model discovery and testing,
   Agent-ready and Free filters, encrypted credential posture, cooldown
-  clearing, and the legacy preset lifecycle of save, activate/load, and delete.
-  No legacy preset file export workflow existed.
+  clearing, and the preset lifecycle of save, activate/load, and delete.
 - RepoReaper persists the active team and team presets in SQLite. Per-agent API keys and bot token overrides are encrypted at rest through `patchhive_product_core::secrets::TokenProtector` when `REAPER_ENCRYPTION_KEY` or `PATCHHIVE_ENCRYPTION_KEY` is set; without one of those keys, those secret fields stay memory-only and are not written to SQLite. Adding an encryption key later migrates existing plaintext active-team and preset secrets on boot.
 - Dry Stalk is still a no-write mode, but it needs at least a Scout agent because issue scoring and dry-run analysis use the AI agent pipeline.
 - Operator-started missions and explicitly enabled write schedules are

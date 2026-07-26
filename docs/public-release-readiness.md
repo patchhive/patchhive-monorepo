@@ -12,7 +12,7 @@ The current tracked tree is clear of obvious committed secrets.
 
 Checks performed:
 
-- Fresh clone to `/tmp/patchhive2-public-audit-20260630`.
+- Fresh clone to `/tmp/patchhive-public-audit-20260630`.
 - `git fsck --full` on the fresh clone passed.
 - Strict high-entropy scans found no current tracked GitHub tokens, OpenAI-style
   keys, AWS access keys, or private key blocks.
@@ -61,7 +61,7 @@ Before making the repository public:
 Current CLI limitation:
 
 - The available GitHub token has push access but not admin access to
-  `patchhive/patchhive2`.
+  `patchhive/patchhive-monorepo`.
 - Repository-level settings and visibility changes must be completed by an
   admin in GitHub settings, or by rerunning the relevant `gh api` calls with an
   admin-capable token.

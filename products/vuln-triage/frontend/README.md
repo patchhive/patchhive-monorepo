@@ -1,8 +1,7 @@
 # VulnTriage UI
 
-This is the canonical VulnTriage frontend, built on the Lovable-derived
-PatchHive UI v3 system. The v1 and v2 implementations were removed after the
-final parity audit.
+This is the canonical VulnTriage specialist frontend, built on the shared
+PatchHive UI system.
 
 It currently wires the Lovable visual system to VulnTriage's real API-key auth,
 health, startup checks, overview, history, scan detail, finding detail, source

@@ -59,6 +59,7 @@ html[data-product="repo-memory"] { --accent:#2a8a4a; --accent-2:#65d98e; --accen
 html[data-product="merge-keeper"] { --accent:#1f9f8f; --accent-2:#62e1d3; --accent-3:#17675e; --accent-glow:0 12px 26px -10px rgb(31 159 143 / .55); }
 html[data-product="flake-sting"] { --accent:#d96b27; --accent-2:#ff9b52; --accent-3:#8b4317; --accent-glow:0 12px 26px -10px rgb(217 107 39 / .55); }
 html[data-product="dep-triage"] { --accent:#5f7cff; --accent-2:#9aacff; --accent-3:#38458f; --accent-glow:0 12px 26px -10px rgb(95 124 255 / .55); }
+html[data-product="vuln-triage"] { --accent:#d6406a; --accent-2:#ff87a7; --accent-3:#8d2746; --accent-glow:0 12px 26px -10px rgb(214 64 106 / .55); }
 html[data-product="refactor-scout"] { --accent:#30a783; --accent-2:#70dfbd; --accent-3:#1d6d55; --accent-glow:0 12px 26px -10px rgb(48 167 131 / .55); }
 html[data-product="release-sentry"] { --accent:#c7a91b; --accent-2:#fff08a; --accent-3:#8a7728; --accent-glow:0 12px 26px -10px rgb(199 169 27 / .55); }
 

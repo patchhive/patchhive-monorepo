@@ -26,7 +26,11 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Check backend
-        run: cargo check --locked
+        run: |
+          cargo fmt --check
+          cargo check --locked
+          cargo clippy --all-targets -- -D warnings
+          cargo test --locked
 
   frontend:
     runs-on: ubuntu-latest
@@ -48,7 +52,7 @@ jobs:
       - name: Install frontend dependencies
         run: |
           for attempt in 1 2 3 4 5; do
-            npm install --prefer-online && exit 0
+            if [ -f package-lock.json ]; then npm ci --prefer-online && exit 0; else npm install --prefer-online && exit 0; fi
             if [ "$attempt" -eq 5 ]; then
               exit 1
             fi

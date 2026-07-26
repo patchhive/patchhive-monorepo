@@ -76,10 +76,9 @@ open rather than written as settled architecture.
 | [Release checklist](release-checklist.md) | Monorepo-first release steps. |
 | [Product export workflow](product-export-workflow.md) | How products are mirrored into standalone repos. |
 | [Product starter workflow](product-starter-workflow.md) | Scaffolding a new product from the starter. |
-| [UI release workflow](ui-release-workflow.md) | Releasing `@patchhivehq/ui`. |
+| [UI release workflow](ui-release-workflow.md) | Releasing the control-plane UI and specialist UI v3 packages. |
 | [Product shell release workflow](product-shell-release-workflow.md) | Releasing `@patchhivehq/product-shell`. |
-| [UI v2 migration](ui-v2-migration.md) | Active/legacy v2 migration track. |
-| [UI v3 migration](ui-v3-migration.md) | v3 visual-language unification. |
+| [Specialist UI architecture](specialist-ui-architecture.md) | Canonical specialist frontend structure, shared UI contracts, and verification rules. |
 
 ## Standards & Planning
 
@@ -88,7 +87,6 @@ open rather than written as settled architecture.
 | [PRODUCT_README_TEMPLATE.md](PRODUCT_README_TEMPLATE.md) | **Canonical README structure + Safety Boundary standard.** Read before writing a product README. |
 | [CONFIGURATION_STANDARDS.md](CONFIGURATION_STANDARDS.md) | De-facto config naming, suffixes, and known deviations. |
 | [Product naming strategy](product-naming-strategy.md) | Customer-facing naming rules, internal apiary vocabulary, and rename candidates. |
-| [PatchHive Improvements](PatchHive_Improvements.md) | The master improvement analysis (10 findings + action plan). |
 | [Future plans](FUTURE_PLANS.md) | Planning scratchpad. |
 
 ## See Also

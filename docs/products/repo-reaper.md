@@ -5,7 +5,7 @@
 | Attribute | Value |
 |-----------|-------|
 | **Product Role** | Outbound autonomous contribution — find, fix, validate, and open PRs |
-| **Status** | Unified-backend engine integrated; v3 functional parity verified, final operator visual acceptance pending |
+| **Status** | Unified-backend engine and canonical specialist frontend promoted |
 | **Standalone Repository** | [`patchhive/reporeaper`](https://github.com/patchhive/reporeaper) (mirror of this directory) |
 | **Local Port** | `8000` |
 
@@ -250,12 +250,12 @@ docker compose up --build
 Backend: `http://localhost:8000`
 Frontend: `http://localhost:5173`
 
-### Canonical v3 frontend
+### Canonical specialist frontend
 
-The v3 frontend passed final operator acceptance on 2026-07-25 and now lives at
-`products/repo-reaper/frontend/`. The legacy v1 and v2 trees were removed.
+The canonical frontend lives at `products/repo-reaper/frontend/` and passed
+final operator acceptance on 2026-07-25.
 
-Legacy behavior retained in v3:
+Product workflows preserved in the canonical frontend:
 
 - Checks can recruit a starter team and edit the backend's current in-memory
   agent team through `/agents`.
@@ -267,7 +267,7 @@ Legacy behavior retained in v3:
   custom providers with incomplete model-list support. The shared picker filters
   obvious non-text models such as embeddings, rerankers, STT/TTS/audio,
   image/video, moderation, and provider utility entries from noisy catalogs.
-  Free provider models remain visible by default, and RepoReaper v3 can narrow
+  Free provider models remain visible by default, and RepoReaper can narrow
   the picker to free-marked model IDs when the operator enables Free only.
 - Provider defaults can also test the selected model through
   `/models/:provider/test`, which sends a tiny prompt through RepoReaper's real
@@ -275,8 +275,7 @@ Legacy behavior retained in v3:
 - Mission Deck and Dry Stalk are gated until an agent team exists, so the UI no
   longer lets a run fail with a bare `No agents configured` backend error.
 - RepoReaper persists the active team and saved team presets in SQLite. The
-  legacy preset lifecycle is save, activate/load, and delete; there was no
-  preset file export workflow to preserve.
+  preset lifecycle is save, activate/load, and delete.
   Per-agent API keys and bot token overrides are encrypted at rest when
   `REAPER_ENCRYPTION_KEY` or `PATCHHIVE_ENCRYPTION_KEY` is set. Without one of
   those keys, secret fields stay memory-only and are not written to SQLite.
@@ -285,35 +284,34 @@ Legacy behavior retained in v3:
 - Dry Stalk remains no-write, but it still needs at least a Scout agent because
   issue scoring and dry-run analysis use the AI agent pipeline.
 
-The v3 Squad surface now covers role editing, provider defaults, live model
+The Squad surface covers role editing, provider defaults, live model
 discovery and testing, Agent-ready and Free filters, encrypted credential
-posture, cooldown clearing, and the complete legacy preset lifecycle.
+posture, cooldown clearing, and the complete preset lifecycle.
 
-### UI v3 parity and safety matrix
+### Specialist workflow and safety matrix
 
-RepoReaper's canonical v3 frontend preserves every operator workflow below. The tabs are intentionally
+RepoReaper's canonical frontend preserves every operator workflow below. The tabs are intentionally
 short so the specialist header remains usable without horizontally scrolling
 at ordinary desktop widths.
 
-| Workflow | Current source | Required v3 destination | Acceptance boundary |
-|----------|----------------|-------------------------|---------------------|
-| Guarded patch hunt, direct target, and autonomous discovery | v1 Run; v2 Mission Deck | **Mission** | Explicit Target repo / Autonomous discovery mode, complete bounded inputs, preflight readiness, live SSE phase/agent/cost/issue evidence, stop reasons, and PR result links |
-| No-write candidate discovery and Scout analysis | v1 Dry Run; v2 Dry Stalk | **Dry Stalk** | Same explicit target modes and filters as Mission, clear no-write boundary, live evidence, saved result, and prompt/report preview |
-| Run list, attempt dossier, phase events, artifacts, diffs, rejection evidence, and cost | v1 History/Rejected/Leaderboard; v2 History | **History** | Search/filter/sort/saved views, progressive complete evidence, per-attempt stop point, copyable artifacts, rejected patches, and lifetime/run cost without losing persisted records |
-| Opened PR lifecycle and refreshable GitHub links | v1 PR Tracking; v2 PR monitor | **PRs** | State, merge/review status, source run, repository, opened/checked timestamps, direct links, and honest write/poll diagnostics |
-| Agent team, role assignment, provider defaults, model discovery/testing, cooldowns, and team presets | v1 Team/Presets; v2 Checks team builder | **Squad** | Add/edit/remove all roles, encrypted secret behavior, provider/model refresh and test errors, starter team, save/load/delete presets, live statuses/logs, and cooldown clearing |
-| Repository allow/deny/opt-out controls, explicit schedules, watch mode, and webhook posture | v1 Repo Lists/Schedules/Webhook/Config | **Controls** | Shared v3 controls hierarchy, separate `run` and `dry_run` schedules, explicit target mode, run-now/load/pause/delete, repository-policy precedence, watch-mode state, and webhook guidance |
-| Startup diagnostics, GitHub write identity, AI/provider readiness, sandbox/test policy, budget/approval posture, and suite integrations | v1 Config/Startup Checks; v2 Checks | **Checks** | Typed checks with actionable names, warnings visible, GitHub read/write claims distinguished, database path, auth state, worker capacity, validation states, and HiveCore/RepoMemory availability |
+| Surface | Acceptance boundary |
+|---------|---------------------|
+| **Mission** | Explicit Target repo / Autonomous discovery mode, complete bounded inputs, preflight readiness, live SSE phase/agent/cost/issue evidence, stop reasons, and PR result links |
+| **Dry Stalk** | Same explicit target modes and filters as Mission, clear no-write boundary, live evidence, saved result, and prompt/report preview |
+| **History** | Search/filter/sort/saved views, progressive complete evidence, per-attempt stop point, copyable artifacts, rejected patches, and lifetime/run cost without losing persisted records |
+| **PRs** | State, merge/review status, source run, repository, opened/checked timestamps, direct links, and honest write/poll diagnostics |
+| **Squad** | Add/edit/remove all roles, encrypted secret behavior, provider/model refresh and test errors, starter team, save/load/delete presets, live statuses/logs, and cooldown clearing |
+| **Controls** | Shared controls hierarchy, separate `run` and `dry_run` schedules, explicit target mode, run-now/load/pause/delete, repository-policy precedence, watch-mode state, and webhook guidance |
+| **Checks** | Typed checks with actionable names, warnings visible, GitHub read/write claims distinguished, database path, auth state, worker capacity, validation states, and HiveCore/RepoMemory availability |
 
-The v3 header therefore uses **Mission**, **Dry Stalk**, **History**, **PRs**,
+The canonical header therefore uses **Mission**, **Dry Stalk**, **History**, **PRs**,
 **Squad**, **Controls**, and **Checks**. Intake is part of Mission and Dry Stalk;
 RepoReaper does not need a duplicate Sources tab.
 
-RepoReaper v3's Squad picker enables **Agent-ready only** by default. It uses
+RepoReaper's Squad picker enables **Agent-ready only** by default. It uses
 provider capability metadata when available and remains independent from the
 optional **Free only** price filter. Manual model entry always remains usable
-as an explicit operator override. The v1/v2 surfaces are not extended with new
-Squad controls during the v3 migration.
+as an explicit operator override.
 
 Dry Stalk validates Scout summaries against a typed report contract. A malformed
 or truncated response gets one bounded repair request; if that also fails, the
@@ -785,8 +783,7 @@ cargo run --release
 
 - **Active development** — core workflow (scan → fix → PR) is fully implemented
 - Unified-backend engine mounted in-process at `/api/products/repo-reaper`
-- The canonical frontend is v3 at `/frontend/`; the legacy v1/v2 trees were
-  removed after final operator acceptance on 2026-07-25
+- The canonical specialist frontend lives at `/frontend/`
 - CI: GitHub Actions for Rust backend (`cargo build`, `cargo test`, `cargo clippy`)
 - No Prometheus or Kubernetes integration — health checks are HTTP-based
 - Configuration is via `.env` file or environment variables

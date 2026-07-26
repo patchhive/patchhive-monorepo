@@ -138,9 +138,9 @@ Run dossiers include durable PatchHive contract v1 events. Read them from `GET /
 
 The PatchHive monorepo is the source of truth for RepoReaper development. The standalone [`patchhive/reporeaper`](https://github.com/patchhive/reporeaper) repository is an exported mirror of this directory.
 
-Local Notes:
+Local notes:
 
-- `frontend/` is the canonical v3 interface. The legacy v1 and v2 trees were removed after final operator acceptance on 2026-07-25.
-- The v3 Squad surface covers the complete legacy preset lifecycle (save, activate/load, and delete), role editing, provider defaults, live model discovery/testing, model filters, encrypted credential posture, and cooldown clearing. No legacy preset file export workflow existed.
+- `frontend/` is the canonical specialist interface and passed final operator acceptance on 2026-07-25.
+- The Squad surface covers the complete preset lifecycle (save, activate/load, and delete), role editing, provider defaults, live model discovery/testing, model filters, encrypted credential posture, and cooldown clearing.
 - Active teams and team presets persist in SQLite. Per-agent API keys and bot token overrides are encrypted at rest when `REAPER_ENCRYPTION_KEY` or `PATCHHIVE_ENCRYPTION_KEY` is set; without one of those keys, those secret fields stay memory-only and are not written to SQLite. Adding an encryption key later migrates existing plaintext active-team and preset secrets on boot.
 - Dry Stalk is no-write, but it still needs at least a Scout agent because scoring and dry-run analysis use the AI agent pipeline.

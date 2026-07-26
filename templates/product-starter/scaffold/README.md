@@ -6,9 +6,11 @@ __PRODUCT_TITLE__ starts from the shared PatchHive product starter. Replace this
 
 ## What The Starter Gives You
 
-- shared frontend shell and API-key auth flow
-- shared Rust auth and startup primitives from `patchhive-product-core`
-- a placeholder backend route and a basic frontend overview and checks loop
+- canonical specialist UI shell and API-key auth flow
+- a mountable Rust engine plus thin standalone launcher using shared auth,
+  startup, SQLite, environment, and rate-limit primitives
+- placeholder workspace, checks, sources, health, and overview surfaces that
+  must be replaced when the real product loop lands
 - Docker setup and standalone CI from day one
 
 ## Run Locally
@@ -34,8 +36,11 @@ cd ../frontend && npm install && npm run dev
 
 ## Local Notes
 
-- The frontend uses `@patchhivehq/ui` and `@patchhivehq/product-shell`.
-- The backend stores starter state in SQLite at `__ENV_PREFIX___DB_PATH`.
+- The frontend uses `@patchhivehq/ui-v3` and `@patchhivehq/product-shell`.
+- The backend uses `PATCHHIVE_DB_PATH` in suite mode and
+  `__ENV_PREFIX___DB_PATH` as a standalone compatibility override.
+- Register and mount the engine in `services/patchhive-backend` before treating
+  the product as integrated.
 - If the product talks to GitHub, prefer a classic personal access token.
 - Keep repository access public-only unless the product truly needs private repositories.
 - Generate the first local API key from `http://localhost:__FRONTEND_PORT__`.

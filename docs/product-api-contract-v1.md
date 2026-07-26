@@ -223,7 +223,11 @@ for patch-and-retest automation.
 
 Every product must remain independently runnable from its standalone repository. HiveCore is not a required runtime dependency.
 
-The long-term suite direction is still one browser-facing backend: product v2 frontends should eventually call HiveCore/suite backend routes, while HiveCore either proxies to existing product services or mounts product modules in-process. Standalone product contracts remain important because they let HiveCore route work cleanly during the gateway phase and keep product ownership visible. See [Suite backend direction](suite-backend-direction.md).
+The specialist suite now uses one browser-facing backend. Canonical product
+frontends call namespaced routes in `patchhive-backend`, which mounts each
+specialist engine in-process. Standalone contracts remain important because the
+same product router also powers exported product launches and keeps ownership
+visible. See [Suite backend direction](suite-backend-direction.md).
 
 When HiveCore is enabled, products should expose enough lifecycle metadata for HiveCore to become the suite front door and operator:
 

@@ -97,7 +97,6 @@ docker compose up --build
 | Service | URL |
 |---------|-----|
 | Frontend | `http://localhost:5182` |
-| Frontend v2 (prototype) | `http://localhost:5201` |
 | Backend | `http://localhost:8090` |
 
 Backend: `http://localhost:8090`
@@ -134,13 +133,12 @@ configuration source, and `PATCHHIVE_DB_PATH` selects the shared suite database.
 
 ### Canonical UI
 
-The integrated v3 frontend lives in
+The canonical specialist frontend lives in
 `products/refactor-scout/frontend/`. It covers both local-path and public-GitHub intake,
 the ranked opportunity queue and detail surface, saved filters and sorts,
 progressive results, scan warnings, copyable Markdown, history, shared
 read-only scheduling, startup diagnostics, filesystem safety guidance,
-responsive layout, and persistent light/dark preference. The v1 and v2 trees
-were removed after final acceptance on 2026-07-21.
+responsive layout, and persistent light/dark preference.
 
 ## Configuration
 

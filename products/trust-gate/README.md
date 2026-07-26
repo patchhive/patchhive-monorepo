@@ -43,14 +43,12 @@ Every review returns one of those three recommendations plus the evidence behind
 | Frontend preview | `http://localhost:4175` | `http://localhost:8000` | `npm run preview` plus backend running locally |
 | Container internal | `http://frontend:8080` | `http://backend:8000` | Internal service ports inside Docker |
 
-### Canonical UI v3
+### Canonical specialist UI
 
 TrustGate's canonical Lovable-derived UI lives in `frontend/`. It preserves
 pasted-diff review, GitHub PR review and publishing, decision evidence,
 filterable history and saved views, rule packs, saved repo rules, report
 templates, startup diagnostics, Markdown copy, and print-friendly HTML export.
-The v1 and v2 frontends were removed after final parity acceptance on
-2026-07-12.
 
 ```bash
 cd frontend && npm install && npm run dev

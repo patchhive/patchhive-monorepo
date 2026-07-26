@@ -120,17 +120,13 @@ The frontend default API base is:
 http://127.0.0.1:8100/api/products/vuln-triage
 ```
 
-The standalone backend at `products/vuln-triage/backend` remains as a
-compatibility wrapper around the same product module while the migration is
-tested. Once product-mode packaging runs the shared backend image with only
-VulnTriage enabled, the old separate backend service can be moved to legacy or
-removed.
+The standalone backend at `products/vuln-triage/backend` is a thin launcher
+around the same product module mounted by the unified backend.
 
-### Final UI parity and retirement audit
+### Canonical specialist UI
 
-Completed on 2026-07-10 before removing `frontend-legacy/` and `frontend-v2/`.
-The canonical `frontend/` preserves the important workflows from both retired
-implementations:
+The canonical `frontend/` preserves the important workflows established during
+the final parity audit:
 
 - API-key bootstrap/login, theme persistence, backend health, database status,
   startup checks, and GitHub-readiness guidance

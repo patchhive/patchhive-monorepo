@@ -1,13 +1,15 @@
 services:
   backend:
-    build: ./backend
+    build:
+      context: ../..
+      dockerfile: products/__PRODUCT_SLUG__/backend/Dockerfile
     user: "${PATCHHIVE_BACKEND_UID:-0}:${PATCHHIVE_BACKEND_GID:-0}"
     ports:
       - "__BACKEND_PORT__:8000"
     volumes:
       - ./data:/data
     environment:
-      - __ENV_PREFIX___DB_PATH=/data/__DB_FILE__
+      - PATCHHIVE_DB_PATH=/data/patchhive.db
       - __ENV_PREFIX___PORT=8000
       - RUST_LOG=info
     env_file:
@@ -15,7 +17,11 @@ services:
     restart: unless-stopped
 
   frontend:
-    build: ./frontend
+    build:
+      context: ../..
+      dockerfile: products/__PRODUCT_SLUG__/frontend/Dockerfile
+      args:
+        VITE_API_URL: /api/products/__PRODUCT_SLUG__
     ports:
       - "__FRONTEND_PORT__:8080"
     depends_on:

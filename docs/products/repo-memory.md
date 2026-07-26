@@ -75,15 +75,14 @@ cd ../frontend && npm install && npm run dev
 
 Generate the first local API key from the UI at `http://localhost:5176`.
 
-### Canonical UI
+### Canonical specialist UI
 
 RepoMemory is mounted directly by `patchhive-backend` at
-`/api/products/repo-memory`. Its Lovable-derived v3 frontend lives in
+`/api/products/repo-memory`. Its specialist frontend lives in
 `frontend/`. It retains ingest, memory search and curation, consumer context
 preview, history and run diffs, prompt-pack handoff, FailGuard review and
 promotion, diagnostics, saved views, progressive lists, and suite-wide
-light/dark persistence. It passed final parity acceptance on 2026-07-14; the
-v1 and v2 frontends have been removed.
+light/dark persistence.
 
 ## Configuration
 

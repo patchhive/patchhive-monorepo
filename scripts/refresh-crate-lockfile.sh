@@ -12,8 +12,9 @@ Example:
 
 What it does:
   1. Copies crates/<crate-name> to a temporary directory outside the monorepo
-  2. Regenerates Cargo.lock there without the monorepo's local crate patch
-  3. Copies the standalone-safe lockfile back into the crate directory
+  2. Rewrites shared PatchHive path dependencies to pinned standalone mirrors
+  3. Regenerates Cargo.lock there without monorepo-only paths
+  4. Copies the standalone-safe lockfile back into the crate directory
 
 Use this whenever a shared crate's git dependencies change and its standalone
 repository needs a fresh lockfile for `cargo check --locked`.
@@ -43,6 +44,7 @@ TMP_DIR="$(mktemp -d /tmp/patchhive-crate-lockfile-XXXXXX)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
 cp -R "$CRATE_DIR" "$TMP_DIR/crate"
+"$ROOT_DIR/scripts/prepare-standalone-cargo-manifest.sh" --git-mirrors "$TMP_DIR/crate/Cargo.toml"
 rm -f "$TMP_DIR/crate/Cargo.lock"
 (
   cd "$TMP_DIR/crate"

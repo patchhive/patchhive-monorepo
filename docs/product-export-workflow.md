@@ -32,11 +32,12 @@ That is intentional.
 Standalone product repositories should:
 
 - depend on published shared packages such as `@patchhivehq/ui`
+- depend on published shared packages such as `@patchhivehq/ui-v3`
 - depend on published shared packages such as `@patchhivehq/product-shell`
 - use shared service contracts for things like `PATCHHIVE_AI_URL`
 - avoid local `file:` dependencies back into the monorepo
 
-`@patchhivehq/ui` is intended to publish to the public npm registry so standalone products can install it without package-registry authentication.
+`@patchhivehq/ui` and `@patchhivehq/ui-v3` publish to the public npm registry so standalone control-plane and specialist products can install the correct shared interface without package-registry authentication.
 `@patchhivehq/product-shell` follows the same pattern.
 
 That means:
@@ -45,7 +46,10 @@ That means:
 - outside contributors can run `npm install` without GitHub package tokens
 - PatchHive only needs npm publishing credentials during release, not during consumer installs
 
-For example, RepoReaper's frontend currently uses a local dependency while it lives inside the monorepo. When RepoReaper becomes a standalone repository, that dependency should be changed from a local path to a published package version.
+Specialist frontends use local `file:` dependencies while they live inside the
+monorepo. `export-product.sh` rewrites those dependencies to the current
+published package versions, regenerates the standalone lockfile, and replaces
+the monorepo-context frontend Docker build with a standalone build context.
 
 ## Shared Rust Crates
 
@@ -55,11 +59,19 @@ That is intentional too.
 
 Standalone Rust product repositories should:
 
-- depend on shared Rust crates from their standalone git repositories
+- carry the exact shared Rust crate snapshot used to build the export under
+  `shared-crates/`
 - avoid `path = "../../../crates/..."` dependencies that only work inside the monorepo
-- rely on the monorepo's `.cargo/config.toml` patching only for local PatchHive development
+- treat that snapshot as generated export material rather than an independent
+  source of truth
 
-For example, `patchhive-product-core` should be consumed from `https://github.com/patchhive/patchhive-product-core.git` in exported products, `patchhive-github-pr` should be consumed from `https://github.com/patchhive/patchhive-github-pr.git`, `patchhive-github-data` should be consumed from `https://github.com/patchhive/patchhive-github-data.git`, and `patchhive-github-security` should be consumed from `https://github.com/patchhive/patchhive-github-security.git`, while the monorepo patches those dependencies back to local crate paths for day-to-day work.
+`export-product.sh` copies `patchhive-product-core`, `patchhive-github-pr`,
+`patchhive-github-data`, and `patchhive-github-security` from the current
+monorepo revision, rewrites the exported backend to those paths, and generates
+the matching lockfile. This keeps a product mirror reproducible even when a
+standalone shared-crate mirror has not been synchronized yet. Shared-crate
+repositories remain useful package-focused mirrors, but product correctness no
+longer depends on their release timing.
 
 ## Export Script
 
@@ -88,11 +100,14 @@ That will:
 1. create a subtree export branch
 2. push that branch to the `repo-reaper` remote's `main` branch
 
-The script is intentionally safe:
+The script is intentionally safe and portable:
 
 - it does not overwrite an existing export branch
 - if `export/<product>` already exists, it creates a timestamped branch name instead
 - if the product has a Rust backend, it refreshes the standalone-safe `backend/Cargo.lock` before exporting
+- it snapshots current shared crates and rewrites monorepo-only paths to that
+  standalone snapshot
+- it rewrites local frontend package paths and Docker context for the mirror
 
 For standalone product repositories that are treated as mirrors, you can opt into a guarded mirror update:
 

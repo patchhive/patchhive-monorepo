@@ -29,7 +29,8 @@ Detailed product documentation lives in [docs/products](docs/products/).
 
 | Foundation | Repo | Purpose |
 | --- | --- | --- |
-| `@patchhivehq/ui` | [`patchhive/patchhive-ui`](https://github.com/patchhive/patchhive-ui) | Shared React components, layout primitives, and product themes. |
+| `@patchhivehq/ui` | [`patchhive/patchhive-ui`](https://github.com/patchhive/patchhive-ui) | Control-plane and compatibility React primitives. |
+| `@patchhivehq/ui-v3` | [`patchhive/ui-v3`](https://github.com/patchhive/ui-v3) | Canonical shared shell, diagnostics, controls, history, and workspace primitives for specialist products. |
 | `@patchhivehq/product-shell` | [`patchhive/product-shell`](https://github.com/patchhive/product-shell) | Shared frontend auth bootstrap, session handling, and product app framing. |
 | `@patchhivehq/ai-models` | [`patchhive/ai-models`](https://github.com/patchhive/ai-models) | Shared AI provider catalog, model selector UX, and live model discovery contract. |
 | `@patchhive/ai-local` | [`patchhive/patchhive-ai-local`](https://github.com/patchhive/patchhive-ai-local) | Local OpenAI-compatible gateway for Codex, Copilot, and future providers. |
@@ -71,7 +72,7 @@ patchhive/
 ### Work on an Existing Product
 
 ```bash
-git clone https://github.com/patchhive/patchhive2.git patchhive
+git clone https://github.com/patchhive/patchhive-monorepo.git patchhive
 cd patchhive
 
 # Example: SignalHive
@@ -98,7 +99,7 @@ Backends bind to `0.0.0.0` by default for Docker compatibility. For loopback-onl
 The starter includes:
 
 - shared Rust backend auth and startup wiring
-- shared frontend auth and app shell wiring
+- shared frontend auth and canonical specialist UI wiring
 - Docker and local-development setup
 - API-key bootstrap flow
 - standalone GitHub Actions CI

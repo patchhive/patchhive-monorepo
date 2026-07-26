@@ -1,15 +1,19 @@
 # UI Release Workflow
 
-`@patchhivehq/ui` is versioned and released from the PatchHive monorepo.
+PatchHive's shared UI packages are versioned and released from the monorepo:
+
+- `@patchhivehq/ui` for control-plane and compatibility consumers
+- `@patchhivehq/ui-v3` for specialist products
 
 The standalone `patchhive/patchhive-ui` repository is a mirror with package-focused history, not the source of truth.
 
 ## Normal Release Flow
 
-1. Bump the package version in the monorepo:
+1. Bump the appropriate package version in the monorepo:
 
 ```bash
 ./scripts/version-ui.sh patch
+./scripts/version-package.sh ui-v3 @patchhivehq/ui-v3 patch
 ```
 
 You can also choose `minor`, `major`, or an explicit version such as:
@@ -27,19 +31,22 @@ If you want to preview the next version without editing files:
 2. Review the changed files:
 
 - `packages/ui/package.json`
+- `packages/ui-v3/package.json`
 - `package-lock.json`
 - any workspace `package.json` files that depend on `@patchhivehq/ui`
 
 3. Commit and push the monorepo changes.
 
-4. Run the GitHub Actions workflow in `patchhive/patchhive2`:
+4. Run the matching GitHub Actions workflow:
 
 - `Publish UI Package`
+- `Publish Specialist UI Package`
 
 5. After the npm publish succeeds, update the standalone package mirror with a clean sync commit:
 
 ```bash
 ./scripts/sync-package-mirror.sh ui patchhive-ui main
+./scripts/sync-package-mirror.sh ui-v3 ui-v3 main
 ```
 
 6. Tag the release:

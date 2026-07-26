@@ -51,7 +51,7 @@ DepTriage Backend
 
 ```json
 {
-  "repo": "patchhive/patchhive2",
+  "repo": "patchhive/patchhive-monorepo",
   "pr_limit": 25,
   "include_alerts": true
 }
@@ -73,8 +73,8 @@ DepTriage Backend
 {
   "id": "550e8400-e29b-41d4-a716-446655440000",
   "created_at": "2026-06-28T10:30:00Z",
-  "repo": "patchhive/patchhive2",
-  "summary": "DepTriage ranked 5 dependency items for `patchhive/patchhive2`: 2 update now, 1 watch, 2 ignore for now. Highest urgency: lodash is currently marked `update now` because DepTriage saw high severity alert, major version jump, runtime impact.",
+  "repo": "patchhive/patchhive-monorepo",
+  "summary": "DepTriage ranked 5 dependency items for `patchhive/patchhive-monorepo`: 2 update now, 1 watch, 2 ignore for now. Highest urgency: lodash is currently marked `update now` because DepTriage saw high severity alert, major version jump, runtime impact.",
   "metrics": {
     "scanned_pull_requests": 20,
     "dependency_pull_requests": 4,
@@ -110,7 +110,7 @@ DepTriage Backend
         {
           "number": 142,
           "title": "Bump lodash from 4.17.20 to 4.17.21",
-          "html_url": "https://github.com/patchhive/patchhive2/pull/142",
+          "html_url": "https://github.com/patchhive/patchhive-monorepo/pull/142",
           "updated_at": "2026-06-14T08:00:00Z",
           "author": "dependabot[bot]",
           "source_tool": "dependabot",
@@ -128,7 +128,7 @@ DepTriage Backend
           "ecosystem": "npm",
           "severity": "high",
           "summary": "Prototype Pollution in lodash",
-          "html_url": "https://github.com/patchhive/patchhive2/security/dependabot/42",
+          "html_url": "https://github.com/patchhive/patchhive-monorepo/security/dependabot/42",
           "created_at": "2026-06-01T12:00:00Z",
           "vulnerable_version_range": "< 4.17.21",
           "first_patched_version": "4.17.21"
@@ -217,11 +217,8 @@ The canonical frontend default API base is:
 http://127.0.0.1:8100/api/products/dep-triage
 ```
 
-The standalone backend at `products/dep-triage/backend` remains as a
-compatibility wrapper around the same product module while the migration is
-tested. Once product-mode packaging runs the shared backend image with only
-DepTriage enabled, the old separate backend service can be moved to legacy or
-removed.
+The standalone backend at `products/dep-triage/backend` is a thin launcher
+around the same product module mounted by the unified backend.
 
 Local launch caveat: `DEP_TRIAGE_SERVICE_TOKEN_HASH` can contain a scoped
 service-token JSON record. If the unified backend is started by shell-sourcing
@@ -233,51 +230,10 @@ token before depending on service dispatch.
 
 ---
 
-## UI V1 To V2 Parity Audit
+## Canonical specialist UI
 
-Audited on 2026-07-05. The source trees listed here were retired after the v3
-promotion gate passed:
-
-- `products/dep-triage/frontend-legacy/src/App.jsx`
-- `products/dep-triage/frontend-legacy/src/panels/TriagePanel.jsx`
-- `products/dep-triage/frontend-legacy/src/panels/HistoryPanel.jsx`
-- `products/dep-triage/frontend-legacy/src/panels/ChecksPanel.jsx`
-- `products/dep-triage/frontend-v2/src/App.jsx`
-
-V2 covers the old directed repository scan loop, PR limit, optional Dependabot
-alert reads, update-now/watch/ignore queue, overview counts, saved scan history,
-history load, backend health, GitHub readiness, database status, and startup
-checks. It also preserves the old queue utilities that operators used during
-testing: Markdown summary copy, queue sorting by risk/recommendation/staleness
-or package name, item reasons, manifest chips, dependency PR links, and
-Dependabot alert links when alert evidence is available.
-
-Intentional v2 changes:
-
-- The old Setup wizard is replaced by the shared v2 login/readiness/checks
-  surface. DepTriage does not need a separate setup workflow beyond GitHub token
-  readiness and first scan guidance.
-- Dependabot alerts are labeled as a best-effort read: the UI says "Try
-  Dependabot alerts" and explains when GitHub reports alerts are disabled for
-  the target repository.
-- The main radar shows saved scans when no scan is loaded, then switches to
-  package-level dependency decisions once a scan is selected or completed.
-
-Deferred polish before old UI deletion:
-
-- Suite-wide scope controls should eventually add allowlist, denylist,
-  opt-out, and saved-scope context around scans. DepTriage stays read-only until
-  HiveCore owns those suite-level controls.
-- If dependency execution becomes product-owned later, add a separate
-  approval-gated action surface instead of folding write behavior into the
-  current read-only scan form.
-
----
-
-## UI V1 And V2 To V3 Parity Audit
-
-Audited and implemented on 2026-07-11 against the legacy and v2 scan, history,
-checks, and source workflows. The v3 frontend now preserves the complete
+Audited and implemented on 2026-07-11 against the prior scan, history,
+checks, and source workflows. The canonical frontend preserves the complete
 read-only dependency-triage loop while using the shared specialist shell:
 
 - repository and pull-request-limit validation, plus best-effort Dependabot
@@ -293,10 +249,10 @@ read-only dependency-triage loop while using the shared specialist shell:
 - filterable, sortable, saved-view history with full scan restoration;
 - complete metrics, startup checks, database/auth/GitHub state, and the
   read-only safety boundary on the Checks and Sources tabs; and
-- the suite-wide persisted light/dark theme and v2 footer identity.
+- the suite-wide persisted light/dark theme and specialist footer identity.
 
-Local verification passed for the DepTriage v3 production build, every current
-v3 shared-package consumer, suite-drift checks, the standalone DepTriage tests
+Local verification passed for the DepTriage production build, every current
+shared-package consumer, suite-drift checks, the standalone DepTriage tests
 and strict Clippy run, and the unified-backend tests and strict Clippy run. The
 real-data acceptance gate described below is also complete.
 
@@ -305,9 +261,8 @@ four watch decisions and three safe defers, a detailed Django major-update
 record with its manifest and pull-request evidence, explicit degraded messaging
 for a repository with Dependabot alerts disabled, five saved history runs with
 filter/sort/saved-view controls, verified startup checks, and the complete
-read-only Sources boundary. The v3 UI is now the packaged canonical
-`products/dep-triage/frontend/` implementation. The retired v1 and v2 source
-trees and Docker profiles were removed after this gate passed.
+read-only Sources boundary. The packaged canonical implementation is
+`products/dep-triage/frontend/`.
 
 ---
 
@@ -405,7 +360,7 @@ Status is `"degraded"` when `config_errors > 0` or `db_ok` is `false`, otherwise
     "ignore_for_now": 82
   },
   "recent_scans": [
-    { "id": "...", "repo": "patchhive/patchhive2", "summary": "...", "tracked_items": 5, "update_now": 2, "watch": 1, "ignore_for_now": 2, "created_at": "2026-06-28T10:30:00Z" }
+    { "id": "...", "repo": "patchhive/patchhive-monorepo", "summary": "...", "tracked_items": 5, "update_now": 2, "watch": 1, "ignore_for_now": 2, "created_at": "2026-06-28T10:30:00Z" }
   ]
 }
 ```
@@ -418,7 +373,7 @@ Returns up to 30 `HistoryItem` records (most recent first):
 [
   {
     "id": "550e8400-e29b-41d4-a716-446655440000",
-    "repo": "patchhive/patchhive2",
+    "repo": "patchhive/patchhive-monorepo",
     "summary": "DepTriage ranked 5 dependency items...",
     "tracked_items": 5,
     "update_now": 2,
@@ -512,9 +467,8 @@ dep-triage/
 │           ├── scoring.rs      ── Scan orchestration, grouping, scoring, recommendations, persistence
 │           └── utils.rs        ── Version parsing, ecosystem inference, manifest detection,
 │                                   severity ranking, stale-day calculation, repo validation
-├── frontend-v2/                ── Active DepTriage v2 UI (Vite dev port 5203)
-├── frontend-legacy/            ── Audited v1 UI kept for reference before deletion
-├── docker-compose.yml          ── Docker deployment (backend, active v2 frontend, optional legacy UI profile)
+├── frontend/                   ── Canonical specialist UI (Vite dev port 5180)
+├── docker-compose.yml          ── Docker deployment (backend and canonical frontend)
 ├── .env.example                ── Configuration template
 └── README.md                   ── Product README
 ```
@@ -696,7 +650,7 @@ cd products/dep-triage/backend
 cp ../.env.example .env
 cargo run
 
-cd ../frontend-v2
+cd ../frontend
 npm install
 npm run dev
 ```
@@ -705,15 +659,13 @@ npm run dev
 |---|---|
 | Backend | `http://localhost:8070` |
 | Frontend | `http://localhost:5180` |
-| Frontend v2 | `http://localhost:5203` |
 
 Backend: `http://localhost:8070`
 Frontend: `http://localhost:5180`
 
 ### Docker
 
-The `docker-compose.yml` runs the backend and active v2 frontend by default.
-The audited v1 frontend is available only through the `legacy-ui` profile:
+The `docker-compose.yml` runs the backend and canonical frontend:
 
 ```yaml
 services:
@@ -724,11 +676,8 @@ services:
       - DEP_TRIAGE_DB_PATH=/data/dep-triage.db
       - DEP_TRIAGE_PORT=8000
 
-  frontend:        # image: patchhive/deptriage-frontend-v2
+  frontend:        # image: patchhive/deptriage-frontend
     ports: ["5180:8080"]
-
-  frontend-legacy: # profile: legacy-ui
-    ports: ["5203:8080"]
 ```
 
 For production deployment:
@@ -791,11 +740,10 @@ For production deployment:
 | Capabilities advertisement | ✅ Implemented — `/capabilities` endpoint for HiveCore |
 | Overview API | ✅ Implemented — aggregated counts + recent scans |
 | HiveCore integration | ✅ Service token dispatch |
-| Frontend UI | ✅ Implemented (v1) |
-| Frontend v2 | 🚧 In progress |
+| Specialist frontend | ✅ Canonical `frontend/` implementation |
 | Cross-product signal export | ❌ Future — expose dependency health to ReleaseSentry, HiveCore decision engine |
 | RepoReaper execution trigger | ❌ Future — auto-create PRs or merge approved updates |
-| Scheduled/cron scans | ❌ Future — recurring scans without manual POST |
+| Scheduled scans | ✅ Implemented through shared Controls and schedule contracts |
 | Webhook-driven scans | ❌ Future — GitHub webhook triggers for new PRs |
 | Additional scoring factors | ❌ Future — license compliance, maintainer activity, download trends |
 | Slack/Teams notifications | ❌ Future — push recommendation summaries to communication channels |

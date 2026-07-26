@@ -27,8 +27,8 @@ provider safety rules.
   context size, output limiting, and tool or structured-output support. Manual
   model entry remains outside both filters.
 
-Prefer `@patchhivehq/ai-models/model-discovery` for new v2 surfaces so they do
-not inherit old UI components while the suite is migrating.
+Prefer `@patchhivehq/ai-models/model-discovery` for specialist product surfaces
+so provider discovery and filtering stay shared.
 
 ## Expected Product Endpoint
 

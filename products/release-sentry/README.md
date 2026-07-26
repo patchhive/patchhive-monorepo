@@ -45,7 +45,7 @@ Example request:
 
 ```json
 {
-  "repo": "patchhive/patchhive2",
+  "repo": "patchhive/patchhive-monorepo",
   "branch": "main",
   "target_version": "0.2.0",
   "target_tag": "v0.2.0",
@@ -89,9 +89,6 @@ cd backend && cargo run
 cd ../frontend && npm install && npm run dev
 ```
 
-The v1 and v2 frontends were removed after the v3 parity audit and live ready/watch/hold
-acceptance gate passed on 2026-07-11.
-
 ### Unified Backend Mode
 
 ReleaseSentry's backend logic is exported as a product module and can run inside
@@ -105,8 +102,7 @@ cargo run --manifest-path services/patchhive-backend/Cargo.toml
 npm --prefix products/release-sentry/frontend run dev
 ```
 
-The standalone backend remains available as a compatibility wrapper while the suite backend
-migration is tested.
+The standalone backend is a thin launcher around the same product module.
 
 ## Configuration
 

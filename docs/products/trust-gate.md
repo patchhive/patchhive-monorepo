@@ -101,14 +101,13 @@ docker compose up --build
 Backend: `http://localhost:8020`
 Frontend: `http://localhost:5175`
 
-### Canonical UI v3
+### Canonical specialist UI
 
 The TrustGate engine is mounted directly by `patchhive-backend` at
 `/api/products/trust-gate`. Its canonical Lovable-derived frontend lives in
 `frontend/`. Pasted-diff and live PR review, policy persistence, history and
 detail evidence, diagnostics, PAT publishing, saved views, responsive layout,
-and light/dark persistence passed final acceptance on 2026-07-12. The v1 and
-v2 frontend trees were removed after promotion.
+and light/dark persistence are part of the canonical product surface.
 
 ### Split Backend and Frontend
 

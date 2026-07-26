@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT"
 description = "Shared PatchHive suite backend runtime."
-repository = "https://github.com/patchhive/patchhive2"
+repository = "https://github.com/patchhive/patchhive-monorepo"
 
 [[bin]]
 name = "patchhive-backend"
