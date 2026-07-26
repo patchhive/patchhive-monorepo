@@ -53,7 +53,25 @@ fn suite_public_paths() -> Vec<String> {
     .collect();
 
     for key in PRODUCT_KEYS {
-        for suffix in ["health", "capabilities", "startup/checks", "auth/status"] {
+        // Exactly the set each product declares public in its own auth config. The
+        // bootstrap routes matter as much as the contract ones: HiveCore provisions
+        // downstream tokens by calling a product's generate/rotate endpoint through
+        // this runtime, and that internal call carries no suite key — so gating them
+        // here made provisioning fail with the suite's own 401.
+        //
+        // Safe because the product's guard is the real one: generate and rotate are
+        // localhost-only unless an operator key or the suite bootstrap secret is
+        // supplied. This layer simply stops being stricter than the engine it fronts.
+        for suffix in [
+            "health",
+            "capabilities",
+            "startup/checks",
+            "auth/status",
+            "auth/login",
+            "auth/generate-key",
+            "auth/generate-service-token",
+            "auth/rotate-service-token",
+        ] {
             paths.push(format!("/api/products/{key}/{suffix}"));
         }
     }
