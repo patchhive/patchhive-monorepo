@@ -1,100 +1,253 @@
-import { useMemo } from "react";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { Rocket } from "lucide-react";
-import { PRODUCTS } from "@/lib/hive-data";
-import { DEPENDENCIES } from "@/lib/hive-extra";
+import { useEffect, useMemo, useState } from "react";
+import { AlertTriangle, Ban, Loader2, Rocket, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 
-function downstreams(id: string): string[] {
-  const seen = new Set<string>();
-  const q = [id];
-  while (q.length) {
-    const cur = q.shift()!;
-    for (const e of DEPENDENCIES) {
-      if (e.from === cur && !seen.has(e.to) && e.to !== id) {
-        seen.add(e.to);
-        q.push(e.to);
-      }
-    }
-  }
-  return [...seen];
-}
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  dispatchAction,
+  fetchDispatchableActions,
+  refusalReason,
+  type DispatchableAction,
+  type DispatchOutcome,
+  type ProductActions,
+} from "@/lib/dispatch";
+import { useHiveCommand } from "./hive-command";
 
+/**
+ * Real dispatch, through HiveCore.
+ *
+ * This replaced a preview that computed a fabricated blast radius and toasted
+ * "Dispatch queued" without calling anything. What an operator needs before firing
+ * an action is what it will touch and whether it will be refused — both are known
+ * from the advertised capability metadata, so both are shown up front.
+ */
 interface Props {
   open: boolean;
-  onOpenChange: (o: boolean) => void;
+  onOpenChange: (open: boolean) => void;
 }
 
 export function DispatchPreview({ open, onOpenChange }: Props) {
-  // Default preview: bootstrap = touches all products from hivecore
-  const targetId = "hivecore";
-  const affected = useMemo(() => downstreams(targetId), []);
-  const byId = Object.fromEntries(PRODUCTS.map((p) => [p.id, p]));
-  const critAffected = affected.filter((id) => byId[id]?.status === "crit").length;
+  const { logAudit } = useHiveCommand();
+  const [catalog, setCatalog] = useState<ProductActions[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [selected, setSelected] = useState<{ product: string; action: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [outcome, setOutcome] = useState<DispatchOutcome | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const controller = new AbortController();
+    setLoading(true);
+    setOutcome(null);
+    fetchDispatchableActions(controller.signal)
+      .then((rows) => {
+        setCatalog(rows);
+        setError("");
+      })
+      .catch((cause) => {
+        if (cause instanceof DOMException && cause.name === "AbortError") return;
+        setError(cause instanceof Error ? cause.message : "Could not read capabilities.");
+      })
+      .finally(() => setLoading(false));
+    return () => controller.abort();
+  }, [open]);
+
+  const active = useMemo(() => {
+    if (!selected) return null;
+    const product = catalog.find((row) => row.productKey === selected.product);
+    const action = product?.actions.find((item) => item.id === selected.action);
+    return product && action ? { product, action } : null;
+  }, [selected, catalog]);
+
+  const refusal = active ? refusalReason(active.action) : null;
+
+  async function fire() {
+    if (!active || refusal || busy) return;
+    setBusy(true);
+    const result = await dispatchAction(active.product.productKey, active.action.id);
+    setBusy(false);
+    setOutcome(result);
+    logAudit({
+      kind: result.ok ? "action" : "info",
+      title: result.ok ? "Dispatched" : "Dispatch refused",
+      detail: `${active.product.productName} · ${active.action.id} — ${result.message}`,
+    });
+    if (result.ok) {
+      toast.success(`${active.product.productName} · ${active.action.id}`, {
+        description: result.message,
+      });
+    } else {
+      toast.error("Dispatch did not run", { description: result.message });
+    }
+  }
 
   return (
-    <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent className="border-[var(--honey)]/40 bg-background/95 sm:max-w-lg">
-        <AlertDialogHeader>
-          <AlertDialogTitle className="flex items-center gap-2 font-display uppercase tracking-wider text-[var(--honey)]">
-            <Rocket className="h-4 w-4" /> Dispatch preview · Blast radius
-          </AlertDialogTitle>
-          <AlertDialogDescription>
-            HiveCore will fan out to <span className="text-[var(--honey)] font-semibold">{affected.length}</span> downstream
-            product{affected.length === 1 ? "" : "s"} across the mesh.
-            {critAffected > 0 && (
-              <>
-                {" "}
-                <span className="text-[var(--crit)] font-semibold">{critAffected}</span> currently critical — dispatch may amplify pressure.
-              </>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="border-[var(--honey)]/40 bg-background/95 sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 font-display uppercase tracking-wider text-[var(--honey)]">
+            <Rocket className="h-4 w-4" /> Dispatch an action
+          </DialogTitle>
+          <DialogDescription>
+            HiveCore dispatches on your behalf using the downstream service token it holds. Only
+            actions each product actually advertises appear here.
+          </DialogDescription>
+        </DialogHeader>
+
+        {loading ? (
+          <div className="flex items-center gap-2 py-8 text-xs text-muted-foreground">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" /> Reading advertised capabilities…
+          </div>
+        ) : error ? (
+          <div className="rounded-lg border border-[var(--crit)]/40 bg-[var(--crit)]/[0.06] p-3 text-xs text-muted-foreground">
+            {error}
+          </div>
+        ) : (
+          <div className="max-h-[46vh] space-y-3 overflow-y-auto pr-1">
+            {catalog.map((product) => (
+              <div key={product.productKey}>
+                <div className="mb-1 font-display text-[10px] uppercase tracking-wider text-muted-foreground">
+                  {product.productName}
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {product.actions.map((action) => (
+                    <ActionChip
+                      key={action.id}
+                      action={action}
+                      selected={
+                        selected?.product === product.productKey && selected?.action === action.id
+                      }
+                      onSelect={() =>
+                        setSelected({ product: product.productKey, action: action.id })
+                      }
+                    />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {active && (
+          <div className="rounded-lg border border-border bg-background/60 p-3">
+            <div className="font-display text-xs font-bold text-foreground">
+              {active.product.productName} · {active.action.label}
+            </div>
+            {active.action.description && (
+              <p className="mt-1 text-[11px] text-muted-foreground">{active.action.description}</p>
             )}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-
-        <div className="my-2 flex flex-wrap gap-1.5">
-          {affected.map((id) => {
-            const p = byId[id];
-            if (!p) return null;
-            const tone =
-              p.status === "crit"
-                ? "var(--crit)"
-                : p.status === "warn"
-                  ? "var(--warn)"
-                  : "var(--ok)";
-            return (
-              <span
-                key={id}
-                className="inline-flex items-center gap-1.5 rounded border border-border bg-background/60 px-2 py-0.5 font-display text-[10px]"
-              >
-                <span
-                  className="h-1.5 w-1.5 rounded-full"
-                  style={{ background: tone, boxShadow: `0 0 6px ${tone}` }}
-                />
-                {p.name}
+            <div className="mt-2 flex flex-wrap gap-3 font-mono text-[10px] text-muted-foreground">
+              <span>
+                {active.action.method} {active.action.path}
               </span>
-            );
-          })}
-        </div>
+              {active.action.startsRun && <span>starts a run</span>}
+              {active.action.requiredScopes.length > 0 && (
+                <span>scopes: {active.action.requiredScopes.join(", ")}</span>
+              )}
+            </div>
+            {active.action.credentialRequirements.length > 0 && (
+              <div className="mt-1 font-mono text-[10px] text-muted-foreground">
+                credentials: {active.action.credentialRequirements.join(", ")}
+              </div>
+            )}
 
-        <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction
-            className="bg-[var(--honey)] text-background hover:bg-[var(--honey)]/90"
-            onClick={() => toast.success("Dispatch queued", { description: `${affected.length} downstreams notified` })}
+            {refusal ? (
+              <div className="mt-3 flex items-start gap-2 rounded border border-[var(--warn)]/40 bg-[var(--warn)]/[0.06] px-2 py-1.5">
+                <Ban className="mt-0.5 h-3 w-3 flex-shrink-0 text-[var(--warn)]" />
+                <span className="text-[11px] text-muted-foreground">{refusal}</span>
+              </div>
+            ) : (
+              <div className="mt-3 flex items-center gap-2 text-[11px] text-[var(--ok)]">
+                <ShieldCheck className="h-3 w-3" /> Read-only and dispatchable.
+              </div>
+            )}
+          </div>
+        )}
+
+        {outcome && (
+          <div
+            className={`rounded-lg border p-3 ${
+              outcome.ok
+                ? "border-[var(--ok)]/40 bg-[var(--ok)]/[0.06]"
+                : "border-[var(--crit)]/40 bg-[var(--crit)]/[0.06]"
+            }`}
           >
-            Confirm dispatch
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+            <div className="flex items-center gap-2 font-display text-[10px] uppercase tracking-wider">
+              {outcome.ok ? (
+                <ShieldCheck className="h-3 w-3 text-[var(--ok)]" />
+              ) : (
+                <AlertTriangle className="h-3 w-3 text-[var(--crit)]" />
+              )}
+              <span className={outcome.ok ? "text-[var(--ok)]" : "text-[var(--crit)]"}>
+                {outcome.status}
+              </span>
+              {outcome.remoteStatus !== null && (
+                <span className="font-mono text-muted-foreground">
+                  HTTP {outcome.remoteStatus}
+                </span>
+              )}
+            </div>
+            <p className="mt-1 text-[11px] text-muted-foreground">{outcome.message}</p>
+            {outcome.eventId && (
+              <code className="mt-1 block font-mono text-[10px] text-muted-foreground">
+                {outcome.eventId}
+              </code>
+            )}
+          </div>
+        )}
+
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={() => onOpenChange(false)}
+            className="rounded border border-border px-3 py-1.5 font-display text-[10px] uppercase tracking-wider text-muted-foreground transition hover:text-foreground"
+          >
+            Close
+          </button>
+          <button
+            onClick={fire}
+            disabled={!active || Boolean(refusal) || busy}
+            className="glow-honey inline-flex items-center gap-2 rounded bg-[var(--honey)] px-4 py-1.5 font-display text-[10px] font-bold uppercase tracking-wider text-primary-foreground transition hover:brightness-110 disabled:opacity-40"
+          >
+            {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Rocket className="h-3 w-3" />}
+            Dispatch
+          </button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ActionChip({
+  action,
+  selected,
+  onSelect,
+}: {
+  action: DispatchableAction;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const blocked = Boolean(refusalReason(action));
+  return (
+    <button
+      onClick={onSelect}
+      title={action.description}
+      className={`inline-flex items-center gap-1.5 rounded border px-2 py-1 font-mono text-[10px] transition ${
+        selected
+          ? "border-[var(--honey)] bg-[var(--honey)]/10 text-[var(--honey)]"
+          : blocked
+            ? "border-border text-muted-foreground hover:border-[var(--warn)]/40"
+            : "border-border text-foreground hover:border-[var(--honey)]/50"
+      }`}
+    >
+      {blocked && <Ban className="h-2.5 w-2.5 text-[var(--warn)]" />}
+      {action.id}
+    </button>
   );
 }

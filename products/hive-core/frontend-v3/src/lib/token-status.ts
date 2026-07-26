@@ -207,44 +207,7 @@ export async function fetchTokenStatuses(signal?: AbortSignal): Promise<TokenSta
   });
 }
 
-export interface ProvisionResult {
-  ok: boolean;
-  message: string;
-}
-
-/**
- * Mint or rotate a product's service token.
- *
- * The backend does the work in-process and returns only the resulting posture —
- * the token is written to the product's own storage and never reaches the browser.
- * Authorization is the product's own guard, so this is not a softer door than its
- * native /auth/generate-service-token route.
- *
- * The operator key travels as X-API-Key because that is the guard's intended path.
- * If a product uses a different key than the deck session, it refuses — which is
- * correct, and better than the control plane holding a master credential.
- */
-export async function provisionServiceToken(
-  slug: string,
-  rotate: boolean,
-): Promise<ProvisionResult> {
-  try {
-    const response = await apiFetch(`/api/products/${slug}/service-token`, {
-      method: "POST",
-      body: JSON.stringify({ rotate }),
-    });
-    if (response.ok) {
-      return {
-        ok: true,
-        message: rotate ? "Service token rotated." : "Service token provisioned.",
-      };
-    }
-    const payload = (await response.json().catch(() => null)) as { message?: string } | null;
-    return {
-      ok: false,
-      message: payload?.message ?? `HiveCore returned HTTP ${response.status}.`,
-    };
-  } catch {
-    return { ok: false, message: "Could not reach the control plane." };
-  }
-}
+// The suite-level provisioning helper lived here and is gone: it minted a token the
+// backend then discarded, so the product ended up authenticated while HiveCore still
+// could not dispatch to it. Provisioning now goes through HiveCore's own route,
+// which stores the token where its dispatcher reads from — see lib/dispatch.ts.

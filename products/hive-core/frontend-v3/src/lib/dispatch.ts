@@ -1,0 +1,209 @@
+// Action dispatch through HiveCore.
+//
+// HiveCore is the dispatcher, not the deck: it holds the downstream service tokens,
+// checks the action's safety metadata, refuses what it must, and records an event.
+// The deck's job is to show what will happen before it happens, and to report what
+// actually did — never to call a product directly.
+//
+// Now that the engine is mounted, its dispatch route lives under the suite prefix.
+
+import { apiFetch } from "./http";
+
+export interface DispatchableAction {
+  id: string;
+  label: string;
+  description: string;
+  method: string;
+  path: string;
+  mutating: boolean;
+  destructive: boolean;
+  opensPr: boolean;
+  requiresApproval: boolean;
+  startsRun: boolean;
+  requiredScopes: string[];
+  credentialRequirements: string[];
+}
+
+export interface ProductActions {
+  productKey: string;
+  productName: string;
+  actions: DispatchableAction[];
+}
+
+interface ApiAction {
+  id: string;
+  label: string;
+  description?: string;
+  method: string;
+  path: string;
+  mutating?: boolean;
+  destructive?: boolean;
+  opens_pr?: boolean;
+  requires_approval?: boolean;
+  starts_run?: boolean;
+  read_only?: boolean;
+  required_scopes?: string[];
+  credential_requirements?: string[];
+}
+
+interface ApiCapabilityReport {
+  key: string;
+  advertised: { display_name?: string; actions: ApiAction[] } | null;
+}
+
+function toAction(raw: ApiAction): DispatchableAction {
+  return {
+    id: raw.id,
+    label: raw.label,
+    description: raw.description ?? "",
+    method: raw.method,
+    path: raw.path,
+    mutating: Boolean(raw.mutating) || raw.read_only === false,
+    destructive: Boolean(raw.destructive),
+    opensPr: Boolean(raw.opens_pr),
+    requiresApproval: Boolean(raw.requires_approval),
+    startsRun: Boolean(raw.starts_run),
+    requiredScopes: raw.required_scopes ?? [],
+    credentialRequirements: raw.credential_requirements ?? [],
+  };
+}
+
+export async function fetchDispatchableActions(
+  signal?: AbortSignal,
+): Promise<ProductActions[]> {
+  const response = await apiFetch("/api/products/capabilities", { signal });
+  if (!response.ok) throw new Error(`HTTP ${response.status} from /api/products/capabilities`);
+  const rows = (await response.json()) as ApiCapabilityReport[];
+
+  return rows
+    .filter((row) => row.advertised && row.key !== "hive-core")
+    .map((row) => ({
+      productKey: row.key,
+      productName: row.advertised?.display_name ?? row.key,
+      actions: (row.advertised?.actions ?? []).map(toAction),
+    }))
+    .filter((row) => row.actions.length > 0);
+}
+
+/**
+ * Why HiveCore will refuse an action, decided before dispatching rather than after.
+ *
+ * These mirror the engine's own guards. Duplicating them here is not the deck
+ * second-guessing the backend — the backend still refuses independently — it is so
+ * the operator sees the reason on the button instead of in an error toast.
+ */
+export function refusalReason(action: DispatchableAction): string | null {
+  if (action.destructive) {
+    return "Destructive actions are not dispatched.";
+  }
+  if (action.requiresApproval || action.opensPr) {
+    return "Approval-gated and PR-opening actions wait on the suite approval flow, which does not exist yet.";
+  }
+  return null;
+}
+
+export interface DispatchOutcome {
+  ok: boolean;
+  status: string;
+  message: string;
+  remoteStatus: number | null;
+  startedRun: boolean;
+  eventId: string;
+}
+
+interface DispatchEnvelope {
+  data?: {
+    event?: {
+      id?: string;
+      status?: string;
+      remote_status?: number | null;
+      error?: string;
+    };
+    started_run?: boolean;
+  };
+  error?: { code?: string; message?: string };
+}
+
+/**
+ * Dispatch through the mounted HiveCore engine.
+ *
+ * A non-2xx here is HiveCore refusing or failing. A 2xx with an event whose status
+ * is "failed" means HiveCore dispatched and the *product* rejected it — different
+ * facts, reported differently.
+ */
+export async function dispatchAction(
+  productKey: string,
+  actionId: string,
+  payload: unknown = {},
+): Promise<DispatchOutcome> {
+  let response: Response;
+  try {
+    response = await apiFetch(
+      `/api/products/hive-core/products/${productKey}/actions/${actionId}`,
+      { method: "POST", body: JSON.stringify(payload) },
+    );
+  } catch {
+    return {
+      ok: false,
+      status: "unreachable",
+      message: "Could not reach the control plane.",
+      remoteStatus: null,
+      startedRun: false,
+      eventId: "",
+    };
+  }
+
+  const body = (await response.json().catch(() => null)) as DispatchEnvelope | null;
+
+  if (!response.ok) {
+    return {
+      ok: false,
+      status: body?.error?.code ?? "dispatch_refused",
+      message: body?.error?.message ?? `HiveCore returned HTTP ${response.status}.`,
+      remoteStatus: response.status,
+      startedRun: false,
+      eventId: "",
+    };
+  }
+
+  const event = body?.data?.event;
+  const dispatched = event?.status === "dispatched";
+  return {
+    ok: dispatched,
+    status: event?.status ?? "unknown",
+    message: dispatched
+      ? `Product accepted the action${body?.data?.started_run ? " and started a run" : ""}.`
+      : (event?.error ?? "The product rejected the action."),
+    remoteStatus: event?.remote_status ?? null,
+    startedRun: Boolean(body?.data?.started_run),
+    eventId: event?.id ?? "",
+  };
+}
+
+/**
+ * Provision a downstream service token through HiveCore.
+ *
+ * The suite-level provisioning route mints a token and deliberately discards it, so
+ * nothing can dispatch with it. HiveCore's own route mints and stores it server-side
+ * where its dispatcher reads from — which is the whole point of the broker.
+ */
+export async function provisionThroughHiveCore(productKey: string): Promise<DispatchOutcome> {
+  const response = await apiFetch(
+    `/api/products/hive-core/products/${productKey}/provision-service-token`,
+    { method: "POST", body: JSON.stringify({}) },
+  );
+  const body = (await response.json().catch(() => null)) as
+    | { data?: { message?: string }; error?: { message?: string } }
+    | null;
+
+  return {
+    ok: response.ok,
+    status: response.ok ? "provisioned" : "failed",
+    message:
+      (response.ok ? body?.data?.message : body?.error?.message) ??
+      `HiveCore returned HTTP ${response.status}.`,
+    remoteStatus: response.status,
+    startedRun: false,
+    eventId: "",
+  };
+}

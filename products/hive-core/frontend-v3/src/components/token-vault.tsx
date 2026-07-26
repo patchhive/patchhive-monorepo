@@ -2,9 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { KeyRound, Loader2, RefreshCw, RotateCw, ShieldAlert, Wand2 } from "lucide-react";
 import { toast } from "sonner";
 
+import { provisionThroughHiveCore } from "@/lib/dispatch";
 import {
   fetchTokenStatuses,
-  provisionServiceToken,
   TOKEN_STATE_LABEL,
   type TokenState,
   type TokenStatus,
@@ -61,9 +61,13 @@ export function TokenVault() {
   const [nonce, setNonce] = useState(0);
   const [busy, setBusy] = useState<string | null>(null);
 
-  async function provision(row: TokenStatus, rotate: boolean) {
+  // Provision through HiveCore, not the suite route. The suite route mints a token
+  // and discards it, which leaves the product authenticated but leaves HiveCore
+  // unable to dispatch to it. HiveCore's own route stores the token server-side
+  // where its dispatcher reads from, which is the point of having a broker.
+  async function provision(row: TokenStatus) {
     setBusy(row.productId);
-    const result = await provisionServiceToken(row.slug, rotate);
+    const result = await provisionThroughHiveCore(row.slug);
     setBusy(null);
     if (result.ok) {
       toast.success(row.productName, { description: result.message });
@@ -198,7 +202,7 @@ export function TokenVault() {
                   row.state === "expiring") && (
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     <button
-                      onClick={() => provision(row, row.state !== "missing")}
+                      onClick={() => provision(row)}
                       disabled={busy === row.productId}
                       className="inline-flex items-center gap-1 rounded border border-[var(--honey)]/50 bg-[var(--honey)]/10 px-2 py-1 font-display text-[9px] uppercase tracking-wider text-[var(--honey)] transition hover:brightness-125 disabled:opacity-50"
                     >
