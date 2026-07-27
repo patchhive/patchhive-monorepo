@@ -7,7 +7,20 @@ use crate::models::SetupFleetLaunchJob;
 
 #[derive(Clone)]
 pub struct AppState {
+    /// For polling: health, startup checks, capabilities, auth status. Short
+    /// timeouts are right here — a product that cannot answer "are you alive" in a
+    /// few seconds is not alive for dashboard purposes.
     pub client: reqwest::Client,
+    /// For dispatching actions. A product run is real work: SignalHive scans GitHub,
+    /// RefactorScout walks a repository, DepTriage reads dependency graphs. Minutes,
+    /// not seconds.
+    ///
+    /// These were one client with a 4-second ceiling, which meant every dispatch that
+    /// did anything substantial failed — and failed as a bare transport error with no
+    /// status, so it read as "the product is unreachable" rather than "HiveCore hung
+    /// up on it". Suite runs made it unmissable: the long actions are precisely the
+    /// ones worth orchestrating.
+    pub dispatch_client: reqwest::Client,
     pub latest_fleet_launch: Arc<RwLock<Option<SetupFleetLaunchJob>>>,
 }
 
@@ -24,11 +37,36 @@ impl AppState {
             .timeout(Duration::from_secs(4))
             .build()
             .expect("HiveCore reqwest client should build");
+
+        // Connect stays short: a product that will not accept a connection is not
+        // going to start working partway through. It is the response that takes time.
+        let dispatch_client = reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(5))
+            .timeout(Duration::from_secs(dispatch_timeout_secs()))
+            .build()
+            .expect("HiveCore dispatch client should build");
+
         Self {
             client,
+            dispatch_client,
             latest_fleet_launch: Arc::new(RwLock::new(None)),
         }
     }
+}
+
+/// How long HiveCore waits for a dispatched action, in seconds.
+///
+/// Ten minutes by default. Long, deliberately: the cost of waiting too long is a
+/// slow dashboard row, and the cost of waiting too little is a completed product run
+/// recorded as a failure — which is worse, because the work happened and the evidence
+/// says it did not.
+pub fn dispatch_timeout_secs() -> u64 {
+    std::env::var("HIVE_CORE_DISPATCH_TIMEOUT_SECS")
+        .ok()
+        .and_then(|value| value.trim().parse::<u64>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(600)
+        .clamp(5, 3_600)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

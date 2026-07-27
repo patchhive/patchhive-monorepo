@@ -171,7 +171,11 @@ pub(super) async fn dispatch_once(
         created_at: now_rfc3339(),
     };
 
-    let mut request = authorized_request(state.client.request(method.clone(), target_url), &auth);
+    // The dispatch client, not the polling one: this is a product doing real work.
+    let mut request = authorized_request(
+        state.dispatch_client.request(method.clone(), target_url),
+        &auth,
+    );
     if method != Method::GET && method != Method::HEAD {
         request = request.json(&input.payload);
     }
@@ -193,8 +197,25 @@ pub(super) async fn dispatch_once(
         }
         Err(err) => {
             event.status = "failed".into();
-            event.error = err.to_string();
-            event.response_json = json!({ "error": err.to_string() });
+            // Name a timeout as a timeout. reqwest's Display for a timed-out request
+            // is "error sending request for url (...)", which reads as "the product is
+            // unreachable" when what actually happened is that HiveCore stopped
+            // waiting for a product that was still working.
+            event.error = if err.is_timeout() {
+                format!(
+                    "HiveCore stopped waiting after {}s. The product may still be running this action; \
+                     raise HIVE_CORE_DISPATCH_TIMEOUT_SECS if this action legitimately takes longer.",
+                    crate::state::dispatch_timeout_secs()
+                )
+            } else if err.is_connect() {
+                format!(
+                    "Could not connect to the product at {}: {err}",
+                    event.target_url
+                )
+            } else {
+                err.to_string()
+            };
+            event.response_json = json!({ "error": event.error });
         }
     }
 

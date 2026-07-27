@@ -177,49 +177,15 @@ async fn execute(
 
         // A plain step is one dispatch; a step with a target reference is one per
         // resolved target.
-        let expansions = match &input.targets {
-            None => vec![(String::new(), base_payload(&input.payload))],
-            Some(targets) => match resolve_targets(&outputs, targets) {
-                Ok(values) => {
-                    if values.is_empty() {
-                        // Zero targets is a failure, not a quiet success. A step that
-                        // dispatched nothing and reported "completed" is how a run
-                        // that did no work gets read as a run that found nothing wrong.
-                        run.steps.push(failed_step(
-                            input,
-                            &format!(
-                                "Resolved 0 targets from step {} ({}), so this step did not run.",
-                                targets.from_step,
-                                describe_source(targets)
-                            ),
-                        ));
-                        if !continue_on_failure {
-                            halted = true;
-                        }
-                        continue;
-                    }
-                    values
-                        .into_iter()
-                        .map(|target| {
-                            let mut payload = base_payload(&input.payload);
-                            if let Value::Object(map) = &mut payload {
-                                map.insert(
-                                    targets.assign_to.trim().to_string(),
-                                    Value::String(target.clone()),
-                                );
-                            }
-                            (target, payload)
-                        })
-                        .collect()
+        let expansions = match plan_expansions(&outputs, input) {
+            Ok(expansions) => expansions,
+            Err(message) => {
+                run.steps.push(failed_step(input, &message));
+                if !continue_on_failure {
+                    halted = true;
                 }
-                Err(message) => {
-                    run.steps.push(failed_step(input, &message));
-                    if !continue_on_failure {
-                        halted = true;
-                    }
-                    continue;
-                }
-            },
+                continue;
+            }
         };
 
         let mut last_body = None;
@@ -367,6 +333,51 @@ fn describe_source(targets: &SuiteRunTargets) -> String {
     } else {
         format!("{path} field `{}`", targets.field.trim())
     }
+}
+
+/// Turn one composed step into the dispatches it will actually make.
+///
+/// Separated from the execution loop so the expansion is testable without a network:
+/// how many dispatches a step becomes, and what payload each carries, is the part
+/// that decides how much of the world a run touches, and it should not only be
+/// exercised against live products.
+///
+/// Returns `(target, payload)` pairs. A plain step yields exactly one with an empty
+/// target. A referencing step yields one per resolved target, each with `assign_to`
+/// set to that target.
+fn plan_expansions(
+    outputs: &StepOutputs,
+    input: &SuiteRunStepInput,
+) -> Result<Vec<(String, Value)>, String> {
+    let Some(targets) = &input.targets else {
+        return Ok(vec![(String::new(), base_payload(&input.payload))]);
+    };
+
+    let values = resolve_targets(outputs, targets)?;
+    if values.is_empty() {
+        // Zero targets is a failure, not a quiet success. A step that dispatched
+        // nothing and reported "completed" is how a run that did no work gets read as
+        // a run that found nothing wrong.
+        return Err(format!(
+            "Resolved 0 targets from step {} ({}), so this step did not run.",
+            targets.from_step,
+            describe_source(targets)
+        ));
+    }
+
+    Ok(values
+        .into_iter()
+        .map(|target| {
+            let mut payload = base_payload(&input.payload);
+            if let Value::Object(map) = &mut payload {
+                map.insert(
+                    targets.assign_to.trim().to_string(),
+                    Value::String(target.clone()),
+                );
+            }
+            (target, payload)
+        })
+        .collect())
 }
 
 /// Resolve an earlier step's output into a list of target strings.
@@ -680,5 +691,97 @@ mod tests {
         assert!(request.steps[0].targets.is_none());
         assert!(request.steps[0].payload.is_null());
         assert_eq!(base_payload(&request.steps[0].payload), json!({}));
+    }
+
+    fn step_with(payload: Value, targets: Option<SuiteRunTargets>) -> SuiteRunStepInput {
+        SuiteRunStepInput {
+            product: "refactor-scout".into(),
+            action: "scan".into(),
+            payload,
+            targets,
+        }
+    }
+
+    #[test]
+    fn a_plain_step_expands_to_exactly_one_dispatch_keeping_its_payload() {
+        let input = step_with(json!({ "repo": "owner/one", "depth": 2 }), None);
+        let planned = plan_expansions(&vec![None], &input).expect("plain step should plan");
+
+        assert_eq!(planned.len(), 1);
+        assert_eq!(planned[0].0, "");
+        assert_eq!(planned[0].1, json!({ "repo": "owner/one", "depth": 2 }));
+    }
+
+    #[test]
+    fn each_target_gets_its_own_payload_with_the_field_assigned() {
+        // The whole feature in one assertion: N targets become N dispatches, the
+        // named field carries the target, and everything else the operator typed
+        // survives onto every one of them.
+        let outputs = outputs(json!({ "repos": [
+            { "full_name": "owner/one" },
+            { "full_name": "owner/two" },
+        ]}));
+        let input = step_with(
+            json!({ "depth": 3 }),
+            Some(reference(1, "repos", "full_name", 25)),
+        );
+
+        let planned = plan_expansions(&outputs, &input).expect("targets should plan");
+
+        assert_eq!(planned.len(), 2);
+        assert_eq!(planned[0].0, "owner/one");
+        assert_eq!(planned[0].1, json!({ "depth": 3, "repo": "owner/one" }));
+        assert_eq!(planned[1].1, json!({ "depth": 3, "repo": "owner/two" }));
+    }
+
+    #[test]
+    fn the_assigned_field_overwrites_a_conflicting_literal() {
+        // If the operator both typed `repo` and referenced targets, the reference is
+        // the more specific instruction and must win — otherwise every expansion
+        // would silently dispatch against the same hardcoded repository.
+        let outputs = outputs(json!({ "repos": ["owner/one", "owner/two"] }));
+        let input = step_with(
+            json!({ "repo": "owner/typed" }),
+            Some(reference(1, "repos", "", 25)),
+        );
+
+        let planned = plan_expansions(&outputs, &input).expect("targets should plan");
+
+        assert_eq!(planned.len(), 2);
+        assert_eq!(planned[0].1["repo"], "owner/one");
+        assert_eq!(planned[1].1["repo"], "owner/two");
+    }
+
+    #[test]
+    fn a_non_object_payload_becomes_an_object_rather_than_dropping_the_target() {
+        // Payload is `Value`, so a caller can send a string or a list. The target
+        // still has to land somewhere; silently dispatching without it would act on
+        // whatever the product defaults to.
+        let outputs = outputs(json!({ "repos": ["owner/one"] }));
+        let input = step_with(json!("not-an-object"), Some(reference(1, "repos", "", 25)));
+
+        let planned = plan_expansions(&outputs, &input).expect("targets should plan");
+
+        assert_eq!(planned.len(), 1);
+        assert_eq!(planned[0].1, json!({ "repo": "owner/one" }));
+    }
+
+    #[test]
+    fn zero_targets_plans_nothing_and_says_so() {
+        let outputs = outputs(json!({ "repos": [] }));
+        let input = step_with(json!({}), Some(reference(1, "repos", "full_name", 25)));
+
+        let error = plan_expansions(&outputs, &input).expect_err("empty targets should fail");
+        assert!(error.contains("Resolved 0 targets"));
+    }
+
+    #[test]
+    fn planning_respects_the_server_cap_so_a_run_cannot_be_widened_by_payload() {
+        let items: Vec<Value> = (0..80).map(|i| json!(format!("owner/repo{i}"))).collect();
+        let outputs = outputs(json!({ "repos": items }));
+        let input = step_with(json!({}), Some(reference(1, "repos", "", 999)));
+
+        let planned = plan_expansions(&outputs, &input).expect("targets should plan");
+        assert_eq!(planned.len(), MAX_TARGETS_PER_STEP as usize);
     }
 }

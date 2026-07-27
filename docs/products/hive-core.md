@@ -229,7 +229,18 @@ All errors are wrapped in the `ApiEnvelope` format:
 | `PATCHHIVE_AI_URL` | — | OpenAI-compatible gateway used for incident postmortem and run-failure drafts. Suite-wide; prefer this over a raw provider endpoint |
 | `PATCHHIVE_AI_API_KEY` | — | Bearer for `PATCHHIVE_AI_URL` when it is **not** a loopback address. A local gateway holds the provider key itself and needs none |
 | `HIVE_CORE_AI_MODEL` | `gpt-4o-mini` | Model name sent to the gateway for narrative drafts |
+| `HIVE_CORE_DISPATCH_TIMEOUT_SECS` | `600` | How long HiveCore waits for a dispatched product action. Clamped to 5–3600. Separate from the short polling timeout used for health and status |
 | `RUST_LOG` | `info` | Logging level |
+
+HiveCore uses two HTTP clients. Polling (health, startup checks, capabilities, auth
+status) keeps a 4-second ceiling — a product that cannot answer "are you alive" quickly
+is not alive for dashboard purposes. Dispatch uses `HIVE_CORE_DISPATCH_TIMEOUT_SECS`,
+because a product run is real work: SignalHive scans GitHub, RefactorScout walks a
+repository. Erring long is deliberate — waiting too long costs a slow row, waiting too
+little records a completed product run as a failure, and that is worse because the work
+happened and the evidence says it did not. A timeout is reported as a timeout, naming
+the variable, rather than as a bare transport error that reads like an unreachable
+product.
 
 The narrative endpoints (`POST /incidents/summarize`, `POST /runs/explain`) draft text
 for an operator to edit and accept. They dispatch nothing, write to no product, and
