@@ -1,4 +1,5 @@
 mod client;
+pub mod discovery;
 mod errors;
 pub mod models;
 

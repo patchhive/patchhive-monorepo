@@ -5,6 +5,15 @@ mod schema;
 
 // Re-export all public items for backward compatibility.
 // External callers use `db::function_name` — this keeps them working.
+/// A connection for repository-policy reads.
+///
+/// Deliberately a separate accessor rather than exposing `connect`: this is for the
+/// synchronous policy filter that runs between GitHub calls. Callers open it for the
+/// filter and drop it, so no handle is parked across an await.
+pub fn policy_connection() -> anyhow::Result<rusqlite::Connection> {
+    rusqlite::Connection::open(schema::db_path()).map_err(Into::into)
+}
+
 pub use repos::{
     delete_repo_list, delete_scan_preset, list_repo_lists, list_scan_presets,
     normalize_repo_list_type, normalize_repo_name, repo_list_sets, save_repo_list,

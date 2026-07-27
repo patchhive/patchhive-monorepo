@@ -661,6 +661,25 @@ Important env vars:
 - Watch Mode is a UI toggle backed by SQLite settings.
 - PatchHive should contribute under its own GitHub identity with explicit autonomous attribution.
 - Allowlist, denylist, and opt-out controls should exist early anywhere PatchHive discovers work autonomously.
+- **Repository policy is one suite-wide store, not one per product.** If a repository
+  owner does not want RepoReaper on their repository, they do not want SignalHive
+  there either — same owner, same wishes, and no reason the answer should depend on
+  which product happened to ask. Five products previously kept their own
+  `*_repo_lists` while sharing one evaluator, which is worse than obviously separate
+  stores: it looks consistent and is not, and no single product's UI could show the
+  disagreement. `patchhive_product_core::repo_policy` is now the only store. Legacy
+  tables remain on disk as migration input and are not read. Precedence is opt-out →
+  denylist → allowlist → trust; conflicts resolve toward exclusion and are reported.
+  Trust is an elevation, never a way around an exclusion, and a verified public
+  opt-out cannot be cleared by any operator or product edit — including by omission,
+  which is the case that actually happens.
+- **Discovery filters inside the shared helper, not at each call site.**
+  `patchhive_github_data::discovery` searches and filters as one operation; there is
+  no entry point that returns unfiltered results. Eleven products each writing
+  "search, then filter" is eleven chances to forget the second half, and the failure
+  is silent — a run that touched an excluded repository looks exactly like one that
+  did not. Results are never backfilled to replace excluded ones: the survivors, the
+  considered count, and every exclusion with its reason come back together.
 - Hard quality and rate limits should gate outbound PR creation so PatchHive's reputation compounds in the right direction.
 - HiveCore owns operator-managed repository exclusions/trust and atomic
   per-product plus suite-wide concurrent PR budgets. RepoReaper is the first

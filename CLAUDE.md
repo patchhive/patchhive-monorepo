@@ -202,6 +202,14 @@ products moves here *before* a third copy exists.
   payload validation, authorization, execution, and approval policy.
 - **`validation`** — `TestExecutionStatus` with `passed()`, `should_retry()`,
   `requires_draft()`. **Only `passed` permits a non-draft autonomous PR.**
+- **`repo_policy`** — the one suite-wide repository policy store (`patchhive_repo_policy`).
+  `PolicyKind{OptOut,Denylist,Allowlist,Trusted}`, `RepoPolicyEntry`, `Decision` (with
+  the full precedence `chain`), `init_and_migrate`, `evaluate`, `filter_discovered`,
+  `scope_policy` (the `RepoScopePolicy` view, trust excluded), `record_listing`,
+  `remove_listings`, `migrate_legacy_tables`. **Never add a per-product repository
+  list.** An empty allowlist is not deny-all; conflicts resolve toward exclusion;
+  trust never bypasses an exclusion; verified public opt-outs survive every operator
+  and product edit, including omission from a saved list.
 - **`scope_policy`** — `RepoListType` (allow/deny/opt-out), `RepoScopePolicy`,
   `RepoScopeDecision`, `normalize_repo_name`.
 - **`hivecore_policy`** — `check_repository_policy`, `reserve_pr_slot`, `commit_pr_slot`,
@@ -219,7 +227,9 @@ products moves here *before* a third copy exists.
 
 ### GitHub crates
 
-- **`patchhive-github-data`** — `GH_API`, `request_headers`, `valid_repo`, `get_json`,
+- **`patchhive-github-data`** — `discovery::{discover_repositories, apply_policy,
+  DiscoveryRequest, DiscoveryOutcome}` (policy-filtered autonomous discovery);
+  `GH_API`, `request_headers`, `valid_repo`, `get_json`,
   `get_paginated_json`, `get_cursor_paginated_json`, `get_paginated_field_json`,
   `fetch_repository`, `search_repositories`, `fetch_issues`, `fetch_pull_requests`,
   `search_merged_pull_requests`, `search_closed_issues`, `fetch_pull_reviews`,
@@ -386,7 +396,12 @@ typography scale, spacing system, or theme implementation.
   history. See [docs/suite-runs-and-fix-capabilities.md](docs/suite-runs-and-fix-capabilities.md).
 - Only `TestExecutionStatus::passed` permits a non-draft autonomous PR.
 - Allowlist, denylist, and opt-out controls exist wherever PatchHive discovers work
-  autonomously — early, not as later polish.
+  autonomously — early, not as later polish. They live in **one** suite-wide store
+  (`patchhive_product_core::repo_policy`), never per product.
+- Autonomous discovery goes through `patchhive_github_data::discovery`, which searches
+  and filters as a single operation — there is no way to obtain unfiltered results and
+  forget the filter. Excluded repositories come back as `Decision`s carrying their
+  reason chain, so a run can record what it skipped and why.
 - HiveCore owns operator-managed repository exclusions/trust and atomic per-product plus
   suite-wide concurrent PR budgets. **The suite ceiling always wins, and enforcing clients
   fail closed when a configured policy service is unavailable.**

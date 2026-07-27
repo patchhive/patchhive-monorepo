@@ -787,6 +787,7 @@ dependencies = [
  "anyhow",
  "patchhive-product-core",
  "reqwest",
+ "rusqlite",
  "serde",
  "serde_json",
  "tokio",

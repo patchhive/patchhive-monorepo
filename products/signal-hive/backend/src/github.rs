@@ -123,6 +123,9 @@ pub async fn discover_repositories(
     let mut seen = std::collections::HashSet::new();
     let mut repos = Vec::new();
     let mut warnings = Vec::new();
+    // The same exclusion surfacing under three language scopes is one fact, not
+    // three warnings.
+    let mut excluded_reported = std::collections::HashSet::new();
 
     for language in languages {
         if repos.len() >= params.max_repos as usize {
@@ -167,10 +170,45 @@ pub async fn discover_repositories(
             }
         };
 
-        for repo in response.items {
-            if !repo_allowed(&repo.full_name, allowlist, denylist, opt_out) {
+        // Filter through the shared helper rather than in a local loop. The sets
+        // this function already receives would give the same answer, but they give
+        // it silently: a `continue` leaves no trace, so a scan that skipped half its
+        // results looked identical to a query that found few. Every exclusion now
+        // arrives with the reason chain that produced it and is surfaced as a scan
+        // warning — discovery is where nobody typed the names, so "why was this
+        // repository left out" has to stay answerable.
+        // Opened per filter step rather than once around the loop. The loop awaits
+        // GitHub between iterations, and a SQLite handle parked across network calls
+        // for the length of a discovery run buys nothing — opening is cheap, and the
+        // filter itself never awaits.
+        let outcome = match crate::db::policy_connection().and_then(|conn| {
+            patchhive_github_data::discovery::apply_policy(
+                &conn,
+                response.items,
+                "signal-hive",
+                "scan",
+            )
+        }) {
+            Ok(outcome) => outcome,
+            Err(error) => {
+                warn!("repository policy filtering failed for `{language}`: {error}");
+                warnings.push(format!(
+                    "SignalHive could not evaluate repository policy for language scope `{language}`, so those results were skipped rather than scanned unchecked."
+                ));
                 continue;
             }
+        };
+
+        for decision in &outcome.excluded {
+            if excluded_reported.insert(decision.repository.clone()) {
+                warnings.push(format!(
+                    "Skipped `{}`: {}",
+                    decision.repository, decision.reason
+                ));
+            }
+        }
+
+        for repo in outcome.repositories {
             if seen.insert(repo.full_name.clone()) {
                 repos.push(repo);
             }
