@@ -35,6 +35,12 @@ pub fn init_db() -> Result<()> {
     let conn = get_conn()?;
     conn.execute_batch(SCHEMA)?;
     scheduling::init_schema(&conn)?;
+    // Repository scope comes from the suite-wide store; RepoReaper's own
+    // `repo_reaper_repo_lists` becomes migration input and is no longer read.
+    // This matters most here: RepoReaper is the write-capable product, so it is the
+    // one where a list that disagrees with the rest of the suite opens a PR nobody
+    // wanted.
+    patchhive_product_core::repo_policy::init_and_migrate(&conn, "repo-reaper")?;
     migrate_legacy_schedules(&conn)?;
     migrate_pr_follow_up_count(&conn)?;
     Ok(())

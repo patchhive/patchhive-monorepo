@@ -1,10 +1,11 @@
 use std::collections::HashSet;
 
 use once_cell::sync::Lazy;
+use patchhive_product_core::repo_policy;
 use patchhive_product_core::scheduling::{
     self, ProductSchedule, SaveSchedule, DEFAULT_SCHEDULE_APPROVAL_POLICY,
 };
-use patchhive_product_core::scope_policy::{normalize_repo_name, RepoListType, RepoScopePolicy};
+use patchhive_product_core::scope_policy::RepoScopePolicy;
 use patchhive_product_core::sqlite::{product_db_path, PooledSqliteConnection, SqlitePool};
 use rusqlite::{params, types::Type};
 use serde_json::Value;
@@ -32,9 +33,13 @@ pub fn health_check() -> bool {
         .is_ok()
 }
 
-pub fn init_db() -> rusqlite::Result<()> {
+pub fn init_db() -> anyhow::Result<()> {
     let conn = connect()?;
-    init_schema(&conn)
+    init_schema(&conn)?;
+    // Repository scope comes from the suite-wide store; RefactorScout's own
+    // `refactor_scout_repo_lists` becomes migration input and is no longer read.
+    repo_policy::init_and_migrate(&conn, "refactor-scout")?;
+    Ok(())
 }
 
 fn init_schema(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
@@ -360,57 +365,48 @@ pub fn delete_scan_preset(name: &str) -> anyhow::Result<bool> {
     )? > 0)
 }
 
+// One suite-wide list, not one per product. An operator who tells RefactorScout to
+// stay off a repository means the whole suite: same owner, same wishes, and no reason
+// the answer should depend on which product happened to ask.
 pub fn list_repo_lists() -> anyhow::Result<Vec<RepoListItem>> {
     let conn = connect()?;
-    let mut stmt = conn.prepare(
-        "SELECT repo, list_type, added_at FROM refactor_scout_repo_lists ORDER BY list_type ASC, repo ASC",
-    )?;
-    let rows = stmt.query_map([], |row| {
-        Ok(RepoListItem {
-            repo: row.get(0)?,
-            list_type: row.get(1)?,
-            added_at: row.get(2)?,
+    let mut rows = repo_policy::list(&conn)?
+        .into_iter()
+        // Trust gates elevated operations RefactorScout does not perform; listing it
+        // as a scan control would imply this product acts on it.
+        .filter(|entry| entry.kind != repo_policy::PolicyKind::Trusted)
+        .map(|entry| RepoListItem {
+            repo: entry.repository,
+            list_type: entry.kind.as_str().to_string(),
+            added_at: entry.updated_at,
         })
-    })?;
-    rows.collect::<rusqlite::Result<Vec<_>>>()
-        .map_err(Into::into)
+        .collect::<Vec<_>>();
+    rows.sort_by(|left, right| {
+        left.list_type
+            .cmp(&right.list_type)
+            .then_with(|| left.repo.cmp(&right.repo))
+    });
+    Ok(rows)
 }
 
 pub fn save_repo_list(repo: &str, list_type: &str) -> anyhow::Result<RepoListItem> {
-    let repo = normalize_repo_name(repo)
-        .ok_or_else(|| anyhow::anyhow!("Repository must use owner/repo format."))?;
-    let list_type = RepoListType::parse(list_type)
-        .ok_or_else(|| anyhow::anyhow!("Unknown repository control."))?
-        .as_str();
-    let added_at = chrono::Utc::now().to_rfc3339();
     let conn = connect()?;
-    conn.execute(
-        "INSERT OR REPLACE INTO refactor_scout_repo_lists(repo, list_type, added_at) VALUES(?1, ?2, ?3)",
-        params![repo, list_type, added_at],
-    )?;
+    let entry = repo_policy::record_listing(&conn, repo, list_type, "refactor-scout")?;
     Ok(RepoListItem {
-        repo,
-        list_type: list_type.to_string(),
-        added_at,
+        repo: entry.repository,
+        list_type: entry.kind.as_str().to_string(),
+        added_at: entry.updated_at,
     })
 }
 
 pub fn delete_repo_list(repo: &str) -> anyhow::Result<bool> {
-    let Some(repo) = normalize_repo_name(repo) else {
-        return Ok(false);
-    };
     let conn = connect()?;
-    Ok(conn.execute(
-        "DELETE FROM refactor_scout_repo_lists WHERE repo = ?1",
-        [repo],
-    )? > 0)
+    Ok(repo_policy::remove_listings(&conn, repo)? > 0)
 }
 
 pub fn repo_scope_policy() -> anyhow::Result<RepoScopePolicy> {
-    let rows = list_repo_lists()?;
-    Ok(RepoScopePolicy::from_entries(rows.iter().map(|entry| {
-        (entry.repo.as_str(), entry.list_type.as_str())
-    })))
+    let conn = connect()?;
+    repo_policy::scope_policy(&conn)
 }
 
 pub fn get_schedule(name: &str) -> anyhow::Result<Option<ProductSchedule>> {

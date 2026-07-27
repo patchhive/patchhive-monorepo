@@ -78,8 +78,18 @@ async fn main() -> Result<()> {
 }
 
 fn init_tracing() {
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("patchhive_backend=info,tower_http=info"));
+    // The default used to be `patchhive_backend=info`, which enabled this crate and
+    // nothing else. Every product engine compiled in-process — and the shared crates
+    // underneath them — had its logs discarded, so startup diagnostics, migration
+    // reports and repository-policy conflict warnings were emitted into a filter that
+    // dropped them. A warning nobody can see is worse than no warning: it reads as
+    // "nothing happened".
+    //
+    // `info` is the floor for everything, with the noisy dependencies that motivated
+    // a narrow filter in the first place named explicitly. RUST_LOG still overrides.
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+        EnvFilter::new("info,hyper=warn,rustls=warn,h2=warn,reqwest=warn,sqlx=warn")
+    });
 
     tracing_subscriber::registry()
         .with(filter)

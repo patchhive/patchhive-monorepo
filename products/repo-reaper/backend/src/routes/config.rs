@@ -1028,25 +1028,26 @@ async fn get_repo_lists() -> Json<Value> {
     let Ok(conn) = get_conn() else {
         return Json(json!({"repos":[]}));
     };
-    let rows: Vec<Value> = conn
-        .prepare("SELECT repo, list_type, added_at FROM repo_reaper_repo_lists")
-        .ok()
-        .and_then(|mut s| {
-            let mapped = s
-                .query_map([], |r| {
-                    let list_type = r.get::<_, String>(1)?;
-                    Ok(json!({
-                        "repo": r.get::<_, String>(0)?,
-                        "list_type": RepoListType::parse(&list_type)
-                            .unwrap_or(RepoListType::Denylist)
-                            .as_str(),
-                        "added_at": r.get::<_, String>(2)?,
-                    }))
-                })
-                .ok()?;
-            Some(mapped.flatten().collect())
+    // One suite-wide list. Trust is excluded: it gates elevated operations and is
+    // granted in HiveCore, not from RepoReaper's repository controls.
+    let mut rows: Vec<Value> = patchhive_product_core::repo_policy::list(&conn)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|entry| entry.kind != patchhive_product_core::repo_policy::PolicyKind::Trusted)
+        .map(|entry| {
+            json!({
+                "repo": entry.repository,
+                "list_type": entry.kind.as_str(),
+                "added_at": entry.updated_at,
+            })
         })
-        .unwrap_or_default();
+        .collect();
+    rows.sort_by(|left, right| {
+        left["list_type"]
+            .as_str()
+            .cmp(&right["list_type"].as_str())
+            .then_with(|| left["repo"].as_str().cmp(&right["repo"].as_str()))
+    });
     Json(json!({"repos": rows}))
 }
 
@@ -1066,10 +1067,14 @@ async fn add_repo(Json(body): Json<RepoListUpdate>) -> Json<Value> {
     let Some(list_type) = RepoListType::parse(&body.list_type) else {
         return Json(json!({"ok": false, "error": "invalid list_type"}));
     };
-    let _ = conn.execute(
-        "INSERT OR REPLACE INTO repo_reaper_repo_lists(repo, list_type, added_at) VALUES(?1,?2,?3)",
-        rusqlite::params![repo, list_type.as_str(), Utc::now().to_rfc3339()],
-    );
+    if let Err(error) = patchhive_product_core::repo_policy::record_listing(
+        &conn,
+        &repo,
+        list_type.as_str(),
+        "repo-reaper",
+    ) {
+        return Json(json!({"ok": false, "error": error.to_string()}));
+    }
     Json(json!({"ok": true}))
 }
 
@@ -1080,7 +1085,9 @@ async fn remove_repo(Path(repo): Path<String>) -> Json<Value> {
     let Some(repo) = normalize_repo_name(&repo) else {
         return Json(json!({"ok": false, "error": "invalid repo"}));
     };
-    let _ = conn.execute("DELETE FROM repo_reaper_repo_lists WHERE repo=?1", [&repo]);
+    if let Err(error) = patchhive_product_core::repo_policy::remove_listings(&conn, &repo) {
+        return Json(json!({"ok": false, "error": error.to_string()}));
+    }
     Json(json!({"ok": true}))
 }
 

@@ -1,7 +1,8 @@
 use anyhow::Result;
 use chrono::Utc;
+use patchhive_product_core::repo_policy;
 use patchhive_product_core::scope_policy::{
-    normalize_repo_name as normalize_scope_repo_name, RepoListType, RepoScopePolicy,
+    normalize_repo_name as normalize_scope_repo_name, RepoListType,
 };
 use rusqlite::params;
 use std::collections::HashSet;
@@ -28,50 +29,47 @@ pub fn normalize_repo_name(value: &str) -> Option<String> {
     normalize_scope_repo_name(value)
 }
 
+// Repository lists live in the suite-wide `patchhive_repo_policy` table, not in
+// SignalHive's own `repo_lists`. An operator who tells one product to stay off a
+// repository means all of them: the same owner, the same wishes, and no reason the
+// answer should depend on which product asked. SignalHive's table remains on disk as
+// migration input and is no longer read.
 pub fn list_repo_lists() -> Result<Vec<RepoListItem>> {
     let conn = connect()?;
-    let mut stmt = conn.prepare(
-        "SELECT repo, list_type, added_at FROM repo_lists ORDER BY list_type ASC, repo ASC",
-    )?;
-    let rows = stmt.query_map([], |row| {
-        let list_type: String = row.get(1)?;
-        Ok(RepoListItem {
-            repo: row.get(0)?,
-            list_type: normalize_repo_list_type(&list_type)
-                .unwrap_or("denylist")
-                .to_string(),
-            added_at: row.get(2)?,
+    let mut repos = repo_policy::list(&conn)?
+        .into_iter()
+        // Trust is an elevation for operations SignalHive does not perform. Showing
+        // it in a scan-scope list would imply this product acts on it.
+        .filter(|entry| entry.kind != repo_policy::PolicyKind::Trusted)
+        .map(|entry| RepoListItem {
+            repo: entry.repository,
+            list_type: entry.kind.as_str().to_string(),
+            added_at: entry.updated_at,
         })
-    })?;
-
-    let mut repos = Vec::new();
-    for row in rows {
-        repos.push(row?);
-    }
+        .collect::<Vec<_>>();
+    repos.sort_by(|left, right| {
+        left.list_type
+            .cmp(&right.list_type)
+            .then_with(|| left.repo.cmp(&right.repo))
+    });
     Ok(repos)
 }
 
 pub fn save_repo_list(repo: &str, list_type: &str) -> Result<()> {
     let conn = connect()?;
-    conn.execute(
-        "INSERT OR REPLACE INTO repo_lists(repo, list_type, added_at) VALUES(?1, ?2, ?3)",
-        params![repo, list_type, Utc::now().to_rfc3339()],
-    )?;
+    repo_policy::record_listing(&conn, repo, list_type, "signal-hive")?;
     Ok(())
 }
 
 pub fn delete_repo_list(repo: &str) -> Result<()> {
     let conn = connect()?;
-    conn.execute("DELETE FROM repo_lists WHERE repo = ?1", [repo])?;
+    repo_policy::remove_listings(&conn, repo)?;
     Ok(())
 }
 
 pub fn repo_list_sets() -> Result<(HashSet<String>, HashSet<String>, HashSet<String>)> {
-    let rows = list_repo_lists()?;
-    let policy = RepoScopePolicy::from_entries(
-        rows.iter()
-            .map(|row| (row.repo.as_str(), row.list_type.as_str())),
-    );
+    let conn = connect()?;
+    let policy = repo_policy::scope_policy(&conn)?;
     Ok((policy.allowlist, policy.denylist, policy.opt_out))
 }
 

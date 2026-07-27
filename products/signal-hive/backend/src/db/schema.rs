@@ -238,6 +238,9 @@ pub(crate) fn init_schema(conn: &Connection) -> anyhow::Result<()> {
 pub fn init_db() -> anyhow::Result<()> {
     let conn = connect()?;
     init_schema(&conn)?;
+    // Repository scope now comes from the suite-wide store; SignalHive's own
+    // `repo_lists` becomes migration input and is no longer read.
+    patchhive_product_core::repo_policy::init_and_migrate(&conn, "signal-hive")?;
     drop(conn);
     super::schedules::migrate_legacy_scan_schedules()
 }

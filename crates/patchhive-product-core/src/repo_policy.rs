@@ -380,6 +380,106 @@ pub fn filter_discovered(
     Ok((allowed, excluded))
 }
 
+/// Initialize the shared table and fold any legacy per-product lists into it.
+///
+/// Every product calls this from its own schema init. In suite mode they share one
+/// database and the first caller does the work; standalone, each product migrates its
+/// own copy. Either way the product stops reading its private table afterwards.
+///
+/// Conflicts are logged, not swallowed: a repository allowed in one product and denied
+/// in another resolves toward exclusion, and an operator needs to know it happened.
+pub fn init_and_migrate(conn: &Connection, product: &str) -> Result<MigrationReport> {
+    init_schema(conn)?;
+    let report = migrate_legacy_tables(conn)?;
+    if report.imported > 0 {
+        tracing::info!(
+            "{product}: imported {} repository policy entries from {}",
+            report.imported,
+            report.sources.join(", ")
+        );
+    }
+    for conflict in &report.conflicts {
+        tracing::warn!(
+            "{product}: repository policy conflict for {}: {} — resolved to {}",
+            conflict.repository,
+            conflict.claims.join(" / "),
+            conflict.resolved_to.as_str()
+        );
+    }
+    Ok(report)
+}
+
+/// The shared store as a [`RepoScopePolicy`], for products that already filter with one.
+///
+/// Products reached the same three sets from their own `*_repo_lists` table. The sets
+/// were never the problem — the *source* was, because five copies of a list is five
+/// chances for a repository to be excluded in one product and reachable from another.
+/// This hands back the familiar shape, read from the one table, so a product repoints
+/// without rewriting the loop it already filters in.
+///
+/// Trust is deliberately not represented: it gates elevated operations, which these
+/// products do not perform, and flattening an elevation into a permission set is how
+/// a safety distinction gets lost.
+pub fn scope_policy(conn: &Connection) -> Result<crate::scope_policy::RepoScopePolicy> {
+    let entries = list(conn)?;
+    let collect = |kind| {
+        entries
+            .iter()
+            .filter(|entry| entry.kind == kind)
+            .map(|entry| entry.repository.clone())
+            .collect::<std::collections::HashSet<_>>()
+    };
+    Ok(crate::scope_policy::RepoScopePolicy::new(
+        collect(PolicyKind::Allowlist),
+        collect(PolicyKind::Denylist),
+        collect(PolicyKind::OptOut),
+    ))
+}
+
+/// Record a repository listing from a product's own list editor.
+///
+/// `list_type` is the legacy `allowlist` / `denylist` / `opt_out` spelling the product
+/// UIs already send. An unrecognised value is rejected rather than defaulted: guessing
+/// a listing wrong in either direction is a safety decision, not a formatting one.
+pub fn record_listing(
+    conn: &Connection,
+    repository: &str,
+    list_type: &str,
+    source: &str,
+) -> Result<RepoPolicyEntry> {
+    let Some(repository) = normalize_repo_name(repository) else {
+        anyhow::bail!("Repository must use owner/repo format.");
+    };
+    let Some(kind) = PolicyKind::parse(list_type) else {
+        anyhow::bail!("Unknown list type '{list_type}'.");
+    };
+    let entry = RepoPolicyEntry {
+        repository,
+        kind,
+        source: source.to_string(),
+        notes: String::new(),
+        verified: false,
+        updated_at: now_rfc3339(),
+    };
+    upsert(conn, &entry)?;
+    Ok(entry)
+}
+
+/// Remove every operator-owned listing for a repository.
+///
+/// Verified public opt-outs are left in place. A product's list editor removing a row
+/// means "I no longer list this"; it cannot mean "the owner withdrew their opt-out".
+pub fn remove_listings(conn: &Connection, repository: &str) -> Result<usize> {
+    let Some(repository) = normalize_repo_name(repository) else {
+        return Ok(0);
+    };
+    let removed = conn.execute(
+        &format!("DELETE FROM {TABLE} WHERE repository = ?1 AND kind <> ?2"),
+        params![repository, PolicyKind::OptOut.as_str()],
+    )?;
+    Ok(removed)
+}
+
 /// What a legacy-table import did, and what it could not decide cleanly.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MigrationReport {
@@ -544,17 +644,7 @@ pub fn migrate_legacy_tables(conn: &Connection) -> Result<MigrationReport> {
             .collect();
 
         if let Some(kind) = listing {
-            if distinct.len() > 1 {
-                report.conflicts.push(PolicyConflict {
-                    repository: repository.clone(),
-                    claims: entries
-                        .iter()
-                        .map(|(source, kind)| format!("{source}: {}", kind.as_str()))
-                        .collect(),
-                    resolved_to: kind,
-                });
-            }
-            if insert_if_absent(
+            let wrote = insert_if_absent(
                 conn,
                 &RepoPolicyEntry {
                     repository: repository.clone(),
@@ -564,8 +654,24 @@ pub fn migrate_legacy_tables(conn: &Connection) -> Result<MigrationReport> {
                     verified: false,
                     updated_at: now.clone(),
                 },
-            )? {
+            )?;
+            if wrote {
                 report.imported += 1;
+            }
+            // Report the conflict only when this call actually resolved it. Every
+            // product runs this migration and every one of them re-reads the same
+            // legacy tables, so reporting on inspection made one disagreement look
+            // like four — each later run claiming to have resolved something that was
+            // already settled. A repeat migration that changes nothing says nothing.
+            if wrote && distinct.len() > 1 {
+                report.conflicts.push(PolicyConflict {
+                    repository: repository.clone(),
+                    claims: entries
+                        .iter()
+                        .map(|(source, kind)| format!("{source}: {}", kind.as_str()))
+                        .collect(),
+                    resolved_to: kind,
+                });
             }
         }
 
@@ -852,5 +958,108 @@ mod tests {
         );
         assert_eq!(report.conflicts.len(), 1);
         assert_eq!(report.conflicts[0].resolved_to, PolicyKind::Denylist);
+    }
+
+    #[test]
+    fn one_products_denial_binds_every_other_product() {
+        // The whole point of the shared store. SignalHive lists a repository as
+        // denied; RepoReaper — a different product, and the write-capable one — must
+        // reach the same answer. When each product owned its own table this was the
+        // failure that could not be seen from any single product's UI.
+        let conn = conn();
+        record_listing(&conn, "Owner/Quiet", "denylist", "signal-hive").unwrap();
+
+        for product in [
+            "signal-hive",
+            "repo-reaper",
+            "refactor-scout",
+            "vuln-triage",
+        ] {
+            let decision = evaluate(&conn, "owner/quiet", product, "scan").unwrap();
+            assert!(!decision.allowed, "{product} did not honour the denial");
+        }
+    }
+
+    #[test]
+    fn scope_policy_view_carries_exclusions_but_not_trust() {
+        // Products that still filter with RepoScopePolicy read the shared store
+        // through this. Trust must not leak into it: it is an elevation for
+        // operations these products do not perform, and flattening it into a
+        // permission set is how a safety distinction quietly disappears.
+        let conn = conn();
+        upsert(&conn, &entry("owner/allowed", PolicyKind::Allowlist)).unwrap();
+        upsert(&conn, &entry("owner/denied", PolicyKind::Denylist)).unwrap();
+        upsert(&conn, &entry("owner/gone", PolicyKind::OptOut)).unwrap();
+        upsert(&conn, &entry("owner/trusted", PolicyKind::Trusted)).unwrap();
+
+        let policy = scope_policy(&conn).unwrap();
+        assert!(policy.allowlist.contains("owner/allowed"));
+        assert!(policy.denylist.contains("owner/denied"));
+        assert!(policy.opt_out.contains("owner/gone"));
+        assert!(!policy.allowlist.contains("owner/trusted"));
+    }
+
+    #[test]
+    fn a_product_list_editor_cannot_remove_a_verified_opt_out() {
+        // "Remove from my list" is not "the owner withdrew their request". Product
+        // list editors are the most likely place for that conflation, because from
+        // inside one product the opt-out just looks like another row.
+        let conn = conn();
+        upsert(
+            &conn,
+            &RepoPolicyEntry {
+                repository: "owner/quiet".into(),
+                kind: PolicyKind::OptOut,
+                source: "patchhive.dev".into(),
+                notes: String::new(),
+                verified: true,
+                updated_at: now_rfc3339(),
+            },
+        )
+        .unwrap();
+        record_listing(&conn, "owner/quiet", "denylist", "repo-reaper").unwrap();
+
+        remove_listings(&conn, "owner/quiet").unwrap();
+
+        assert!(
+            !evaluate(&conn, "owner/quiet", "repo-reaper", "scan")
+                .unwrap()
+                .allowed
+        );
+    }
+
+    #[test]
+    fn an_unknown_list_type_is_rejected_rather_than_defaulted() {
+        // Defaulting a listing is a safety decision wearing a formatting decision's
+        // clothes: guess "denylist" and the operator silently blocks a repository,
+        // guess "allowlist" and they silently open one.
+        let conn = conn();
+        assert!(record_listing(&conn, "owner/repo", "blocklisted-ish", "signal-hive").is_err());
+        assert!(entries_for(&conn, "owner/repo").unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_repeat_migration_reports_no_conflict_it_did_not_resolve() {
+        // Every product runs this migration against the same legacy tables. If
+        // conflicts were reported on inspection rather than on resolution, one
+        // disagreement would be logged once per product and read as several.
+        let conn = conn();
+        conn.execute_batch(
+            r#"
+            CREATE TABLE repo_lists (repo TEXT, list_type TEXT);
+            CREATE TABLE repo_reaper_repo_lists (repo TEXT, list_type TEXT);
+            INSERT INTO repo_lists VALUES ('owner/split', 'allowlist');
+            INSERT INTO repo_reaper_repo_lists VALUES ('owner/split', 'denylist');
+            "#,
+        )
+        .unwrap();
+
+        let first = migrate_legacy_tables(&conn).unwrap();
+        assert_eq!(first.conflicts.len(), 1);
+        assert_eq!(first.conflicts[0].resolved_to, PolicyKind::Denylist);
+
+        let second = migrate_legacy_tables(&conn).unwrap();
+        assert_eq!(second.imported, 0);
+        assert!(second.conflicts.is_empty(), "resolved conflict re-reported");
     }
 }

@@ -170,19 +170,25 @@ struct FixWaveInput<'a> {
     min_conf: i32,
 }
 
+/// Repository scope for a hunt, read from the suite-wide policy store.
+///
+/// Failing to an empty policy is deliberate and safe *here*: an empty policy is not
+/// deny-all, but RepoReaper's allowlist check is separate and a denylist that failed
+/// to load simply cannot exclude anything it never saw. That is the one behaviour to
+/// watch if this ever grows a fallback — silently reading zero denials must never
+/// become the quiet path to writing to a repository an operator excluded.
 fn load_filters() -> RepoScopePolicy {
     let Ok(conn) = get_conn() else {
+        tracing::error!("repo-reaper: could not open the database to read repository scope");
         return Default::default();
     };
-    let rows: Vec<(String, String)> = conn
-        .prepare("SELECT repo, list_type FROM repo_reaper_repo_lists")
-        .ok()
-        .and_then(|mut s| {
-            let mapped = s.query_map([], |r| Ok((r.get(0)?, r.get(1)?))).ok()?;
-            Some(mapped.flatten().collect())
-        })
-        .unwrap_or_default();
-    RepoScopePolicy::from_entries(rows)
+    match patchhive_product_core::repo_policy::scope_policy(&conn) {
+        Ok(policy) => policy,
+        Err(error) => {
+            tracing::error!("repo-reaper: could not read repository scope: {error}");
+            Default::default()
+        }
+    }
 }
 
 fn select_run_team(
