@@ -8,8 +8,8 @@ use patchhive_product_core::sqlite::{product_db_path, PooledSqliteConnection, Sq
 use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBehavior};
 
 use crate::models::{
-    FirstStackSmokeRun, PrBudgetReservation, ProductActionEvent, ProductOverride, RepositoryPolicy,
-    RunbookRun, SuiteSettings,
+    FirstStackSmokeRun, PrBudgetReservation, ProbeSample, ProductActionEvent, ProductOverride,
+    RepositoryPolicy, RunbookRun, SuiteSettings,
 };
 
 static DB_POOL: Lazy<SqlitePool> = Lazy::new(|| {
@@ -711,6 +711,71 @@ pub fn record_first_stack_smoke_run(run: &FirstStackSmokeRun) -> rusqlite::Resul
     Ok(())
 }
 
+/// How many probe samples to retain per product.
+///
+/// Bounded because the overview polls continuously: unbounded retention turns a
+/// dashboard into a slowly growing disk-usage problem. 240 samples is enough for a
+/// readable sparkline and an uptime figure with a stated denominator, which is the
+/// most an operator should read into it anyway.
+const PROBE_RETENTION: usize = 240;
+
+/// Record one health-probe observation.
+///
+/// Deliberately infallible from the caller's perspective: a metrics write must never
+/// turn a successful probe into a failed one. A lost sample is a gap in a sparkline;
+/// a propagated error would be a product reported as down because HiveCore could not
+/// write to its own database.
+pub fn record_product_probe(slug: &str, latency_ms: u64, healthy: bool, observed_at: &str) {
+    let Ok(conn) = connect() else {
+        return;
+    };
+    let result = conn.execute(
+        "INSERT INTO hive_core_product_probes (product_slug, observed_at, latency_ms, healthy)
+         VALUES (?1, ?2, ?3, ?4)",
+        params![slug, observed_at, latency_ms as i64, i64::from(healthy)],
+    );
+    if let Err(error) = result {
+        tracing::debug!("could not record probe sample for {slug}: {error}");
+        return;
+    }
+    // Prune inline rather than on a timer: the write that grows the table is the
+    // natural place to bound it, and it keeps the retention rule in one spot.
+    let _ = conn.execute(
+        "DELETE FROM hive_core_product_probes
+         WHERE product_slug = ?1
+           AND id NOT IN (
+             SELECT id FROM hive_core_product_probes
+             WHERE product_slug = ?1 ORDER BY id DESC LIMIT ?2
+           )",
+        params![slug, PROBE_RETENTION as i64],
+    );
+}
+
+/// Retained probe samples for one product, oldest first.
+pub fn product_probes(slug: &str) -> Vec<ProbeSample> {
+    let Ok(conn) = connect() else {
+        return Vec::new();
+    };
+    load_product_probes(&conn, slug).unwrap_or_default()
+}
+
+fn load_product_probes(conn: &Connection, slug: &str) -> rusqlite::Result<Vec<ProbeSample>> {
+    let mut stmt = conn.prepare(
+        "SELECT observed_at, latency_ms, healthy FROM hive_core_product_probes
+         WHERE product_slug = ?1 ORDER BY id DESC LIMIT ?2",
+    )?;
+    let rows = stmt.query_map(params![slug, PROBE_RETENTION as i64], |row| {
+        Ok(ProbeSample {
+            observed_at: row.get(0)?,
+            latency_ms: row.get::<_, i64>(1)? as u64,
+            healthy: row.get::<_, i64>(2)? != 0,
+        })
+    })?;
+    let mut samples = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+    samples.reverse();
+    Ok(samples)
+}
+
 /// Runbook history is server-side, not browser state.
 ///
 /// It was React state: a record of what an operator did that did not survive a page
@@ -834,6 +899,17 @@ fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
         -- Namespaced: patchhive-backend already owns a suite-level `suite_runs`
         -- table with a different schema, and the suite database is shared. New
         -- product tables must be product-namespaced (CLAUDE.md § SQLite).
+        CREATE TABLE IF NOT EXISTS hive_core_product_probes (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          product_slug TEXT NOT NULL,
+          observed_at TEXT NOT NULL,
+          latency_ms INTEGER NOT NULL,
+          healthy INTEGER NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_hive_core_product_probes_slug
+        ON hive_core_product_probes(product_slug, id DESC);
+
         CREATE TABLE IF NOT EXISTS hive_core_runbook_runs (
           id TEXT PRIMARY KEY,
           product_slug TEXT NOT NULL,

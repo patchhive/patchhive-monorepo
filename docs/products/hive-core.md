@@ -232,6 +232,18 @@ All errors are wrapped in the `ApiEnvelope` format:
 | `HIVE_CORE_DISPATCH_TIMEOUT_SECS` | `600` | How long HiveCore waits for a dispatched product action. Clamped to 5–3600. Separate from the short polling timeout used for health and status |
 | `RUST_LOG` | `info` | Logging level |
 
+HiveCore times every `/health` probe and retains a bounded ring of samples per product
+(`GET /products/:slug/probes`, 240 samples, pruned on write). Latency history, the
+latency figure on a product card, and uptime are all computed from those same rows, so
+the sparkline and the percentage beside it cannot disagree.
+
+Failed probes are recorded with `healthy = false`. Uptime is the share of retained
+probes that succeeded, so dropping failures would make every product look perfect;
+latency percentiles use successful probes only, because a timeout is not a round trip
+and mixing them reports a product as slow when it was actually down. Every figure is
+absent rather than zero when nothing has been observed — "no data" and "zero" are
+different claims.
+
 Product runbooks (`POST /products/:slug/runbook`, `GET /runbooks`) are a recorded
 read-only diagnostic pass over one product: reachability, startup checks, contract
 conformance, service-token posture, and recent run outcomes. Every step reports what

@@ -96,8 +96,6 @@ interface Ctx {
   toggleDemo: () => void;
   tourOpen: boolean;
   setTourOpen: (o: boolean) => void;
-  presenceOn: boolean;
-  togglePresence: () => void;
   // dispatch preview
   dispatchPreviewOpen: boolean;
   setDispatchPreviewOpen: (o: boolean) => void;
@@ -151,7 +149,6 @@ export function HiveCommandProvider({ children }: { children: ReactNode }) {
   const [runbookProductId, setRunbookProductId] = useState<string | null>(null);
   const [demoMode, setDemoMode] = useState(false);
   const [tourOpen, setTourOpen] = useState(false);
-  const [presenceOn, setPresenceOn] = useState(false);
 
   const [dispatchPreviewOpen, setDispatchPreviewOpen] = useState(false);
   const [frecency, setFrecency] = useState<Record<string, { count: number; last: number }>>({});
@@ -203,7 +200,6 @@ export function HiveCommandProvider({ children }: { children: ReactNode }) {
   const openRunbook = useCallback((id: string) => setRunbookProductId(id), []);
   const closeRunbook = useCallback(() => setRunbookProductId(null), []);
   const toggleDemo = useCallback(() => setDemoMode((v) => !v), []);
-  const togglePresence = useCallback(() => setPresenceOn((v) => !v), []);
 
   const pulseProduct = useCallback((id: string) => {
     setPulseProductId(id);
@@ -344,8 +340,6 @@ export function HiveCommandProvider({ children }: { children: ReactNode }) {
       toggleDemo,
       tourOpen,
       setTourOpen,
-      presenceOn,
-      togglePresence,
       dispatchPreviewOpen,
       setDispatchPreviewOpen,
       bumpFrecency,
@@ -353,7 +347,7 @@ export function HiveCommandProvider({ children }: { children: ReactNode }) {
       seedFrecency,
       frecency,
     }),
-    [open, registryFilter, scanlineOn, pulseProductId, pulseProduct, toggleScanline, repollKey, repoll, theme, setTheme, cycleTheme, soundOn, toggleSound, cheatsheetOpen, replayRun, auditLog, logAudit, clearAudit, runbookProductId, openRunbook, closeRunbook, demoMode, toggleDemo, tourOpen, presenceOn, togglePresence, dispatchPreviewOpen, bumpFrecency, resetFrecency, seedFrecency, frecency],
+    [open, registryFilter, scanlineOn, pulseProductId, pulseProduct, toggleScanline, repollKey, repoll, theme, setTheme, cycleTheme, soundOn, toggleSound, cheatsheetOpen, replayRun, auditLog, logAudit, clearAudit, runbookProductId, openRunbook, closeRunbook, demoMode, toggleDemo, tourOpen, dispatchPreviewOpen, bumpFrecency, resetFrecency, seedFrecency, frecency],
   );
 
   return (

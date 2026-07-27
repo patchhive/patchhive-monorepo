@@ -153,6 +153,13 @@ pub struct ProductSettingsItem {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProductHealthSnapshot {
     pub status: String,
+    /// Round-trip time of this /health probe, in milliseconds.
+    ///
+    /// Measured, not modelled. The deck previously rendered a per-product latency
+    /// that came from a seeded constant in its own source — a number on a card that
+    /// looked like an observation and was a literal.
+    #[serde(default)]
+    pub latency_ms: Option<u64>,
     pub reachable: bool,
     pub version: String,
     pub capabilities_ok: bool,
@@ -173,6 +180,7 @@ impl Default for ProductHealthSnapshot {
     fn default() -> Self {
         Self {
             status: "unknown".into(),
+            latency_ms: None,
             reachable: false,
             version: String::new(),
             capabilities_ok: false,
@@ -648,6 +656,19 @@ pub struct FirstStackSmokeRun {
     pub finished_at: String,
     pub summary: String,
     pub steps: Vec<FirstStackSmokeStep>,
+}
+
+/// One observed health probe.
+///
+/// The deck used to draw latency sparklines from a seeded pseudo-random generator fed
+/// by a constant in its own source. These are measurements: what a probe actually took
+/// and whether it succeeded. Uptime is derived from the same samples, so the number and
+/// the graph can never disagree.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProbeSample {
+    pub observed_at: String,
+    pub latency_ms: u64,
+    pub healthy: bool,
 }
 
 /// One check in a product runbook.

@@ -209,8 +209,11 @@ export function RunDetailDrawer({ run, onClose }: Props) {
 
   if (!run) return null;
   const Icon = statusIcon[run.status];
+  // Null when the capability has too few observed runs to establish a baseline.
+  // Previously this always returned a number because the baseline was generated, so
+  // every run could be labelled anomalous against a distribution nobody had measured.
   const anomalyZ = runAnomalyZ(run);
-  const isAnomaly = Math.abs(anomalyZ) > 2;
+  const isAnomaly = anomalyZ !== null && Math.abs(anomalyZ) > 2;
 
   const handleExplain = async () => {
     if (!timeline?.error) return;
@@ -270,8 +273,8 @@ export function RunDetailDrawer({ run, onClose }: Props) {
           <SheetDescription className="font-display text-[11px] uppercase tracking-wider">
             run <span className="text-[var(--honey)]">{run.id}</span> · {run.status} ·{" "}
             {run.status === "running" ? "in flight" : `${run.durationMs}ms`} · {run.ts}
-            {isAnomaly && (
-              <span className="ml-2 inline-flex items-center gap-1 rounded border border-[var(--warn)]/50 bg-[var(--warn)]/10 px-1.5 py-0.5 font-display text-[9px] uppercase tracking-wider text-[var(--warn)]" title={`z = ${anomalyZ.toFixed(2)} vs capability baseline`}>
+            {isAnomaly && anomalyZ !== null && (
+              <span className="ml-2 inline-flex items-center gap-1 rounded border border-[var(--warn)]/50 bg-[var(--warn)]/10 px-1.5 py-0.5 font-display text-[9px] uppercase tracking-wider text-[var(--warn)]" title={`z = ${anomalyZ.toFixed(2)} against observed runs of this capability`}>
                 ⚠︎ anomaly {anomalyZ > 0 ? "+" : ""}{anomalyZ.toFixed(1)}σ
               </span>
             )}

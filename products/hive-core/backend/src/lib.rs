@@ -168,6 +168,7 @@ pub fn router() -> Router {
             axum::routing::post(pipeline::run_product_runbook),
         )
         .route("/runbooks", get(pipeline::list_runbook_runs))
+        .route("/products/:slug/probes", get(pipeline::product_probes))
         .route(
             "/incidents/summarize",
             axum::routing::post(pipeline::summarize_incident),

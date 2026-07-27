@@ -257,6 +257,16 @@ pub async fn suite_run_detail(
     super::suite_runs::suite_run_detail(id).await
 }
 
+/// Retained health-probe samples for one product.
+///
+/// Latency history and uptime come from the same rows, so the sparkline and the
+/// percentage beside it cannot tell different stories.
+pub async fn product_probes(
+    Path(slug): Path<String>,
+) -> Json<crate::models::ApiEnvelope<Vec<crate::models::ProbeSample>>> {
+    Json(crate::models::ok(crate::db::product_probes(&slug)))
+}
+
 /// Runbooks: a recorded read-only diagnostic pass over one product.
 pub async fn run_product_runbook(
     State(state): State<AppState>,

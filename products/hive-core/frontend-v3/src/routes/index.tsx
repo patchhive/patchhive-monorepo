@@ -43,9 +43,10 @@ import { AuditLog } from "@/components/audit-log";
 import { AskHive } from "@/components/ask-hive";
 import { RunbookDrawer } from "@/components/runbook-drawer";
 import { GuidedTour } from "@/components/guided-tour";
-import { PresenceCursors } from "@/components/presence-cursors";
 import { Sparkline } from "@/components/sparkline";
-import { latencyHistory, latencyStats, runAnomalyZ } from "@/lib/hive-metrics";
+import { runAnomalyZ } from "@/lib/hive-metrics";
+import { useProbes } from "@/lib/probes";
+import { slugForId } from "@/lib/product-slugs";
 import { EmptyHex } from "@/components/empty-hex";
 import { DispatchPreview } from "@/components/dispatch-preview";
 import { RunbookHistory } from "@/components/runbook-history";
@@ -181,7 +182,7 @@ function DeckInner() {
         <ContractDrift syncVersion={suite.version} />
         <CapabilitySearch />
         <TokenVault />
-        <RunHeatmap />
+        <RunHeatmap syncVersion={suite.version} />
         <CapabilityGrid />
         <AskHive />
         <RunbookHistory syncVersion={suite.version} />
@@ -191,7 +192,6 @@ function DeckInner() {
       <LiveTail />
       <RunbookDrawer />
       <GuidedTour />
-      <PresenceCursors />
       <DispatchPreviewWrapper />
     </main>
   );
@@ -310,8 +310,6 @@ function TopBar({ now }: { now: Date | null }) {
     setCheatsheetOpen,
     demoMode,
     toggleDemo,
-    presenceOn,
-    togglePresence,
     setTourOpen,
     setDispatchPreviewOpen,
   } = useHiveCommand();
@@ -375,14 +373,6 @@ function TopBar({ now }: { now: Date | null }) {
           aria-label="Toggle crit alarm"
         >
           {soundOn ? <Bell className="h-3.5 w-3.5" /> : <BellOff className="h-3.5 w-3.5" />}
-        </button>
-        <button
-          onClick={togglePresence}
-          className={`rounded-md border border-border bg-card/60 p-1.5 transition hover:border-[var(--honey)]/50 ${presenceOn ? "text-[var(--honey)]" : "text-muted-foreground hover:text-[var(--honey)]"}`}
-          title={presenceOn ? "Operator presence on" : "Operator presence off"}
-          aria-label="Toggle operator presence"
-        >
-          <Users className="h-3.5 w-3.5" />
         </button>
         <button
           onClick={toggleDemo}
@@ -746,8 +736,21 @@ function Registry() {
 }
 
 function ProductCard({ product, index, pulse }: { product: Product; index: number; pulse?: boolean }) {
-  const samples = useMemo(() => latencyHistory(product, 60), [product]);
-  const stats = useMemo(() => latencyStats(product), [product]);
+  // Real probe history from the control plane. Every figure below is null until
+  // HiveCore has actually observed something, and renders as "—" rather than 0 —
+  // "no data" and "zero" are different claims and only one of them was ever true here.
+  const probes = useProbes(slugForId(product.id));
+  // Runs in the last 24h, counted from the feed instead of a seeded constant.
+  const runs24h = useMemo(
+    () =>
+      RUNS.filter(
+        (run) =>
+          run.product === product.name &&
+          run.startedAt &&
+          Date.now() - Date.parse(run.startedAt) < 86_400_000,
+      ).length,
+    [product.name],
+  );
   const { openRunbook, setDispatchPreviewOpen } = useHiveCommand();
   const sparkColor =
     product.status === "crit"
@@ -792,24 +795,46 @@ function ProductCard({ product, index, pulse }: { product: Product; index: numbe
           </div>
           <div className="mt-3 rounded border border-border/60 bg-background/40 p-2">
             <div className="mb-1 flex items-center justify-between font-display text-[9px] uppercase tracking-[0.18em] text-muted-foreground">
-              <span title="Seeded sample series — the suite records no per-request latency">
-                latency · 60s · sampled
+              <span title="Round-trip time of HiveCore's /health probes, as measured">
+                latency · {probes.observations} probe{probes.observations === 1 ? "" : "s"}
               </span>
               <span style={{ color: sparkColor }}>
-                {product.status === "crit" ? "—" : `${product.latencyMs}ms`}
+                {probes.latest === null ? "—" : `${probes.latest}ms`}
               </span>
             </div>
-            <Sparkline data={samples} color={sparkColor} width={280} height={28} className="w-full" />
-            <div className="mt-2 flex items-center gap-1.5 font-display text-[9px] uppercase tracking-wider">
-              <PctChip label="p50" value={stats.p50} tone="ok" />
-              <PctChip label="p95" value={stats.p95} tone="warn" />
-              <PctChip label="p99" value={stats.p99} tone="crit" />
-            </div>
+            {probes.samples.length > 1 ? (
+              <>
+                <Sparkline
+                  data={probes.samples}
+                  color={sparkColor}
+                  width={280}
+                  height={28}
+                  className="w-full"
+                />
+                <div className="mt-2 flex items-center gap-1.5 font-display text-[9px] uppercase tracking-wider">
+                  <PctChip label="p50" value={probes.p50 ?? 0} tone="ok" />
+                  <PctChip label="p95" value={probes.p95 ?? 0} tone="warn" />
+                </div>
+              </>
+            ) : (
+              /* One point is not a series. Drawing a flat line from a single probe
+                 would imply a stable history that has not been observed yet. */
+              <div className="py-2 text-center font-display text-[9px] uppercase tracking-wider text-muted-foreground">
+                {probes.loading ? "reading probes…" : "not enough probes yet"}
+              </div>
+            )}
           </div>
           <div className="mt-3 grid grid-cols-3 gap-2 font-display text-[10px]">
-            <Stat label="latency" value={product.status === "crit" ? "—" : `${product.latencyMs}ms`} tone={product.status} />
-            <Stat label="uptime · sampled" value={`${(product.uptime * 100).toFixed(1)}%`} />
-            <Stat label="runs 24h" value={product.runs24h.toLocaleString()} />
+            <Stat
+              label="latency"
+              value={probes.latest === null ? "—" : `${probes.latest}ms`}
+              tone={product.status}
+            />
+            <Stat
+              label={`uptime · ${probes.observations}`}
+              value={probes.uptime === null ? "—" : `${(probes.uptime * 100).toFixed(1)}%`}
+            />
+            <Stat label="runs 24h" value={runs24h.toLocaleString()} />
           </div>
           <div className="mt-3 flex flex-wrap gap-1">
             {product.capabilities.map((c) => (
@@ -834,10 +859,9 @@ function ProductCard({ product, index, pulse }: { product: Product; index: numbe
                   close ✕
                 </button>
               </div>
-              <RunHeatmap />
-              <div className="mt-2 font-display text-[9px] uppercase tracking-wider text-muted-foreground">
-                Filtered baseline · {product.id}
-              </div>
+              {/* Actually filtered to this product. The caption used to claim it was
+                  while rendering the unfiltered grid. */}
+              <RunHeatmap lockedProductName={product.name} />
             </div>
           )}
         </div>

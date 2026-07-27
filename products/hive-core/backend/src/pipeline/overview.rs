@@ -285,7 +285,7 @@ pub(super) async fn build_product_runtime(
             recent_runs: Vec::new(),
         }
     } else {
-        fetch_product_health(&state.client, &api_url, &auth).await
+        fetch_product_health(&state.client, definition.slug, &api_url, &auth).await
     };
 
     ProductRuntimeItem {
@@ -317,6 +317,7 @@ pub(super) async fn build_product_runtime(
 
 pub(super) async fn fetch_product_health(
     client: &reqwest::Client,
+    slug: &str,
     api_url: &str,
     auth: &ProductStoredAuth,
 ) -> ProductProbeSnapshot {
@@ -324,15 +325,29 @@ pub(super) async fn fetch_product_health(
     let checked_at = now_rfc3339();
     let health_url = format!("{normalized}/health");
 
+    let probe_started = std::time::Instant::now();
     let health_response = authorized_get(client, &health_url, auth)
         .timeout(Duration::from_secs(3))
         .send()
         .await;
+    // Time only the request. Parsing the body afterwards is HiveCore's cost, not the
+    // product's, and folding it in would make every product look slower than it is.
+    let latency_ms = probe_started.elapsed().as_millis() as u64;
     let Ok(health_response) = health_response else {
+        // Record the failure. Uptime is the share of probes that succeeded, so an
+        // unreachable product that leaves no row is a product with a perfect record —
+        // which is the opposite of what just happened. The elapsed time is stored so
+        // the row is complete, but `healthy = false` keeps it out of the latency
+        // distribution: a timeout is not a round trip.
+        db::record_product_probe(slug, latency_ms, false, &checked_at);
         return ProductProbeSnapshot {
             health: ProductHealthSnapshot {
                 status: "offline".into(),
                 checked_at,
+                // No latency: a request that never completed has no round-trip time,
+                // and recording the timeout duration would put a 3000ms sample in the
+                // history of a product that was simply down.
+                latency_ms: None,
                 error: "Could not reach /health.".into(),
                 ..ProductHealthSnapshot::default()
             },
@@ -346,10 +361,14 @@ pub(super) async fn fetch_product_health(
     };
 
     if !health_response.status().is_success() {
+        db::record_product_probe(slug, latency_ms, false, &checked_at);
         return ProductProbeSnapshot {
             health: ProductHealthSnapshot {
                 status: "offline".into(),
                 checked_at,
+                // The product answered, so this is a real round trip even though the
+                // answer was an error.
+                latency_ms: Some(latency_ms),
                 error: format!("/health returned HTTP {}", health_response.status()),
                 ..ProductHealthSnapshot::default()
             },
@@ -498,10 +517,16 @@ pub(super) async fn fetch_product_health(
         .collect::<Vec<_>>()
         .join(" ");
 
+    // One real sample per probe, retained so the deck can draw a latency history it
+    // did not invent. Failures are recorded too: uptime is the share of probes that
+    // succeeded, so dropping them would make every product look perfect.
+    db::record_product_probe(slug, latency_ms, status == "online", &checked_at);
+
     ProductProbeSnapshot {
         health: ProductHealthSnapshot {
             status: status.into(),
             reachable: true,
+            latency_ms: Some(latency_ms),
             version: health_body.version.unwrap_or_default(),
             capabilities_ok,
             action_count,
@@ -549,6 +574,10 @@ pub(super) fn local_hive_core_probe() -> ProductProbeSnapshot {
     ProductProbeSnapshot {
         health: ProductHealthSnapshot {
             status: status.into(),
+            // HiveCore reads its own state in-process; there is no round trip to
+            // measure, and reporting 0ms would invite a comparison against products
+            // that made a real network call.
+            latency_ms: None,
             reachable: true,
             version: PRODUCT_VERSION.into(),
             capabilities_ok: true,

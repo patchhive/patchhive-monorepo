@@ -5,11 +5,25 @@ import { runHeatmap } from "@/lib/hive-metrics";
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-export function RunHeatmap() {
+export function RunHeatmap({
+  syncVersion = 0,
+  lockedProductName,
+}: {
+  syncVersion?: number;
+  /** When set, the heatmap covers only this product and the selector is hidden. */
+  lockedProductName?: string;
+}) {
   const [productId, setProductId] = useState<string>("all");
-  const grid = useMemo(() => runHeatmap(productId === "all" ? undefined : productId), [productId]);
+  // Bucketed from the real run feed. RUNS is mutated in place by the live sync, so
+  // syncVersion is the dependency that matters — the array identity never changes.
+  const heatmap = useMemo(() => {
+    if (lockedProductName) return runHeatmap(lockedProductName);
+    const name = PRODUCTS.find((product) => product.id === productId)?.name;
+    return runHeatmap(productId === "all" ? undefined : name);
+  }, [productId, syncVersion, lockedProductName]);
+  const grid = heatmap.grid;
   const max = Math.max(...grid.flat(), 1);
-  const total = grid.flat().reduce((a, b) => a + b, 0);
+  const total = heatmap.counted;
   const [hover, setHover] = useState<{ d: number; h: number; v: number } | null>(null);
 
   return (
@@ -20,10 +34,13 @@ export function RunHeatmap() {
             <Activity className="h-4 w-4 text-[var(--honey)]" /> Run Volume Heatmap
           </h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            Rolling 7-day run volume by hour. Deeper cells mean more traffic.
+            Runs the suite has reported, bucketed by weekday and hour. The feed carries
+            each product's recent runs rather than full history, so sparse is expected —
+            an empty cell means nothing was reported in that hour, not that nothing ran.
           </p>
         </div>
         <div className="flex items-center gap-2 font-display text-[10px] uppercase tracking-wider">
+          {!lockedProductName && (
           <select
             value={productId}
             onChange={(e) => setProductId(e.target.value)}
@@ -34,7 +51,11 @@ export function RunHeatmap() {
               <option key={p.id} value={p.id}>{p.name}</option>
             ))}
           </select>
-          <span className="text-muted-foreground">total {total.toLocaleString()}</span>
+          )}
+          <span className="text-muted-foreground">
+            {total.toLocaleString()} placed
+            {heatmap.undated > 0 && ` · ${heatmap.undated} undated`}
+          </span>
         </div>
       </div>
 

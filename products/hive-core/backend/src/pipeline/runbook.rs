@@ -76,7 +76,7 @@ pub(super) async fn run_product_runbook(
 
     // 1. Reachability. Everything below depends on this, so a failure here is
     //    reported once rather than repeated as five downstream mysteries.
-    let probe = fetch_product_health(&state.client, &api_url, &auth).await;
+    let probe = fetch_product_health(&state.client, definition.slug, &api_url, &auth).await;
     let reachable = probe.health.status != "offline";
     steps.push(step(
         "reachable",
