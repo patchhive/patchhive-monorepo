@@ -10,6 +10,8 @@ import {
 import {
   fetchSuiteRuns,
   startSuiteRun,
+  MAX_TARGETS_PER_STEP,
+  TARGET_PRESETS,
   type SuiteRun,
   type SuiteRunStep,
   type SuiteRunStepInput,
@@ -22,6 +24,11 @@ import {
  * destructive, approval-gated or PR-opening is excluded here for the same reason
  * the dispatch dialog disables it, so a suite run cannot become a side door around
  * a guard that blocks the manual path.
+ *
+ * Chaining does not change that. A step expanded over ten targets is ten dispatches
+ * through the same guard, not one privileged batch — and the fan-out ceiling is the
+ * server's, not this form's. Everything here is a request the control plane is free
+ * to clamp.
  */
 const stepTone: Record<string, string> = {
   dispatched: "text-[var(--ok)] border-[var(--ok)]/40",
@@ -66,9 +73,28 @@ export function SuiteRuns({ syncVersion = 0 }: { syncVersion?: number }) {
       const index = current.findIndex(
         (step) => step.product === product && step.action === action,
       );
-      if (index >= 0) return current.filter((_, position) => position !== index);
+      if (index >= 0) {
+        // Removing a step renumbers everything after it, so any reference pointing
+        // past the removal would silently start meaning a different step. Drop those
+        // references rather than let them re-aim themselves.
+        const remaining = current.filter((_, position) => position !== index);
+        return remaining.map((step) => {
+          if (!step.targets) return step;
+          if (step.targets.from_step > index) {
+            const { targets: _dropped, ...rest } = step;
+            return rest;
+          }
+          return step;
+        });
+      }
       return [...current, { product, action }];
     });
+  }
+
+  function update(position: number, patch: Partial<SuiteRunStepInput>) {
+    setSteps((current) =>
+      current.map((step, index) => (index === position ? { ...step, ...patch } : step)),
+    );
   }
 
   async function start() {
@@ -111,7 +137,8 @@ export function SuiteRuns({ syncVersion = 0 }: { syncVersion?: number }) {
           </h2>
           <p className="mt-1 text-xs text-muted-foreground">
             Run a sequence of product actions as one unit. Steps execute in order and halt on
-            failure unless told otherwise.
+            failure unless told otherwise. A step can take its targets from an earlier step's
+            output and run once per target, up to a cap the control plane enforces.
           </p>
         </div>
         <span className="rounded border border-border px-2 py-1 font-display text-[10px] uppercase tracking-wider text-muted-foreground">
@@ -164,6 +191,20 @@ export function SuiteRuns({ syncVersion = 0 }: { syncVersion?: number }) {
           </div>
         )}
 
+        {steps.length > 0 && (
+          <ol className="mt-3 space-y-2">
+            {steps.map((step, index) => (
+              <StepEditor
+                key={`${step.product}-${step.action}-${index}`}
+                step={step}
+                index={index}
+                onChange={(patch) => update(index, patch)}
+                onRemove={() => toggle(step.product, step.action)}
+              />
+            ))}
+          </ol>
+        )}
+
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <input
             value={name}
@@ -205,6 +246,246 @@ export function SuiteRuns({ syncVersion = 0 }: { syncVersion?: number }) {
         )}
       </div>
     </section>
+  );
+}
+
+/**
+ * One composed step: its payload, and optionally where its targets come from.
+ *
+ * The payload is edited as JSON rather than a generated form. A generated form needs
+ * a schema per action, and the contract does not carry one — inventing fields here
+ * would show an operator inputs the product never accepts.
+ */
+function StepEditor({
+  step,
+  index,
+  onChange,
+  onRemove,
+}: {
+  step: SuiteRunStepInput;
+  index: number;
+  onChange: (patch: Partial<SuiteRunStepInput>) => void;
+  onRemove: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [raw, setRaw] = useState(() =>
+    step.payload ? JSON.stringify(step.payload, null, 2) : "",
+  );
+  const [payloadError, setPayloadError] = useState("");
+
+  function editPayload(next: string) {
+    setRaw(next);
+    if (!next.trim()) {
+      setPayloadError("");
+      onChange({ payload: undefined });
+      return;
+    }
+    try {
+      const parsed: unknown = JSON.parse(next);
+      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+        setPayloadError("Payload must be a JSON object.");
+        return;
+      }
+      setPayloadError("");
+      onChange({ payload: parsed });
+    } catch {
+      // Keep the text so the operator can fix it; withhold it from the run so a
+      // half-typed payload is never dispatched as if it were finished.
+      setPayloadError("Not valid JSON yet.");
+    }
+  }
+
+  const targets = step.targets;
+  const canReference = index > 0;
+
+  return (
+    <li className="rounded border border-border/70 bg-background/40">
+      <div className="flex flex-wrap items-center gap-2 px-2 py-1.5">
+        <span className="font-display text-[10px] text-[var(--honey)]">{index + 1}</span>
+        <span className="font-mono text-[10px] text-foreground">
+          {step.product}/{step.action}
+        </span>
+        {targets && (
+          <span className="rounded border border-[var(--honey)]/40 px-1.5 py-0.5 font-mono text-[9px] text-[var(--honey)]">
+            ← step {targets.from_step} · {targets.assign_to}
+          </span>
+        )}
+        {payloadError && (
+          <span className="font-display text-[9px] uppercase tracking-wider text-[var(--warn)]">
+            {payloadError}
+          </span>
+        )}
+        <button
+          onClick={() => setOpen((value) => !value)}
+          className="ml-auto font-display text-[9px] uppercase tracking-wider text-muted-foreground transition hover:text-[var(--honey)]"
+        >
+          {open ? "hide" : "edit"}
+        </button>
+        <button
+          onClick={onRemove}
+          className="font-display text-[9px] uppercase tracking-wider text-muted-foreground transition hover:text-[var(--crit)]"
+        >
+          remove
+        </button>
+      </div>
+
+      {open && (
+        <div className="space-y-2 border-t border-border/60 px-2 py-2">
+          <div>
+            <label className="font-display text-[9px] uppercase tracking-wider text-muted-foreground">
+              Payload (JSON object)
+            </label>
+            <textarea
+              value={raw}
+              onChange={(event) => editPayload(event.target.value)}
+              rows={3}
+              spellCheck={false}
+              placeholder="{}"
+              className="mt-1 w-full resize-y rounded border border-border bg-background/60 p-2 font-mono text-[11px] text-foreground outline-none focus:border-[var(--honey)]/50"
+            />
+          </div>
+
+          {canReference && (
+            <div>
+              <label className="flex items-center gap-1.5 font-display text-[9px] uppercase tracking-wider text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={Boolean(targets)}
+                  onChange={(event) =>
+                    onChange({
+                      targets: event.target.checked
+                        ? {
+                            from_step: index,
+                            path: TARGET_PRESETS[0].path,
+                            field: TARGET_PRESETS[0].field,
+                            assign_to: TARGET_PRESETS[0].assign_to,
+                            max_targets: 5,
+                          }
+                        : undefined,
+                    })
+                  }
+                />
+                Run once per target from an earlier step
+              </label>
+
+              {targets && (
+                <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                  <Field label="From step">
+                    <select
+                      value={targets.from_step}
+                      onChange={(event) =>
+                        onChange({ targets: { ...targets, from_step: Number(event.target.value) } })
+                      }
+                      className={inputClass}
+                    >
+                      {Array.from({ length: index }, (_, position) => position + 1).map((value) => (
+                        <option key={value} value={value}>
+                          Step {value}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+
+                  <Field label="Shape">
+                    <select
+                      value={`${targets.path}|${targets.field}`}
+                      onChange={(event) => {
+                        const preset = TARGET_PRESETS.find(
+                          (item) => `${item.path}|${item.field}` === event.target.value,
+                        );
+                        if (preset) {
+                          onChange({
+                            targets: {
+                              ...targets,
+                              path: preset.path,
+                              field: preset.field,
+                              assign_to: preset.assign_to,
+                            },
+                          });
+                        }
+                      }}
+                      className={inputClass}
+                    >
+                      {TARGET_PRESETS.map((preset) => (
+                        <option key={preset.label} value={`${preset.path}|${preset.field}`}>
+                          {preset.label}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+
+                  <Field label="Path">
+                    <input
+                      value={targets.path}
+                      onChange={(event) =>
+                        onChange({ targets: { ...targets, path: event.target.value } })
+                      }
+                      className={inputClass}
+                    />
+                  </Field>
+
+                  <Field label="Element field">
+                    <input
+                      value={targets.field}
+                      onChange={(event) =>
+                        onChange({ targets: { ...targets, field: event.target.value } })
+                      }
+                      placeholder="(element is the value)"
+                      className={inputClass}
+                    />
+                  </Field>
+
+                  <Field label="Set payload field">
+                    <input
+                      value={targets.assign_to}
+                      onChange={(event) =>
+                        onChange({ targets: { ...targets, assign_to: event.target.value } })
+                      }
+                      className={inputClass}
+                    />
+                  </Field>
+
+                  <Field label={`Max targets (server caps at ${MAX_TARGETS_PER_STEP})`}>
+                    <input
+                      type="number"
+                      min={1}
+                      max={MAX_TARGETS_PER_STEP}
+                      value={targets.max_targets}
+                      onChange={(event) =>
+                        onChange({
+                          targets: {
+                            ...targets,
+                            max_targets: Math.max(
+                              1,
+                              Math.min(MAX_TARGETS_PER_STEP, Number(event.target.value) || 1),
+                            ),
+                          },
+                        })
+                      }
+                      className={inputClass}
+                    />
+                  </Field>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </li>
+  );
+}
+
+const inputClass =
+  "w-full rounded border border-border bg-background/60 px-2 py-1 font-mono text-[11px] text-foreground outline-none focus:border-[var(--honey)]/50";
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="block">
+      <span className="font-display text-[9px] uppercase tracking-wider text-muted-foreground">
+        {label}
+      </span>
+      <div className="mt-0.5">{children}</div>
+    </label>
   );
 }
 
@@ -255,6 +536,11 @@ function StepRow({ step, index }: { step: SuiteRunStep; index: number }) {
       <span className="font-mono text-[10px] text-foreground">
         {step.product}/{step.action}
       </span>
+      {step.target && (
+        <span className="rounded border border-[var(--honey)]/40 px-1 py-0.5 font-mono text-[9px] text-[var(--honey)]">
+          {step.target}
+        </span>
+      )}
       <span
         className={`rounded border px-1.5 py-0.5 font-display text-[9px] uppercase tracking-wider ${stepTone[step.status] ?? "border-border text-muted-foreground"}`}
       >

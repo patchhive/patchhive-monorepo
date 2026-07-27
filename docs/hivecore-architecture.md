@@ -336,6 +336,35 @@ inspectable in normal history, and the kernel evaluates the gate. **Orchestratio
 safety boundary** — a stage dispatch passes through `evaluate()` identically to an operator click.
 HiveCore composes; it never elevates.
 
+**Built as of 2026-07-27** (`pipeline/suite_runs.rs`): ordered steps, per-step payloads, and
+explicit target references between steps. Gates and TOML pipelines are not built; the composer
+is the deck's Suite Runs panel.
+
+Target references are explicit, never inferred. A step declares `targets = { from_step, path,
+field, assign_to, max_targets }`; HiveCore resolves that path in the referenced step's response
+body and dispatches once per resolved target with `assign_to` set. Inference — "a scan produced
+repositories, so the next step probably wants them" — is a guess about operator intent applied
+to actions that reach real repositories, and it is not made.
+
+Settled properties, each pinned by a test:
+
+- **Forward and self references are rejected before the first dispatch.** A composition mistake
+  reported halfway through a run has already touched repositories.
+- **Zero resolved targets fails the step.** A fan-out that dispatched nothing and reported
+  success is how a run that did no work gets read as a run that found nothing wrong.
+- **A wrong path is an error, not an empty list.** The two are indistinguishable at the call
+  site and only one is the operator's fault.
+- **Only a successful response supplies targets.** A later step must never fan out over whatever
+  an error body happened to contain.
+- **Caps are the server's.** `max_targets` from a client is clamped to 25 per step, with 100
+  dispatches per run — fan-out multiplies, and five steps at twenty-five each is a hundred and
+  twenty-five dispatches from a form that looked like five.
+- **Duplicate targets collapse.** One repository surfacing twice is one piece of work.
+- **A run where everything was skipped is not `completed`.** Zero failures is not success when
+  nothing ran.
+- Each expansion is a separate recorded step carrying its own payload and target, so evidence
+  stays per-target rather than per-composition.
+
 ### 3.12 Fleet supervision fails closed, including on absence
 
 The rule, hardcoded:

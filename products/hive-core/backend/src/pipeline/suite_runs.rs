@@ -1,23 +1,26 @@
 //! Suite runs: an ordered sequence of product dispatches, recorded as one unit.
 //!
-//! This is the smallest honest version of the orchestration described in
-//! docs/hivecore-architecture.md §3.11 — a run whose steps are dispatches. It
-//! deliberately does not yet resolve one step's inputs from a previous step's
-//! artifacts; each step carries its own payload. Passing data between stages needs
-//! agreed artifact shapes, and inventing them here would bake in a guess.
+//! This is the orchestration described in docs/hivecore-architecture.md §3.11 — a run
+//! whose steps are dispatches, optionally chained so one step acts on what an earlier
+//! step found.
 //!
-//! Every step goes through the same `dispatch_once` a manual dispatch uses, so a
+//! Every dispatch goes through the same `dispatch_once` a manual dispatch uses, so a
 //! suite run cannot reach anything an operator could not reach by hand: destructive,
-//! approval-gated and PR-opening actions are refused identically. A suite run is a
-//! sequencing convenience, never an elevation of authority.
+//! approval-gated and PR-opening actions are refused identically. A suite run
+//! sequences work; it never widens authority. Chaining does not change that — a step
+//! expanded over ten targets is ten dispatches through the same guard, not one
+//! privileged batch.
 
 use axum::{extract::State, http::StatusCode, Json};
-use serde_json::Value;
+use serde_json::{Map, Value};
 use uuid::Uuid;
 
 use crate::{
     db,
-    models::{now_rfc3339, ok, StartSuiteRunRequest, SuiteRun, SuiteRunStep, SuiteRunStepInput},
+    models::{
+        now_rfc3339, ok, StartSuiteRunRequest, SuiteRun, SuiteRunStep, SuiteRunStepInput,
+        SuiteRunTargets,
+    },
     state::AppState,
 };
 
@@ -27,6 +30,20 @@ type ApiResult<T> = Result<
     Json<crate::models::ApiEnvelope<T>>,
     (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
 >;
+
+/// Ceiling on how many dispatches one composed step may expand into.
+///
+/// Enforced here rather than trusted from the request: a cap the caller supplies is a
+/// cap the caller can raise, which is not a cap. A composer that wants fewer can ask
+/// for fewer; nothing can ask for more.
+const MAX_TARGETS_PER_STEP: u32 = 25;
+
+/// Ceiling on total dispatches in one run, counting expansions.
+///
+/// The composed-step limit is separate and smaller. This one exists because fan-out
+/// multiplies: five composed steps each expanding to twenty-five is a hundred and
+/// twenty-five dispatches from a form that looked like five.
+const MAX_DISPATCHES_PER_RUN: usize = 100;
 
 pub(super) async fn start_suite_run(
     State(state): State<AppState>,
@@ -46,6 +63,13 @@ pub(super) async fn start_suite_run(
             "A suite run is limited to 50 steps.",
         ));
     }
+    if let Err(message) = validate_targets(&request.steps) {
+        return Err(api_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_step_reference",
+            message,
+        ));
+    }
 
     let name = if request.name.trim().is_empty() {
         format!("{} step suite run", request.steps.len())
@@ -60,20 +84,10 @@ pub(super) async fn start_suite_run(
         started_at: now_rfc3339(),
         finished_at: String::new(),
         summary: String::new(),
-        steps: request
-            .steps
-            .iter()
-            .map(|step| SuiteRunStep {
-                product: step.product.clone(),
-                action: step.action.clone(),
-                status: "queued".into(),
-                message: String::new(),
-                remote_status: None,
-                event_id: String::new(),
-                started_at: String::new(),
-                finished_at: String::new(),
-            })
-            .collect(),
+        // Steps are built as the run executes: a step with a target reference is not
+        // one step but however many targets the earlier step turned out to produce,
+        // which is not knowable before that step has run.
+        steps: Vec::new(),
     };
 
     // Persist before executing. A run that dies mid-flight should leave a record
@@ -101,6 +115,36 @@ pub(super) async fn start_suite_run(
     Ok(Json(ok(run)))
 }
 
+/// Reject references that cannot be satisfied, before anything is dispatched.
+///
+/// A forward or self reference is not a runtime failure to report halfway through a
+/// run that has already touched repositories — it is a composition mistake, and the
+/// honest moment to say so is before the first dispatch.
+fn validate_targets(steps: &[SuiteRunStepInput]) -> Result<(), String> {
+    for (index, step) in steps.iter().enumerate() {
+        let Some(targets) = &step.targets else {
+            continue;
+        };
+        let position = index + 1;
+        if targets.from_step == 0 || targets.from_step >= position {
+            return Err(format!(
+                "Step {position} takes targets from step {}, which must be an earlier step in the same run.",
+                targets.from_step
+            ));
+        }
+        if targets.assign_to.trim().is_empty() {
+            return Err(format!(
+                "Step {position} takes targets from step {} but does not say which payload field to set.",
+                targets.from_step
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// The response bodies of completed steps, indexed 1-based to match the operator's view.
+type StepOutputs = Vec<Option<Value>>;
+
 async fn execute(
     state: &AppState,
     run: &mut SuiteRun,
@@ -108,73 +152,169 @@ async fn execute(
     continue_on_failure: bool,
 ) {
     let mut halted = false;
+    let mut outputs: StepOutputs = vec![None; inputs.len() + 1];
 
     for (index, input) in inputs.iter().enumerate() {
+        let position = index + 1;
+
         if halted {
-            run.steps[index].status = "skipped".into();
-            run.steps[index].message =
-                "Skipped because an earlier step failed and the run halts on failure.".into();
+            run.steps.push(skipped_step(
+                input,
+                "Skipped because an earlier step failed and the run halts on failure.",
+            ));
             continue;
         }
 
-        run.steps[index].status = "running".into();
-        run.steps[index].started_at = now_rfc3339();
+        if run.steps.len() >= MAX_DISPATCHES_PER_RUN {
+            run.steps.push(skipped_step(
+                input,
+                &format!(
+                    "Skipped: this run reached the {MAX_DISPATCHES_PER_RUN} dispatch ceiling."
+                ),
+            ));
+            continue;
+        }
 
-        let payload = if input.payload.is_null() {
-            Value::Object(Default::default())
-        } else {
-            input.payload.clone()
+        // A plain step is one dispatch; a step with a target reference is one per
+        // resolved target.
+        let expansions = match &input.targets {
+            None => vec![(String::new(), base_payload(&input.payload))],
+            Some(targets) => match resolve_targets(&outputs, targets) {
+                Ok(values) => {
+                    if values.is_empty() {
+                        // Zero targets is a failure, not a quiet success. A step that
+                        // dispatched nothing and reported "completed" is how a run
+                        // that did no work gets read as a run that found nothing wrong.
+                        run.steps.push(failed_step(
+                            input,
+                            &format!(
+                                "Resolved 0 targets from step {} ({}), so this step did not run.",
+                                targets.from_step,
+                                describe_source(targets)
+                            ),
+                        ));
+                        if !continue_on_failure {
+                            halted = true;
+                        }
+                        continue;
+                    }
+                    values
+                        .into_iter()
+                        .map(|target| {
+                            let mut payload = base_payload(&input.payload);
+                            if let Value::Object(map) = &mut payload {
+                                map.insert(
+                                    targets.assign_to.trim().to_string(),
+                                    Value::String(target.clone()),
+                                );
+                            }
+                            (target, payload)
+                        })
+                        .collect()
+                }
+                Err(message) => {
+                    run.steps.push(failed_step(input, &message));
+                    if !continue_on_failure {
+                        halted = true;
+                    }
+                    continue;
+                }
+            },
         };
 
-        match dispatch_once(state, &input.product, &input.action, payload).await {
-            Ok(response) => {
-                let event = response.event;
-                let dispatched = event.status == "dispatched";
-                run.steps[index].status = if dispatched { "dispatched" } else { "failed" }.into();
-                run.steps[index].remote_status = event.remote_status;
-                run.steps[index].event_id = event.id;
-                run.steps[index].message = if dispatched {
-                    if response.started_run {
-                        "Product accepted the action and started a run.".into()
+        let mut last_body = None;
+
+        for (target, payload) in expansions {
+            if run.steps.len() >= MAX_DISPATCHES_PER_RUN {
+                run.steps.push(skipped_step(
+                    input,
+                    &format!(
+                        "Skipped: this run reached the {MAX_DISPATCHES_PER_RUN} dispatch ceiling."
+                    ),
+                ));
+                break;
+            }
+
+            let mut step = SuiteRunStep {
+                product: input.product.clone(),
+                action: input.action.clone(),
+                payload: payload.clone(),
+                target: target.clone(),
+                status: "running".into(),
+                message: String::new(),
+                remote_status: None,
+                event_id: String::new(),
+                started_at: now_rfc3339(),
+                finished_at: String::new(),
+            };
+
+            match dispatch_once(state, &input.product, &input.action, payload).await {
+                Ok(response) => {
+                    let event = response.event;
+                    let dispatched = event.status == "dispatched";
+                    step.status = if dispatched { "dispatched" } else { "failed" }.into();
+                    step.remote_status = event.remote_status;
+                    step.event_id = event.id;
+                    step.message = if dispatched {
+                        if response.started_run {
+                            "Product accepted the action and started a run.".into()
+                        } else {
+                            "Product accepted the action.".into()
+                        }
                     } else {
-                        "Product accepted the action.".into()
+                        event.error
+                    };
+                    if dispatched {
+                        last_body = Some(event.response_json);
+                    } else if !continue_on_failure {
+                        halted = true;
                     }
-                } else {
-                    event.error
-                };
-                if !dispatched && !continue_on_failure {
-                    halted = true;
+                }
+                Err((_status, body)) => {
+                    // HiveCore refused before reaching the product — a guard, a
+                    // missing token, an unknown action. Recorded as the step's own
+                    // failure.
+                    step.status = "failed".into();
+                    step.message = body
+                        .0
+                        .error
+                        .as_ref()
+                        .map(|error| error.message.clone())
+                        .unwrap_or_else(|| "HiveCore refused the step.".into());
+                    if !continue_on_failure {
+                        halted = true;
+                    }
                 }
             }
-            Err((_status, body)) => {
-                // HiveCore refused before reaching the product — a guard, a missing
-                // token, an unknown action. Recorded as the step's own failure.
-                run.steps[index].status = "failed".into();
-                run.steps[index].message = body
-                    .0
-                    .error
-                    .as_ref()
-                    .map(|error| error.message.clone())
-                    .unwrap_or_else(|| "HiveCore refused the step.".into());
-                if !continue_on_failure {
-                    halted = true;
-                }
+
+            step.finished_at = now_rfc3339();
+            run.steps.push(step);
+
+            if halted {
+                break;
             }
         }
 
-        run.steps[index].finished_at = now_rfc3339();
+        // Only a successful body is offered downstream. A later step must not fan out
+        // over the contents of a failed response.
+        outputs[position] = last_body;
     }
 
-    let dispatched = run
-        .steps
-        .iter()
-        .filter(|s| s.status == "dispatched")
-        .count();
-    let failed = run.steps.iter().filter(|s| s.status == "failed").count();
-    let skipped = run.steps.iter().filter(|s| s.status == "skipped").count();
+    summarize(run, halted);
+}
 
-    run.status = if failed == 0 {
+fn summarize(run: &mut SuiteRun, halted: bool) {
+    let count = |status: &str| run.steps.iter().filter(|s| s.status == status).count();
+    let dispatched = count("dispatched");
+    let failed = count("failed");
+    let skipped = count("skipped");
+
+    run.status = if failed == 0 && dispatched > 0 {
         "completed"
+    } else if failed == 0 {
+        // No failures and no dispatches means every step was skipped. Reporting that
+        // as "completed" would describe an empty run as a successful one.
+        "halted"
     } else if halted {
         "halted"
     } else {
@@ -183,6 +323,124 @@ async fn execute(
     .into();
     run.finished_at = now_rfc3339();
     run.summary = format!("{dispatched} dispatched, {failed} failed, {skipped} skipped.");
+}
+
+fn base_payload(payload: &Value) -> Value {
+    if payload.is_object() {
+        payload.clone()
+    } else {
+        Value::Object(Map::new())
+    }
+}
+
+fn skipped_step(input: &SuiteRunStepInput, message: &str) -> SuiteRunStep {
+    stub_step(input, "skipped", message)
+}
+
+fn failed_step(input: &SuiteRunStepInput, message: &str) -> SuiteRunStep {
+    stub_step(input, "failed", message)
+}
+
+fn stub_step(input: &SuiteRunStepInput, status: &str, message: &str) -> SuiteRunStep {
+    SuiteRunStep {
+        product: input.product.clone(),
+        action: input.action.clone(),
+        payload: base_payload(&input.payload),
+        target: String::new(),
+        status: status.into(),
+        message: message.to_string(),
+        remote_status: None,
+        event_id: String::new(),
+        started_at: now_rfc3339(),
+        finished_at: now_rfc3339(),
+    }
+}
+
+fn describe_source(targets: &SuiteRunTargets) -> String {
+    let path = if targets.path.trim().is_empty() {
+        "the response body".to_string()
+    } else {
+        format!("`{}`", targets.path.trim())
+    };
+    if targets.field.trim().is_empty() {
+        path
+    } else {
+        format!("{path} field `{}`", targets.field.trim())
+    }
+}
+
+/// Resolve an earlier step's output into a list of target strings.
+///
+/// Everything here fails loudly. A path that does not exist, a value that is not an
+/// array, elements with no usable string — each is reported as itself rather than
+/// resolving to an empty list, because an empty list and a wrong path are
+/// indistinguishable at the call site and only one of them is the operator's fault.
+fn resolve_targets(
+    outputs: &StepOutputs,
+    targets: &SuiteRunTargets,
+) -> Result<Vec<String>, String> {
+    let Some(Some(body)) = outputs.get(targets.from_step) else {
+        return Err(format!(
+            "Step {} produced no successful response to take targets from.",
+            targets.from_step
+        ));
+    };
+
+    let mut node = body;
+    for segment in targets
+        .path
+        .split('.')
+        .filter(|part| !part.trim().is_empty())
+    {
+        node = node.get(segment.trim()).ok_or_else(|| {
+            format!(
+                "Step {} response has no `{}` at `{}`.",
+                targets.from_step,
+                segment.trim(),
+                targets.path.trim()
+            )
+        })?;
+    }
+
+    let items = node.as_array().ok_or_else(|| {
+        format!(
+            "Step {} {} is not a list, so it cannot supply targets.",
+            targets.from_step,
+            describe_source(targets)
+        )
+    })?;
+
+    let field = targets.field.trim();
+    let mut resolved = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+
+    for item in items {
+        let value = if field.is_empty() {
+            item.as_str().map(str::to_string)
+        } else {
+            item.get(field).and_then(Value::as_str).map(str::to_string)
+        };
+        let Some(value) = value.map(|value| value.trim().to_string()) else {
+            continue;
+        };
+        if value.is_empty() {
+            continue;
+        }
+        // The same repository surfacing twice is one target. Dispatching to it twice
+        // spends budget and doubles the evidence for one piece of work.
+        if seen.insert(value.clone()) {
+            resolved.push(value);
+        }
+    }
+
+    let cap = if targets.max_targets == 0 {
+        MAX_TARGETS_PER_STEP
+    } else {
+        targets.max_targets.min(MAX_TARGETS_PER_STEP)
+    } as usize;
+    resolved.truncate(cap);
+
+    Ok(resolved)
 }
 
 pub(super) async fn list_suite_runs() -> Json<crate::models::ApiEnvelope<Vec<SuiteRun>>> {
@@ -197,4 +455,230 @@ pub(super) async fn suite_run_detail(id: String) -> ApiResult<SuiteRun> {
             "Suite run was not found.",
         )
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn step(product: &str, targets: Option<SuiteRunTargets>) -> SuiteRunStepInput {
+        SuiteRunStepInput {
+            product: product.into(),
+            action: "scan".into(),
+            payload: Value::Null,
+            targets,
+        }
+    }
+
+    fn reference(from_step: usize, path: &str, field: &str, max: u32) -> SuiteRunTargets {
+        SuiteRunTargets {
+            from_step,
+            path: path.into(),
+            field: field.into(),
+            assign_to: "repo".into(),
+            max_targets: max,
+        }
+    }
+
+    fn outputs(body: Value) -> StepOutputs {
+        vec![None, Some(body), None]
+    }
+
+    #[test]
+    fn a_forward_reference_is_rejected_before_anything_dispatches() {
+        // Catching this at runtime would mean reporting a composition mistake halfway
+        // through a run that has already touched repositories.
+        let steps = vec![
+            step("signal-hive", Some(reference(2, "repos", "full_name", 5))),
+            step("repo-reaper", None),
+        ];
+        assert!(validate_targets(&steps).is_err());
+    }
+
+    #[test]
+    fn a_self_reference_is_rejected() {
+        let steps = vec![step(
+            "signal-hive",
+            Some(reference(1, "repos", "full_name", 5)),
+        )];
+        assert!(validate_targets(&steps).is_err());
+    }
+
+    #[test]
+    fn a_reference_without_a_destination_field_is_rejected() {
+        let mut targets = reference(1, "repos", "full_name", 5);
+        targets.assign_to = "  ".into();
+        let steps = vec![
+            step("signal-hive", None),
+            step("repo-reaper", Some(targets)),
+        ];
+        assert!(validate_targets(&steps).is_err());
+    }
+
+    #[test]
+    fn targets_resolve_from_a_nested_path_and_field() {
+        let body = json!({ "data": { "repos": [
+            { "full_name": "owner/one" },
+            { "full_name": "owner/two" },
+        ]}});
+        let resolved = resolve_targets(&outputs(body), &reference(1, "data.repos", "full_name", 5))
+            .expect("targets should resolve");
+        assert_eq!(resolved, vec!["owner/one", "owner/two"]);
+    }
+
+    #[test]
+    fn the_server_cap_beats_a_larger_client_cap() {
+        // A cap the caller can raise is not a cap.
+        let items: Vec<Value> = (0..60)
+            .map(|index| json!({ "full_name": format!("owner/repo{index}") }))
+            .collect();
+        let body = json!({ "repos": items });
+        let resolved = resolve_targets(&outputs(body), &reference(1, "repos", "full_name", 10_000))
+            .expect("targets should resolve");
+        assert_eq!(resolved.len(), MAX_TARGETS_PER_STEP as usize);
+    }
+
+    #[test]
+    fn a_smaller_client_cap_is_honoured() {
+        let items: Vec<Value> = (0..10)
+            .map(|index| json!({ "full_name": format!("owner/repo{index}") }))
+            .collect();
+        let resolved = resolve_targets(
+            &outputs(json!({ "repos": items })),
+            &reference(1, "repos", "full_name", 3),
+        )
+        .expect("targets should resolve");
+        assert_eq!(resolved.len(), 3);
+    }
+
+    #[test]
+    fn duplicate_targets_collapse_to_one_dispatch() {
+        let body = json!({ "repos": [
+            { "full_name": "owner/one" },
+            { "full_name": "owner/one" },
+            { "full_name": "owner/two" },
+        ]});
+        let resolved = resolve_targets(&outputs(body), &reference(1, "repos", "full_name", 25))
+            .expect("targets should resolve");
+        assert_eq!(resolved, vec!["owner/one", "owner/two"]);
+    }
+
+    #[test]
+    fn a_wrong_path_is_an_error_not_an_empty_list() {
+        // An empty list and a mistyped path are indistinguishable at the call site,
+        // and only one of them is the operator's fault.
+        let body = json!({ "repos": [{ "full_name": "owner/one" }] });
+        let error = resolve_targets(&outputs(body), &reference(1, "results", "full_name", 5))
+            .expect_err("a missing path should be reported");
+        assert!(error.contains("results"));
+    }
+
+    #[test]
+    fn a_non_list_value_is_reported_rather_than_iterated() {
+        let body = json!({ "repos": "owner/one" });
+        assert!(resolve_targets(&outputs(body), &reference(1, "repos", "full_name", 5)).is_err());
+    }
+
+    #[test]
+    fn a_step_that_never_succeeded_supplies_no_targets() {
+        // Fanning out over a failed step's body would act on whatever an error
+        // response happened to contain.
+        let empty: StepOutputs = vec![None, None];
+        assert!(resolve_targets(&empty, &reference(1, "repos", "full_name", 5)).is_err());
+    }
+
+    #[test]
+    fn elements_without_the_named_field_are_dropped_not_stringified() {
+        let body = json!({ "repos": [
+            { "full_name": "owner/one" },
+            { "name": "no-full-name" },
+            { "full_name": "" },
+        ]});
+        let resolved = resolve_targets(&outputs(body), &reference(1, "repos", "full_name", 25))
+            .expect("targets should resolve");
+        assert_eq!(resolved, vec!["owner/one"]);
+    }
+
+    #[test]
+    fn a_bare_string_array_resolves_without_a_field() {
+        let body = json!({ "repos": ["owner/one", "owner/two"] });
+        let resolved = resolve_targets(&outputs(body), &reference(1, "repos", "", 25))
+            .expect("targets should resolve");
+        assert_eq!(resolved, vec!["owner/one", "owner/two"]);
+    }
+
+    #[test]
+    fn an_all_skipped_run_is_not_reported_as_completed() {
+        // Zero failures is not success when nothing ran.
+        let mut run = SuiteRun {
+            id: "srun_test".into(),
+            name: "test".into(),
+            status: "running".into(),
+            started_at: now_rfc3339(),
+            finished_at: String::new(),
+            summary: String::new(),
+            steps: vec![skipped_step(&step("signal-hive", None), "skipped")],
+        };
+        summarize(&mut run, false);
+        assert_eq!(run.status, "halted");
+    }
+
+    #[test]
+    fn the_wire_shape_the_deck_sends_deserializes_into_a_reference() {
+        // `targets` is an Option, so a field-name mismatch between the deck and this
+        // struct does not error — it deserializes to None and the step runs once,
+        // unchained, reporting success. That is the worst available failure mode:
+        // silent, and it looks like it worked. This pins the exact JSON the composer
+        // emits so a rename on either side breaks a test instead of a run.
+        let body = json!({
+            "name": "nightly",
+            "continue_on_failure": false,
+            "steps": [
+                { "product": "signal-hive", "action": "scan", "payload": { "languages": ["rust"] } },
+                {
+                    "product": "refactor-scout",
+                    "action": "scan",
+                    "payload": {},
+                    "targets": {
+                        "from_step": 1,
+                        "path": "repos",
+                        "field": "full_name",
+                        "assign_to": "repo",
+                        "max_targets": 5
+                    }
+                }
+            ]
+        });
+
+        let request: StartSuiteRunRequest =
+            serde_json::from_value(body).expect("composer payload should deserialize");
+
+        assert_eq!(request.steps.len(), 2);
+        assert!(request.steps[0].targets.is_none());
+        assert_eq!(request.steps[0].payload["languages"][0], "rust");
+
+        let targets = request.steps[1]
+            .targets
+            .as_ref()
+            .expect("second step should carry a target reference");
+        assert_eq!(targets.from_step, 1);
+        assert_eq!(targets.path, "repos");
+        assert_eq!(targets.field, "full_name");
+        assert_eq!(targets.assign_to, "repo");
+        assert_eq!(targets.max_targets, 5);
+        assert!(validate_targets(&request.steps).is_ok());
+    }
+
+    #[test]
+    fn a_step_with_no_payload_or_targets_still_deserializes() {
+        // The composer omits both for a plain step; neither may be required.
+        let request: StartSuiteRunRequest = serde_json::from_value(json!({
+            "steps": [{ "product": "signal-hive", "action": "scan" }]
+        }))
+        .expect("a bare step should deserialize");
+        assert!(request.steps[0].targets.is_none());
+        assert!(request.steps[0].payload.is_null());
+        assert_eq!(base_payload(&request.steps[0].payload), json!({}));
+    }
 }

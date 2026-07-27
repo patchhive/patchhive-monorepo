@@ -685,6 +685,15 @@ pub struct DispatchActionResponse {
 pub struct SuiteRunStep {
     pub product: String,
     pub action: String,
+    /// The payload actually dispatched, after any target substitution. Recorded so a
+    /// step is answerable later: "what did this run with" cannot be reconstructed
+    /// from the composed input once a fan-out has rewritten a field.
+    #[serde(default)]
+    pub payload: Value,
+    /// The target this step was expanded for, when it came from an earlier step's
+    /// output. Empty for ordinary steps.
+    #[serde(default)]
+    pub target: String,
     /// queued | dispatched | failed | skipped
     pub status: String,
     pub message: String,
@@ -713,6 +722,34 @@ pub struct SuiteRunStepInput {
     pub action: String,
     #[serde(default)]
     pub payload: Value,
+    /// Run this step once per target produced by an earlier step.
+    #[serde(default)]
+    pub targets: Option<SuiteRunTargets>,
+}
+
+/// An explicit reference from one step to an earlier step's output.
+///
+/// Explicit on purpose. HiveCore could try to infer that a scan produced repositories
+/// and that the next step wants them, but inference here is a guess about what an
+/// operator meant, applied to actions that reach real repositories. The operator names
+/// the step, the path, and the field; HiveCore resolves exactly that and nothing else.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct SuiteRunTargets {
+    /// 1-based index of an earlier step in the same run.
+    pub from_step: usize,
+    /// Dot path into that step's response body, resolving to an array.
+    /// Empty means the body itself is the array.
+    #[serde(default)]
+    pub path: String,
+    /// Field to read from each array element. Empty means the element is the value.
+    #[serde(default)]
+    pub field: String,
+    /// Payload field to set on each expanded dispatch.
+    pub assign_to: String,
+    /// Ceiling on fan-out. Clamped server-side — a client-supplied cap is a
+    /// suggestion, never the limit, or the limit is whatever the caller says it is.
+    #[serde(default)]
+    pub max_targets: u32,
 }
 
 #[derive(Debug, Clone, Deserialize)]

@@ -9,6 +9,10 @@ import { apiFetch } from "./http";
 export interface SuiteRunStep {
   product: string;
   action: string;
+  /** The payload actually dispatched, after any target substitution. */
+  payload?: unknown;
+  /** The target this step was expanded for; empty for ordinary steps. */
+  target?: string;
   /** queued | running | dispatched | failed | skipped */
   status: string;
   message: string;
@@ -34,7 +38,59 @@ export interface SuiteRunStepInput {
   product: string;
   action: string;
   payload?: unknown;
+  targets?: SuiteRunTargets;
 }
+
+/**
+ * An explicit reference from one step to an earlier step's output.
+ *
+ * Explicit on purpose. HiveCore could infer that a scan produced repositories and
+ * that the next step wants them, but inference here is a guess about what an operator
+ * meant, applied to actions that reach real repositories. The operator names the step,
+ * the path and the field; HiveCore resolves exactly that.
+ *
+ * `max_targets` is a request, not a limit — the server clamps it. A cap the browser
+ * chooses is a cap the browser can raise.
+ */
+export interface SuiteRunTargets {
+  /** 1-based index of an earlier step in the same run. */
+  from_step: number;
+  /** Dot path into that step's response body, resolving to an array. */
+  path: string;
+  /** Field to read from each element; empty means the element is the value. */
+  field: string;
+  /** Payload field to set on each expanded dispatch. */
+  assign_to: string;
+  max_targets: number;
+}
+
+/** The server's ceiling, mirrored so the composer cannot offer more than it will honour. */
+export const MAX_TARGETS_PER_STEP = 25;
+
+/**
+ * Shapes products actually return, offered as starting points in the composer.
+ *
+ * These are suggestions, not detection: the operator confirms or edits them. Guessing
+ * silently would make a mistyped path look like a step that legitimately found
+ * nothing, which is exactly the failure the server refuses to paper over.
+ */
+export const TARGET_PRESETS: ReadonlyArray<{
+  label: string;
+  path: string;
+  field: string;
+  assign_to: string;
+}> = [
+  { label: "repos[].full_name", path: "repos", field: "full_name", assign_to: "repo" },
+  { label: "data.repos[].full_name", path: "data.repos", field: "full_name", assign_to: "repo" },
+  {
+    label: "repositories[].full_name",
+    path: "repositories",
+    field: "full_name",
+    assign_to: "repo",
+  },
+  { label: "results[].repo", path: "results", field: "repo", assign_to: "repo" },
+  { label: "repos[] (strings)", path: "repos", field: "", assign_to: "repo" },
+];
 
 const BASE = "/api/products/hive-core/suite-runs";
 
