@@ -6,6 +6,7 @@ use serde_json::{json, Value};
 #[cfg(test)]
 use crate::models::{ProductOverride, ProductOverrideInput};
 
+mod ai;
 pub mod dispatch;
 mod overview;
 mod policy;
@@ -15,6 +16,8 @@ pub mod settings;
 mod setup;
 mod smoke;
 mod suite_runs;
+
+pub use ai::{explain_failure, summarize_incident};
 pub mod types;
 
 pub use types::{

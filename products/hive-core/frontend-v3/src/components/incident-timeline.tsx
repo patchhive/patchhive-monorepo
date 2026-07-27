@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertOctagon, AlertTriangle, BookOpen, CheckCircle2, Timer } from "lucide-react";
-import { PRODUCTS } from "@/lib/hive-data";
-import { INCIDENTS, mttrMinutes } from "@/lib/hive-extra";
+import { PRODUCTS, RUNS } from "@/lib/hive-data";
+import { deriveIncidents, mttrMinutes } from "@/lib/hive-extra";
 import { useHiveCommand } from "./hive-command";
 import { IncidentSummary } from "./incident-summary";
 
@@ -31,13 +31,14 @@ export function IncidentTimeline({ syncVersion = 0 }: { syncVersion?: number }) 
   }, []);
 
   const byProduct = useMemo(() => Object.fromEntries(PRODUCTS.map((p) => [p.id, p])), [syncVersion]);
-  const sorted = useMemo(
-    () => [...INCIDENTS].sort((a, b) => Date.parse(b.from) - Date.parse(a.from)),
-    [],
-  );
+  // RUNS is mutated in place by the live sync, so syncVersion is the dependency
+  // that matters here — the array identity never changes.
+  const sorted = useMemo(() => deriveIncidents(RUNS, PRODUCTS), [syncVersion]);
 
   const ongoing = sorted.filter((i) => !i.to).length;
-  const totalMttrParts = PRODUCTS.map((p) => mttrMinutes(p.id)).filter((v): v is number => v !== null);
+  const totalMttrParts = PRODUCTS.map((p) => mttrMinutes(p.id, sorted)).filter(
+    (v): v is number => v !== null,
+  );
   const fleetMttr = totalMttrParts.length
     ? Math.round(totalMttrParts.reduce((a, b) => a + b, 0) / totalMttrParts.length)
     : null;
@@ -48,7 +49,8 @@ export function IncidentTimeline({ syncVersion = 0 }: { syncVersion?: number }) 
         <div>
           <h2 className="font-display text-sm font-bold uppercase tracking-[0.2em]">Incident Timeline</h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            Every ok → warn / crit transition the mesh has observed. MTTR is fleet average across closed incidents.
+            Derived from the run feed: a streak of failed runs opens an incident, the next
+            success closes it. MTTR is the fleet average across closed streaks.
           </p>
         </div>
         <div className="flex items-center gap-4 font-display text-[10px] uppercase tracking-wider text-muted-foreground">
@@ -57,6 +59,12 @@ export function IncidentTimeline({ syncVersion = 0 }: { syncVersion?: number }) 
           <span className="flex items-center gap-1.5"><CheckCircle2 className="h-3 w-3 text-[var(--ok)]" /> {sorted.filter((i) => i.to).length} resolved</span>
         </div>
       </div>
+
+      {sorted.length === 0 && (
+        <p className="rounded-lg border border-dashed border-border p-6 text-center font-display text-[11px] uppercase tracking-wider text-muted-foreground">
+          No failed runs in the current feed.
+        </p>
+      )}
 
       <ol className="relative space-y-3 border-l border-border/50 pl-5">
         {sorted.map((i) => {

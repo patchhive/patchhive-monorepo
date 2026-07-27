@@ -226,7 +226,16 @@ All errors are wrapped in the `ApiEnvelope` format:
 | `PATCHHIVE_SUITE_BOOTSTRAP_SECRET` | — | Shared bootstrap secret for automatic service-token provisioning/rotation across products |
 | `PATCHHIVE_ALLOW_REMOTE_BOOTSTRAP` | — | Set to `true` to allow API key generation from non-localhost clients |
 | `PATCHHIVE_GITHUB_TOKEN_RO` | — | Optional suite-wide classic PAT for future GitHub reads. Use `public_repo` for public repositories or `repo` for private repositories |
+| `PATCHHIVE_AI_URL` | — | OpenAI-compatible gateway used for incident postmortem and run-failure drafts. Suite-wide; prefer this over a raw provider endpoint |
+| `PATCHHIVE_AI_API_KEY` | — | Bearer for `PATCHHIVE_AI_URL` when it is **not** a loopback address. A local gateway holds the provider key itself and needs none |
+| `HIVE_CORE_AI_MODEL` | `gpt-4o-mini` | Model name sent to the gateway for narrative drafts |
 | `RUST_LOG` | `info` | Logging level |
+
+The narrative endpoints (`POST /incidents/summarize`, `POST /runs/explain`) draft text
+for an operator to edit and accept. They dispatch nothing, write to no product, and
+reach no repository. With no gateway configured they return `ai_unavailable` naming the
+missing variable rather than degrading to a canned answer. Grounding comes only from the
+caller's payload, so a draft cannot assert anything the deck did not already show.
 
 Generate `HIVECORE_ENCRYPTION_KEY` with `openssl rand -hex 32`. Startup checks
 reject short values and obvious placeholders; retain the same key across

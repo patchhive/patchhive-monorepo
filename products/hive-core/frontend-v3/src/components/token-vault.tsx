@@ -19,6 +19,11 @@ import {
  * only grants runs:read means HiveCore silently cannot dispatch to that product.
  */
 const stateMeta: Record<TokenState, { dot: string; text: string; ring: string }> = {
+  broker: {
+    dot: "bg-[var(--honey)]",
+    text: "text-[var(--honey)]",
+    ring: "ring-[var(--honey)]/30",
+  },
   healthy: {
     dot: "bg-[var(--ok)] shadow-[0_0_8px_var(--ok)]",
     text: "text-[var(--ok)]",
@@ -95,6 +100,7 @@ export function TokenVault() {
       missing: count("missing"),
       cannotDispatch: rows.filter(
         (row) =>
+          row.state !== "broker" &&
           row.state !== "unsupported" &&
           row.state !== "rate_limited" &&
           row.state !== "unreachable" &&
@@ -226,6 +232,7 @@ export function TokenVault() {
                     <span>expires {new Date(row.expiresAt).toLocaleDateString()}</span>
                   )}
                   {!canDispatch &&
+                    row.state !== "broker" &&
                     row.state !== "unsupported" &&
                     row.state !== "rate_limited" &&
                     row.state !== "unreachable" && (

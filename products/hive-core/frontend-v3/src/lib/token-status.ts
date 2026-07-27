@@ -55,6 +55,7 @@ interface AuthStatusBody {
 }
 
 export type TokenState =
+  | "broker"
   | "rate_limited"
   | "healthy"
   | "legacy"
@@ -82,6 +83,7 @@ export interface TokenStatus {
 }
 
 export const TOKEN_STATE_LABEL: Record<TokenState, string> = {
+  broker: "broker",
   rate_limited: "rate limited",
   healthy: "scoped",
   legacy: "legacy",
@@ -187,6 +189,21 @@ export async function fetchTokenStatuses(signal?: AbortSignal): Promise<TokenSta
         ...base,
         state: "unsupported" as const,
         detail: "Product is not enabled in this runtime.",
+      };
+    }
+
+    // HiveCore holds the other products' tokens; it is not a dispatch target for
+    // itself, and its provisioning endpoint refuses self-provisioning outright.
+    // Before this, it classified as "not provisioned" — technically true, but it
+    // read as a gap to close and offered a Provision button that could only fail.
+    // A component that cannot be in a state should not render a control for it.
+    if (slug === "hive-core") {
+      return {
+        ...base,
+        state: "broker" as const,
+        detail:
+          "HiveCore issues service tokens; it does not hold one for itself. Operators authenticate to it with the suite key.",
+        knownScopes: row.status.service_auth_known_scopes ?? [],
       };
     }
 

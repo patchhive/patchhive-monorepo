@@ -7,11 +7,14 @@
 // endpoints. So these are thin POSTs to HiveCore, which owns the model choice, the
 // key, and the grounding context.
 //
-// The endpoints are not implemented yet; until they are, these reject with a message
-// that says so rather than failing silently.
+// Both endpoints are served by HiveCore's pipeline::ai module. They produce drafts
+// for an operator to read and edit — never a dispatch, never a write. The wire shape
+// is snake_case because the Rust side is the contract, not the browser.
 
 import { API } from "@/config";
 import { apiFetch } from "./http";
+
+const BASE = "/api/products/hive-core";
 
 async function post<T>(path: string, body: unknown): Promise<T> {
   let response: Response;
@@ -26,12 +29,6 @@ async function post<T>(path: string, body: unknown): Promise<T> {
     );
   }
 
-  if (response.status === 404) {
-    throw new Error(
-      `${path} is not implemented yet. The model call belongs in the Rust backend behind PATCHHIVE_AI_URL.`,
-    );
-  }
-
   if (!response.ok) {
     const payload = (await response.json().catch(() => null)) as
       | { error?: { message?: string } }
@@ -43,30 +40,38 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   return ((payload as { data?: T }).data ?? payload) as T;
 }
 
+/** Mirrors pipeline::ai::IncidentSummaryInput. */
 export interface IncidentSummaryInput {
-  productName: string;
+  product_name: string;
   severity: string;
   summary: string;
-  openedMinutesAgo: number;
+  opened_minutes_ago: number;
   closed: boolean;
   resolution?: string;
   logs?: string[];
 }
 
-export function summarizeIncident(data: IncidentSummaryInput): Promise<{ text: string }> {
-  return post<{ text: string }>("/incidents/summarize", data);
+export interface GeneratedText {
+  text: string;
+  /** The model HiveCore used, so a draft can be attributed. */
+  model: string;
 }
 
+export function summarizeIncident(data: IncidentSummaryInput): Promise<GeneratedText> {
+  return post<GeneratedText>(`${BASE}/incidents/summarize`, data);
+}
+
+/** Mirrors pipeline::ai::ExplainFailureInput. */
 export interface ExplainFailureInput {
   product: string;
   capability: string;
-  errorCode: string;
+  error_code: string;
   stage: string;
   message: string;
   logs: string[];
   inputs: Record<string, string | number | boolean>;
 }
 
-export function explainFailure(data: ExplainFailureInput): Promise<{ text: string }> {
-  return post<{ text: string }>("/runs/explain", data);
+export function explainFailure(data: ExplainFailureInput): Promise<GeneratedText> {
+  return post<GeneratedText>(`${BASE}/runs/explain`, data);
 }

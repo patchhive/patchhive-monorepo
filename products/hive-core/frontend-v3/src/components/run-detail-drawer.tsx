@@ -220,7 +220,7 @@ export function RunDetailDrawer({ run, onClose }: Props) {
       const res = await explainFailure({
           product: run.product,
           capability: run.capability,
-          errorCode: timeline.error.code,
+          error_code: timeline.error.code,
           stage: timeline.error.stage,
           message: timeline.error.message,
           logs: logs.map((l) => `[${l.level}] ${l.msg}`),

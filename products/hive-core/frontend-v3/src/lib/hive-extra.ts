@@ -1,5 +1,5 @@
 // Extended ops data: incidents, dependencies, SLOs, drift schemas, tokens.
-import { PRODUCTS } from "./hive-data";
+import { PRODUCTS, type Product, type RunEvent } from "./hive-data";
 
 export type IncidentSeverity = "warn" | "crit";
 export interface Incident {
@@ -12,25 +12,103 @@ export interface Incident {
   resolution?: string;
 }
 
-// Deterministic-ish recent incidents. Anchored to "now" at module load,
-// fine for a mock deck.
-const NOW = Date.now();
-const m = (mins: number) => new Date(NOW - mins * 60_000).toISOString();
+/**
+ * Incidents, derived from the real run feed.
+ *
+ * These were a hand-written list of plausible-sounding outages — "CVE ingest worker
+ * pool exhausted", "Upstream NVD feed 504" — anchored to page load so they always
+ * looked recent. Against a mock deck that was set dressing. Against a live suite it
+ * was a control plane asserting failures that never happened, in the one panel an
+ * operator would trust during an actual incident.
+ *
+ * PatchHive has no incident *record*, so nothing here invents one. What it has is
+ * run outcomes, and a run that failed is the only failure evidence the suite
+ * actually holds. So an incident is a streak of failed runs for one product: it
+ * opens at the first failure and closes at the first success after it. Anything
+ * richer — root cause, contributing factors, resolution text — is not derivable
+ * from a run summary and is therefore absent rather than guessed.
+ *
+ * Same rule as run-failure.ts: report what the run carries, synthesise nothing.
+ */
+const CRITICAL_STREAK = 3;
 
-export const INCIDENTS: Incident[] = [
-  { id: "i_001", productId: "vulntriage", from: m(74), to: null, severity: "crit", summary: "CVE ingest worker pool exhausted" },
-  { id: "i_002", productId: "repomemory", from: m(220), to: m(38), severity: "warn", summary: "Embedding queue backpressure", resolution: "Scaled worker replicas 3 → 6" },
-  { id: "i_003", productId: "flakesting", from: m(180), to: m(95), severity: "warn", summary: "Classifier latency spike", resolution: "Rolled back model v0.4 → v0.3" },
-  { id: "i_004", productId: "vulntriage", from: m(1440), to: m(1280), severity: "crit", summary: "Upstream NVD feed 504", resolution: "Failover to mirror" },
-  { id: "i_005", productId: "trustgate", from: m(2880), to: m(2820), severity: "warn", summary: "Token rotation backlog", resolution: "Cleared rotation queue" },
-  { id: "i_006", productId: "signalhive", from: m(4320), to: m(4290), severity: "warn", summary: "Alert dedupe cache miss-storm", resolution: "Warmed cache via cron" },
-  { id: "i_007", productId: "reviewbee", from: m(7200), to: m(7110), severity: "warn", summary: "GitHub API rate-limit", resolution: "Switched to app token" },
-];
+export function deriveIncidents(runs: RunEvent[], products: Product[]): Incident[] {
+  const idByName = new Map(products.map((product) => [product.name, product.id]));
 
-export function mttrMinutes(productId: string): number | null {
-  const closed = INCIDENTS.filter((i) => i.productId === productId && i.to);
+  // Seed rows carry no ISO timestamp and cannot be ordered, so they cannot
+  // establish that a failure preceded a recovery. Excluded rather than assumed.
+  const dated = runs
+    .filter((run) => run.startedAt)
+    .sort((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt));
+
+  const byProduct = new Map<string, RunEvent[]>();
+  for (const run of dated) {
+    const id = idByName.get(run.product) ?? run.product;
+    const bucket = byProduct.get(id);
+    if (bucket) bucket.push(run);
+    else byProduct.set(id, [run]);
+  }
+
+  const incidents: Incident[] = [];
+
+  for (const [productId, history] of byProduct) {
+    let open: { from: string; failures: RunEvent[] } | null = null;
+
+    for (const run of history) {
+      if (run.status === "failed") {
+        if (open) open.failures.push(run);
+        else open = { from: run.startedAt, failures: [run] };
+        continue;
+      }
+      // A run still in flight neither breaks a streak nor proves recovery.
+      if (run.status !== "success") continue;
+      if (open) {
+        incidents.push(close(productId, open, run.startedAt));
+        open = null;
+      }
+    }
+
+    if (open) incidents.push(close(productId, open, null));
+  }
+
+  return incidents.sort((a, b) => Date.parse(b.from) - Date.parse(a.from));
+}
+
+function close(
+  productId: string,
+  open: { from: string; failures: RunEvent[] },
+  to: string | null,
+): Incident {
+  const count = open.failures.length;
+  const capabilities = [...new Set(open.failures.map((run) => run.capability))];
+  const subject =
+    capabilities.length === 1 ? capabilities[0] : `${capabilities.length} capabilities`;
+
+  return {
+    id: `inc_${productId}_${Date.parse(open.from)}`,
+    productId,
+    from: open.from,
+    to,
+    // Severity is streak length, and nothing else. It is a statement about how
+    // many runs failed, not a judgement about impact the deck cannot make.
+    severity: count >= CRITICAL_STREAK ? "crit" : "warn",
+    summary:
+      count === 1
+        ? `Failed ${subject} run`
+        : `${count} consecutive failed runs · ${subject}`,
+    // Recovery is observed, not explained. There is no resolution text because the
+    // suite records none; a later success is the whole of what is known.
+    resolution: to ? `Recovered on the next successful ${subject} run` : undefined,
+  };
+}
+
+export function mttrMinutes(productId: string, incidents: Incident[]): number | null {
+  const closed = incidents.filter((i) => i.productId === productId && i.to);
   if (closed.length === 0) return null;
-  const total = closed.reduce((acc, i) => acc + (Date.parse(i.to!) - Date.parse(i.from)) / 60_000, 0);
+  const total = closed.reduce(
+    (acc, i) => acc + (Date.parse(i.to as string) - Date.parse(i.from)) / 60_000,
+    0,
+  );
   return Math.round(total / closed.length);
 }
 

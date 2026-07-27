@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { AlertCircle, CheckCircle2, Loader2, Play, Repeat, Send, Sparkles, Square, Trash2 } from "lucide-react";
 import { PRODUCTS, RUNS } from "@/lib/hive-data";
-import { INCIDENTS } from "@/lib/hive-extra";
+import { deriveIncidents } from "@/lib/hive-extra";
 import { toast } from "sonner";
 import { useHiveCommand } from "./hive-command";
 import { apiFetch } from "@/lib/http";
@@ -27,7 +27,7 @@ function buildContext() {
         durationMs: r.durationMs,
         ts: r.ts,
       })),
-      incidents: INCIDENTS.map((i) => ({
+      incidents: deriveIncidents(RUNS, PRODUCTS).map((i) => ({
         productId: i.productId,
         severity: i.severity,
         summary: i.summary,

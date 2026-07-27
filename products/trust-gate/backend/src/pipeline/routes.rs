@@ -49,6 +49,10 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
                 "Review a GitHub pull request diff against TrustGate rules.",
                 true,
             )
+            // Publishes a decision report as a GitHub check run — external state.
+            // Distinct from review_diff above, which writes nothing outside PatchHive
+            // and is correctly read-only.
+            .mutating(true)
             .scheduleable(true)
             .credential_requirements(["github:pull_requests:read", "github:checks:write"]),
             contract::action(
@@ -59,6 +63,8 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
                 "Process a signed GitHub pull request webhook for diff review.",
                 true,
             )
+            // Same check-run write, driven by a webhook.
+            .mutating(true)
             .trigger_modes([contract::RunTriggerMode::Webhook])
             .credential_requirements(["github:pull_requests:read", "github:checks:write"]),
         ],

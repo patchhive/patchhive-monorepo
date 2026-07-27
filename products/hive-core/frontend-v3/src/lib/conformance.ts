@@ -139,12 +139,23 @@ function compare(product: ApiProduct, actions: ApiAction[]): ConformanceFinding[
     if (!isMutating(action)) {
       const writes = writeScopes(action);
       if (writes.length > 0) {
+        // Two distinct defects reach here and they deserve different words.
+        // An action that says `read_only = true` while holding a write scope
+        // contradicts itself. An action that says nothing is read as read-only by
+        // every consumer of the contract, including this deck — silence is not a
+        // safer default, it is an unstated claim. Reporting both as "declares
+        // read-only" sends you looking for a `read_only` line that isn't there.
+        const explicit = action.read_only === true;
         findings.push({
           productKey: product.key,
           severity: "critical",
-          kind: "read-only needs write credential",
-          detail: `Action \`${action.id}\` declares read-only but requires ${writes.join(", ")}.`,
-          declared: "read_only action",
+          kind: explicit
+            ? "read-only needs write credential"
+            : "write credential, no declaration",
+          detail: explicit
+            ? `Action \`${action.id}\` declares read-only but requires ${writes.join(", ")}.`
+            : `Action \`${action.id}\` requires ${writes.join(", ")} but declares neither read_only nor mutating, so it reads as read-only.`,
+          declared: explicit ? "read_only action" : "no safety declaration",
           advertised: writes.join(", "),
         });
       }

@@ -27,16 +27,20 @@ export function IncidentSummary({ incident, product }: { incident: Incident; pro
     setShowDiff(false);
     try {
       const res = await summarizeIncident({
-          productName: product?.name ?? incident.productId,
+          product_name: product?.name ?? incident.productId,
           severity: incident.severity,
           summary: incident.summary,
-          openedMinutesAgo: Math.round((Date.now() - Date.parse(incident.from)) / 60000),
+          opened_minutes_ago: Math.round((Date.now() - Date.parse(incident.from)) / 60000),
           closed: !!incident.to,
           resolution: incident.resolution,
       });
       setDraft(res.text);
       setOriginal(res.text);
-      logAudit({ kind: "ai", title: "Postmortem drafted", detail: `${product?.name ?? incident.productId} · ${incident.severity}` });
+      logAudit({
+        kind: "ai",
+        title: "Postmortem drafted",
+        detail: `${product?.name ?? incident.productId} · ${incident.severity} · ${res.model}`,
+      });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       toast.error("Summary failed", { description: msg });

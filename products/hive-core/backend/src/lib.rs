@@ -160,6 +160,16 @@ pub fn router() -> Router {
             get(pipeline::list_suite_runs).post(pipeline::start_suite_run),
         )
         .route("/suite-runs/:id", get(pipeline::suite_run_detail))
+        // Narrative drafts. Operator-only: these produce text for a human to edit,
+        // never a dispatch, so they are not service-token dispatch paths.
+        .route(
+            "/incidents/summarize",
+            axum::routing::post(pipeline::summarize_incident),
+        )
+        .route(
+            "/runs/explain",
+            axum::routing::post(pipeline::explain_failure),
+        )
         .route(
             "/products/:slug/actions/:action_id",
             axum::routing::post(pipeline::dispatch_product_action),
