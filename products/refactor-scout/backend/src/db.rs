@@ -27,6 +27,17 @@ fn connect() -> rusqlite::Result<PooledSqliteConnection<'static>> {
     DB_POOL.get()
 }
 
+/// A connection for repository-policy reads.
+///
+/// Deliberately a separate accessor rather than exposing `connect`: this is for the
+/// synchronous policy filter that runs between GitHub calls. Callers open it for the
+/// filter and drop it, so no handle is parked across an await. Matches SignalHive's
+/// accessor of the same name — the discovery path is meant to look identical in every
+/// product that has one.
+pub fn policy_connection() -> anyhow::Result<rusqlite::Connection> {
+    rusqlite::Connection::open(db_path()).map_err(Into::into)
+}
+
 pub fn health_check() -> bool {
     connect()
         .and_then(|conn| conn.query_row("SELECT 1", [], |row| row.get::<_, i64>(0)))

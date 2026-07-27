@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 
 use anyhow::{anyhow, Result};
+use patchhive_github_data::discovery::apply_policy;
 use patchhive_github_data::search_repositories;
 use patchhive_product_core::hivecore_policy::{
     check_repository_policy, RepositoryPolicyDecisionRequest,
@@ -45,10 +46,13 @@ pub(crate) async fn select_repository(
     let mut seen = HashSet::new();
     let mut candidates = Vec::new();
     let mut errors = Vec::new();
+    // Repositories the suite-wide store excluded, counted before any remote check so
+    // the two layers stay distinguishable in the failure message.
+    let mut policy_blocked = 0usize;
 
     for language in languages {
         let query = discovery_query(&scope, &language);
-        match search_repositories(
+        let response = match search_repositories(
             &state.http,
             &query,
             DISCOVERY_CANDIDATE_LIMIT,
@@ -57,30 +61,50 @@ pub(crate) async fn select_repository(
         )
         .await
         {
-            Ok(response) => {
-                for repository in response.items {
-                    let name = repository.full_name.trim();
-                    if !name.is_empty() && seen.insert(name.to_ascii_lowercase()) {
-                        candidates.push(name.to_string());
-                    }
-                }
+            Ok(response) => response,
+            Err(error) => {
+                errors.push(error.to_string());
+                continue;
             }
-            Err(error) => errors.push(error.to_string()),
+        };
+
+        // Filter through the shared discovery helper, exactly as SignalHive does.
+        // Opened per filter step: the loop awaits GitHub between iterations, and the
+        // filter itself never awaits, so no SQLite handle is parked across a network
+        // call.
+        let outcome = match crate::db::policy_connection().and_then(|conn| {
+            apply_policy(&conn, response.items, "refactor-scout", "read_only_scan")
+        }) {
+            Ok(outcome) => outcome,
+            Err(error) => {
+                errors.push(format!("repository policy could not be evaluated: {error}"));
+                continue;
+            }
+        };
+        policy_blocked += outcome.excluded.len();
+
+        for repository in outcome.repositories {
+            let name = repository.full_name.trim();
+            if !name.is_empty() && seen.insert(name.to_ascii_lowercase()) {
+                candidates.push(name.to_string());
+            }
         }
     }
 
-    let mut policy_blocked = 0usize;
     for repository in candidates
         .iter()
         .filter(|repository| !contains_repo(recently_scanned, repository))
     {
+        // The local store has already spoken. This is HiveCore's policy service — a
+        // second, remote layer that RefactorScout consults and that fails closed when
+        // it is configured but unreachable.
         if repository_policy_allows(state, repository).await? {
             return Ok(repository.clone());
         }
         policy_blocked += 1;
     }
 
-    if candidates.is_empty() {
+    if candidates.is_empty() && policy_blocked == 0 {
         let reason = errors
             .first()
             .map(String::as_str)
@@ -94,15 +118,27 @@ pub(crate) async fn select_repository(
         .iter()
         .filter(|repository| contains_repo(recently_scanned, repository))
         .count();
+    // `candidates` counts only what survived the local policy filter, so report the
+    // pre-filter total. Saying "found 0 repositories" when policy excluded twelve
+    // sends the operator to widen a query that was working fine.
     Err(anyhow!(
         "Autonomous discovery found {} matching repositories, but none are currently eligible: {} were scanned by this schedule within the last {} days and {} were blocked by repository policy. Broaden the scope, shorten the cooldown, or review repository controls.",
-        candidates.len(),
+        candidates.len() + policy_blocked,
         recent_count,
         scope.cooldown_days,
         policy_blocked
     ))
 }
 
+/// Both policy layers for a single repository: the suite-wide store, then HiveCore's
+/// operator-managed policy service, which fails closed when configured but unreachable.
+///
+/// The direct-target path has no discovery step to filter through, so it needs the
+/// local check here. Discovery has already applied the same store in bulk, which makes
+/// this a redundant read on that path rather than a redundant *rule* — the two agree
+/// by construction because they read the same table. Left in place deliberately: the
+/// cost is one indexed lookup, and the alternative is an entry point that trusts its
+/// caller to have filtered.
 pub(crate) async fn repository_policy_allows(state: &AppState, repository: &str) -> Result<bool> {
     if !crate::db::repo_scope_policy()?.allows(repository) {
         return Ok(false);
