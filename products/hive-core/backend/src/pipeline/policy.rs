@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use axum::{http::StatusCode, Json};
 use chrono::{Duration, Utc};
-use patchhive_product_core::scope_policy::{normalize_repo_name, RepoScopePolicy};
+use patchhive_product_core::scope_policy::normalize_repo_name;
 use serde_json::Value;
 use uuid::Uuid;
 
@@ -59,8 +59,15 @@ pub(super) async fn save_repository_policies(
         }
         policies.push(RepositoryPolicy {
             repository,
+            // Trust is an elevation, never a way around an exclusion, so an entry
+            // that is both excluded and trusted keeps only the exclusion.
             trusted: input.trusted && !input.operator_excluded,
             operator_excluded: input.operator_excluded,
+            allowlisted: input.allowlisted && !input.operator_excluded,
+            // Verified public opt-outs are preserved by the store, not by this
+            // request: an operator edit cannot set or clear one.
+            public_opt_out: false,
+            source: "operator".into(),
             notes: input.notes.trim().to_string(),
             updated_at: now_rfc3339(),
         });
@@ -86,16 +93,19 @@ pub(super) async fn repository_policy_check(
     Ok(Json(ok(decision)))
 }
 
+/// Evaluate one repository against the shared suite-wide policy store.
+///
+/// The logic used to live here, reading HiveCore's own table *and* two free-text
+/// settings fields. Four other products carried their own copies of the same idea.
+/// One evaluator over five stores looks consistent and is not — the failure mode is
+/// a repository denied in one product and reachable from another.
+///
+/// So this now answers from `patchhive_product_core::repo_policy` and nothing else.
+/// HiveCore keeps the editing surface and stays the operator's single place to say
+/// "stay off this repository"; it no longer keeps a private opinion about it.
 pub(super) fn evaluate_repository_policy(
     request: &RepositoryPolicyDecisionRequest,
 ) -> InternalApiResult<RepositoryPolicyDecision> {
-    let repository = normalize_repo_name(&request.repository).ok_or_else(|| {
-        Box::new(api_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_repository",
-            "Repository must use owner/repo format.",
-        ))
-    })?;
     let product = request.product.trim().to_ascii_lowercase();
     let operation = request.operation.trim().to_ascii_lowercase();
     if product.is_empty() || operation.is_empty() {
@@ -105,59 +115,51 @@ pub(super) fn evaluate_repository_policy(
             "Repository policy checks require product and operation.",
         )));
     }
+    // Reject a malformed name before evaluating. The shared evaluator also refuses
+    // it, but as a denial rather than a validation error, and a caller that
+    // mistyped a repository deserves the difference.
+    if normalize_repo_name(&request.repository).is_none() {
+        return Err(Box::new(api_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_repository",
+            "Repository must use owner/repo format.",
+        )));
+    }
 
-    let settings = db::suite_settings();
-    let allowlist = parse_repo_set(&settings.repo_allowlist);
-    let denylist = parse_repo_set(&settings.repo_denylist);
-    let local = db::repository_policy_result(&repository)
+    let decision = db::evaluate_repository_policy(&request.repository, &product, &operation)
         .map_err(|err| {
             Box::new(api_error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "repository_policy_read_failed",
                 format!("HiveCore could not evaluate repository policy: {err}"),
             ))
-        })?
-        .unwrap_or_default();
-    let opt_out = if local.operator_excluded {
-        HashSet::from([repository.clone()])
-    } else {
-        HashSet::new()
-    };
-    let scope = RepoScopePolicy::new(allowlist, denylist, opt_out);
-    let scope_decision = scope.decision(&repository);
-    let trusted = local.trusted && !local.operator_excluded;
-    let requires_trust = operation_requires_trust(&operation);
+        })?;
 
-    let (decision, reason) = if !scope_decision.is_allowed() {
-        ("blocked", scope_decision.message(&repository))
-    } else if requires_trust && !trusted {
-        (
-            "blocked",
-            format!("Operation '{operation}' requires {repository} to be trusted in HiveCore."),
-        )
-    } else {
-        (
-            "allowed",
-            if trusted {
-                format!("Repository {repository} is eligible and trusted for '{operation}'.")
-            } else {
-                format!("Repository {repository} is eligible for '{operation}'.")
-            },
-        )
-    };
+    let listed = db::repository_policy_result(&decision.repository)
+        .ok()
+        .flatten()
+        .unwrap_or_default();
 
     Ok(RepositoryPolicyDecision {
-        repository,
-        product,
-        operation,
-        decision: decision.into(),
-        reason,
-        trusted,
-        operator_excluded: local.operator_excluded,
-        public_opt_out_checked: false,
-        public_opted_out: false,
-        policy_version: "hivecore.repository-policy.v1".into(),
-        evaluated_at: now_rfc3339(),
+        repository: decision.repository,
+        product: decision.product,
+        operation: decision.operation,
+        decision: if decision.allowed {
+            "allowed"
+        } else {
+            "blocked"
+        }
+        .into(),
+        reason: decision.reason,
+        trusted: decision.trusted,
+        operator_excluded: listed.operator_excluded,
+        // The store is consulted every time now, so this is genuinely checked
+        // rather than a field that was always false.
+        public_opt_out_checked: true,
+        public_opted_out: listed.public_opt_out,
+        chain: decision.chain,
+        policy_version: decision.policy_version.to_string(),
+        evaluated_at: decision.evaluated_at,
     })
 }
 
@@ -456,33 +458,15 @@ fn configured_product_limit(product: &str) -> u32 {
         .unwrap_or_else(|| db::default_product_pr_limit(product))
 }
 
-fn parse_repo_set(value: &str) -> HashSet<String> {
-    value
-        .split([',', ';', '\n', '\r'])
-        .filter_map(normalize_repo_name)
-        .collect()
-}
-
-fn operation_requires_trust(operation: &str) -> bool {
-    matches!(
-        operation,
-        "execute_repository_tests" | "execute_host_tests" | "broader_sandbox"
-    )
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{operation_requires_trust, parse_repo_set};
-
-    #[test]
-    fn parses_repository_lists_across_supported_separators() {
-        let repos = parse_repo_set("Owner/One, owner/two\nowner/three;bad");
-        assert_eq!(repos.len(), 3);
-        assert!(repos.contains("owner/one"));
-    }
+    use patchhive_product_core::repo_policy::operation_requires_trust;
 
     #[test]
     fn only_elevated_operations_require_repository_trust() {
+        // Kept as a HiveCore-side assertion because HiveCore is where the operator
+        // grants trust: if the shared list of trust-gated operations ever changes,
+        // the control plane's promise about what trust unlocks changes with it.
         assert!(operation_requires_trust("execute_repository_tests"));
         assert!(!operation_requires_trust("open_pull_request"));
     }

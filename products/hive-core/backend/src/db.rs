@@ -1,7 +1,8 @@
 use anyhow::{Context, Result};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use once_cell::sync::Lazy;
+use patchhive_product_core::repo_policy;
 use patchhive_product_core::secrets::TokenProtector;
 use patchhive_product_core::sqlite::{product_db_path, PooledSqliteConnection, SqlitePool};
 use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBehavior};
@@ -60,6 +61,39 @@ pub fn init_db() -> Result<()> {
     init_schema(&conn)?;
     seed_defaults(&conn)?;
     migrate_service_token_storage(&conn)?;
+    migrate_repository_policy(&conn)?;
+    Ok(())
+}
+
+/// Fold HiveCore's two legacy stores into the shared suite-wide policy table.
+///
+/// HiveCore held repository rules in two places that did not agree with each other:
+/// a structured `repository_policies` table and two free-text fields on
+/// `suite_settings`. Both fed one evaluator, which made them look like one store
+/// while behaving as two. The shared table is now the only thing consulted; these
+/// remain on disk, read once, as the migration source.
+///
+/// Conflicts resolve toward exclusion and are logged rather than swallowed. An
+/// operator who denied a repository in one place and allowed it in another needs to
+/// know which way it landed.
+fn migrate_repository_policy(conn: &Connection) -> Result<()> {
+    repo_policy::init_schema(conn)?;
+    let report = repo_policy::migrate_legacy_tables(conn)?;
+    if report.imported > 0 {
+        tracing::info!(
+            "repository policy: imported {} entries from {}",
+            report.imported,
+            report.sources.join(", ")
+        );
+    }
+    for conflict in &report.conflicts {
+        tracing::warn!(
+            "repository policy conflict for {}: {} — resolved to {}",
+            conflict.repository,
+            conflict.claims.join(" / "),
+            conflict.resolved_to.as_str()
+        );
+    }
     Ok(())
 }
 
@@ -67,7 +101,19 @@ pub fn suite_settings() -> SuiteSettings {
     let Ok(conn) = connect() else {
         return SuiteSettings::default();
     };
-    load_suite_settings(&conn).unwrap_or_default()
+    let stored = load_suite_settings(&conn).unwrap_or_default();
+    // The allow/deny fields are rendered from the shared policy store, never from
+    // the stored text. The stored copy is migration residue; reading it back would
+    // resurrect the second store this change exists to remove.
+    // Reuses the connection already held. Calling repo_list_text() here would take
+    // a second one from the pool while this one is still checked out, which starves
+    // the pool under concurrency instead of merely being wasteful.
+    let (repo_allowlist, repo_denylist) = repo_list_text_from(&conn);
+    SuiteSettings {
+        repo_allowlist,
+        repo_denylist,
+        ..stored
+    }
 }
 
 pub fn save_suite_settings(settings: &SuiteSettings) -> rusqlite::Result<()> {
@@ -152,41 +198,186 @@ pub fn recent_action_events(limit: u32) -> Vec<ProductActionEvent> {
     load_action_events(&conn, limit).unwrap_or_default()
 }
 
+/// Every repository the shared store knows about, as one row per repository.
+///
+/// The shared table stores one row per (repository, kind); the operator thinks in
+/// repositories. Collapsing happens here so nothing in the store is invisible to
+/// the editor — an allowlist entry or a public opt-out that the UI could not see
+/// would be silently dropped the next time an operator pressed save.
 pub fn repository_policies() -> Vec<RepositoryPolicy> {
     let Ok(conn) = connect() else {
         return Vec::new();
     };
-    load_repository_policies(&conn).unwrap_or_default()
+    collapse_policies(&repo_policy::list(&conn).unwrap_or_default())
 }
 
-pub fn repository_policy_result(repository: &str) -> rusqlite::Result<Option<RepositoryPolicy>> {
-    let conn = connect()?;
-    load_repository_policy(&conn, repository)
-}
-
-pub fn replace_repository_policies(policies: &[RepositoryPolicy]) -> rusqlite::Result<()> {
-    let mut conn = connect()?;
-    let tx = conn.transaction()?;
-    tx.execute("DELETE FROM repository_policies", [])?;
-    {
-        let mut stmt = tx.prepare(
-            r#"
-            INSERT INTO repository_policies (
-              repository, trusted, operator_excluded, notes, updated_at
-            ) VALUES (?1, ?2, ?3, ?4, ?5)
-            "#,
-        )?;
-        for policy in policies {
-            stmt.execute(params![
-                policy.repository,
-                if policy.trusted { 1 } else { 0 },
-                if policy.operator_excluded { 1 } else { 0 },
-                policy.notes,
-                policy.updated_at,
-            ])?;
+fn collapse_policies(entries: &[repo_policy::RepoPolicyEntry]) -> Vec<RepositoryPolicy> {
+    let mut by_repo: BTreeMap<String, RepositoryPolicy> = BTreeMap::new();
+    for entry in entries {
+        let row = by_repo
+            .entry(entry.repository.clone())
+            .or_insert_with(|| RepositoryPolicy {
+                repository: entry.repository.clone(),
+                ..RepositoryPolicy::default()
+            });
+        match entry.kind {
+            repo_policy::PolicyKind::OptOut => row.public_opt_out = true,
+            repo_policy::PolicyKind::Denylist => row.operator_excluded = true,
+            repo_policy::PolicyKind::Allowlist => row.allowlisted = true,
+            repo_policy::PolicyKind::Trusted => row.trusted = true,
+        }
+        // Notes and provenance come from whichever entry carries them; the most
+        // recently updated wins so an edit is what the operator sees next.
+        if entry.updated_at > row.updated_at {
+            row.updated_at = entry.updated_at.clone();
+            row.source = entry.source.clone();
+        }
+        if !entry.notes.is_empty() && row.notes.is_empty() {
+            row.notes = entry.notes.clone();
         }
     }
-    tx.commit()
+    by_repo.into_values().collect()
+}
+
+/// The allow/deny text fields, rendered from the shared store.
+///
+/// These two settings fields used to be their own store, parsed at evaluation time
+/// and disagreeing with `repository_policies` whenever the two were edited apart.
+/// They are kept as an operator convenience — pasting a list of repositories is
+/// faster than a row-by-row editor — but they are now a *view*: read from the shared
+/// table, written straight back into it. There is nothing left to drift.
+pub fn repo_list_text() -> (String, String) {
+    let Ok(conn) = connect() else {
+        return (String::new(), String::new());
+    };
+    repo_list_text_from(&conn)
+}
+
+fn repo_list_text_from(conn: &Connection) -> (String, String) {
+    let entries = repo_policy::list(conn).unwrap_or_default();
+    let join = |kind| {
+        entries
+            .iter()
+            .filter(|entry| entry.kind == kind)
+            .map(|entry| entry.repository.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    (
+        join(repo_policy::PolicyKind::Allowlist),
+        join(repo_policy::PolicyKind::Denylist),
+    )
+}
+
+/// Replace the allow/deny listings from the settings text fields.
+///
+/// Touches only the two kinds these fields represent. Trust is granted elsewhere and
+/// verified opt-outs belong to repository owners; neither is the settings form's to
+/// revoke, and both would otherwise vanish the moment someone edited a text box.
+pub fn save_repo_list_text(allowlist: &str, denylist: &str, now: &str) -> Result<()> {
+    let mut conn = connect()?;
+    let tx = conn.transaction()?;
+    tx.execute(
+        &format!(
+            "DELETE FROM {} WHERE kind IN (?1, ?2)",
+            patchhive_product_core::repo_policy::TABLE
+        ),
+        params![
+            repo_policy::PolicyKind::Allowlist.as_str(),
+            repo_policy::PolicyKind::Denylist.as_str()
+        ],
+    )?;
+    for (raw, kind) in [
+        (allowlist, repo_policy::PolicyKind::Allowlist),
+        (denylist, repo_policy::PolicyKind::Denylist),
+    ] {
+        for candidate in raw.split([',', ';', '\n', '\r']) {
+            let Some(repository) =
+                patchhive_product_core::scope_policy::normalize_repo_name(candidate)
+            else {
+                continue;
+            };
+            repo_policy::upsert(
+                &tx,
+                &repo_policy::RepoPolicyEntry {
+                    repository,
+                    kind,
+                    source: "operator".into(),
+                    notes: "Set from HiveCore suite settings.".into(),
+                    verified: false,
+                    updated_at: now.to_string(),
+                },
+            )?;
+        }
+    }
+    tx.commit()?;
+    Ok(())
+}
+
+/// One repository, one product, one operation — answered by the shared evaluator.
+pub fn evaluate_repository_policy(
+    repository: &str,
+    product: &str,
+    operation: &str,
+) -> Result<repo_policy::Decision> {
+    let conn = connect()?;
+    repo_policy::evaluate(&conn, repository, product, operation)
+}
+
+pub fn repository_policy_result(repository: &str) -> Result<Option<RepositoryPolicy>> {
+    let conn = connect()?;
+    let entries = repo_policy::entries_for(&conn, repository)?;
+    Ok(collapse_policies(&entries).into_iter().next())
+}
+
+/// Replace the operator-editable policy set.
+///
+/// Only the three kinds an operator owns are replaced. Verified public opt-outs are
+/// deliberately untouched: the repository owner asked to be left alone through the
+/// public flow, and no operator edit — including one that simply omits the row —
+/// may revoke that. Omission is the dangerous case, which is why it is handled here
+/// rather than trusted to the caller.
+pub fn replace_repository_policies(policies: &[RepositoryPolicy]) -> Result<()> {
+    let mut conn = connect()?;
+    replace_repository_policies_with_connection(&mut conn, policies)
+}
+
+fn replace_repository_policies_with_connection(
+    conn: &mut Connection,
+    policies: &[RepositoryPolicy],
+) -> Result<()> {
+    let tx = conn.transaction()?;
+    tx.execute(
+        &format!(
+            "DELETE FROM {} WHERE kind <> ?1",
+            patchhive_product_core::repo_policy::TABLE
+        ),
+        params![repo_policy::PolicyKind::OptOut.as_str()],
+    )?;
+    for policy in policies {
+        for (active, kind) in [
+            (policy.operator_excluded, repo_policy::PolicyKind::Denylist),
+            (policy.allowlisted, repo_policy::PolicyKind::Allowlist),
+            (policy.trusted, repo_policy::PolicyKind::Trusted),
+        ] {
+            if !active {
+                continue;
+            }
+            repo_policy::upsert(
+                &tx,
+                &repo_policy::RepoPolicyEntry {
+                    repository: policy.repository.clone(),
+                    kind,
+                    source: "operator".into(),
+                    notes: policy.notes.clone(),
+                    verified: false,
+                    updated_at: policy.updated_at.clone(),
+                },
+            )?;
+        }
+    }
+    tx.commit()?;
+    Ok(())
 }
 
 pub fn suite_pr_limit() -> u32 {
@@ -1010,43 +1201,10 @@ fn load_latest_first_stack_smoke_run(
     .optional()
 }
 
-fn load_repository_policies(conn: &Connection) -> rusqlite::Result<Vec<RepositoryPolicy>> {
-    let mut stmt = conn.prepare(
-        r#"
-        SELECT repository, trusted, operator_excluded, notes, updated_at
-        FROM repository_policies
-        ORDER BY repository
-        "#,
-    )?;
-    let rows = stmt.query_map([], decode_repository_policy)?;
-    rows.collect()
-}
-
-fn load_repository_policy(
-    conn: &Connection,
-    repository: &str,
-) -> rusqlite::Result<Option<RepositoryPolicy>> {
-    conn.query_row(
-        r#"
-        SELECT repository, trusted, operator_excluded, notes, updated_at
-        FROM repository_policies
-        WHERE repository = ?1
-        "#,
-        [repository],
-        decode_repository_policy,
-    )
-    .optional()
-}
-
-fn decode_repository_policy(row: &rusqlite::Row<'_>) -> rusqlite::Result<RepositoryPolicy> {
-    Ok(RepositoryPolicy {
-        repository: row.get(0)?,
-        trusted: row.get::<_, i64>(1)? != 0,
-        operator_excluded: row.get::<_, i64>(2)? != 0,
-        notes: row.get(3)?,
-        updated_at: row.get(4)?,
-    })
-}
+// The legacy `repository_policies` loaders are gone: that table is now migration
+// input only, read once by migrate_repository_policy. Leaving readers behind would
+// have recreated the exact problem the shared store exists to end — two tables that
+// look like one because a single evaluator consults both.
 
 fn load_suite_pr_limit(conn: &Connection) -> rusqlite::Result<u32> {
     conn.query_row(
@@ -1264,15 +1422,17 @@ fn decode_suite_run(row: &rusqlite::Row<'_>) -> rusqlite::Result<crate::models::
 #[cfg(test)]
 mod tests {
     use super::{
-        init_schema, load_action_event, load_action_events, load_latest_first_stack_smoke_run,
-        load_product_overrides, load_service_token_storage_stats, load_suite_settings,
-        replace_overrides, reserve_pr_slot_with_connection, write_suite_settings,
-        ServiceTokenStorageStats,
+        collapse_policies, init_schema, load_action_event, load_action_events,
+        load_latest_first_stack_smoke_run, load_product_overrides,
+        load_service_token_storage_stats, load_suite_settings, replace_overrides,
+        replace_repository_policies_with_connection, reserve_pr_slot_with_connection,
+        write_suite_settings, ServiceTokenStorageStats,
     };
     use crate::models::{
         now_rfc3339, FirstStackSmokeRun, FirstStackSmokeStep, PrBudgetReservation,
-        ProductActionEvent, ProductOverride, SuiteSettings,
+        ProductActionEvent, ProductOverride, RepositoryPolicy, SuiteSettings,
     };
+    use patchhive_product_core::repo_policy;
     use patchhive_product_core::secrets::TokenProtector;
     use rusqlite::Connection;
     use serde_json::json;
@@ -1540,5 +1700,100 @@ mod tests {
                 plaintext: 0,
             }
         );
+    }
+
+    fn policy_conn() -> Connection {
+        let conn = Connection::open_in_memory().expect("in-memory db should open");
+        repo_policy::init_schema(&conn).expect("policy schema should initialize");
+        conn
+    }
+
+    fn opt_out(repository: &str) -> repo_policy::RepoPolicyEntry {
+        repo_policy::RepoPolicyEntry {
+            repository: repository.into(),
+            kind: repo_policy::PolicyKind::OptOut,
+            source: "patchhive.dev".into(),
+            notes: "Owner opted out.".into(),
+            verified: true,
+            updated_at: crate::models::now_rfc3339(),
+        }
+    }
+
+    #[test]
+    fn operator_save_cannot_clear_a_verified_public_opt_out() {
+        // The dangerous shape is omission, not an explicit clear: the operator saves
+        // a list that simply does not mention the repository. If that deleted the
+        // opt-out, a repository owner's request to be left alone would evaporate the
+        // next time anyone edited an unrelated row.
+        let mut conn = policy_conn();
+        repo_policy::upsert(&conn, &opt_out("owner/quiet")).expect("opt-out should save");
+
+        replace_repository_policies_with_connection(
+            &mut conn,
+            &[RepositoryPolicy {
+                repository: "owner/other".into(),
+                trusted: true,
+                ..RepositoryPolicy::default()
+            }],
+        )
+        .expect("save should succeed");
+
+        let decision = repo_policy::evaluate(&conn, "owner/quiet", "repo-reaper", "scan")
+            .expect("evaluation should succeed");
+        assert!(!decision.allowed, "opt-out survived the save");
+    }
+
+    #[test]
+    fn operator_save_replaces_the_kinds_it_owns() {
+        // The other half: entries the operator *does* own must actually go away when
+        // they are dropped from the list, or the editor would only ever add.
+        let mut conn = policy_conn();
+        replace_repository_policies_with_connection(
+            &mut conn,
+            &[RepositoryPolicy {
+                repository: "owner/blocked".into(),
+                operator_excluded: true,
+                ..RepositoryPolicy::default()
+            }],
+        )
+        .expect("first save should succeed");
+        assert!(
+            !repo_policy::evaluate(&conn, "owner/blocked", "repo-reaper", "scan")
+                .unwrap()
+                .allowed
+        );
+
+        replace_repository_policies_with_connection(&mut conn, &[])
+            .expect("second save should succeed");
+        assert!(
+            repo_policy::evaluate(&conn, "owner/blocked", "repo-reaper", "scan")
+                .unwrap()
+                .allowed,
+            "operator denial was not removed"
+        );
+    }
+
+    #[test]
+    fn collapsing_keeps_every_kind_visible_on_one_row() {
+        // The editor saves what it renders. A kind the UI cannot see would be
+        // silently dropped by the next save, so collapsing must lose nothing.
+        let entry = |repository: &str, kind| repo_policy::RepoPolicyEntry {
+            repository: repository.into(),
+            kind,
+            source: "operator".into(),
+            notes: String::new(),
+            verified: false,
+            updated_at: "2026-07-26T00:00:00Z".into(),
+        };
+        let rows = collapse_policies(&[
+            entry("owner/one", repo_policy::PolicyKind::Allowlist),
+            entry("owner/one", repo_policy::PolicyKind::Trusted),
+            opt_out("owner/two"),
+        ]);
+
+        assert_eq!(rows.len(), 2);
+        assert!(rows[0].allowlisted && rows[0].trusted);
+        assert!(!rows[0].public_opt_out);
+        assert!(rows[1].public_opt_out);
     }
 }

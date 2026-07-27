@@ -49,6 +49,31 @@ pub(super) async fn save_settings(
         }
     }
 
+    // The allow/deny text is a view over the shared policy store, so it is written
+    // there rather than back into suite_settings. Persisting it in both places is
+    // exactly what let the two disagree before.
+    db::save_repo_list_text(
+        &settings.repo_allowlist,
+        &settings.repo_denylist,
+        &settings.updated_at,
+    )
+    .map_err(|err| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(error(
+                "repository_policy_save_failed",
+                format!("HiveCore could not save repository lists: {err}"),
+                false,
+            )),
+        )
+    })?;
+
+    let settings = SuiteSettings {
+        repo_allowlist: String::new(),
+        repo_denylist: String::new(),
+        ..settings
+    };
+
     db::save_suite_settings(&settings).map_err(|_| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,

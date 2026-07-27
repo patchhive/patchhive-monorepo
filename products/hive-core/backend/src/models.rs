@@ -260,7 +260,16 @@ pub struct SettingsResponse {
 pub struct RepositoryPolicy {
     pub repository: String,
     pub trusted: bool,
+    /// Operator denial. Distinct from `public_opt_out`, which the operator may see
+    /// but must not clear.
     pub operator_excluded: bool,
+    /// Present when an allowlist is configured; an empty allowlist is not deny-all.
+    pub allowlisted: bool,
+    /// A verified opt-out from the public patchhive.dev flow. Read-only here: the
+    /// repository owner asked to be left alone, and no operator edit revokes that.
+    pub public_opt_out: bool,
+    /// Where the entry came from — operator, migration, opt-out service.
+    pub source: String,
     pub notes: String,
     pub updated_at: String,
 }
@@ -284,6 +293,8 @@ pub struct RepositoryPolicyInput {
     #[serde(default)]
     pub operator_excluded: bool,
     #[serde(default)]
+    pub allowlisted: bool,
+    #[serde(default)]
     pub notes: String,
 }
 
@@ -305,6 +316,11 @@ pub struct RepositoryPolicyDecision {
     pub operator_excluded: bool,
     pub public_opt_out_checked: bool,
     pub public_opted_out: bool,
+    /// Every precedence step the shared evaluator walked, in order. A denial is
+    /// evidence a run records, so "why was this repository skipped" stays
+    /// answerable after the fact.
+    #[serde(default)]
+    pub chain: Vec<String>,
     pub policy_version: String,
     pub evaluated_at: String,
 }

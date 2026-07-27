@@ -494,6 +494,37 @@ pub fn migrate_legacy_tables(conn: &Connection) -> Result<MigrationReport> {
         }
     }
 
+    // HiveCore's free-text suite settings: two comma/newline-separated fields on a
+    // single-row table. Easy to miss precisely because they do not look like a store
+    // — but an operator who typed a denial there expects it to hold, and dropping it
+    // during migration would silently widen the suite's reach.
+    if table_exists(conn, "suite_settings") {
+        report.sources.push("suite_settings".to_string());
+        let lists = conn
+            .query_row(
+                "SELECT repo_allowlist, repo_denylist FROM suite_settings WHERE id = 1",
+                [],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+            )
+            .optional()?;
+        if let Some((allowlist, denylist)) = lists {
+            for (raw, kind) in [
+                (allowlist, PolicyKind::Allowlist),
+                (denylist, PolicyKind::Denylist),
+            ] {
+                for candidate in raw.split([',', ';', '\n', '\r']) {
+                    let Some(repository) = normalize_repo_name(candidate) else {
+                        continue;
+                    };
+                    claims
+                        .entry(repository)
+                        .or_default()
+                        .push(("suite_settings".into(), kind));
+                }
+            }
+        }
+    }
+
     let now = now_rfc3339();
     for (repository, mut entries) in claims {
         entries.sort_by_key(|(_, kind)| std::cmp::Reverse(strength(*kind)));
@@ -750,5 +781,76 @@ mod tests {
         assert_eq!(allowed, vec!["good/one".to_string()]);
         assert_eq!(excluded.len(), 2);
         assert!(excluded.iter().all(|decision| !decision.reason.is_empty()));
+    }
+
+    #[test]
+    fn migration_absorbs_hivecore_free_text_suite_lists() {
+        // These two fields are a store even though they read like a preference: an
+        // operator typing a repository into repo_denylist expects a denial. Losing
+        // them during migration would quietly widen what the suite may touch.
+        let conn = conn();
+        conn.execute_batch(
+            r#"
+            CREATE TABLE suite_settings (
+              id INTEGER PRIMARY KEY CHECK (id = 1),
+              repo_allowlist TEXT NOT NULL,
+              repo_denylist TEXT NOT NULL
+            );
+            INSERT INTO suite_settings (id, repo_allowlist, repo_denylist)
+            -- char(10) is a real newline; a raw-string \n would be a literal
+            -- backslash and would not exercise the newline separator at all.
+            VALUES (1, 'Owner/Allowed, owner/second',
+                       'owner/denied' || char(10) || 'owner/other;junk');
+            "#,
+        )
+        .unwrap();
+
+        let report = migrate_legacy_tables(&conn).unwrap();
+        assert!(report.sources.contains(&"suite_settings".to_string()));
+
+        let kinds = |repo: &str| {
+            entries_for(&conn, repo)
+                .unwrap()
+                .into_iter()
+                .map(|entry| entry.kind)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(kinds("owner/allowed"), vec![PolicyKind::Allowlist]);
+        assert_eq!(kinds("owner/second"), vec![PolicyKind::Allowlist]);
+        assert_eq!(kinds("owner/denied"), vec![PolicyKind::Denylist]);
+        assert_eq!(kinds("owner/other"), vec![PolicyKind::Denylist]);
+        // "junk" is not owner/repo and must not become a policy row.
+        assert!(entries_for(&conn, "junk").unwrap().is_empty());
+    }
+
+    #[test]
+    fn free_text_denial_beats_free_text_allowance_for_the_same_repo() {
+        // Same precedence rule as cross-product conflicts: resolve toward exclusion,
+        // and report it rather than silently unioning toward permission.
+        let conn = conn();
+        conn.execute_batch(
+            r#"
+            CREATE TABLE suite_settings (
+              id INTEGER PRIMARY KEY CHECK (id = 1),
+              repo_allowlist TEXT NOT NULL,
+              repo_denylist TEXT NOT NULL
+            );
+            INSERT INTO suite_settings (id, repo_allowlist, repo_denylist)
+            VALUES (1, 'owner/both', 'owner/both');
+            "#,
+        )
+        .unwrap();
+
+        let report = migrate_legacy_tables(&conn).unwrap();
+        assert_eq!(
+            entries_for(&conn, "owner/both")
+                .unwrap()
+                .into_iter()
+                .map(|entry| entry.kind)
+                .collect::<Vec<_>>(),
+            vec![PolicyKind::Denylist]
+        );
+        assert_eq!(report.conflicts.len(), 1);
+        assert_eq!(report.conflicts[0].resolved_to, PolicyKind::Denylist);
     }
 }
