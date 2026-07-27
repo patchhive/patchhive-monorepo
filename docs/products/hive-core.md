@@ -232,6 +232,19 @@ All errors are wrapped in the `ApiEnvelope` format:
 | `HIVE_CORE_DISPATCH_TIMEOUT_SECS` | `600` | How long HiveCore waits for a dispatched product action. Clamped to 5–3600. Separate from the short polling timeout used for health and status |
 | `RUST_LOG` | `info` | Logging level |
 
+Product runbooks (`POST /products/:slug/runbook`, `GET /runbooks`) are a recorded
+read-only diagnostic pass over one product: reachability, startup checks, contract
+conformance, service-token posture, and recent run outcomes. Every step reports what
+HiveCore actually observed, with the evidence attached.
+
+There is deliberately no step for restarting a worker, rotating a token, or failing
+over a feed. Those are host operations belonging to `patchhive-launcher`, and a control
+plane that claims to have performed them has corrupted the record an operator would
+consult to find out what was actually done. If a step could change a product it belongs
+in dispatch or a suite run, where approval, scope and credential guards already live —
+a diagnostic panel must not become a side door around them. Unreachability halts the
+pass rather than cascading into four more failures that all mean "it is not running".
+
 HiveCore uses two HTTP clients. Polling (health, startup checks, capabilities, auth
 status) keeps a 4-second ceiling — a product that cannot answer "are you alive" quickly
 is not alive for dashboard purposes. Dispatch uses `HIVE_CORE_DISPATCH_TIMEOUT_SECS`,

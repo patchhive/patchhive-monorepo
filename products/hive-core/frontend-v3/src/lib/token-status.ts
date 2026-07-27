@@ -15,22 +15,7 @@
 
 import { apiFetch } from "./http";
 import { PRODUCTS } from "./hive-data";
-
-/** Slugs are kebab-case in the API; the deck's product ids are not. */
-const SLUGS: Record<string, string> = {
-  reporeaper: "repo-reaper",
-  signalhive: "signal-hive",
-  trustgate: "trust-gate",
-  repomemory: "repo-memory",
-  reviewbee: "review-bee",
-  mergekeeper: "merge-keeper",
-  flakesting: "flake-sting",
-  deptriage: "dep-triage",
-  vulntriage: "vuln-triage",
-  refactorscout: "refactor-scout",
-  releasesentry: "release-sentry",
-  hivecore: "hive-core",
-};
+import { slugForId } from "./product-slugs";
 
 interface AuthStatusBody {
   auth_enabled?: boolean;
@@ -126,7 +111,7 @@ function blank(productId: string, productName: string): Omit<TokenStatus, "state
   return {
     productId,
     productName,
-    slug: SLUGS[productId] ?? productId,
+    slug: slugForId(productId),
     scopes: [],
     knownScopes: [],
     name: "",
@@ -173,7 +158,7 @@ export async function fetchTokenStatuses(signal?: AbortSignal): Promise<TokenSta
   const bySlug = new Map(rows.map((row) => [row.key, row]));
 
   return PRODUCTS.map((product) => {
-    const slug = SLUGS[product.id] ?? product.id;
+    const slug = slugForId(product.id);
     const base = { ...blank(product.id, product.name), slug };
     const row = bySlug.get(slug);
 

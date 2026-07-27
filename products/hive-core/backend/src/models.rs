@@ -650,6 +650,39 @@ pub struct FirstStackSmokeRun {
     pub steps: Vec<FirstStackSmokeStep>,
 }
 
+/// One check in a product runbook.
+///
+/// A runbook step is an observation HiveCore actually made. There is no step for
+/// something it cannot do — no "restart the worker pool", no "failover the feed".
+/// Those are host operations belonging to the launcher, and a control plane that
+/// claims to have performed them while sleeping for 700ms is worse than one that
+/// offers nothing: it writes a confident audit line about work that never happened.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RunbookStep {
+    pub id: String,
+    pub label: String,
+    /// ok | warn | fail | skipped
+    pub status: String,
+    pub message: String,
+    pub remote_status: Option<u16>,
+    /// What the check actually saw, for the operator who wants to disagree with it.
+    pub evidence: Value,
+}
+
+/// A recorded diagnostic pass over one product.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RunbookRun {
+    pub id: String,
+    pub product_slug: String,
+    pub product_title: String,
+    /// ok | degraded | failed
+    pub status: String,
+    pub started_at: String,
+    pub finished_at: String,
+    pub summary: String,
+    pub steps: Vec<RunbookStep>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SetupProductLogsResponse {
     pub slug: String,

@@ -162,6 +162,12 @@ pub fn router() -> Router {
         .route("/suite-runs/:id", get(pipeline::suite_run_detail))
         // Narrative drafts. Operator-only: these produce text for a human to edit,
         // never a dispatch, so they are not service-token dispatch paths.
+        // Runbooks: a recorded read-only diagnostic pass over one product.
+        .route(
+            "/products/:slug/runbook",
+            axum::routing::post(pipeline::run_product_runbook),
+        )
+        .route("/runbooks", get(pipeline::list_runbook_runs))
         .route(
             "/incidents/summarize",
             axum::routing::post(pipeline::summarize_incident),

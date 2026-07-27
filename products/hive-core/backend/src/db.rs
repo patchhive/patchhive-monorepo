@@ -9,7 +9,7 @@ use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBe
 
 use crate::models::{
     FirstStackSmokeRun, PrBudgetReservation, ProductActionEvent, ProductOverride, RepositoryPolicy,
-    SuiteSettings,
+    RunbookRun, SuiteSettings,
 };
 
 static DB_POOL: Lazy<SqlitePool> = Lazy::new(|| {
@@ -711,6 +711,65 @@ pub fn record_first_stack_smoke_run(run: &FirstStackSmokeRun) -> rusqlite::Resul
     Ok(())
 }
 
+/// Runbook history is server-side, not browser state.
+///
+/// It was React state: a record of what an operator did that did not survive a page
+/// reload. A history that forgets is not a history, and this one is meant to answer
+/// "who checked this product, and what did it say" after the fact.
+pub fn record_runbook_run(run: &RunbookRun) -> rusqlite::Result<()> {
+    let conn = connect()?;
+    conn.execute(
+        r#"
+        INSERT OR REPLACE INTO hive_core_runbook_runs (
+          id, product_slug, product_title, status, started_at, finished_at, summary, steps_json
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+        "#,
+        params![
+            run.id,
+            run.product_slug,
+            run.product_title,
+            run.status,
+            run.started_at,
+            run.finished_at,
+            run.summary,
+            serde_json::to_string(&run.steps).unwrap_or_else(|_| "[]".into()),
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn runbook_runs(limit: u32) -> Vec<RunbookRun> {
+    let Ok(conn) = connect() else {
+        return Vec::new();
+    };
+    load_runbook_runs(&conn, limit).unwrap_or_default()
+}
+
+fn load_runbook_runs(conn: &Connection, limit: u32) -> rusqlite::Result<Vec<RunbookRun>> {
+    let mut stmt = conn.prepare(
+        r#"
+        SELECT id, product_slug, product_title, status, started_at, finished_at, summary, steps_json
+        FROM hive_core_runbook_runs
+        ORDER BY started_at DESC
+        LIMIT ?1
+        "#,
+    )?;
+    let rows = stmt.query_map([limit], |row| {
+        let steps_json: String = row.get(7)?;
+        Ok(RunbookRun {
+            id: row.get(0)?,
+            product_slug: row.get(1)?,
+            product_title: row.get(2)?,
+            status: row.get(3)?,
+            started_at: row.get(4)?,
+            finished_at: row.get(5)?,
+            summary: row.get(6)?,
+            steps: serde_json::from_str(&steps_json).unwrap_or_default(),
+        })
+    })?;
+    rows.collect()
+}
+
 pub fn latest_first_stack_smoke_run() -> Option<FirstStackSmokeRun> {
     let Ok(conn) = connect() else {
         return None;
@@ -775,6 +834,20 @@ fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
         -- Namespaced: patchhive-backend already owns a suite-level `suite_runs`
         -- table with a different schema, and the suite database is shared. New
         -- product tables must be product-namespaced (CLAUDE.md § SQLite).
+        CREATE TABLE IF NOT EXISTS hive_core_runbook_runs (
+          id TEXT PRIMARY KEY,
+          product_slug TEXT NOT NULL,
+          product_title TEXT NOT NULL,
+          status TEXT NOT NULL,
+          started_at TEXT NOT NULL,
+          finished_at TEXT NOT NULL,
+          summary TEXT NOT NULL,
+          steps_json TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_hive_core_runbook_runs_started_at
+        ON hive_core_runbook_runs(started_at DESC);
+
         CREATE TABLE IF NOT EXISTS hive_core_suite_runs (
           id TEXT PRIMARY KEY,
           name TEXT NOT NULL,

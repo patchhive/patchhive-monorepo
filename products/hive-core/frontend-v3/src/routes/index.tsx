@@ -184,7 +184,7 @@ function DeckInner() {
         <RunHeatmap />
         <CapabilityGrid />
         <AskHive />
-        <RunbookHistory />
+        <RunbookHistory syncVersion={suite.version} />
         <AuditLog syncVersion={suite.version} />
         <Footer />
       </div>

@@ -257,6 +257,22 @@ pub async fn suite_run_detail(
     super::suite_runs::suite_run_detail(id).await
 }
 
+/// Runbooks: a recorded read-only diagnostic pass over one product.
+pub async fn run_product_runbook(
+    State(state): State<AppState>,
+    Path(slug): Path<String>,
+) -> Result<
+    Json<crate::models::ApiEnvelope<crate::models::RunbookRun>>,
+    (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
+> {
+    super::runbook::run_product_runbook(State(state), slug).await
+}
+
+pub async fn list_runbook_runs() -> Json<crate::models::ApiEnvelope<Vec<crate::models::RunbookRun>>>
+{
+    super::runbook::list_runbook_runs().await
+}
+
 pub async fn recent_actions() -> Json<crate::models::ApiEnvelope<Vec<ProductActionEvent>>> {
     super::dispatch::recent_actions().await
 }

@@ -12,6 +12,7 @@
 import { useEffect, useState } from "react";
 
 import { apiFetch } from "./http";
+import { ID_BY_SLUG, SLUG_BY_ID, TITLE_BY_SLUG } from "./product-slugs";
 import { PRODUCTS, RUNS, type RunEvent, type Status } from "./hive-data";
 import { fetchConformance } from "./conformance";
 
@@ -21,40 +22,6 @@ interface ApiProduct {
   status: string;
   capabilities: string[];
 }
-
-/** Deck ids back to API keys, for joining against endpoints keyed by slug. */
-const SLUG_BY_ID: Record<string, string> = Object.fromEntries(
-  Object.entries({
-    "repo-reaper": "reporeaper",
-    "signal-hive": "signalhive",
-    "trust-gate": "trustgate",
-    "repo-memory": "repomemory",
-    "review-bee": "reviewbee",
-    "merge-keeper": "mergekeeper",
-    "flake-sting": "flakesting",
-    "dep-triage": "deptriage",
-    "vuln-triage": "vulntriage",
-    "refactor-scout": "refactorscout",
-    "release-sentry": "releasesentry",
-    "hive-core": "hivecore",
-  }).map(([slug, id]) => [id, slug]),
-);
-
-/** API product keys are kebab-case; the deck's ids are not. */
-const ID_BY_SLUG: Record<string, string> = {
-  "repo-reaper": "reporeaper",
-  "signal-hive": "signalhive",
-  "trust-gate": "trustgate",
-  "repo-memory": "repomemory",
-  "review-bee": "reviewbee",
-  "merge-keeper": "mergekeeper",
-  "flake-sting": "flakesting",
-  "dep-triage": "deptriage",
-  "vuln-triage": "vulntriage",
-  "refactor-scout": "refactorscout",
-  "release-sentry": "releasesentry",
-  "hive-core": "hivecore",
-};
 
 /**
  * `engine-pending` means the manifest is registered but no engine is mounted in this
@@ -89,21 +56,6 @@ interface ApiProductRuns {
   key: string;
   runs: { runs: ApiRunSummary[] } | null;
 }
-
-const NAME_BY_SLUG: Record<string, string> = {
-  "repo-reaper": "RepoReaper",
-  "signal-hive": "SignalHive",
-  "trust-gate": "TrustGate",
-  "repo-memory": "RepoMemory",
-  "review-bee": "ReviewBee",
-  "merge-keeper": "MergeKeeper",
-  "flake-sting": "FlakeSting",
-  "dep-triage": "DepTriage",
-  "vuln-triage": "VulnTriage",
-  "refactor-scout": "RefactorScout",
-  "release-sentry": "ReleaseSentry",
-  "hive-core": "HiveCore",
-};
 
 function toRunStatus(summary: ApiRunSummary): RunEvent["status"] {
   switch (summary.lifecycle_status || summary.status) {
@@ -164,7 +116,7 @@ async function syncRuns(signal: AbortSignal): Promise<void> {
   const collected: { summary: ApiRunSummary; product: string }[] = [];
   for (const row of rows) {
     if (!row.runs) continue;
-    const product = NAME_BY_SLUG[row.key] ?? row.key;
+    const product = TITLE_BY_SLUG[row.key] ?? row.key;
     for (const summary of row.runs.runs) collected.push({ summary, product });
   }
 

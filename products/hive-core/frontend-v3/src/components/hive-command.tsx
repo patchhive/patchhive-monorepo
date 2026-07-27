@@ -63,15 +63,6 @@ export interface AuditEvent {
   diff?: { before: string; after: string };
 }
 
-export interface RunbookRun {
-  id: string;
-  at: number;
-  productId: string;
-  productName: string;
-  dryRun: boolean;
-  steps: number;
-  actor: string;
-}
 
 interface Ctx {
   open: boolean;
@@ -100,8 +91,6 @@ interface Ctx {
   runbookProductId: string | null;
   openRunbook: (id: string) => void;
   closeRunbook: () => void;
-  runbookHistory: RunbookRun[];
-  recordRunbook: (r: Omit<RunbookRun, "id" | "at" | "actor"> & { actor?: string }) => void;
   // demo/tour/presence
   demoMode: boolean;
   toggleDemo: () => void;
@@ -164,7 +153,6 @@ export function HiveCommandProvider({ children }: { children: ReactNode }) {
   const [tourOpen, setTourOpen] = useState(false);
   const [presenceOn, setPresenceOn] = useState(false);
 
-  const [runbookHistory, setRunbookHistory] = useState<RunbookRun[]>([]);
   const [dispatchPreviewOpen, setDispatchPreviewOpen] = useState(false);
   const [frecency, setFrecency] = useState<Record<string, { count: number; last: number }>>({});
 
@@ -204,18 +192,6 @@ export function HiveCommandProvider({ children }: { children: ReactNode }) {
     setFrecency(seed);
     try { window.localStorage.setItem("hive.frecency", JSON.stringify(seed)); } catch { /* ignore */ }
   }, []);
-
-  const recordRunbook = useCallback(
-    (r: Omit<RunbookRun, "id" | "at" | "actor"> & { actor?: string }) => {
-      setRunbookHistory((prev) =>
-        [
-          { id: Math.random().toString(36).slice(2, 8), at: Date.now(), actor: r.actor ?? "you", ...r },
-          ...prev,
-        ].slice(0, 30),
-      );
-    },
-    [],
-  );
 
   const logAudit = useCallback((e: Omit<AuditEvent, "id" | "at" | "actor"> & { actor?: string }) => {
     setAuditLog((prev) => [
@@ -370,8 +346,6 @@ export function HiveCommandProvider({ children }: { children: ReactNode }) {
       setTourOpen,
       presenceOn,
       togglePresence,
-      runbookHistory,
-      recordRunbook,
       dispatchPreviewOpen,
       setDispatchPreviewOpen,
       bumpFrecency,
@@ -379,7 +353,7 @@ export function HiveCommandProvider({ children }: { children: ReactNode }) {
       seedFrecency,
       frecency,
     }),
-    [open, registryFilter, scanlineOn, pulseProductId, pulseProduct, toggleScanline, repollKey, repoll, theme, setTheme, cycleTheme, soundOn, toggleSound, cheatsheetOpen, replayRun, auditLog, logAudit, clearAudit, runbookProductId, openRunbook, closeRunbook, demoMode, toggleDemo, tourOpen, presenceOn, togglePresence, runbookHistory, recordRunbook, dispatchPreviewOpen, bumpFrecency, resetFrecency, seedFrecency, frecency],
+    [open, registryFilter, scanlineOn, pulseProductId, pulseProduct, toggleScanline, repollKey, repoll, theme, setTheme, cycleTheme, soundOn, toggleSound, cheatsheetOpen, replayRun, auditLog, logAudit, clearAudit, runbookProductId, openRunbook, closeRunbook, demoMode, toggleDemo, tourOpen, presenceOn, togglePresence, dispatchPreviewOpen, bumpFrecency, resetFrecency, seedFrecency, frecency],
   );
 
   return (
