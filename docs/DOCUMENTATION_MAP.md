@@ -88,6 +88,7 @@ open rather than written as settled architecture.
 | [CONFIGURATION_STANDARDS.md](CONFIGURATION_STANDARDS.md) | De-facto config naming, suffixes, and known deviations. |
 | [Product naming strategy](product-naming-strategy.md) | Customer-facing naming rules, internal apiary vocabulary, and rename candidates. |
 | [Future plans](FUTURE_PLANS.md) | Planning scratchpad. |
+| [Full review — 2026-07-31](code-review-2026-07-31.md) | Reproduced findings across code, docs, config and the safety model, with severity and suggested order. |
 
 ## See Also
 
