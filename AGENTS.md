@@ -648,6 +648,10 @@ Important env vars:
 - The canonical HiveCore design is `docs/hivecore-architecture.md`. It defines the four layers
   (Fleet, Kernel, Conductor, Cockpit), records the current implementation's blockers, and owns the
   build order. Read it before changing HiveCore; the notes below remain true but are narrower.
+- `products/hive-core/frontend-v3/` is the only active HiveCore frontend. Treat
+  `products/hive-core/frontend/` and `products/hive-core/frontend-v2/` as obsolete,
+  removal-bound code: do not extend, repair, or use them as implementation references.
+  New HiveCore frontend work and verification target `frontend-v3/` only.
 - **HiveCore's purpose is to run the whole suite.** The operator declares standing intent and
   HiveCore keeps the suite satisfying it — discovering work, dispatching product actions, enforcing
   policy, staying inside budgets, and stopping when something is wrong. The specialist products are

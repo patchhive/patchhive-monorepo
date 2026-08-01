@@ -83,7 +83,8 @@ Ports are authoritative in [scripts/suite-common.sh](scripts/suite-common.sh); R
 `docs/products/<slug>.md`, and `docker-compose.yml` must agree or `check:suite-drift` fails.
 All eleven specialist products and HiveCore are `migration_stage = "integrated"`
 inside `patchhive-backend`. HiveCore remains the distinct control-plane product,
-with `frontend-v3/` as its canonical cockpit.
+with `frontend-v3/` as its only active cockpit. Its `frontend/` and `frontend-v2/`
+trees are obsolete and removal-bound; do not change or verify them.
 
 ---
 

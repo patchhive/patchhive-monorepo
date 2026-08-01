@@ -6,6 +6,10 @@
 
 HiveCore is the PatchHive control plane. It brings standalone PatchHive products into one operational interface for health, launch links, shared defaults, run history, capability visibility, action dispatch, and product handoffs.
 
+`products/hive-core/frontend-v3/` is the sole active HiveCore cockpit. The older
+`frontend/` and `frontend-v2/` trees are obsolete and scheduled for removal; they
+must not receive new features, fixes, or quality-gate work.
+
 ---
 
 ## Product Role
