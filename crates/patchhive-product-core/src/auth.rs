@@ -1077,6 +1077,11 @@ mod tests {
     use chrono::DateTime;
     use http::HeaderValue;
 
+    fn suite_bootstrap_env_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
+
     fn test_config(env_var: &str, env_path: PathBuf) -> ApiKeyAuthConfig {
         ApiKeyAuthConfig::new(env_var, "ph_").with_env_path(env_path)
     }
@@ -1511,6 +1516,9 @@ mod tests {
 
     #[test]
     fn suite_bootstrap_secret_allows_service_token_generation_without_operator_key() {
+        let _env_guard = suite_bootstrap_env_lock()
+            .lock()
+            .expect("suite bootstrap test environment lock should be available");
         let env_var = format!("PATCHHIVE_TEST_AUTH_{}", uuid::Uuid::new_v4().simple());
         let service_env_var = format!(
             "PATCHHIVE_TEST_SERVICE_AUTH_{}",
@@ -1543,6 +1551,9 @@ mod tests {
 
     #[test]
     fn suite_bootstrap_secret_rejects_wrong_secret() {
+        let _env_guard = suite_bootstrap_env_lock()
+            .lock()
+            .expect("suite bootstrap test environment lock should be available");
         let secret = format!("ph-suite-test-{}", uuid::Uuid::new_v4().simple());
         std::env::set_var("PATCHHIVE_SUITE_BOOTSTRAP_SECRET", &secret);
 
