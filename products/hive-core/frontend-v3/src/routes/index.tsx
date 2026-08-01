@@ -928,7 +928,6 @@ function RunsFeed({ syncVersion }: { syncVersion: number }) {
       replace: !r,
     });
   };
-  const { replayRun } = useHiveCommand();
 
   const [codeFilter, setCodeFilter] = useState<string>("all");
   const [stageFilter, setStageFilter] = useState<string>("all");
@@ -1093,20 +1092,6 @@ function RunsFeed({ syncVersion }: { syncVersion: number }) {
                   </div>
                 )}
               </div>
-              {r.status !== "running" && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    replayRun(r);
-                  }}
-                  className="opacity-0 transition group-hover:opacity-100 inline-flex shrink-0 items-center gap-1 rounded border border-border bg-card/80 px-1.5 py-0.5 font-display text-[9px] uppercase tracking-wider text-muted-foreground hover:border-[var(--honey)]/50 hover:text-[var(--honey)]"
-                  title="Replay run"
-                  aria-label="Replay run"
-                >
-                  <Repeat className="h-2.5 w-2.5" /> replay
-                </button>
-              )}
             </div>
           </li>
         ))}

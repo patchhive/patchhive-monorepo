@@ -200,37 +200,6 @@ export const DEPENDENCIES: SafetyEdge[] = [
 
 
 // Schemas for capability inputs/outputs, surfaced in the run drawer.
-export interface CapabilitySchema {
-  input: Record<string, string>;
-  output: Record<string, string>;
-}
-export const CAPABILITY_SCHEMAS: Record<string, CapabilitySchema> = {
-  "scan.repo": { input: { repo: "string", branch: "string?" }, output: { commits: "number", health: "0..1" } },
-  "report.health": { input: { repo: "string" }, output: { score: "0..1", flags: "string[]" } },
-  "schedule.cron": { input: { expr: "string", target: "string" }, output: { jobId: "string" } },
-  "alert.dispatch": { input: { signal: "Signal", level: "warn|crit" }, output: { delivered: "boolean" } },
-  "signal.normalize": { input: { raw: "object" }, output: { signal: "Signal" } },
-  "token.issue": { input: { scope: "string", ttl: "number" }, output: { token: "string", id: "string" } },
-  "token.rotate": { input: { id: "string" }, output: { id: "string", rotatedAt: "string" } },
-  "audit.read": { input: { since: "string" }, output: { events: "Event[]" } },
-  "embed.commit": { input: { sha: "string", diff: "string" }, output: { vectorId: "string" } },
-  "search.semantic": { input: { q: "string", k: "number" }, output: { hits: "Hit[]" } },
-  "pr.review": { input: { pr: "number" }, output: { verdict: "approve|request|comment" } },
-  "pr.comment": { input: { pr: "number", body: "string" }, output: { commentId: "number" } },
-  "merge.queue": { input: { pr: "number" }, output: { position: "number" } },
-  "merge.gate": { input: { pr: "number" }, output: { allowed: "boolean", reasons: "string[]" } },
-  "test.classify": { input: { runId: "string" }, output: { flaky: "string[]" } },
-  "test.quarantine": { input: { test: "string" }, output: { quarantined: "boolean" } },
-  "dep.audit": { input: { manifest: "string" }, output: { vulnerable: "Dep[]" } },
-  "dep.upgrade": { input: { dep: "string", to: "string" }, output: { pr: "number" } },
-  "cve.ingest": { input: { source: "nvd|ghsa" }, output: { ingested: "number" } },
-  "cve.score": { input: { cve: "string" }, output: { score: "0..10", vector: "string" } },
-  "scan.smells": { input: { path: "string" }, output: { findings: "Finding[]" } },
-  "suggest.refactor": { input: { findingId: "string" }, output: { patch: "string" } },
-  "registry.read": { input: {}, output: { products: "Product[]" } },
-  "registry.poll": { input: {}, output: { polled: "number" } },
-  "action.dispatch": { input: { product: "string", capability: "string", args: "object" }, output: { runId: "string" } },
-  "check.github.release": { input: { repo: "string", tag: "string" }, output: { ready: "boolean", blockers: "string[]" } },
-  "drift.changelog": { input: { repo: "string", tag: "string" }, output: { drift: "string[]" } },
-  "blockers.scan": { input: { repo: "string" }, output: { blockers: "Blocker[]" } },
-};
+// CAPABILITY_SCHEMAS lived here: hand-written input/output schemas per capability,
+// rendered in the run drawer as though the contract carried them. It does not. The
+// drawer now shows the product's own run record or says there is none.

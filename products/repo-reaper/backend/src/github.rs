@@ -519,7 +519,7 @@ pub async fn gh_get_issue_context(
             format!(
                 "**@{}**: {}",
                 c["user"]["login"].as_str().unwrap_or("?"),
-                &c["body"]
+                c["body"]
                     .as_str()
                     .unwrap_or("")
                     .chars()

@@ -594,7 +594,7 @@ pub async fn agent_select_files(
     let system = "Software architect. Select ONLY the 3-8 files most relevant to fixing this bug.\nReply ONLY with JSON array of relative paths (no markdown): [\"path/to/file.rs\"]";
     let prompt = format!(
         "Issue: {title}\n\n{}\n\nFiles:\n{structure}",
-        &body.chars().take(1000).collect::<String>()
+        body.chars().take(1000).collect::<String>()
     );
     let (text, cost) = ai_call(http, &call_params(agent, system, &prompt)).await?;
     let files: Vec<String> = parse_typed_json(&text, "judge file selection")?;
@@ -624,7 +624,7 @@ pub async fn agent_generate_patch(
         Set patch to null if you cannot fix it safely.";
     let prompt = format!(
         "Issue: {title}\n\n{}\n\nIssue context:\n{ctx}\n\nCode:\n{codebase}",
-        &body.chars().take(1500).collect::<String>()
+        body.chars().take(1500).collect::<String>()
     );
     let (text, cost) = ai_call(
         http,
@@ -651,7 +651,7 @@ pub async fn agent_patch_retry(
         Set patch to null if you cannot fix it.";
     let prompt = format!(
         "Issue: {title}\n\n{}\n\nPrevious patch (FAILED):\n{prev_patch}\n\nFailure:\n{error_ctx}\n\nCode:\n{codebase}",
-        &body.chars().take(1000).collect::<String>()
+        body.chars().take(1000).collect::<String>()
     );
     let (text, cost) = ai_call(
         http,

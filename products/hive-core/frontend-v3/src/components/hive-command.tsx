@@ -82,7 +82,6 @@ interface Ctx {
   toggleSound: () => void;
   cheatsheetOpen: boolean;
   setCheatsheetOpen: (o: boolean) => void;
-  replayRun: (run: RunEvent) => void;
   // audit
   auditLog: AuditEvent[];
   logAudit: (e: Omit<AuditEvent, "id" | "at" | "actor"> & { actor?: string }) => void;
@@ -246,16 +245,6 @@ export function HiveCommandProvider({ children }: { children: ReactNode }) {
     return () => window.clearInterval(i);
   }, [soundOn]);
 
-  const replayRun = useCallback((run: RunEvent) => {
-    const id = toast.loading(`Replaying ${run.capability}…`, { description: `${run.product} · from ${run.id}` });
-    window.setTimeout(() => {
-      toast.success("Replay dispatched", {
-        id,
-        description: `New run queued for ${run.product} · same payload`,
-      });
-    }, 1100);
-  }, []);
-
   // Global hotkeys
   const gPressedRef = useRef<number>(0);
   useEffect(() => {
@@ -329,7 +318,6 @@ export function HiveCommandProvider({ children }: { children: ReactNode }) {
       toggleSound,
       cheatsheetOpen,
       setCheatsheetOpen,
-      replayRun,
       auditLog,
       logAudit,
       clearAudit,
@@ -347,7 +335,7 @@ export function HiveCommandProvider({ children }: { children: ReactNode }) {
       seedFrecency,
       frecency,
     }),
-    [open, registryFilter, scanlineOn, pulseProductId, pulseProduct, toggleScanline, repollKey, repoll, theme, setTheme, cycleTheme, soundOn, toggleSound, cheatsheetOpen, replayRun, auditLog, logAudit, clearAudit, runbookProductId, openRunbook, closeRunbook, demoMode, toggleDemo, tourOpen, dispatchPreviewOpen, bumpFrecency, resetFrecency, seedFrecency, frecency],
+    [open, registryFilter, scanlineOn, pulseProductId, pulseProduct, toggleScanline, repollKey, repoll, theme, setTheme, cycleTheme, soundOn, toggleSound, cheatsheetOpen, auditLog, logAudit, clearAudit, runbookProductId, openRunbook, closeRunbook, demoMode, toggleDemo, tourOpen, dispatchPreviewOpen, bumpFrecency, resetFrecency, seedFrecency, frecency],
   );
 
   return (
