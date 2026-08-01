@@ -39,6 +39,7 @@ import { CapabilitySearch } from "@/components/capability-search";
 import { TokenVault } from "@/components/token-vault";
 import { LiveTail } from "@/components/live-tail";
 import { RunHeatmap } from "@/components/run-heatmap";
+import { BootstrapWizard } from "@/components/bootstrap-wizard";
 import { AuditLog } from "@/components/audit-log";
 import { AskHive } from "@/components/ask-hive";
 import { RunbookDrawer } from "@/components/runbook-drawer";
@@ -182,6 +183,7 @@ function DeckInner() {
         <ContractDrift syncVersion={suite.version} />
         <CapabilitySearch />
         <TokenVault />
+        <BootstrapWizard syncVersion={suite.version} />
         <RunHeatmap syncVersion={suite.version} />
         <CapabilityGrid />
         <AskHive />

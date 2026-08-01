@@ -482,11 +482,19 @@ pub(super) async fn build_first_stack_response(
             },
             products: HashMap::new(),
         });
-    let requirements = fetch_launcher_requirements(state)
-        .await
-        .unwrap_or_else(|_| LauncherRequirementsSnapshot {
-            products: HashMap::new(),
-        });
+    // Keep the failure rather than flattening it into an empty map. An empty
+    // requirements list and an unanswerable one look identical downstream, and only
+    // one of them means the operator has nothing left to configure.
+    let (requirements, requirements_error) = match fetch_launcher_requirements(state).await {
+        Ok(snapshot) => (snapshot, String::new()),
+        Err(error) => (
+            LauncherRequirementsSnapshot {
+                products: HashMap::new(),
+            },
+            error,
+        ),
+    };
+    let requirements_known = requirements_error.is_empty();
 
     let mut products = Vec::new();
     for runtime in runtimes {
@@ -516,6 +524,7 @@ pub(super) async fn build_first_stack_response(
                 .get(&runtime.slug)
                 .map(|item| item.requirements.clone())
                 .unwrap_or_default(),
+            credentials_known: requirements_known,
             launcher: launcher.products.get(&runtime.slug).cloned(),
             runtime,
             auth_status,
@@ -527,6 +536,8 @@ pub(super) async fn build_first_stack_response(
     FirstStackSetupResponse {
         stack_id: "first-stack".into(),
         launcher: launcher.status,
+        requirements_known,
+        requirements_error,
         suite_bootstrap_configured: configured_suite_bootstrap_secret().is_some(),
         latest_smoke: db::latest_first_stack_smoke_run(),
         latest_fleet_launch: latest_fleet_launch_job(state).await,

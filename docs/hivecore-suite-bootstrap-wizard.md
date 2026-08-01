@@ -22,6 +22,23 @@ The desired first-run flow:
 10. HiveCore provisions downstream product service tokens.
 11. HiveCore runs suite smoke checks and shows a ready screen with evidence.
 
+## Status (2026-07-31)
+
+The backend has existed for some time: launcher status, per-product credential
+requirements, pairing, fleet launch, per-product env writes, GitHub token validation and
+smoke tiers. The v3 deck carried none of it, so first-run setup meant editing files by
+hand. `components/bootstrap-wizard.tsx` now surfaces it as four dependency-ordered steps
+— launcher, credentials, service tokens, readiness evidence.
+
+One correctness fix went with it. Credential requirements come from the launcher, which
+owns the `.env` files, and the fetch failure was swallowed with `unwrap_or_else` into an
+empty map. `credentials: []` therefore meant either "this product needs nothing" or
+"HiveCore could not ask", and the two were indistinguishable — an operator with the
+launcher down would read a complete setup. The response now carries `requirements_known`
+and `requirements_error`, and each product carries `credentials_known`; the wizard renders
+step 2 as `unknown` rather than `ok` when the launcher cannot be reached, and says what
+that blocks.
+
 ## Architecture
 
 The browser must not write `.env` files or control Docker directly.

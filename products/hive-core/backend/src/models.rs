@@ -585,6 +585,14 @@ pub struct SetupProductStatus {
     pub pairing_ready: bool,
     pub launcher: Option<SetupLauncherProductStatus>,
     pub credentials: Vec<SetupCredentialRequirement>,
+    /// Whether `credentials` is an answer or an absence.
+    ///
+    /// Requirements come from the launcher, which owns the `.env` files. When the
+    /// launcher is unreachable the list is empty because HiveCore could not ask —
+    /// which is not the same as "this product needs nothing", and rendering the two
+    /// identically tells an operator their setup is complete when it is unknown.
+    #[serde(default)]
+    pub credentials_known: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -628,6 +636,12 @@ pub struct SetupFleetLaunchJob {
 pub struct FirstStackSetupResponse {
     pub stack_id: String,
     pub launcher: SetupLauncherStatus,
+    /// False when the launcher could not be asked what each product requires.
+    #[serde(default)]
+    pub requirements_known: bool,
+    /// Why requirements are unknown, when they are.
+    #[serde(default)]
+    pub requirements_error: String,
     pub suite_bootstrap_configured: bool,
     pub latest_smoke: Option<FirstStackSmokeRun>,
     pub latest_fleet_launch: Option<SetupFleetLaunchJob>,
