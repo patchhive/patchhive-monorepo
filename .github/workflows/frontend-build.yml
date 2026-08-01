@@ -22,7 +22,6 @@ jobs:
         workspace:
           - products/dep-triage/frontend
           - products/flake-sting/frontend
-          - products/hive-core/frontend
           - products/hive-core/frontend-v3
           - products/merge-keeper/frontend
           - products/refactor-scout/frontend

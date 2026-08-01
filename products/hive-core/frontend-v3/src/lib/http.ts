@@ -2,19 +2,41 @@
 //
 // Every protected suite route requires the operator key, and attaching it at each
 // call site is how one gets forgotten. This is the only place the deck reads the
-// stored key, and the only place it is attached to a request.
+// in-memory key, and the only place it is attached to a request.
 //
 // The key goes to VITE_API_URL and nowhere else — no cookie, no third-party origin.
 
 import { API, API_KEY_STORAGE } from "@/config";
 
+let apiKey = "";
+
+function clearLegacyStoredKey(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(API_KEY_STORAGE);
+  } catch {
+    // Storage can be unavailable by browser policy. The active key is memory-only.
+  }
+  try {
+    window.sessionStorage.removeItem(API_KEY_STORAGE);
+  } catch {
+    // Best-effort cleanup of the short-lived storage used by earlier builds.
+  }
+}
+
 export function readApiKey(): string {
-  if (typeof window === "undefined") return "";
-  return window.localStorage.getItem(API_KEY_STORAGE) ?? "";
+  clearLegacyStoredKey();
+  return apiKey;
+}
+
+export function storeApiKey(value: string): void {
+  clearLegacyStoredKey();
+  apiKey = value.trim();
 }
 
 export function clearApiKey(): void {
-  if (typeof window !== "undefined") window.localStorage.removeItem(API_KEY_STORAGE);
+  apiKey = "";
+  clearLegacyStoredKey();
 }
 
 /** Fetch a control-plane path with the operator key attached. */

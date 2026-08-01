@@ -23,8 +23,9 @@ dark-only rather than following the suite-wide `patchhive.theme` preference.
 a single-operator console behind an API key: SSR buys nothing, and a Node server would
 become a second place holding the operator credential — the export already had an LLM
 call and a provider key living there. TanStack Router is kept; Start, nitro, and every
-`.server.ts` are gone. The operator key stays in `localStorage` and travels as
-`X-API-Key` to `VITE_API_URL` and nowhere else.
+`.server.ts` are gone. The operator key stays in memory for the current page lifetime
+and travels as `X-API-Key` to `VITE_API_URL` and nowhere else. Reloading requires a
+fresh login; the frontend also clears keys left in Web Storage by earlier builds.
 
 ## What the data is
 

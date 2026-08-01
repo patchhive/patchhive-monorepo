@@ -1,7 +1,8 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Hexagon, KeyRound, Loader2, ShieldAlert } from "lucide-react";
 
-import { API, API_KEY_STORAGE } from "@/config";
+import { API } from "@/config";
+import { clearApiKey, readApiKey, storeApiKey } from "@/lib/http";
 
 /**
  * Operator session for the deck.
@@ -10,20 +11,15 @@ import { API, API_KEY_STORAGE } from "@/config";
  * protected route with 503 rather than running open, so this gate has three states
  * and not two — needs bootstrap, needs login, authenticated.
  *
- * The key lives in localStorage and travels as X-API-Key. There is no cookie and no
- * server-side session, so nothing between the browser and the Rust backend holds a
- * credential.
+ * The key lives only in this JavaScript module's memory and travels as X-API-Key.
+ * Reloading the page requires login again. There is no cookie, Web Storage copy, or
+ * server-side session holding the cleartext credential.
  */
 type Phase = "checking" | "bootstrap" | "login" | "ready" | "unreachable";
 
 interface AuthStatus {
   auth_enabled: boolean;
   bootstrap_required: boolean;
-}
-
-export function readApiKey(): string {
-  if (typeof window === "undefined") return "";
-  return window.localStorage.getItem(API_KEY_STORAGE) ?? "";
 }
 
 export function SessionGate({ children }: { children: ReactNode }) {
@@ -54,7 +50,7 @@ export function SessionGate({ children }: { children: ReactNode }) {
           return;
         }
 
-        // A stored key can be stale — the hash may have been rotated in .env.
+        // An in-memory key can be stale — the hash may have been rotated in .env.
         const probe = await fetch(`${API}/api/auth/login`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -62,7 +58,10 @@ export function SessionGate({ children }: { children: ReactNode }) {
         });
         if (cancelled) return;
         setPhase(probe.ok ? "ready" : "login");
-        if (!probe.ok) setError("Stored key was rejected. It may have been rotated.");
+        if (!probe.ok) {
+          clearApiKey();
+          setError("The active key was rejected. It may have been rotated.");
+        }
       } catch {
         if (!cancelled) setPhase("unreachable");
       }
@@ -86,7 +85,7 @@ export function SessionGate({ children }: { children: ReactNode }) {
         body: JSON.stringify({ api_key: key.trim() }),
       });
       if (response.ok) {
-        window.localStorage.setItem(API_KEY_STORAGE, key.trim());
+        storeApiKey(key);
         setPhase("ready");
       } else {
         setError("That key was rejected.");
@@ -105,7 +104,7 @@ export function SessionGate({ children }: { children: ReactNode }) {
       const response = await fetch(`${API}/api/auth/generate-key`, { method: "POST" });
       const payload = (await response.json()) as { api_key?: string; message?: string };
       if (response.ok && payload.api_key) {
-        window.localStorage.setItem(API_KEY_STORAGE, payload.api_key);
+        storeApiKey(payload.api_key);
         setGenerated(payload.api_key);
       } else {
         setError(payload.message ?? `Bootstrap failed (HTTP ${response.status}).`);
@@ -164,8 +163,8 @@ export function SessionGate({ children }: { children: ReactNode }) {
           (generated ? (
             <div>
               <p className="text-xs text-muted-foreground">
-                Key generated and stored in this browser. Save it somewhere — it will not be
-                shown again.
+                Key generated and held for this page. Save it somewhere — it will not be
+                shown again, and reloading will require it.
               </p>
               <code className="mt-3 block break-all rounded border border-[var(--honey)]/40 bg-background/60 p-3 font-mono text-[11px] text-[var(--honey)]">
                 {generated}
@@ -225,8 +224,9 @@ export function SessionGate({ children }: { children: ReactNode }) {
         {error && <p className="mt-3 text-xs text-[var(--crit)]">{error}</p>}
 
         <p className="mt-6 text-[10px] leading-relaxed text-muted-foreground">
-          The key is stored in this browser and sent as <code className="font-mono">X-API-Key</code>{" "}
-          to {API} only. No cookie, no server-side session.
+          The key is held in memory for this page and sent as{" "}
+          <code className="font-mono">X-API-Key</code> to {API} only. It is not saved in
+          browser storage, a cookie, or a server-side session.
         </p>
       </div>
     </main>

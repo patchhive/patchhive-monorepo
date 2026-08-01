@@ -85,6 +85,9 @@ All eleven specialist products and HiveCore are `migration_stage = "integrated"`
 inside `patchhive-backend`. HiveCore remains the distinct control-plane product,
 with `frontend-v3/` as its only active cockpit. Its `frontend/` and `frontend-v2/`
 trees are obsolete and removal-bound; do not change or verify them.
+HiveCore v3 keeps the operator API key in memory only and deliberately requires a
+fresh login after reload. Never restore Web Storage or cookie persistence for it;
+retain best-effort cleanup of keys left by earlier builds.
 
 ---
 

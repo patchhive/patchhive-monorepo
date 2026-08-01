@@ -83,7 +83,7 @@ git fsck --full
 rg -l -I -P --hidden --glob '!.git/**' --glob '!**/target/**' --glob '!node_modules/**' 'github_pat_[A-Za-z0-9_]{60,}|ghp_[A-Za-z0-9]{36,}|gho_[A-Za-z0-9]{36,}|ghs_[A-Za-z0-9]{36,}|glpat-[A-Za-z0-9_-]{20,}|sk-[A-Za-z0-9]{48,}|AKIA[0-9A-Z]{16}|-----BEGIN (RSA |OPENSSH |EC |DSA |PRIVATE )?PRIVATE KEY-----'
 find . -path ./.git -prune -o -type f \( -name '.env' -o -name '*.db' -o -name '*.db-shm' -o -name '*.db-wal' -o -name '*.sqlite' -o -name '*.sqlite3' -o -name '*.pem' -o -name '*.key' \) -print
 npm audit
-npm --prefix products/hive-core/frontend run build
+npm --prefix products/hive-core/frontend-v3 run build
 npm run check:suite-drift
 ```
 

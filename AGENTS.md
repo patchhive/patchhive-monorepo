@@ -652,6 +652,10 @@ Important env vars:
   `products/hive-core/frontend/` and `products/hive-core/frontend-v2/` as obsolete,
   removal-bound code: do not extend, repair, or use them as implementation references.
   New HiveCore frontend work and verification target `frontend-v3/` only.
+- HiveCore v3 keeps the operator API key in browser memory only. Never persist it in
+  `localStorage`, `sessionStorage`, cookies, or another browser-owned durable store;
+  a page reload intentionally requires login again. Retain best-effort deletion of
+  keys left in Web Storage by earlier builds while that migration cleanup is useful.
 - **HiveCore's purpose is to run the whole suite.** The operator declares standing intent and
   HiveCore keeps the suite satisfying it — discovering work, dispatching product actions, enforcing
   policy, staying inside budgets, and stopping when something is wrong. The specialist products are
