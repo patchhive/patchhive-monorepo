@@ -80,9 +80,8 @@ Recommended schedule action metadata:
   "id": "run_scan",
   "label": "Run scan",
   "scheduleable": true,
-  "read_only": true,
-  "mutating": false,
-  "requires_approval": false,
+  "effect": { "kind": "writes_local_state" },
+  "approval": "automatic",
   "default_cadences": ["daily", "weekly"],
   "credential_requirements": ["github:metadata:read"],
   "required_scopes": ["actions:dispatch"]
@@ -268,9 +267,11 @@ Recommended action metadata:
   "description": "Create a small refactor PR for a selected RefactorScout lead.",
   "starts_run": true,
   "destructive": true,
-  "mutates_repo": true,
-  "opens_pr": true,
-  "requires_approval": true,
+  "effect": {
+    "kind": "mutates_repository",
+    "opens_pull_request": true
+  },
+  "approval": "operator_required",
   "required_scopes": [
     "github:contents:write",
     "github:pull_requests:write"

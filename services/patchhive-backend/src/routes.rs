@@ -589,6 +589,24 @@ mod tests {
                     .is_some_and(|modes| !modes.is_empty()),
                 "{key} must advertise at least one target-selection mode"
             );
+            for action in capabilities["actions"]
+                .as_array()
+                .expect("capability actions")
+            {
+                assert!(
+                    action["effect"]["kind"].as_str().is_some(),
+                    "{key} action {} must advertise an explicit effect",
+                    action["id"]
+                );
+                assert!(
+                    matches!(
+                        action["approval"].as_str(),
+                        Some("automatic" | "operator_required")
+                    ),
+                    "{key} action {} must advertise an explicit approval policy",
+                    action["id"]
+                );
+            }
             if key == "signal-hive" {
                 let target_modes = capabilities["operating_modes"]["target_selection"]
                     .as_array()

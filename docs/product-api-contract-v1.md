@@ -274,12 +274,22 @@ Rules:
 
 Products should model scan and fix work as different actions.
 
-- Scan actions discover or analyze and should be read-only.
+- Scan actions discover or analyze. Use `read_only` only when they persist nothing;
+  use `writes_local_state` when they retain findings or run evidence inside PatchHive.
 - Fix actions mutate code, repository state, CI settings, release state, or GitHub objects and must advertise that through capability metadata.
 - Any product that naturally owns a fix type should eventually expose an explicit fix action for it.
 - Products that do not naturally own fixes should still participate in suite runs as signal, memory, policy, or validation providers.
-- `read_only`, `mutating`, `requires_approval`, `scheduleable`, and
-  `opens_pr` are optional booleans. Missing values are treated as `false`.
+- `effect` and `approval` are required. They are sum types, not independent
+  booleans, so an action cannot omit its safety declaration or claim contradictory
+  states. Valid effect kinds are `read_only`, `writes_local_state`,
+  `writes_external_state`, and `mutates_repository`. The repository variant carries
+  an explicit `opens_pull_request` value.
+- `read_only`, `mutating`, `requires_approval`, and `opens_pr` remain emitted as
+  derived compatibility fields during the v1 rolling migration. Readers may accept
+  legacy payloads only when exactly one of `read_only` or `mutating` is true; they
+  must reject missing, both-false, both-true, or contradictory declarations.
+- `scheduleable` remains an independent boolean because both values are complete,
+  meaningful states rather than an attempt to encode a larger state machine.
 - `credential_requirements` describes the operator credentials an action needs,
   while `required_scopes` describes the product service-token scopes HiveCore
   must hold to dispatch the action.
@@ -295,9 +305,11 @@ Recommended fix action fields:
   "description": "Create a small refactor PR for a selected lead.",
   "starts_run": true,
   "destructive": true,
-  "mutating": true,
-  "opens_pr": true,
-  "requires_approval": true,
+  "effect": {
+    "kind": "mutates_repository",
+    "opens_pull_request": true
+  },
+  "approval": "operator_required",
   "credential_requirements": [
     "github:contents:write",
     "github:pull_requests:write"

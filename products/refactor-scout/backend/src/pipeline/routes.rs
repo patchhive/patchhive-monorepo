@@ -62,8 +62,8 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
             "/scan/local",
             "Surface evidence-ranked structural review candidates from an allowed local path or public GitHub repository.",
             true,
+            contract::ActionSafety::automatic(contract::ActionEffect::WritesLocalState),
         )
-        .read_only(true)
         .scheduleable(true)
         .trigger_modes([RunTriggerMode::Operator, RunTriggerMode::Schedule])
         .target_selection_modes([

@@ -39,8 +39,8 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
             "/scan/github/findings",
             "Rank code scanning and dependency alerts into a practical security queue.",
             true,
+            contract::ActionSafety::automatic(contract::ActionEffect::WritesLocalState),
         )
-        .read_only(true)
         .scheduleable(true)
         .credential_requirements(["github:security_events:read", "github:dependabot:read"])],
         vec![

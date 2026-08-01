@@ -46,6 +46,7 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
                 "/assess/github/pr",
                 "Evaluate whether a GitHub pull request is merge-ready, blocked, or on hold.",
                 true,
+                contract::ActionSafety::automatic(contract::ActionEffect::WritesExternalState),
             )
             // Not read-only: `publish_report` writes a maintained comment and a
             // commit status back to GitHub. It is opt-in and defaults to false, so
@@ -53,7 +54,6 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
             // declaring read_only made HiveCore advertise it to operators as safe.
             // The write credential is declared for the same reason: an action that
             // reaches for MERGE_KEEPER_GITHUB_TOKEN_RW must say so.
-            .mutating(true)
             .credential_requirements([
                 "github:pull_requests:read",
                 "github:checks:read",
@@ -67,13 +67,13 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
                 "/webhooks/github",
                 "Process a signed GitHub pull request webhook for readiness updates.",
                 true,
+                contract::ActionSafety::automatic(contract::ActionEffect::WritesExternalState),
             )
             // Also not read-only, and less conditionally so than the assess action:
             // the webhook handler passes publish_report: true unconditionally, so
             // every delivery writes a maintained comment and commit status back to
             // GitHub. That is the intended behaviour — maintained comments have to
             // stay current — but it must be declared, not hidden behind read_only.
-            .mutating(true)
             .trigger_modes([contract::RunTriggerMode::Webhook])
             .credential_requirements([
                 "github:pull_requests:read",

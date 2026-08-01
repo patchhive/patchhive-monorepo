@@ -40,8 +40,10 @@ pub async fn capabilities() -> Json<patchhive_product_core::contract::ProductCap
             "/scan/github/dependencies",
             "Rank dependency PRs and alerts into update, watch, and ignore decisions.",
             true,
+            patchhive_product_core::contract::ActionSafety::automatic(
+                patchhive_product_core::contract::ActionEffect::WritesLocalState,
+            ),
         )
-        .read_only(true)
         .credential_requirements(["github:pull_requests:read", "github:dependabot:read"])],
         vec![
             patchhive_product_core::contract::link("overview", "Overview", "/overview"),

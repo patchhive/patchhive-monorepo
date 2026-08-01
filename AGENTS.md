@@ -128,6 +128,22 @@ patchhive/
   evidence and are not prohibited by this policy; the prohibition applies to
   warnings produced by the code-quality toolchain.
 
+### Explicit State Modeling
+
+- Safety decisions and runtime evidence must distinguish success, failure,
+  absence, unknown, and not-applicable instead of collapsing them into zero values,
+  empty collections, or reassuring booleans.
+- Use an enum when multiple booleans jointly describe one state. A safety-critical
+  type must not permit contradictory combinations or acquire meaning through
+  `Default` or `serde(default)`.
+- `ProductAction` requires a non-defaultable `ActionSafety`, constructed with an
+  explicit `ActionEffect` and either `automatic` or `operator_required`. Do not
+  restore `read_only`, `mutating`, `requires_approval`, or
+  `opens_pr` as independently writable domain fields. Their v1 JSON booleans are
+  derived compatibility output only.
+- Booleans remain appropriate for complete binary facts such as whether an action
+  is scheduleable. The rule is to eliminate ambiguous state, not booleans generally.
+
 Backend:
 - Rust
 - `axum`, `rusqlite`, `reqwest`, `tokio`, `serde`, `serde_json`, `chrono`, `uuid`, `anyhow`, `tracing`
@@ -595,23 +611,25 @@ Important env vars:
 ## Manifest Safety Semantics
 
 - `[safety]` in a product manifest is **posture**: the outer boundary of what the
-  product may ever do. Per-action flags on `/capabilities` describe what a specific
+  product may ever do. Per-action effect and approval types on `/capabilities` describe what a specific
   dispatch does. They are different scopes.
 - `requires_operator_approval = true` means the product *has* approval-gated actions,
   not that every mutating action is gated. RepoMemory is the clarifying case: four
   curation actions are gated, while `suggest_failguard_candidate` is the unattended
   intake path TrustGate and RepoReaper call mid-run, and gating it would stall the
   FailGuard loop silently.
-- Per-action flags are authoritative for dispatch. Product-level flags are
+- Per-action types are authoritative for dispatch. Product-level flags are
   authoritative for registry and operator-facing posture.
-- `mutating` describes what the product itself changes, not what its call causes
-  elsewhere. TrustGate's `review_diff` is read-only despite submitting a FailGuard
-  candidate — nothing leaves PatchHive and TrustGate writes nothing it owns — while
-  RepoMemory's `suggest_failguard_candidate`, which receives it, is mutating because
-  it writes RepoMemory's own store. Both are right; the subject differs.
+- `ActionEffect` describes what the product itself changes, not what its call causes
+  elsewhere. Local evidence persistence is `writes_local_state`; writes to GitHub or
+  another external system are `writes_external_state`; repository changes are
+  `mutates_repository`. TrustGate's `review_diff` and RepoMemory's
+  `suggest_failguard_candidate` both write PatchHive-owned local state.
 - Conformance compares them as existence claims, not universals. The inverse is still
-  a hard failure: an action exceeding the declared posture — mutating under
-  `read_only`, or `opens_pr` the manifest denies — is critical.
+  a hard failure: an action exceeding the declared external posture — external or
+  repository mutation under `read_only`, or a pull-request-opening effect the
+  manifest denies — is critical. Local evidence persistence remains inside a
+  read-only product's external boundary.
 - See `docs/hivecore-architecture.md` § 6a.
 
 ## HiveCore Notes

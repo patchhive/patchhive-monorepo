@@ -8,16 +8,15 @@
 // them would report total drift on every product.
 //
 // What *is* comparable, and what actually matters, is the safety boundary. Both
-// sides state it independently: the manifest in [safety], each action in its own
-// mutating / opens_pr / requires_approval / credential_requirements flags. A product
-// declaring read_only while advertising a mutating action is a real conformance
-// failure — the exact case docs/hivecore-architecture.md §3.14 calls out.
+// sides state it independently: the manifest in [safety], each action in its explicit
+// effect / approval / credential_requirements contract. A product exceeding its
+// declared external-effect ceiling is a real conformance failure.
 //
 // The two directions are not symmetric, and conflating them produced a false
 // positive (architecture doc § 6a):
 //
 //   posture is a CEILING  — an action exceeding it is critical. read_only means no
-//                           action may mutate; that genuinely is a universal.
+//                           action may write externally or mutate a repository.
 //   posture is an EXISTENCE claim for capabilities the product offers — declaring
 //                           approval or PR capability means *some* action has it,
 //                           not all of them. RepoMemory gates four curation actions
@@ -65,9 +64,20 @@ interface ApiProduct {
   safety: ApiSafety;
 }
 
+type ApiActionEffect =
+  | { kind: "read_only" }
+  | { kind: "writes_local_state" }
+  | { kind: "writes_external_state" }
+  | { kind: "mutates_repository"; opens_pull_request: boolean };
+
+type ApiApprovalPolicy = "automatic" | "operator_required";
+
 interface ApiAction {
   id: string;
   label: string;
+  effect?: ApiActionEffect;
+  approval?: ApiApprovalPolicy;
+  // Rolling-upgrade compatibility only. New engines always emit effect/approval.
   read_only?: boolean;
   mutating?: boolean;
   destructive?: boolean;
@@ -81,8 +91,35 @@ interface ApiCapabilityReport {
   advertised: { actions: ApiAction[] } | null;
 }
 
+function effectKind(action: ApiAction): ApiActionEffect["kind"] | null {
+  if (action.effect) return action.effect.kind;
+  if (action.read_only === true && action.mutating !== true) return "read_only";
+  if (action.mutating === true && action.read_only !== true) {
+    return action.opens_pr ? "mutates_repository" : "writes_external_state";
+  }
+  return null;
+}
+
 function isMutating(action: ApiAction): boolean {
-  return Boolean(action.mutating) || action.read_only === false;
+  const kind = effectKind(action);
+  return kind !== null && kind !== "read_only";
+}
+
+function exceedsReadOnlyBoundary(action: ApiAction): boolean {
+  const kind = effectKind(action);
+  return kind === "writes_external_state" || kind === "mutates_repository";
+}
+
+function opensPullRequest(action: ApiAction): boolean {
+  return action.effect?.kind === "mutates_repository"
+    ? action.effect.opens_pull_request
+    : Boolean(action.opens_pr);
+}
+
+function requiresApproval(action: ApiAction): boolean {
+  return action.approval
+    ? action.approval === "operator_required"
+    : Boolean(action.requires_approval);
 }
 
 /**
@@ -111,19 +148,31 @@ function compare(product: ApiProduct, actions: ApiAction[]): ConformanceFinding[
   const scopes = new Set(safety.credential_scopes);
 
   for (const action of actions) {
-    // A read-only product advertising a mutating action is the headline failure.
-    if (safety.read_only && isMutating(action)) {
+    if (effectKind(action) === null) {
+      findings.push({
+        productKey: product.key,
+        severity: "critical",
+        kind: "missing action effect",
+        detail: `Action \`${action.id}\` does not declare an unambiguous effect.`,
+        declared: "explicit effect required",
+        advertised: "no valid effect",
+      });
+    }
+
+    // Local evidence persistence stays within a read-only product boundary;
+    // external and repository effects do not.
+    if (safety.read_only && exceedsReadOnlyBoundary(action)) {
       findings.push({
         productKey: product.key,
         severity: "critical",
         kind: "read-only violated",
-        detail: `Action \`${action.id}\` is mutating.`,
+        detail: `Action \`${action.id}\` exceeds the product's read-only external boundary.`,
         declared: "read_only = true",
-        advertised: "mutating action",
+        advertised: effectKind(action) ?? "invalid effect",
       });
     }
 
-    if (!safety.opens_pull_requests && action.opens_pr) {
+    if (!safety.opens_pull_requests && opensPullRequest(action)) {
       findings.push({
         productKey: product.key,
         severity: "critical",
@@ -145,17 +194,12 @@ function compare(product: ApiProduct, actions: ApiAction[]): ConformanceFinding[
         // every consumer of the contract, including this deck — silence is not a
         // safer default, it is an unstated claim. Reporting both as "declares
         // read-only" sends you looking for a `read_only` line that isn't there.
-        const explicit = action.read_only === true;
         findings.push({
           productKey: product.key,
           severity: "critical",
-          kind: explicit
-            ? "read-only needs write credential"
-            : "write credential, no declaration",
-          detail: explicit
-            ? `Action \`${action.id}\` declares read-only but requires ${writes.join(", ")}.`
-            : `Action \`${action.id}\` requires ${writes.join(", ")} but declares neither read_only nor mutating, so it reads as read-only.`,
-          declared: explicit ? "read_only action" : "no safety declaration",
+          kind: "read-only needs write credential",
+          detail: `Action \`${action.id}\` declares read-only but requires ${writes.join(", ")}.`,
+          declared: "read_only action",
           advertised: writes.join(", "),
         });
       }
@@ -176,7 +220,7 @@ function compare(product: ApiProduct, actions: ApiAction[]): ConformanceFinding[
   }
 
   // Existence claims: the manifest promises a capability no action provides.
-  if (safety.opens_pull_requests && !actions.some((action) => action.opens_pr)) {
+  if (safety.opens_pull_requests && !actions.some(opensPullRequest)) {
     findings.push({
       productKey: product.key,
       severity: "warning",
@@ -190,7 +234,7 @@ function compare(product: ApiProduct, actions: ApiAction[]): ConformanceFinding[
   if (
     safety.requires_operator_approval &&
     actions.length > 0 &&
-    !actions.some((action) => action.requires_approval)
+    !actions.some(requiresApproval)
   ) {
     findings.push({
       productKey: product.key,
@@ -204,7 +248,7 @@ function compare(product: ApiProduct, actions: ApiAction[]): ConformanceFinding[
   }
 
   // Under-claim: an action is gated but the manifest never says approval applies.
-  if (!safety.requires_operator_approval && actions.some((action) => action.requires_approval)) {
+  if (!safety.requires_operator_approval && actions.some(requiresApproval)) {
     findings.push({
       productKey: product.key,
       severity: "warning",

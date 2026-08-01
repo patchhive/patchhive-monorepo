@@ -12,6 +12,7 @@ import {
 import {
   dispatchAction,
   fetchDispatchableActions,
+  isMutatingAction,
   refusalReason,
   type DispatchableAction,
   type DispatchOutcome,
@@ -207,7 +208,7 @@ export function DispatchPreview({ open, onOpenChange }: Props) {
                 <Ban className="mt-0.5 h-3 w-3 flex-shrink-0 text-[var(--warn)]" />
                 <span className="text-[11px] text-muted-foreground">{refusal}</span>
               </div>
-            ) : active.action.mutating ? (
+            ) : isMutatingAction(active.action) ? (
               // Not refused is not the same as safe. This line said "Read-only and
               // dispatchable" for anything HiveCore would accept, so a mutating
               // action read as harmless — the exact claim that hid MergeKeeper's
@@ -215,8 +216,11 @@ export function DispatchPreview({ open, onOpenChange }: Props) {
               <div className="mt-3 flex items-start gap-2 rounded border border-[var(--warn)]/40 bg-[var(--warn)]/[0.06] px-2 py-1.5">
                 <AlertTriangle className="mt-0.5 h-3 w-3 flex-shrink-0 text-[var(--warn)]" />
                 <span className="text-[11px] text-muted-foreground">
-                  Mutating — this action writes external state. Dispatchable, but check the
-                  request body before firing.
+                  {active.action.effect.kind === "writes_local_state"
+                    ? "Writes PatchHive state — this action persists local evidence or configuration."
+                    : active.action.effect.kind === "writes_external_state"
+                      ? "Writes external state — check the request body before dispatching."
+                      : "Mutates a repository — check the target and request body before dispatching."}
                 </span>
               </div>
             ) : (
@@ -304,7 +308,7 @@ function ActionChip({
     >
       {blocked ? (
         <Ban className="h-2.5 w-2.5 text-[var(--warn)]" />
-      ) : action.mutating ? (
+      ) : isMutatingAction(action) ? (
         <AlertTriangle className="h-2.5 w-2.5 text-[var(--warn)]" />
       ) : null}
       {action.id}

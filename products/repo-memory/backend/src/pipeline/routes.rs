@@ -69,8 +69,8 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
                 "/ingest",
                 "Build durable repo memory from GitHub history and review feedback.",
                 true,
+                contract::ActionSafety::automatic(contract::ActionEffect::WritesLocalState),
             )
-            .read_only(true)
             .scheduleable(true)
             .credential_requirements([
                 "github:repo:read",
@@ -84,8 +84,8 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
                 "/context",
                 "Return reusable repo-specific context for another PatchHive product or agent.",
                 false,
-            )
-            .read_only(true),
+                contract::ActionSafety::automatic(contract::ActionEffect::ReadOnly),
+            ),
             contract::action(
                 "capture_failguard_lesson",
                 "Capture FailGuard lesson",
@@ -93,9 +93,8 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
                 "/failguard/lessons",
                 "Turn a painful outcome into a curated failure-pattern policy memory.",
                 true,
-            )
-            .mutating(true)
-            .requires_approval(true),
+                contract::ActionSafety::operator_required(contract::ActionEffect::WritesLocalState),
+            ),
             contract::action(
                 "suggest_failguard_candidate",
                 "Suggest FailGuard candidate",
@@ -103,8 +102,8 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
                 "/failguard/candidates",
                 "Queue a bad outcome for operator review before it becomes durable memory.",
                 false,
-            )
-            .mutating(true),
+                contract::ActionSafety::automatic(contract::ActionEffect::WritesLocalState),
+            ),
             contract::action(
                 "curate_memory",
                 "Curate durable memory",
@@ -112,9 +111,8 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
                 "/memories/curation",
                 "Pin, soften, or suppress a stored repo memory.",
                 false,
-            )
-            .mutating(true)
-            .requires_approval(true),
+                contract::ActionSafety::operator_required(contract::ActionEffect::WritesLocalState),
+            ),
             contract::action(
                 "promote_failguard_candidate",
                 "Promote FailGuard candidate",
@@ -122,9 +120,8 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
                 "/failguard/candidates/{id}/promote",
                 "Promote an operator-reviewed candidate into durable memory.",
                 true,
-            )
-            .mutating(true)
-            .requires_approval(true),
+                contract::ActionSafety::operator_required(contract::ActionEffect::WritesLocalState),
+            ),
             contract::action(
                 "dismiss_failguard_candidate",
                 "Dismiss FailGuard candidate",
@@ -132,9 +129,8 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
                 "/failguard/candidates/{id}/dismiss",
                 "Dismiss a noisy candidate without adding durable memory.",
                 false,
-            )
-            .mutating(true)
-            .requires_approval(true),
+                contract::ActionSafety::operator_required(contract::ActionEffect::WritesLocalState),
+            ),
         ],
         vec![
             contract::link("overview", "Overview", "/overview"),

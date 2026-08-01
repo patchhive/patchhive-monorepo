@@ -27,8 +27,8 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
                 "/smoke",
                 "Verify SignalHive is ready for HiveCore dispatch without running a live GitHub scan.",
                 false,
-            )
-            .read_only(true),
+                contract::ActionSafety::automatic(contract::ActionEffect::ReadOnly),
+            ),
             contract::action(
                 "scan",
                 "Run signal scan",
@@ -36,8 +36,8 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
                 "/scan",
                 "Surface maintenance signals for a direct repository target or repositories discovered from a bounded scope.",
                 true,
+                contract::ActionSafety::automatic(contract::ActionEffect::WritesLocalState),
             )
-            .read_only(true)
             .scheduleable(true)
             .target_selection_modes([
                 contract::TargetSelectionMode::Direct,
@@ -51,8 +51,8 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
                 "/schedules/{name}/run",
                 "Trigger a saved SignalHive scan schedule immediately.",
                 true,
+                contract::ActionSafety::automatic(contract::ActionEffect::WritesLocalState),
             )
-            .read_only(true)
             .scheduleable(true)
             .target_selection_modes([
                 contract::TargetSelectionMode::Direct,

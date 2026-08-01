@@ -376,7 +376,15 @@ mod tests {
 
     #[test]
     fn dispatch_service_token_issue_blocks_legacy_machine_tokens() {
-        let action = contract::action("scan", "Run signal scan", "POST", "/scan", "", true);
+        let action = contract::action(
+            "scan",
+            "Run signal scan",
+            "POST",
+            "/scan",
+            "",
+            true,
+            contract::ActionSafety::automatic(contract::ActionEffect::WritesLocalState),
+        );
         let auth_status = ProductAuthStatusBody {
             service_auth_enabled: true,
             service_auth_scoped: false,
@@ -392,7 +400,15 @@ mod tests {
 
     #[test]
     fn dispatch_service_token_issue_blocks_expired_machine_tokens() {
-        let action = contract::action("scan", "Run signal scan", "POST", "/scan", "", true);
+        let action = contract::action(
+            "scan",
+            "Run signal scan",
+            "POST",
+            "/scan",
+            "",
+            true,
+            contract::ActionSafety::automatic(contract::ActionEffect::WritesLocalState),
+        );
         let auth_status = ProductAuthStatusBody {
             service_auth_enabled: true,
             service_auth_scoped: true,

@@ -31,15 +31,11 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
                 "/review",
                 "Review a submitted diff against repo-specific safety and policy rules.",
                 true,
+                contract::ActionSafety::automatic(contract::ActionEffect::WritesLocalState),
             )
-            // Read-only is correct even though this submits a FailGuard candidate to
-            // RepoMemory on warn/block. `mutating` describes what this product
-            // changes, not what its call causes elsewhere: nothing leaves PatchHive,
-            // TrustGate writes no state it owns, and the candidate is queued for
-            // operator review rather than acted on. RepoMemory's receiving action is
-            // mutating for the same reason — it writes its own store.
+            // The review and any FailGuard candidate remain inside PatchHive, but the
+            // durable review record means this is explicitly a local-state write.
             // See docs/hivecore-architecture.md § 6a.
-            .read_only(true)
             .scheduleable(true),
             contract::action(
                 "review_github_pr",
@@ -48,11 +44,11 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
                 "/review/github/pr",
                 "Review a GitHub pull request diff against TrustGate rules.",
                 true,
+                contract::ActionSafety::automatic(contract::ActionEffect::WritesExternalState),
             )
             // Publishes a decision report as a GitHub check run — external state.
             // Distinct from review_diff above, which writes nothing outside PatchHive
             // and is correctly read-only.
-            .mutating(true)
             .scheduleable(true)
             .credential_requirements(["github:pull_requests:read", "github:checks:write"]),
             contract::action(
@@ -62,9 +58,9 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
                 "/webhooks/github",
                 "Process a signed GitHub pull request webhook for diff review.",
                 true,
+                contract::ActionSafety::automatic(contract::ActionEffect::WritesExternalState),
             )
             // Same check-run write, driven by a webhook.
-            .mutating(true)
             .trigger_modes([contract::RunTriggerMode::Webhook])
             .credential_requirements(["github:pull_requests:read", "github:checks:write"]),
         ],

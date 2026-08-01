@@ -44,11 +44,11 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
                 "/review/github/pr",
                 "Turn a GitHub pull request review thread history into an actionable checklist.",
                 true,
+                contract::ActionSafety::automatic(contract::ActionEffect::WritesExternalState),
             )
             // Publishes a maintained PR comment, so this mutates external state.
             // It declared neither read_only nor mutating, which the deck reads as
             // read-only — an action holding issues:write must say what it does.
-            .mutating(true)
             .credential_requirements(["github:pull_requests:read", "github:issues:write"]),
             contract::action(
                 "github_webhook",
@@ -57,9 +57,9 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
                 "/webhooks/github",
                 "Process a signed GitHub pull request review webhook.",
                 true,
+                contract::ActionSafety::automatic(contract::ActionEffect::WritesExternalState),
             )
             // Same publishing path, driven by a webhook rather than an operator.
-            .mutating(true)
             .trigger_modes([contract::RunTriggerMode::Webhook])
             .credential_requirements(["github:pull_requests:read", "github:issues:write"]),
         ],

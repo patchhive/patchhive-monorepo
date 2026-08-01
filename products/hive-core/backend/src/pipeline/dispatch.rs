@@ -118,21 +118,28 @@ pub(super) async fn dispatch_once(
             )
         })?;
 
-    if action.opens_pr && !safety.opens_pull_requests {
+    if action.opens_pull_request() && !safety.opens_pull_requests {
         return Err(api_error(
             StatusCode::CONFLICT,
             "safety_contract_mismatch",
             "The live action claims it opens pull requests, but the product manifest does not.",
         ));
     }
-    if action.mutating && !(safety.writes_external_state || safety.mutates_repositories) {
+    if action.effect.writes_external_state() && !safety.writes_external_state {
         return Err(api_error(
             StatusCode::CONFLICT,
             "safety_contract_mismatch",
-            "The live action claims it mutates state, but the product manifest declares no write boundary.",
+            "The live action claims it writes external state, but the product manifest does not declare that boundary.",
         ));
     }
-    if action.mutating && safety.requires_operator_approval && !action.requires_approval {
+    if action.effect.mutates_repository() && !safety.mutates_repositories {
+        return Err(api_error(
+            StatusCode::CONFLICT,
+            "safety_contract_mismatch",
+            "The live action claims it mutates repositories, but the product manifest does not declare that boundary.",
+        ));
+    }
+    if action.is_mutating() && safety.requires_operator_approval && !action.requires_approval() {
         return Err(api_error(
             StatusCode::CONFLICT,
             "safety_contract_mismatch",
@@ -148,7 +155,7 @@ pub(super) async fn dispatch_once(
         ));
     }
 
-    if action.requires_approval || action.opens_pr {
+    if action.requires_approval() || action.opens_pull_request() {
         return Err(api_error(
             StatusCode::FORBIDDEN,
             "approval_required",

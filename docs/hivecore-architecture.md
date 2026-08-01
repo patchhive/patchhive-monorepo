@@ -97,7 +97,7 @@ fan-out and still have no history to reconcile against.
 
 ```rust
 if action.destructive { /* "destructive_action_blocked" */ }
-if action.requires_approval || action.opens_pr {
+if action.requires_approval() || action.opens_pull_request() {
     /* "HiveCore does not dispatch approval-gated or pull-request-opening
        actions until the suite approval flow exists." */
 }
@@ -478,7 +478,7 @@ seconds.
 Settled 2026-07-25, after the conformance check produced a false positive.
 
 `[safety]` in a product manifest describes the product's **posture** — the outer
-boundary of what it may ever do. Per-action flags on `/capabilities` describe what a
+boundary of what it may ever do. Per-action effect and approval types on `/capabilities` describe what a
 **specific dispatch** does. They are different scopes, and the manifest is not a
 promise that every action behaves identically.
 
@@ -487,7 +487,7 @@ require operator approval*, not *every mutating action requires approval*. Readi
 the strict way produced a false conformance failure against RepoMemory, which is the
 clarifying case:
 
-| Action | `requires_approval` | Role |
+| Action | Approval policy | Role |
 | --- | --- | --- |
 | `capture_failguard_lesson` | yes | operator writes durable memory |
 | `curate_memory` | yes | operator pins, softens, suppresses |
@@ -505,14 +505,14 @@ Smith rejects below `MIN_REVIEW_CONFIDENCE`. Gating it would stall the FailGuard
 — incident → captured lesson → durable memory → future policy — at the first arrow,
 silently, in the middle of autonomous runs.
 
-**`mutating` describes what the product itself changes.** Settled 2026-07-26.
+**`ActionEffect` describes what the product itself changes.** Settled 2026-07-26;
+made compiler-enforced 2026-08-01.
 
 A call that causes another product to write is not what makes an action mutating.
 TrustGate's `review_diff` submits a FailGuard candidate to RepoMemory on `warn` or
-`block`, and it is correctly `read_only`: nothing leaves PatchHive, TrustGate changes
-no state it owns, and the candidate is queued for operator review rather than acted
-on. RepoMemory's `suggest_failguard_candidate`, which receives it, is correctly
-`mutating` — it writes RepoMemory's own durable store.
+`block` and persists its review, so it explicitly `writes_local_state`: nothing
+leaves PatchHive. RepoMemory's `suggest_failguard_candidate`, which receives it, also
+`writes_local_state` because it writes RepoMemory's durable store.
 
 The two are not in conflict once the subject is fixed: each action declares what *it*
 changes, not what its call causes downstream. Reading it the other way would make
@@ -521,7 +521,7 @@ that matters — whether external state, meaning state outside PatchHive, was to
 
 **Rules that follow:**
 
-- Per-action flags are authoritative for dispatch decisions. The kernel evaluates the
+- Per-action types are authoritative for dispatch decisions. The kernel evaluates the
   action, never the product-level flag.
 - Product-level flags are authoritative for registry, discovery, and operator-facing
   posture — "can this product ever open a PR", not "will this call open one".
@@ -529,8 +529,9 @@ that matters — whether external state, meaning state outside PatchHive, was to
   a capability none of its actions offer is drift; a product claiming a capability
   some of its actions offer is consistent.
 - The inverse remains a real failure: an action exceeding the product's declared
-  posture — mutating under `read_only`, or `opens_pr` when the manifest denies it —
-  is a critical finding, because the outer boundary genuinely is a universal.
+  external posture — external/repository mutation under `read_only`, or a
+  pull-request-opening repository effect when the manifest denies it — is critical.
+  Local evidence persistence remains inside a read-only product's external boundary.
 
 ## 7. Open questions
 

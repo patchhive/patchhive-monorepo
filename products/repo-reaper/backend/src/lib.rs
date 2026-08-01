@@ -289,11 +289,13 @@ pub fn advertised_capabilities() -> contract::ProductCapabilities {
                 "/run",
                 "Find candidate issues, generate fixes, validate them, and open pull requests.",
                 true,
+                contract::ActionSafety::operator_required(
+                    contract::ActionEffect::MutatesRepository {
+                        opens_pull_request: true,
+                    },
+                ),
             )
-            .mutating(true)
-            .requires_approval(true)
             .scheduleable(true)
-            .opens_pr(true)
             .target_selection_modes([
                 contract::TargetSelectionMode::Direct,
                 contract::TargetSelectionMode::Discovery,
@@ -310,8 +312,8 @@ pub fn advertised_capabilities() -> contract::ProductCapabilities {
                 "/dry-run",
                 "Discover and score candidate work without writing patches or opening pull requests.",
                 true,
+                contract::ActionSafety::automatic(contract::ActionEffect::WritesLocalState),
             )
-            .read_only(true)
             .scheduleable(true)
             .target_selection_modes([
                 contract::TargetSelectionMode::Direct,

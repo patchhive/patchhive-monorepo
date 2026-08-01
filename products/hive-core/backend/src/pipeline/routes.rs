@@ -138,9 +138,8 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
                 "/settings",
                 "Persist suite-wide defaults and per-product launch/API overrides.",
                 false,
+                contract::ActionSafety::operator_required(contract::ActionEffect::WritesLocalState),
             )
-            .mutating(true)
-            .requires_approval(true)
             .credential_requirements(["suite:control"]),
             contract::action(
                 "save_repository_policies",
@@ -149,9 +148,8 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
                 "/repository-policies",
                 "Persist operator exclusions and trusted-repository elevations.",
                 false,
+                contract::ActionSafety::operator_required(contract::ActionEffect::WritesLocalState),
             )
-            .mutating(true)
-            .requires_approval(true)
             .credential_requirements(["suite:control"]),
             contract::action(
                 "save_pr_budgets",
@@ -160,9 +158,8 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
                 "/pr-budgets",
                 "Persist per-product limits and the suite-wide PR ceiling.",
                 false,
+                contract::ActionSafety::operator_required(contract::ActionEffect::WritesLocalState),
             )
-            .mutating(true)
-            .requires_approval(true)
             .credential_requirements(["suite:control"]),
         ],
         vec![

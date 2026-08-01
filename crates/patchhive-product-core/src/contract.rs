@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
-use serde::{Deserialize, Serialize};
+use serde::{
+    de::Error as _, ser::SerializeStruct, Deserialize, Deserializer, Serialize, Serializer,
+};
 use serde_json::Value;
 
 pub const CONTRACT_SCHEMA_VERSION: &str = "patchhive.product.contract.v1";
@@ -65,7 +67,82 @@ pub struct ProductContractRoutes {
     pub settings_apply: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ActionEffect {
+    ReadOnly,
+    WritesLocalState,
+    WritesExternalState,
+    MutatesRepository { opens_pull_request: bool },
+}
+
+impl ActionEffect {
+    pub fn is_read_only(self) -> bool {
+        matches!(self, Self::ReadOnly)
+    }
+
+    pub fn writes_local_state(self) -> bool {
+        matches!(self, Self::WritesLocalState)
+    }
+
+    pub fn writes_external_state(self) -> bool {
+        matches!(self, Self::WritesExternalState)
+    }
+
+    pub fn mutates_repository(self) -> bool {
+        matches!(self, Self::MutatesRepository { .. })
+    }
+
+    pub fn is_mutating(self) -> bool {
+        !self.is_read_only()
+    }
+
+    pub fn opens_pull_request(self) -> bool {
+        matches!(
+            self,
+            Self::MutatesRepository {
+                opens_pull_request: true
+            }
+        )
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ApprovalPolicy {
+    Automatic,
+    OperatorRequired,
+}
+
+impl ApprovalPolicy {
+    pub fn requires_operator(self) -> bool {
+        matches!(self, Self::OperatorRequired)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ActionSafety {
+    pub effect: ActionEffect,
+    pub approval: ApprovalPolicy,
+}
+
+impl ActionSafety {
+    pub const fn automatic(effect: ActionEffect) -> Self {
+        Self {
+            effect,
+            approval: ApprovalPolicy::Automatic,
+        }
+    }
+
+    pub const fn operator_required(effect: ActionEffect) -> Self {
+        Self {
+            effect,
+            approval: ApprovalPolicy::OperatorRequired,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProductAction {
     pub id: String,
     pub label: String,
@@ -74,22 +151,159 @@ pub struct ProductAction {
     pub description: String,
     pub starts_run: bool,
     pub destructive: bool,
-    #[serde(default, skip_serializing_if = "is_false")]
-    pub read_only: bool,
-    #[serde(default, skip_serializing_if = "is_false")]
-    pub mutating: bool,
-    #[serde(default, skip_serializing_if = "is_false")]
-    pub requires_approval: bool,
-    #[serde(default, skip_serializing_if = "is_false")]
+    pub effect: ActionEffect,
+    pub approval: ApprovalPolicy,
     pub scheduleable: bool,
-    #[serde(default, skip_serializing_if = "is_false")]
-    pub opens_pr: bool,
-    #[serde(default)]
     pub required_scopes: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub credential_requirements: Vec<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub operating_modes: Option<ProductOperatingModes>,
+}
+
+#[derive(Deserialize)]
+struct ProductActionWire {
+    id: String,
+    label: String,
+    method: String,
+    path: String,
+    description: String,
+    starts_run: bool,
+    #[serde(default)]
+    destructive: bool,
+    effect: Option<ActionEffect>,
+    approval: Option<ApprovalPolicy>,
+    read_only: Option<bool>,
+    mutating: Option<bool>,
+    requires_approval: Option<bool>,
+    opens_pr: Option<bool>,
+    #[serde(default)]
+    scheduleable: bool,
+    #[serde(default)]
+    required_scopes: Vec<String>,
+    #[serde(default)]
+    credential_requirements: Vec<String>,
+    #[serde(default)]
+    operating_modes: Option<ProductOperatingModes>,
+}
+
+impl Serialize for ProductAction {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut state = serializer.serialize_struct("ProductAction", 17)?;
+        state.serialize_field("id", &self.id)?;
+        state.serialize_field("label", &self.label)?;
+        state.serialize_field("method", &self.method)?;
+        state.serialize_field("path", &self.path)?;
+        state.serialize_field("description", &self.description)?;
+        state.serialize_field("starts_run", &self.starts_run)?;
+        state.serialize_field("destructive", &self.destructive)?;
+        state.serialize_field("effect", &self.effect)?;
+        state.serialize_field("approval", &self.approval)?;
+        state.serialize_field("read_only", &self.effect.is_read_only())?;
+        state.serialize_field("mutating", &self.effect.is_mutating())?;
+        state.serialize_field("requires_approval", &self.approval.requires_operator())?;
+        if self.scheduleable {
+            state.serialize_field("scheduleable", &true)?;
+        }
+        state.serialize_field("opens_pr", &self.effect.opens_pull_request())?;
+        state.serialize_field("required_scopes", &self.required_scopes)?;
+        if !self.credential_requirements.is_empty() {
+            state.serialize_field("credential_requirements", &self.credential_requirements)?;
+        }
+        if let Some(operating_modes) = &self.operating_modes {
+            state.serialize_field("operating_modes", operating_modes)?;
+        }
+        state.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for ProductAction {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = ProductActionWire::deserialize(deserializer)?;
+        let explicit_effect = wire.effect.is_some();
+        let effect = match wire.effect {
+            Some(effect) => effect,
+            None => match (wire.read_only, wire.mutating) {
+                (Some(true), None | Some(false)) => ActionEffect::ReadOnly,
+                (None | Some(false), Some(true)) if wire.opens_pr == Some(true) => {
+                    ActionEffect::MutatesRepository {
+                        opens_pull_request: true,
+                    }
+                }
+                (None | Some(false), Some(true)) => ActionEffect::WritesExternalState,
+                _ => {
+                    return Err(D::Error::custom(
+                        "action effect is required; legacy read_only/mutating fields must declare exactly one true value",
+                    ));
+                }
+            },
+        };
+
+        if explicit_effect {
+            validate_legacy_bool::<D::Error>("read_only", wire.read_only, effect.is_read_only())?;
+            validate_legacy_bool::<D::Error>("mutating", wire.mutating, effect.is_mutating())?;
+            validate_legacy_bool::<D::Error>(
+                "opens_pr",
+                wire.opens_pr,
+                effect.opens_pull_request(),
+            )?;
+        }
+
+        let approval = match wire.approval {
+            Some(approval) => {
+                validate_legacy_bool::<D::Error>(
+                    "requires_approval",
+                    wire.requires_approval,
+                    approval.requires_operator(),
+                )?;
+                approval
+            }
+            None if !explicit_effect => {
+                if wire.requires_approval.unwrap_or(false) {
+                    ApprovalPolicy::OperatorRequired
+                } else {
+                    ApprovalPolicy::Automatic
+                }
+            }
+            None => {
+                return Err(D::Error::custom(
+                    "action approval policy is required when effect uses the explicit contract",
+                ));
+            }
+        };
+
+        Ok(Self {
+            id: wire.id,
+            label: wire.label,
+            method: wire.method,
+            path: wire.path,
+            description: wire.description,
+            starts_run: wire.starts_run,
+            destructive: wire.destructive,
+            effect,
+            approval,
+            scheduleable: wire.scheduleable,
+            required_scopes: wire.required_scopes,
+            credential_requirements: wire.credential_requirements,
+            operating_modes: wire.operating_modes,
+        })
+    }
+}
+
+fn validate_legacy_bool<E>(field: &str, actual: Option<bool>, expected: bool) -> Result<(), E>
+where
+    E: serde::de::Error,
+{
+    if actual.is_some_and(|actual| actual != expected) {
+        return Err(E::custom(format!(
+            "legacy {field} contradicts the explicit action contract"
+        )));
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -271,19 +485,20 @@ impl SuiteScheduleRecord {
 }
 
 impl ProductAction {
-    pub fn read_only(mut self, value: bool) -> Self {
-        self.read_only = value;
-        self
+    pub fn is_read_only(&self) -> bool {
+        self.effect.is_read_only()
     }
 
-    pub fn mutating(mut self, value: bool) -> Self {
-        self.mutating = value;
-        self
+    pub fn is_mutating(&self) -> bool {
+        self.effect.is_mutating()
     }
 
-    pub fn requires_approval(mut self, value: bool) -> Self {
-        self.requires_approval = value;
-        self
+    pub fn requires_approval(&self) -> bool {
+        self.approval.requires_operator()
+    }
+
+    pub fn opens_pull_request(&self) -> bool {
+        self.effect.opens_pull_request()
     }
 
     pub fn scheduleable(mut self, value: bool) -> Self {
@@ -324,11 +539,6 @@ impl ProductAction {
                 push_unique(&mut modes.target_selection, value);
             }
         }
-        self
-    }
-
-    pub fn opens_pr(mut self, value: bool) -> Self {
-        self.opens_pr = value;
         self
     }
 
@@ -563,6 +773,7 @@ pub fn action(
     path: impl Into<String>,
     description: impl Into<String>,
     starts_run: bool,
+    safety: ActionSafety,
 ) -> ProductAction {
     let operating_modes = starts_run.then(|| ProductOperatingModes {
         triggers: vec![RunTriggerMode::Operator, RunTriggerMode::Orchestration],
@@ -576,11 +787,9 @@ pub fn action(
         description: description.into(),
         starts_run,
         destructive: false,
-        read_only: false,
-        mutating: false,
-        requires_approval: false,
+        effect: safety.effect,
+        approval: safety.approval,
         scheduleable: false,
-        opens_pr: false,
         required_scopes: vec![crate::auth::SERVICE_SCOPE_ACTIONS_DISPATCH.into()],
         credential_requirements: vec![],
         operating_modes,
@@ -607,10 +816,6 @@ fn push_unique<T: PartialEq>(values: &mut Vec<T>, value: T) {
     if !values.contains(&value) {
         values.push(value);
     }
-}
-
-fn is_false(value: &bool) -> bool {
-    !*value
 }
 
 pub fn link(
@@ -825,9 +1030,9 @@ fn numeric_summary(raw: &Value) -> Option<String> {
 mod tests {
     use super::{
         action, cadence_from_hours, capabilities, interval_cron_label, parse_dispatch_input,
-        run_events_response, runs_from_values, ProductRunArtifact, ProductRunEvent,
-        RetainedEvidencePage, RunEventLevel, RunLifecycleStatus, RunTriggerMode,
-        SuiteScheduleRecord, TargetSelectionMode,
+        run_events_response, runs_from_values, ActionEffect, ActionSafety, ApprovalPolicy,
+        ProductRunArtifact, ProductRunEvent, RetainedEvidencePage, RunEventLevel,
+        RunLifecycleStatus, RunTriggerMode, SuiteScheduleRecord, TargetSelectionMode,
     };
     use serde_json::json;
 
@@ -843,6 +1048,7 @@ mod tests {
                 "/scan",
                 "Scan repos",
                 true,
+                ActionSafety::automatic(ActionEffect::WritesLocalState),
             )],
             vec![],
         );
@@ -855,8 +1061,8 @@ mod tests {
             caps.actions[0].required_scopes,
             vec![crate::auth::SERVICE_SCOPE_ACTIONS_DISPATCH.to_string()]
         );
-        assert!(!caps.actions[0].read_only);
-        assert!(!caps.actions[0].mutating);
+        assert_eq!(caps.actions[0].effect, ActionEffect::WritesLocalState);
+        assert_eq!(caps.actions[0].approval, ApprovalPolicy::Automatic);
         assert!(caps.actions[0].credential_requirements.is_empty());
         assert_eq!(
             caps.operating_modes.triggers,
@@ -866,6 +1072,78 @@ mod tests {
             caps.operating_modes.target_selection,
             vec![TargetSelectionMode::Direct]
         );
+    }
+
+    #[test]
+    fn action_wire_contract_emits_explicit_effect_and_approval() {
+        let action = action(
+            "run",
+            "Run patch hunt",
+            "POST",
+            "/run",
+            "Open a validated pull request.",
+            true,
+            ActionSafety::operator_required(ActionEffect::MutatesRepository {
+                opens_pull_request: true,
+            }),
+        );
+
+        let value = serde_json::to_value(action).expect("action should serialize");
+        assert_eq!(value["effect"]["kind"], "mutates_repository");
+        assert_eq!(value["effect"]["opens_pull_request"], true);
+        assert_eq!(value["approval"], "operator_required");
+        assert_eq!(value["read_only"], false);
+        assert_eq!(value["mutating"], true);
+        assert_eq!(value["requires_approval"], true);
+        assert_eq!(value["opens_pr"], true);
+    }
+
+    #[test]
+    fn action_wire_contract_rejects_missing_or_contradictory_effects() {
+        let base = json!({
+            "id": "scan",
+            "label": "Scan",
+            "method": "POST",
+            "path": "/scan",
+            "description": "Scan a repository.",
+            "starts_run": true
+        });
+        assert!(serde_json::from_value::<super::ProductAction>(base.clone()).is_err());
+
+        let mut contradictory = base;
+        contradictory["effect"] = json!({"kind": "read_only"});
+        contradictory["approval"] = json!("automatic");
+        contradictory["mutating"] = json!(true);
+        assert!(serde_json::from_value::<super::ProductAction>(contradictory).is_err());
+    }
+
+    #[test]
+    fn action_wire_contract_accepts_only_unambiguous_legacy_effects() {
+        let legacy = json!({
+            "id": "scan",
+            "label": "Scan",
+            "method": "POST",
+            "path": "/scan",
+            "description": "Scan a repository.",
+            "starts_run": true,
+            "read_only": true
+        });
+        let decoded: super::ProductAction =
+            serde_json::from_value(legacy).expect("unambiguous legacy action should decode");
+        assert_eq!(decoded.effect, ActionEffect::ReadOnly);
+        assert_eq!(decoded.approval, ApprovalPolicy::Automatic);
+
+        let ambiguous = json!({
+            "id": "scan",
+            "label": "Scan",
+            "method": "POST",
+            "path": "/scan",
+            "description": "Scan a repository.",
+            "starts_run": true,
+            "read_only": false,
+            "mutating": false
+        });
+        assert!(serde_json::from_value::<super::ProductAction>(ambiguous).is_err());
     }
 
     #[test]
@@ -880,6 +1158,9 @@ mod tests {
                 "/run",
                 "Find and fix suitable work.",
                 true,
+                ActionSafety::operator_required(ActionEffect::MutatesRepository {
+                    opens_pull_request: true,
+                }),
             )
             .scheduleable(true)
             .target_selection_modes([TargetSelectionMode::Direct, TargetSelectionMode::Discovery])],
@@ -913,6 +1194,7 @@ mod tests {
                 "/assess",
                 "Assess one pull request.",
                 true,
+                ActionSafety::automatic(ActionEffect::WritesExternalState),
             )],
             vec![],
         );

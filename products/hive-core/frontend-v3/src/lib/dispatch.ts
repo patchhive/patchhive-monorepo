@@ -9,16 +9,23 @@
 
 import { apiFetch } from "./http";
 
+export type ActionEffect =
+  | { kind: "read_only" }
+  | { kind: "writes_local_state" }
+  | { kind: "writes_external_state" }
+  | { kind: "mutates_repository"; opens_pull_request: boolean };
+
+export type ApprovalPolicy = "automatic" | "operator_required";
+
 export interface DispatchableAction {
   id: string;
   label: string;
   description: string;
   method: string;
   path: string;
-  mutating: boolean;
+  effect: ActionEffect;
+  approval: ApprovalPolicy;
   destructive: boolean;
-  opensPr: boolean;
-  requiresApproval: boolean;
   startsRun: boolean;
   requiredScopes: string[];
   credentialRequirements: string[];
@@ -36,12 +43,10 @@ interface ApiAction {
   description?: string;
   method: string;
   path: string;
-  mutating?: boolean;
+  effect?: ActionEffect;
+  approval?: ApprovalPolicy;
   destructive?: boolean;
-  opens_pr?: boolean;
-  requires_approval?: boolean;
   starts_run?: boolean;
-  read_only?: boolean;
   required_scopes?: string[];
   credential_requirements?: string[];
 }
@@ -51,6 +56,32 @@ interface ApiCapabilityReport {
   advertised: { display_name?: string; actions: ApiAction[] } | null;
 }
 
+function parseEffect(raw: ApiAction): ActionEffect {
+  const effect = raw.effect;
+  if (!effect) throw new Error(`Action ${raw.id} does not declare an effect.`);
+  if (
+    effect.kind === "read_only" ||
+    effect.kind === "writes_local_state" ||
+    effect.kind === "writes_external_state"
+  ) {
+    return { kind: effect.kind };
+  }
+  if (
+    effect.kind === "mutates_repository" &&
+    typeof effect.opens_pull_request === "boolean"
+  ) {
+    return effect;
+  }
+  throw new Error(`Action ${raw.id} declares an invalid effect.`);
+}
+
+function parseApproval(raw: ApiAction): ApprovalPolicy {
+  if (raw.approval === "automatic" || raw.approval === "operator_required") {
+    return raw.approval;
+  }
+  throw new Error(`Action ${raw.id} does not declare an approval policy.`);
+}
+
 function toAction(raw: ApiAction): DispatchableAction {
   return {
     id: raw.id,
@@ -58,14 +89,27 @@ function toAction(raw: ApiAction): DispatchableAction {
     description: raw.description ?? "",
     method: raw.method,
     path: raw.path,
-    mutating: Boolean(raw.mutating) || raw.read_only === false,
+    effect: parseEffect(raw),
+    approval: parseApproval(raw),
     destructive: Boolean(raw.destructive),
-    opensPr: Boolean(raw.opens_pr),
-    requiresApproval: Boolean(raw.requires_approval),
     startsRun: Boolean(raw.starts_run),
     requiredScopes: raw.required_scopes ?? [],
     credentialRequirements: raw.credential_requirements ?? [],
   };
+}
+
+export function isMutatingAction(action: DispatchableAction): boolean {
+  return action.effect.kind !== "read_only";
+}
+
+export function actionOpensPullRequest(action: DispatchableAction): boolean {
+  return (
+    action.effect.kind === "mutates_repository" && action.effect.opens_pull_request
+  );
+}
+
+export function actionRequiresApproval(action: DispatchableAction): boolean {
+  return action.approval === "operator_required";
 }
 
 export async function fetchDispatchableActions(
@@ -96,7 +140,7 @@ export function refusalReason(action: DispatchableAction): string | null {
   if (action.destructive) {
     return "Destructive actions are not dispatched.";
   }
-  if (action.requiresApproval || action.opensPr) {
+  if (actionRequiresApproval(action) || actionOpensPullRequest(action)) {
     return "Approval-gated and PR-opening actions wait on the suite approval flow, which does not exist yet.";
   }
   return null;

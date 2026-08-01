@@ -192,8 +192,10 @@ products moves here *before* a third copy exists.
   `count_errors`, `log_checks`, `check_has_status`, `configured_port`, `listen_addr`,
   `cors_layer`.
 - **`contract`** — schema `patchhive.product.contract.v1`. `ProductCapabilities`,
-  `ProductAction` (builder: `.read_only`, `.mutating`, `.requires_approval`, `.scheduleable`,
-  `.trigger_modes`, `.target_selection_modes`, `.opens_pr`, `.credential_requirements`),
+  `ProductAction` with a required non-defaultable `ActionSafety` wrapping
+  `ActionEffect` and `ApprovalPolicy`
+  (builders: `.scheduleable`, `.trigger_modes`, `.target_selection_modes`,
+  `.credential_requirements`; legacy safety booleans are derived wire output only),
   `RunTriggerMode`, `TargetSelectionMode`, `RunLifecycleStatus`, `ProductRunEvent`,
   `ProductRunArtifact`, `RetainedEvidencePage::from_retained`, `SuiteScheduleRecord`,
   `DispatchActionInput`.
