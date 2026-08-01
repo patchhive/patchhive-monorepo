@@ -758,11 +758,9 @@ pub fn record_product_probe(slug: &str, latency_ms: u64, healthy: bool, observed
 }
 
 /// Retained probe samples for one product, oldest first.
-pub fn product_probes(slug: &str) -> Vec<ProbeSample> {
-    let Ok(conn) = connect() else {
-        return Vec::new();
-    };
-    load_product_probes(&conn, slug).unwrap_or_default()
+pub fn product_probes(slug: &str) -> rusqlite::Result<Vec<ProbeSample>> {
+    let conn = connect()?;
+    load_product_probes(&conn, slug)
 }
 
 fn load_product_probes(conn: &Connection, slug: &str) -> rusqlite::Result<Vec<ProbeSample>> {

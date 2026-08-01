@@ -77,7 +77,7 @@ pub(super) async fn run_product_runbook(
     // 1. Reachability. Everything below depends on this, so a failure here is
     //    reported once rather than repeated as five downstream mysteries.
     let probe = fetch_product_health(&state.client, definition.slug, &api_url, &auth).await;
-    let reachable = probe.health.status != "offline";
+    let reachable = probe.health.status.is_reachable();
     steps.push(step(
         "reachable",
         "Product answers /health",
@@ -85,14 +85,18 @@ pub(super) async fn run_product_runbook(
         if reachable {
             format!("Reported status `{}`.", probe.health.status)
         } else {
-            let detail = if probe.health.error.is_empty() {
-                "No response.".to_string()
-            } else {
-                probe.health.error.clone()
-            };
+            let detail = probe
+                .health
+                .health_endpoint
+                .reason()
+                .unwrap_or("No health observation is available.");
             format!("Unreachable at {api_url}. {detail}")
         },
-        json!({ "api_url": api_url, "status": probe.health.status, "error": probe.health.error }),
+        json!({
+            "api_url": api_url,
+            "status": probe.health.status,
+            "health_endpoint": probe.health.health_endpoint,
+        }),
     ));
 
     if !reachable {
@@ -112,27 +116,42 @@ pub(super) async fn run_product_runbook(
     // 2. Startup diagnostics the product reports about itself. These are product-domain
     //    findings, not toolchain noise — a warning here is evidence, not something to
     //    tidy away.
-    let errors = probe.health.startup_errors;
-    let warnings = probe.health.startup_warns;
-    steps.push(step(
-        "startup",
-        "Startup checks",
-        if errors > 0 {
-            "fail"
-        } else if warnings > 0 {
-            "warn"
-        } else {
-            "ok"
-        },
-        if errors > 0 {
-            format!("{errors} error(s) and {warnings} warning(s) reported at startup.")
-        } else if warnings > 0 {
-            format!("{warnings} warning(s) reported at startup.")
-        } else {
-            "No startup errors or warnings.".to_string()
-        },
-        json!({ "errors": errors, "warnings": warnings }),
-    ));
+    if let Some(startup) = probe.health.startup_checks.value() {
+        steps.push(step(
+            "startup",
+            "Startup checks",
+            if startup.errors > 0 {
+                "fail"
+            } else if startup.warnings > 0 {
+                "warn"
+            } else {
+                "ok"
+            },
+            if startup.errors > 0 {
+                format!(
+                    "{} error(s) and {} warning(s) reported at startup.",
+                    startup.errors, startup.warnings
+                )
+            } else if startup.warnings > 0 {
+                format!("{} warning(s) reported at startup.", startup.warnings)
+            } else {
+                "No startup errors or warnings.".to_string()
+            },
+            json!(probe.health.startup_checks),
+        ));
+    } else {
+        steps.push(step(
+            "startup",
+            "Startup checks",
+            "warn",
+            probe
+                .health
+                .startup_checks
+                .reason()
+                .unwrap_or("Startup checks were not observed."),
+            json!(probe.health.startup_checks),
+        ));
+    }
 
     // 3. Contract conformance: what the product advertises versus what its manifest
     //    declares. This is the check that caught ReviewBee and TrustGate holding write
@@ -193,26 +212,44 @@ pub(super) async fn run_product_runbook(
     // 5. Recent outcomes. A product can be reachable, conformant and authenticated and
     //    still be failing every run, which is the state most worth surfacing.
     let recent = &probe.recent_runs;
-    let failed = recent.iter().filter(|run| run.status == "failed").count();
-    steps.push(step(
-        "recent_runs",
-        "Recent run outcomes",
-        if recent.is_empty() {
-            "warn"
-        } else if failed == recent.len() {
-            "fail"
-        } else if failed > 0 {
-            "warn"
-        } else {
-            "ok"
-        },
-        if recent.is_empty() {
-            "No recorded runs to judge from.".to_string()
-        } else {
-            format!("{failed} of the last {} run(s) failed.", recent.len())
-        },
-        json!({ "considered": recent.len(), "failed": failed }),
-    ));
+    if probe.health.runs.is_observed() {
+        let failed = recent.iter().filter(|run| run.status == "failed").count();
+        steps.push(step(
+            "recent_runs",
+            "Recent run outcomes",
+            if recent.is_empty() {
+                "warn"
+            } else if failed == recent.len() {
+                "fail"
+            } else if failed > 0 {
+                "warn"
+            } else {
+                "ok"
+            },
+            if recent.is_empty() {
+                "Run history was observed and contains no recorded runs.".to_string()
+            } else {
+                format!("{failed} of the last {} run(s) failed.", recent.len())
+            },
+            json!({
+                "observation": probe.health.runs,
+                "considered": recent.len(),
+                "failed": failed,
+            }),
+        ));
+    } else {
+        steps.push(step(
+            "recent_runs",
+            "Recent run outcomes",
+            "warn",
+            probe
+                .health
+                .runs
+                .reason()
+                .unwrap_or("Run history was not observed."),
+            json!(probe.health.runs),
+        ));
+    }
 
     Ok(Json(ok(finish(definition, started_at, steps))))
 }

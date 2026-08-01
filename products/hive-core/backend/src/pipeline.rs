@@ -129,13 +129,26 @@ mod tests {
         SERVICE_TOKEN_HEADER,
     };
     use crate::models::{
-        now_rfc3339, ProductHealthSnapshot, ProductOverride, ProductOverrideInput,
-        ProductRuntimeItem,
+        now_rfc3339, Observation, ProductHealthSnapshot, ProductHealthStatus, ProductOverride,
+        ProductOverrideInput, ProductRuntimeItem,
     };
     use patchhive_product_core::contract;
     use reqwest::Client;
     use serde_json::json;
     use std::collections::HashMap;
+
+    fn unobserved_health(status: ProductHealthStatus) -> ProductHealthSnapshot {
+        ProductHealthSnapshot {
+            status,
+            health_endpoint: Observation::not_observed("test fixture"),
+            version: Observation::not_observed("test fixture"),
+            database_ok: Observation::not_observed("test fixture"),
+            startup_checks: Observation::not_observed("test fixture"),
+            capabilities: Observation::not_observed("test fixture"),
+            runs: Observation::not_observed("test fixture"),
+            checked_at: now_rfc3339(),
+        }
+    }
 
     #[test]
     fn summarize_products_counts_each_runtime_status() {
@@ -156,7 +169,7 @@ mod tests {
                 legacy_api_key_configured: false,
                 notes: String::new(),
                 status: "online".into(),
-                health: ProductHealthSnapshot::default(),
+                health: unobserved_health(ProductHealthStatus::Online),
                 hivecore: None,
                 actions: Vec::new(),
                 links: Vec::new(),
@@ -181,7 +194,7 @@ mod tests {
                 legacy_api_key_configured: false,
                 notes: String::new(),
                 status: "degraded".into(),
-                health: ProductHealthSnapshot::default(),
+                health: unobserved_health(ProductHealthStatus::Degraded),
                 hivecore: None,
                 actions: Vec::new(),
                 links: Vec::new(),
@@ -206,7 +219,7 @@ mod tests {
                 legacy_api_key_configured: false,
                 notes: String::new(),
                 status: "unconfigured".into(),
-                health: ProductHealthSnapshot::default(),
+                health: unobserved_health(ProductHealthStatus::Unconfigured),
                 hivecore: None,
                 actions: Vec::new(),
                 links: Vec::new(),
@@ -231,7 +244,7 @@ mod tests {
                 legacy_api_key_configured: false,
                 notes: String::new(),
                 status: "disabled".into(),
-                health: ProductHealthSnapshot::default(),
+                health: unobserved_health(ProductHealthStatus::Disabled),
                 hivecore: None,
                 actions: Vec::new(),
                 links: Vec::new(),

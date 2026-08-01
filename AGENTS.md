@@ -141,8 +141,19 @@ patchhive/
   restore `read_only`, `mutating`, `requires_approval`, or
   `opens_pr` as independently writable domain fields. Their v1 JSON booleans are
   derived compatibility output only.
+- HiveCore runtime evidence uses tagged `Observation<T>` values with `observed`,
+  `failed`, `not_observed`, and `not_applicable` states. Do not replace a failed
+  database read or an unattempted product probe with an empty collection, zero
+  latency, zero uptime, or zero findings. An observed empty collection is valid
+  evidence and must remain distinguishable from all three unavailable states.
 - Booleans remain appropriate for complete binary facts such as whether an action
   is scheduleable. The rule is to eliminate ambiguous state, not booleans generally.
+
+GitHub Actions:
+- `.github/workflows/cleanup-action-runs.yml` deletes workflow runs older than
+  three days once per day. Keep its `actions: write` permission narrowly scoped
+  to that workflow; do not give ordinary build/test workflows write access merely
+  to share the cleanup behavior.
 
 Backend:
 - Rust

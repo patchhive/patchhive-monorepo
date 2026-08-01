@@ -1,0 +1,47 @@
+name: Cleanup old Actions runs
+
+on:
+  schedule:
+    - cron: "37 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: cleanup-old-actions-runs
+  cancel-in-progress: false
+
+jobs:
+  delete-expired-runs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Delete workflow runs older than three days
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cutoff="$(date --utc --date='3 days ago' '+%Y-%m-%dT%H:%M:%SZ')"
+          deleted=0
+          run_ids_file="$(mktemp)"
+          trap 'rm -f "$run_ids_file"' EXIT
+
+          gh api --paginate "repos/${GH_REPO}/actions/runs?per_page=100" \
+            --jq ".workflow_runs[] | select(.created_at < \"${cutoff}\") | .id" \
+            > "$run_ids_file"
+
+          while IFS= read -r run_id; do
+            if [[ ! "$run_id" =~ ^[0-9]+$ ]]; then
+              echo "Refusing unexpected workflow run id: $run_id" >&2
+              exit 1
+            fi
+            gh api --method DELETE "repos/${GH_REPO}/actions/runs/${run_id}"
+            deleted=$((deleted + 1))
+          done < "$run_ids_file"
+
+          echo "Deleted ${deleted} workflow run(s) created before ${cutoff}."

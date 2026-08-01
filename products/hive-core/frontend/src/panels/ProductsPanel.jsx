@@ -8,6 +8,11 @@ import {
   commandPanelStyle,
   tacticalGridStyle,
 } from "../components/CommandChrome.jsx";
+import {
+  healthEvidence,
+  observationLabel,
+  observationReason,
+} from "../health-evidence.js";
 
 const payloadStyle = {
   ...S.input,
@@ -246,6 +251,7 @@ function ContractChecklist({ product }) {
 
 function RunHistory({ product, onOpenRun }) {
   const runs = product.recent_runs || [];
+  const runsEvidence = healthEvidence(product.health).runs;
   if (!product.enabled) {
     return (
       <div style={{ borderTop: "1px solid var(--border)", paddingTop: 12, fontSize: 11, color: "var(--text-dim)" }}>
@@ -263,13 +269,16 @@ function RunHistory({ product, onOpenRun }) {
             Latest product-owned work.
           </div>
         </div>
-        <Tag color={product.health?.runs_ok ? "var(--green)" : "var(--gold)"}>
-          {product.health?.runs_ok ? `${runs.length} visible` : "locked"}
+        <Tag color={runsEvidence ? "var(--green)" : "var(--gold)"}>
+          {runsEvidence ? `${runs.length} visible` : observationLabel(product.health?.runs)}
         </Tag>
       </div>
-      {!product.health?.runs_ok ? (
+      {!runsEvidence ? (
         <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.5 }}>
-          {product.health?.runs_error || "Provision this product's service token in Settings to show run history."}
+          {observationReason(
+            product.health?.runs,
+            "Provision this product's service token in Settings to show run history.",
+          )}
         </div>
       ) : runs.length === 0 ? (
         <div style={{ fontSize: 11, color: "var(--text-dim)" }}>No run history visible yet.</div>
@@ -402,6 +411,7 @@ function RunDetailPanel({ detail, loading, onClose }) {
 
 function ProductCard({ product, onDispatch, onOpenRun }) {
   const health = product.health || {};
+  const evidence = healthEvidence(health);
   const actions = product.actions || [];
   const dispatchableActions = actions.filter((action) => !action.destructive && product.slug !== "hive-core");
   const lifecycle = product.hivecore || {};
@@ -460,7 +470,7 @@ function ProductCard({ product, onDispatch, onOpenRun }) {
   const canDispatch =
     product.enabled &&
     product.api_url &&
-    health.capabilities_ok &&
+    evidence.capabilities &&
     product.machine_auth_configured &&
     selectedAction;
 
@@ -480,21 +490,21 @@ function ProductCard({ product, onDispatch, onOpenRun }) {
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <Tag color="var(--accent)">{product.lane}</Tag>
-        {health.version && <Tag color="var(--blue)">v{health.version}</Tag>}
-        {health.capabilities_ok && <Tag color="var(--green)">{health.action_count} action{health.action_count === 1 ? "" : "s"}</Tag>}
-        {!health.capabilities_ok && product.enabled && <Tag color="var(--gold)">contract pending</Tag>}
+        {evidence.version && <Tag color="var(--blue)">v{evidence.version}</Tag>}
+        {evidence.capabilities && <Tag color="var(--green)">{evidence.capabilities.action_count} action{evidence.capabilities.action_count === 1 ? "" : "s"}</Tag>}
+        {!evidence.capabilities && product.enabled && <Tag color="var(--gold)">contract {observationLabel(health.capabilities)}</Tag>}
         {product.enabled &&
-          (health.runs_ok ? (
-            <Tag color="var(--blue)">{health.run_count} run{health.run_count === 1 ? "" : "s"}</Tag>
+          (evidence.runs ? (
+            <Tag color="var(--blue)">{evidence.runs.run_count} run{evidence.runs.run_count === 1 ? "" : "s"}</Tag>
           ) : (
-            <Tag color="var(--gold)">runs locked</Tag>
+            <Tag color="var(--gold)">runs {observationLabel(health.runs)}</Tag>
           ))}
         <Tag color={authColor(product)}>{authLabel(product)}</Tag>
         {product.legacy_api_key_configured && !product.service_token_configured && (
           <Tag color="var(--gold)">replace fallback</Tag>
         )}
-        {health.startup_warns > 0 && <Tag color="var(--gold)">{health.startup_warns} warn</Tag>}
-        {health.startup_errors > 0 && <Tag color="var(--accent)">{health.startup_errors} error</Tag>}
+        {evidence.startup?.warnings > 0 && <Tag color="var(--gold)">{evidence.startup.warnings} warn</Tag>}
+        {evidence.startup?.errors > 0 && <Tag color="var(--accent)">{evidence.startup.errors} error</Tag>}
       </div>
 
       <div style={{ display: "grid", gap: 6, gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))" }}>
@@ -524,16 +534,20 @@ function ProductCard({ product, onDispatch, onOpenRun }) {
         </div>
         <div>
           <div style={S.label}>Lifecycle Contract</div>
-          <div style={{ fontSize: 11, color: health.capabilities_ok ? "var(--green)" : "var(--gold)" }}>
-            {health.capabilities_ok
+          <div style={{ fontSize: 11, color: evidence.capabilities ? "var(--green)" : "var(--gold)" }}>
+            {evidence.capabilities
               ? `${lifecycle.can_start_runs ? "start" : "view"} · ${lifecycle.can_list_runs ? "runs" : "no runs"}`
-              : "Not available"}
+              : observationLabel(health.capabilities)}
           </div>
         </div>
         <div>
           <div style={S.label}>Database</div>
-          <div style={{ fontSize: 11, color: health.db_ok === false ? "var(--accent)" : "var(--text-dim)" }}>
-            {health.db_ok == null ? "Unknown" : health.db_ok ? "Healthy" : "Unhealthy"}
+          <div style={{ fontSize: 11, color: evidence.databaseOk === false ? "var(--accent)" : "var(--text-dim)" }}>
+            {evidence.databaseOk == null
+              ? observationLabel(health.database_ok)
+              : evidence.databaseOk
+                ? "Healthy"
+                : "Unhealthy"}
           </div>
         </div>
       </div>
@@ -609,7 +623,7 @@ function ProductCard({ product, onDispatch, onOpenRun }) {
             {product.legacy_api_key_configured && !product.service_token_configured && (
               <span style={{ fontSize: 11, color: "var(--gold)" }}>Dispatch is using a legacy operator key fallback until a service token is provisioned.</span>
             )}
-            {!health.capabilities_ok && <span style={{ fontSize: 11, color: "var(--gold)" }}>Contract check is not passing yet.</span>}
+            {!evidence.capabilities && <span style={{ fontSize: 11, color: "var(--gold)" }}>{observationReason(health.capabilities, "Contract evidence is unavailable.")}</span>}
           </div>
 
           {localResult && <DispatchResult event={localResult} />}
@@ -638,7 +652,7 @@ function ProductCard({ product, onDispatch, onOpenRun }) {
         </div>
       )}
 
-      {health.error && (
+      {health.health_endpoint?.state === "failed" && (
         <div
           style={{
             borderTop: "1px solid var(--border)",
@@ -647,7 +661,7 @@ function ProductCard({ product, onDispatch, onOpenRun }) {
             color: "var(--gold)",
           }}
         >
-          {health.error}
+          {observationReason(health.health_endpoint)}
         </div>
       )}
     </div>

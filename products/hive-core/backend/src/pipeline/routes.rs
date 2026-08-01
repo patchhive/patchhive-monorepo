@@ -260,8 +260,20 @@ pub async fn suite_run_detail(
 /// percentage beside it cannot tell different stories.
 pub async fn product_probes(
     Path(slug): Path<String>,
-) -> Json<crate::models::ApiEnvelope<Vec<crate::models::ProbeSample>>> {
-    Json(crate::models::ok(crate::db::product_probes(&slug)))
+) -> Result<
+    Json<crate::models::ApiEnvelope<Vec<crate::models::ProbeSample>>>,
+    (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
+> {
+    crate::db::product_probes(&slug)
+        .map(|samples| Json(crate::models::ok(samples)))
+        .map_err(|error| {
+            tracing::error!(product = %slug, %error, "could not read retained probe evidence");
+            api_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "probe_history_unavailable",
+                "HiveCore could not read retained probe evidence.",
+            )
+        })
 }
 
 /// Runbooks: a recorded read-only diagnostic pass over one product.

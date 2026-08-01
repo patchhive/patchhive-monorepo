@@ -185,9 +185,28 @@ export function useLiveSuite(pollMs = 10_000): LiveSuite {
         await Promise.all(
           PRODUCTS.map(async (product) => {
             const slug = SLUG_BY_ID[product.id] ?? product.id;
-            const probes = summarise(await fetchProbes(slug, controller.signal));
-            product.latencyMs = probes.latest ?? 0;
-            product.uptime = probes.uptime ?? 0;
+            if (slug === "hive-core") {
+              product.latencyMs = null;
+              product.uptime = null;
+              product.probeState = "not_applicable";
+              product.probeReason = "HiveCore has no network round trip to measure in-process.";
+              return;
+            }
+            try {
+              const probes = summarise(await fetchProbes(slug, controller.signal));
+              product.latencyMs = probes.latest;
+              product.uptime = probes.uptime;
+              product.probeState = "observed";
+              product.probeReason =
+                probes.observations === 0 ? "Probe history was observed and is empty." : "";
+            } catch (cause) {
+              if (cause instanceof DOMException && cause.name === "AbortError") throw cause;
+              product.latencyMs = null;
+              product.uptime = null;
+              product.probeState = "failed";
+              product.probeReason =
+                cause instanceof Error ? cause.message : "Probe history could not be read.";
+            }
           }),
         );
 

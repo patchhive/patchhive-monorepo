@@ -116,7 +116,10 @@ Operator / Frontend
 - **Self-actions blocked:** HiveCore refuses to dispatch actions to itself — native HiveCore routes handle HiveCore operations.
 - **Disabled products are skipped:** HiveCore does not poll, fetch runs, or dispatch actions for disabled products.
 - **Run detail path sanitized:** run IDs containing `/`, `?`, `#`, `{`, `}` are rejected before being placed into product path templates.
-- **Partial failures are non-fatal:** If a product is offline or its API is unreachable, HiveCore reports `offline` health with the error message and continues polling remaining products.
+- **Partial failures are non-fatal and explicit:** If a product is offline or an
+  endpoint cannot be read, HiveCore continues polling the fleet and tags the affected
+  observation as `failed`, `not_observed`, or `not_applicable`. It does not synthesize
+  zero counts or empty collections for unavailable evidence.
 
 The Settings surface manages operator exclusions, trusted repositories,
 per-product PR limits, the suite-wide PR ceiling, and active reservation
@@ -247,6 +250,11 @@ latency percentiles use successful probes only, because a timeout is not a round
 and mixing them reports a product as slow when it was actually down. Every figure is
 absent rather than zero when nothing has been observed — "no data" and "zero" are
 different claims.
+
+Probe-history reads fail as API errors when SQLite cannot be queried. A successful
+empty response means the history was observed and contains no samples; the cockpit
+renders that separately from a failed read and uses `null`/“—” for unavailable latency
+and uptime.
 
 Product runbooks (`POST /products/:slug/runbook`, `GET /runbooks`) are a recorded
 read-only diagnostic pass over one product: reachability, startup checks, contract

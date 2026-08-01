@@ -9,6 +9,7 @@ import {
   commandPanelStyle,
   tacticalGridStyle,
 } from "../components/CommandChrome.jsx";
+import { healthEvidence, observationLabel } from "../health-evidence.js";
 
 const heroGridStyle = {
   display: "grid",
@@ -57,6 +58,7 @@ function MetricCard({ label, value, tone = "var(--text)" }) {
 }
 
 function ProductStrip({ product }) {
+  const evidence = healthEvidence(product.health);
   return (
     <div
       style={commandPanelStyle(statusColor(product.status), { display: "grid", gap: 8 })}
@@ -72,28 +74,28 @@ function ProductStrip({ product }) {
       </div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <Tag color="var(--accent)">{product.lane}</Tag>
-        {product.health.startup_warns > 0 && (
+        {evidence.startup?.warnings > 0 && (
           <Tag color="var(--gold)">
-            {product.health.startup_warns} startup warn{product.health.startup_warns === 1 ? "" : "s"}
+            {evidence.startup.warnings} startup warn{evidence.startup.warnings === 1 ? "" : "s"}
           </Tag>
         )}
-        {product.health.startup_errors > 0 && (
+        {evidence.startup?.errors > 0 && (
           <Tag color="var(--accent)">
-            {product.health.startup_errors} startup error{product.health.startup_errors === 1 ? "" : "s"}
+            {evidence.startup.errors} startup error{evidence.startup.errors === 1 ? "" : "s"}
           </Tag>
         )}
-        {product.health.capabilities_ok && (
+        {evidence.capabilities && (
           <Tag color="var(--green)">
-            {product.health.action_count} action{product.health.action_count === 1 ? "" : "s"}
+            {evidence.capabilities.action_count} action{evidence.capabilities.action_count === 1 ? "" : "s"}
           </Tag>
         )}
         {product.enabled &&
-          (product.health.runs_ok ? (
+          (evidence.runs ? (
             <Tag color="var(--blue)">
-              {product.health.run_count} recent run{product.health.run_count === 1 ? "" : "s"}
+              {evidence.runs.run_count} recent run{evidence.runs.run_count === 1 ? "" : "s"}
             </Tag>
           ) : (
-            <Tag color="var(--gold)">runs locked</Tag>
+            <Tag color="var(--gold)">runs {observationLabel(product.health.runs)}</Tag>
           ))}
       </div>
       {(product.recent_runs || [])[0] && (
@@ -175,8 +177,13 @@ export default function OverviewPanel({ fetchEnvelope, setRunning, setError }) {
   const featured = preferred || overview.products.find((product) => product.status === "online") || overview.products[0];
   const unstable = overview.products.filter((product) => product.status === "degraded" || product.status === "offline");
   const runs = recentRuns(overview.products);
-  const totalRuns = overview.products.reduce((total, product) => total + (product.health?.run_count || 0), 0);
-  const contractReady = overview.products.filter((product) => product.health?.capabilities_ok).length;
+  const totalRuns = overview.products.reduce(
+    (total, product) => total + (healthEvidence(product.health).runs?.run_count || 0),
+    0,
+  );
+  const contractReady = overview.products.filter(
+    (product) => healthEvidence(product.health).capabilities,
+  ).length;
 
   return (
     <div style={{ ...commandGridStyle, gap: 14 }}>

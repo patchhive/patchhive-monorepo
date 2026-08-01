@@ -891,12 +891,17 @@ fn launcher_product_running(
 fn stored_service_token_cannot_read_runs(runtime: &ProductRuntimeItem) -> bool {
     if !runtime.service_token_configured
         || runtime.legacy_api_key_configured
-        || runtime.health.runs_ok
+        || runtime.health.runs.is_observed()
     {
         return false;
     }
 
-    let error = runtime.health.runs_error.to_ascii_lowercase();
+    let error = runtime
+        .health
+        .runs
+        .reason()
+        .unwrap_or_default()
+        .to_ascii_lowercase();
     error.contains("401")
         || error.contains("403")
         || error.contains("unauthorized")

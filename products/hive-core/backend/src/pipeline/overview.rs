@@ -10,9 +10,10 @@ use serde_json::{json, Value};
 use crate::{
     db,
     models::{
-        now_rfc3339, ok, OverviewResponse, OverviewSummary, ProductHealthSnapshot,
-        ProductRunDetailResponse, ProductRunsSnapshotResponse, ProductRuntimeItem, PRODUCT_TAGLINE,
-        PRODUCT_TITLE, PRODUCT_VERSION,
+        now_rfc3339, ok, CapabilitiesEvidence, HealthEndpointEvidence, Observation,
+        OverviewResponse, OverviewSummary, ProductHealthSnapshot, ProductHealthStatus,
+        ProductRunDetailResponse, ProductRunsSnapshotResponse, ProductRuntimeItem, RunsEvidence,
+        StartupChecksEvidence, PRODUCT_TAGLINE, PRODUCT_TITLE, PRODUCT_VERSION,
     },
     startup,
     state::{product_catalog, AppState, ProductDefinition},
@@ -76,14 +77,23 @@ pub(super) async fn product_runs(
             machine_auth_configured: resolved_machine_auth_configured(definition, &auth),
             service_token_configured: resolved_service_token_configured(definition, &auth),
             legacy_api_key_configured: resolved_legacy_api_key_configured(definition, &auth),
-            runs_ok: true,
             checked_at: now_rfc3339(),
-            error: String::new(),
-            runs,
+            runs: Observation::observed(runs),
         })));
     }
 
     let (runs_ok, runs, error) = fetch_product_runs(&state.client, &api_url, &auth).await;
+    let runs = if runs_ok {
+        Observation::observed(runs)
+    } else if auth.machine_auth_configured() {
+        Observation::failed(error)
+    } else {
+        Observation::not_observed(if error.is_empty() {
+            "HiveCore has no machine credential for protected run history.".into()
+        } else {
+            error
+        })
+    };
     Ok(Json(ok(ProductRunsSnapshotResponse {
         slug: definition.slug.into(),
         title: definition.title.into(),
@@ -92,9 +102,7 @@ pub(super) async fn product_runs(
         machine_auth_configured: resolved_machine_auth_configured(definition, &auth),
         service_token_configured: resolved_service_token_configured(definition, &auth),
         legacy_api_key_configured: resolved_legacy_api_key_configured(definition, &auth),
-        runs_ok,
         checked_at: now_rfc3339(),
-        error,
         runs,
     })))
 }
@@ -256,9 +264,22 @@ pub(super) async fn build_product_runtime(
     } else if !enabled {
         ProductProbeSnapshot {
             health: ProductHealthSnapshot {
-                status: "disabled".into(),
+                status: ProductHealthStatus::Disabled,
+                health_endpoint: Observation::not_applicable(
+                    "Product is disabled in HiveCore settings.",
+                ),
+                version: Observation::not_applicable("Product is disabled in HiveCore settings."),
+                database_ok: Observation::not_applicable(
+                    "Product is disabled in HiveCore settings.",
+                ),
+                startup_checks: Observation::not_applicable(
+                    "Product is disabled in HiveCore settings.",
+                ),
+                capabilities: Observation::not_applicable(
+                    "Product is disabled in HiveCore settings.",
+                ),
+                runs: Observation::not_applicable("Product is disabled in HiveCore settings."),
                 checked_at: now_rfc3339(),
-                ..ProductHealthSnapshot::default()
             },
             hivecore: None,
             actions: Vec::new(),
@@ -270,9 +291,24 @@ pub(super) async fn build_product_runtime(
     } else if api_url.is_empty() {
         ProductProbeSnapshot {
             health: ProductHealthSnapshot {
-                status: "unconfigured".into(),
+                status: ProductHealthStatus::Unconfigured,
+                health_endpoint: Observation::not_observed("Product API URL is not configured."),
+                version: Observation::not_observed(
+                    "Product API URL is required before version can be queried.",
+                ),
+                database_ok: Observation::not_observed(
+                    "Product API URL is required before database health can be queried.",
+                ),
+                startup_checks: Observation::not_observed(
+                    "Product API URL is required before startup checks can be queried.",
+                ),
+                capabilities: Observation::not_observed(
+                    "Product API URL is required before capabilities can be queried.",
+                ),
+                runs: Observation::not_observed(
+                    "Product API URL is required before run history can be queried.",
+                ),
                 checked_at: now_rfc3339(),
-                ..ProductHealthSnapshot::default()
             },
             hivecore: None,
             actions: Vec::new(),
@@ -300,7 +336,7 @@ pub(super) async fn build_product_runtime(
         service_token_configured: resolved_service_token_configured(definition, &auth),
         legacy_api_key_configured: resolved_legacy_api_key_configured(definition, &auth),
         notes,
-        status: probe.health.status.clone(),
+        status: probe.health.status.as_str().into(),
         health: probe.health,
         hivecore: probe.hivecore,
         actions: probe.actions,
@@ -339,14 +375,20 @@ pub(super) async fn fetch_product_health(
         db::record_product_probe(slug, latency_ms, false, &checked_at);
         return ProductProbeSnapshot {
             health: ProductHealthSnapshot {
-                status: "offline".into(),
+                status: ProductHealthStatus::Offline,
                 checked_at,
-                // No latency: a request that never completed has no round-trip time,
-                // and recording the timeout duration would put a 3000ms sample in the
-                // history of a product that was simply down.
-                latency_ms: None,
-                error: "Could not reach /health.".into(),
-                ..ProductHealthSnapshot::default()
+                health_endpoint: Observation::failed("Could not reach /health."),
+                version: Observation::not_observed("/health could not be reached."),
+                database_ok: Observation::not_observed("/health could not be reached."),
+                startup_checks: Observation::not_observed(
+                    "Health must pass before startup checks are meaningful.",
+                ),
+                capabilities: Observation::not_observed(
+                    "Health must pass before capabilities are meaningful.",
+                ),
+                runs: Observation::not_observed(
+                    "Health must pass before run history is meaningful.",
+                ),
             },
             hivecore: None,
             actions: Vec::new(),
@@ -361,13 +403,23 @@ pub(super) async fn fetch_product_health(
         db::record_product_probe(slug, latency_ms, false, &checked_at);
         return ProductProbeSnapshot {
             health: ProductHealthSnapshot {
-                status: "offline".into(),
+                status: ProductHealthStatus::Offline,
                 checked_at,
-                // The product answered, so this is a real round trip even though the
-                // answer was an error.
-                latency_ms: Some(latency_ms),
-                error: format!("/health returned HTTP {}", health_response.status()),
-                ..ProductHealthSnapshot::default()
+                health_endpoint: Observation::failed(format!(
+                    "/health returned HTTP {}",
+                    health_response.status()
+                )),
+                version: Observation::not_observed("/health did not return a usable document."),
+                database_ok: Observation::not_observed("/health did not return a usable document."),
+                startup_checks: Observation::not_observed(
+                    "Health must pass before startup checks are meaningful.",
+                ),
+                capabilities: Observation::not_observed(
+                    "Health must pass before capabilities are meaningful.",
+                ),
+                runs: Observation::not_observed(
+                    "Health must pass before run history is meaningful.",
+                ),
             },
             hivecore: None,
             actions: Vec::new(),
@@ -381,16 +433,49 @@ pub(super) async fn fetch_product_health(
         };
     }
 
-    let health_body =
-        health_response
-            .json::<ProductHealthBody>()
-            .await
-            .unwrap_or(ProductHealthBody {
-                status: Some("unknown".into()),
-                version: None,
-                config_errors: Some(0),
-                db_ok: None,
+    let (health_body, health_endpoint, version, database_ok) = match health_response
+        .json::<ProductHealthBody>()
+        .await
+    {
+        Ok(body) => {
+            let evidence = HealthEndpointEvidence {
+                reported_status: body
+                    .status
+                    .clone()
+                    .map(Observation::observed)
+                    .unwrap_or_else(|| {
+                        Observation::not_observed("/health did not report `status`.")
+                    }),
+                latency_ms,
+                config_errors: body
+                    .config_errors
+                    .map(Observation::observed)
+                    .unwrap_or_else(|| {
+                        Observation::not_observed("/health did not report `config_errors`.")
+                    }),
+            };
+            let version = body
+                .version
+                .clone()
+                .map(Observation::observed)
+                .unwrap_or_else(|| Observation::not_observed("/health did not report `version`."));
+            let database_ok = body.db_ok.map(Observation::observed).unwrap_or_else(|| {
+                Observation::not_observed("/health did not report database health.")
             });
+            (
+                Some(body),
+                Observation::observed(evidence),
+                version,
+                database_ok,
+            )
+        }
+        Err(error) => (
+            None,
+            Observation::failed(format!("Could not decode /health response: {error}")),
+            Observation::not_observed("The /health document could not be decoded."),
+            Observation::not_observed("The /health document could not be decoded."),
+        ),
+    };
 
     let checks_url = format!("{normalized}/startup/checks");
     let checks_response = authorized_get(client, &checks_url, auth)
@@ -398,25 +483,36 @@ pub(super) async fn fetch_product_health(
         .send()
         .await;
 
-    let (startup_errors, startup_warns, startup_infos, startup_ok, extra_error) =
-        match checks_response {
-            Ok(response) if response.status().is_success() => {
-                let body = response
-                    .json::<StartupChecksBody>()
-                    .await
-                    .unwrap_or(StartupChecksBody { checks: Vec::new() });
-                let (errors, warns, infos) = startup::summarize_check_levels(&body.checks);
-                (errors, warns, infos, true, String::new())
+    let (startup_checks, startup_ok, extra_error) = match checks_response {
+        Ok(response) if response.status().is_success() => {
+            match response.json::<StartupChecksBody>().await {
+                Ok(body) => {
+                    let (errors, warnings, infos) = startup::summarize_check_levels(&body.checks);
+                    (
+                        Observation::observed(StartupChecksEvidence {
+                            errors,
+                            warnings,
+                            infos,
+                        }),
+                        true,
+                        String::new(),
+                    )
+                }
+                Err(error) => {
+                    let reason = format!("Could not decode /startup/checks response: {error}");
+                    (Observation::failed(&reason), false, reason)
+                }
             }
-            Ok(response) => (
-                0,
-                0,
-                0,
-                false,
-                format!("/startup/checks returned HTTP {}", response.status()),
-            ),
-            Err(_) => (0, 0, 0, false, "Could not reach /startup/checks.".into()),
-        };
+        }
+        Ok(response) => {
+            let reason = format!("/startup/checks returned HTTP {}", response.status());
+            (Observation::failed(&reason), false, reason)
+        }
+        Err(_) => {
+            let reason = "Could not reach /startup/checks.".to_string();
+            (Observation::failed(&reason), false, reason)
+        }
+    };
 
     let (capabilities_ok, actions, links, hivecore, run_detail_template, capabilities_error) =
         match fetch_product_capabilities(client, api_url, auth).await {
@@ -430,9 +526,27 @@ pub(super) async fn fetch_product_health(
             ),
             Err(message) => (false, Vec::new(), Vec::new(), None, String::new(), message),
         };
-    let action_count = actions.len() as u32;
+    let capabilities = if capabilities_ok {
+        Observation::observed(CapabilitiesEvidence {
+            action_count: actions.len() as u32,
+        })
+    } else {
+        Observation::failed(&capabilities_error)
+    };
     let (runs_ok, recent_runs, runs_error) = fetch_product_runs(client, api_url, auth).await;
-    let run_count = recent_runs.len() as u32;
+    let runs = if runs_ok {
+        Observation::observed(RunsEvidence {
+            run_count: recent_runs.len() as u32,
+        })
+    } else if auth.machine_auth_configured() {
+        Observation::failed(&runs_error)
+    } else {
+        Observation::not_observed(if runs_error.is_empty() {
+            "HiveCore has no machine credential for protected run history."
+        } else {
+            &runs_error
+        })
+    };
     let run_detail_ok = hivecore
         .as_ref()
         .map(|support| support.can_read_run_detail && !run_detail_template.trim().is_empty())
@@ -495,48 +609,50 @@ pub(super) async fn fetch_product_health(
         ),
     ];
 
-    let config_errors = health_body.config_errors.unwrap_or(0);
-    let base_status = health_body.status.unwrap_or_else(|| "unknown".into());
+    let config_errors = health_body.as_ref().and_then(|body| body.config_errors);
+    let base_status = health_body.as_ref().and_then(|body| body.status.as_deref());
+    let database_unhealthy = health_body
+        .as_ref()
+        .and_then(|body| body.db_ok)
+        .is_some_and(|ok| !ok);
     let runs_integration_failed = auth.machine_auth_configured() && !runs_ok;
-    let status = if startup_errors > 0
-        || config_errors > 0
-        || base_status != "ok"
+    let startup_has_errors = startup_checks
+        .value()
+        .is_some_and(|summary| summary.errors > 0);
+    let status = if health_endpoint.is_failed()
+        || !startup_ok
+        || startup_has_errors
+        || config_errors.is_none_or(|errors| errors > 0)
+        || base_status != Some("ok")
+        || database_unhealthy
         || !capabilities_ok
         || runs_integration_failed
     {
-        "degraded"
+        ProductHealthStatus::Degraded
     } else {
-        "online"
+        ProductHealthStatus::Online
     };
-    let error = [extra_error, capabilities_error]
-        .into_iter()
-        .filter(|item| !item.is_empty())
-        .collect::<Vec<_>>()
-        .join(" ");
 
     // One real sample per probe, retained so the deck can draw a latency history it
     // did not invent. Failures are recorded too: uptime is the share of probes that
     // succeeded, so dropping them would make every product look perfect.
-    db::record_product_probe(slug, latency_ms, status == "online", &checked_at);
+    db::record_product_probe(
+        slug,
+        latency_ms,
+        status == ProductHealthStatus::Online,
+        &checked_at,
+    );
 
     ProductProbeSnapshot {
         health: ProductHealthSnapshot {
-            status: status.into(),
-            reachable: true,
-            latency_ms: Some(latency_ms),
-            version: health_body.version.unwrap_or_default(),
-            capabilities_ok,
-            action_count,
-            runs_ok,
-            run_count,
-            config_errors,
-            startup_errors,
-            startup_warns,
-            startup_infos,
-            db_ok: health_body.db_ok,
+            status,
+            health_endpoint,
+            version,
+            database_ok,
+            startup_checks,
+            capabilities,
+            runs,
             checked_at,
-            error,
-            runs_error,
         },
         hivecore,
         actions,
@@ -569,25 +685,28 @@ pub(super) fn local_hive_core_probe() -> ProductProbeSnapshot {
     let recent_runs = contract::runs_from_values("hive-core", hive_core_action_run_values(6)).runs;
     ProductProbeSnapshot {
         health: ProductHealthSnapshot {
-            status: status.into(),
-            // HiveCore reads its own state in-process; there is no round trip to
-            // measure, and reporting 0ms would invite a comparison against products
-            // that made a real network call.
-            latency_ms: None,
-            reachable: true,
-            version: PRODUCT_VERSION.into(),
-            capabilities_ok: true,
-            action_count: actions.len() as u32,
-            runs_ok: true,
-            run_count: recent_runs.len() as u32,
-            config_errors: startup_errors,
-            startup_errors,
-            startup_warns,
-            startup_infos,
-            db_ok: Some(db_ok),
+            status: if status == "online" {
+                ProductHealthStatus::Online
+            } else {
+                ProductHealthStatus::Degraded
+            },
+            health_endpoint: Observation::not_applicable(
+                "HiveCore reads its own in-process state; there is no network probe.",
+            ),
+            version: Observation::observed(PRODUCT_VERSION.into()),
+            database_ok: Observation::observed(db_ok),
+            startup_checks: Observation::observed(StartupChecksEvidence {
+                errors: startup_errors,
+                warnings: startup_warns,
+                infos: startup_infos,
+            }),
+            capabilities: Observation::observed(CapabilitiesEvidence {
+                action_count: actions.len() as u32,
+            }),
+            runs: Observation::observed(RunsEvidence {
+                run_count: recent_runs.len() as u32,
+            }),
             checked_at: now_rfc3339(),
-            error: String::new(),
-            runs_error: String::new(),
         },
         hivecore: Some(contract::HiveCoreLifecycleSupport {
             can_launch: true,

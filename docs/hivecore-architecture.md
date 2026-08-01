@@ -92,6 +92,13 @@ smoke tier. The frontend polls `/products` every 10 seconds. There is no cache, 
 and no background poller. A conductor tick layered on this would multiply an already expensive
 fan-out and still have no history to reconcile against.
 
+The live snapshot preserves evidence semantics while that larger persistence work
+remains open. Health, startup checks, capabilities, and run history are tagged as
+`observed`, `failed`, `not_observed`, or `not_applicable`; an observed empty run list
+is not interchangeable with an unreadable endpoint. Probe-history storage errors
+propagate from the API, and the cockpit renders unavailable latency and uptime as
+`null`/“—” rather than zero.
+
 **B3 — Dispatch refuses, in code, exactly what autonomy requires.**
 `pipeline/dispatch.rs`:
 

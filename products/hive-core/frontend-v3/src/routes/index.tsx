@@ -541,7 +541,7 @@ function HiveOrb() {
                     key={p.id}
                     className="animate-float-up relative z-10 -mt-2 flex h-[104px] w-24 items-center justify-center shadow-[0_0_30px_color-mix(in_oklab,var(--honey)_30%,transparent)]"
                     style={{ clipPath: HEX, background: "var(--honey)", animationDelay: `${i * 50}ms` }}
-                    title={`${p.name} · ${p.status} · ${p.latencyMs > 0 ? `${p.latencyMs}ms` : "latency unavailable"}`}
+                    title={`${p.name} · ${p.status} · ${p.latencyMs !== null ? `${p.latencyMs}ms` : p.probeReason}`}
                   >
                     <div
                       className="absolute inset-[1.5px] bg-background"
@@ -556,7 +556,7 @@ function HiveOrb() {
                         {initials}
                       </span>
                       <span className="mt-0.5 font-mono text-[10px] font-medium tracking-tight text-[var(--honey)]/80">
-                        {p.latencyMs > 0 ? `${p.latencyMs}ms` : "—"}
+                        {p.latencyMs !== null ? `${p.latencyMs}ms` : "—"}
                       </span>
                     </div>
                     <span className="absolute bottom-2 h-1 w-1 animate-ping rounded-full bg-[var(--honey)]" />
@@ -568,7 +568,7 @@ function HiveOrb() {
                   key={p.id}
                   className="animate-float-up relative flex h-[88px] w-20 items-center justify-center bg-card/80"
                   style={{ clipPath: HEX, animationDelay: `${i * 50}ms` }}
-                  title={`${p.name} · ${p.status} · ${p.latencyMs > 0 ? `${p.latencyMs}ms` : "latency unavailable"}`}
+                  title={`${p.name} · ${p.status} · ${p.latencyMs !== null ? `${p.latencyMs}ms` : p.probeReason}`}
                 >
                   <span
                     className="absolute top-2 h-1.5 w-1.5 rounded-full"
@@ -587,7 +587,7 @@ function HiveOrb() {
                     >
                       {p.status === "crit" || p.status === "offline"
                         ? "OFFLINE"
-                        : p.latencyMs > 0
+                        : p.latencyMs !== null
                           ? `${p.latencyMs}ms`
                           : "—"}
                     </span>
@@ -824,7 +824,13 @@ function ProductCard({ product, index, pulse }: { product: Product; index: numbe
               /* One point is not a series. Drawing a flat line from a single probe
                  would imply a stable history that has not been observed yet. */
               <div className="py-2 text-center font-display text-[9px] uppercase tracking-wider text-muted-foreground">
-                {probes.loading ? "reading probes…" : "not enough probes yet"}
+                {probes.loading
+                  ? "reading probes…"
+                  : probes.state === "failed"
+                    ? `probe read failed · ${probes.reason}`
+                    : probes.state !== "observed"
+                      ? probes.reason
+                      : "probe history observed · no samples yet"}
               </div>
             )}
           </div>

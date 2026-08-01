@@ -29,6 +29,13 @@ export interface ProbeStats {
   latest: number | null;
 }
 
+export type ProbeEvidenceState = "observed" | "failed" | "not_observed" | "not_applicable";
+
+interface ProbeEvidence {
+  state: ProbeEvidenceState;
+  reason: string;
+}
+
 const BASE = "/api/products/hive-core";
 
 interface Envelope<T> {
@@ -39,7 +46,10 @@ export async function fetchProbes(slug: string, signal?: AbortSignal): Promise<P
   const response = await apiFetch(`${BASE}/products/${slug}/probes`, { signal });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   const body = (await response.json()) as Envelope<ProbeSample[]>;
-  return body.data ?? [];
+  if (!Array.isArray(body.data)) {
+    throw new Error("Probe response did not contain an observed sample collection.");
+  }
+  return body.data;
 }
 
 function percentile(sorted: number[], p: number): number | null {
@@ -75,20 +85,54 @@ export function summarise(probes: ProbeSample[]): ProbeStats {
 }
 
 /** Retained probes for one product, refreshed when the live sync ticks. */
-export function useProbes(slug: string | null, syncVersion = 0): ProbeStats & { loading: boolean } {
+export function useProbes(
+  slug: string | null,
+  syncVersion = 0,
+): ProbeStats & ProbeEvidence & { loading: boolean } {
   const [probes, setProbes] = useState<ProbeSample[]>([]);
+  const [evidence, setEvidence] = useState<ProbeEvidence>({
+    state: "not_observed",
+    reason: "Probe history has not been requested yet.",
+  });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!slug) return;
+    if (!slug) {
+      setProbes([]);
+      setEvidence({ state: "not_observed", reason: "No product was selected." });
+      setLoading(false);
+      return;
+    }
+    if (slug === "hive-core") {
+      setProbes([]);
+      setEvidence({
+        state: "not_applicable",
+        reason: "HiveCore reads itself in-process; there is no network probe.",
+      });
+      setLoading(false);
+      return;
+    }
     const controller = new AbortController();
     setLoading(true);
     fetchProbes(slug, controller.signal)
-      .then(setProbes)
-      .catch(() => setProbes([]))
+      .then((samples) => {
+        setProbes(samples);
+        setEvidence({
+          state: "observed",
+          reason: samples.length === 0 ? "Probe history was observed and is empty." : "",
+        });
+      })
+      .catch((cause) => {
+        if (cause instanceof DOMException && cause.name === "AbortError") return;
+        setProbes([]);
+        setEvidence({
+          state: "failed",
+          reason: cause instanceof Error ? cause.message : "Probe history could not be read.",
+        });
+      })
       .finally(() => setLoading(false));
     return () => controller.abort();
   }, [slug, syncVersion]);
 
-  return { ...summarise(probes), loading };
+  return { ...summarise(probes), ...evidence, loading };
 }

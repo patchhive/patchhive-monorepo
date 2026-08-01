@@ -150,53 +150,134 @@ pub struct ProductSettingsItem {
     pub updated_at: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProductHealthSnapshot {
-    pub status: String,
-    /// Round-trip time of this /health probe, in milliseconds.
-    ///
-    /// Measured, not modelled. The deck previously rendered a per-product latency
-    /// that came from a seeded constant in its own source — a number on a card that
-    /// looked like an observation and was a literal.
-    #[serde(default)]
-    pub latency_ms: Option<u64>,
-    pub reachable: bool,
-    pub version: String,
-    pub capabilities_ok: bool,
-    pub action_count: u32,
-    pub runs_ok: bool,
-    pub run_count: u32,
-    pub config_errors: u32,
-    pub startup_errors: u32,
-    pub startup_warns: u32,
-    pub startup_infos: u32,
-    pub db_ok: Option<bool>,
-    pub checked_at: String,
-    pub error: String,
-    pub runs_error: String,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProductHealthStatus {
+    Online,
+    Degraded,
+    Offline,
+    Disabled,
+    Unconfigured,
 }
 
-impl Default for ProductHealthSnapshot {
-    fn default() -> Self {
-        Self {
-            status: "unknown".into(),
-            latency_ms: None,
-            reachable: false,
-            version: String::new(),
-            capabilities_ok: false,
-            action_count: 0,
-            runs_ok: false,
-            run_count: 0,
-            config_errors: 0,
-            startup_errors: 0,
-            startup_warns: 0,
-            startup_infos: 0,
-            db_ok: None,
-            checked_at: now_rfc3339(),
-            error: String::new(),
-            runs_error: String::new(),
+impl ProductHealthStatus {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Online => "online",
+            Self::Degraded => "degraded",
+            Self::Offline => "offline",
+            Self::Disabled => "disabled",
+            Self::Unconfigured => "unconfigured",
         }
     }
+
+    pub const fn is_reachable(self) -> bool {
+        matches!(self, Self::Online | Self::Degraded)
+    }
+}
+
+impl std::fmt::Display for ProductHealthStatus {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+/// Evidence from an attempted observation.
+///
+/// This type intentionally has no `Default`. An endpoint that returned an empty
+/// collection, an endpoint that failed, an endpoint that was never queried, and an
+/// endpoint that does not apply are four different facts for an operator.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum Observation<T> {
+    Observed { value: T },
+    Failed { reason: String },
+    NotObserved { reason: String },
+    NotApplicable { reason: String },
+}
+
+impl<T> Observation<T> {
+    pub fn observed(value: T) -> Self {
+        Self::Observed { value }
+    }
+
+    pub fn failed(reason: impl Into<String>) -> Self {
+        Self::Failed {
+            reason: reason.into(),
+        }
+    }
+
+    pub fn not_observed(reason: impl Into<String>) -> Self {
+        Self::NotObserved {
+            reason: reason.into(),
+        }
+    }
+
+    pub fn not_applicable(reason: impl Into<String>) -> Self {
+        Self::NotApplicable {
+            reason: reason.into(),
+        }
+    }
+
+    pub const fn value(&self) -> Option<&T> {
+        match self {
+            Self::Observed { value } => Some(value),
+            Self::Failed { .. } | Self::NotObserved { .. } | Self::NotApplicable { .. } => None,
+        }
+    }
+
+    pub fn reason(&self) -> Option<&str> {
+        match self {
+            Self::Observed { .. } => None,
+            Self::Failed { reason }
+            | Self::NotObserved { reason }
+            | Self::NotApplicable { reason } => Some(reason),
+        }
+    }
+
+    pub const fn is_observed(&self) -> bool {
+        matches!(self, Self::Observed { .. })
+    }
+
+    pub const fn is_failed(&self) -> bool {
+        matches!(self, Self::Failed { .. })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HealthEndpointEvidence {
+    pub reported_status: Observation<String>,
+    pub latency_ms: u64,
+    pub config_errors: Observation<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StartupChecksEvidence {
+    pub errors: u32,
+    pub warnings: u32,
+    pub infos: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CapabilitiesEvidence {
+    pub action_count: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RunsEvidence {
+    pub run_count: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProductHealthSnapshot {
+    pub status: ProductHealthStatus,
+    pub health_endpoint: Observation<HealthEndpointEvidence>,
+    pub version: Observation<String>,
+    pub database_ok: Observation<bool>,
+    pub startup_checks: Observation<StartupChecksEvidence>,
+    pub capabilities: Observation<CapabilitiesEvidence>,
+    pub runs: Observation<RunsEvidence>,
+    pub checked_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -423,10 +504,8 @@ pub struct ProductRunsSnapshotResponse {
     pub machine_auth_configured: bool,
     pub service_token_configured: bool,
     pub legacy_api_key_configured: bool,
-    pub runs_ok: bool,
     pub checked_at: String,
-    pub error: String,
-    pub runs: Vec<contract::ProductRunSummary>,
+    pub runs: Observation<Vec<contract::ProductRunSummary>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -740,6 +819,33 @@ pub struct ProductActionEvent {
     pub response_json: Value,
     pub error: String,
     pub created_at: String,
+}
+
+#[cfg(test)]
+mod evidence_tests {
+    use super::Observation;
+    use serde_json::json;
+
+    #[test]
+    fn empty_observation_is_not_a_failed_or_missing_observation() {
+        let observed = serde_json::to_value(Observation::observed(Vec::<String>::new()))
+            .expect("observed evidence should serialize");
+        let failed = serde_json::to_value(Observation::<Vec<String>>::failed("database error"))
+            .expect("failed evidence should serialize");
+        let missing =
+            serde_json::to_value(Observation::<Vec<String>>::not_observed("not requested"))
+                .expect("missing evidence should serialize");
+
+        assert_eq!(observed, json!({"state": "observed", "value": []}));
+        assert_eq!(
+            failed,
+            json!({"state": "failed", "reason": "database error"})
+        );
+        assert_eq!(
+            missing,
+            json!({"state": "not_observed", "reason": "not requested"})
+        );
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

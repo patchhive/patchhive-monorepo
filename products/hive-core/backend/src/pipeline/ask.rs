@@ -58,7 +58,18 @@ async fn build_context(state: &AppState) -> Value {
     let product_context: Vec<Value> = products
         .iter()
         .map(|product| {
-            let probes = db::product_probes(&product.slug);
+            let (probes, probe_history) = match db::product_probes(&product.slug) {
+                Ok(probes) => {
+                    let observation = crate::models::Observation::observed(probes.len());
+                    (probes, observation)
+                }
+                Err(error) => (
+                    Vec::new(),
+                    crate::models::Observation::failed(format!(
+                        "Could not read retained probes: {error}"
+                    )),
+                ),
+            };
             let healthy = probes.iter().filter(|probe| probe.healthy).count();
             let latencies: Vec<u64> = probes
                 .iter()
@@ -85,10 +96,11 @@ async fn build_context(state: &AppState) -> Value {
                 "name": product.title,
                 "enabled": product.enabled,
                 "status": product.status,
-                "health": product.health.status,
-                "startup_errors": product.health.startup_errors,
-                "startup_warnings": product.health.startup_warns,
-                "advertised_actions": product.actions.len(),
+                "health_status": product.health.status,
+                "health_endpoint": product.health.health_endpoint,
+                "startup_checks": product.health.startup_checks,
+                "capabilities": product.health.capabilities,
+                "runs": product.health.runs,
                 "contract_checks_not_ok": product
                     .contract_checks
                     .iter()
@@ -97,7 +109,7 @@ async fn build_context(state: &AppState) -> Value {
                 "service_token_configured": product.service_token_configured,
                 "median_latency_ms": median,
                 "uptime_percent": uptime,
-                "probe_observations": probes.len(),
+                "probe_history": probe_history,
             })
         })
         .collect();

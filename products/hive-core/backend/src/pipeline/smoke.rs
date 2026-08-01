@@ -398,32 +398,33 @@ async fn smoke_runtime_checks(
         json!({
             "status": runtime.status,
             "api_url": runtime.api_url,
-            "db_ok": runtime.health.db_ok,
+            "health_endpoint": runtime.health.health_endpoint,
         }),
     );
 
-    let mut startup_status = if runtime.health.startup_errors > 0 {
-        "fail"
-    } else if runtime.health.startup_warns > 0 {
-        "warn"
-    } else {
-        "pass"
+    let startup = runtime.health.startup_checks.value();
+    let mut startup_status = match startup {
+        Some(summary) if summary.errors > 0 => "fail",
+        Some(summary) if summary.warnings > 0 => "warn",
+        Some(_) => "pass",
+        None => "fail",
     };
-    let mut startup_message = if runtime.health.startup_errors > 0 {
-        "Startup checks have blocking errors."
-    } else if runtime.health.startup_warns > 0 {
-        "Startup checks have warnings, but no blocking errors."
-    } else {
-        "Startup checks have no blocking errors or warnings."
-    }
-    .to_string();
-    let mut evidence = json!({
-        "startup_errors": runtime.health.startup_errors,
-        "startup_warns": runtime.health.startup_warns,
-        "startup_infos": runtime.health.startup_infos,
-    });
+    let mut startup_message = match startup {
+        Some(summary) if summary.errors > 0 => "Startup checks have blocking errors.".into(),
+        Some(summary) if summary.warnings > 0 => {
+            "Startup checks have warnings, but no blocking errors.".into()
+        }
+        Some(_) => "Startup checks have no blocking errors or warnings.".into(),
+        None => runtime
+            .health
+            .startup_checks
+            .reason()
+            .unwrap_or("Startup checks were not observed.")
+            .into(),
+    };
+    let mut evidence = json!(runtime.health.startup_checks);
 
-    if runtime.health.startup_errors == 0 && runtime.health.startup_warns > 0 {
+    if startup.is_some_and(|summary| summary.errors == 0 && summary.warnings > 0) {
         match fetch_startup_warning_messages(state, api_url, auth).await {
             Ok(warnings)
                 if !warnings.is_empty()
@@ -742,7 +743,21 @@ async fn smoke_safe_action(
         return;
     }
 
-    if runtime.health.startup_errors > 0 {
+    let Some(startup) = runtime.health.startup_checks.value() else {
+        push_step!(
+            steps,
+            &runtime.slug,
+            &runtime.title,
+            "safe-action",
+            "skip",
+            "Skipped safe action because startup checks were not observed.",
+            None,
+            json!(runtime.health.startup_checks),
+        );
+        return;
+    };
+
+    if startup.errors > 0 {
         push_step!(
             steps,
             &runtime.slug,

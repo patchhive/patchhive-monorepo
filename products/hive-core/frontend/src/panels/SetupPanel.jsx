@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Btn, EmptyState, Input, S, Tag } from "@patchhivehq/ui";
+import { healthEvidence, observationLabel } from "../health-evidence.js";
 
 const FIRST_STACK_SLUGS = ["signal-hive", "trust-gate", "repo-reaper"];
 const LANE_ORDER = [
@@ -1729,6 +1730,7 @@ function ProductCard({
   const githubTokenDraft = Object.entries(credentialDraft)
     .find(([key, value]) => key.includes("GITHUB_TOKEN") && value?.trim?.())?.[1] || "";
   const canStart = Boolean(launcher?.start_ready);
+  const runtimeEvidence = healthEvidence(item.runtime.health);
   return (
     <div
       style={commandSurfaceStyle(statusColor(item.runtime.status), { display: "grid", gap: 12 })}
@@ -1759,14 +1761,19 @@ function ProductCard({
         <div style={{ color: "var(--text-dim)" }}>
           Frontend: <span style={{ color: "var(--text)" }}>{item.runtime.frontend_url}</span>
         </div>
-        {item.runtime.health.startup_errors > 0 && (
+        {runtimeEvidence.startup?.errors > 0 && (
           <div style={{ color: "var(--accent)" }}>
-            {item.runtime.health.startup_errors} startup error{item.runtime.health.startup_errors === 1 ? "" : "s"}
+            {runtimeEvidence.startup.errors} startup error{runtimeEvidence.startup.errors === 1 ? "" : "s"}
           </div>
         )}
-        {item.runtime.health.startup_warns > 0 && (
+        {runtimeEvidence.startup?.warnings > 0 && (
           <div style={{ color: "var(--gold)" }}>
-            {item.runtime.health.startup_warns} startup warn{item.runtime.health.startup_warns === 1 ? "" : "s"}
+            {runtimeEvidence.startup.warnings} startup warn{runtimeEvidence.startup.warnings === 1 ? "" : "s"}
+          </div>
+        )}
+        {!runtimeEvidence.startup && (
+          <div style={{ color: "var(--text-dim)" }}>
+            Startup checks: {observationLabel(item.runtime.health.startup_checks)}
           </div>
         )}
         {item.auth_status_error && <div style={{ color: "var(--gold)" }}>{item.auth_status_error}</div>}

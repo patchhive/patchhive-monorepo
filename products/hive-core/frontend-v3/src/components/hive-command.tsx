@@ -508,7 +508,7 @@ export function HiveCommand() {
         tail: (
           <span className="flex items-center gap-2">
             <span className="font-display text-[10px] text-muted-foreground">
-              {p.status === "crit" ? "—" : `${p.latencyMs}ms`}
+              {p.status === "crit" || p.latencyMs === null ? "—" : `${p.latencyMs}ms`}
             </span>
             <span className={`h-1.5 w-1.5 rounded-full ${statusDotCls[p.status]}`} />
           </span>
