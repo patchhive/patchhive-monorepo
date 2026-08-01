@@ -7,8 +7,9 @@ use serde_json::{json, Value};
 use crate::models::{ProductOverride, ProductOverrideInput};
 
 mod ai;
+mod ask;
 pub mod dispatch;
-mod overview;
+pub(crate) mod overview;
 mod policy;
 mod provision;
 pub mod routes;
@@ -19,6 +20,7 @@ mod smoke;
 mod suite_runs;
 
 pub use ai::{explain_failure, summarize_incident};
+pub use ask::ask;
 pub mod types;
 
 pub use types::{

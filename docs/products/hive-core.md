@@ -257,6 +257,15 @@ in dispatch or a suite run, where approval, scope and credential guards already 
 a diagnostic panel must not become a side door around them. Unreachability halts the
 pass rather than cascading into four more failures that all mean "it is not running".
 
+`POST /ask` answers a natural-language question about suite state, streamed as plain
+text. The grounding is assembled server-side from product runtime status, measured probe
+latency and uptime, contract drift, and recent run outcomes — the browser sends a question
+and nothing else. It previously built the context itself and passed per-product latency,
+uptime and 24h run counts that were seeded constants in its own source; a model reasoning
+carefully over invented inputs produces confident, well-argued, wrong answers. Context is
+bounded (recent runs capped per product) because an unbounded one is both a cost and an
+accuracy problem. The answer describes state and authorises nothing.
+
 HiveCore uses two HTTP clients. Polling (health, startup checks, capabilities, auth
 status) keeps a 4-second ceiling — a product that cannot answer "are you alive" quickly
 is not alive for dashboard purposes. Dispatch uses `HIVE_CORE_DISPATCH_TIMEOUT_SECS`,

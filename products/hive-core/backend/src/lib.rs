@@ -169,6 +169,8 @@ pub fn router() -> Router {
         )
         .route("/runbooks", get(pipeline::list_runbook_runs))
         .route("/products/:slug/probes", get(pipeline::product_probes))
+        // Ask the Hive: a grounded reading of suite state, streamed as plain text.
+        .route("/ask", axum::routing::post(pipeline::ask))
         .route(
             "/incidents/summarize",
             axum::routing::post(pipeline::summarize_incident),

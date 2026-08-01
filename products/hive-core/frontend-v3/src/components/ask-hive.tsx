@@ -1,44 +1,20 @@
 import { useRef, useState } from "react";
 import { AlertCircle, CheckCircle2, Loader2, Play, Repeat, Send, Sparkles, Square, Trash2 } from "lucide-react";
-import { PRODUCTS, RUNS } from "@/lib/hive-data";
-import { deriveIncidents } from "@/lib/hive-extra";
 import { toast } from "sonner";
 import { useHiveCommand } from "./hive-command";
 import { apiFetch } from "@/lib/http";
 
-function buildContext() {
-  return JSON.stringify(
-    {
-      products: PRODUCTS.map((p) => ({
-        id: p.id,
-        name: p.name,
-        status: p.status,
-        latencyMs: p.latencyMs,
-        uptime: p.uptime,
-        runs24h: p.runs24h,
-        capabilities: p.capabilities,
-        contractDrift: p.contractDrift,
-      })),
-      recentRuns: RUNS.map((r) => ({
-        id: r.id,
-        product: r.product,
-        capability: r.capability,
-        status: r.status,
-        durationMs: r.durationMs,
-        ts: r.ts,
-      })),
-      incidents: deriveIncidents(RUNS, PRODUCTS).map((i) => ({
-        productId: i.productId,
-        severity: i.severity,
-        summary: i.summary,
-        openedAt: i.from,
-        closedAt: i.to,
-      })),
-    },
-    null,
-    2,
-  );
-}
+/**
+ * The context is built by HiveCore, not here.
+ *
+ * The deck used to assemble the grounding and POST it with the question, which put the
+ * model's evidence under the control of the least trustworthy participant — and it sent
+ * the wrong thing: the per-product latency, uptime and 24h run counts it passed were
+ * seeded constants from this codebase, not measurements. A model reasoning carefully
+ * over invented inputs produces confident, well-argued, wrong answers.
+ *
+ * The browser now sends a question and nothing else.
+ */
 
 const SUGGESTIONS = [
   "Which products are currently degraded?",
@@ -78,12 +54,9 @@ export function AskHive() {
     const controller = new AbortController();
     abortRef.current = controller;
     try {
-      const body: Record<string, string> = {
-        question,
-        context: buildContext(),
-      };
+      const body: Record<string, string> = { question };
       if (opts?.resumeFrom) body.resumeFrom = opts.resumeFrom;
-      const res = await apiFetch("/ask", {
+      const res = await apiFetch("/api/products/hive-core/ask", {
         method: "POST",
         body: JSON.stringify(body),
         signal: controller.signal,
