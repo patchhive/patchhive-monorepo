@@ -43,7 +43,6 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
             true,
         )
         .read_only(true)
-        .scheduleable(true)
         .credential_requirements(["github:actions:read"])],
         vec![
             contract::link("overview", "Overview", "/overview"),

@@ -32,13 +32,15 @@ pub fn openai_base_url() -> String {
 }
 
 pub fn is_local_openai_base(base: &str) -> bool {
-    let base = normalize(base);
-    if configured_url().is_some_and(|configured| normalize(&configured) == base) {
-        return true;
-    }
-
-    let lower = base.to_ascii_lowercase();
-    lower.contains("127.0.0.1") || lower.contains("localhost")
+    reqwest::Url::parse(base)
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_ascii_lowercase))
+        .is_some_and(|host| {
+            host == "localhost"
+                || host
+                    .parse::<std::net::IpAddr>()
+                    .is_ok_and(|address| address.is_loopback())
+        })
 }
 
 pub async fn fetch_status(http: &Client) -> Value {

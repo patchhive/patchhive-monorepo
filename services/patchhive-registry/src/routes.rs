@@ -39,8 +39,17 @@ async fn health(State(state): State<Arc<AppState>>) -> Json<HealthResponse> {
 
 async fn register_install(
     State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
     Json(request): Json<RegisterInstallRequest>,
 ) -> Result<(StatusCode, Json<RegisterInstallResponse>), ApiError> {
+    if let Some(expected) = state.registration_key.as_deref() {
+        let presented = headers
+            .get("x-patchhive-registry-registration-key")
+            .and_then(|value| value.to_str().ok());
+        if presented != Some(expected) {
+            return Err(unauthorized("Invalid registry registration key."));
+        }
+    }
     let response = state
         .store
         .register_install(request)

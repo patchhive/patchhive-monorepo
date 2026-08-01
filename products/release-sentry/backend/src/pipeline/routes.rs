@@ -198,6 +198,11 @@ pub async fn check_github_release(
             "Repository must be in owner/name format.",
         ));
     }
+    let decision = db::repository_allowed(repo)
+        .map_err(|error| api_error(StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?;
+    if !decision.allowed {
+        return Err(api_error(StatusCode::FORBIDDEN, decision.reason));
+    }
 
     let result = build_release_readiness(&state, request)
         .await

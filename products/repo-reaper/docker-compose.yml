@@ -1,9 +1,12 @@
 services:
   backend:
     image: "${PATCHHIVE_REPO_REAPER_BACKEND_IMAGE:-ghcr.io/patchhive/reporeaper-backend}:${PATCHHIVE_IMAGE_TAG:-main}"
-    build: ./backend
+    build:
+      context: ../..
+      dockerfile: docker/backend-product.Dockerfile
+      args: { PRODUCT_SLUG: repo-reaper, BINARY_NAME: repo-reaper }
     pull_policy: "${PATCHHIVE_IMAGE_PULL_POLICY:-missing}"
-    user: "${PATCHHIVE_BACKEND_UID:-0}:${PATCHHIVE_BACKEND_GID:-0}"
+    user: "${PATCHHIVE_BACKEND_UID:-10001}:${PATCHHIVE_BACKEND_GID:-10001}"
     ports:
       - "8000:8000"
     volumes:
@@ -22,6 +25,7 @@ services:
     build:
       context: ../..
       dockerfile: products/repo-reaper/frontend/Dockerfile
+      args: { VITE_API_URL: "http://127.0.0.1:8000" }
     pull_policy: "${PATCHHIVE_IMAGE_PULL_POLICY:-missing}"
     ports:
       - "5173:8080"

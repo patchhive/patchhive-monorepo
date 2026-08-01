@@ -91,8 +91,15 @@ fn model_name() -> String {
 }
 
 fn is_local(base: &str) -> bool {
-    let lower = base.to_ascii_lowercase();
-    lower.contains("127.0.0.1") || lower.contains("localhost")
+    reqwest::Url::parse(base)
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_ascii_lowercase))
+        .is_some_and(|host| {
+            host == "localhost"
+                || host
+                    .parse::<std::net::IpAddr>()
+                    .is_ok_and(|address| address.is_loopback())
+        })
 }
 
 /// One chat completion against the configured OpenAI-compatible gateway.
@@ -126,9 +133,15 @@ async fn complete(state: &AppState, system: &str, user: String) -> Result<Genera
         .json(&body);
 
     match nonempty_env("PATCHHIVE_AI_API_KEY").or_else(|| nonempty_env("OPENAI_API_KEY")) {
+        _ if is_local(&base) => match nonempty_env("PATCHHIVE_AI_GATEWAY_API_KEY") {
+            Some(key) => request = request.bearer_auth(key),
+            None => {
+                return Err(
+                    "PATCHHIVE_AI_GATEWAY_API_KEY is required for the local AI gateway.".into(),
+                )
+            }
+        },
         Some(key) => request = request.bearer_auth(key),
-        // A local gateway holds the real provider key itself; it accepts any bearer.
-        None if is_local(&base) => request = request.bearer_auth("patchhive-local"),
         None => {
             return Err(format!(
                 "AI gateway {base} is not local and no key is configured. \

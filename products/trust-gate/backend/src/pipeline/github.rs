@@ -3,6 +3,9 @@
 use axum::http::StatusCode;
 
 use patchhive_github_pr::verify_github_webhook_signature;
+use patchhive_product_core::hivecore_policy::{
+    check_repository_policy, RepositoryPolicyDecisionRequest,
+};
 
 use crate::github;
 use crate::models::{GitHubReviewContext, RepoRuleSet, ReviewResult};
@@ -38,6 +41,36 @@ pub async fn run_github_pr_review(
         return Err(api_error(
             StatusCode::BAD_REQUEST,
             "TrustGate expects a positive pull request number.",
+        ));
+    }
+
+    if !crate::db::repo_scope_policy()
+        .map_err(|err| api_error(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?
+        .allows(&repo)
+    {
+        return Err(api_error(
+            StatusCode::FORBIDDEN,
+            "Repository policy blocks TrustGate from reviewing this repository.",
+        ));
+    }
+    let policy = check_repository_policy(
+        client,
+        &RepositoryPolicyDecisionRequest {
+            repository: repo.clone(),
+            product: "trust-gate".into(),
+            operation: if input.publish_status {
+                "github_status_publish".into()
+            } else {
+                "read_only_review".into()
+            },
+        },
+    )
+    .await
+    .map_err(|err| api_error(StatusCode::BAD_GATEWAY, err.to_string()))?;
+    if policy.as_ref().is_some_and(|decision| !decision.allowed()) {
+        return Err(api_error(
+            StatusCode::FORBIDDEN,
+            "Repository policy blocks TrustGate from reviewing this repository.",
         ));
     }
 

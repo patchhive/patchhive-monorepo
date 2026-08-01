@@ -46,7 +46,7 @@ These are not product-prefixed. They appear across multiple products:
 | FlakeSting | `FLAKE_STING_` | Full canonical set. |
 | RefactorScout | `REFACTOR_SCOUT_` | Adds `ALLOWED_ROOTS`, `ALLOW_REMOTE_FS`, `CLONE_TIMEOUT_SECS` (filesystem sandbox controls). |
 | ReleaseSentry | `RELEASE_SENTRY_` | Full canonical set. |
-| RepoMemory | `REPO_MEMORY_` | **Missing `_DB_POOL_SIZE`** — has `_DB_PATH` only. |
+| RepoMemory | `REPO_MEMORY_` | Full canonical set. |
 | RepoReaper | `REAPER_` | Broadest set (AI provider keys, sandbox caps, encryption). |
 | ReviewBee | `REVIEW_BEE_` | Full canonical set. |
 | SignalHive | `SIGNAL_` | Adds `SIGNAL_MARKER_REPO_LIMIT`. |
@@ -64,9 +64,7 @@ be reconciled deliberately rather than copied forward:
    `TRUST_GITHUB_WEBHOOK_SECRET`, `TRUST_SERVICE_TOKEN_HASH` but `TRUSTGATE_PORT`,
    `TRUSTGATE_PUBLIC_URL`, `TRUSTGATE_DB_POOL_SIZE`. New code should pick one (`TRUSTGATE_` is
    the more complete set); old `TRUST_` vars should be aliased or migrated.
-2. **RepoMemory missing `_DB_POOL_SIZE`.** It defines `REPO_MEMORY_DB_PATH` but not the pool-size
-   companion that every other DB-backed product has. Add `REPO_MEMORY_DB_POOL_SIZE` for parity.
-3. **HiveCore dual spelling.** `HIVE_CORE_API_KEY_HASH` / `HIVE_CORE_PORT` coexist with
+2. **HiveCore dual spelling.** `HIVE_CORE_API_KEY_HASH` / `HIVE_CORE_PORT` coexist with
    `HIVECORE_ENCRYPTION_KEY`. Prefer `HIVE_CORE_` for product-scoped vars.
 
 ## Rules for Adding a New Variable

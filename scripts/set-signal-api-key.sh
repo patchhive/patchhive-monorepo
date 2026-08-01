@@ -48,9 +48,11 @@ write_hash() {
   local env_file="$1"
   local hash="$2"
   local tmp_file
+  local write_file
 
   mkdir -p "$(dirname "$env_file")"
   touch "$env_file"
+  write_file="$(readlink -f "$env_file")"
   tmp_file="$(mktemp /tmp/signalhive-env-XXXXXX)"
 
   awk -v key="SIGNAL_API_KEY_HASH" -v hash="$hash" '
@@ -70,7 +72,7 @@ write_hash() {
     }
   ' "$env_file" > "$tmp_file"
 
-  mv "$tmp_file" "$env_file"
+  mv "$tmp_file" "$write_file"
 }
 
 STDIN_MODE=0

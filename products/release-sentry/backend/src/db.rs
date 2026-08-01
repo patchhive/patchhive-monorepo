@@ -30,6 +30,7 @@ pub fn health_check() -> bool {
 
 pub fn init_db() -> Result<()> {
     let conn = connect()?;
+    patchhive_product_core::repo_policy::init_and_migrate(&conn, "release-sentry")?;
     conn.execute_batch(
         r#"
         CREATE TABLE IF NOT EXISTS release_sentry_runs (
@@ -54,6 +55,13 @@ pub fn init_db() -> Result<()> {
         "#,
     )?;
     Ok(())
+}
+
+pub fn repository_allowed(
+    repository: &str,
+) -> Result<patchhive_product_core::repo_policy::Decision> {
+    let conn = connect()?;
+    patchhive_product_core::repo_policy::evaluate(&conn, repository, "release-sentry", "scan")
 }
 
 pub fn save_run(run: &ReleaseReadinessResult) -> Result<()> {

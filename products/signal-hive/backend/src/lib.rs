@@ -379,10 +379,19 @@ async fn add_repo_list(
 
 async fn remove_repo_list(
     axum::extract::Path(repo): axum::extract::Path<String>,
+    axum::extract::Query(query): axum::extract::Query<RepoListDeleteQuery>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let Some(repo) = db::normalize_repo_name(&repo) else {
         return Err(StatusCode::BAD_REQUEST);
     };
-    db::delete_repo_list(&repo).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let Some(list_type) = db::normalize_repo_list_type(&query.list_type) else {
+        return Err(StatusCode::BAD_REQUEST);
+    };
+    db::delete_repo_list(&repo, list_type).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(json!({ "ok": true })))
+}
+
+#[derive(serde::Deserialize)]
+struct RepoListDeleteQuery {
+    list_type: String,
 }

@@ -1,9 +1,12 @@
 services:
   backend:
     image: "${PATCHHIVE_DEP_TRIAGE_BACKEND_IMAGE:-ghcr.io/patchhive/deptriage-backend}:${PATCHHIVE_IMAGE_TAG:-main}"
-    build: ./backend
+    build:
+      context: ../..
+      dockerfile: docker/backend-product.Dockerfile
+      args: { PRODUCT_SLUG: dep-triage, BINARY_NAME: dep-triage }
     pull_policy: "${PATCHHIVE_IMAGE_PULL_POLICY:-missing}"
-    user: "${PATCHHIVE_BACKEND_UID:-0}:${PATCHHIVE_BACKEND_GID:-0}"
+    user: "${PATCHHIVE_BACKEND_UID:-10001}:${PATCHHIVE_BACKEND_GID:-10001}"
     ports:
       - "8070:8000"
     volumes:
@@ -21,6 +24,7 @@ services:
     build:
       context: ../..
       dockerfile: products/dep-triage/frontend/Dockerfile
+      args: { VITE_API_URL: "http://127.0.0.1:8070" }
     pull_policy: "${PATCHHIVE_IMAGE_PULL_POLICY:-missing}"
     ports:
       - "5180:8080"

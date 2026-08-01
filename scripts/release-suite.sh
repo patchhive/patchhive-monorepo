@@ -256,9 +256,9 @@ pack_package() {
     echo "[dry-run] npm --workspace ${npm_name} pack --pack-destination ${RELEASE_DIR}"
     return 0
   fi
-  npm --cache "$NPM_CACHE_DIR" --workspace "$npm_name" pack --pack-destination "$RELEASE_DIR" >/tmp/patchhive-pack-output.txt
+  npm --cache "$NPM_CACHE_DIR" --workspace "$npm_name" pack --pack-destination "$RELEASE_DIR" >"$PACK_OUTPUT"
   local tarball
-  tarball="$(tail -n 1 /tmp/patchhive-pack-output.txt)"
+  tarball="$(tail -n 1 "$PACK_OUTPUT")"
   PACKAGE_TARBALLS[$package]="${RELEASE_DIR}/${tarball}"
   echo "Packed ${PACKAGE_TARBALLS[$package]}"
 }
@@ -405,7 +405,8 @@ export_product_mirror() {
 }
 
 RELEASE_DIR="$(mktemp -d "/tmp/patchhive-release-suite-XXXXXX")"
-trap 'rm -rf "$RELEASE_DIR" /tmp/patchhive-pack-output.txt' EXIT
+PACK_OUTPUT="$(mktemp "/tmp/patchhive-pack-output-XXXXXX")"
+trap 'rm -rf "$RELEASE_DIR"; rm -f "$PACK_OUTPUT"' EXIT
 declare -A PACKAGE_TARBALLS=()
 CI_FAILURES=()
 
@@ -425,6 +426,13 @@ fi
 for package in "${SELECTED_PACKAGES[@]}"; do
   pack_package "$package"
 done
+
+if [[ ${#SELECTED_PRODUCTS[@]} -gt 0 && ${#SELECTED_PACKAGES[@]} -eq 0 && "$SKIP_PRODUCT_SMOKE" == false ]]; then
+  echo "Packing shared packages locally for product smoke checks; --packages none still skips publishing."
+  for package in "${PATCHHIVE_SHARED_PACKAGES[@]}"; do
+    pack_package "$package"
+  done
+fi
 
 for product in "${SELECTED_PRODUCTS[@]}"; do
   smoke_product_frontend "$product"

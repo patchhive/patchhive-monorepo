@@ -102,7 +102,14 @@ pub fn configured_port(port_env: &str, default_port: u16) -> u16 {
 
 pub fn listen_addr(port_env: &str, default_port: u16) -> String {
     let bind_addr = std::env::var("PATCHHIVE_BIND_ADDR").unwrap_or_else(|_| "0.0.0.0".to_string());
-    format!("{bind_addr}:{}", configured_port(port_env, default_port))
+    let port = configured_port(port_env, default_port);
+    if let Ok(socket) = bind_addr.parse::<std::net::SocketAddr>() {
+        std::net::SocketAddr::new(socket.ip(), port).to_string()
+    } else if let Ok(ip) = bind_addr.parse::<std::net::IpAddr>() {
+        std::net::SocketAddr::new(ip, port).to_string()
+    } else {
+        format!("{bind_addr}:{port}")
+    }
 }
 
 pub fn cors_layer() -> CorsLayer {

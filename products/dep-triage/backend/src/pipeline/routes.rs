@@ -42,7 +42,6 @@ pub async fn capabilities() -> Json<patchhive_product_core::contract::ProductCap
             true,
         )
         .read_only(true)
-        .scheduleable(true)
         .credential_requirements(["github:pull_requests:read", "github:dependabot:read"])],
         vec![
             patchhive_product_core::contract::link("overview", "Overview", "/overview"),

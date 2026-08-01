@@ -5,7 +5,7 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "dev": "vite --port 5300",
+    "dev": "vite --port 5181",
     "build": "vite build",
     "preview": "vite preview --port 4300"
   },

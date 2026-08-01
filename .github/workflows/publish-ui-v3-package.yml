@@ -5,6 +5,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   publish-ui-v3:
@@ -20,12 +21,17 @@ jobs:
           node-version: 24
           registry-url: https://registry.npmjs.org
 
+      - name: Install and verify workspace
+        run: |
+          npm ci
+          npm run check:suite-drift
+
       - name: Show package contents
         working-directory: packages/ui-v3
         run: npm pack --dry-run
 
       - name: Publish @patchhivehq/ui-v3 to npm
         working-directory: packages/ui-v3
-        run: npm publish --access public
+        run: npm publish --access public --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

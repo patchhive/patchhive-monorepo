@@ -54,7 +54,6 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
             // The write credential is declared for the same reason: an action that
             // reaches for MERGE_KEEPER_GITHUB_TOKEN_RW must say so.
             .mutating(true)
-            .scheduleable(true)
             .credential_requirements([
                 "github:pull_requests:read",
                 "github:checks:read",

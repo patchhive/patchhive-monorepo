@@ -72,10 +72,21 @@ impl RateLimiter {
         let window = self.config.window;
 
         let Ok(mut buckets) = self.buckets.lock() else {
-            tracing::warn!("rate limiter lock poisoned; allowing request");
-            return Ok(());
+            tracing::error!("rate limiter lock poisoned; rejecting request");
+            return Err(self.config.window.as_secs().max(1));
         };
 
+        if buckets.len() >= 100 && buckets.len() % 100 == 0 {
+            buckets.retain(|_, requests| {
+                while requests
+                    .front()
+                    .is_some_and(|seen| now.duration_since(*seen) >= self.config.window)
+                {
+                    requests.pop_front();
+                }
+                !requests.is_empty()
+            });
+        }
         let bucket = buckets.entry(key).or_default();
         while bucket
             .front()
@@ -98,10 +109,6 @@ impl RateLimiter {
         }
 
         bucket.push_back(now);
-        // W3: periodic sweep of empty buckets to prevent unbounded memory growth.
-        if buckets.len() % 100 == 0 {
-            buckets.retain(|_, v| !v.is_empty());
-        }
         Ok(())
     }
 }
@@ -117,7 +124,7 @@ pub async fn rate_limit_middleware(req: Request, next: Next) -> Response {
         .extensions()
         .get::<ConnectInfo<SocketAddr>>()
         .map(|ConnectInfo(addr)| *addr);
-    let identity = request_identity(req.headers(), peer_addr);
+    let identity = request_identity(req.headers(), peer_addr, sensitive);
     let bucket = if sensitive { "sensitive" } else { "standard" };
     let key = format!("{identity}:{bucket}");
 
@@ -159,16 +166,17 @@ fn is_sensitive_request(method: &Method, path: &str) -> bool {
         )
 }
 
-fn request_identity(headers: &HeaderMap, peer_addr: Option<SocketAddr>) -> String {
+fn request_identity(headers: &HeaderMap, peer_addr: Option<SocketAddr>, sensitive: bool) -> String {
+    let client = client_ip(headers, peer_addr, trust_proxy_enabled());
+    if sensitive {
+        return client
+            .map(|ip| format!("sensitive-peer:{}", hash_identity(&ip)))
+            .unwrap_or_else(|| "sensitive-unknown-peer".to_string());
+    }
     header_token(headers)
         .map(|token| format!("api:{}", hash_identity(&token)))
-        .unwrap_or_else(|| {
-            if let Some(ip) = client_ip(headers, peer_addr, trust_proxy_enabled()) {
-                format!("anon:{}", hash_identity(&ip))
-            } else {
-                "anonymous".to_string()
-            }
-        })
+        .or_else(|| client.map(|ip| format!("anon:{}", hash_identity(&ip))))
+        .unwrap_or_else(|| "anonymous".to_string())
 }
 
 fn trust_proxy_enabled() -> bool {
@@ -267,7 +275,7 @@ mod tests {
         let mut headers = HeaderMap::new();
         headers.insert("x-api-key", HeaderValue::from_static("secret-key"));
 
-        let identity = request_identity(&headers, Some("127.0.0.1:9000".parse().unwrap()));
+        let identity = request_identity(&headers, Some("127.0.0.1:9000".parse().unwrap()), false);
 
         assert!(identity.starts_with("api:"));
         assert!(!identity.contains("secret-key"));
@@ -276,8 +284,8 @@ mod tests {
     #[test]
     fn anonymous_identity_uses_the_socket_peer() {
         let headers = HeaderMap::new();
-        let first = request_identity(&headers, Some("192.0.2.10:4000".parse().unwrap()));
-        let second = request_identity(&headers, Some("192.0.2.11:4000".parse().unwrap()));
+        let first = request_identity(&headers, Some("192.0.2.10:4000".parse().unwrap()), false);
+        let second = request_identity(&headers, Some("192.0.2.11:4000".parse().unwrap()), false);
 
         assert!(first.starts_with("anon:"));
         assert_ne!(first, second);

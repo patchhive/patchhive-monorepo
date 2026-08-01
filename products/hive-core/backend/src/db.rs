@@ -592,10 +592,11 @@ pub fn commit_pr_reservation(
     let changed = tx.execute(
         r#"
         UPDATE pr_budget_reservations
-        SET status = 'committed', pr_url = ?2, updated_at = ?3
+        SET status = 'committed', pr_url = ?2, updated_at = ?3,
+            expires_at = datetime(?3, '+' || ?4 || ' days')
         WHERE id = ?1 AND status = 'reserved'
         "#,
-        params![id, pr_url, updated_at],
+        params![id, pr_url, updated_at, committed_pr_lease_days()],
     )?;
     let reservation = load_pr_reservation(&tx, id)?;
     if changed > 0 {
@@ -605,6 +606,11 @@ pub fn commit_pr_reservation(
     }
     tx.commit()?;
     Ok(reservation)
+}
+
+pub fn pr_budget_reservation(id: &str) -> rusqlite::Result<Option<PrBudgetReservation>> {
+    let conn = connect()?;
+    load_pr_reservation(&conn, id)
 }
 
 pub fn release_pr_reservation(
@@ -1181,12 +1187,16 @@ fn load_product_overrides(
         let service_token = protector
             .reveal_from_storage(&raw_service_token)
             .with_context(|| format!("failed to reveal HiveCore service token for {slug}"))?;
+        let raw_legacy_api_key = row.get::<_, String>(4)?;
+        let legacy_api_key = protector
+            .reveal_from_storage(&raw_legacy_api_key)
+            .with_context(|| format!("failed to reveal HiveCore legacy API key for {slug}"))?;
         let override_item = ProductOverride {
             slug: slug.clone(),
             frontend_url: row.get(1)?,
             api_url: row.get(2)?,
             service_token,
-            legacy_api_key: row.get(4)?,
+            legacy_api_key,
             enabled: row.get::<_, i64>(5)? != 0,
             notes: row.get(6)?,
             updated_at: row.get(7)?,
@@ -1218,12 +1228,20 @@ fn replace_overrides(
                 .with_context(|| {
                     format!("failed to protect HiveCore service token for {}", item.slug)
                 })?;
+            let protected_legacy_api_key = protector
+                .protect_for_storage(&item.legacy_api_key)
+                .with_context(|| {
+                    format!(
+                        "failed to protect HiveCore legacy API key for {}",
+                        item.slug
+                    )
+                })?;
             stmt.execute(params![
                 &item.slug,
                 &item.frontend_url,
                 &item.api_url,
                 &protected_service_token,
-                &item.legacy_api_key,
+                &protected_legacy_api_key,
                 if item.enabled { 1 } else { 0 },
                 &item.notes,
                 &item.updated_at,
@@ -1442,7 +1460,38 @@ fn expire_pr_reservations_in_transaction(tx: &Transaction<'_>) -> rusqlite::Resu
         "#,
         [],
     )?;
+    tx.execute(
+        r#"
+        INSERT INTO pr_budget_events (
+          reservation_id, product_slug, repository, event_type, reason, created_at
+        )
+        SELECT id, product_slug, repository, 'committed_lease_expired',
+               'Committed PR lease expired before GitHub state reconciliation.', datetime('now')
+        FROM pr_budget_reservations
+        WHERE status = 'committed' AND datetime(expires_at) <= datetime('now')
+        "#,
+        [],
+    )?;
+    tx.execute(
+        r#"
+        UPDATE pr_budget_reservations
+        SET status = 'expired',
+            reason = 'Committed PR lease expired before GitHub state reconciliation.',
+            updated_at = datetime('now')
+        WHERE status = 'committed' AND datetime(expires_at) <= datetime('now')
+        "#,
+        [],
+    )?;
     Ok(())
+}
+
+fn committed_pr_lease_days() -> u32 {
+    std::env::var("HIVECORE_COMMITTED_PR_LEASE_DAYS")
+        .ok()
+        .and_then(|value| value.trim().parse::<u32>().ok())
+        .filter(|days| *days > 0)
+        .unwrap_or(30)
+        .clamp(1, 365)
 }
 
 fn load_pr_reservations(
@@ -1811,7 +1860,7 @@ mod tests {
     }
 
     #[test]
-    fn replacing_overrides_encrypts_service_tokens_when_key_is_configured() {
+    fn replacing_overrides_encrypts_all_stored_credentials_when_key_is_configured() {
         let mut conn = Connection::open_in_memory().expect("in-memory db should open");
         init_schema(&conn).expect("schema should initialize");
         let protector = TokenProtector::from_secret(Some("test-secret"));
@@ -1821,7 +1870,7 @@ mod tests {
             frontend_url: "https://signal.example.com".into(),
             api_url: "https://signal-api.example.com".into(),
             service_token: "svc_signal".into(),
-            legacy_api_key: String::new(),
+            legacy_api_key: "legacy_signal".into(),
             enabled: true,
             notes: String::new(),
             updated_at: now_rfc3339(),
@@ -1836,9 +1885,18 @@ mod tests {
             )
             .expect("encrypted token should exist");
         assert!(TokenProtector::is_encrypted_value(&raw));
+        let raw_legacy: String = conn
+            .query_row(
+                "SELECT api_key FROM product_overrides WHERE slug = 'signal-hive'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("encrypted legacy key should exist");
+        assert!(TokenProtector::is_encrypted_value(&raw_legacy));
 
         let loaded = load_product_overrides(&conn, &protector).expect("rows should decrypt");
         assert_eq!(loaded["signal-hive"].service_token, "svc_signal");
+        assert_eq!(loaded["signal-hive"].legacy_api_key, "legacy_signal");
 
         let stats = load_service_token_storage_stats(&conn).expect("stats should load");
         assert_eq!(

@@ -63,7 +63,7 @@ pub(super) async fn build_release_readiness(
     checks.push(check_workflows(&runs, &branch));
 
     let blocker_labels = normalize_blocker_labels(&request.blocker_labels);
-    let issues = match github::fetch_open_issues(&state.http, &repo, 100).await {
+    let issues = match github::fetch_open_issues(&state.http, &repo, u32::MAX).await {
         Ok(value) => value,
         Err(err) => {
             warnings.push(format!("Could not read open issues for {repo}: {err}"));
@@ -337,19 +337,24 @@ fn check_workflows(runs: &[github::GitHubActionsWorkflowRun], branch: &str) -> R
         };
     }
 
-    let failures = runs
+    let mut seen_workflows = std::collections::HashSet::new();
+    let current_runs = runs
+        .iter()
+        .filter(|run| seen_workflows.insert(run.name.clone()))
+        .collect::<Vec<_>>();
+    let failures = current_runs
         .iter()
         .filter(|run| failing_conclusion(&run.conclusion))
         .count();
-    let pending = runs
+    let pending = current_runs
         .iter()
         .filter(|run| run.conclusion.trim().is_empty())
         .count();
-    let successes = runs
+    let successes = current_runs
         .iter()
         .filter(|run| run.conclusion == "success")
         .count();
-    let neutral = runs
+    let neutral = current_runs
         .iter()
         .filter(|run| {
             !run.conclusion.trim().is_empty()
@@ -364,7 +369,7 @@ fn check_workflows(runs: &[github::GitHubActionsWorkflowRun], branch: &str) -> R
     } else {
         "pass"
     };
-    let evidence = runs
+    let evidence = current_runs
         .iter()
         .take(6)
         .map(|run| {
@@ -779,18 +784,22 @@ mod tests {
     fn ci_detail_uses_readable_plural_words() {
         let runs = vec![
             GitHubActionsWorkflowRun {
+                name: "build".into(),
                 conclusion: "success".into(),
                 ..GitHubActionsWorkflowRun::default()
             },
             GitHubActionsWorkflowRun {
+                name: "test".into(),
                 conclusion: "success".into(),
                 ..GitHubActionsWorkflowRun::default()
             },
             GitHubActionsWorkflowRun {
+                name: "lint".into(),
                 conclusion: "failure".into(),
                 ..GitHubActionsWorkflowRun::default()
             },
             GitHubActionsWorkflowRun {
+                name: "docs".into(),
                 conclusion: "skipped".into(),
                 ..GitHubActionsWorkflowRun::default()
             },
@@ -802,5 +811,29 @@ mod tests {
         assert!(check.detail.contains("1 failed run"));
         assert!(check.detail.contains("1 skipped or neutral run"));
         assert!(!check.detail.contains("successs"));
+    }
+
+    #[test]
+    fn ci_health_uses_only_the_latest_run_per_workflow() {
+        let runs = vec![
+            GitHubActionsWorkflowRun {
+                name: "build".into(),
+                conclusion: "success".into(),
+                run_number: 2,
+                ..GitHubActionsWorkflowRun::default()
+            },
+            GitHubActionsWorkflowRun {
+                name: "build".into(),
+                conclusion: "failure".into(),
+                run_number: 1,
+                ..GitHubActionsWorkflowRun::default()
+            },
+        ];
+
+        let check = check_workflows(&runs, "main");
+
+        assert_eq!(check.status, "pass");
+        assert!(check.detail.contains("1 successful run"));
+        assert!(check.detail.contains("0 failed runs"));
     }
 }

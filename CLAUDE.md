@@ -81,8 +81,9 @@ products do not use versioned frontend directories.
 
 Ports are authoritative in [scripts/suite-common.sh](scripts/suite-common.sh); README,
 `docs/products/<slug>.md`, and `docker-compose.yml` must agree or `check:suite-drift` fails.
-All eleven specialist products are `migration_stage = "integrated"`; HiveCore is
-`not-started` and intentionally stays a separate control plane.
+All eleven specialist products and HiveCore are `migration_stage = "integrated"`
+inside `patchhive-backend`. HiveCore remains the distinct control-plane product,
+with `frontend-v3/` as its canonical cockpit.
 
 ---
 
@@ -317,7 +318,6 @@ Reuse rule: shared across 2+ products → shared package; product-specific → s
 `unified-ui-revamp-main/` is executable design source. Use its real component structure,
 tokens, typography, spacing, radii, glass surfaces, shadows, backgrounds, motion, and
 responsive behavior. Do not redraw from screenshots;
-`prototypes/vuln-triage-calm-mockup.html` is reference material, not the source of truth.
 Tailwind utilities are correct here — do not translate them back into the older
 CSS-variable-only convention. JSX is fine; TypeScript only when lifting Lovable code
 directly.
@@ -481,8 +481,8 @@ standalone lockfile before the first export.
 
 ## 9. Current state
 
-- Eleven specialist engines are `integrated` in `patchhive-backend`; HiveCore stays a
-  separate control plane.
+- All twelve product engines are `integrated` in `patchhive-backend`; HiveCore stays
+  a distinct control-plane product and cockpit.
 - Eleven products use canonical specialist frontends at `products/<slug>/frontend/`.
   RepoReaper's canonical interface is
   [products/repo-reaper/frontend/](products/repo-reaper/frontend/).
@@ -491,7 +491,6 @@ standalone lockfile before the first export.
   ([docs/inbound-email-architecture.md](docs/inbound-email-architecture.md)), and the shared
   Squad substrate extraction.
 - HiveCore's target design is [docs/hivecore-architecture.md](docs/hivecore-architecture.md)
-  (Fleet / Kernel / Conductor / Cockpit). Two blockers there are live defects, not future work:
-  committed PR-budget slots never expire and leak the suite ceiling toward zero when RepoReaper
-  misses a release, and every HiveCore overview read fans out ~50 sequential product HTTP calls
-  with no snapshot table behind it.
+  (Fleet / Kernel / Conductor / Cockpit). Overview probes now run concurrently and
+  committed PR-budget slots carry a bounded lease. Durable fleet snapshots and a
+  background reconciliation loop remain future architecture work.

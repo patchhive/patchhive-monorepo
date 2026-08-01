@@ -27,7 +27,7 @@ pub async fn fetch_code_scanning_alerts(
             ("direction", "desc".into()),
         ],
         token.as_deref(),
-        limit.clamp(1, 1000) as usize,
+        limit.max(1) as usize,
     )
     .await
 }
@@ -48,7 +48,7 @@ pub async fn fetch_dependabot_alerts(
         &format!("/repos/{repo}/dependabot/alerts"),
         &[("state", "open".into())],
         Some(token.as_str()),
-        limit.clamp(1, 1000) as usize,
+        limit.max(1) as usize,
     )
     .await
 }

@@ -304,11 +304,26 @@ pub(super) async fn commit_pr_budget_reservation(
     pr_url: String,
 ) -> ApiResult<PrBudgetReservation> {
     let pr_url = pr_url.trim();
-    if !pr_url.starts_with("https://github.com/") {
+    let reservation = db::pr_budget_reservation(&id)
+        .map_err(|err| {
+            api_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "pr_reservation_read_failed",
+                format!("HiveCore could not read the PR reservation: {err}"),
+            )
+        })?
+        .ok_or_else(|| {
+            api_error(
+                StatusCode::NOT_FOUND,
+                "pr_reservation_not_found",
+                "PR reservation not found or no longer active.",
+            )
+        })?;
+    if !github_pull_request_url_matches_repository(pr_url, &reservation.repository) {
         return Err(api_error(
             StatusCode::BAD_REQUEST,
             "invalid_pr_url",
-            "Committed reservations require a GitHub pull-request URL.",
+            "Committed reservations require a GitHub pull-request URL for the reserved repository.",
         ));
     }
     let reservation = db::commit_pr_reservation(&id, pr_url, &now_rfc3339())
@@ -337,6 +352,14 @@ pub(super) async fn commit_pr_budget_reservation(
         ));
     }
     Ok(Json(ok(reservation)))
+}
+
+fn github_pull_request_url_matches_repository(pr_url: &str, repository: &str) -> bool {
+    let expected = format!("https://github.com/{}/pull/", repository.trim_matches('/'));
+    let Some(number) = pr_url.strip_prefix(&expected) else {
+        return false;
+    };
+    !number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit())
 }
 
 pub(super) async fn release_pr_budget_reservation(

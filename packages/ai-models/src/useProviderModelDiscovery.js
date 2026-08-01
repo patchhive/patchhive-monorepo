@@ -33,6 +33,9 @@ export function providerModelStatusCopy(
 function redactedProviderError(message) {
   return String(message || "")
     .replace(/\b(sk-[A-Za-z0-9_-]{8,})\b/g, "sk-***")
+    .replace(/\b(gsk_[A-Za-z0-9_-]{8,})\b/g, "gsk_***")
+    .replace(/\b(AIza[A-Za-z0-9_-]{20,})\b/g, "AIza***")
+    .replace(/([?&](?:key|api_key)=)[^&\s]+/gi, "$1***")
     .replace(/\b([A-Za-z0-9_-]{12,}\.[A-Za-z0-9_-]{12,}\.[A-Za-z0-9_-]{12,})\b/g, "***")
     .replace(/\s+/g, " ")
     .trim();

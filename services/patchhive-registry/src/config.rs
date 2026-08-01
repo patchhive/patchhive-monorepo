@@ -5,6 +5,7 @@ use std::{net::SocketAddr, path::PathBuf};
 pub struct Config {
     pub bind_addr: SocketAddr,
     pub db_path: PathBuf,
+    pub registration_key: Option<String>,
 }
 
 impl Config {
@@ -18,6 +19,20 @@ impl Config {
             .map(PathBuf::from)
             .unwrap_or_else(|_| PathBuf::from("patchhive-registry.db"));
 
-        Ok(Self { bind_addr, db_path })
+        let registration_key = std::env::var("PATCHHIVE_REGISTRY_REGISTRATION_KEY")
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
+        if !bind_addr.ip().is_loopback() && registration_key.is_none() {
+            anyhow::bail!(
+                "PATCHHIVE_REGISTRY_REGISTRATION_KEY is required for a non-loopback registry"
+            );
+        }
+
+        Ok(Self {
+            bind_addr,
+            db_path,
+            registration_key,
+        })
     }
 }

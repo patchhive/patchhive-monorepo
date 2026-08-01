@@ -1,3 +1,4 @@
+use crate::agents::agent_score_issues;
 use crate::db::{
     delete_product_schedule, finish_run, get_conn, get_product_schedule, list_product_schedules,
     record_product_schedule_result, save_product_schedule, start_run, RunStart, RunStatus,
@@ -401,6 +402,19 @@ async fn webhook_single_fix(state: AppState, repo: &str, issue: Value) {
         .filter(|a| a.role == "scout")
         .cloned()
         .collect();
+    let Some(scout) = scouts.first().cloned() else {
+        tracing::warn!(
+            repo,
+            "RepoReaper webhook issue held because no Scout is configured"
+        );
+        return;
+    };
+    let filters = crate::pipeline::load_filters();
+    let scope_decision = filters.decision(repo);
+    if !scope_decision.is_allowed() {
+        tracing::warn!(repo, reason = %scope_decision.message(repo), "RepoReaper webhook issue blocked by repository policy");
+        return;
+    }
     let judges: Vec<_> = agents_snap
         .values()
         .filter(|a| a.role == "judge")
@@ -433,7 +447,6 @@ async fn webhook_single_fix(state: AppState, repo: &str, issue: Value) {
     };
 
     let run_id = Uuid::new_v4().to_string()[..12].to_string();
-    let run_cost = std::sync::Arc::new(std::sync::atomic::AtomicI64::new(0));
     let min_conf = std::env::var("MIN_REVIEW_CONFIDENCE")
         .ok()
         .and_then(|s| s.parse().ok())
@@ -448,8 +461,41 @@ async fn webhook_single_fix(state: AppState, repo: &str, issue: Value) {
         "title": issue["title"], "body": issue["body"].as_str().unwrap_or("").chars().take(500).collect::<String>(),
         "labels": ["bug"], "comments": 0, "created": issue.get("created_at"),
         "url": issue.get("html_url"), "repo": repo, "repo_url": "",
-        "status": "queued", "fixability_score": 70, "fixability_reason": "webhook",
+        "status": "queued", "fixability_score": 0, "fixability_reason": "awaiting Scout scoring",
     });
+
+    let mut scored_issues = vec![iss];
+    let scoring_cost = match agent_score_issues(&state.http, &mut scored_issues, &scout).await {
+        Ok(cost) => cost,
+        Err(error) => {
+            tracing::warn!(repo, %error, "RepoReaper webhook issue held because Scout scoring failed");
+            return;
+        }
+    };
+    let cost_budget = std::env::var("COST_BUDGET_USD")
+        .ok()
+        .and_then(|value| value.parse::<f64>().ok())
+        .unwrap_or(0.0);
+    if cost_budget > 0.0 && scoring_cost >= cost_budget {
+        tracing::warn!(
+            repo,
+            scoring_cost,
+            cost_budget,
+            "RepoReaper webhook issue held because scoring exhausted the cost budget"
+        );
+        return;
+    }
+    let mut eligible = crate::pipeline::classify_write_eligibility(&mut scored_issues, true, 60, 1);
+    let Some(iss) = eligible.pop() else {
+        tracing::info!(
+            repo,
+            "RepoReaper webhook issue held below the Scout fixability threshold"
+        );
+        return;
+    };
+    let run_cost = std::sync::Arc::new(std::sync::atomic::AtomicI64::new(
+        (scoring_cost * 1_000_000.0) as i64,
+    ));
 
     let run_config_json =
         json!({"source":"webhook","repo":repo,"issue":issue["number"]}).to_string();

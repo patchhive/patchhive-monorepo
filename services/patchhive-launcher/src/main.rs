@@ -20,6 +20,17 @@ use uuid::Uuid;
 
 const SUITE_BOOTSTRAP_KEY: &str = "PATCHHIVE_SUITE_BOOTSTRAP_SECRET";
 
+patchhive_product_core::define_api_key_auth_module! {
+    mod auth {
+        patchhive_product_core::auth::ApiKeyAuthConfig::new(
+            "PATCHHIVE_LAUNCHER_API_KEY_HASH",
+            "ph-launcher-",
+        )
+        .with_unauthorized_message("Unauthorized launcher request — provide X-API-Key.")
+        .with_public_paths(["/health"])
+    }
+}
+
 #[derive(Clone)]
 struct AppState {
     repo_root: Option<PathBuf>,
@@ -344,6 +355,11 @@ async fn main() {
         .route("/stacks/all", get(first_stack_status))
         .route("/stacks/all/start-ready", post(start_ready_products))
         .route("/stacks/all/start", post(start_all_products))
+        .layer(axum::middleware::from_fn(auth::auth_middleware))
+        .layer(axum::middleware::from_fn(
+            patchhive_product_core::rate_limit::rate_limit_middleware,
+        ))
+        .layer(patchhive_product_core::startup::cors_layer())
         .with_state(Arc::new(AppState { repo_root }));
 
     let addr = launcher_addr();
@@ -1491,8 +1507,16 @@ fn requested_or_configured_secret(requested_secret: String) -> Option<String> {
     if requested.is_empty() {
         configured_suite_bootstrap_secret()
     } else {
-        Some(requested)
+        valid_suite_bootstrap_secret(&requested).then_some(requested)
     }
+}
+
+fn valid_suite_bootstrap_secret(secret: &str) -> bool {
+    !secret.trim().is_empty()
+        && !secret.contains(['\n', '\r'])
+        && secret.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.')
+        })
 }
 
 async fn start_managed_products(
@@ -1500,11 +1524,19 @@ async fn start_managed_products(
     products: &[ManagedProduct],
     secret: &str,
 ) -> Result<Vec<String>, (StatusCode, Json<ApiError>)> {
+    if !valid_suite_bootstrap_secret(secret) {
+        return Err(error(
+            StatusCode::BAD_REQUEST,
+            "Suite bootstrap secret contains unsupported characters.",
+        ));
+    }
     let mut actions = Vec::new();
     for product in products {
         let product_dir = product_dir(repo_root, product.slug);
         ensure_env_file(&product_dir)?;
-        upsert_env_value(&product_dir.join(".env"), SUITE_BOOTSTRAP_KEY, secret)?;
+        let env_file = product_dir.join(".env");
+        upsert_env_value(&env_file, SUITE_BOOTSTRAP_KEY, secret)?;
+        harden_env_permissions(&env_file)?;
         let image_plan = product_image_plan(product);
 
         if image_plan.mode == "build" {
@@ -1573,9 +1605,17 @@ fn sync_hive_core_suite_bootstrap_secret(
     secret: &str,
     actions: &mut Vec<String>,
 ) -> Result<(), (StatusCode, Json<ApiError>)> {
+    if !valid_suite_bootstrap_secret(secret) {
+        return Err(error(
+            StatusCode::BAD_REQUEST,
+            "Suite bootstrap secret contains unsupported characters.",
+        ));
+    }
     let hive_core_dir = product_dir(repo_root, "hive-core");
     ensure_env_file(&hive_core_dir)?;
-    upsert_env_value(&hive_core_dir.join(".env"), SUITE_BOOTSTRAP_KEY, secret)?;
+    let env_file = hive_core_dir.join(".env");
+    upsert_env_value(&env_file, SUITE_BOOTSTRAP_KEY, secret)?;
+    harden_env_permissions(&env_file)?;
     actions.push("Synced HiveCore suite bootstrap secret.".into());
     Ok(())
 }

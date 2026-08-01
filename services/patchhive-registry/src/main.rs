@@ -9,7 +9,6 @@ use axum::{middleware, Router};
 use config::Config;
 use patchhive_product_core::rate_limit::rate_limit_middleware;
 use std::sync::Arc;
-use tower_http::cors::CorsLayer;
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
@@ -27,7 +26,7 @@ async fn main() -> Result<()> {
     let app = Router::new()
         .merge(routes::router())
         .layer(middleware::from_fn(rate_limit_middleware))
-        .layer(CorsLayer::permissive())
+        .layer(patchhive_product_core::startup::cors_layer())
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind(bind_addr).await?;

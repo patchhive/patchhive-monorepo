@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use chrono::Utc;
 use once_cell::sync::Lazy;
+use patchhive_product_core::repo_policy;
 use patchhive_product_core::sqlite::{product_db_path, PooledSqliteConnection, SqlitePool};
 use rusqlite::{params, OptionalExtension};
 
@@ -48,6 +49,7 @@ pub fn normalize_repo_name(repo: &str) -> Option<String> {
 
 pub fn init_db() -> Result<()> {
     let conn = connect()?;
+    repo_policy::init_and_migrate(&conn, "trust-gate")?;
     conn.execute_batch(
         r#"
         CREATE TABLE IF NOT EXISTS rule_sets (
@@ -79,6 +81,11 @@ pub fn init_db() -> Result<()> {
     )
     .context("failed to initialize TrustGate schema")?;
     Ok(())
+}
+
+pub fn repo_scope_policy() -> Result<patchhive_product_core::scope_policy::RepoScopePolicy> {
+    let conn = connect()?;
+    repo_policy::scope_policy(&conn)
 }
 
 pub fn save_rules(repo: &str, rules: &RepoRuleSet) -> Result<()> {

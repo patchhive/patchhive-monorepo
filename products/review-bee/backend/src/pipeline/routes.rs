@@ -49,7 +49,6 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
             // It declared neither read_only nor mutating, which the deck reads as
             // read-only — an action holding issues:write must say what it does.
             .mutating(true)
-            .scheduleable(true)
             .credential_requirements(["github:pull_requests:read", "github:issues:write"]),
             contract::action(
                 "github_webhook",

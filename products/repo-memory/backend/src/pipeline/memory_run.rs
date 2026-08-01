@@ -258,7 +258,6 @@ pub fn build_memory_run(
     for (dir, bucket) in hotspot_dirs
         .into_iter()
         .filter(|(_, bucket)| bucket.frequency >= 2)
-        .take(3)
     {
         entries.push(build_entry(
             &run_id,
@@ -289,7 +288,6 @@ pub fn build_memory_run(
     for (path, bucket) in review_paths
         .into_iter()
         .filter(|(_, bucket)| bucket.frequency >= 2)
-        .take(3)
     {
         entries.push(build_entry(
             &run_id,
@@ -320,7 +318,6 @@ pub fn build_memory_run(
     for (term, bucket) in bug_terms
         .into_iter()
         .filter(|(_, bucket)| bucket.frequency >= 2)
-        .take(4)
     {
         let topic = failure_topic_label(&term);
         entries.push(build_entry(
@@ -354,7 +351,6 @@ pub fn build_memory_run(
     for (reviewer, profile) in reviewer_profiles
         .into_iter()
         .filter(|(_, profile)| profile.total_feedback >= 2)
-        .take(4)
     {
         let focus = top_named_counts(&profile.category_counts, 2)
             .into_iter()
@@ -411,7 +407,6 @@ pub fn build_memory_run(
     for (author, profile) in maintainer_profiles
         .into_iter()
         .filter(|(_, profile)| profile.merged_prs >= 2)
-        .take(4)
     {
         let paths = top_string_counts(&profile.path_counts, 2)
             .into_iter()
@@ -585,7 +580,13 @@ pub fn split_feedback_sentences(body: &str) -> Vec<String> {
 }
 
 pub fn push_evidence(target: &mut Vec<MemoryEvidence>, evidence: MemoryEvidence) {
-    if target.len() < 4 {
+    if !target.iter().any(|existing| {
+        existing.source_type == evidence.source_type
+            && existing.title == evidence.title
+            && existing.url == evidence.url
+            && existing.path == evidence.path
+            && existing.excerpt == evidence.excerpt
+    }) {
         target.push(evidence);
     }
 }

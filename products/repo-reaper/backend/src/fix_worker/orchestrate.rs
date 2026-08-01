@@ -719,7 +719,7 @@ pub async fn fix_one(job: FixIssueJob) {
         return;
     }
 
-    let confidence = result.confidence;
+    let mut confidence = result.confidence;
     let _ = tx
         .send(alog(
             &agents.reaper,
@@ -838,7 +838,28 @@ pub async fn fix_one(job: FixIssueJob) {
         smith_note: String::new(),
     };
 
-    if let Some(ref smith) = agents.smith {
+    let Some(ref smith) = agents.smith else {
+        update_issue_status_comment(
+            &http,
+            &issue,
+            &scope,
+            &bot_token,
+            issue_comment_held(&issue, &params.run_id, &attempt_id, "smith_unavailable"),
+        )
+        .await;
+        attempt_finisher
+            .skipped(
+                "smith_unavailable",
+                cost,
+                Some(&smith_review.final_patch),
+                confidence,
+            )
+            .await;
+        cleanup_work_path(&scope.work_path).await;
+        return;
+    };
+
+    {
         if cancelled(&params) {
             update_issue_status_comment(
                 &http,
@@ -907,7 +928,7 @@ pub async fn fix_one(job: FixIssueJob) {
                 smith_review.smith_note =
                     format!("\n\n### Smith Review\n{feedback} (confidence: {sconf}%)");
 
-                if !approved && sconf < params.min_conf {
+                if !approved || sconf < params.min_conf {
                     let _ = tx
                         .send(alog(
                             smith,
@@ -916,7 +937,11 @@ pub async fn fix_one(job: FixIssueJob) {
                         ))
                         .await;
                     let rejection_id = Uuid::new_v4().to_string()[..12].to_string();
-                    let rejection_reason = format!("confidence_{sconf}");
+                    let rejection_reason = if approved {
+                        format!("confidence_{sconf}")
+                    } else {
+                        "smith_rejected".to_string()
+                    };
                     let _ = save_rejected_patch(RejectedPatchRecord {
                         id: &rejection_id,
                         run_id: &params.run_id,
@@ -969,13 +994,13 @@ pub async fn fix_one(job: FixIssueJob) {
                             json!({
                                 "id": issue["id"],
                                 "status": "rejected",
-                                "reason": format!("confidence_{sconf}"),
+                                "reason": rejection_reason,
                                 "feedback": feedback,
                                 "confidence": sconf,
                             }),
                         ))
                         .await;
-                    let skip_reason = format!("confidence_{sconf}");
+                    let skip_reason = rejection_reason;
                     update_issue_status_comment(
                         &http,
                         &issue,
@@ -1000,6 +1025,7 @@ pub async fn fix_one(job: FixIssueJob) {
                     cleanup_work_path(&scope.work_path).await;
                     return;
                 }
+                confidence = confidence.min(sconf);
             }
             Err(e) => {
                 artifact(
@@ -1014,10 +1040,29 @@ pub async fn fix_one(job: FixIssueJob) {
                 let _ = tx
                     .send(alog(
                         smith,
-                        &format!("Smith error (continuing): {e}"),
+                        &format!("Smith review failed; patch held: {e}"),
                         "warn",
                     ))
                     .await;
+                update_issue_status_comment(
+                    &http,
+                    &issue,
+                    &scope,
+                    &bot_token,
+                    issue_comment_held(&issue, &params.run_id, &attempt_id, "smith_review_failed"),
+                )
+                .await;
+                attempt_finisher
+                    .skipped(
+                        "smith_review_failed",
+                        cost,
+                        Some(&smith_review.final_patch),
+                        confidence,
+                    )
+                    .await;
+                let _ = tx.send(astatus(&smith.id, "idle", "")).await;
+                cleanup_work_path(&scope.work_path).await;
+                return;
             }
         }
         let _ = tx.send(astatus(&smith.id, "idle", "")).await;
@@ -1123,10 +1168,82 @@ pub async fn fix_one(job: FixIssueJob) {
                     let (applied, _) =
                         crate::git_ops::apply_patch(&scope.work_path, &retry_patch).await;
                     if applied {
-                        smith_review.final_patch = retry_patch.clone();
+                        let mut reviewed_patch = retry_patch;
+                        if let Some(smith) = agents.smith.as_ref() {
+                            match agent_smith_patch(
+                                &http,
+                                issue["title"].as_str().unwrap_or(""),
+                                &reviewed_patch,
+                                &retry_result.explanation,
+                                smith,
+                            )
+                            .await
+                            {
+                                Ok((review, review_cost)) => {
+                                    cost += review_cost;
+                                    artifact(
+                                        &params.run_id,
+                                        &attempt_id,
+                                        "smith",
+                                        "smith.retry_reviewed",
+                                        if review.approved {
+                                            "succeeded"
+                                        } else {
+                                            "rejected"
+                                        },
+                                        &review.feedback,
+                                        json!({
+                                            "agent": smith.name,
+                                            "confidence": review.confidence,
+                                            "approved": review.approved,
+                                            "retry": retry + 1,
+                                        }),
+                                    );
+                                    if !review.approved || review.confidence < params.min_conf {
+                                        let _ = crate::git_ops::git_reset(&scope.work_path).await;
+                                        result.patch = None;
+                                        break;
+                                    }
+                                    confidence = confidence.min(review.confidence);
+                                    if let Some(improved) = review
+                                        .improved_patch
+                                        .filter(|value| !value.trim().is_empty())
+                                    {
+                                        let _ = crate::git_ops::git_reset(&scope.work_path).await;
+                                        let (improved_applied, _) = crate::git_ops::apply_patch(
+                                            &scope.work_path,
+                                            &improved,
+                                        )
+                                        .await;
+                                        if !improved_applied {
+                                            let _ =
+                                                crate::git_ops::git_reset(&scope.work_path).await;
+                                            result.patch = None;
+                                            break;
+                                        }
+                                        reviewed_patch = improved;
+                                    }
+                                }
+                                Err(error) => {
+                                    artifact(
+                                        &params.run_id,
+                                        &attempt_id,
+                                        "smith",
+                                        "smith.retry_review_failed",
+                                        "failed",
+                                        &error.to_string(),
+                                        json!({"agent": smith.name, "retry": retry + 1}),
+                                    );
+                                    let _ = crate::git_ops::git_reset(&scope.work_path).await;
+                                    result.patch = None;
+                                    break;
+                                }
+                            }
+                        }
+                        smith_review.final_patch = reviewed_patch.clone();
                         result.explanation = retry_result.explanation;
                         result.files_changed = retry_result.files_changed;
-                        result.patch = Some(retry_patch);
+                        result.patch = Some(reviewed_patch);
                         test =
                             crate::git_ops::run_tests(&scope.work_path, repository_trusted).await;
                         let _ = tx

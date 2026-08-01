@@ -61,9 +61,11 @@ pub fn save_repo_list(repo: &str, list_type: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn delete_repo_list(repo: &str) -> Result<()> {
+pub fn delete_repo_list(repo: &str, list_type: &str) -> Result<()> {
     let conn = connect()?;
-    repo_policy::remove_listings(&conn, repo)?;
+    let kind = repo_policy::PolicyKind::parse(list_type)
+        .ok_or_else(|| anyhow::anyhow!("invalid repository list type"))?;
+    repo_policy::remove(&conn, repo, kind)?;
     Ok(())
 }
 

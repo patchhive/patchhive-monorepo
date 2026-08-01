@@ -30,7 +30,7 @@ pub async fn build_scan_result(
     let mut findings = Vec::new();
 
     if include_code_scanning {
-        match github::fetch_code_scanning_alerts(&state.http, repo, 100).await {
+        match github::fetch_code_scanning_alerts(&state.http, repo, u32::MAX).await {
             Ok(alerts) => {
                 findings.extend(alerts.into_iter().map(code_scanning_to_finding));
             }
@@ -41,7 +41,7 @@ pub async fn build_scan_result(
     }
 
     if include_dependency_alerts {
-        match github::fetch_dependabot_alerts(&state.http, repo, 100).await {
+        match github::fetch_dependabot_alerts(&state.http, repo, u32::MAX).await {
             Ok(alerts) => {
                 findings.extend(alerts.into_iter().map(dependabot_to_finding));
             }

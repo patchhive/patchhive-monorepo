@@ -433,7 +433,7 @@ pub async fn fetch_issues(
             ("direction", direction.trim().to_string()),
         ],
         github_token().as_deref(),
-        per_page.clamp(1, 1000) as usize,
+        per_page.max(1) as usize,
     )
     .await
 }
@@ -707,7 +707,7 @@ pub async fn fetch_workflow_runs(
         &query,
         github_token().as_deref(),
         "workflow_runs",
-        limit.clamp(1, 1000) as usize,
+        limit.max(1) as usize,
     )
     .await
 }

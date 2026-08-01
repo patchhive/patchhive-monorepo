@@ -110,7 +110,6 @@ impl GitHubPrClient {
     ) -> Result<Vec<Value>> {
         let mut items = Vec::new();
         let mut page = 1u32;
-        const MAX_PAGES: u32 = 10; // at most 1000 items
 
         loop {
             let mut page_query = query.to_vec();
@@ -136,9 +135,6 @@ impl GitHubPrClient {
                 break;
             }
             page += 1;
-            if page > MAX_PAGES {
-                break; // silently cap at 10 pages (1000 items)
-            }
         }
 
         Ok(items)
@@ -391,16 +387,18 @@ impl GitHubPrClient {
         validate_repo(repo)?;
         let (owner, name) = split_repo(repo)?;
         let query = r#"
-query PatchHiveReviewThreads($owner: String!, $name: String!, $number: Int!) {
+query PatchHiveReviewThreads($owner: String!, $name: String!, $number: Int!, $cursor: String) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
-      reviewThreads(first: 100) {
+      reviewThreads(first: 100, after: $cursor) {
+        pageInfo { hasNextPage endCursor }
         nodes {
           id
           path
           isResolved
           isOutdated
-          comments(first: 30) {
+          comments(first: 100) {
+            pageInfo { hasNextPage endCursor }
             nodes {
               id
               body
@@ -418,54 +416,105 @@ query PatchHiveReviewThreads($owner: String!, $name: String!, $number: Int!) {
 }
 "#;
 
+        let mut result = Vec::new();
+        let mut cursor: Option<String> = None;
+        loop {
+            let value = self
+                .post_json_with_headers(
+                    "/graphql",
+                    &json!({
+                        "query": query,
+                        "variables": {
+                            "owner": owner,
+                            "name": name,
+                            "number": pr_number,
+                            "cursor": cursor,
+                        }
+                    }),
+                    "application/vnd.github+json",
+                )
+                .await?;
+            graphql_result(&value)?;
+            let connection = &value["data"]["repository"]["pullRequest"]["reviewThreads"];
+            let threads = connection["nodes"]
+                .as_array()
+                .ok_or_else(|| anyhow!("GitHub review thread response was not an array"))?;
+
+            for thread in threads {
+                let mut comments = parse_review_thread_comments(&thread["comments"]["nodes"]);
+                let mut has_more_comments = thread["comments"]["pageInfo"]["hasNextPage"]
+                    .as_bool()
+                    .unwrap_or(false);
+                let mut comment_cursor = thread["comments"]["pageInfo"]["endCursor"]
+                    .as_str()
+                    .map(str::to_string);
+                while has_more_comments {
+                    let current_cursor = comment_cursor.clone().ok_or_else(|| {
+                        anyhow!("GitHub review comment pagination omitted its end cursor")
+                    })?;
+                    let page = self
+                        .fetch_review_thread_comment_page(
+                            thread["id"].as_str().unwrap_or(""),
+                            &current_cursor,
+                        )
+                        .await?;
+                    comments.extend(parse_review_thread_comments(&page["nodes"]));
+                    has_more_comments = page["pageInfo"]["hasNextPage"].as_bool().unwrap_or(false);
+                    let next_cursor = page["pageInfo"]["endCursor"].as_str().map(str::to_string);
+                    if has_more_comments && next_cursor == comment_cursor {
+                        return Err(anyhow!("GitHub review comment pagination did not advance"));
+                    }
+                    comment_cursor = next_cursor;
+                }
+
+                result.push(GitHubPullReviewThread {
+                    id: thread["id"].as_str().unwrap_or("").to_string(),
+                    path: thread["path"].as_str().unwrap_or("").to_string(),
+                    is_resolved: thread["isResolved"].as_bool().unwrap_or(false),
+                    is_outdated: thread["isOutdated"].as_bool().unwrap_or(false),
+                    comments,
+                });
+            }
+
+            let page_info = &connection["pageInfo"];
+            if !page_info["hasNextPage"].as_bool().unwrap_or(false) {
+                break;
+            }
+            let next_cursor = page_info["endCursor"].as_str().map(str::to_string);
+            if next_cursor.is_none() || next_cursor == cursor {
+                return Err(anyhow!("GitHub review thread pagination did not advance"));
+            }
+            cursor = next_cursor;
+        }
+        Ok(result)
+    }
+
+    async fn fetch_review_thread_comment_page(
+        &self,
+        thread_id: &str,
+        cursor: &str,
+    ) -> Result<Value> {
         let value = self
             .post_json_with_headers(
                 "/graphql",
                 &json!({
-                    "query": query,
-                    "variables": {
-                        "owner": owner,
-                        "name": name,
-                        "number": pr_number,
-                    }
+                    "query": r#"query PatchHiveReviewThreadComments($id: ID!, $cursor: String!) {
+                      node(id: $id) {
+                        ... on PullRequestReviewThread {
+                          comments(first: 100, after: $cursor) {
+                            pageInfo { hasNextPage endCursor }
+                            nodes { id body url createdAt author { login } }
+                          }
+                        }
+                      }
+                    }"#,
+                    "variables": { "id": thread_id, "cursor": cursor },
                 }),
                 "application/vnd.github+json",
             )
             .await?;
-
         graphql_result(&value)?;
-
-        let threads = value["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"]
-            .as_array()
-            .ok_or_else(|| anyhow!("GitHub review thread response was not an array"))?;
-
-        Ok(threads
-            .iter()
-            .map(|thread| GitHubPullReviewThread {
-                id: thread["id"].as_str().unwrap_or("").to_string(),
-                path: thread["path"].as_str().unwrap_or("").to_string(),
-                is_resolved: thread["isResolved"].as_bool().unwrap_or(false),
-                is_outdated: thread["isOutdated"].as_bool().unwrap_or(false),
-                comments: thread["comments"]["nodes"]
-                    .as_array()
-                    .map(|comments| {
-                        comments
-                            .iter()
-                            .map(|comment| GitHubPullReviewThreadComment {
-                                id: comment["id"].as_str().unwrap_or("").to_string(),
-                                body: comment["body"].as_str().unwrap_or("").to_string(),
-                                url: comment["url"].as_str().unwrap_or("").to_string(),
-                                created_at: comment["createdAt"].as_str().unwrap_or("").to_string(),
-                                author_login: comment["author"]["login"]
-                                    .as_str()
-                                    .unwrap_or("")
-                                    .to_string(),
-                            })
-                            .collect::<Vec<_>>()
-                    })
-                    .unwrap_or_default(),
-            })
-            .collect())
+        Ok(value["data"]["node"]["comments"].clone())
     }
 
     /// Convert an open pull request back to draft.
@@ -635,6 +684,27 @@ fn graphql_result(value: &Value) -> Result<()> {
         .collect::<Vec<_>>()
         .join("; ");
     Err(anyhow!("GitHub GraphQL error: {messages}"))
+}
+
+fn parse_review_thread_comments(value: &Value) -> Vec<GitHubPullReviewThreadComment> {
+    value
+        .as_array()
+        .map(|comments| {
+            comments
+                .iter()
+                .map(|comment| GitHubPullReviewThreadComment {
+                    id: comment["id"].as_str().unwrap_or("").to_string(),
+                    body: comment["body"].as_str().unwrap_or("").to_string(),
+                    url: comment["url"].as_str().unwrap_or("").to_string(),
+                    created_at: comment["createdAt"].as_str().unwrap_or("").to_string(),
+                    author_login: comment["author"]["login"]
+                        .as_str()
+                        .unwrap_or("")
+                        .to_string(),
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn validate_repo(repo: &str) -> Result<()> {

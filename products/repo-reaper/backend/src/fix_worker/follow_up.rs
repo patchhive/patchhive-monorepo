@@ -17,7 +17,7 @@ use patchhive_product_core::write_authorization::ValidatedChange;
 use serde_json::json;
 use uuid::Uuid;
 
-use crate::agents::agent_pr_comment_fix;
+use crate::agents::{agent_pr_comment_fix, agent_smith_patch};
 use crate::db::{
     finish_run, record_pr_follow_up, record_run_artifact, start_run, tracked_pull_request,
     RunArtifactInput, RunStart, RunStatus, MAX_PR_FOLLOW_UPS,
@@ -45,6 +45,9 @@ pub enum FollowUpRefusal {
     FollowUpCapReached,
     RepositoryBlocked,
     NoReaperAgent,
+    NoSmithAgent,
+    PullRequestNotDraft,
+    SmithRejected,
     ConfidenceBelowFloor,
 }
 
@@ -56,6 +59,9 @@ impl FollowUpRefusal {
             Self::FollowUpCapReached => "follow_up_cap_reached",
             Self::RepositoryBlocked => "repository_blocked",
             Self::NoReaperAgent => "no_reaper_agent",
+            Self::NoSmithAgent => "no_smith_agent",
+            Self::PullRequestNotDraft => "pull_request_not_draft",
+            Self::SmithRejected => "smith_rejected",
             Self::ConfidenceBelowFloor => "confidence_below_floor",
         }
     }
@@ -76,6 +82,11 @@ impl FollowUpRefusal {
                 "Repository policy blocks automated writes to this repository.".into()
             }
             Self::NoReaperAgent => "No Reaper agent is configured to generate a patch.".into(),
+            Self::NoSmithAgent => "No Smith agent is configured to review the follow-up patch.".into(),
+            Self::PullRequestNotDraft => {
+                "Automated follow-up commits are limited to draft pull requests.".into()
+            }
+            Self::SmithRejected => "Smith rejected the corrected patch as unsafe or incomplete.".into(),
             Self::ConfidenceBelowFloor => {
                 "The corrected patch did not reach the configured review confidence floor.".into()
             }
@@ -182,6 +193,11 @@ async fn execute(
         .or_else(|| agents.values().next())
         .cloned()
         .ok_or(FollowUpRefusal::NoReaperAgent)?;
+    let smith = agents
+        .values()
+        .find(|agent| agent.role == "smith")
+        .cloned()
+        .ok_or(FollowUpRefusal::NoSmithAgent)?;
 
     // The cap is consumed as soon as the attempt is real, so a crash or a
     // failure cannot be retried indefinitely by re-commenting.
@@ -230,6 +246,9 @@ async fn execute(
     if detail.state != "open" || detail.merged {
         return Err(FollowUpRefusal::PullRequestClosed);
     }
+    if !detail.draft {
+        return Err(FollowUpRefusal::PullRequestNotDraft);
+    }
 
     let work_dir = crate::fix_worker::types::work_dir()
         .join(format!("followup-{}-{}", request.pr_number, run_id));
@@ -243,6 +262,7 @@ async fn execute(
         run_id,
         DeliveryInput {
             reaper: &reaper,
+            smith: &smith,
             bot_token: &bot_token,
             bot_user: &bot_user,
             head_ref: &detail.head_ref,
@@ -262,6 +282,7 @@ async fn execute(
 
 struct DeliveryInput<'a> {
     reaper: &'a crate::state::AgentConfig,
+    smith: &'a crate::state::AgentConfig,
     bot_token: &'a str,
     bot_user: &'a str,
     head_ref: &'a str,
@@ -348,10 +369,9 @@ async fn deliver(
         return Err(FollowUpRefusal::ConfidenceBelowFloor);
     }
 
-    let Some(patch) = patch_response
+    let Some(mut patch) = patch_response
         .patch
-        .as_deref()
-        .filter(|p| !p.trim().is_empty())
+        .filter(|patch| !patch.trim().is_empty())
     else {
         artifact(
             run_id,
@@ -363,7 +383,45 @@ async fn deliver(
         return Ok(());
     };
 
-    let (applied, apply_error) = apply_patch(input.work_dir, patch).await;
+    let Ok((review, _review_cost)) = agent_smith_patch(
+        &state.http,
+        &request.issue_title,
+        &patch,
+        &patch_response.explanation,
+        input.smith,
+    )
+    .await
+    else {
+        return Err(FollowUpRefusal::SmithRejected);
+    };
+    if !review.approved {
+        artifact(
+            run_id,
+            "review",
+            "follow_up.smith_rejected",
+            "blocked",
+            &review.feedback,
+        );
+        return Err(FollowUpRefusal::SmithRejected);
+    }
+    if review.confidence < minimum_confidence {
+        return Err(FollowUpRefusal::ConfidenceBelowFloor);
+    }
+    if let Some(improved_patch) = review
+        .improved_patch
+        .filter(|value| !value.trim().is_empty())
+    {
+        patch = improved_patch;
+    }
+    artifact(
+        run_id,
+        "review",
+        "follow_up.smith_approved",
+        "succeeded",
+        &review.feedback,
+    );
+
+    let (applied, apply_error) = apply_patch(input.work_dir, &patch).await;
     if !applied {
         artifact(
             run_id,
@@ -376,7 +434,11 @@ async fn deliver(
     }
 
     let test = run_tests(input.work_dir, input.repository_trusted).await;
-    let validated = ValidatedChange::new(&test, test.status, patch_response.confidence);
+    let validated = ValidatedChange::new(
+        &test,
+        test.status,
+        patch_response.confidence.min(review.confidence),
+    );
     artifact(
         run_id,
         "validate",

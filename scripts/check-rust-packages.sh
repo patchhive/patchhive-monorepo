@@ -29,7 +29,15 @@ manifests=(
 )
 
 for manifest in "${manifests[@]}"; do
-  echo "::group::cargo check ${manifest}"
-  cargo check --locked --all-targets --manifest-path "${manifest}"
+  echo "::group::cargo fmt ${manifest}"
+  cargo fmt --manifest-path "${manifest}" -- --check
+  echo "::endgroup::"
+
+  echo "::group::cargo clippy ${manifest}"
+  cargo clippy --locked --all-targets --manifest-path "${manifest}" -- -D warnings
+  echo "::endgroup::"
+
+  echo "::group::cargo test ${manifest}"
+  cargo test --locked --all-targets --manifest-path "${manifest}"
   echo "::endgroup::"
 done

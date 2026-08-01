@@ -254,7 +254,11 @@ fn public_snapshot_from_json(value: &str) -> Result<RegistrySnapshot> {
 fn sanitize_public_snapshot(mut snapshot: RegistrySnapshot) -> RegistrySnapshot {
     snapshot.install_mode = RegistryMode::PublicDemo;
     snapshot.privacy = None;
+    snapshot.hivecore.version.clear();
+    snapshot.hivecore.suite_bootstrap_enabled = false;
     for product in &mut snapshot.products {
+        product.version.clear();
+        product.image_tag = None;
         product.note = None;
     }
     snapshot

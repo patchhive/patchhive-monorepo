@@ -80,7 +80,20 @@ fn shell_single_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\"'\"'"))
 }
 
-fn write_askpass_script(user: &str, token: &str) -> Result<(PathBuf, PathBuf)> {
+struct AuthDirGuard(PathBuf);
+
+impl Drop for AuthDirGuard {
+    fn drop(&mut self) {
+        if let Err(error) = std::fs::remove_dir_all(&self.0) {
+            tracing::warn!(
+                path = %self.0.display(),
+                "could not remove temporary GitHub credential directory: {error}"
+            );
+        }
+    }
+}
+
+fn write_askpass_script(user: &str, token: &str) -> Result<(AuthDirGuard, PathBuf)> {
     let auth_dir = std::env::temp_dir().join(format!("repo-reaper-auth-{}", uuid::Uuid::new_v4()));
     // create_dir (not create_dir_all) — parent /tmp always exists, UUID guarantees freshness.
     // Permissions are set immediately to minimize the window before the token file is written.
@@ -97,7 +110,7 @@ fn write_askpass_script(user: &str, token: &str) -> Result<(PathBuf, PathBuf)> {
     std::fs::write(&script_path, script)?;
     #[cfg(unix)]
     std::fs::set_permissions(&script_path, std::fs::Permissions::from_mode(0o700))?;
-    Ok((auth_dir, script_path))
+    Ok((AuthDirGuard(auth_dir), script_path))
 }
 
 pub async fn git_clone(
@@ -120,7 +133,7 @@ pub async fn git_clone(
     } else {
         user.as_str()
     };
-    let (auth_dir, askpass_path) = write_askpass_script(askpass_user, &token)?;
+    let (_auth_dir, askpass_path) = write_askpass_script(askpass_user, &token)?;
     let clone = runcmd_with_env(
         &[
             "git",
@@ -138,7 +151,6 @@ pub async fn git_clone(
         ],
     )
     .await;
-    let _ = std::fs::remove_dir_all(&auth_dir);
     let out = clone?;
     if !out.status.success() {
         let stderr = String::from_utf8_lossy(&out.stderr).to_string();
@@ -198,7 +210,7 @@ pub async fn git_commit_push(
     } else {
         user.as_str()
     };
-    let (auth_dir, askpass_path) = write_askpass_script(askpass_user, &token)?;
+    let (_auth_dir, askpass_path) = write_askpass_script(askpass_user, &token)?;
     runcmd_ok(&["git", "add", "-A"], Some(dest)).await?;
     runcmd_ok(&["git", "commit", "-m", msg], Some(dest)).await?;
     let push = runcmd_ok_with_env(
@@ -210,12 +222,12 @@ pub async fn git_commit_push(
         ],
     )
     .await;
-    let _ = std::fs::remove_dir_all(&auth_dir);
     push.map(|_| ())
 }
 
 pub async fn git_reset(dest: &Path) -> Result<()> {
-    let _ = runcmd(&["git", "checkout", "."], Some(dest)).await;
+    runcmd_ok(&["git", "reset", "--hard", "HEAD"], Some(dest)).await?;
+    runcmd_ok(&["git", "clean", "-fd"], Some(dest)).await?;
     Ok(())
 }
 

@@ -229,7 +229,6 @@ Rules:
   specialist product. Change and verify the canonical `frontend/` directly.
 - HiveCore is intentionally outside the specialist UI architecture and keeps
   its control-plane UI.
-- `prototypes/vuln-triage-calm-mockup.html` is reference material only; it is not the v3 source of truth.
 - See [docs/specialist-ui-architecture.md](docs/specialist-ui-architecture.md).
 
 ## Shared Product Shell Package
@@ -722,9 +721,8 @@ docker-compose up --build
 
 ## New Product Checklist
 
-1. Create `products/<name>/`.
-2. Copy `products/repo-reaper/backend/` as the backend starting point and strip unused pieces.
-3. Create `products/<name>/frontend/` with `package.json`, `src/config.js`, `src/App.jsx`, and panels.
-4. Wire in `applyTheme("<product-key>")`, `PatchHiveHeader`, `TabBar`, and `PatchHiveFooter`.
-5. Add `docker-compose.yml`, `backend/Dockerfile`, and `frontend/Dockerfile`.
-6. Update this file and `README.md` when the product becomes real.
+1. Run `./scripts/new-product.sh <product-slug>`.
+2. Replace placeholder backend routes and frontend copy with the product-owned loop.
+3. Add the product manifest, specialist brand tokens, and suite port mapping.
+4. Refresh the standalone lockfile before the first export.
+5. Update this file, `README.md`, and the product documentation when it becomes real.

@@ -227,15 +227,12 @@ pub(super) async fn product_run_detail(
 
 pub(super) async fn build_runtime_products(state: &AppState) -> Vec<ProductRuntimeItem> {
     let overrides = db::product_overrides();
-    let mut products = Vec::new();
-
-    for definition in product_catalog() {
-        let runtime =
-            build_product_runtime(state, definition, overrides.get(definition.slug)).await;
-        products.push(runtime);
-    }
-
-    products
+    futures_util::future::join_all(
+        product_catalog().iter().map(|definition| {
+            build_product_runtime(state, definition, overrides.get(definition.slug))
+        }),
+    )
+    .await
 }
 
 pub(super) async fn build_product_runtime(

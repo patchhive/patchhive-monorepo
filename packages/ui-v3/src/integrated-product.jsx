@@ -33,6 +33,15 @@ function parseError(data, fallback) {
   return data?.error || data?.message || fallback;
 }
 
+function safeExternalUrl(value) {
+  try {
+    const url = new URL(String(value || ""));
+    return url.protocol === "https:" || url.protocol === "http:" ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
 async function readJson(response) {
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(parseError(data, `Request failed: ${response.status}`));
@@ -161,7 +170,11 @@ function ItemRow({ item, onOpen }) {
 function Detail({ item, config, onBack }) {
   const itemTone = tone(item.tone);
   const statusLabel = config.detailStatusLabel || "Decision";
-  const links = item.links?.length ? item.links : item.link ? [{ label: "Open source evidence", url: item.link }] : [];
+  const rawLinks = item.links?.length ? item.links : item.link ? [{ label: "Open source evidence", url: item.link }] : [];
+  const links = rawLinks.flatMap((link) => {
+    const url = safeExternalUrl(link.url);
+    return url ? [{ ...link, url }] : [];
+  });
   const evidence = [...new Set((item.evidence || []).map((entry) => String(entry)))];
   return (
     <>

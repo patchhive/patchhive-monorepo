@@ -304,7 +304,8 @@ Required rules:
 
 ## Runtime Shape
 
-During gateway mode, a suite run can call product backends through `patchhive-backend` proxy routes. Later, when product engines move in-process, the same suite-run contract should still hold.
+Product engines run in-process under `patchhive-backend`; compatibility proxy routes remain only
+for explicitly non-integrated targets. The same suite-run contract applies across both paths.
 
 The long-term backend should own:
 

@@ -8,7 +8,8 @@
     "packages/product-shell",
     "packages/ui",
     "packages/ui-v3",
-    "products/*/frontend"
+    "products/*/frontend",
+    "products/hive-core/frontend-v3"
   ],
   "scripts": {
     "dev:ai-local": "npm --workspace @patchhive/ai-local run dev",

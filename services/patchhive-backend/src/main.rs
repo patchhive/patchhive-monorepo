@@ -46,7 +46,6 @@ use anyhow::Result;
 use axum::Router;
 use config::Config;
 use std::sync::Arc;
-use tower_http::cors::CorsLayer;
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
@@ -64,7 +63,7 @@ async fn main() -> Result<()> {
     // Auth is applied inside routes::router, to the suite routes only.
     let app = Router::new()
         .merge(routes::router(state))
-        .layer(CorsLayer::permissive());
+        .layer(patchhive_product_core::startup::cors_layer());
 
     let listener = tokio::net::TcpListener::bind(bind_addr).await?;
     info!(%bind_addr, "patchhive-backend listening");

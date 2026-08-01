@@ -293,10 +293,11 @@ pub async fn remove_repo_list(AxumPath(repo): AxumPath<String>) -> JsonResult<se
 
 pub async fn scan_local_repo(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    peer: Option<patchhive_product_core::auth::ClientConnectInfo>,
     Json(request): Json<ScanRequest>,
 ) -> JsonResult<RefactorScanResult> {
-    if !scan_request_allowed(&headers, state.remote_fs_enabled) {
+    let peer_addr = patchhive_product_core::auth::peer_addr_from_connect_info(peer);
+    if !scan_request_allowed(peer_addr, state.remote_fs_enabled) {
         return Err(api_error(
             StatusCode::FORBIDDEN,
             "RefactorScout scans are limited to localhost callers unless REFACTOR_SCOUT_ALLOW_REMOTE_FS=true.",
@@ -349,16 +350,17 @@ pub async fn scan_schedules() -> Json<serde_json::Value> {
 
 pub async fn save_scan_schedule(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    peer: Option<patchhive_product_core::auth::ClientConnectInfo>,
     Json(mut body): Json<
         patchhive_product_core::scheduling::SaveProductScheduleRequest<ScanRequest>,
     >,
 ) -> JsonResult<serde_json::Value> {
     normalize_and_validate_saved_payload(&mut body.payload, body.target_selection_mode)?;
     let repo_path = body.payload.repo_path.trim();
+    let peer_addr = patchhive_product_core::auth::peer_addr_from_connect_info(peer);
     if body.target_selection_mode == TargetSelectionMode::Direct
         && github_repo_target_for_input(repo_path).is_none()
-        && !scan_request_allowed(&headers, state.remote_fs_enabled)
+        && !scan_request_allowed(peer_addr, state.remote_fs_enabled)
     {
         return Err(api_error(
             StatusCode::FORBIDDEN,
@@ -424,7 +426,7 @@ pub async fn delete_scan_schedule(
 
 pub async fn run_scan_schedule_now(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    peer: Option<patchhive_product_core::auth::ClientConnectInfo>,
     AxumPath(name): AxumPath<String>,
 ) -> JsonResult<RefactorScanResult> {
     let schedule = db::get_schedule(&name)
@@ -433,9 +435,10 @@ pub async fn run_scan_schedule_now(
     let request = schedule
         .decode_payload::<ScanRequest>()
         .map_err(|error| api_error(StatusCode::BAD_REQUEST, error.to_string()))?;
+    let peer_addr = patchhive_product_core::auth::peer_addr_from_connect_info(peer);
     if schedule.target_selection_mode == TargetSelectionMode::Direct
         && github_repo_target_for_input(request.repo_path.trim()).is_none()
-        && !scan_request_allowed(&headers, state.remote_fs_enabled)
+        && !scan_request_allowed(peer_addr, state.remote_fs_enabled)
     {
         return Err(api_error(
             StatusCode::FORBIDDEN,

@@ -96,20 +96,45 @@ pub fn build_rule_packs() -> Vec<RulePack> {
 }
 
 pub fn resolve_rules(repo: &str, incoming: Option<RepoRuleSet>) -> Result<RepoRuleSet, ApiError> {
-    let mut rules = if let Some(mut rules) = incoming {
-        rules.repo = repo.to_string();
-        rules
-    } else if let Some(saved) = crate::db::get_rules(repo)
-        .map_err(|err| api_error(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?
-    {
-        saved
-    } else {
-        RepoRuleSet {
-            repo: repo.to_string(),
-            ..RepoRuleSet::default()
-        }
+    let saved = crate::db::get_rules(repo)
+        .map_err(|err| api_error(StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+    let mut rules = match (saved, incoming) {
+        (Some(saved), Some(incoming)) => merge_rules(saved, incoming),
+        (Some(saved), None) => saved,
+        (None, Some(incoming)) => incoming,
+        (None, None) => RepoRuleSet::default(),
     };
 
     rules.repo = repo.to_string();
     Ok(rules)
+}
+
+fn merge_rules(mut floor: RepoRuleSet, incoming: RepoRuleSet) -> RepoRuleSet {
+    merge_unique(&mut floor.blocked_paths, incoming.blocked_paths);
+    merge_unique(&mut floor.warn_paths, incoming.warn_paths);
+    merge_unique(
+        &mut floor.require_test_for_paths,
+        incoming.require_test_for_paths,
+    );
+    merge_unique(&mut floor.suspicious_terms, incoming.suspicious_terms);
+    merge_unique(&mut floor.blocked_terms, incoming.blocked_terms);
+    floor.max_files = floor.max_files.min(incoming.max_files);
+    floor.max_additions = floor.max_additions.min(incoming.max_additions);
+    floor.max_deletions = floor.max_deletions.min(incoming.max_deletions);
+    if !incoming.notes.trim().is_empty() {
+        floor.notes = if floor.notes.trim().is_empty() {
+            incoming.notes
+        } else {
+            format!("{}\n{}", floor.notes.trim(), incoming.notes.trim())
+        };
+    }
+    floor
+}
+
+fn merge_unique(target: &mut Vec<String>, incoming: Vec<String>) {
+    for value in incoming {
+        if !target.iter().any(|existing| existing == &value) {
+            target.push(value);
+        }
+    }
 }

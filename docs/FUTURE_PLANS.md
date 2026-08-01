@@ -125,9 +125,9 @@ back here instead of living in parallel long-term.
 - Contract drift reporting now shows health, startup checks, capabilities, run list, and run detail support for each product.
 - Add suite-wide schedule views once more products expose schedule metadata through `/capabilities`.
 - Add global allowlist, denylist, and opt-out propagation only when each product supports explicit settings-apply semantics.
-- Add the documented `patchhive.dev` repository-owner opt-out API and form,
-  HiveCore trusted-repository policy, and atomic per-product plus suite-wide PR
-  budgets. See `docs/hivecore-repository-safety-and-pr-budgets.md`.
+- Add the documented `patchhive.dev` repository-owner opt-out API and form.
+  Structured trusted-repository policy and atomic per-product plus suite-wide PR
+  budgets are implemented. See `docs/hivecore-repository-safety-and-pr-budgets.md`.
 - Add cross-product handoff flows such as SignalHive -> RepoReaper candidate
   revalidation and patch planning -> TrustGate diff review -> guarded delivery,
   after approval and safety controls are visible in HiveCore.

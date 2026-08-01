@@ -12,7 +12,11 @@ HiveCore is the PatchHive control plane. It brings standalone PatchHive products
 
 HiveCore is not a replacement for standalone products. Its first job is to make the suite legible: what is running, what is healthy, what capabilities exist, what work has happened, and where product contracts have drifted.
 
-Longer term, HiveCore should become the browser-facing suite backend for PatchHive: one operator auth flow, one shared product registry, one shared credential/config surface, and namespaced product APIs for all product frontends. It already owns structured local repository trust/exclusion policy and atomic outbound PR capacity. The products remain distinct, but their frontends should eventually talk to HiveCore instead of separate product backends. See [Suite backend direction](../suite-backend-direction.md).
+`patchhive-backend` is the browser-facing suite runtime: it mounts product engines,
+owns the manifest registry, and exposes namespaced APIs behind one operator auth
+flow. HiveCore is the cockpit and orchestration domain within that runtime. It owns
+structured repository trust/exclusion policy and atomic outbound PR capacity while
+the products remain distinct. See [Suite backend direction](../suite-backend-direction.md).
 
 ```
 RepoReaper  SignalHive  TrustGate  RepoMemory  ReviewBee  MergeKeeper

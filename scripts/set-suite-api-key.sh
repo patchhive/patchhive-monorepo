@@ -59,9 +59,11 @@ write_hash() {
   local key="$2"
   local hash="$3"
   local tmp_file
+  local write_file
 
   mkdir -p "$(dirname "$env_file")"
   touch "$env_file"
+  write_file="$(readlink -f "$env_file")"
   tmp_file="$(mktemp /tmp/patchhive-suite-env-XXXXXX)"
 
   awk -v key="$key" -v hash="$hash" '
@@ -81,7 +83,7 @@ write_hash() {
     }
   ' "$env_file" > "$tmp_file"
 
-  mv "$tmp_file" "$env_file"
+  mv "$tmp_file" "$write_file"
 }
 
 ROOT_DIR="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"

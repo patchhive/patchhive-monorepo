@@ -146,8 +146,9 @@ const ROLES: &[(&str, &str, &str, &str, &str)] = &[
 ];
 
 fn env(k: &str) -> String {
-    env_from_file(StdPath::new(".env"), k)
-        .or_else(|| std::env::var(k).ok())
+    std::env::var(k)
+        .ok()
+        .or_else(|| env_from_file(StdPath::new(".env"), k))
         .unwrap_or_default()
 }
 
@@ -189,7 +190,13 @@ fn persist_env_updates(path: &StdPath, updates: &[(String, String)]) -> std::io:
     if !content.is_empty() {
         content.push('\n');
     }
-    fs::write(path, content)
+    fs::write(path, content)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
+    }
+    Ok(())
 }
 
 fn canonical_env_path() -> std::path::PathBuf {
@@ -711,12 +718,20 @@ async fn fetch_openai_compatible_models(
     let mut request = http
         .get(format!("{}/models", base.trim_end_matches('/')))
         .timeout(Duration::from_secs(8));
-    request = match api_key {
-        Some(key) => request.bearer_auth(key),
-        None if crate::ai_local::is_local_openai_base(base) => {
-            request.bearer_auth("patchhive-local")
-        }
-        None => anyhow::bail!("No OpenAI-compatible API key available for model discovery"),
+    request = if crate::ai_local::is_local_openai_base(base) {
+        let gateway_key = std::env::var("PATCHHIVE_AI_GATEWAY_API_KEY")
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "PATCHHIVE_AI_GATEWAY_API_KEY is required for local model discovery"
+                )
+            })?;
+        request.bearer_auth(gateway_key)
+    } else if let Some(key) = api_key {
+        request.bearer_auth(key)
+    } else {
+        anyhow::bail!("No OpenAI-compatible API key available for model discovery");
     };
 
     let resp = request.send().await?;

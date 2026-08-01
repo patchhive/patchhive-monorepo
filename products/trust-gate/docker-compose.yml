@@ -1,9 +1,12 @@
 services:
   backend:
     image: "${PATCHHIVE_TRUST_GATE_BACKEND_IMAGE:-ghcr.io/patchhive/trustgate-backend}:${PATCHHIVE_IMAGE_TAG:-main}"
-    build: ./backend
+    build:
+      context: ../..
+      dockerfile: docker/backend-product.Dockerfile
+      args: { PRODUCT_SLUG: trust-gate, BINARY_NAME: trust-gate }
     pull_policy: "${PATCHHIVE_IMAGE_PULL_POLICY:-missing}"
-    user: "${PATCHHIVE_BACKEND_UID:-0}:${PATCHHIVE_BACKEND_GID:-0}"
+    user: "${PATCHHIVE_BACKEND_UID:-10001}:${PATCHHIVE_BACKEND_GID:-10001}"
     ports:
       - "8020:8000"
     volumes:
@@ -21,6 +24,7 @@ services:
     build:
       context: ../..
       dockerfile: products/trust-gate/frontend/Dockerfile
+      args: { VITE_API_URL: "http://127.0.0.1:8020" }
     pull_policy: "${PATCHHIVE_IMAGE_PULL_POLICY:-missing}"
     ports:
       - "5175:8080"

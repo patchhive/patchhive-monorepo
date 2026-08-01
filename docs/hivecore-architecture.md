@@ -72,21 +72,21 @@ and all of `src/pipeline/`.
 
 ### The blockers
 
-**B1 — Two product registries with no shared source.**
+**B1 — Product identity decoration is still duplicated.**
 `state.rs` holds `const PRODUCT_CATALOG: [ProductDefinition; 12]` carrying slug, title, icon,
 lane, role, repo, and default URLs. `services/patchhive-backend/registry/products/*.toml` holds
-`[safety]`, `[[capabilities]]`, `[[routes]]`, `[health]`, `migration_stage`. HiveCore therefore
-has **no access to any product's safety block**. It does not know from its own records which
-products are read-only, which mutate repositories, which open PRs, or which require approval — it
-learns actions at runtime by probing `/capabilities` and trusting the product's self-report. A
-control plane that cannot state a product's safety posture cannot govern it.
+`[safety]`, `[[capabilities]]`, `[[routes]]`, `[health]`, and `migration_stage`.
+`patchhive-backend` now injects manifest-backed safety definitions into HiveCore before startup,
+and dispatch fails closed if those definitions are absent or disagree with a live action. The
+remaining duplication is presentation metadata and default standalone URLs; moving those fields
+into the manifests would eliminate the final parallel catalog.
 
 **B2 — No durable knowledge of the suite.**
 HiveCore's tables are `suite_settings`, `product_overrides`, `product_action_events`,
 `first_stack_smoke_runs`, `repository_policies`, `pr_budget_*`. Product runs are proxied live and
-never stored. Consequently every read is a fan-out: `overview::build_runtime_products` loops all
-twelve products issuing `/health`, `/startup/checks`, `/capabilities`, `/runs` sequentially at 3s
-timeout each, on **every** `/overview` and `/products` call. `build_first_stack_response` adds
+never stored. Consequently every read is a fan-out: `overview::build_runtime_products` probes all
+twelve products concurrently for `/health`, `/startup/checks`, `/capabilities`, and `/runs` with a
+3s timeout, on **every** `/overview` and `/products` call. `build_first_stack_response` adds
 `/auth/status` per product plus two launcher calls, and runs after every setup action and every
 smoke tier. The frontend polls `/products` every 10 seconds. There is no cache, no snapshot table,
 and no background poller. A conductor tick layered on this would multiply an already expensive
@@ -106,23 +106,17 @@ if action.requires_approval || action.opens_pr {
 HiveCore can dispatch read-only actions only. The approval object is not one item on a list; it is
 the single named blocker between today and HiveCore running the suite.
 
-**B4 — The policy evaluator is far thinner than the documented model.**
-`pipeline/policy.rs::evaluate_repository_policy` is three branches — scope decision,
-trust-required-and-not-trusted, else allowed — not the eight-step precedence chain in
-[hivecore-repository-safety-and-pr-budgets.md](hivecore-repository-safety-and-pr-budgets.md#policy-order).
-`public_opt_out_checked` is hardcoded `false`. `operation_requires_trust` covers only
-`execute_repository_tests`, `execute_host_tests`, and `broader_sandbox`; **`open_pull_request`
-requires no trust.** Worst: the allowlist and denylist are re-parsed on every check from
-`suite_settings.repo_allowlist` / `repo_denylist`, which are free-text fields split on commas and
-newlines by `parse_repo_set`. The suite's autonomous-safety boundary is currently a textarea.
+**B4 — Public opt-out ingestion is not implemented.**
+HiveCore and the specialist products now evaluate the shared structured repository-policy store
+with opt-out, denylist, allowlist, and trust precedence. The remaining gap is the authenticated
+`patchhive.dev` owner opt-out service and ingestion path; local evaluations report that the store
+was checked, but cannot claim that public owner assertions have been synchronized.
 
-**B5 — Committed PR slots can leak permanently.**
-`expire_pr_reservations_in_transaction` expires only `status = 'reserved'`, while
-`active_pr_count` counts `reserved` **and** `committed`. Committed slots are released solely when
-RepoReaper's PR monitor calls `/pr-budgets/releases`. If RepoReaper restarts, loses the run, or is
-down when the PR merges, that slot is consumed forever. With a default ceiling of 10, the suite
-silently ratchets toward zero outbound capacity with no error surfaced anywhere. This is a live
-correctness bug in the current write path, not a future concern.
+**B5 — PR lifecycle reconciliation remains polling-dependent.**
+Reserved slots have a short lease and committed slots now have a bounded long lease (30 days by
+default), so a missed RepoReaper release cannot consume capacity forever. A future supervisor
+should still reconcile open/merged/closed PR state proactively instead of relying on release calls
+and lease expiry.
 
 **B6 — Fleet-launch state is in-memory only.**
 `AppState.latest_fleet_launch: Arc<RwLock<Option<SetupFleetLaunchJob>>>` — one job, no history,
@@ -222,8 +216,7 @@ product_runs_index      slug, run_id, status, title, summary, created_at, observ
 
 Every HTTP read becomes a table read. `/overview` stops fanning out. Staleness is explicit data,
 not an implicit consequence of a timeout. This is a large win independent of autonomy — it removes
-roughly fifty sequential HTTP calls per ten-second frontend poll — and it creates the history the
-conductor needs.
+repeated live HTTP fan-out from frontend polling — and it creates the history the conductor needs.
 
 ### 3.5 Approvals as objects
 

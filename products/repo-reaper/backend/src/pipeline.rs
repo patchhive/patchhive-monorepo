@@ -172,21 +172,28 @@ struct FixWaveInput<'a> {
 
 /// Repository scope for a hunt, read from the suite-wide policy store.
 ///
-/// Failing to an empty policy is deliberate and safe *here*: an empty policy is not
-/// deny-all, but RepoReaper's allowlist check is separate and a denylist that failed
-/// to load simply cannot exclude anything it never saw. That is the one behaviour to
-/// watch if this ever grows a fallback — silently reading zero denials must never
-/// become the quiet path to writing to a repository an operator excluded.
-fn load_filters() -> RepoScopePolicy {
+/// A policy read failure produces a non-matching allowlist sentinel. This fails every
+/// repository closed instead of silently treating unknown policy as unrestricted.
+pub(crate) fn load_filters() -> RepoScopePolicy {
+    fn deny_all() -> RepoScopePolicy {
+        RepoScopePolicy::new(
+            ["patchhive-policy-load-failed/deny-all".to_string()]
+                .into_iter()
+                .collect(),
+            Default::default(),
+            Default::default(),
+        )
+    }
+
     let Ok(conn) = get_conn() else {
         tracing::error!("repo-reaper: could not open the database to read repository scope");
-        return Default::default();
+        return deny_all();
     };
     match patchhive_product_core::repo_policy::scope_policy(&conn) {
         Ok(policy) => policy,
         Err(error) => {
             tracing::error!("repo-reaper: could not read repository scope: {error}");
-            Default::default()
+            deny_all()
         }
     }
 }
@@ -302,7 +309,7 @@ async fn collect_targets(
     (repos, issues, fixable, scoring_available)
 }
 
-fn classify_write_eligibility(
+pub(crate) fn classify_write_eligibility(
     issues: &mut [Value],
     scoring_available: bool,
     min_fixability_score: i64,
@@ -814,6 +821,7 @@ pub async fn execute_dry_run(
     req: RunRequest,
     tx: mpsc::Sender<Result<Event, Infallible>>,
 ) -> Result<RunExecutionResult, String> {
+    let req = normalized_run_request(req);
     let _active = claim_active_run(state.run_active.clone(), &tx).await?;
     let agents_snap = state.agents.read().await.clone();
     let Some(team) = select_run_team(&agents_snap) else {
@@ -998,6 +1006,7 @@ pub async fn execute_run(
     req: RunRequest,
     tx: mpsc::Sender<Result<Event, Infallible>>,
 ) -> Result<RunExecutionResult, String> {
+    let req = normalized_run_request(req);
     let http = state.http.clone();
     let agents_arc = state.agents.clone();
     let _active = claim_active_run(state.run_active.clone(), &tx).await?;
@@ -1084,6 +1093,14 @@ pub async fn execute_run(
     .await;
 
     Ok(finalize_run_with_summary(&tx, &run_id, &run_cost, fixable.len()).await)
+}
+
+fn normalized_run_request(mut request: RunRequest) -> RunRequest {
+    request.max_repos = request.max_repos.clamp(1, 100);
+    request.max_issues = request.max_issues.clamp(1, 100);
+    request.concurrency = request.concurrency.clamp(1, 32);
+    request.retry_count = request.retry_count.clamp(0, 10);
+    request
 }
 
 #[cfg(test)]

@@ -98,6 +98,13 @@ pub(super) async fn dispatch_once(
         .map_err(|message| {
             api_error(StatusCode::BAD_GATEWAY, "capabilities_unavailable", message)
         })?;
+    let safety = crate::state::product_safety(definition.slug).ok_or_else(|| {
+        api_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "product_safety_unavailable",
+            "HiveCore refuses dispatch until the manifest-backed product safety registry is loaded.",
+        )
+    })?;
     let action = capabilities
         .actions
         .iter()
@@ -110,6 +117,28 @@ pub(super) async fn dispatch_once(
                 "The product did not advertise that action.",
             )
         })?;
+
+    if action.opens_pr && !safety.opens_pull_requests {
+        return Err(api_error(
+            StatusCode::CONFLICT,
+            "safety_contract_mismatch",
+            "The live action claims it opens pull requests, but the product manifest does not.",
+        ));
+    }
+    if action.mutating && !(safety.writes_external_state || safety.mutates_repositories) {
+        return Err(api_error(
+            StatusCode::CONFLICT,
+            "safety_contract_mismatch",
+            "The live action claims it mutates state, but the product manifest declares no write boundary.",
+        ));
+    }
+    if action.mutating && safety.requires_operator_approval && !action.requires_approval {
+        return Err(api_error(
+            StatusCode::CONFLICT,
+            "safety_contract_mismatch",
+            "The product manifest requires operator approval, but the live mutating action omits that gate.",
+        ));
+    }
 
     if action.destructive {
         return Err(api_error(
@@ -124,6 +153,14 @@ pub(super) async fn dispatch_once(
             StatusCode::FORBIDDEN,
             "approval_required",
             "HiveCore does not dispatch approval-gated or pull-request-opening actions until the suite approval flow exists.",
+        ));
+    }
+
+    if auth.legacy_api_key_configured() && !action.required_scopes.is_empty() {
+        return Err(api_error(
+            StatusCode::FORBIDDEN,
+            "legacy_api_key_unscoped",
+            "This action requires scoped machine credentials. Pair the product with a service token before dispatching it.",
         ));
     }
 
@@ -294,6 +331,16 @@ pub(super) fn fill_path_template(
 ) -> Result<String, String> {
     let mut resolved = path.to_string();
     for (key, value) in path_params {
+        if value.is_empty()
+            || matches!(value.as_str(), "." | "..")
+            || value
+                .chars()
+                .any(|character| matches!(character, '/' | '\\' | '?' | '#' | '{' | '}' | '%'))
+        {
+            return Err(format!(
+                "Action path parameter '{key}' contains unsupported path characters."
+            ));
+        }
         resolved = resolved.replace(&format!("{{{key}}}"), value);
     }
 

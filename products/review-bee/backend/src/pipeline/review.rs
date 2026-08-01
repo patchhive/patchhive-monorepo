@@ -1,5 +1,5 @@
 use chrono::Utc;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use uuid::Uuid;
 
 use crate::github::GitHubReviewContext;
@@ -106,7 +106,27 @@ pub fn build_review_result(
     let mut clusters: HashMap<String, ChecklistCluster> = HashMap::new();
     let mut actionable_threads = 0u32;
 
+    let mut latest_reviews = BTreeMap::new();
     for review in &context.reviews {
+        let author_key = if review.author_login.trim().is_empty() {
+            format!("review:{}", review.id)
+        } else {
+            review.author_login.trim().to_ascii_lowercase()
+        };
+        let replace = latest_reviews.get(&author_key).is_none_or(
+            |current: &&patchhive_github_pr::GitHubPullReview| {
+                review.submitted_at >= current.submitted_at
+            },
+        );
+        if replace {
+            latest_reviews.insert(author_key, review);
+        }
+    }
+
+    for review in latest_reviews.values().copied() {
+        if review.state == "DISMISSED" {
+            continue;
+        }
         if !review.author_login.trim().is_empty() {
             reviewer_logins.insert(review.author_login.trim().to_string());
         }

@@ -145,8 +145,14 @@ pub fn upsert(conn: &Connection, entry: &RepoPolicyEntry) -> Result<()> {
             "INSERT INTO {TABLE} (repository, kind, source, notes, verified, updated_at) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6) \
              ON CONFLICT(repository, kind) DO UPDATE SET \
-               source = excluded.source, notes = excluded.notes, \
-               verified = excluded.verified, updated_at = excluded.updated_at"
+               source = CASE WHEN kind = 'opt_out' AND verified = 1 \
+                        THEN source ELSE excluded.source END, \
+               notes = CASE WHEN kind = 'opt_out' AND verified = 1 \
+                       THEN notes ELSE excluded.notes END, \
+               verified = CASE WHEN kind = 'opt_out' AND verified = 1 \
+                          THEN 1 ELSE excluded.verified END, \
+               updated_at = CASE WHEN kind = 'opt_out' AND verified = 1 \
+                            THEN updated_at ELSE excluded.updated_at END"
         ),
         params![
             repository,
@@ -191,7 +197,10 @@ pub fn remove(conn: &Connection, repository: &str, kind: PolicyKind) -> Result<b
         return Ok(false);
     };
     let changed = conn.execute(
-        &format!("DELETE FROM {TABLE} WHERE repository = ?1 AND kind = ?2"),
+        &format!(
+            "DELETE FROM {TABLE} WHERE repository = ?1 AND kind = ?2 \
+             AND NOT (kind = 'opt_out' AND verified = 1)"
+        ),
         params![normalized, kind.as_str()],
     )?;
     Ok(changed > 0)

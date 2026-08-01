@@ -96,6 +96,9 @@ pub async fn discover_repositories(
         let mut warnings = Vec::new();
         for repo in allowlist {
             if !repo_allowed(repo, allowlist, denylist, opt_out) {
+                warnings.push(format!(
+                    "SignalHive skipped allowlisted repository `{repo}` because a stronger denylist or opt-out policy applies."
+                ));
                 continue;
             }
             match fetch_repo(client, repo).await {

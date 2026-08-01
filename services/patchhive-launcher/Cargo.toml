@@ -9,6 +9,7 @@ name = "patchhive-launcher"
 path = "src/main.rs"
 
 [dependencies]
+anyhow = "1"
 axum = { version = "0.7", features = ["macros"] }
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }

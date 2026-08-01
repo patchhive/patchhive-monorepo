@@ -7,6 +7,7 @@ use axum::{
     Json,
 };
 
+use crate::models::MigrationStage;
 use crate::{models::ErrorResponse, registry::ProductManifest, state::AppState};
 
 const MAX_GATEWAY_BODY_BYTES: usize = 25 * 1024 * 1024;
@@ -30,6 +31,17 @@ pub async fn proxy_product_request(
             StatusCode::FORBIDDEN,
             "product-disabled",
             format!("{} is disabled by PATCHHIVE_PRODUCTS.", product.name),
+        );
+    }
+
+    if matches!(product.migration_stage, Some(MigrationStage::Integrated)) {
+        return json_error(
+            StatusCode::NOT_FOUND,
+            "integrated-route-not-mounted",
+            format!(
+                "{} is integrated, but this route is not mounted by its in-process router.",
+                product.name
+            ),
         );
     }
 

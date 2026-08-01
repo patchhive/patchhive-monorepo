@@ -55,7 +55,7 @@ fn env_flag(name: &str) -> bool {
 fn configured_allowed_roots() -> Vec<PathBuf> {
     match env::var_os("REFACTOR_SCOUT_ALLOWED_ROOTS") {
         Some(value) if !value.is_empty() => env::split_paths(&value).collect(),
-        _ => vec![env::current_dir().unwrap_or_else(|_| PathBuf::from("."))],
+        _ => Vec::new(),
     }
 }
 

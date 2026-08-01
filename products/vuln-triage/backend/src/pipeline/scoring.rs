@@ -147,7 +147,7 @@ pub fn severity_score(severity: &str) -> u32 {
 }
 
 pub fn recommend(score: u32, severity: &str) -> String {
-    if matches!(severity, "critical" | "high") || score >= 70 {
+    if severity == "critical" || score >= 70 {
         "fix_now".into()
     } else if score >= 42 {
         "plan_next".into()

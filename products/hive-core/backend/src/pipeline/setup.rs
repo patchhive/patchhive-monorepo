@@ -306,9 +306,7 @@ pub(super) async fn setup_product_logs(
         slug,
         tail
     );
-    let response = state
-        .client
-        .get(url)
+    let response = launcher_request(state.client.get(url))
         .timeout(Duration::from_secs(20))
         .send()
         .await
@@ -968,6 +966,17 @@ fn launcher_base_url() -> String {
     env::var("PATCHHIVE_LAUNCHER_URL").unwrap_or_else(|_| "http://localhost:8210".into())
 }
 
+fn launcher_request(request: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+    match env::var("PATCHHIVE_LAUNCHER_API_KEY")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+    {
+        Some(key) => request.header("X-API-Key", key),
+        None => request,
+    }
+}
+
 fn configured_suite_bootstrap_secret() -> Option<String> {
     env::var("PATCHHIVE_SUITE_BOOTSTRAP_SECRET")
         .ok()
@@ -987,9 +996,7 @@ fn ensure_suite_bootstrap_secret() -> String {
 
 async fn fetch_launcher_snapshot(state: &AppState) -> Result<LauncherSnapshot, String> {
     let url = format!("{}/stacks/first", launcher_base_url().trim_end_matches('/'));
-    let response = state
-        .client
-        .get(url)
+    let response = launcher_request(state.client.get(url))
         .timeout(Duration::from_secs(3))
         .send()
         .await
@@ -1035,9 +1042,7 @@ async fn fetch_launcher_requirements(
         "{}/setup/requirements",
         launcher_base_url().trim_end_matches('/')
     );
-    let response = state
-        .client
-        .get(url)
+    let response = launcher_request(state.client.get(url))
         .timeout(Duration::from_secs(3))
         .send()
         .await
@@ -1075,9 +1080,7 @@ async fn write_launcher_product_env(
         launcher_base_url().trim_end_matches('/'),
         slug
     );
-    let response = state
-        .client
-        .post(url)
+    let response = launcher_request(state.client.post(url))
         .json(&serde_json::json!({ "values": values }))
         .timeout(Duration::from_secs(20))
         .send()
@@ -1117,9 +1120,7 @@ async fn start_launcher_stack(
         "{}/stacks/first/start",
         launcher_base_url.trim_end_matches('/')
     );
-    let response = state
-        .client
-        .post(url)
+    let response = launcher_request(state.client.post(url))
         .json(&LauncherStartRequest {
             suite_bootstrap_secret: secret,
             products,
@@ -1175,7 +1176,7 @@ async fn run_launcher_product_action(
         slug,
         action
     );
-    let mut request = state.client.post(url).timeout(Duration::from_secs(180));
+    let mut request = launcher_request(state.client.post(url)).timeout(Duration::from_secs(180));
     request = if let Some(secret) = suite_bootstrap_secret {
         request.json(&LauncherProductActionRequest {
             suite_bootstrap_secret: secret,
@@ -1248,9 +1249,7 @@ async fn stop_launcher_stack(
         "{}/stacks/first/stop",
         launcher_base_url.trim_end_matches('/')
     );
-    let response = state
-        .client
-        .post(url)
+    let response = launcher_request(state.client.post(url))
         .json(&LauncherStopRequest { remove: false })
         .timeout(Duration::from_secs(90))
         .send()

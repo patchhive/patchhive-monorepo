@@ -27,16 +27,18 @@ Rules:
 - Maintainer and operator opt-out signals should be durable and easy to inspect.
 - Products should fail closed when policy data is ambiguous rather than acting aggressively.
 
-The future canonical design for the public `patchhive.dev` repository-owner
-opt-out, HiveCore trusted repositories, and hierarchical PR budgets is recorded
+The canonical design for the public `patchhive.dev` repository-owner opt-out,
+HiveCore trusted repositories, and hierarchical PR budgets is recorded
 in [HiveCore repository safety and PR budgets](hivecore-repository-safety-and-pr-budgets.md).
-Those controls are not implemented yet.
+Local repository policy, trusted-repository enforcement, and atomic hierarchical
+PR budgets are implemented. The verified public `patchhive.dev` opt-out service
+remains future work.
 
 ## 2. Reputation And Output Limits
 
 PatchHive's GitHub reputation compounds over time, which means bad output scales just as fast as good output.
 
-Every autonomous write-capable product should eventually enforce hard limits for:
+Every autonomous write-capable product should enforce hard limits for:
 
 - maximum PRs opened per run
 - maximum PRs opened per repo per 24 hours
@@ -57,7 +59,7 @@ Operational rules:
   reverse proxy and `X-Forwarded-For` is sanitized by that proxy; otherwise
   forwarded client headers are ignored.
 - HiveCore should inherit and coordinate these caps, not bypass them.
-- HiveCore should eventually enforce an atomic two-layer PR budget: a
+- HiveCore enforces an atomic two-layer PR budget: a
   configurable per-product maximum and one suite-wide ceiling. The suite
   ceiling always wins when it has less capacity than the product maximum.
 - Every GitHub-facing PR body, issue comment, PR comment, report, or other
@@ -82,8 +84,8 @@ Every product backend should converge toward:
 
 See:
 
-- [Product API Contract v1](/home/coemedia/Documents/code/patchhive/docs/product-api-contract-v1.md)
-- [Suite runs and fix capabilities](/home/coemedia/Documents/code/patchhive/docs/suite-runs-and-fix-capabilities.md)
+- [Product API Contract v1](product-api-contract-v1.md)
+- [Suite runs and fix capabilities](suite-runs-and-fix-capabilities.md)
 
 ## 4. Complete Evidence Retention
 

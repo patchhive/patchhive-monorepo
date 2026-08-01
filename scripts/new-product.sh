@@ -172,6 +172,7 @@ fi
 
 mkdir -p "$TARGET_ROOT"
 cp -R "$TEMPLATE_DIR" "$TARGET_DIR"
+rm -rf -- "$TARGET_DIR/backend/target" "$TARGET_DIR/frontend/dist"
 
 SLUG_ESCAPED="$(escape_sed "$SLUG")"
 TITLE_ESCAPED="$(escape_sed "$TITLE")"

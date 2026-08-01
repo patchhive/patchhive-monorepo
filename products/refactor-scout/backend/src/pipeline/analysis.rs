@@ -84,67 +84,11 @@ pub(crate) fn push_warning(warnings: &mut Vec<String>, warning: String) {
 }
 
 pub(crate) fn scan_request_allowed(
-    headers: &axum::http::HeaderMap,
+    peer_addr: Option<std::net::SocketAddr>,
     remote_fs_enabled: bool,
 ) -> bool {
     if remote_fs_enabled {
         return true;
     }
-
-    let mut saw_browser_local_hint = false;
-
-    for header in ["origin", "referer"] {
-        if let Some(value) = headers.get(header).and_then(|value| value.to_str().ok()) {
-            if !local_endpoint(value) {
-                return false;
-            }
-            saw_browser_local_hint = true;
-        }
-    }
-
-    if saw_browser_local_hint {
-        return true;
-    }
-
-    if let Some(value) = headers
-        .get("x-forwarded-for")
-        .and_then(|value| value.to_str().ok())
-    {
-        let client = value.split(',').next().unwrap_or("").trim();
-        if !matches!(client, "" | "127.0.0.1" | "::1" | "[::1]") {
-            return false;
-        }
-    }
-
-    headers
-        .get("host")
-        .and_then(|value| value.to_str().ok())
-        .map(local_endpoint)
-        .unwrap_or(false)
-}
-
-fn local_endpoint(value: &str) -> bool {
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        return false;
-    }
-
-    let without_scheme = trimmed
-        .split("://")
-        .nth(1)
-        .unwrap_or(trimmed)
-        .split('/')
-        .next()
-        .unwrap_or(trimmed)
-        .trim();
-
-    let host = without_scheme
-        .trim_start_matches('[')
-        .trim_end_matches(']')
-        .split(':')
-        .next()
-        .unwrap_or(without_scheme)
-        .trim();
-
-    matches!(host, "localhost" | "127.0.0.1" | "::1")
+    peer_addr.is_some_and(|addr| addr.ip().is_loopback())
 }

@@ -931,6 +931,7 @@ dependencies = [
 name = "patchhive-launcher"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "axum",
  "patchhive-product-core",
  "serde",

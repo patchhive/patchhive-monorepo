@@ -541,7 +541,7 @@ function HiveOrb() {
                     key={p.id}
                     className="animate-float-up relative z-10 -mt-2 flex h-[104px] w-24 items-center justify-center shadow-[0_0_30px_color-mix(in_oklab,var(--honey)_30%,transparent)]"
                     style={{ clipPath: HEX, background: "var(--honey)", animationDelay: `${i * 50}ms` }}
-                    title={`${p.name} · ${p.status} · ${p.latencyMs}ms`}
+                    title={`${p.name} · ${p.status} · ${p.latencyMs > 0 ? `${p.latencyMs}ms` : "latency unavailable"}`}
                   >
                     <div
                       className="absolute inset-[1.5px] bg-background"
@@ -556,7 +556,7 @@ function HiveOrb() {
                         {initials}
                       </span>
                       <span className="mt-0.5 font-mono text-[10px] font-medium tracking-tight text-[var(--honey)]/80">
-                        {p.latencyMs}ms
+                        {p.latencyMs > 0 ? `${p.latencyMs}ms` : "—"}
                       </span>
                     </div>
                     <span className="absolute bottom-2 h-1 w-1 animate-ping rounded-full bg-[var(--honey)]" />
@@ -568,7 +568,7 @@ function HiveOrb() {
                   key={p.id}
                   className="animate-float-up relative flex h-[88px] w-20 items-center justify-center bg-card/80"
                   style={{ clipPath: HEX, animationDelay: `${i * 50}ms` }}
-                  title={`${p.name} · ${p.status} · ${p.latencyMs}ms`}
+                  title={`${p.name} · ${p.status} · ${p.latencyMs > 0 ? `${p.latencyMs}ms` : "latency unavailable"}`}
                 >
                   <span
                     className="absolute top-2 h-1.5 w-1.5 rounded-full"
@@ -587,7 +587,9 @@ function HiveOrb() {
                     >
                       {p.status === "crit" || p.status === "offline"
                         ? "OFFLINE"
-                        : `${p.latencyMs}ms`}
+                        : p.latencyMs > 0
+                          ? `${p.latencyMs}ms`
+                          : "—"}
                     </span>
                   </div>
                 </div>

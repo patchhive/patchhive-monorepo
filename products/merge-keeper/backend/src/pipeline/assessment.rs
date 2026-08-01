@@ -351,14 +351,26 @@ pub fn reviewer_states(context: &GitHubMergeContext) -> Vec<ReviewerState> {
         if login.is_empty() {
             continue;
         }
-        latest.insert(
-            login.into(),
-            ReviewerState {
-                login: login.into(),
-                state: review.state.clone(),
-                submitted_at: review.submitted_at.clone(),
-            },
-        );
+        if review.state == "DISMISSED" {
+            latest.remove(login);
+            continue;
+        }
+        if !matches!(review.state.as_str(), "APPROVED" | "CHANGES_REQUESTED") {
+            continue;
+        }
+        let should_replace = latest
+            .get(login)
+            .is_none_or(|current| review.submitted_at >= current.submitted_at);
+        if should_replace {
+            latest.insert(
+                login.into(),
+                ReviewerState {
+                    login: login.into(),
+                    state: review.state.clone(),
+                    submitted_at: review.submitted_at.clone(),
+                },
+            );
+        }
     }
     latest.into_values().collect()
 }

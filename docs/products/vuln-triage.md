@@ -83,7 +83,7 @@ docker compose up --build
 
 Defaults:
 - **Frontend** (canonical UI v3): `http://localhost:5181`
-- **Frontend Vite dev server**: `http://localhost:5300`
+- **Frontend Vite dev server**: `http://localhost:5181`
 - **Backend**: `http://localhost:8110`
 - **Suite backend route**: `http://localhost:8100/api/products/vuln-triage`
 

@@ -1,4 +1,5 @@
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use tokio::sync::RwLock;
@@ -79,6 +80,28 @@ pub struct ProductDefinition {
     pub repo: &'static str,
     pub default_frontend_url: &'static str,
     pub default_api_url: &'static str,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ProductSafetyDefinition {
+    pub writes_external_state: bool,
+    pub mutates_repositories: bool,
+    pub opens_pull_requests: bool,
+    pub requires_operator_approval: bool,
+}
+
+static PRODUCT_SAFETY: OnceLock<HashMap<String, ProductSafetyDefinition>> = OnceLock::new();
+
+pub fn configure_product_safety(
+    entries: impl IntoIterator<Item = (String, ProductSafetyDefinition)>,
+) -> anyhow::Result<()> {
+    PRODUCT_SAFETY
+        .set(entries.into_iter().collect())
+        .map_err(|_| anyhow::anyhow!("HiveCore product safety registry was already configured"))
+}
+
+pub fn product_safety(slug: &str) -> Option<&'static ProductSafetyDefinition> {
+    PRODUCT_SAFETY.get()?.get(slug)
 }
 
 const PRODUCT_CATALOG: [ProductDefinition; 12] = [

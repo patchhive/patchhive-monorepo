@@ -1,10 +1,11 @@
 import http from "node:http";
-import { randomUUID } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 
 import { CopilotClient } from "@github/copilot-sdk";
 import { Codex } from "@openai/codex-sdk";
 
 const DEFAULT_TIMEOUT_MS = 120_000;
+const DEFAULT_MAX_BODY_BYTES = 1_048_576;
 const DEFAULT_PROVIDER_ORDER = ["codex", "copilot"];
 const DEFAULT_MODELS = {
   codex: "gpt-5.4",
@@ -191,24 +192,53 @@ function createErrorPayload(message, attempts = []) {
   };
 }
 
-function setCorsHeaders(res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
+function setCorsHeaders(req, res, allowedOrigins) {
+  const origin = String(req.headers.origin || "").trim();
+  if (origin && allowedOrigins.includes(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Vary", "Origin");
+  }
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Patchhive-Provider");
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "Content-Type, Authorization, X-API-Key, X-Patchhive-Provider",
+  );
 }
 
 function writeJson(res, status, payload, extraHeaders = {}) {
-  setCorsHeaders(res);
   Object.entries(extraHeaders).forEach(([key, value]) => res.setHeader(key, value));
   res.writeHead(status, { "Content-Type": "application/json; charset=utf-8" });
   res.end(JSON.stringify(payload, null, 2));
 }
 
-async function readJson(req) {
+async function readJson(req, maxBodyBytes) {
   const chunks = [];
-  for await (const chunk of req) chunks.push(chunk);
+  let received = 0;
+  for await (const chunk of req) {
+    received += chunk.length;
+    if (received > maxBodyBytes) {
+      const error = new Error("Request body is too large.");
+      error.code = "BODY_TOO_LARGE";
+      throw error;
+    }
+    chunks.push(chunk);
+  }
   const raw = Buffer.concat(chunks).toString("utf8").trim();
   return raw ? JSON.parse(raw) : {};
+}
+
+function requestToken(req) {
+  const authorization = String(req.headers.authorization || "").trim();
+  if (/^bearer\s+/i.test(authorization)) {
+    return authorization.replace(/^bearer\s+/i, "").trim();
+  }
+  return String(req.headers["x-api-key"] || "").trim();
+}
+
+function tokensEqual(presented, configured) {
+  const left = Buffer.from(presented);
+  const right = Buffer.from(configured);
+  return left.length === right.length && timingSafeEqual(left, right);
 }
 
 class CodexAdapter {
@@ -304,6 +334,12 @@ export function resolveGatewayConfig(env = process.env) {
     port: toPositiveInt(env.PATCHHIVE_AI_PORT, 8787),
     providerOrder: providerOrder.length ? providerOrder : [...DEFAULT_PROVIDER_ORDER],
     requestTimeoutMs: toPositiveInt(env.PATCHHIVE_AI_TIMEOUT_MS, DEFAULT_TIMEOUT_MS),
+    maxBodyBytes: toPositiveInt(env.PATCHHIVE_AI_MAX_BODY_BYTES, DEFAULT_MAX_BODY_BYTES),
+    apiKey: String(env.PATCHHIVE_AI_GATEWAY_API_KEY || "").trim(),
+    corsOrigins: String(env.PATCHHIVE_AI_CORS_ORIGINS || "")
+      .split(",")
+      .map(origin => origin.trim())
+      .filter(origin => origin && origin !== "*"),
     codex: {
       workingDirectory: env.PATCHHIVE_AI_WORKDIR || process.cwd(),
     },
@@ -318,6 +354,11 @@ export function resolveGatewayConfig(env = process.env) {
 }
 
 export function createGateway(config = resolveGatewayConfig()) {
+  if (!config.apiKey) {
+    throw new Error(
+      "PATCHHIVE_AI_GATEWAY_API_KEY is required for the JavaScript local AI gateway.",
+    );
+  }
   const adapters = new Map();
   adapters.set("codex", new CodexAdapter(config.codex));
   if (config.copilot.enabled) {
@@ -357,9 +398,9 @@ export function createGateway(config = resolveGatewayConfig()) {
 
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url || "/", `http://${req.headers.host || "127.0.0.1"}`);
+    setCorsHeaders(req, res, config.corsOrigins);
 
     if (req.method === "OPTIONS") {
-      setCorsHeaders(res);
       res.writeHead(204);
       res.end();
       return;
@@ -376,6 +417,10 @@ export function createGateway(config = resolveGatewayConfig()) {
     }
 
     if (req.method === "GET" && url.pathname === "/v1/models") {
+      if (!tokensEqual(requestToken(req), config.apiKey)) {
+        writeJson(res, 401, createErrorPayload("Unauthorized."));
+        return;
+      }
       const data = Array.from(adapters.keys()).map(provider => ({
         id: config.defaultModels[provider] || DEFAULT_MODELS[provider],
         object: "model",
@@ -386,11 +431,20 @@ export function createGateway(config = resolveGatewayConfig()) {
     }
 
     if (req.method === "POST" && (url.pathname === "/v1/chat/completions" || url.pathname === "/v1/responses")) {
+      if (!tokensEqual(requestToken(req), config.apiKey)) {
+        writeJson(res, 401, createErrorPayload("Unauthorized."));
+        return;
+      }
       let body;
       try {
-        body = await readJson(req);
+        body = await readJson(req, config.maxBodyBytes);
       } catch (error) {
-        writeJson(res, 400, createErrorPayload("Invalid JSON request body."));
+        const tooLarge = error?.code === "BODY_TOO_LARGE";
+        writeJson(
+          res,
+          tooLarge ? 413 : 400,
+          createErrorPayload(tooLarge ? "Request body is too large." : "Invalid JSON request body."),
+        );
         return;
       }
 

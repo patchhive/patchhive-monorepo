@@ -15,6 +15,7 @@ import { apiFetch } from "./http";
 import { ID_BY_SLUG, SLUG_BY_ID, TITLE_BY_SLUG } from "./product-slugs";
 import { PRODUCTS, RUNS, type RunEvent, type Status } from "./hive-data";
 import { fetchConformance } from "./conformance";
+import { fetchProbes, summarise } from "./probes";
 
 interface ApiProduct {
   key: string;
@@ -180,6 +181,15 @@ export function useLiveSuite(pollMs = 10_000): LiveSuite {
           product.status = toStatus(row);
           if (row.capabilities.length > 0) product.capabilities = row.capabilities;
         }
+
+        await Promise.all(
+          PRODUCTS.map(async (product) => {
+            const slug = SLUG_BY_ID[product.id] ?? product.id;
+            const probes = summarise(await fetchProbes(slug, controller.signal));
+            product.latencyMs = probes.latest ?? 0;
+            product.uptime = probes.uptime ?? 0;
+          }),
+        );
 
         await syncRuns(controller.signal);
         if (cancelled) return;

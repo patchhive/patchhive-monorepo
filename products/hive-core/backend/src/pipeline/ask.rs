@@ -209,11 +209,26 @@ pub async fn ask(State(state): State<AppState>, Json(request): Json<AskRequest>)
         .post(format!("{base}/chat/completions"))
         .json(&body);
 
-    let lower = base.to_ascii_lowercase();
-    let is_local = lower.contains("127.0.0.1") || lower.contains("localhost");
+    let is_local = reqwest::Url::parse(&base)
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_ascii_lowercase))
+        .is_some_and(|host| {
+            host == "localhost"
+                || host
+                    .parse::<std::net::IpAddr>()
+                    .is_ok_and(|address| address.is_loopback())
+        });
     match nonempty_env("PATCHHIVE_AI_API_KEY").or_else(|| nonempty_env("OPENAI_API_KEY")) {
+        _ if is_local => match nonempty_env("PATCHHIVE_AI_GATEWAY_API_KEY") {
+            Some(key) => request_builder = request_builder.bearer_auth(key),
+            None => {
+                return plain_error(
+                    StatusCode::BAD_GATEWAY,
+                    "PATCHHIVE_AI_GATEWAY_API_KEY is required for the local AI gateway.",
+                )
+            }
+        },
         Some(key) => request_builder = request_builder.bearer_auth(key),
-        None if is_local => request_builder = request_builder.bearer_auth("patchhive-local"),
         None => {
             return plain_error(
                 StatusCode::BAD_GATEWAY,

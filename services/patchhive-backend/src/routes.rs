@@ -21,6 +21,7 @@ use crate::{
 use std::net::SocketAddr;
 
 pub fn router(state: Arc<AppState>) -> Router {
+    let selection = state.config.product_selection.clone();
     let suite_routes = Router::new()
         .route("/", get(root))
         .route("/health", get(health))
@@ -58,29 +59,62 @@ pub fn router(state: Arc<AppState>) -> Router {
         // chased the symptom; the layer was simply in the wrong place.
         .layer(axum::middleware::from_fn(crate::auth::auth_middleware));
 
-    Router::new()
-        .nest(
+    let mut product_routes = Router::new();
+    if selection.enables("merge-keeper") {
+        product_routes = product_routes.nest(
             "/api/products/merge-keeper",
             products::merge_keeper_router(),
-        )
-        .nest(
+        );
+    }
+    if selection.enables("release-sentry") {
+        product_routes = product_routes.nest(
             "/api/products/release-sentry",
             products::release_sentry_router(),
-        )
-        .nest("/api/products/dep-triage", products::dep_triage_router())
-        .nest("/api/products/vuln-triage", products::vuln_triage_router())
-        .nest("/api/products/flake-sting", products::flake_sting_router())
-        .nest("/api/products/review-bee", products::review_bee_router())
-        .nest("/api/products/trust-gate", products::trust_gate_router())
-        .nest("/api/products/repo-memory", products::repo_memory_router())
-        .nest("/api/products/signal-hive", products::signal_hive_router())
-        .nest(
+        );
+    }
+    if selection.enables("dep-triage") {
+        product_routes =
+            product_routes.nest("/api/products/dep-triage", products::dep_triage_router());
+    }
+    if selection.enables("vuln-triage") {
+        product_routes =
+            product_routes.nest("/api/products/vuln-triage", products::vuln_triage_router());
+    }
+    if selection.enables("flake-sting") {
+        product_routes =
+            product_routes.nest("/api/products/flake-sting", products::flake_sting_router());
+    }
+    if selection.enables("review-bee") {
+        product_routes =
+            product_routes.nest("/api/products/review-bee", products::review_bee_router());
+    }
+    if selection.enables("trust-gate") {
+        product_routes =
+            product_routes.nest("/api/products/trust-gate", products::trust_gate_router());
+    }
+    if selection.enables("repo-memory") {
+        product_routes =
+            product_routes.nest("/api/products/repo-memory", products::repo_memory_router());
+    }
+    if selection.enables("signal-hive") {
+        product_routes =
+            product_routes.nest("/api/products/signal-hive", products::signal_hive_router());
+    }
+    if selection.enables("refactor-scout") {
+        product_routes = product_routes.nest(
             "/api/products/refactor-scout",
             products::refactor_scout_router(),
-        )
-        .nest("/api/products/repo-reaper", products::repo_reaper_router())
-        .nest("/api/products/hive-core", products::hive_core_router())
-        .merge(suite_routes)
+        );
+    }
+    if selection.enables("repo-reaper") {
+        product_routes =
+            product_routes.nest("/api/products/repo-reaper", products::repo_reaper_router());
+    }
+    if selection.enables("hive-core") {
+        product_routes =
+            product_routes.nest("/api/products/hive-core", products::hive_core_router());
+    }
+    product_routes.merge(suite_routes)
 }
 
 async fn root() -> Json<HealthResponse> {
@@ -446,6 +480,10 @@ mod tests {
     use tower::ServiceExt;
 
     fn test_app() -> (Router, PathBuf) {
+        std::env::set_var(
+            "PATCHHIVE_SUITE_API_KEY_HASH",
+            "ab6ba4319a3173aa99e7cdb08457e18d3a10a01c8fbd821b76085b1c80c17d64",
+        );
         let db_path = std::env::temp_dir().join(format!(
             "patchhive-backend-contract-{}-{}.db",
             std::process::id(),
@@ -466,6 +504,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .uri(uri)
+                    .header("x-api-key", "ph-suite-test-key")
                     .body(Body::empty())
                     .expect("request"),
             )
