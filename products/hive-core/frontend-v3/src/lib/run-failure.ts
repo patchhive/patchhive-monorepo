@@ -44,7 +44,7 @@ export function buildPayload(run: RunEvent) {
     product: run.product,
     subject: run.capability,
     status: run.status,
-    duration_ms: run.durationMs || null,
+    duration_ms: run.durationMs,
     observed: run.ts,
     detail_source: "GET /runs/:id (not yet wired)",
   };

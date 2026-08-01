@@ -83,9 +83,14 @@ const MIN_BASELINE_SAMPLES = 5;
 export function capabilityBaseline(
   capability: string,
 ): { mean: number; stdev: number; samples: number } | null {
-  const durations = RUNS.filter(
-    (run) => run.capability === capability && run.status === "success" && run.durationMs > 0,
-  ).map((run) => run.durationMs);
+  const durations = RUNS.flatMap((run) =>
+    run.capability === capability &&
+    run.status === "completed" &&
+    run.durationMs !== null &&
+    run.durationMs > 0
+      ? [run.durationMs]
+      : [],
+  );
 
   if (durations.length < MIN_BASELINE_SAMPLES) return null;
 
@@ -107,7 +112,7 @@ export function capabilityBaseline(
  * produced a number, because its baseline was always available — it was invented.
  */
 export function runAnomalyZ(run: RunEvent): number | null {
-  if (run.status !== "success" || run.durationMs === 0) return null;
+  if (run.status !== "completed" || run.durationMs === null) return null;
   const baseline = capabilityBaseline(run.capability);
   if (!baseline) return null;
   return (run.durationMs - baseline.mean) / baseline.stdev;

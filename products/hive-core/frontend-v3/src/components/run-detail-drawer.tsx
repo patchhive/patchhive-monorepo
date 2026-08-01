@@ -45,15 +45,27 @@ interface Props {
 }
 
 const statusIcon = {
-  success: CheckCircle2,
+  standby: CircleDot,
+  queued: CircleDot,
   running: CircleDot,
+  completed: CheckCircle2,
   failed: XCircle,
+  cancelled: XCircle,
+  held: CircleDot,
+  skipped: CircleDot,
+  unknown: CircleDot,
 } as const;
 
 const statusTone = {
-  success: "text-[var(--ok)]",
+  standby: "text-muted-foreground",
+  queued: "text-[var(--honey)]",
   running: "text-[var(--honey)]",
+  completed: "text-[var(--ok)]",
   failed: "text-[var(--crit)]",
+  cancelled: "text-[var(--crit)]",
+  held: "text-[var(--warn)]",
+  skipped: "text-muted-foreground",
+  unknown: "text-muted-foreground",
 } as const;
 
 /** The run feed labels runs by product display name; the API wants a slug. */
@@ -118,7 +130,10 @@ export function RunDetailDrawer({ run, onClose }: Props) {
         stage: "",
         message: `${run.product} reported a failed ${run.capability} run.`,
         logs,
-        inputs: { run_id: run.id, duration_ms: run.durationMs },
+        inputs: {
+          run_id: run.id,
+          ...(run.durationMs === null ? {} : { duration_ms: run.durationMs }),
+        },
       });
       setExplanation(result.text);
     } catch (cause) {
@@ -167,7 +182,7 @@ export function RunDetailDrawer({ run, onClose }: Props) {
           <Field label="status" value={run.status} />
           <Field
             label="duration"
-            value={run.durationMs > 0 ? `${run.durationMs}ms` : "not reported"}
+            value={run.durationMs === null ? "not reported" : `${run.durationMs}ms`}
           />
         </dl>
 

@@ -428,6 +428,7 @@ direct reassessment. Products must not collapse both facts into one
   "runs": [
     {
       "id": "scan_123",
+      "lifecycle_status": "completed",
       "status": "completed",
       "title": "patchhive/example",
       "summary": "5 signals found",
@@ -440,7 +441,14 @@ direct reassessment. Products must not collapse both facts into one
 }
 ```
 
-The normalized fields are for HiveCore. The `raw` object preserves product-specific detail so standalone UIs and deeper integrations do not lose context.
+The normalized fields are for HiveCore. `lifecycle_status` is the required typed
+execution state: `standby`, `queued`, `running`, `completed`, `failed`,
+`cancelled`, `held`, `skipped`, or `unknown`. It must never be omitted or inferred
+as `completed` merely because a product record exists. `status` remains the
+product-owned outcome or recommendation and may use product vocabulary such as
+`safe`, `blocked`, or `partial`; consumers must not substitute it for lifecycle.
+The `raw` object preserves product-specific detail so standalone UIs and deeper
+integrations do not lose context.
 
 ### Finding retention and pagination
 

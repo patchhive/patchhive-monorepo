@@ -146,6 +146,10 @@ patchhive/
   database read or an unattempted product probe with an empty collection, zero
   latency, zero uptime, or zero findings. An observed empty collection is valid
   evidence and must remain distinguishable from all three unavailable states.
+- Product run summaries require a non-defaultable `RunLifecycleStatus`. Missing or
+  unrecognized lifecycle evidence is `unknown`, never `completed`; product-owned
+  decision `status` remains a separate field. HiveCore v3 must preserve every
+  lifecycle variant and represent an unavailable duration as `null`, not `0ms`.
 - Booleans remain appropriate for complete binary facts such as whether an action
   is scheduleable. The rule is to eliminate ambiguous state, not booleans generally.
 
@@ -154,10 +158,10 @@ GitHub Actions:
   three days once per day. Keep its `actions: write` permission narrowly scoped
   to that workflow; do not give ordinary build/test workflows write access merely
   to share the cleanup behavior.
-- Rust CodeQL uses manual build mode and `scripts/build-rust-packages.sh` so the
-  extractor sees every standalone Cargo package. Keep the canonical package list
-  in `scripts/rust-manifests.txt`; both CodeQL builds and strict Rust checks must
-  read that inventory instead of maintaining separate lists.
+- Rust CodeQL supports source extraction with `build-mode: none`, not manual
+  builds. Its analysis enables all Cargo targets and dependency source extraction
+  so dependency macros and call targets resolve across the multi-manifest repo.
+  Keep the strict CI package inventory in `scripts/rust-manifests.txt`.
 
 Backend:
 - Rust

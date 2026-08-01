@@ -323,7 +323,6 @@ pub struct ProductRunsResponse {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ProductRunSummary {
     pub id: String,
-    #[serde(default)]
     pub lifecycle_status: RunLifecycleStatus,
     pub status: String,
     pub title: String,
@@ -552,7 +551,7 @@ impl ProductAction {
     }
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum RunLifecycleStatus {
     Standby,
@@ -563,7 +562,6 @@ pub enum RunLifecycleStatus {
     Cancelled,
     Held,
     Skipped,
-    #[default]
     Unknown,
 }
 
@@ -934,9 +932,9 @@ fn run_summary_from_value(raw: &Value) -> ProductRunSummary {
         first_string(raw, &["status"])
             .and_then(|value| RunLifecycleStatus::from_runtime_status(&value))
     })
-    .unwrap_or(RunLifecycleStatus::Completed);
+    .unwrap_or(RunLifecycleStatus::Unknown);
     let status = first_string(raw, &["status", "recommendation", "readiness"])
-        .unwrap_or_else(|| "completed".into());
+        .unwrap_or_else(|| "unknown".into());
     let created_at =
         first_string(raw, &["created_at", "started_at", "opened_at"]).unwrap_or_default();
     let updated_at =
@@ -1340,8 +1338,8 @@ mod tests {
 
         assert_eq!(runs.product_slug, "dep-triage");
         assert_eq!(runs.runs[0].id, "scan_123");
-        assert_eq!(runs.runs[0].status, "completed");
-        assert_eq!(runs.runs[0].lifecycle_status, RunLifecycleStatus::Completed);
+        assert_eq!(runs.runs[0].status, "unknown");
+        assert_eq!(runs.runs[0].lifecycle_status, RunLifecycleStatus::Unknown);
         assert_eq!(runs.runs[0].title, "patchhive/example");
         assert_eq!(runs.runs[0].detail_path, "/runs/scan_123");
     }
@@ -1396,7 +1394,7 @@ mod tests {
     }
 
     #[test]
-    fn run_lifecycle_status_does_not_treat_ready_decisions_as_standby_runs() {
+    fn run_lifecycle_status_does_not_invent_completion_for_ready_decisions() {
         let runs = runs_from_values(
             "merge-keeper",
             vec![json!({
@@ -1408,7 +1406,7 @@ mod tests {
         );
 
         assert_eq!(runs.runs[0].status, "ready");
-        assert_eq!(runs.runs[0].lifecycle_status, RunLifecycleStatus::Completed);
+        assert_eq!(runs.runs[0].lifecycle_status, RunLifecycleStatus::Unknown);
     }
 
     #[test]
@@ -1428,8 +1426,8 @@ mod tests {
     }
 
     #[test]
-    fn run_summary_deserializes_legacy_json_without_lifecycle_status() {
-        let summary: super::ProductRunSummary = serde_json::from_value(json!({
+    fn run_summary_rejects_json_without_explicit_lifecycle_status() {
+        let result = serde_json::from_value::<super::ProductRunSummary>(json!({
             "id": "run_legacy",
             "status": "completed",
             "title": "patchhive/example",
@@ -1438,9 +1436,8 @@ mod tests {
             "updated_at": "",
             "detail_path": "/runs/run_legacy",
             "raw": {}
-        }))
-        .expect("legacy run summary without lifecycle status should parse");
+        }));
 
-        assert_eq!(summary.lifecycle_status, RunLifecycleStatus::Unknown);
+        assert!(result.is_err());
     }
 }

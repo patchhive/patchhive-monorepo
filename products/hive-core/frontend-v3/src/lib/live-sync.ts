@@ -13,7 +13,13 @@ import { useEffect, useState } from "react";
 
 import { apiFetch } from "./http";
 import { ID_BY_SLUG, SLUG_BY_ID, TITLE_BY_SLUG } from "./product-slugs";
-import { PRODUCTS, RUNS, type RunEvent, type Status } from "./hive-data";
+import {
+  PRODUCTS,
+  RUNS,
+  type RunEvent,
+  type RunLifecycleStatus,
+  type Status,
+} from "./hive-data";
 import { fetchConformance } from "./conformance";
 import { fetchProbes, summarise } from "./probes";
 
@@ -58,15 +64,20 @@ interface ApiProductRuns {
   runs: { runs: ApiRunSummary[] } | null;
 }
 
-function toRunStatus(summary: ApiRunSummary): RunEvent["status"] {
-  switch (summary.lifecycle_status || summary.status) {
-    case "completed":
-      return "success";
+function toRunStatus(summary: ApiRunSummary): RunLifecycleStatus {
+  switch (summary.lifecycle_status) {
+    case "standby":
     case "queued":
     case "running":
-      return "running";
+    case "completed":
+    case "failed":
+    case "cancelled":
+    case "held":
+    case "skipped":
+    case "unknown":
+      return summary.lifecycle_status;
     default:
-      return "failed";
+      return "unknown";
   }
 }
 
@@ -84,13 +95,14 @@ function relativeAge(iso: string): string {
 }
 
 /**
- * Duration is only real when a run recorded both ends. Products that never write
- * updated_at report 0, which the feed renders as blank rather than as "instant".
+ * Duration is only real when a terminal run recorded both ends. Missing timestamps
+ * stay null; a measured zero-length interval remains a real zero.
  */
-function durationMs(summary: ApiRunSummary): number {
+function durationMs(summary: ApiRunSummary, status: RunLifecycleStatus): number | null {
+  if (["standby", "queued", "running", "unknown"].includes(status)) return null;
   const start = Date.parse(summary.created_at);
   const end = Date.parse(summary.updated_at);
-  if (Number.isNaN(start) || Number.isNaN(end) || end <= start) return 0;
+  if (Number.isNaN(start) || Number.isNaN(end) || end < start) return null;
   return end - start;
 }
 
@@ -127,17 +139,20 @@ async function syncRuns(signal: AbortSignal): Promise<void> {
       (Date.parse(right.summary.created_at) || 0) - (Date.parse(left.summary.created_at) || 0),
   );
 
-  const events: RunEvent[] = collected.map(({ summary, product }) => ({
-    id: summary.id,
-    product,
-    // Products title runs with their subject (a repo, a PR); that is the most
-    // useful label the contract actually carries.
-    capability: summary.title || summary.summary || product,
-    status: toRunStatus(summary),
-    durationMs: durationMs(summary),
-    ts: relativeAge(summary.created_at),
-    startedAt: summary.created_at,
-  }));
+  const events: RunEvent[] = collected.map(({ summary, product }) => {
+    const status = toRunStatus(summary);
+    return {
+      id: summary.id,
+      product,
+      // Products title runs with their subject (a repo, a PR); that is the most
+      // useful label the contract actually carries.
+      capability: summary.title || summary.summary || product,
+      status,
+      durationMs: durationMs(summary, status),
+      ts: relativeAge(summary.created_at),
+      startedAt: summary.created_at,
+    };
+  });
   RUNS.length = 0;
   RUNS.push(...events);
 

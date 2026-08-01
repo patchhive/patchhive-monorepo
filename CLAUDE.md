@@ -101,7 +101,6 @@ cargo test                          --manifest-path products/<slug>/backend/Carg
 cargo clippy --all-targets          --manifest-path products/<slug>/backend/Cargo.toml -- -D warnings
 cargo fmt                           --manifest-path products/<slug>/backend/Cargo.toml
 bash scripts/check-rust-packages.sh          # exactly what CI runs (fmt, clippy, test; all 20 manifests)
-bash scripts/build-rust-packages.sh          # CodeQL manual build; all 20 manifests
 
 # Frontend
 npm --prefix products/<slug>/frontend run build

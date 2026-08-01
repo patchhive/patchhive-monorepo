@@ -49,12 +49,24 @@ export interface RunEvent {
   id: string;
   product: string;
   capability: string;
-  status: "success" | "running" | "failed";
-  durationMs: number;
+  status: RunLifecycleStatus;
+  /** Null when the product did not report a complete time interval. */
+  durationMs: number | null;
   /** Human-relative age, rendered directly. */
   ts: string;
   /** ISO start, for windowing and sorting. Empty on seed rows. */
   startedAt: string;
 }
+
+export type RunLifecycleStatus =
+  | "standby"
+  | "queued"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "held"
+  | "skipped"
+  | "unknown";
 
 export const RUNS: RunEvent[] = [];

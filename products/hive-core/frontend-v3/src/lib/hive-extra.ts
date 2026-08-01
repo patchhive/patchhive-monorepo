@@ -61,7 +61,7 @@ export function deriveIncidents(runs: RunEvent[], products: Product[]): Incident
         continue;
       }
       // A run still in flight neither breaks a streak nor proves recovery.
-      if (run.status !== "success") continue;
+      if (run.status !== "completed") continue;
       if (open) {
         incidents.push(close(productId, open, run.startedAt));
         open = null;

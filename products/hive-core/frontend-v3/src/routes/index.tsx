@@ -1072,11 +1072,13 @@ function RunsFeed({ syncVersion }: { syncVersion: number }) {
             >
               <span
                 className={`h-1.5 w-1.5 rounded-full ${
-                  r.status === "success"
+                  r.status === "completed"
                     ? "bg-[var(--ok)] shadow-[0_0_8px_var(--ok)]"
-                    : r.status === "running"
+                    : r.status === "running" || r.status === "queued"
                     ? "bg-[var(--honey)] shadow-[0_0_8px_var(--honey)] animate-pulse-dot"
-                    : "bg-[var(--crit)] shadow-[0_0_8px_var(--crit)]"
+                    : r.status === "failed" || r.status === "cancelled"
+                    ? "bg-[var(--crit)] shadow-[0_0_8px_var(--crit)]"
+                    : "bg-muted-foreground"
                 }`}
               />
               <div className="min-w-0 flex-1">
@@ -1087,7 +1089,7 @@ function RunsFeed({ syncVersion }: { syncVersion: number }) {
                 <div className="flex items-center justify-between gap-2">
                   <code className="truncate font-display text-[10px] text-[var(--honey)]">{r.capability}</code>
                   <span className="font-display text-[10px] text-muted-foreground">
-                    {r.status === "running" ? "…" : `${r.durationMs}ms`}
+                    {r.durationMs === null ? "—" : `${r.durationMs}ms`}
                   </span>
                 </div>
                 {failure && (

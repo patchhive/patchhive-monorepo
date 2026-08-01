@@ -50,20 +50,28 @@ export function LiveTail() {
           <div className="flex gap-4 whitespace-nowrap font-display text-[10px]">
             {visible.map((r, i) => {
               const tone =
-                r.status === "success"
+                r.status === "completed"
                   ? "text-[var(--ok)]"
-                  : r.status === "failed"
+                  : r.status === "failed" || r.status === "cancelled"
                   ? "text-[var(--crit)]"
-                  : "text-[var(--honey)]";
+                  : r.status === "running" || r.status === "queued"
+                    ? "text-[var(--honey)]"
+                    : "text-muted-foreground";
               return (
                 <span key={`${r.id}-${i}`} className="inline-flex items-center gap-1.5 text-muted-foreground">
                   <span className={`h-1 w-1 rounded-full ${
-                    r.status === "success" ? "bg-[var(--ok)]" : r.status === "failed" ? "bg-[var(--crit)]" : "bg-[var(--honey)] animate-pulse-dot"
+                    r.status === "completed"
+                      ? "bg-[var(--ok)]"
+                      : r.status === "failed" || r.status === "cancelled"
+                        ? "bg-[var(--crit)]"
+                        : r.status === "running" || r.status === "queued"
+                          ? "bg-[var(--honey)] animate-pulse-dot"
+                          : "bg-muted-foreground"
                   }`} />
                   <span className="text-foreground/80">{r.product}</span>
                   <code className={tone}>{r.capability}</code>
                   <span className="text-muted-foreground/70">
-                    {r.status === "running" ? "…" : `${r.durationMs}ms`}
+                    {r.durationMs === null ? "—" : `${r.durationMs}ms`}
                   </span>
                   <span className="text-muted-foreground/40">·</span>
                 </span>
