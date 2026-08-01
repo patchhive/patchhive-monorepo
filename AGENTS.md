@@ -154,6 +154,10 @@ GitHub Actions:
   three days once per day. Keep its `actions: write` permission narrowly scoped
   to that workflow; do not give ordinary build/test workflows write access merely
   to share the cleanup behavior.
+- Rust CodeQL uses manual build mode and `scripts/build-rust-packages.sh` so the
+  extractor sees every standalone Cargo package. Keep the canonical package list
+  in `scripts/rust-manifests.txt`; both CodeQL builds and strict Rust checks must
+  read that inventory instead of maintaining separate lists.
 
 Backend:
 - Rust

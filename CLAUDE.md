@@ -56,11 +56,12 @@ scripts/                              export, mirror, release, drift, lockfile t
 ```
 
 **Not a Cargo workspace.** Each backend/crate/service is its own Cargo package with its own
-lockfile; the authoritative list is [scripts/check-rust-packages.sh](scripts/check-rust-packages.sh).
+lockfile; the authoritative list is [scripts/rust-manifests.txt](scripts/rust-manifests.txt).
 Never run a bare workspace-wide `cargo` command — always `--manifest-path`.
 
-**npm workspaces cover active packages and `products/*/frontend`.** Specialist
-products do not use versioned frontend directories.
+**npm workspaces explicitly list active packages and specialist `frontend/` trees,
+plus HiveCore's `frontend-v3/`.** Specialist products do not use versioned frontend
+directories; obsolete HiveCore frontends are not workspace members.
 
 ### Product table
 
@@ -99,7 +100,8 @@ cargo check  --locked --all-targets --manifest-path products/<slug>/backend/Carg
 cargo test                          --manifest-path products/<slug>/backend/Cargo.toml
 cargo clippy --all-targets          --manifest-path products/<slug>/backend/Cargo.toml -- -D warnings
 cargo fmt                           --manifest-path products/<slug>/backend/Cargo.toml
-bash scripts/check-rust-packages.sh          # exactly what CI runs (cargo check, all 20 manifests)
+bash scripts/check-rust-packages.sh          # exactly what CI runs (fmt, clippy, test; all 20 manifests)
+bash scripts/build-rust-packages.sh          # CodeQL manual build; all 20 manifests
 
 # Frontend
 npm --prefix products/<slug>/frontend run build
