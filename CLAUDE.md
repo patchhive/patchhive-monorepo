@@ -201,9 +201,9 @@ products moves here *before* a third copy exists.
   `ActionEffect` and `ApprovalPolicy`
   (builders: `.scheduleable`, `.trigger_modes`, `.target_selection_modes`,
   `.credential_requirements`; legacy safety booleans are derived wire output only),
-  `RunTriggerMode`, `TargetSelectionMode`, `RunLifecycleStatus`, `ProductRunEvent`,
-  `ProductRunArtifact`, `RetainedEvidencePage::from_retained`, `SuiteScheduleRecord`,
-  `DispatchActionInput`.
+  `RunTriggerMode`, `TargetSelectionMode`, `RunLifecycleStatus`,
+  `ScheduleExecutionState`, `ProductRunEvent`, `ProductRunArtifact`,
+  `RetainedEvidencePage::from_retained`, `SuiteScheduleRecord`, `DispatchActionInput`.
 - **HiveCore observations** — runtime health, startup checks, capabilities, and
   run-history evidence use non-defaultable tagged `Observation<T>` states:
   `observed`, `failed`, `not_observed`, and `not_applicable`. Empty observed data
@@ -211,8 +211,10 @@ products moves here *before* a third copy exists.
   `null`, never zero.
 - **`scheduling`** — shared table `patchhive_product_schedules`; `init_schema`, `save`,
   `list`, `get`, `delete`, `claim_due`, `record_result`, `next_run_at`,
-  `validate_schedule_name`. Caps: 80-char names, 8760-hour cadence. The product still owns
-  payload validation, authorization, execution, and approval policy.
+  `validate_schedule_name`. `ProductSchedule.last_execution` is a required tagged
+  state; `record_result` accepts `ScheduleExecutionResult`, and malformed legacy
+  column combinations decode as `unknown`. Caps: 80-char names, 8760-hour cadence.
+  The product still owns payload validation, authorization, execution, and approval policy.
 - **`validation`** — `TestExecutionStatus` with `passed()`, `should_retry()`,
   `requires_draft()`. **Only `passed` permits a non-draft autonomous PR.**
 - **`repo_policy`** — the one suite-wide repository policy store (`patchhive_repo_policy`).

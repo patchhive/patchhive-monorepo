@@ -179,13 +179,11 @@ pub fn claim_due_product_schedules(action_id: &str, limit: usize) -> Result<Vec<
 pub fn record_product_schedule_result(
     action_id: &str,
     name: &str,
-    run_id: Option<&str>,
-    status: &str,
-    error: Option<&str>,
+    result: scheduling::ScheduleExecutionResult,
 ) -> Result<bool> {
     let action_id = schedule_action(action_id)?;
     let conn = get_conn()?;
-    scheduling::record_result(&conn, "repo-reaper", action_id, name, run_id, status, error)
+    scheduling::record_result(&conn, "repo-reaper", action_id, name, result)
 }
 
 pub fn health_check() -> bool {

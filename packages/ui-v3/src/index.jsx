@@ -182,7 +182,7 @@ export function MetricCard({ label, value, footerLeft, footerRight, tone = "from
 }
 
 export { countLabel, IntegratedProductApp, PriorityHighlights, ProductLoginScreen, readJson } from "./integrated-product.jsx";
-export { ActivityTimeline, CopyMarkdownButton, DashboardControls, GitHubPermissionGuidance, GuidanceNotice, HistoryDashboard, ProductScheduleManager, ProgressiveList, ScanWarnings, StartupCheckList, useSavedDashboardViews } from "./workspace.jsx";
+export { ActivityTimeline, CopyMarkdownButton, DashboardControls, describeScheduleExecution, GitHubPermissionGuidance, GuidanceNotice, HistoryDashboard, ProductScheduleManager, ProgressiveList, ScanWarnings, StartupCheckList, useSavedDashboardViews } from "./workspace.jsx";
 export {
   ControlButton,
   ControlField,

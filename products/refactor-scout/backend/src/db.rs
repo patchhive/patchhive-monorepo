@@ -484,12 +484,10 @@ pub fn claim_due_schedules(limit: usize) -> anyhow::Result<Vec<ProductSchedule>>
 
 pub fn record_schedule_result(
     name: &str,
-    run_id: Option<&str>,
-    status: &str,
-    error: Option<&str>,
+    result: scheduling::ScheduleExecutionResult,
 ) -> anyhow::Result<bool> {
     let conn = connect()?;
-    scheduling::record_result(&conn, "refactor-scout", "scan", name, run_id, status, error)
+    scheduling::record_result(&conn, "refactor-scout", "scan", name, result)
 }
 
 pub fn overview_counts() -> OverviewCounts {

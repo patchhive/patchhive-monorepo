@@ -434,15 +434,22 @@ pub async fn run_schedule_now(state: &AppState, schedule_name: &str) -> Result<S
     .await;
     match result {
         Ok(record) => {
-            crate::db::record_scan_schedule_result(&schedule.name, Some(&record.id), "ok", None)?;
+            crate::db::record_scan_schedule_result(
+                &schedule.name,
+                patchhive_product_core::scheduling::ScheduleExecutionResult::completed(
+                    Some(record.id.clone()),
+                    "ok",
+                ),
+            )?;
             Ok(record)
         }
         Err(err) => {
             crate::db::record_scan_schedule_result(
                 &schedule.name,
-                None,
-                "error",
-                Some(&err.to_string()),
+                patchhive_product_core::scheduling::ScheduleExecutionResult::failed(
+                    None::<String>,
+                    err.to_string(),
+                ),
             )?;
             Err(err)
         }
@@ -467,9 +474,7 @@ pub fn start_scheduler(state: AppState) {
                             Ok(record) => {
                                 if let Err(err) = crate::db::record_scan_schedule_result(
                                     &name,
-                                    Some(&record.id),
-                                    "ok",
-                                    None,
+                                    patchhive_product_core::scheduling::ScheduleExecutionResult::completed(Some(record.id.clone()), "ok"),
                                 ) {
                                     warn!("failed to store schedule result for {name}: {err}");
                                 }
@@ -481,9 +486,7 @@ pub fn start_scheduler(state: AppState) {
                             Err(err) => {
                                 if let Err(write_err) = crate::db::record_scan_schedule_result(
                                     &name,
-                                    None,
-                                    "error",
-                                    Some(&err.to_string()),
+                                    patchhive_product_core::scheduling::ScheduleExecutionResult::failed(None::<String>, err.to_string()),
                                 ) {
                                     warn!("failed to store schedule error for {name}: {write_err}");
                                 }

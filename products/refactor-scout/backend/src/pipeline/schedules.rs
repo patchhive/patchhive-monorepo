@@ -1,5 +1,8 @@
 use anyhow::{anyhow, Context, Result};
-use patchhive_product_core::{contract::TargetSelectionMode, scheduling::ProductSchedule};
+use patchhive_product_core::{
+    contract::TargetSelectionMode,
+    scheduling::{ProductSchedule, ScheduleExecutionResult},
+};
 use tracing::{info, warn};
 
 use crate::{
@@ -54,11 +57,17 @@ async fn run_saved_schedule(
     let result = execute_scheduled_scan(state, schedule).await;
     match result {
         Ok(record) => {
-            db::record_schedule_result(&schedule.name, Some(&record.id), "ok", None)?;
+            db::record_schedule_result(
+                &schedule.name,
+                ScheduleExecutionResult::completed(Some(record.id.clone()), "ok"),
+            )?;
             Ok(record)
         }
         Err(error) => {
-            db::record_schedule_result(&schedule.name, None, "error", Some(&error.to_string()))?;
+            db::record_schedule_result(
+                &schedule.name,
+                ScheduleExecutionResult::failed(None::<String>, error.to_string()),
+            )?;
             Err(error)
         }
     }

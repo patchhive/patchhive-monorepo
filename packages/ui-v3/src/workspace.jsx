@@ -122,6 +122,28 @@ const SCHEDULE_CADENCES = [
   { value: "168", label: "Weekly" },
 ];
 
+export function describeScheduleExecution(execution) {
+  if (!execution || typeof execution !== "object") {
+    return "Unknown · execution evidence is missing";
+  }
+  switch (execution.state) {
+    case "never_run":
+      return "Never run";
+    case "claimed":
+      return `Claimed${execution.claimed_at ? ` · ${new Date(execution.claimed_at).toLocaleString()}` : ""}`;
+    case "completed":
+      return `Completed${execution.outcome ? ` · ${execution.outcome}` : ""}${execution.completed_at ? ` · ${new Date(execution.completed_at).toLocaleString()}` : ""}`;
+    case "failed":
+      return `Failed${execution.error ? ` · ${execution.error}` : ""}`;
+    case "cancelled":
+      return `Cancelled${execution.reason ? ` · ${execution.reason}` : ""}`;
+    case "unknown":
+      return `Unknown · ${execution.raw_status || "unrecognized execution evidence"}${execution.detail ? ` · ${execution.detail}` : ""}`;
+    default:
+      return `Unknown · unrecognized state ${String(execution.state || "missing")}`;
+  }
+}
+
 export function ProductScheduleManager({
   actionLabel = "run",
   apiBase,
@@ -295,7 +317,7 @@ export function ProductScheduleManager({
           <button className={`surface-inset inline-flex h-10 items-center gap-2 rounded-full px-4 text-[12px] ${V3_TEXT.body} disabled:opacity-40`} disabled={busy || !selected} onClick={runNow} type="button">{runningName ? <LoaderCircle className="animate-spin" size={13} /> : <Play size={13} />}{runningName ? "Running…" : "Run now"}</button>
           <button className="surface-inset h-10 rounded-full px-4 text-[12px] text-red-700 disabled:opacity-40 dark:text-red-300" disabled={busy || !selected} onClick={deleteSchedule} type="button"><span className="inline-flex items-center gap-2"><Trash2 size={13} />Delete</span></button>
         </div>
-        {selected ? <div className={`surface-inset mt-5 rounded-xl p-4 text-[11px] leading-relaxed ${V3_TEXT.mute}`}><strong className={V3_TEXT.strong}>{selected.name}</strong> · {selected.target_selection_mode === "discovery" ? "Autonomous discovery" : "Target repo"} · Next run: {selected.next_run_at ? new Date(selected.next_run_at).toLocaleString() : "not scheduled"} · Last status: {selected.last_status || "idle"}{selected.last_error ? ` · ${selected.last_error}` : ""}</div> : null}
+        {selected ? <div className={`surface-inset mt-5 rounded-xl p-4 text-[11px] leading-relaxed ${V3_TEXT.mute}`}><strong className={V3_TEXT.strong}>{selected.name}</strong> · {selected.target_selection_mode === "discovery" ? "Autonomous discovery" : "Target repo"} · Next run: {selected.next_run_at ? new Date(selected.next_run_at).toLocaleString() : "not scheduled"} · Last execution: {describeScheduleExecution(selected.last_execution)}</div> : null}
       </section>
 
       <section className="surface p-6">

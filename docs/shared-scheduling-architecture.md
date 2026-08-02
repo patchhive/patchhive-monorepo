@@ -33,7 +33,8 @@ standalone Schedules tab.
 - schedule-name and cadence bounds;
 - transactional due-work claims so two pollers do not claim the same run;
 - next-run advancement before dispatch;
-- last-run ID, status, timestamp, and error recording;
+- a required tagged last-execution state that cannot combine stale run IDs,
+  timestamps, statuses, and errors into contradictory history;
 - preservation of run evidence when schedule configuration changes.
 
 The common product API is:
@@ -75,6 +76,17 @@ RepoReaper schedule may discover work automatically, but opening a pull request
 must still pass trust, validation, opt-out, and budget policy.
 
 ## Run Evidence
+
+Schedule records expose one non-defaultable `last_execution` value. Its states
+are `never_run`, `claimed`, `completed`, `failed`, `cancelled`, and `unknown`.
+Terminal variants carry only the evidence valid for that outcome, and a claim
+replaces prior terminal evidence instead of pairing `running` with the previous
+run's ID. `completed` may retain a product-owned outcome such as `partial` or
+`skipped` without confusing that decision with scheduler failure. The shared
+SQLite layer retains the legacy columns as a storage compatibility boundary,
+decodes valid historical combinations into the tagged state, and preserves
+malformed or unrecognized combinations as `unknown` without guessing their
+outcome.
 
 Scheduled results enter the normal product run/history store with:
 

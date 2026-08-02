@@ -67,7 +67,7 @@ async fn list_schedules(State(_): State<AppState>) -> Json<Value> {
                 "cron_expr": legacy_cadence_label(schedule.cadence_hours),
                 "config_json": schedule.payload.to_string(),
                 "enabled": schedule.enabled,
-                "last_run": schedule.last_run_at,
+                "last_run": schedule.last_execution.observed_at(),
                 "next_run": schedule.next_run_at,
             })
         })
@@ -620,9 +620,10 @@ async fn execute_saved_schedule(
             record_product_schedule_result(
                 &schedule.action_id,
                 &schedule.name,
-                Some(&record.run_id),
-                &record.status,
-                None,
+                patchhive_product_core::scheduling::ScheduleExecutionResult::completed(
+                    Some(record.run_id.clone()),
+                    record.status.clone(),
+                ),
             )
             .map_err(|error| error.to_string())?;
         }
@@ -630,9 +631,10 @@ async fn execute_saved_schedule(
             record_product_schedule_result(
                 &schedule.action_id,
                 &schedule.name,
-                None,
-                "error",
-                Some(error),
+                patchhive_product_core::scheduling::ScheduleExecutionResult::failed(
+                    None::<String>,
+                    error.clone(),
+                ),
             )
             .map_err(|record_error| record_error.to_string())?;
         }

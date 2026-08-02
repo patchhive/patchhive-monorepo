@@ -1,6 +1,6 @@
 use patchhive_product_core::contract::{
-    cadence_from_hours, interval_cron_label, DispatchActionInput, SuiteScheduleRecord,
-    TargetSelectionMode,
+    cadence_from_hours, interval_cron_label, DispatchActionInput, ScheduleExecutionState,
+    SuiteScheduleRecord, TargetSelectionMode,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -253,10 +253,7 @@ pub struct ScanSchedule {
     pub created_at: String,
     pub updated_at: String,
     pub next_run_at: String,
-    pub last_run_at: Option<String>,
-    pub last_scan_id: Option<String>,
-    pub last_status: String,
-    pub last_error: Option<String>,
+    pub last_execution: ScheduleExecutionState,
 }
 
 impl ScanSchedule {
@@ -289,10 +286,7 @@ impl ScanSchedule {
         record.target_scope = target_scope;
         record.approval_policy = "read_only_auto".into();
         record.next_run_at = self.next_run_at.clone();
-        record.last_run_id = self.last_scan_id.clone();
-        record.last_run_at = self.last_run_at.clone();
-        record.last_status = self.last_status.clone();
-        record.last_error = self.last_error.clone();
+        record.last_execution = self.last_execution.clone();
         record.dispatch = dispatch;
         record
     }
@@ -333,7 +327,7 @@ fn default_true() -> bool {
 #[cfg(test)]
 mod tests {
     use super::{consolidate_scan_warnings, ScanParams, ScanSchedule};
-    use patchhive_product_core::contract::TargetSelectionMode;
+    use patchhive_product_core::contract::{ScheduleExecutionState, TargetSelectionMode};
 
     #[test]
     fn suite_schedule_records_preserve_direct_target_mode() {
@@ -350,10 +344,7 @@ mod tests {
             created_at: "2026-07-15T00:00:00Z".into(),
             updated_at: "2026-07-15T00:00:00Z".into(),
             next_run_at: "2026-07-16T00:00:00Z".into(),
-            last_run_at: None,
-            last_scan_id: None,
-            last_status: "idle".into(),
-            last_error: None,
+            last_execution: ScheduleExecutionState::NeverRun,
         };
 
         assert_eq!(schedule.target_selection_mode, TargetSelectionMode::Direct);

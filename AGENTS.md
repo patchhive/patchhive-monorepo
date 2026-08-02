@@ -150,6 +150,11 @@ patchhive/
   unrecognized lifecycle evidence is `unknown`, never `completed`; product-owned
   decision `status` remains a separate field. HiveCore v3 must preserve every
   lifecycle variant and represent an unavailable duration as `null`, not `0ms`.
+- Product schedules require one non-defaultable tagged `ScheduleExecutionState`
+  instead of independently writable last-run IDs, timestamps, statuses, and
+  errors. Claims clear prior terminal evidence. Contradictory or unrecognized
+  legacy SQLite combinations decode as `unknown`; never infer a reassuring
+  schedule outcome from malformed history.
 - Booleans remain appropriate for complete binary facts such as whether an action
   is scheduleable. The rule is to eliminate ambiguous state, not booleans generally.
 

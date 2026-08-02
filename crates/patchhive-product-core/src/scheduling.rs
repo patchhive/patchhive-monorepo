@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::contract::{
-    cadence_from_hours, interval_cron_label, DispatchActionInput, SuiteScheduleRecord,
-    TargetSelectionMode,
+    cadence_from_hours, interval_cron_label, DispatchActionInput, ScheduleExecutionState,
+    SuiteScheduleRecord, TargetSelectionMode,
 };
 
 pub const SCHEDULE_TABLE: &str = "patchhive_product_schedules";
@@ -40,13 +40,39 @@ pub struct ProductSchedule {
     pub created_at: String,
     pub updated_at: String,
     pub next_run_at: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub last_run_at: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub last_run_id: Option<String>,
-    pub last_status: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub last_error: Option<String>,
+    pub last_execution: ScheduleExecutionState,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ScheduleExecutionResult {
+    Completed {
+        run_id: Option<String>,
+        outcome: String,
+    },
+    Failed {
+        run_id: Option<String>,
+        error: String,
+    },
+    Cancelled {
+        run_id: Option<String>,
+        reason: Option<String>,
+    },
+}
+
+impl ScheduleExecutionResult {
+    pub fn completed(run_id: Option<impl Into<String>>, outcome: impl Into<String>) -> Self {
+        Self::Completed {
+            run_id: run_id.map(Into::into),
+            outcome: outcome.into(),
+        }
+    }
+
+    pub fn failed(run_id: Option<impl Into<String>>, error: impl Into<String>) -> Self {
+        Self::Failed {
+            run_id: run_id.map(Into::into),
+            error: error.into(),
+        }
+    }
 }
 
 impl ProductSchedule {
@@ -87,10 +113,7 @@ impl ProductSchedule {
         record.target_scope = target_scope;
         record.approval_policy = self.approval_policy.clone();
         record.next_run_at = self.next_run_at.clone();
-        record.last_run_id = self.last_run_id.clone();
-        record.last_run_at = self.last_run_at.clone();
-        record.last_status = self.last_status.clone();
-        record.last_error = self.last_error.clone();
+        record.last_execution = self.last_execution.clone();
         record.dispatch = dispatch;
         record
     }
@@ -247,19 +270,10 @@ pub fn save(conn: &Connection, input: SaveSchedule<'_>) -> Result<ProductSchedul
             created_at,
             now,
             next_run_at,
-            existing
-                .as_ref()
-                .and_then(|schedule| schedule.last_run_at.clone()),
-            existing
-                .as_ref()
-                .and_then(|schedule| schedule.last_run_id.clone()),
-            existing
-                .as_ref()
-                .map(|schedule| schedule.last_status.clone())
-                .unwrap_or_else(|| "idle".into()),
-            existing
-                .as_ref()
-                .and_then(|schedule| schedule.last_error.clone()),
+            Option::<String>::None,
+            Option::<String>::None,
+            "idle",
+            Option::<String>::None,
         ],
     )?;
 
@@ -297,22 +311,24 @@ pub fn claim_due(
         params![product, action_id, now, limit.max(1) as i64],
         schedule_from_row,
     )?;
-    let schedules = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+    let mut schedules = rows.collect::<rusqlite::Result<Vec<_>>>()?;
     drop(stmt);
 
-    for schedule in &schedules {
+    for schedule in &mut schedules {
+        let claimed_at = Utc::now().to_rfc3339();
+        let advanced_next_run_at = next_run_at(schedule.cadence_hours);
         tx.execute(
             r#"
             UPDATE patchhive_product_schedules
-            SET next_run_at = ?2, updated_at = ?3, last_status = 'running', last_error = NULL
+            SET next_run_at = ?2, updated_at = ?3, last_run_at = ?3,
+                last_run_id = NULL, last_status = 'claimed', last_error = NULL
             WHERE id = ?1 AND enabled = 1
             "#,
-            params![
-                schedule.id,
-                next_run_at(schedule.cadence_hours),
-                Utc::now().to_rfc3339(),
-            ],
+            params![schedule.id, advanced_next_run_at, claimed_at,],
         )?;
+        schedule.next_run_at = advanced_next_run_at;
+        schedule.updated_at = claimed_at.clone();
+        schedule.last_execution = ScheduleExecutionState::Claimed { claimed_at };
     }
 
     tx.commit()?;
@@ -324,10 +340,27 @@ pub fn record_result(
     product: &str,
     action_id: &str,
     name: &str,
-    last_run_id: Option<&str>,
-    status: &str,
-    error: Option<&str>,
+    result: ScheduleExecutionResult,
 ) -> Result<bool> {
+    let (run_id, status, detail) = match result {
+        ScheduleExecutionResult::Completed { run_id, outcome } => {
+            if outcome.trim().is_empty() {
+                return Err(anyhow!(
+                    "a completed schedule execution requires an outcome"
+                ));
+            }
+            (run_id, outcome, None)
+        }
+        ScheduleExecutionResult::Failed { run_id, error } => {
+            if error.trim().is_empty() {
+                return Err(anyhow!("a failed schedule execution requires an error"));
+            }
+            (run_id, "failed".into(), Some(error))
+        }
+        ScheduleExecutionResult::Cancelled { run_id, reason } => {
+            (run_id, "cancelled".into(), reason)
+        }
+    };
     Ok(conn.execute(
         r#"
         UPDATE patchhive_product_schedules
@@ -340,9 +373,9 @@ pub fn record_result(
             action_id,
             name,
             Utc::now().to_rfc3339(),
-            last_run_id,
+            run_id,
             status,
-            error,
+            detail,
         ],
     )? > 0)
 }
@@ -387,6 +420,11 @@ fn schedule_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ProductSchedul
     let payload = serde_json::from_str(&payload_json).map_err(|error| {
         rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, Box::new(error))
     })?;
+    let observed_at = row.get(12)?;
+    let run_id = row.get(13)?;
+    let raw_status = row.get::<_, String>(14)?;
+    let detail = row.get(15)?;
+    let last_execution = decode_last_execution(observed_at, run_id, raw_status, detail);
     Ok(ProductSchedule {
         id: row.get(0)?,
         name: row.get(1)?,
@@ -400,11 +438,64 @@ fn schedule_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ProductSchedul
         created_at: row.get(9)?,
         updated_at: row.get(10)?,
         next_run_at: row.get(11)?,
-        last_run_at: row.get(12)?,
-        last_run_id: row.get(13)?,
-        last_status: row.get(14)?,
-        last_error: row.get(15)?,
+        last_execution,
     })
+}
+
+fn decode_last_execution(
+    observed_at: Option<String>,
+    run_id: Option<String>,
+    raw_status: String,
+    detail: Option<String>,
+) -> ScheduleExecutionState {
+    let status = raw_status.trim().to_ascii_lowercase();
+    match status.as_str() {
+        "idle" | "never_run" if observed_at.is_none() && run_id.is_none() && detail.is_none() => {
+            ScheduleExecutionState::NeverRun
+        }
+        "claimed" | "running" if observed_at.is_some() && run_id.is_none() && detail.is_none() => {
+            ScheduleExecutionState::Claimed {
+                claimed_at: observed_at.expect("claimed timestamp checked above"),
+            }
+        }
+        "error" | "failed"
+            if observed_at.is_some()
+                && detail
+                    .as_deref()
+                    .is_some_and(|message| !message.trim().is_empty()) =>
+        {
+            ScheduleExecutionState::Failed {
+                failed_at: observed_at.expect("failure timestamp checked above"),
+                run_id,
+                error: detail.expect("failure detail checked above"),
+            }
+        }
+        "cancelled" | "canceled" if observed_at.is_some() => ScheduleExecutionState::Cancelled {
+            cancelled_at: observed_at.expect("cancellation timestamp checked above"),
+            run_id,
+            reason: detail,
+        },
+        _ if observed_at.is_some()
+            && detail.is_none()
+            && !status.is_empty()
+            && !matches!(
+                status.as_str(),
+                "idle" | "never_run" | "claimed" | "running"
+            ) =>
+        {
+            ScheduleExecutionState::Completed {
+                completed_at: observed_at.expect("completion timestamp checked above"),
+                run_id,
+                outcome: raw_status,
+            }
+        }
+        _ => ScheduleExecutionState::Unknown {
+            raw_status,
+            observed_at,
+            run_id,
+            detail,
+        },
+    }
 }
 
 fn target_selection_mode_label(mode: TargetSelectionMode) -> &'static str {
@@ -428,8 +519,9 @@ mod tests {
 
     use super::{
         claim_due, delete, get, init_schema, list, record_result, save, ProductSchedule,
-        SaveSchedule, DEFAULT_SCHEDULE_APPROVAL_POLICY,
+        SaveSchedule, ScheduleExecutionResult, DEFAULT_SCHEDULE_APPROVAL_POLICY,
     };
+    use crate::contract::ScheduleExecutionState;
 
     fn save_daily(conn: &Connection, name: &str) -> ProductSchedule {
         save(
@@ -520,15 +612,19 @@ mod tests {
             "refactor-scout",
             "scan",
             "daily-review",
-            Some("run-1"),
-            "ok",
-            None,
+            ScheduleExecutionResult::completed(Some("run-1"), "ok"),
         )
         .expect("result should record"));
 
         let updated = save_daily(&conn, "daily-review");
-        assert_eq!(updated.last_run_id.as_deref(), Some("run-1"));
-        assert_eq!(updated.last_status, "ok");
+        assert!(matches!(
+            updated.last_execution,
+            ScheduleExecutionState::Completed {
+                run_id: Some(ref run_id),
+                ref outcome,
+                ..
+            } if run_id == "run-1" && outcome == "ok"
+        ));
         assert_eq!(
             list(&conn, "refactor-scout", "scan")
                 .expect("schedules should list")
@@ -554,9 +650,68 @@ mod tests {
         let advanced = get(&conn, "refactor-scout", "scan", "daily-review")
             .expect("schedule should reload")
             .expect("schedule should remain");
-        assert_eq!(advanced.last_status, "running");
+        assert!(matches!(
+            advanced.last_execution,
+            ScheduleExecutionState::Claimed { .. }
+        ));
         assert!(advanced.next_run_at.as_str() > "2020-01-01T00:00:00Z");
         assert!(delete(&conn, "refactor-scout", "scan", "daily-review")
             .expect("schedule should delete"));
+    }
+
+    #[test]
+    fn contradictory_legacy_execution_evidence_is_unknown() {
+        let conn = Connection::open_in_memory().expect("database should open");
+        init_schema(&conn).expect("schema should initialize");
+        let saved = save_daily(&conn, "legacy-contradiction");
+        conn.execute(
+            "UPDATE patchhive_product_schedules SET last_run_id = 'run-stale', last_status = 'idle' WHERE id = ?1",
+            [&saved.id],
+        )
+        .expect("legacy evidence should update");
+
+        let schedule = get(&conn, "refactor-scout", "scan", "legacy-contradiction")
+            .expect("schedule should load")
+            .expect("schedule should exist");
+        assert_eq!(
+            schedule.last_execution,
+            ScheduleExecutionState::Unknown {
+                raw_status: "idle".into(),
+                observed_at: None,
+                run_id: Some("run-stale".into()),
+                detail: None,
+            }
+        );
+    }
+
+    #[test]
+    fn failed_results_require_failure_evidence() {
+        let conn = Connection::open_in_memory().expect("database should open");
+        init_schema(&conn).expect("schema should initialize");
+        save_daily(&conn, "failure-without-detail");
+
+        let error = record_result(
+            &conn,
+            "refactor-scout",
+            "scan",
+            "failure-without-detail",
+            ScheduleExecutionResult::failed(None::<String>, "  "),
+        )
+        .expect_err("empty failure evidence should be rejected");
+        assert!(error
+            .to_string()
+            .contains("failed schedule execution requires an error"));
+
+        let error = record_result(
+            &conn,
+            "refactor-scout",
+            "scan",
+            "failure-without-detail",
+            ScheduleExecutionResult::completed(None::<String>, "  "),
+        )
+        .expect_err("empty completion outcomes should be rejected");
+        assert!(error
+            .to_string()
+            .contains("completed schedule execution requires an outcome"));
     }
 }

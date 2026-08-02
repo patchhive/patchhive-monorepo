@@ -21,10 +21,7 @@ fn scan_schedule(record: ProductSchedule) -> Result<ScanSchedule> {
         created_at: record.created_at,
         updated_at: record.updated_at,
         next_run_at: record.next_run_at,
-        last_run_at: record.last_run_at,
-        last_scan_id: record.last_run_id,
-        last_status: record.last_status,
-        last_error: record.last_error,
+        last_execution: record.last_execution,
     })
 }
 
@@ -126,11 +123,9 @@ pub fn claim_due_scan_schedules(limit: usize) -> Result<Vec<ScanSchedule>> {
 
 pub fn record_scan_schedule_result(
     name: &str,
-    last_scan_id: Option<&str>,
-    status: &str,
-    error: Option<&str>,
+    result: scheduling::ScheduleExecutionResult,
 ) -> Result<()> {
     let conn = connect()?;
-    scheduling::record_result(&conn, PRODUCT, ACTION, name, last_scan_id, status, error)?;
+    scheduling::record_result(&conn, PRODUCT, ACTION, name, result)?;
     Ok(())
 }

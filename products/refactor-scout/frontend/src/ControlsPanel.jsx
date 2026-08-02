@@ -20,6 +20,7 @@ import {
   ProductTargetScopeSection,
   V3_TEXT,
   countLabel,
+  describeScheduleExecution,
   readJson,
 } from "@patchhivehq/ui-v3";
 
@@ -285,7 +286,7 @@ export default function ControlsPanel({
             <ControlButton disabled={busy || !currentSchedule} onClick={() => perform(async () => readJson(await fetcher(`${apiBase}/schedules/${encodeURIComponent(currentSchedule.name)}`, { method: "DELETE" })), `Schedule deleted: ${currentSchedule?.name}.`)} tone="danger">Delete</ControlButton>
           </div>
           {runningSchedule ? <div aria-live="polite" className={`surface-inset mt-4 flex items-start gap-3 rounded-xl p-3 text-[11px] leading-relaxed ${V3_TEXT.body}`} role="status"><LoaderCircle className="mt-0.5 shrink-0 animate-spin" size={14} /><span><strong className={V3_TEXT.strong}>{runningSchedule}</strong> is inspecting its saved scope. RefactorScout will open the completed result automatically.</span></div> : null}
-          {currentSchedule ? <div className={`surface-inset mt-4 rounded-xl p-3 text-[11px] leading-relaxed ${V3_TEXT.mute}`}>Next run: {currentSchedule.next_run_at ? new Date(currentSchedule.next_run_at).toLocaleString() : "not scheduled"} · Last status: {currentSchedule.last_status || "never"}{currentSchedule.last_error ? ` · ${currentSchedule.last_error}` : ""}</div> : null}
+          {currentSchedule ? <div className={`surface-inset mt-4 rounded-xl p-3 text-[11px] leading-relaxed ${V3_TEXT.mute}`}>Next run: {currentSchedule.next_run_at ? new Date(currentSchedule.next_run_at).toLocaleString() : "not scheduled"} · Last execution: {describeScheduleExecution(currentSchedule.last_execution)}</div> : null}
         </ProductControlSection>
       </ProductControlsPair>
 

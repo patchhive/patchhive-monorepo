@@ -442,16 +442,59 @@ pub struct SuiteScheduleRecord {
     pub target_scope: Value,
     pub approval_policy: String,
     pub next_run_at: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub last_run_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub last_run_at: Option<String>,
-    #[serde(default)]
-    pub last_status: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub last_error: Option<String>,
+    pub last_execution: ScheduleExecutionState,
     #[serde(default)]
     pub dispatch: DispatchActionInput,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum ScheduleExecutionState {
+    NeverRun,
+    Claimed {
+        claimed_at: String,
+    },
+    Completed {
+        completed_at: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        run_id: Option<String>,
+        outcome: String,
+    },
+    Failed {
+        failed_at: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        run_id: Option<String>,
+        error: String,
+    },
+    Cancelled {
+        cancelled_at: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        run_id: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
+    },
+    Unknown {
+        raw_status: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        observed_at: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        run_id: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        detail: Option<String>,
+    },
+}
+
+impl ScheduleExecutionState {
+    pub fn observed_at(&self) -> Option<&str> {
+        match self {
+            Self::NeverRun => None,
+            Self::Claimed { claimed_at } => Some(claimed_at),
+            Self::Completed { completed_at, .. } => Some(completed_at),
+            Self::Failed { failed_at, .. } => Some(failed_at),
+            Self::Cancelled { cancelled_at, .. } => Some(cancelled_at),
+            Self::Unknown { observed_at, .. } => observed_at.as_deref(),
+        }
+    }
 }
 
 impl SuiteScheduleRecord {
@@ -474,10 +517,7 @@ impl SuiteScheduleRecord {
             target_scope: Value::Null,
             approval_policy: "read_only_auto".into(),
             next_run_at: String::new(),
-            last_run_id: None,
-            last_run_at: None,
-            last_status: "idle".into(),
-            last_error: None,
+            last_execution: ScheduleExecutionState::NeverRun,
             dispatch: DispatchActionInput::default(),
         }
     }
@@ -1030,7 +1070,8 @@ mod tests {
         action, cadence_from_hours, capabilities, interval_cron_label, parse_dispatch_input,
         run_events_response, runs_from_values, ActionEffect, ActionSafety, ApprovalPolicy,
         ProductRunArtifact, ProductRunEvent, RetainedEvidencePage, RunEventLevel,
-        RunLifecycleStatus, RunTriggerMode, SuiteScheduleRecord, TargetSelectionMode,
+        RunLifecycleStatus, RunTriggerMode, ScheduleExecutionState, SuiteScheduleRecord,
+        TargetSelectionMode,
     };
     use serde_json::json;
 
@@ -1310,7 +1351,7 @@ mod tests {
         assert_eq!(schedule.schema_version, "patchhive.product.contract.v1");
         assert_eq!(schedule.product, "signal-hive");
         assert_eq!(schedule.approval_policy, "read_only_auto");
-        assert_eq!(schedule.last_status, "idle");
+        assert_eq!(schedule.last_execution, ScheduleExecutionState::NeverRun);
         assert_eq!(schedule.dispatch.payload, serde_json::Value::Null);
     }
 
