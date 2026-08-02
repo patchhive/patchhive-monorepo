@@ -8,8 +8,9 @@ use patchhive_product_core::sqlite::{product_db_path, PooledSqliteConnection, Sq
 use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBehavior};
 
 use crate::models::{
-    FirstStackSmokeRun, PrBudgetReservation, ProbeSample, ProductActionEvent, ProductOverride,
-    RepositoryPolicy, RunbookRun, SuiteSettings,
+    FirstStackSmokeRun, PrBudgetLimitingLayer, PrBudgetReservation, PrBudgetUsage,
+    PrReservationDecision, PrReservationDenial, PrReservationExpiration, PrReservationState,
+    ProbeSample, ProductActionEvent, ProductOverride, RepositoryPolicy, RunbookRun, SuiteSettings,
 };
 
 static DB_POOL: Lazy<SqlitePool> = Lazy::new(|| {
@@ -21,18 +22,6 @@ pub struct ServiceTokenStorageStats {
     pub total: usize,
     pub encrypted: usize,
     pub plaintext: usize,
-}
-
-#[derive(Debug, Clone)]
-pub struct PrReservationAttempt {
-    pub granted: bool,
-    pub reason: String,
-    pub limiting_layer: String,
-    pub product_limit: u32,
-    pub product_used: u32,
-    pub suite_limit: u32,
-    pub suite_used: u32,
-    pub reservation: Option<PrBudgetReservation>,
 }
 
 /// Suite-first, exactly as every other integrated product resolves it.
@@ -380,18 +369,14 @@ fn replace_repository_policies_with_connection(
     Ok(())
 }
 
-pub fn suite_pr_limit() -> u32 {
-    let Ok(conn) = connect() else {
-        return 10;
-    };
-    load_suite_pr_limit(&conn).unwrap_or(10)
+pub fn suite_pr_limit() -> rusqlite::Result<u32> {
+    let conn = connect()?;
+    load_suite_pr_limit(&conn)
 }
 
-pub fn product_pr_limits() -> HashMap<String, u32> {
-    let Ok(conn) = connect() else {
-        return HashMap::new();
-    };
-    load_product_pr_limits(&conn).unwrap_or_default()
+pub fn product_pr_limits() -> rusqlite::Result<HashMap<String, u32>> {
+    let conn = connect()?;
+    load_product_pr_limits(&conn)
 }
 
 pub fn save_pr_budget_settings(
@@ -423,14 +408,10 @@ pub fn save_pr_budget_settings(
     tx.commit()
 }
 
-pub fn pr_budget_reservations(limit: u32) -> Vec<PrBudgetReservation> {
-    let Ok(mut conn) = connect() else {
-        return Vec::new();
-    };
-    if expire_pr_reservations(&mut conn).is_err() {
-        return Vec::new();
-    }
-    load_pr_reservations(&conn, limit).unwrap_or_default()
+pub fn pr_budget_reservations(limit: u32) -> rusqlite::Result<Vec<PrBudgetReservation>> {
+    let mut conn = connect()?;
+    expire_pr_reservations(&mut conn)?;
+    load_pr_reservations(&conn, limit)
 }
 
 pub fn active_pr_usage() -> rusqlite::Result<(u32, HashMap<String, u32>)> {
@@ -453,7 +434,7 @@ pub fn active_pr_usage() -> rusqlite::Result<(u32, HashMap<String, u32>)> {
 
 pub fn reserve_pr_slot(
     reservation: &PrBudgetReservation,
-) -> rusqlite::Result<PrReservationAttempt> {
+) -> rusqlite::Result<PrReservationDecision> {
     let mut conn = connect()?;
     reserve_pr_slot_with_connection(&mut conn, reservation)
 }
@@ -461,7 +442,12 @@ pub fn reserve_pr_slot(
 fn reserve_pr_slot_with_connection(
     conn: &mut Connection,
     reservation: &PrBudgetReservation,
-) -> rusqlite::Result<PrReservationAttempt> {
+) -> rusqlite::Result<PrReservationDecision> {
+    let PrReservationState::Reserved { expires_at } = &reservation.lifecycle else {
+        return Err(rusqlite::Error::InvalidParameterName(
+            "new PR reservation must have a reserved lifecycle".into(),
+        ));
+    };
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
     expire_pr_reservations_in_transaction(&tx)?;
 
@@ -482,9 +468,15 @@ fn reserve_pr_slot_with_connection(
     let suite_used = active_pr_count(&tx, None)?;
     let product_used = active_pr_count(&tx, Some(&reservation.product))?;
 
+    let usage = PrBudgetUsage {
+        product_limit,
+        product_used,
+        suite_limit,
+        suite_used,
+    };
     let denial = if product_limit == 0 {
         Some((
-            "product",
+            PrBudgetLimitingLayer::Product,
             format!(
                 "{} has no PR budget. Configure a positive product maximum in HiveCore.",
                 reservation.product
@@ -492,7 +484,7 @@ fn reserve_pr_slot_with_connection(
         ))
     } else if product_used >= product_limit {
         Some((
-            "product",
+            PrBudgetLimitingLayer::Product,
             format!(
                 "{} has used all {product_limit} of its PR slots.",
                 reservation.product
@@ -500,12 +492,12 @@ fn reserve_pr_slot_with_connection(
         ))
     } else if suite_limit == 0 {
         Some((
-            "suite",
+            PrBudgetLimitingLayer::Suite,
             "The PatchHive suite PR ceiling is zero.".to_string(),
         ))
     } else if suite_used >= suite_limit {
         Some((
-            "suite",
+            PrBudgetLimitingLayer::Suite,
             format!("The PatchHive suite has used all {suite_limit} PR slots."),
         ))
     } else {
@@ -527,15 +519,12 @@ fn reserve_pr_slot_with_connection(
             ],
         )?;
         tx.commit()?;
-        return Ok(PrReservationAttempt {
-            granted: false,
-            reason,
-            limiting_layer: limiting_layer.into(),
-            product_limit,
-            product_used,
-            suite_limit,
-            suite_used,
-            reservation: None,
+        return Ok(PrReservationDecision::Denied {
+            denial: PrReservationDenial {
+                reason,
+                limiting_layer,
+                usage,
+            },
         });
     }
 
@@ -552,11 +541,11 @@ fn reserve_pr_slot_with_connection(
             reservation.repository,
             reservation.run_id,
             reservation.action,
-            reservation.status,
-            reservation.pr_url,
-            reservation.reason,
+            "reserved",
+            "",
+            "",
             reservation.created_at,
-            reservation.expires_at,
+            expires_at,
             reservation.updated_at,
         ],
     )?;
@@ -569,15 +558,9 @@ fn reserve_pr_slot_with_connection(
     )?;
     tx.commit()?;
 
-    Ok(PrReservationAttempt {
-        granted: true,
-        reason: "HiveCore reserved one PR slot.".into(),
-        limiting_layer: String::new(),
-        product_limit,
-        product_used,
-        suite_limit,
-        suite_used,
-        reservation: Some(reservation.clone()),
+    Ok(PrReservationDecision::Granted {
+        reservation: Box::new(reservation.clone()),
+        usage,
     })
 }
 
@@ -1527,19 +1510,46 @@ fn load_pr_reservation(
 }
 
 fn decode_pr_reservation(row: &rusqlite::Row<'_>) -> rusqlite::Result<PrBudgetReservation> {
+    let raw_status = row.get::<_, String>(5)?;
+    let pr_url = non_empty(row.get::<_, String>(6)?);
+    let reason = non_empty(row.get::<_, String>(7)?);
+    let expires_at = non_empty(row.get::<_, String>(9)?);
+    let lifecycle = match (raw_status.as_str(), pr_url, reason, expires_at) {
+        ("reserved", None, None, Some(expires_at)) => PrReservationState::Reserved { expires_at },
+        ("committed", Some(pr_url), None, Some(expires_at)) => {
+            PrReservationState::Committed { pr_url, expires_at }
+        }
+        ("released", pr_url, Some(reason), _) => PrReservationState::Released { pr_url, reason },
+        ("expired", pr_url, Some(reason), _) => PrReservationState::Expired {
+            expiration: if pr_url.is_some() {
+                PrReservationExpiration::CommittedLease
+            } else {
+                PrReservationExpiration::BeforePullRequest
+            },
+            pr_url,
+            reason,
+        },
+        (_, pr_url, reason, expires_at) => PrReservationState::Unknown {
+            raw_status,
+            pr_url,
+            reason,
+            expires_at,
+        },
+    };
     Ok(PrBudgetReservation {
         id: row.get(0)?,
         product: row.get(1)?,
         repository: row.get(2)?,
         run_id: row.get(3)?,
         action: row.get(4)?,
-        status: row.get(5)?,
-        pr_url: row.get(6)?,
-        reason: row.get(7)?,
+        lifecycle,
         created_at: row.get(8)?,
-        expires_at: row.get(9)?,
         updated_at: row.get(10)?,
     })
+}
+
+fn non_empty(value: String) -> Option<String> {
+    (!value.trim().is_empty()).then_some(value)
 }
 
 pub fn record_suite_run(run: &crate::models::SuiteRun) -> rusqlite::Result<()> {
@@ -1619,14 +1629,15 @@ fn decode_suite_run(row: &rusqlite::Row<'_>) -> rusqlite::Result<crate::models::
 mod tests {
     use super::{
         collapse_policies, init_schema, load_action_event, load_action_events,
-        load_latest_first_stack_smoke_run, load_product_overrides,
+        load_latest_first_stack_smoke_run, load_pr_reservation, load_product_overrides,
         load_service_token_storage_stats, load_suite_settings, replace_overrides,
         replace_repository_policies_with_connection, reserve_pr_slot_with_connection,
         write_suite_settings, ServiceTokenStorageStats,
     };
     use crate::models::{
         now_rfc3339, FirstStackSmokeRun, FirstStackSmokeStep, PrBudgetReservation,
-        ProductActionEvent, ProductOverride, RepositoryPolicy, SuiteSettings,
+        PrReservationDecision, PrReservationState, ProductActionEvent, ProductOverride,
+        RepositoryPolicy, SuiteSettings,
     };
     use patchhive_product_core::repo_policy;
     use patchhive_product_core::secrets::TokenProtector;
@@ -1669,14 +1680,16 @@ mod tests {
         let first = sample_reservation("prr_1", "run_1");
         let granted = reserve_pr_slot_with_connection(&mut conn, &first)
             .expect("first reservation should evaluate");
-        assert!(granted.granted);
+        assert!(matches!(granted, PrReservationDecision::Granted { .. }));
 
         let second = sample_reservation("prr_2", "run_2");
         let denied = reserve_pr_slot_with_connection(&mut conn, &second)
             .expect("second reservation should evaluate");
-        assert!(!denied.granted);
-        assert_eq!(denied.limiting_layer, "suite");
-        assert_eq!(denied.suite_used, 1);
+        let PrReservationDecision::Denied { denial } = denied else {
+            panic!("second reservation should be denied");
+        };
+        assert_eq!(denial.limiting_layer.as_str(), "suite");
+        assert_eq!(denial.usage.suite_used, 1);
 
         let grants: i64 = conn
             .query_row(
@@ -1703,13 +1716,48 @@ mod tests {
             repository: "patchhive/example".into(),
             run_id: run_id.into(),
             action: "open_pull_request".into(),
-            status: "reserved".into(),
-            pr_url: String::new(),
-            reason: String::new(),
+            lifecycle: PrReservationState::Reserved {
+                expires_at: "2099-07-13T12:10:00Z".into(),
+            },
             created_at: "2026-07-13T12:00:00Z".into(),
-            expires_at: "2099-07-13T12:10:00Z".into(),
             updated_at: "2026-07-13T12:00:00Z".into(),
         }
+    }
+
+    #[test]
+    fn contradictory_legacy_pr_reservation_decodes_as_unknown() {
+        let conn = Connection::open_in_memory().expect("in-memory db should open");
+        init_schema(&conn).expect("schema should initialize");
+        conn.execute(
+            r#"
+            INSERT INTO pr_budget_reservations (
+              id, product_slug, repository, run_id, action, status, pr_url, reason,
+              created_at, expires_at, updated_at
+            ) VALUES (
+              'prr_bad', 'repo-reaper', 'patchhive/example', 'run_bad',
+              'open_pull_request', 'reserved', 'https://github.com/patchhive/example/pull/1',
+              '', '2026-07-13T12:00:00Z', '2099-07-13T12:10:00Z',
+              '2026-07-13T12:00:00Z'
+            )
+            "#,
+            [],
+        )
+        .expect("legacy row should insert");
+
+        let reservation = load_pr_reservation(&conn, "prr_bad")
+            .expect("reservation should decode")
+            .expect("reservation should exist");
+        assert!(matches!(
+            reservation.lifecycle,
+            PrReservationState::Unknown {
+                ref raw_status,
+                ref pr_url,
+                reason: None,
+                ref expires_at,
+            } if raw_status == "reserved"
+                && pr_url.as_deref() == Some("https://github.com/patchhive/example/pull/1")
+                && expires_at.as_deref() == Some("2099-07-13T12:10:00Z")
+        ));
     }
 
     #[test]

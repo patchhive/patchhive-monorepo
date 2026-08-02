@@ -51,10 +51,14 @@ pub async fn validate_config() -> Vec<StartupCheck> {
         "HiveCore repository safety is active with {repository_policy_count} structured polic{}; local exclusions and trusted-repository elevations are available to suite products.",
         if repository_policy_count == 1 { "y" } else { "ies" }
     )));
-    checks.push(StartupCheck::ok(format!(
-        "Atomic pull-request budgets are active with a suite-wide ceiling of {}. RepoReaper reserves capacity before PR creation and releases it when monitored PRs close or merge.",
-        crate::db::suite_pr_limit()
-    )));
+    match crate::db::suite_pr_limit() {
+        Ok(limit) => checks.push(StartupCheck::ok(format!(
+            "Atomic pull-request budgets are active with a suite-wide ceiling of {limit}. RepoReaper reserves capacity before PR creation and releases it when monitored PRs close or merge."
+        ))),
+        Err(error) => checks.push(StartupCheck::error(format!(
+            "HiveCore could not read the suite pull-request budget: {error}"
+        ))),
+    }
     checks.push(StartupCheck::info(
         "The public patchhive.dev repository-owner opt-out registry is not connected yet. HiveCore currently enforces operator-managed exclusions only.",
     ));

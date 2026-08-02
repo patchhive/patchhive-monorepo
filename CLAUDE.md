@@ -419,6 +419,10 @@ typography scale, spacing system, or theme implementation.
 - HiveCore owns operator-managed repository exclusions/trust and atomic per-product plus
   suite-wide concurrent PR budgets. **The suite ceiling always wins, and enforcing clients
   fail closed when a configured policy service is unavailable.**
+  PR-budget grants and denials are a tagged `PrReservationDecision`; a grant cannot
+  exist without its typed reservation. Reservation lifecycle is a tagged
+  `PrReservationState`, malformed legacy rows become `unknown`, and failed budget
+  reads are errors rather than default limits, zero usage, or empty history.
   ([docs/hivecore-repository-safety-and-pr-budgets.md](docs/hivecore-repository-safety-and-pr-budgets.md);
   target design and known gaps in [docs/hivecore-architecture.md](docs/hivecore-architecture.md))
 - Scheduling never widens an action's safety boundary.

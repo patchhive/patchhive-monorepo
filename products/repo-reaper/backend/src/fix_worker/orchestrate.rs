@@ -1376,11 +1376,11 @@ pub async fn fix_one(job: FixIssueJob) {
                 &response.reason,
                 json!({
                     "repo": scope.repo,
-                    "limiting_layer": response.limiting_layer,
-                    "product_used": response.product_used,
-                    "product_limit": response.product_limit,
-                    "suite_used": response.suite_used,
-                    "suite_limit": response.suite_limit,
+                    "limiting_layer": response.limiting_layer.as_str(),
+                    "product_used": response.usage.product_used,
+                    "product_limit": response.usage.product_limit,
+                    "suite_used": response.usage.suite_used,
+                    "suite_limit": response.usage.suite_limit,
                 }),
             );
             update_issue_status_comment(

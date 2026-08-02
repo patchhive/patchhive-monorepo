@@ -172,12 +172,12 @@ reserve at most two. A product maximum can never expand the suite ceiling.
 
 ### Atomic reservation, not check-then-write
 
-The eventual API should not let products independently read a count and then
+The API does not let products independently read a count and then
 decrement it. Concurrent products could all observe the same remaining slot.
 HiveCore must perform the check and reservation atomically in one database
 transaction.
 
-Recommended lifecycle:
+Reservation lifecycle:
 
 1. Product submits a reservation request with product, repo, run, and intended
    action.
@@ -194,6 +194,17 @@ Recommended lifecycle:
 Products must fail closed on PR creation when HiveCore cannot grant a
 reservation. A UI-side counter is informative only; the backend reservation is
 the authority.
+
+The reservation API represents that authority as a tagged decision rather than
+independent `granted` and optional-reservation fields. A `granted` decision always
+contains the reservation and current usage evidence; a `denied` decision always
+contains the reason, a typed repository-policy/product/suite limiting layer, and
+the same usage evidence. The reservation itself has one tagged lifecycle:
+`reserved`, `committed`, `released`, `expired`, or `unknown`. Contradictory or
+unrecognized rows from the legacy string-column schema are preserved as
+`unknown`, never normalized into an active or successful state. Failed reads of
+limits, usage, or reservation history fail the request instead of substituting a
+default ceiling, zero counts, or an empty list.
 
 ### Counting window to decide before implementation
 

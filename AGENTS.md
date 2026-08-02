@@ -155,6 +155,12 @@ patchhive/
   errors. Claims clear prior terminal evidence. Contradictory or unrecognized
   legacy SQLite combinations decode as `unknown`; never infer a reassuring
   schedule outcome from malformed history.
+- PR-budget authorization requires one tagged `PrReservationDecision`: a grant
+  always contains a typed reservation and a denial always contains its typed
+  limiting layer and usage evidence. Reservation history uses the non-defaultable
+  tagged `PrReservationState`; contradictory or unrecognized legacy SQLite rows
+  decode as `unknown`. Budget reads fail explicitly instead of substituting the
+  default ceiling, zero usage, or an empty reservation list.
 - Booleans remain appropriate for complete binary facts such as whether an action
   is scheduleable. The rule is to eliminate ambiguous state, not booleans generally.
 

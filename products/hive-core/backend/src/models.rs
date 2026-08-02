@@ -1,5 +1,10 @@
 use chrono::Utc;
 use patchhive_product_core::contract;
+pub use patchhive_product_core::hivecore_policy::{
+    PrBudgetLimitingLayer, PrBudgetReservation, PrBudgetUsage, PrReservationCommitRequest,
+    PrReservationDecision, PrReservationDenial, PrReservationExpiration,
+    PrReservationReleaseRequest, PrReservationRequest, PrReservationState, PrRunReleaseRequest,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -414,7 +419,7 @@ pub struct RepositoryPolicyDecision {
     pub evaluated_at: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProductPrBudget {
     pub product: String,
     pub limit: u32,
@@ -422,7 +427,7 @@ pub struct ProductPrBudget {
     pub remaining: u32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PrBudgetStatusResponse {
     pub suite_limit: u32,
     pub suite_used: u32,
@@ -431,68 +436,16 @@ pub struct PrBudgetStatusResponse {
     pub reservations: Vec<PrBudgetReservation>,
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct SavePrBudgetRequest {
     pub suite_limit: u32,
     pub products: Vec<ProductPrBudgetInput>,
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct ProductPrBudgetInput {
     pub product: String,
     pub limit: u32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
-pub struct PrBudgetReservation {
-    pub id: String,
-    pub product: String,
-    pub repository: String,
-    pub run_id: String,
-    pub action: String,
-    pub status: String,
-    pub pr_url: String,
-    pub reason: String,
-    pub created_at: String,
-    pub expires_at: String,
-    pub updated_at: String,
-}
-
-#[derive(Debug, Clone, Deserialize, Default)]
-pub struct PrReservationRequest {
-    pub product: String,
-    pub repository: String,
-    pub run_id: String,
-    pub action: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct PrReservationResponse {
-    pub granted: bool,
-    pub reason: String,
-    pub limiting_layer: String,
-    pub product_limit: u32,
-    pub product_used: u32,
-    pub suite_limit: u32,
-    pub suite_used: u32,
-    pub reservation: Option<PrBudgetReservation>,
-}
-
-#[derive(Debug, Clone, Deserialize, Default)]
-pub struct PrReservationCommitRequest {
-    pub pr_url: String,
-}
-
-#[derive(Debug, Clone, Deserialize, Default)]
-pub struct PrReservationReleaseRequest {
-    pub reason: String,
-}
-
-#[derive(Debug, Clone, Deserialize, Default)]
-pub struct PrRunReleaseRequest {
-    pub product: String,
-    pub run_id: String,
-    pub reason: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

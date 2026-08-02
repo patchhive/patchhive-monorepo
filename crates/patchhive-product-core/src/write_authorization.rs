@@ -23,7 +23,8 @@ use anyhow::Result;
 use reqwest::Client;
 
 use crate::hivecore_policy::{
-    commit_pr_slot, release_pr_slot, reserve_pr_slot, PrReservationRequest, PrReservationResponse,
+    commit_pr_slot, release_pr_slot, reserve_pr_slot, PrReservationDecision, PrReservationDenial,
+    PrReservationRequest,
 };
 use crate::validation::TestExecutionStatus;
 
@@ -88,7 +89,7 @@ pub enum PrBudget {
     /// No HiveCore policy service is configured, so no budget applies.
     Unconfigured,
     /// HiveCore refused. `reason` explains which layer refused and why.
-    Denied(Box<PrReservationResponse>),
+    Denied(Box<PrReservationDenial>),
 }
 
 /// A held PR budget slot.
@@ -162,20 +163,14 @@ impl Drop for PrBudgetGuard {
 pub async fn request_pr_budget(client: Client, request: &PrReservationRequest) -> Result<PrBudget> {
     match reserve_pr_slot(&client, request).await? {
         None => Ok(PrBudget::Unconfigured),
-        Some(response) if !response.granted => Ok(PrBudget::Denied(Box::new(response))),
-        Some(response) => match response.reservation {
-            Some(reservation) => Ok(PrBudget::Granted(PrBudgetGuard {
+        Some(PrReservationDecision::Denied { denial }) => Ok(PrBudget::Denied(Box::new(denial))),
+        Some(PrReservationDecision::Granted { reservation, .. }) => {
+            Ok(PrBudget::Granted(PrBudgetGuard {
                 client,
                 reservation_id: reservation.id,
                 settled: false,
-            })),
-            None => Ok(PrBudget::Denied(Box::new(PrReservationResponse {
-                granted: false,
-                reason: "HiveCore granted PR capacity without returning a reservation ID."
-                    .to_string(),
-                ..Default::default()
-            }))),
-        },
+            }))
+        }
     }
 }
 

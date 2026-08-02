@@ -9,8 +9,9 @@ use uuid::Uuid;
 use crate::{
     db,
     models::{
-        now_rfc3339, ok, PrBudgetReservation, PrBudgetStatusResponse, PrReservationRequest,
-        PrReservationResponse, PrRunReleaseRequest, ProductPrBudget, RepositoryPoliciesResponse,
+        now_rfc3339, ok, PrBudgetLimitingLayer, PrBudgetReservation, PrBudgetStatusResponse,
+        PrBudgetUsage, PrReservationDecision, PrReservationDenial, PrReservationRequest,
+        PrReservationState, PrRunReleaseRequest, ProductPrBudget, RepositoryPoliciesResponse,
         RepositoryPolicy, RepositoryPolicyDecision, RepositoryPolicyDecisionRequest,
         SavePrBudgetRequest, SaveRepositoryPoliciesRequest,
     },
@@ -220,7 +221,7 @@ pub(super) async fn save_pr_budgets(
 
 pub(super) async fn reserve_pr_budget(
     Json(request): Json<PrReservationRequest>,
-) -> ApiResult<PrReservationResponse> {
+) -> ApiResult<PrReservationDecision> {
     let product = request.product.trim().to_ascii_lowercase();
     if !product_catalog()
         .iter()
@@ -256,13 +257,12 @@ pub(super) async fn reserve_pr_budget(
     })
     .map_err(|error| *error)?;
     if policy.decision != "allowed" {
-        return Ok(Json(ok(PrReservationResponse {
-            granted: false,
-            reason: policy.reason,
-            limiting_layer: "repository_policy".into(),
-            product_limit: configured_product_limit(&product),
-            suite_limit: db::suite_pr_limit(),
-            ..PrReservationResponse::default()
+        return Ok(Json(ok(PrReservationDecision::Denied {
+            denial: PrReservationDenial {
+                reason: policy.reason,
+                limiting_layer: PrBudgetLimitingLayer::RepositoryPolicy,
+                usage: current_pr_budget_usage(&product).map_err(|error| *error)?,
+            },
         })));
     }
 
@@ -273,11 +273,10 @@ pub(super) async fn reserve_pr_budget(
         repository,
         run_id: run_id.into(),
         action: action.into(),
-        status: "reserved".into(),
-        pr_url: String::new(),
-        reason: String::new(),
+        lifecycle: PrReservationState::Reserved {
+            expires_at: (now + Duration::minutes(10)).to_rfc3339(),
+        },
         created_at: now.to_rfc3339(),
-        expires_at: (now + Duration::minutes(10)).to_rfc3339(),
         updated_at: now.to_rfc3339(),
     };
     let attempt = db::reserve_pr_slot(&reservation).map_err(|err| {
@@ -287,16 +286,7 @@ pub(super) async fn reserve_pr_budget(
             format!("HiveCore could not reserve PR capacity: {err}"),
         )
     })?;
-    Ok(Json(ok(PrReservationResponse {
-        granted: attempt.granted,
-        reason: attempt.reason,
-        limiting_layer: attempt.limiting_layer,
-        product_limit: attempt.product_limit,
-        product_used: attempt.product_used,
-        suite_limit: attempt.suite_limit,
-        suite_used: attempt.suite_used,
-        reservation: attempt.reservation,
-    })))
+    Ok(Json(ok(attempt)))
 }
 
 pub(super) async fn commit_pr_budget_reservation(
@@ -341,13 +331,13 @@ pub(super) async fn commit_pr_budget_reservation(
                 "PR reservation was not found.",
             )
         })?;
-    if reservation.status != "committed" {
+    if !reservation.lifecycle.is_committed() {
         return Err(api_error(
             StatusCode::CONFLICT,
             "pr_reservation_not_active",
             format!(
                 "PR reservation cannot be committed from status '{}'.",
-                reservation.status
+                reservation.lifecycle.label()
             ),
         ));
     }
@@ -389,13 +379,13 @@ pub(super) async fn release_pr_budget_reservation(
                 "PR reservation was not found.",
             )
         })?;
-    if reservation.status != "released" {
+    if !reservation.lifecycle.is_released() {
         return Err(api_error(
             StatusCode::CONFLICT,
             "pr_reservation_not_active",
             format!(
                 "PR reservation cannot be released from status '{}'.",
-                reservation.status
+                reservation.lifecycle.label()
             ),
         ));
     }
@@ -439,9 +429,9 @@ pub(super) async fn release_pr_budget_reservations_for_run(
 }
 
 fn build_pr_budget_status() -> InternalApiResult<PrBudgetStatusResponse> {
-    let suite_limit = db::suite_pr_limit();
-    let configured = db::product_pr_limits();
-    let reservations = db::pr_budget_reservations(50);
+    let suite_limit = db::suite_pr_limit().map_err(pr_budget_read_error)?;
+    let configured = db::product_pr_limits().map_err(pr_budget_read_error)?;
+    let reservations = db::pr_budget_reservations(50).map_err(pr_budget_read_error)?;
     let (suite_used, product_usage) = db::active_pr_usage().map_err(|err| {
         Box::new(api_error(
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -474,11 +464,34 @@ fn build_pr_budget_status() -> InternalApiResult<PrBudgetStatusResponse> {
     })
 }
 
-fn configured_product_limit(product: &str) -> u32 {
-    db::product_pr_limits()
+fn current_pr_budget_usage(product: &str) -> InternalApiResult<PrBudgetUsage> {
+    let product_limit = db::product_pr_limits()
+        .map_err(pr_budget_read_error)?
         .get(product)
         .copied()
-        .unwrap_or_else(|| db::default_product_pr_limit(product))
+        .unwrap_or_else(|| db::default_product_pr_limit(product));
+    let suite_limit = db::suite_pr_limit().map_err(pr_budget_read_error)?;
+    let (suite_used, product_usage) = db::active_pr_usage().map_err(|err| {
+        Box::new(api_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "pr_budget_status_failed",
+            format!("HiveCore could not calculate active PR usage: {err}"),
+        ))
+    })?;
+    Ok(PrBudgetUsage {
+        product_limit,
+        product_used: product_usage.get(product).copied().unwrap_or(0),
+        suite_limit,
+        suite_used,
+    })
+}
+
+fn pr_budget_read_error(err: rusqlite::Error) -> InternalApiError {
+    Box::new(api_error(
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "pr_budget_status_failed",
+        format!("HiveCore could not read PR budget state: {err}"),
+    ))
 }
 
 #[cfg(test)]

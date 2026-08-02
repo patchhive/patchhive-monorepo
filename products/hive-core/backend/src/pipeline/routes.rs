@@ -17,8 +17,8 @@ use crate::{
     db,
     models::{
         DispatchActionResponse, OverviewResponse, PrBudgetReservation, PrBudgetStatusResponse,
-        PrReservationCommitRequest, PrReservationReleaseRequest, PrReservationRequest,
-        PrReservationResponse, PrRunReleaseRequest, ProductActionEvent, ProductRunDetailResponse,
+        PrReservationCommitRequest, PrReservationDecision, PrReservationReleaseRequest,
+        PrReservationRequest, PrRunReleaseRequest, ProductActionEvent, ProductRunDetailResponse,
         ProductRunsSnapshotResponse, ProductRuntimeItem, ProvisionServiceTokenRequest,
         ProvisionServiceTokenResponse, RepositoryPoliciesResponse, RepositoryPolicyDecision,
         RepositoryPolicyDecisionRequest, SavePrBudgetRequest, SaveRepositoryPoliciesRequest,
@@ -117,7 +117,7 @@ pub async fn health() -> Json<Value> {
         "db_path": db::db_path(),
         "product_override_count": db::product_override_count(),
         "repository_policy_count": db::repository_policies().len(),
-        "suite_pr_limit": db::suite_pr_limit(),
+        "suite_pr_limit": db::suite_pr_limit().ok(),
         "mode": "control-plane",
     }))
 }
@@ -357,7 +357,7 @@ pub async fn save_pr_budgets(
 pub async fn reserve_pr_budget(
     Json(body): Json<PrReservationRequest>,
 ) -> Result<
-    Json<crate::models::ApiEnvelope<PrReservationResponse>>,
+    Json<crate::models::ApiEnvelope<PrReservationDecision>>,
     (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
 > {
     super::policy::reserve_pr_budget(Json(body)).await
