@@ -1,4 +1,8 @@
 use chrono::Utc;
+pub use patchhive_product_core::approvals::{
+    ApprovalConsumptionOutcome, ApprovalEvent, ApprovalExpirableState, ApprovalOrigin,
+    ApprovalReasonRequest, ApprovalRecord, ApprovalState, ApprovalSubject,
+};
 use patchhive_product_core::contract;
 pub use patchhive_product_core::hivecore_policy::{
     PrBudgetLimitingLayer, PrBudgetReservation, PrBudgetUsage, PrReservationCommitRequest,
@@ -802,9 +806,15 @@ mod evidence_tests {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DispatchActionResponse {
-    pub event: ProductActionEvent,
-    pub started_run: bool,
+#[serde(tag = "outcome", rename_all = "snake_case")]
+pub enum DispatchActionResponse {
+    Dispatched {
+        event: Box<ProductActionEvent>,
+        started_run: bool,
+    },
+    ApprovalRequired {
+        approval: Box<ApprovalRecord>,
+    },
 }
 
 /// One step of a suite run: a single product action, dispatched in order.
@@ -821,12 +831,15 @@ pub struct SuiteRunStep {
     /// output. Empty for ordinary steps.
     #[serde(default)]
     pub target: String,
-    /// queued | dispatched | failed | skipped
+    /// queued | dispatched | pending_approval | failed | skipped
     pub status: String,
     pub message: String,
     pub remote_status: Option<u16>,
     /// The dispatch event this step produced, so a step is traceable to its evidence.
     pub event_id: String,
+    /// The pending approval this step produced instead of dispatching.
+    #[serde(default)]
+    pub approval_id: String,
     pub started_at: String,
     pub finished_at: String,
 }
@@ -835,7 +848,7 @@ pub struct SuiteRunStep {
 pub struct SuiteRun {
     pub id: String,
     pub name: String,
-    /// running | completed | failed | halted
+    /// running | awaiting_approval | completed | failed | halted
     pub status: String,
     pub started_at: String,
     pub finished_at: String,

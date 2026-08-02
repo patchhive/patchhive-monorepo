@@ -13,12 +13,14 @@ export interface SuiteRunStep {
   payload?: unknown;
   /** The target this step was expanded for; empty for ordinary steps. */
   target?: string;
-  /** queued | running | dispatched | failed | skipped */
+  /** queued | running | dispatched | pending_approval | failed | skipped */
   status: string;
   message: string;
   remote_status: number | null;
   /** The dispatch event this step produced, traceable to its evidence. */
   event_id: string;
+  /** Durable approval created instead of dispatching this step. */
+  approval_id: string;
   started_at: string;
   finished_at: string;
 }
@@ -26,7 +28,7 @@ export interface SuiteRunStep {
 export interface SuiteRun {
   id: string;
   name: string;
-  /** running | completed | failed | halted */
+  /** running | completed | awaiting_approval | failed | halted */
   status: string;
   started_at: string;
   finished_at: string;

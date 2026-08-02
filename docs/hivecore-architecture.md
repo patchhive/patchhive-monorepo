@@ -99,19 +99,13 @@ is not interchangeable with an unreadable endpoint. Probe-history storage errors
 propagate from the API, and the cockpit renders unavailable latency and uptime as
 `null`/“—” rather than zero.
 
-**B3 — Dispatch refuses, in code, exactly what autonomy requires.**
-`pipeline/dispatch.rs`:
-
-```rust
-if action.destructive { /* "destructive_action_blocked" */ }
-if action.requires_approval() || action.opens_pull_request() {
-    /* "HiveCore does not dispatch approval-gated or pull-request-opening
-       actions until the suite approval flow exists." */
-}
-```
-
-HiveCore can dispatch read-only actions only. The approval object is not one item on a list; it is
-the single named blocker between today and HiveCore running the suite.
+**B3 — Approval authority is now a durable object.**
+`pipeline/dispatch.rs` still blocks destructive actions. Approval-gated and PR-opening actions
+instead create a durable pending record for the exact normalized dispatch. The operator grants
+that fingerprint once; HiveCore atomically changes it to `consuming` immediately before the
+remote request and records a terminal `consumed` outcome even when the product rejects the call
+or the transport result is uncertain. A changed action contract, payload, origin, repository,
+run, scope, or effect cannot reuse the grant.
 
 **B4 — Public opt-out ingestion is not implemented.**
 HiveCore and the specialist products now evaluate the shared structured repository-policy store
@@ -228,11 +222,14 @@ repeated live HTTP fan-out from frontend polling — and it creates the history 
 ### 3.5 Approvals as objects
 
 An approval is a record whose subject is a **specific proposed dispatch**: product + action +
-repository + run + input hash. States `pending | granted | denied | expired`. Grants are
-**scoped and single-use** — an approval for run `X` must not authorize run `Y`. Mutating schedules
-and mutating pipeline stages produce pending approvals instead of executing.
-
-Then the two `403`s in `dispatch.rs` are deleted, and HiveCore can act.
+repository + run + normalized input hash + origin + effect + required scopes. Its tagged lifecycle
+is `pending | granted | denied | revoked | consuming | consumed | expired | unknown`. Grants are
+**scoped and single-use** — an approval for run `X` cannot authorize run `Y`, and `consuming`
+prevents replay if HiveCore loses the remote result. Mutating schedules and pipeline stages create
+pending approvals instead of executing. The v3 approval inbox owns grant, deny, revoke, and
+dispatch controls plus the audit history. When a suite-run approval is consumed, HiveCore
+reconciles that exact step with the resulting action event. Steps skipped after the original halt
+remain skipped; approval does not silently resume a partially executed composition.
 
 ### 3.6 The operator's unit of input is intent, not runs
 
@@ -467,7 +464,8 @@ first-run host bring-up remains an HTTP daemon or becomes documented operator se
 2. **Structured policy + reconciliation.** Allow/deny/opt-out become rows; the evaluator becomes
    the pure eight-step function with a persisted reason chain; a GitHub sweep releases merged and
    closed committed reservations. (B4, B5)
-3. **Approvals as objects**, then delete the two `403`s in `dispatch.rs`. (B3)
+3. **Approvals as objects.** Landed: exact durable subjects, atomic single-use claims, suite-run
+   pending states, audit history, and the v3 operator inbox. (B3)
 4. **The conductor.** Work ledger with fingerprint dedup, durable job state replacing the in-memory
    fleet job, reconciliation tick, backpressure sized by real remaining capacity. Ship at autonomy
    `propose` first — it plans and records what it would do, dispatching nothing. (B6)

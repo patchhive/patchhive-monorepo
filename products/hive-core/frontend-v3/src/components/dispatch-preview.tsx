@@ -93,13 +93,15 @@ export function DispatchPreview({ open, onOpenChange }: Props) {
     setOutcome(result);
     logAudit({
       kind: result.ok ? "action" : "info",
-      title: result.ok ? "Dispatched" : "Dispatch refused",
+      title: result.ok ? "Dispatched" : result.approvalRequired ? "Approval requested" : "Dispatch refused",
       detail: `${active.product.productName} · ${active.action.id} — ${result.message}`,
     });
     if (result.ok) {
       toast.success(`${active.product.productName} · ${active.action.id}`, {
         description: result.message,
       });
+    } else if (result.approvalRequired) {
+      toast.warning("Approval required", { description: result.message });
     } else {
       toast.error("Dispatch did not run", { description: result.message });
     }
@@ -236,16 +238,20 @@ export function DispatchPreview({ open, onOpenChange }: Props) {
             className={`rounded-lg border p-3 ${
               outcome.ok
                 ? "border-[var(--ok)]/40 bg-[var(--ok)]/[0.06]"
-                : "border-[var(--crit)]/40 bg-[var(--crit)]/[0.06]"
+                : outcome.approvalRequired
+                  ? "border-[var(--warn)]/40 bg-[var(--warn)]/[0.06]"
+                  : "border-[var(--crit)]/40 bg-[var(--crit)]/[0.06]"
             }`}
           >
             <div className="flex items-center gap-2 font-display text-[10px] uppercase tracking-wider">
               {outcome.ok ? (
                 <ShieldCheck className="h-3 w-3 text-[var(--ok)]" />
+              ) : outcome.approvalRequired ? (
+                <ShieldCheck className="h-3 w-3 text-[var(--warn)]" />
               ) : (
                 <AlertTriangle className="h-3 w-3 text-[var(--crit)]" />
               )}
-              <span className={outcome.ok ? "text-[var(--ok)]" : "text-[var(--crit)]"}>
+              <span className={outcome.ok ? "text-[var(--ok)]" : outcome.approvalRequired ? "text-[var(--warn)]" : "text-[var(--crit)]"}>
                 {outcome.status}
               </span>
               {outcome.remoteStatus !== null && (
@@ -258,6 +264,11 @@ export function DispatchPreview({ open, onOpenChange }: Props) {
             {outcome.eventId && (
               <code className="mt-1 block font-mono text-[10px] text-muted-foreground">
                 {outcome.eventId}
+              </code>
+            )}
+            {outcome.approvalId && (
+              <code className="mt-1 block font-mono text-[10px] text-muted-foreground">
+                {outcome.approvalId}
               </code>
             )}
           </div>

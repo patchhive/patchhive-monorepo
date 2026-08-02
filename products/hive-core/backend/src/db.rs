@@ -8,9 +8,11 @@ use patchhive_product_core::sqlite::{product_db_path, PooledSqliteConnection, Sq
 use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBehavior};
 
 use crate::models::{
-    FirstStackSmokeRun, PrBudgetLimitingLayer, PrBudgetReservation, PrBudgetUsage,
-    PrReservationDecision, PrReservationDenial, PrReservationExpiration, PrReservationState,
-    ProbeSample, ProductActionEvent, ProductOverride, RepositoryPolicy, RunbookRun, SuiteSettings,
+    ApprovalConsumptionOutcome, ApprovalEvent, ApprovalExpirableState, ApprovalRecord,
+    ApprovalState, ApprovalSubject, FirstStackSmokeRun, PrBudgetLimitingLayer, PrBudgetReservation,
+    PrBudgetUsage, PrReservationDecision, PrReservationDenial, PrReservationExpiration,
+    PrReservationState, ProbeSample, ProductActionEvent, ProductOverride, RepositoryPolicy,
+    RunbookRun, SuiteSettings,
 };
 
 static DB_POOL: Lazy<SqlitePool> = Lazy::new(|| {
@@ -185,6 +187,246 @@ pub fn recent_action_events(limit: u32) -> Vec<ProductActionEvent> {
         return Vec::new();
     };
     load_action_events(&conn, limit).unwrap_or_default()
+}
+
+pub fn approvals(limit: u32) -> rusqlite::Result<Vec<ApprovalRecord>> {
+    let mut conn = connect()?;
+    expire_approvals(&mut conn, &crate::models::now_rfc3339())?;
+    load_approvals(&conn, limit)
+}
+
+pub fn approval(id: &str) -> rusqlite::Result<Option<ApprovalRecord>> {
+    let mut conn = connect()?;
+    expire_approvals(&mut conn, &crate::models::now_rfc3339())?;
+    load_approval(&conn, id)
+}
+
+pub fn create_or_get_approval(
+    subject: ApprovalSubject,
+    dispatch: patchhive_product_core::contract::DispatchActionInput,
+    expires_at: String,
+    created_at: String,
+) -> rusqlite::Result<ApprovalRecord> {
+    let mut conn = connect()?;
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    expire_approvals_in_transaction(&tx, &created_at)?;
+    let existing_id = tx
+        .query_row(
+            r#"
+            SELECT id
+            FROM approval_records
+            WHERE subject_hash = ?1 AND state_kind IN ('pending', 'granted', 'consuming')
+            ORDER BY created_at DESC
+            LIMIT 1
+            "#,
+            [&subject.fingerprint],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?;
+    if let Some(id) = existing_id {
+        let approval = load_approval(&tx, &id)?.ok_or(rusqlite::Error::QueryReturnedNoRows)?;
+        tx.commit()?;
+        return Ok(approval);
+    }
+
+    let approval = ApprovalRecord {
+        id: format!("apr_{}", uuid::Uuid::now_v7()),
+        subject,
+        dispatch,
+        lifecycle: ApprovalState::Pending { expires_at },
+        created_at: created_at.clone(),
+        updated_at: created_at.clone(),
+        history: Vec::new(),
+    };
+    insert_approval(&tx, &approval)?;
+    record_approval_event(
+        &tx,
+        &approval.id,
+        "pending",
+        "Dispatch is waiting for operator approval.",
+        &created_at,
+    )?;
+    let approval = load_approval(&tx, &approval.id)?.ok_or(rusqlite::Error::QueryReturnedNoRows)?;
+    tx.commit()?;
+    Ok(approval)
+}
+
+pub fn grant_approval(id: &str, updated_at: &str) -> rusqlite::Result<Option<ApprovalRecord>> {
+    let mut conn = connect()?;
+    grant_approval_with_connection(&mut conn, id, updated_at)
+}
+
+fn grant_approval_with_connection(
+    conn: &mut Connection,
+    id: &str,
+    updated_at: &str,
+) -> rusqlite::Result<Option<ApprovalRecord>> {
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    expire_approvals_in_transaction(&tx, updated_at)?;
+    let current = load_approval(&tx, id)?;
+    if let Some(approval) = &current {
+        if let ApprovalState::Pending { expires_at } = &approval.lifecycle {
+            let next = ApprovalState::Granted {
+                granted_at: updated_at.to_string(),
+                expires_at: expires_at.clone(),
+            };
+            update_approval_state(&tx, id, "pending", &next, updated_at)?;
+            record_approval_event(
+                &tx,
+                id,
+                "granted",
+                "Operator granted this exact dispatch once.",
+                updated_at,
+            )?;
+        }
+    }
+    let result = load_approval(&tx, id)?;
+    tx.commit()?;
+    Ok(result)
+}
+
+pub fn deny_approval(
+    id: &str,
+    reason: &str,
+    updated_at: &str,
+) -> rusqlite::Result<Option<ApprovalRecord>> {
+    transition_approval_to_terminal(id, reason, updated_at, false)
+}
+
+pub fn revoke_approval(
+    id: &str,
+    reason: &str,
+    updated_at: &str,
+) -> rusqlite::Result<Option<ApprovalRecord>> {
+    transition_approval_to_terminal(id, reason, updated_at, true)
+}
+
+fn transition_approval_to_terminal(
+    id: &str,
+    reason: &str,
+    updated_at: &str,
+    revoke: bool,
+) -> rusqlite::Result<Option<ApprovalRecord>> {
+    let mut conn = connect()?;
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    expire_approvals_in_transaction(&tx, updated_at)?;
+    let current = load_approval(&tx, id)?;
+    if let Some(approval) = &current {
+        let expected = match (&approval.lifecycle, revoke) {
+            (ApprovalState::Pending { .. }, _) => Some("pending"),
+            (ApprovalState::Granted { .. }, true) => Some("granted"),
+            _ => None,
+        };
+        if let Some(expected) = expected {
+            let next = if revoke {
+                ApprovalState::Revoked {
+                    revoked_at: updated_at.to_string(),
+                    reason: reason.to_string(),
+                }
+            } else {
+                ApprovalState::Denied {
+                    denied_at: updated_at.to_string(),
+                    reason: reason.to_string(),
+                }
+            };
+            let event = if revoke { "revoked" } else { "denied" };
+            update_approval_state(&tx, id, expected, &next, updated_at)?;
+            record_approval_event(&tx, id, event, reason, updated_at)?;
+        }
+    }
+    let result = load_approval(&tx, id)?;
+    tx.commit()?;
+    Ok(result)
+}
+
+pub fn claim_approval(
+    id: &str,
+    expected_fingerprint: &str,
+    claimed_at: &str,
+) -> rusqlite::Result<Option<ApprovalRecord>> {
+    let mut conn = connect()?;
+    claim_approval_with_connection(&mut conn, id, expected_fingerprint, claimed_at)
+}
+
+fn claim_approval_with_connection(
+    conn: &mut Connection,
+    id: &str,
+    expected_fingerprint: &str,
+    claimed_at: &str,
+) -> rusqlite::Result<Option<ApprovalRecord>> {
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    expire_approvals_in_transaction(&tx, claimed_at)?;
+    let current = load_approval(&tx, id)?;
+    if let Some(approval) = &current {
+        if approval.subject.fingerprint == expected_fingerprint
+            && matches!(approval.lifecycle, ApprovalState::Granted { .. })
+        {
+            let next = ApprovalState::Consuming {
+                claimed_at: claimed_at.to_string(),
+            };
+            update_approval_state(&tx, id, "granted", &next, claimed_at)?;
+            record_approval_event(
+                &tx,
+                id,
+                "consuming",
+                "Single-use approval was claimed immediately before dispatch.",
+                claimed_at,
+            )?;
+        }
+    }
+    let result = load_approval(&tx, id)?;
+    tx.commit()?;
+    Ok(result)
+}
+
+pub fn consume_approval(
+    id: &str,
+    event_id: &str,
+    outcome: ApprovalConsumptionOutcome,
+    consumed_at: &str,
+) -> rusqlite::Result<Option<ApprovalRecord>> {
+    let mut conn = connect()?;
+    consume_approval_with_connection(&mut conn, id, event_id, outcome, consumed_at)
+}
+
+fn consume_approval_with_connection(
+    conn: &mut Connection,
+    id: &str,
+    event_id: &str,
+    outcome: ApprovalConsumptionOutcome,
+    consumed_at: &str,
+) -> rusqlite::Result<Option<ApprovalRecord>> {
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let current = load_approval(&tx, id)?;
+    if let Some(approval) = &current {
+        if let ApprovalState::Consuming { claimed_at } = &approval.lifecycle {
+            let next = ApprovalState::Consumed {
+                claimed_at: claimed_at.clone(),
+                consumed_at: consumed_at.to_string(),
+                event_id: event_id.to_string(),
+                outcome,
+            };
+            update_approval_state(&tx, id, "consuming", &next, consumed_at)?;
+            record_approval_event(
+                &tx,
+                id,
+                "consumed",
+                "Single-use approval was consumed by dispatch.",
+                consumed_at,
+            )?;
+        }
+    }
+    let result = load_approval(&tx, id)?;
+    tx.commit()?;
+    Ok(result)
+}
+
+pub fn approval_ttl_hours() -> u32 {
+    std::env::var("HIVECORE_APPROVAL_TTL_HOURS")
+        .ok()
+        .and_then(|value| value.trim().parse::<u32>().ok())
+        .unwrap_or(24)
+        .clamp(1, 168)
 }
 
 /// Every repository the shared store knows about, as one row per repository.
@@ -924,6 +1166,38 @@ fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
         CREATE INDEX IF NOT EXISTS idx_hive_core_suite_runs_started
           ON hive_core_suite_runs (started_at DESC);
 
+        CREATE TABLE IF NOT EXISTS approval_records (
+          id TEXT PRIMARY KEY,
+          subject_hash TEXT NOT NULL,
+          product_slug TEXT NOT NULL,
+          action_id TEXT NOT NULL,
+          subject_json TEXT NOT NULL,
+          dispatch_json TEXT NOT NULL,
+          state_kind TEXT NOT NULL,
+          state_json TEXT NOT NULL,
+          expires_at TEXT NOT NULL DEFAULT '',
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_approval_records_inbox
+          ON approval_records (state_kind, updated_at DESC);
+
+        CREATE INDEX IF NOT EXISTS idx_approval_records_subject
+          ON approval_records (subject_hash, created_at DESC);
+
+        CREATE TABLE IF NOT EXISTS approval_events (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          approval_id TEXT NOT NULL,
+          event TEXT NOT NULL,
+          reason TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          FOREIGN KEY (approval_id) REFERENCES approval_records(id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_approval_events_record
+          ON approval_events (approval_id, created_at ASC, id ASC);
+
         CREATE TABLE IF NOT EXISTS repository_policies (
           repository TEXT PRIMARY KEY,
           trusted INTEGER NOT NULL DEFAULT 0,
@@ -1253,6 +1527,233 @@ fn load_service_token_storage_stats(
     Ok(stats)
 }
 
+fn insert_approval(conn: &Connection, approval: &ApprovalRecord) -> rusqlite::Result<()> {
+    let state_json = serialize_approval_value(&approval.lifecycle)?;
+    conn.execute(
+        r#"
+        INSERT INTO approval_records (
+          id, subject_hash, product_slug, action_id, subject_json, dispatch_json,
+          state_kind, state_json, expires_at, created_at, updated_at
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+        "#,
+        params![
+            approval.id,
+            approval.subject.fingerprint,
+            approval.subject.product,
+            approval.subject.action_id,
+            serialize_approval_value(&approval.subject)?,
+            serialize_approval_value(&approval.dispatch)?,
+            approval.lifecycle.label(),
+            state_json,
+            approval.lifecycle.expires_at().unwrap_or_default(),
+            approval.created_at,
+            approval.updated_at,
+        ],
+    )?;
+    Ok(())
+}
+
+fn update_approval_state(
+    conn: &Connection,
+    id: &str,
+    expected_state: &str,
+    next: &ApprovalState,
+    updated_at: &str,
+) -> rusqlite::Result<bool> {
+    let changed = conn.execute(
+        r#"
+        UPDATE approval_records
+        SET state_kind = ?3, state_json = ?4, expires_at = ?5, updated_at = ?6
+        WHERE id = ?1 AND state_kind = ?2
+        "#,
+        params![
+            id,
+            expected_state,
+            next.label(),
+            serialize_approval_value(next)?,
+            next.expires_at().unwrap_or_default(),
+            updated_at,
+        ],
+    )?;
+    Ok(changed == 1)
+}
+
+fn record_approval_event(
+    conn: &Connection,
+    approval_id: &str,
+    event: &str,
+    reason: &str,
+    created_at: &str,
+) -> rusqlite::Result<()> {
+    conn.execute(
+        r#"
+        INSERT INTO approval_events (approval_id, event, reason, created_at)
+        VALUES (?1, ?2, ?3, ?4)
+        "#,
+        params![approval_id, event, reason, created_at],
+    )?;
+    Ok(())
+}
+
+fn expire_approvals(conn: &mut Connection, expired_at: &str) -> rusqlite::Result<()> {
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    expire_approvals_in_transaction(&tx, expired_at)?;
+    tx.commit()
+}
+
+fn expire_approvals_in_transaction(tx: &Transaction<'_>, expired_at: &str) -> rusqlite::Result<()> {
+    let expiring = {
+        let mut stmt = tx.prepare(
+            r#"
+            SELECT id, state_kind
+            FROM approval_records
+            WHERE state_kind IN ('pending', 'granted')
+              AND expires_at != ''
+              AND datetime(expires_at) <= datetime(?1)
+            "#,
+        )?;
+        let rows = stmt.query_map([expired_at], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()?
+    };
+    for (id, state_kind) in expiring {
+        let previous = match state_kind.as_str() {
+            "pending" => ApprovalExpirableState::Pending,
+            "granted" => ApprovalExpirableState::Granted,
+            _ => continue,
+        };
+        let next = ApprovalState::Expired {
+            expired_at: expired_at.to_string(),
+            previous,
+        };
+        if update_approval_state(tx, &id, &state_kind, &next, expired_at)? {
+            record_approval_event(
+                tx,
+                &id,
+                "expired",
+                "Approval expired before it was consumed.",
+                expired_at,
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn load_approvals(conn: &Connection, limit: u32) -> rusqlite::Result<Vec<ApprovalRecord>> {
+    let mut stmt = conn.prepare(
+        r#"
+        SELECT id, subject_json, dispatch_json, state_kind, state_json, expires_at,
+               created_at, updated_at
+        FROM approval_records
+        ORDER BY
+          CASE state_kind
+            WHEN 'pending' THEN 0
+            WHEN 'granted' THEN 1
+            WHEN 'consuming' THEN 2
+            ELSE 3
+          END,
+          updated_at DESC
+        LIMIT ?1
+        "#,
+    )?;
+    let mut approvals = stmt
+        .query_map([limit.clamp(1, 200)], decode_approval)?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    for approval in &mut approvals {
+        approval.history = load_approval_events(conn, &approval.id)?;
+    }
+    Ok(approvals)
+}
+
+fn load_approval(conn: &Connection, id: &str) -> rusqlite::Result<Option<ApprovalRecord>> {
+    let mut approval = conn
+        .query_row(
+            r#"
+            SELECT id, subject_json, dispatch_json, state_kind, state_json, expires_at,
+                   created_at, updated_at
+            FROM approval_records
+            WHERE id = ?1
+            "#,
+            [id],
+            decode_approval,
+        )
+        .optional()?;
+    if let Some(approval) = &mut approval {
+        approval.history = load_approval_events(conn, id)?;
+    }
+    Ok(approval)
+}
+
+fn decode_approval(row: &rusqlite::Row<'_>) -> rusqlite::Result<ApprovalRecord> {
+    let subject_json = row.get::<_, String>(1)?;
+    let dispatch_json = row.get::<_, String>(2)?;
+    let raw_state = row.get::<_, String>(3)?;
+    let state_json = row.get::<_, String>(4)?;
+    let stored_expires_at = non_empty(row.get::<_, String>(5)?);
+    let raw_evidence = serde_json::from_str::<serde_json::Value>(&state_json)
+        .unwrap_or_else(|_| serde_json::Value::String(state_json.clone()));
+    let lifecycle = serde_json::from_str::<ApprovalState>(&state_json)
+        .ok()
+        .filter(|state| state.label() == raw_state)
+        .filter(|state| state.expires_at() == stored_expires_at.as_deref())
+        .unwrap_or(ApprovalState::Unknown {
+            raw_state,
+            raw_evidence,
+        });
+    Ok(ApprovalRecord {
+        id: row.get(0)?,
+        subject: deserialize_approval_value(&subject_json, 1)?,
+        dispatch: deserialize_approval_value(&dispatch_json, 2)?,
+        lifecycle,
+        created_at: row.get(6)?,
+        updated_at: row.get(7)?,
+        history: Vec::new(),
+    })
+}
+
+fn load_approval_events(
+    conn: &Connection,
+    approval_id: &str,
+) -> rusqlite::Result<Vec<ApprovalEvent>> {
+    let mut stmt = conn.prepare(
+        r#"
+        SELECT id, approval_id, event, reason, created_at
+        FROM approval_events
+        WHERE approval_id = ?1
+        ORDER BY created_at ASC, id ASC
+        "#,
+    )?;
+    let rows = stmt.query_map([approval_id], |row| {
+        Ok(ApprovalEvent {
+            id: row.get(0)?,
+            approval_id: row.get(1)?,
+            event: row.get(2)?,
+            reason: row.get(3)?,
+            created_at: row.get(4)?,
+        })
+    })?;
+    rows.collect()
+}
+
+fn serialize_approval_value(value: &impl serde::Serialize) -> rusqlite::Result<String> {
+    serde_json::to_string(value)
+        .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))
+}
+
+fn deserialize_approval_value<T: serde::de::DeserializeOwned>(
+    value: &str,
+    column: usize,
+) -> rusqlite::Result<T> {
+    serde_json::from_str(value).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(
+            column,
+            rusqlite::types::Type::Text,
+            Box::new(error),
+        )
+    })
+}
+
 fn load_action_events(conn: &Connection, limit: u32) -> rusqlite::Result<Vec<ProductActionEvent>> {
     let mut stmt = conn.prepare(
         r#"
@@ -1554,6 +2055,8 @@ fn non_empty(value: String) -> Option<String> {
 
 pub fn record_suite_run(run: &crate::models::SuiteRun) -> rusqlite::Result<()> {
     let conn = connect()?;
+    let steps_json = serde_json::to_string(&run.steps)
+        .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
     conn.execute(
         r#"
         INSERT INTO hive_core_suite_runs (id, name, status, started_at, finished_at, summary, steps_json)
@@ -1571,7 +2074,7 @@ pub fn record_suite_run(run: &crate::models::SuiteRun) -> rusqlite::Result<()> {
             &run.started_at,
             &run.finished_at,
             &run.summary,
-            serde_json::to_string(&run.steps).unwrap_or_else(|_| "[]".into()),
+            steps_json,
         ],
     )?;
     Ok(())
@@ -1597,7 +2100,11 @@ pub fn suite_runs(limit: u32) -> Vec<crate::models::SuiteRun> {
 }
 
 pub fn suite_run(id: &str) -> Option<crate::models::SuiteRun> {
-    let conn = connect().ok()?;
+    suite_run_result(id).ok().flatten()
+}
+
+pub fn suite_run_result(id: &str) -> rusqlite::Result<Option<crate::models::SuiteRun>> {
+    let conn = connect()?;
     conn.query_row(
         r#"
         SELECT id, name, status, started_at, finished_at, summary, steps_json
@@ -1608,8 +2115,6 @@ pub fn suite_run(id: &str) -> Option<crate::models::SuiteRun> {
         decode_suite_run,
     )
     .optional()
-    .ok()
-    .flatten()
 }
 
 fn decode_suite_run(row: &rusqlite::Row<'_>) -> rusqlite::Result<crate::models::SuiteRun> {
@@ -1621,16 +2126,24 @@ fn decode_suite_run(row: &rusqlite::Row<'_>) -> rusqlite::Result<crate::models::
         started_at: row.get(3)?,
         finished_at: row.get(4)?,
         summary: row.get(5)?,
-        steps: serde_json::from_str(&steps_json).unwrap_or_default(),
+        steps: serde_json::from_str(&steps_json).map_err(|error| {
+            rusqlite::Error::FromSqlConversionFailure(
+                6,
+                rusqlite::types::Type::Text,
+                Box::new(error),
+            )
+        })?,
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        collapse_policies, init_schema, load_action_event, load_action_events,
-        load_latest_first_stack_smoke_run, load_pr_reservation, load_product_overrides,
-        load_service_token_storage_stats, load_suite_settings, replace_overrides,
+        claim_approval_with_connection, collapse_policies, consume_approval_with_connection,
+        expire_approvals, grant_approval_with_connection, init_schema, insert_approval,
+        load_action_event, load_action_events, load_approval, load_latest_first_stack_smoke_run,
+        load_pr_reservation, load_product_overrides, load_service_token_storage_stats,
+        load_suite_settings, record_approval_event, replace_overrides,
         replace_repository_policies_with_connection, reserve_pr_slot_with_connection,
         write_suite_settings, ServiceTokenStorageStats,
     };
@@ -1639,8 +2152,15 @@ mod tests {
         PrReservationDecision, PrReservationState, ProductActionEvent, ProductOverride,
         RepositoryPolicy, SuiteSettings,
     };
-    use patchhive_product_core::repo_policy;
     use patchhive_product_core::secrets::TokenProtector;
+    use patchhive_product_core::{
+        approvals::{
+            ApprovalConsumptionOutcome, ApprovalExpirableState, ApprovalOrigin, ApprovalRecord,
+            ApprovalState, ApprovalSubject,
+        },
+        contract::{self, ActionEffect, ActionSafety, DispatchActionInput},
+        repo_policy,
+    };
     use rusqlite::Connection;
     use serde_json::json;
 
@@ -1722,6 +2242,178 @@ mod tests {
             created_at: "2026-07-13T12:00:00Z".into(),
             updated_at: "2026-07-13T12:00:00Z".into(),
         }
+    }
+
+    fn sample_approval(id: &str, expires_at: &str) -> ApprovalRecord {
+        let action = contract::action(
+            "hunt",
+            "Run patch hunt",
+            "POST",
+            "/hunts",
+            "Generate a validated patch and open a pull request.",
+            true,
+            ActionSafety::operator_required(ActionEffect::MutatesRepository {
+                opens_pull_request: true,
+            }),
+        )
+        .credential_requirements(["actions:dispatch", "pull_requests:write"]);
+        let dispatch = DispatchActionInput {
+            payload: json!({"repo": "patchhive/example", "issue": 42}),
+            ..DispatchActionInput::default()
+        };
+        let subject = ApprovalSubject::for_dispatch(
+            "repo-reaper",
+            &action,
+            &dispatch,
+            Some("patchhive/example".into()),
+            None,
+            ApprovalOrigin::OperatorDispatch,
+        );
+        ApprovalRecord {
+            id: id.into(),
+            subject,
+            dispatch,
+            lifecycle: ApprovalState::Pending {
+                expires_at: expires_at.into(),
+            },
+            created_at: "2026-08-02T12:00:00Z".into(),
+            updated_at: "2026-08-02T12:00:00Z".into(),
+            history: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn approval_is_claimed_and_consumed_only_once() {
+        let mut conn = Connection::open_in_memory().expect("in-memory db should open");
+        init_schema(&conn).expect("schema should initialize");
+        let approval = sample_approval("apr_once", "2099-08-02T12:00:00Z");
+        insert_approval(&conn, &approval).expect("approval should insert");
+        record_approval_event(
+            &conn,
+            &approval.id,
+            "pending",
+            "Waiting for approval.",
+            &approval.created_at,
+        )
+        .expect("pending event should insert");
+
+        let granted =
+            grant_approval_with_connection(&mut conn, &approval.id, "2026-08-02T12:01:00Z")
+                .expect("approval should grant")
+                .expect("approval should exist");
+        assert!(matches!(granted.lifecycle, ApprovalState::Granted { .. }));
+
+        let claimed = claim_approval_with_connection(
+            &mut conn,
+            &approval.id,
+            &approval.subject.fingerprint,
+            "2026-08-02T12:02:00Z",
+        )
+        .expect("approval should claim")
+        .expect("approval should exist");
+        assert!(matches!(claimed.lifecycle, ApprovalState::Consuming { .. }));
+
+        let replayed_claim = claim_approval_with_connection(
+            &mut conn,
+            &approval.id,
+            &approval.subject.fingerprint,
+            "2026-08-02T12:03:00Z",
+        )
+        .expect("replayed claim should be read safely")
+        .expect("approval should exist");
+        assert!(matches!(
+            replayed_claim.lifecycle,
+            ApprovalState::Consuming { .. }
+        ));
+        assert_eq!(
+            replayed_claim
+                .history
+                .iter()
+                .filter(|event| event.event == "consuming")
+                .count(),
+            1
+        );
+
+        let consumed = consume_approval_with_connection(
+            &mut conn,
+            &approval.id,
+            "evt_once",
+            ApprovalConsumptionOutcome::Accepted { remote_status: 202 },
+            "2026-08-02T12:04:00Z",
+        )
+        .expect("approval should consume")
+        .expect("approval should exist");
+        assert!(matches!(
+            consumed.lifecycle,
+            ApprovalState::Consumed {
+                ref event_id,
+                outcome: ApprovalConsumptionOutcome::Accepted { remote_status: 202 },
+                ..
+            } if event_id == "evt_once"
+        ));
+
+        let replayed_consumption = consume_approval_with_connection(
+            &mut conn,
+            &approval.id,
+            "evt_replay",
+            ApprovalConsumptionOutcome::Accepted { remote_status: 200 },
+            "2026-08-02T12:05:00Z",
+        )
+        .expect("replayed consumption should be read safely")
+        .expect("approval should exist");
+        assert_eq!(
+            replayed_consumption
+                .history
+                .iter()
+                .filter(|event| event.event == "consumed")
+                .count(),
+            1
+        );
+        assert!(matches!(
+            replayed_consumption.lifecycle,
+            ApprovalState::Consumed { ref event_id, .. } if event_id == "evt_once"
+        ));
+    }
+
+    #[test]
+    fn expired_approval_preserves_its_previous_state() {
+        let mut conn = Connection::open_in_memory().expect("in-memory db should open");
+        init_schema(&conn).expect("schema should initialize");
+        let approval = sample_approval("apr_expired", "2026-08-02T12:01:00Z");
+        insert_approval(&conn, &approval).expect("approval should insert");
+
+        expire_approvals(&mut conn, "2026-08-02T12:02:00Z").expect("approval should expire");
+        let loaded = load_approval(&conn, &approval.id)
+            .expect("approval should load")
+            .expect("approval should exist");
+        assert!(matches!(
+            loaded.lifecycle,
+            ApprovalState::Expired {
+                previous: ApprovalExpirableState::Pending,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn contradictory_approval_storage_decodes_as_unknown() {
+        let conn = Connection::open_in_memory().expect("in-memory db should open");
+        init_schema(&conn).expect("schema should initialize");
+        let approval = sample_approval("apr_unknown", "2099-08-02T12:00:00Z");
+        insert_approval(&conn, &approval).expect("approval should insert");
+        conn.execute(
+            "UPDATE approval_records SET state_kind = 'granted' WHERE id = ?1",
+            [&approval.id],
+        )
+        .expect("contradictory state should update");
+
+        let loaded = load_approval(&conn, &approval.id)
+            .expect("approval should load")
+            .expect("approval should exist");
+        assert!(matches!(
+            loaded.lifecycle,
+            ApprovalState::Unknown { ref raw_state, .. } if raw_state == "granted"
+        ));
     }
 
     #[test]

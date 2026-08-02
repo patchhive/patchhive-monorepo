@@ -161,6 +161,12 @@ patchhive/
   tagged `PrReservationState`; contradictory or unrecognized legacy SQLite rows
   decode as `unknown`. Budget reads fail explicitly instead of substituting the
   default ceiling, zero usage, or an empty reservation list.
+- HiveCore approvals are durable, exact, and single-use. `ApprovalSubject` binds the
+  product, action, normalized input hash, origin, run/repository context, effect, and
+  required scopes. `ApprovalState` is a non-defaultable tagged lifecycle; a grant is
+  atomically claimed as `consuming` immediately before dispatch and becomes
+  `consumed` for accepted, rejected, and uncertain remote outcomes. Contradictory
+  stored lifecycle evidence decodes as `unknown`, never as permission to act.
 - Booleans remain appropriate for complete binary facts such as whether an action
   is scheduleable. The rule is to eliminate ambiguous state, not booleans generally.
 
@@ -504,9 +510,9 @@ RepoReaper specialist UI scope:
 - Dry Stalk is still a no-write mode, but it needs at least a Scout agent because issue scoring and dry-run analysis use the AI agent pipeline.
 - Operator-started missions and explicitly enabled write schedules are
   RepoReaper-owned authorization. RepoReaper advertises the write action as
-  approval-required, and HiveCore must not dispatch it until HiveCore has
-  scoped, single-use approval records. This keeps the product-owned write
-  credential and validation requirements intact.
+  approval-required, and HiveCore may dispatch it only through its scoped,
+  single-use approval lifecycle. This keeps the product-owned write credential
+  and validation requirements intact.
 
 RepoReaper defaults:
 - Backend: `VITE_API_URL` or the current browser origin

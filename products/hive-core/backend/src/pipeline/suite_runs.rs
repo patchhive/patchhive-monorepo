@@ -4,9 +4,9 @@
 //! whose steps are dispatches, optionally chained so one step acts on what an earlier
 //! step found.
 //!
-//! Every dispatch goes through the same `dispatch_once` a manual dispatch uses, so a
-//! suite run cannot reach anything an operator could not reach by hand: destructive,
-//! approval-gated and PR-opening actions are refused identically. A suite run
+//! Every dispatch goes through the same guarded dispatcher a manual dispatch uses.
+//! Destructive actions remain refused; approval-gated and PR-opening actions become
+//! durable pending approvals and halt the run before remote work starts. A suite run
 //! sequences work; it never widens authority. Chaining does not change that — a step
 //! expanded over ten targets is ten dispatches through the same guard, not one
 //! privileged batch.
@@ -24,7 +24,8 @@ use crate::{
     state::AppState,
 };
 
-use super::{api_error, dispatch::dispatch_once};
+use super::{api_error, dispatch::dispatch_with_approval};
+use patchhive_product_core::approvals::ApprovalOrigin;
 
 type ApiResult<T> = Result<
     Json<crate::models::ApiEnvelope<T>>,
@@ -160,7 +161,7 @@ async fn execute(
         if halted {
             run.steps.push(skipped_step(
                 input,
-                "Skipped because an earlier step failed and the run halts on failure.",
+                "Skipped because an earlier step failed or is waiting for approval.",
             ));
             continue;
         }
@@ -210,19 +211,31 @@ async fn execute(
                 message: String::new(),
                 remote_status: None,
                 event_id: String::new(),
+                approval_id: String::new(),
                 started_at: now_rfc3339(),
                 finished_at: String::new(),
             };
 
-            match dispatch_once(state, &input.product, &input.action, payload).await {
-                Ok(response) => {
-                    let event = response.event;
+            match dispatch_with_approval(
+                state,
+                &input.product,
+                &input.action,
+                payload,
+                ApprovalOrigin::SuiteRun {
+                    run_id: run.id.clone(),
+                },
+                None,
+            )
+            .await
+            {
+                Ok(crate::models::DispatchActionResponse::Dispatched { event, started_run }) => {
+                    let event = *event;
                     let dispatched = event.status == "dispatched";
                     step.status = if dispatched { "dispatched" } else { "failed" }.into();
                     step.remote_status = event.remote_status;
                     step.event_id = event.id;
                     step.message = if dispatched {
-                        if response.started_run {
+                        if started_run {
                             "Product accepted the action and started a run.".into()
                         } else {
                             "Product accepted the action.".into()
@@ -235,6 +248,15 @@ async fn execute(
                     } else if !continue_on_failure {
                         halted = true;
                     }
+                }
+                Ok(crate::models::DispatchActionResponse::ApprovalRequired { approval }) => {
+                    step.status = "pending_approval".into();
+                    step.approval_id = approval.id.clone();
+                    step.message = format!(
+                        "Waiting for operator approval {} before this exact dispatch can run.",
+                        approval.id
+                    );
+                    halted = true;
                 }
                 Err((_status, body)) => {
                     // HiveCore refused before reaching the product — a guard, a
@@ -274,8 +296,11 @@ fn summarize(run: &mut SuiteRun, halted: bool) {
     let dispatched = count("dispatched");
     let failed = count("failed");
     let skipped = count("skipped");
+    let pending_approval = count("pending_approval");
 
-    run.status = if failed == 0 && dispatched > 0 {
+    run.status = if pending_approval > 0 {
+        "awaiting_approval"
+    } else if failed == 0 && dispatched > 0 && skipped == 0 {
         "completed"
     } else if failed == 0 {
         // No failures and no dispatches means every step was skipped. Reporting that
@@ -288,7 +313,53 @@ fn summarize(run: &mut SuiteRun, halted: bool) {
     }
     .into();
     run.finished_at = now_rfc3339();
-    run.summary = format!("{dispatched} dispatched, {failed} failed, {skipped} skipped.");
+    run.summary = format!(
+        "{dispatched} dispatched, {pending_approval} awaiting approval, {failed} failed, {skipped} skipped."
+    );
+}
+
+pub(super) fn record_approved_dispatch(
+    run_id: &str,
+    approval_id: &str,
+    event: &crate::models::ProductActionEvent,
+    started_run: bool,
+) -> Result<(), String> {
+    let mut run = db::suite_run_result(run_id)
+        .map_err(|error| format!("could not read suite run {run_id}: {error}"))?
+        .ok_or_else(|| format!("suite run {run_id} no longer exists"))?;
+    apply_approved_dispatch(&mut run, approval_id, event, started_run)?;
+    db::record_suite_run(&run)
+        .map_err(|error| format!("could not save suite run {run_id}: {error}"))
+}
+
+fn apply_approved_dispatch(
+    run: &mut SuiteRun,
+    approval_id: &str,
+    event: &crate::models::ProductActionEvent,
+    started_run: bool,
+) -> Result<(), String> {
+    let run_id = run.id.clone();
+    let step = run
+        .steps
+        .iter_mut()
+        .find(|step| step.approval_id == approval_id)
+        .ok_or_else(|| format!("suite run {run_id} does not contain approval {approval_id}"))?;
+    let dispatched = event.status == "dispatched";
+    step.status = if dispatched { "dispatched" } else { "failed" }.into();
+    step.message = if dispatched {
+        if started_run {
+            "Operator approved the action; the product accepted it and started a run.".into()
+        } else {
+            "Operator approved the action; the product accepted it.".into()
+        }
+    } else {
+        event.error.clone()
+    };
+    step.remote_status = event.remote_status;
+    step.event_id.clone_from(&event.id);
+    step.finished_at = now_rfc3339();
+    summarize(run, true);
+    Ok(())
 }
 
 fn base_payload(payload: &Value) -> Value {
@@ -317,6 +388,7 @@ fn stub_step(input: &SuiteRunStepInput, status: &str, message: &str) -> SuiteRun
         message: message.to_string(),
         remote_status: None,
         event_id: String::new(),
+        approval_id: String::new(),
         started_at: now_rfc3339(),
         finished_at: now_rfc3339(),
     }
@@ -459,13 +531,22 @@ pub(super) async fn list_suite_runs() -> Json<crate::models::ApiEnvelope<Vec<Sui
 }
 
 pub(super) async fn suite_run_detail(id: String) -> ApiResult<SuiteRun> {
-    db::suite_run(&id).map(|run| Json(ok(run))).ok_or_else(|| {
-        api_error(
-            StatusCode::NOT_FOUND,
-            "suite_run_not_found",
-            "Suite run was not found.",
-        )
-    })
+    db::suite_run_result(&id)
+        .map_err(|error| {
+            api_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "suite_run_read_failed",
+                format!("Could not read suite run: {error}"),
+            )
+        })?
+        .map(|run| Json(ok(run)))
+        .ok_or_else(|| {
+            api_error(
+                StatusCode::NOT_FOUND,
+                "suite_run_not_found",
+                "Suite run was not found.",
+            )
+        })
 }
 
 #[cfg(test)]
@@ -633,6 +714,65 @@ mod tests {
         };
         summarize(&mut run, false);
         assert_eq!(run.status, "halted");
+    }
+
+    #[test]
+    fn a_pending_approval_is_not_reported_as_failure_or_completion() {
+        let mut approval_step =
+            stub_step(&step("repo-reaper", None), "pending_approval", "waiting");
+        approval_step.approval_id = "apr_test".into();
+        let mut run = SuiteRun {
+            id: "srun_approval".into(),
+            name: "approval test".into(),
+            status: "running".into(),
+            started_at: now_rfc3339(),
+            finished_at: String::new(),
+            summary: String::new(),
+            steps: vec![approval_step],
+        };
+        summarize(&mut run, true);
+        assert_eq!(run.status, "awaiting_approval");
+        assert!(run.summary.contains("1 awaiting approval"));
+    }
+
+    #[test]
+    fn approved_suite_dispatch_reconciles_without_resuming_skipped_steps() {
+        let mut approval_step =
+            stub_step(&step("repo-reaper", None), "pending_approval", "waiting");
+        approval_step.approval_id = "apr_test".into();
+        let skipped = skipped_step(&step("release-sentry", None), "waiting on approval");
+        let mut run = SuiteRun {
+            id: "srun_approval".into(),
+            name: "approval test".into(),
+            status: "awaiting_approval".into(),
+            started_at: now_rfc3339(),
+            finished_at: now_rfc3339(),
+            summary: String::new(),
+            steps: vec![approval_step, skipped],
+        };
+        let event = crate::models::ProductActionEvent {
+            id: "evt_approved".into(),
+            product_slug: "repo-reaper".into(),
+            action_id: "hunt".into(),
+            action_label: "Run hunt".into(),
+            method: "POST".into(),
+            path: "/hunts".into(),
+            target_url: "http://localhost/hunts".into(),
+            status: "dispatched".into(),
+            remote_status: Some(202),
+            request_json: json!({}),
+            response_json: json!({"run_id": "run_1"}),
+            error: String::new(),
+            created_at: now_rfc3339(),
+        };
+
+        apply_approved_dispatch(&mut run, "apr_test", &event, true)
+            .expect("approved dispatch should reconcile");
+        assert_eq!(run.status, "halted");
+        assert_eq!(run.steps[0].status, "dispatched");
+        assert_eq!(run.steps[0].event_id, "evt_approved");
+        assert_eq!(run.steps[0].approval_id, "apr_test");
+        assert_eq!(run.steps[1].status, "skipped");
     }
 
     #[test]

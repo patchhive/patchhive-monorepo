@@ -62,6 +62,7 @@ import { BookOpen } from "lucide-react";
 import { useLiveSuite } from "@/lib/live-sync";
 import { SessionGate } from "@/components/session-gate";
 import { SuiteRuns } from "@/components/suite-runs";
+import { ApprovalInbox } from "@/components/approval-inbox";
 
 
 type IndexSearch = { run?: string; filter?: "all" | "warn" | "crit" };
@@ -180,6 +181,7 @@ function DeckInner() {
         </section>
         <IncidentTimeline syncVersion={suite.version} />
         <SuiteRuns syncVersion={suite.version} />
+        <ApprovalInbox syncVersion={suite.version} />
         <ContractDrift syncVersion={suite.version} />
         <CapabilitySearch />
         <TokenVault />

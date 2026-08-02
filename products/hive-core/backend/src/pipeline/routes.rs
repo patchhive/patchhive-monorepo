@@ -16,9 +16,10 @@ use crate::{
     },
     db,
     models::{
-        DispatchActionResponse, OverviewResponse, PrBudgetReservation, PrBudgetStatusResponse,
-        PrReservationCommitRequest, PrReservationDecision, PrReservationReleaseRequest,
-        PrReservationRequest, PrRunReleaseRequest, ProductActionEvent, ProductRunDetailResponse,
+        ApprovalReasonRequest, ApprovalRecord, DispatchActionResponse, OverviewResponse,
+        PrBudgetReservation, PrBudgetStatusResponse, PrReservationCommitRequest,
+        PrReservationDecision, PrReservationReleaseRequest, PrReservationRequest,
+        PrRunReleaseRequest, ProductActionEvent, ProductRunDetailResponse,
         ProductRunsSnapshotResponse, ProductRuntimeItem, ProvisionServiceTokenRequest,
         ProvisionServiceTokenResponse, RepositoryPoliciesResponse, RepositoryPolicyDecision,
         RepositoryPolicyDecisionRequest, SavePrBudgetRequest, SaveRepositoryPoliciesRequest,
@@ -294,6 +295,52 @@ pub async fn list_runbook_runs() -> Json<crate::models::ApiEnvelope<Vec<crate::m
 
 pub async fn recent_actions() -> Json<crate::models::ApiEnvelope<Vec<ProductActionEvent>>> {
     super::dispatch::recent_actions().await
+}
+
+pub async fn approvals() -> Result<
+    Json<crate::models::ApiEnvelope<Vec<ApprovalRecord>>>,
+    (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
+> {
+    super::approvals::list_approvals().await
+}
+
+pub async fn grant_approval(
+    Path(id): Path<String>,
+) -> Result<
+    Json<crate::models::ApiEnvelope<ApprovalRecord>>,
+    (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
+> {
+    super::approvals::grant_approval(id).await
+}
+
+pub async fn deny_approval(
+    Path(id): Path<String>,
+    Json(body): Json<ApprovalReasonRequest>,
+) -> Result<
+    Json<crate::models::ApiEnvelope<ApprovalRecord>>,
+    (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
+> {
+    super::approvals::deny_approval(id, Json(body)).await
+}
+
+pub async fn revoke_approval(
+    Path(id): Path<String>,
+    Json(body): Json<ApprovalReasonRequest>,
+) -> Result<
+    Json<crate::models::ApiEnvelope<ApprovalRecord>>,
+    (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
+> {
+    super::approvals::revoke_approval(id, Json(body)).await
+}
+
+pub async fn dispatch_approved(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<
+    Json<crate::models::ApiEnvelope<DispatchActionResponse>>,
+    (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
+> {
+    super::approvals::dispatch_approved(State(state), id).await
 }
 
 pub async fn provision_service_token(

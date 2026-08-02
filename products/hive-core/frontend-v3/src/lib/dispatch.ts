@@ -140,9 +140,6 @@ export function refusalReason(action: DispatchableAction): string | null {
   if (action.destructive) {
     return "Destructive actions are not dispatched.";
   }
-  if (actionRequiresApproval(action) || actionOpensPullRequest(action)) {
-    return "Approval-gated and PR-opening actions wait on the suite approval flow, which does not exist yet.";
-  }
   return null;
 }
 
@@ -153,10 +150,13 @@ export interface DispatchOutcome {
   remoteStatus: number | null;
   startedRun: boolean;
   eventId: string;
+  approvalRequired: boolean;
+  approvalId: string;
 }
 
 interface DispatchEnvelope {
   data?: {
+    outcome?: "dispatched" | "approval_required";
     event?: {
       id?: string;
       status?: string;
@@ -164,6 +164,7 @@ interface DispatchEnvelope {
       error?: string;
     };
     started_run?: boolean;
+    approval?: { id?: string };
   };
   error?: { code?: string; message?: string };
 }
@@ -194,6 +195,8 @@ export async function dispatchAction(
       remoteStatus: null,
       startedRun: false,
       eventId: "",
+      approvalRequired: false,
+      approvalId: "",
     };
   }
 
@@ -207,6 +210,21 @@ export async function dispatchAction(
       remoteStatus: response.status,
       startedRun: false,
       eventId: "",
+      approvalRequired: false,
+      approvalId: "",
+    };
+  }
+
+  if (body?.data?.outcome === "approval_required") {
+    return {
+      ok: false,
+      status: "pending_approval",
+      message: "This exact action and input are waiting in the approval inbox. Nothing was dispatched.",
+      remoteStatus: null,
+      startedRun: false,
+      eventId: "",
+      approvalRequired: true,
+      approvalId: body.data.approval?.id ?? "",
     };
   }
 
@@ -221,6 +239,8 @@ export async function dispatchAction(
     remoteStatus: event?.remote_status ?? null,
     startedRun: Boolean(body?.data?.started_run),
     eventId: event?.id ?? "",
+    approvalRequired: false,
+    approvalId: "",
   };
 }
 
@@ -249,5 +269,7 @@ export async function provisionThroughHiveCore(productKey: string): Promise<Disp
     remoteStatus: response.status,
     startedRun: false,
     eventId: "",
+    approvalRequired: false,
+    approvalId: "",
   };
 }

@@ -63,6 +63,21 @@ pub async fn validate_config() -> Vec<StartupCheck> {
         "The public patchhive.dev repository-owner opt-out registry is not connected yet. HiveCore currently enforces operator-managed exclusions only.",
     ));
 
+    match std::env::var("HIVECORE_APPROVAL_TTL_HOURS") {
+        Ok(raw) if !raw.trim().is_empty() => match raw.trim().parse::<u32>() {
+            Ok(hours @ 1..=168) => checks.push(StartupCheck::ok(format!(
+                "HiveCore exact-dispatch approvals expire after {hours} hour{} unless consumed first.",
+                if hours == 1 { "" } else { "s" }
+            ))),
+            _ => checks.push(StartupCheck::error(
+                "HIVECORE_APPROVAL_TTL_HOURS must be an integer from 1 through 168. HiveCore will use its conservative 24-hour default until this is corrected.",
+            )),
+        },
+        _ => checks.push(StartupCheck::info(
+            "HiveCore exact-dispatch approvals use the default 24-hour expiry.",
+        )),
+    }
+
     let token_stats = crate::db::service_token_storage_stats();
     let protector = TokenProtector::from_env("HIVECORE_ENCRYPTION_KEY");
     if let Ok(secret) = std::env::var("HIVECORE_ENCRYPTION_KEY") {
@@ -114,7 +129,7 @@ pub async fn validate_config() -> Vec<StartupCheck> {
     }
 
     checks.push(StartupCheck::info(
-        "HiveCore provides visibility, saved defaults, live product health polling, repository policy, and shared outbound PR capacity. Additional products should adopt the same typed policy client before gaining write actions.",
+        "HiveCore provides visibility, saved defaults, live product health polling, repository policy, shared outbound PR capacity, and durable single-use dispatch approvals. Additional products should adopt the same typed policy client before gaining write actions.",
     ));
 
     checks

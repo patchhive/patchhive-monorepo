@@ -5,6 +5,8 @@ use axum::{
     http::StatusCode,
     Json,
 };
+use chrono::{Duration, Utc};
+use patchhive_product_core::approvals::{ApprovalOrigin, ApprovalState, ApprovalSubject};
 use patchhive_product_core::contract;
 use reqwest::Method;
 use serde_json::{json, Value};
@@ -12,7 +14,9 @@ use uuid::Uuid;
 
 use crate::{
     db,
-    models::{now_rfc3339, ok, DispatchActionResponse, ProductActionEvent},
+    models::{
+        now_rfc3339, ok, ApprovalConsumptionOutcome, DispatchActionResponse, ProductActionEvent,
+    },
     state::{product_catalog, AppState},
 };
 
@@ -42,14 +46,33 @@ pub(super) async fn dispatch_product_action(
 /// One dispatch, callable without an HTTP request.
 ///
 /// Suite runs execute steps through this rather than re-implementing dispatch, so a
-/// step is refused for exactly the same reasons a manual dispatch is — destructive,
-/// approval-gated, PR-opening, missing or unscoped service token. A second code path
-/// would be a second place for those guards to drift.
+/// step is evaluated for exactly the same reasons a manual dispatch is — destructive,
+/// approval-gated, PR-opening, missing or unscoped service token. Approval-gated steps
+/// become durable pending approvals instead of bypassing the shared guard path.
 pub(super) async fn dispatch_once(
     state: &AppState,
     slug: &str,
     action_id: &str,
     body: Value,
+) -> Result<DispatchActionResponse, (StatusCode, Json<crate::models::ApiEnvelope<Value>>)> {
+    dispatch_with_approval(
+        state,
+        slug,
+        action_id,
+        body,
+        ApprovalOrigin::OperatorDispatch,
+        None,
+    )
+    .await
+}
+
+pub(super) async fn dispatch_with_approval(
+    state: &AppState,
+    slug: &str,
+    action_id: &str,
+    body: Value,
+    origin: ApprovalOrigin,
+    approval_id: Option<&str>,
 ) -> Result<DispatchActionResponse, (StatusCode, Json<crate::models::ApiEnvelope<Value>>)> {
     let definition = product_catalog()
         .iter()
@@ -155,14 +178,6 @@ pub(super) async fn dispatch_once(
         ));
     }
 
-    if action.requires_approval() || action.opens_pull_request() {
-        return Err(api_error(
-            StatusCode::FORBIDDEN,
-            "approval_required",
-            "HiveCore does not dispatch approval-gated or pull-request-opening actions until the suite approval flow exists.",
-        ));
-    }
-
     if auth.legacy_api_key_configured() && !action.required_scopes.is_empty() {
         return Err(api_error(
             StatusCode::FORBIDDEN,
@@ -198,6 +213,118 @@ pub(super) async fn dispatch_once(
         )
     })?;
 
+    let approval_required = action.requires_approval() || action.opens_pull_request();
+    let approval_subject = approval_required.then(|| {
+        let repository = approval_string_field(
+            &input.payload,
+            &["repo", "repository", "repository_full_name", "target_repo"],
+        );
+        let run_id = match &origin {
+            ApprovalOrigin::SuiteRun { run_id } => Some(run_id.clone()),
+            ApprovalOrigin::OperatorDispatch => {
+                approval_string_field(&input.payload, &["run_id", "scan_id", "job_id"])
+            }
+        };
+        ApprovalSubject::for_dispatch(
+            definition.slug,
+            &action,
+            &input,
+            repository,
+            run_id,
+            origin.clone(),
+        )
+    });
+
+    let claimed_approval_id = if let Some(subject) = approval_subject {
+        match approval_id {
+            None => {
+                let now = Utc::now();
+                let approval = db::create_or_get_approval(
+                    subject,
+                    input.clone(),
+                    (now + Duration::hours(i64::from(db::approval_ttl_hours()))).to_rfc3339(),
+                    now.to_rfc3339(),
+                )
+                .map_err(|error| {
+                    api_error(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "approval_save_failed",
+                        format!("HiveCore could not record the approval request: {error}"),
+                    )
+                })?;
+                return Ok(DispatchActionResponse::ApprovalRequired {
+                    approval: Box::new(approval),
+                });
+            }
+            Some(id) => {
+                let existing = db::approval(id)
+                    .map_err(|error| {
+                        api_error(
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "approval_read_failed",
+                            format!("HiveCore could not read the approval: {error}"),
+                        )
+                    })?
+                    .ok_or_else(|| {
+                        api_error(
+                            StatusCode::NOT_FOUND,
+                            "approval_not_found",
+                            "Approval was not found.",
+                        )
+                    })?;
+                if existing.subject != subject || existing.dispatch != input {
+                    return Err(api_error(
+                        StatusCode::CONFLICT,
+                        "approval_subject_mismatch",
+                        "This approval does not authorize the current product, action, safety contract, origin, or input.",
+                    ));
+                }
+                if !matches!(existing.lifecycle, ApprovalState::Granted { .. }) {
+                    return Err(api_error(
+                        StatusCode::CONFLICT,
+                        "approval_not_granted",
+                        format!(
+                            "Approval cannot be consumed from state '{}'.",
+                            existing.lifecycle.label()
+                        ),
+                    ));
+                }
+                let claimed = db::claim_approval(id, &subject.fingerprint, &now_rfc3339())
+                    .map_err(|error| {
+                        api_error(
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "approval_claim_failed",
+                            format!("HiveCore could not claim the approval: {error}"),
+                        )
+                    })?
+                    .ok_or_else(|| {
+                        api_error(
+                            StatusCode::NOT_FOUND,
+                            "approval_not_found",
+                            "Approval was not found.",
+                        )
+                    })?;
+                if !matches!(claimed.lifecycle, ApprovalState::Consuming { .. }) {
+                    return Err(api_error(
+                        StatusCode::CONFLICT,
+                        "approval_already_claimed",
+                        "This single-use approval was already consumed or changed state.",
+                    ));
+                }
+                Some(id.to_string())
+            }
+        }
+    } else {
+        if approval_id.is_some() {
+            return Err(api_error(
+                StatusCode::BAD_REQUEST,
+                "approval_not_applicable",
+                "This action is automatic and cannot consume an operator approval.",
+            ));
+        }
+        None
+    };
+
     let event_id = format!("evt_{}", Uuid::now_v7());
     let mut event = ProductActionEvent {
         id: event_id,
@@ -224,7 +351,7 @@ pub(super) async fn dispatch_once(
         request = request.json(&input.payload);
     }
 
-    match request.send().await {
+    let approval_outcome = match request.send().await {
         Ok(response) => {
             let status = response.status();
             let text = response.text().await.unwrap_or_default();
@@ -237,6 +364,16 @@ pub(super) async fn dispatch_once(
             event.response_json = parse_response_body(&text);
             if !status.is_success() {
                 event.error = format!("Product returned HTTP {status}");
+            }
+            if status.is_success() {
+                ApprovalConsumptionOutcome::Accepted {
+                    remote_status: status.as_u16(),
+                }
+            } else {
+                ApprovalConsumptionOutcome::Rejected {
+                    remote_status: Some(status.as_u16()),
+                    reason: event.error.clone(),
+                }
             }
         }
         Err(err) => {
@@ -260,16 +397,43 @@ pub(super) async fn dispatch_once(
                 err.to_string()
             };
             event.response_json = json!({ "error": event.error });
+            ApprovalConsumptionOutcome::Uncertain {
+                reason: event.error.clone(),
+            }
         }
-    }
+    };
 
     if let Err(err) = db::record_action_event(&event) {
         tracing::warn!("failed to record HiveCore product action event: {err}");
     }
 
-    Ok(DispatchActionResponse {
-        event,
+    if let Some(approval_id) = claimed_approval_id {
+        if let Err(error) =
+            db::consume_approval(&approval_id, &event.id, approval_outcome, &now_rfc3339())
+        {
+            tracing::error!(
+                approval_id,
+                event_id = %event.id,
+                %error,
+                "dispatch completed but HiveCore could not finalize its consumed approval"
+            );
+        }
+    }
+
+    Ok(DispatchActionResponse::Dispatched {
+        event: Box::new(event),
         started_run: action.starts_run,
+    })
+}
+
+fn approval_string_field(payload: &Value, keys: &[&str]) -> Option<String> {
+    keys.iter().find_map(|key| {
+        payload
+            .get(key)
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
     })
 }
 

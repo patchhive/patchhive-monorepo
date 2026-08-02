@@ -155,6 +155,23 @@ pub fn router() -> Router {
             axum::routing::post(pipeline::provision_service_token),
         )
         .route("/actions/recent", get(pipeline::recent_actions))
+        .route("/approvals", get(pipeline::approvals))
+        .route(
+            "/approvals/:id/grant",
+            axum::routing::post(pipeline::grant_approval),
+        )
+        .route(
+            "/approvals/:id/deny",
+            axum::routing::post(pipeline::deny_approval),
+        )
+        .route(
+            "/approvals/:id/revoke",
+            axum::routing::post(pipeline::revoke_approval),
+        )
+        .route(
+            "/approvals/:id/dispatch",
+            axum::routing::post(pipeline::dispatch_approved),
+        )
         .route(
             "/suite-runs",
             get(pipeline::list_suite_runs).post(pipeline::start_suite_run),

@@ -423,6 +423,10 @@ typography scale, spacing system, or theme implementation.
   exist without its typed reservation. Reservation lifecycle is a tagged
   `PrReservationState`, malformed legacy rows become `unknown`, and failed budget
   reads are errors rather than default limits, zero usage, or empty history.
+  HiveCore approvals bind one exact product/action/input/origin/safety subject to a
+  non-defaultable `ApprovalState`. Grants are atomically claimed before dispatch and
+  consumed for accepted, rejected, or uncertain outcomes; malformed stored evidence
+  becomes `unknown`, never reusable authority.
   ([docs/hivecore-repository-safety-and-pr-budgets.md](docs/hivecore-repository-safety-and-pr-budgets.md);
   target design and known gaps in [docs/hivecore-architecture.md](docs/hivecore-architecture.md))
 - Scheduling never widens an action's safety boundary.

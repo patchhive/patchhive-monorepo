@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CheckCircle2, ChevronDown, ChevronRight, Layers, Loader2, Play, XCircle } from "lucide-react";
+import { CheckCircle2, ChevronDown, ChevronRight, Layers, Loader2, Play, ShieldCheck, XCircle } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -20,10 +20,9 @@ import {
 /**
  * Compose and run a sequence of product actions.
  *
- * Only actions HiveCore would actually dispatch are offerable — anything
- * destructive, approval-gated or PR-opening is excluded here for the same reason
- * the dispatch dialog disables it, so a suite run cannot become a side door around
- * a guard that blocks the manual path.
+ * Only actions HiveCore will evaluate are offerable. Destructive actions stay
+ * excluded; approval-gated and PR-opening actions halt as durable pending approvals
+ * instead of turning a suite run into a side door around operator authority.
  *
  * Chaining does not change that. A step expanded over ten targets is ten dispatches
  * through the same guard, not one privileged batch — and the fan-out ceiling is the
@@ -36,6 +35,7 @@ const stepTone: Record<string, string> = {
   skipped: "text-muted-foreground border-border",
   queued: "text-muted-foreground border-border",
   running: "text-[var(--honey)] border-[var(--honey)]/40",
+  pending_approval: "text-[var(--warn)] border-[var(--warn)]/40",
 };
 
 const runTone: Record<string, string> = {
@@ -43,6 +43,7 @@ const runTone: Record<string, string> = {
   failed: "text-[var(--crit)] border-[var(--crit)]/40",
   halted: "text-[var(--warn)] border-[var(--warn)]/40",
   running: "text-[var(--honey)] border-[var(--honey)]/40",
+  awaiting_approval: "text-[var(--warn)] border-[var(--warn)]/40",
 };
 
 export function SuiteRuns({ syncVersion = 0 }: { syncVersion?: number }) {
@@ -113,6 +114,8 @@ export function SuiteRuns({ syncVersion = 0 }: { syncVersion?: number }) {
     setRuns((current) => [result.run as SuiteRun, ...current]);
     if (result.ok) {
       toast.success(result.run.name, { description: result.message });
+    } else if (result.run.status === "awaiting_approval") {
+      toast.warning(`${result.run.name} — approval required`, { description: result.message });
     } else {
       toast.error(`${result.run.name} — ${result.run.status}`, { description: result.message });
     }
@@ -526,12 +529,18 @@ function RunRow({ run }: { run: SuiteRun }) {
 
 function StepRow({ step, index }: { step: SuiteRunStep; index: number }) {
   const Icon =
-    step.status === "dispatched" ? CheckCircle2 : step.status === "failed" ? XCircle : Loader2;
+    step.status === "dispatched"
+      ? CheckCircle2
+      : step.status === "pending_approval"
+        ? ShieldCheck
+        : step.status === "failed"
+          ? XCircle
+          : Loader2;
   return (
     <li className="flex flex-wrap items-center gap-2 text-[11px]">
       <span className="font-mono text-[10px] text-muted-foreground">{index + 1}.</span>
       <Icon
-        className={`h-3 w-3 ${step.status === "dispatched" ? "text-[var(--ok)]" : step.status === "failed" ? "text-[var(--crit)]" : "text-muted-foreground"}`}
+        className={`h-3 w-3 ${step.status === "dispatched" ? "text-[var(--ok)]" : step.status === "pending_approval" ? "text-[var(--warn)]" : step.status === "failed" ? "text-[var(--crit)]" : "text-muted-foreground"}`}
       />
       <span className="font-mono text-[10px] text-foreground">
         {step.product}/{step.action}
@@ -549,6 +558,9 @@ function StepRow({ step, index }: { step: SuiteRunStep; index: number }) {
       <span className="flex-1 truncate text-muted-foreground">{step.message}</span>
       {step.remote_status !== null && (
         <span className="font-mono text-[10px] text-muted-foreground">HTTP {step.remote_status}</span>
+      )}
+      {step.approval_id && (
+        <span className="font-mono text-[10px] text-[var(--warn)]">{step.approval_id}</span>
       )}
     </li>
   );

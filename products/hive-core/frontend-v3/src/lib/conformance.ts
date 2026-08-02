@@ -241,7 +241,7 @@ function compare(product: ApiProduct, actions: ApiAction[]): ConformanceFinding[
       severity: "warning",
       kind: "approval not implemented",
       detail:
-        "Manifest declares operator approval; no advertised action carries requires_approval. Expected until the suite approval flow exists — HiveCore refuses approval-gated dispatch today.",
+        "Manifest declares operator approval, but no advertised action carries that gate. HiveCore cannot create a scoped approval for an action whose live contract omits it.",
       declared: "requires_operator_approval = true",
       advertised: "no approval-gated action",
     });

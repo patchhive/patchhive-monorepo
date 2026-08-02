@@ -73,7 +73,10 @@ Operator / Frontend
     │                                              ├── Fetch product /capabilities
     │                                              ├── Verify action exists + not destructive
     │                                              ├── Check service-token scopes match requirements
-    │                                              └── Proxy HTTP request to product action path
+    │                                              ├── Queue exact approval when required
+    │                                              └── Proxy HTTP request only when authorized
+    │
+    ├── GET /approvals ──────────────────────────► Durable approval inbox + audit history
     │
     └── GET /setup/first-stack ───────────────────► First-stack readiness
                                                    │
@@ -107,6 +110,7 @@ Operator / Frontend
 | Product runs snapshot | `ProductRunsSnapshotResponse` | A product's run list fetched through its `/runs` contract |
 | Product run detail | `ProductRunDetailResponse` | A single run's detail fetched through the product's `/runs/:id` contract |
 | Action event | `ProductActionEvent` | Record of a dispatched product action with request/response payloads |
+| Approval record | `ApprovalRecord` | Exact dispatch subject, normalized input, tagged lifecycle, and audit history |
 | First-stack setup status | `FirstStackSetupResponse` | Launcher status, per-product credentials, pairing readiness, smoke run history, fleet launch jobs |
 | Contract drift report | `Vec<ProductContractCheck>` | Per-endpoint pass/fail/lock with error messages across health, startup, capabilities, runs, and run detail |
 
@@ -116,6 +120,8 @@ Operator / Frontend
 
 - HiveCore is a **control plane**, not a replacement runtime for products. It does not read private product databases, bypass product auth, or dispatch destructive actions.
 - **Action dispatch is capability-driven:** only actions advertised by the product's `/capabilities` endpoint can be dispatched. Destructive actions are blocked server-side.
+- **Approvals are exact and single-use:** approval-gated or PR-opening actions create a pending record instead of dispatching. Product, action, input, origin, target/run context, effect, and scopes are fingerprinted; grants are atomically claimed before one remote attempt.
+- **Suite-run evidence stays truthful:** a pending approval makes the run `awaiting_approval`; consuming it reconciles that exact step to the action event without silently resuming later steps that were skipped when the run halted.
 - **Service-token scoping:** dispatch checks that the saved service token's scopes cover the action's `required_scopes`. Legacy tokens limited to `runs:read` are rejected for action dispatch.
 - **Self-actions blocked:** HiveCore refuses to dispatch actions to itself — native HiveCore routes handle HiveCore operations.
 - **Disabled products are skipped:** HiveCore does not poll, fetch runs, or dispatch actions for disabled products.
@@ -160,6 +166,11 @@ opt-out service remains future work; see
 | `GET` | `/products/:slug/runs/:id` | API key / Service token | Fetch a single run detail through the product's `/runs/:id` contract |
 | `POST` | `/products/:slug/provision-service-token` | API key / Service token | Provision or rotate a product's service token server-side |
 | `POST` | `/products/:slug/actions/:action_id` | API key / Service token | Dispatch an advertised product action |
+| `GET` | `/approvals` | Operator API key | List durable exact-dispatch approvals and audit history |
+| `POST` | `/approvals/:id/grant` | Operator API key | Grant one exact dispatch until its recorded expiry |
+| `POST` | `/approvals/:id/deny` | Operator API key | Deny a pending dispatch with a reason |
+| `POST` | `/approvals/:id/revoke` | Operator API key | Revoke a pending or granted dispatch with a reason |
+| `POST` | `/approvals/:id/dispatch` | Operator API key | Atomically claim and dispatch the stored exact input once |
 | `GET` | `/actions/recent` | API key / Service token | Recent 30 action events |
 | `GET` | `/runs` | API key / Service token | HiveCore's own action events as contract-compatible run summaries |
 | `GET` | `/runs/:id` | API key / Service token | Single action event detail |
@@ -241,6 +252,7 @@ All errors are wrapped in the `ApiEnvelope` format:
 | `PATCHHIVE_AI_API_KEY` | — | Bearer for `PATCHHIVE_AI_URL` when it is **not** a loopback address. A local gateway holds the provider key itself and needs none |
 | `HIVE_CORE_AI_MODEL` | `gpt-4o-mini` | Model name sent to the gateway for narrative drafts |
 | `HIVE_CORE_DISPATCH_TIMEOUT_SECS` | `600` | How long HiveCore waits for a dispatched product action. Clamped to 5–3600. Separate from the short polling timeout used for health and status |
+| `HIVECORE_APPROVAL_TTL_HOURS` | `24` | Pending/granted exact-dispatch approval lifetime. Clamped to 1–168 hours |
 | `RUST_LOG` | `info` | Logging level |
 
 HiveCore times every `/health` probe and retains a bounded ring of samples per product
@@ -554,6 +566,7 @@ The `docker-compose.yml` runs the backend as a single container with SQLite on a
 | Auth (API key + service token) | ✅ Implemented — bootstrap, login, generate, rotate |
 | Capabilities advertisement | ✅ Implemented |
 | Action dispatch (non-destructive) | ✅ Implemented — capability-driven, scope-checked |
+| Approval-gated action dispatch | ✅ Implemented — durable exact subjects, atomic single-use claims, v3 inbox |
 | First-stack setup (launcher integration) | ✅ Implemented — detect, pair, start, stop, restart products |
 | Smoke tiers | ✅ Implemented — tiered smoke test execution via `/setup/smoke/:tier` |
 | Fleet launch (start-ready, start-all) | ✅ Implemented |
@@ -561,7 +574,7 @@ The `docker-compose.yml` runs the backend as a single container with SQLite on a
 | GitHub token validation | ✅ Implemented — validates token against GitHub API |
 | Frontend UI | ✅ Implemented (v1) |
 | Frontend v2 | 🚧 In progress |
-| Destructive action dispatch | ❌ Blocked — requires explicit approval flow |
+| Destructive action dispatch | ❌ Blocked by policy — approvals do not override the destructive boundary |
 | Cross-product orchestration (e.g., RepoReaper + ReleaseSentry handoff) | ❌ Future — will build on shared capability contracts |
 | GitHub token for control-plane reads | ❌ Optional — env var exists but `PATCHHIVE_GITHUB_TOKEN_RO` is not yet wired into product operations |
 
