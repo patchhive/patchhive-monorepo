@@ -392,7 +392,9 @@ Current non-HiveCore implementation:
   checked-in public-demo fixture.
 - Hosted-service MVP exists in `services/patchhive-registry/` with install
   registration, authenticated heartbeat and smoke ingestion, SQLite storage,
-  shared PatchHive rate limiting, and public-demo read endpoints.
+  shared PatchHive rate limiting, public-demo read endpoints, GitHub-verified
+  repository-owner opt-out assertions/revocations, and an authenticated typed
+  lifecycle feed for HiveCore.
 - HiveCore is not required for either piece yet; Phase 1 and Phase 4 remain the
   HiveCore-specific work.
 

@@ -20,6 +20,10 @@ The SQLite database defaults to `patchhive-registry.db`. Override it with:
 PATCHHIVE_REGISTRY_DB_PATH=/tmp/patchhive-registry.db cargo run
 ```
 
+Set `PATCHHIVE_REGISTRY_OPT_OUT_SYNC_KEY` to a machine-random secret before
+exposing the repository-owner opt-out feed. HiveCore uses the same value as
+`PATCHHIVE_OPT_OUT_SYNC_KEY`.
+
 ## API
 
 - `GET /health`
@@ -28,6 +32,14 @@ PATCHHIVE_REGISTRY_DB_PATH=/tmp/patchhive-registry.db cargo run
 - `POST /v1/installs/:install_id/smoke`
 - `GET /v1/public/installs`
 - `GET /v1/public/installs/:public_slug`
+- `POST /v1/repository-opt-outs` — assert an opt-out after GitHub administrator verification
+- `DELETE /v1/repository-opt-outs/:owner/:repo` — revoke an assertion after the same verification
+- `GET /v1/sync/repository-opt-outs` — authenticated full lifecycle feed for HiveCore
+
+The assert and revoke routes require the repository administrator's GitHub
+token as `Authorization: Bearer <github_token>`. The sync route requires
+`X-PatchHive-Opt-Out-Sync-Key` instead. Active and revoked assertions are both
+durable so an interrupted or stale consumer cannot invent the current state.
 
 Registration returns a one-time registry token. Send it on update endpoints as:
 

@@ -509,8 +509,9 @@ standalone lockfile before the first export.
 - Eleven products use canonical specialist frontends at `products/<slug>/frontend/`.
   RepoReaper's canonical interface is
   [products/repo-reaper/frontend/](products/repo-reaper/frontend/).
-- Open/incomplete by design: the verified public repo-owner opt-out on `patchhive.dev`,
-  PR-budget adoption by future write-capable products, the email/webmail module boundary
+- Open/incomplete by design: PR-budget adoption by future write-capable products,
+  the public website form for the Registry-backed verified repo-owner opt-out,
+  the email/webmail module boundary
   ([docs/inbound-email-architecture.md](docs/inbound-email-architecture.md)), and the shared
   Squad substrate extraction.
 - HiveCore's target design is [docs/hivecore-architecture.md](docs/hivecore-architecture.md)

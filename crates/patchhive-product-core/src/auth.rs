@@ -380,7 +380,7 @@ fn verify_hash(token: &str, stored: String) -> bool {
         == 0
 }
 
-fn constant_time_eq(left: &str, right: &str) -> bool {
+pub fn constant_time_secret_eq(left: &str, right: &str) -> bool {
     let left = left.as_bytes();
     let right = right.as_bytes();
     if left.len() != right.len() {
@@ -627,7 +627,7 @@ pub fn suite_bootstrap_request_allowed(headers: &HeaderMap) -> bool {
         .map(str::trim)
         .unwrap_or("");
 
-    !provided.is_empty() && constant_time_eq(provided, &configured)
+    !provided.is_empty() && constant_time_secret_eq(provided, &configured)
 }
 
 pub fn auth_already_configured_error() -> JsonApiError {

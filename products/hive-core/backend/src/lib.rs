@@ -53,6 +53,7 @@ pub mod conductor;
 pub mod db;
 pub mod models;
 pub mod pipeline;
+pub mod public_opt_out;
 pub mod startup;
 pub mod state;
 
@@ -90,6 +91,7 @@ pub async fn init_runtime() -> Result<()> {
     log_checks(&checks);
     startup::set_startup_checks(checks);
     pipeline::overview::start_snapshot_loop();
+    public_opt_out::start_background_loop();
     conductor::start_background_loop();
     Ok(())
 }

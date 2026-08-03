@@ -9,11 +9,11 @@ use uuid::Uuid;
 use crate::{
     db,
     models::{
-        now_rfc3339, ok, PrBudgetLimitingLayer, PrBudgetReservation, PrBudgetStatusResponse,
-        PrBudgetUsage, PrReservationDecision, PrReservationDenial, PrReservationRequest,
-        PrReservationState, PrRunReleaseRequest, ProductPrBudget, RepositoryPoliciesResponse,
-        RepositoryPolicy, RepositoryPolicyDecision, RepositoryPolicyDecisionRequest,
-        SavePrBudgetRequest, SaveRepositoryPoliciesRequest,
+        now_rfc3339, ok, Observation, PrBudgetLimitingLayer, PrBudgetReservation,
+        PrBudgetStatusResponse, PrBudgetUsage, PrReservationDecision, PrReservationDenial,
+        PrReservationRequest, PrReservationState, PrRunReleaseRequest, ProductPrBudget,
+        RepositoryPoliciesResponse, RepositoryPolicy, RepositoryPolicyDecision,
+        RepositoryPolicyDecisionRequest, SavePrBudgetRequest, SaveRepositoryPoliciesRequest,
     },
     state::product_catalog,
 };
@@ -29,10 +29,7 @@ type InternalApiResult<T> = Result<T, InternalApiError>;
 
 pub(super) async fn repository_policies(
 ) -> Json<crate::models::ApiEnvelope<RepositoryPoliciesResponse>> {
-    Json(ok(RepositoryPoliciesResponse {
-        policies: db::repository_policies(),
-        public_opt_out_available: false,
-    }))
+    Json(ok(repository_policies_response()))
 }
 
 pub(super) async fn save_repository_policies(
@@ -81,10 +78,21 @@ pub(super) async fn save_repository_policies(
             format!("HiveCore could not save repository policies: {err}"),
         )
     })?;
-    Ok(Json(ok(RepositoryPoliciesResponse {
-        policies,
-        public_opt_out_available: false,
-    })))
+    Ok(Json(ok(repository_policies_response())))
+}
+
+fn repository_policies_response() -> RepositoryPoliciesResponse {
+    let public_opt_out_sync = match db::public_opt_out_sync_state() {
+        Ok(Some(state)) => Observation::observed(state),
+        Ok(None) => Observation::not_observed("Public opt-out synchronization has not run yet."),
+        Err(error) => Observation::failed(format!(
+            "Could not read public opt-out synchronization state: {error}"
+        )),
+    };
+    RepositoryPoliciesResponse {
+        policies: db::repository_policies(),
+        public_opt_out_sync,
+    }
 }
 
 pub(super) async fn repository_policy_check(

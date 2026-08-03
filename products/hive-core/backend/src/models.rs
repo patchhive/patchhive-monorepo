@@ -391,6 +391,87 @@ pub struct SuiteSnapshotCycle {
     pub updated_at: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum PublicOptOutLifecycle {
+    Active {
+        asserted_at: String,
+    },
+    Revoked {
+        revoked_at: String,
+    },
+    Unknown {
+        raw_state: String,
+        raw_evidence: serde_json::Value,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PublicOptOutAssertion {
+    pub repository: String,
+    pub actor_login: String,
+    pub reason: String,
+    pub lifecycle: PublicOptOutLifecycle,
+    pub verified_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct PublicOptOutFeed {
+    pub schema_version: String,
+    pub generated_at: String,
+    pub assertions: Vec<PublicOptOutAssertion>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum PublicOptOutSyncState {
+    NotConfigured {
+        checked_at: String,
+    },
+    Running {
+        started_at: String,
+    },
+    Succeeded {
+        started_at: String,
+        completed_at: String,
+        feed_generated_at: String,
+        active: u32,
+        revoked: u32,
+    },
+    Failed {
+        started_at: String,
+        failed_at: String,
+        reason: String,
+    },
+    Unknown {
+        raw_state: String,
+        raw_evidence: serde_json::Value,
+    },
+}
+
+impl PublicOptOutSyncState {
+    pub const fn kind(&self) -> &str {
+        match self {
+            Self::NotConfigured { .. } => "not_configured",
+            Self::Running { .. } => "running",
+            Self::Succeeded { .. } => "succeeded",
+            Self::Failed { .. } => "failed",
+            Self::Unknown { .. } => "unknown",
+        }
+    }
+
+    pub fn from_storage(raw_state: String, raw_evidence: serde_json::Value) -> Self {
+        match serde_json::from_value::<Self>(raw_evidence.clone()) {
+            Ok(value) if value.kind() == raw_state => value,
+            _ => Self::Unknown {
+                raw_state,
+                raw_evidence,
+            },
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OverviewResponse {
     pub product: &'static str,
@@ -427,10 +508,10 @@ pub struct RepositoryPolicy {
     pub updated_at: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RepositoryPoliciesResponse {
     pub policies: Vec<RepositoryPolicy>,
-    pub public_opt_out_available: bool,
+    pub public_opt_out_sync: Observation<PublicOptOutSyncState>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -835,7 +916,7 @@ pub struct ProductActionEvent {
 
 #[cfg(test)]
 mod evidence_tests {
-    use super::Observation;
+    use super::{Observation, PublicOptOutSyncState};
     use serde_json::json;
 
     #[test]
@@ -857,6 +938,28 @@ mod evidence_tests {
             missing,
             json!({"state": "not_observed", "reason": "not requested"})
         );
+    }
+
+    #[test]
+    fn contradictory_opt_out_sync_storage_is_unknown() {
+        let evidence = json!({
+            "state": "succeeded",
+            "started_at": "2026-08-02T00:00:00Z",
+            "completed_at": "2026-08-02T00:00:01Z",
+            "feed_generated_at": "2026-08-02T00:00:00Z",
+            "active": 1,
+            "revoked": 0
+        });
+
+        let decoded = PublicOptOutSyncState::from_storage("failed".into(), evidence.clone());
+
+        assert!(matches!(
+            decoded,
+            PublicOptOutSyncState::Unknown {
+                raw_state,
+                raw_evidence
+            } if raw_state == "failed" && raw_evidence == evidence
+        ));
     }
 }
 

@@ -100,11 +100,12 @@ remote request and records a terminal `consumed` outcome even when the product r
 or the transport result is uncertain. A changed action contract, payload, origin, repository,
 run, scope, or effect cannot reuse the grant.
 
-**B4 — Public opt-out ingestion is not implemented.**
-HiveCore and the specialist products now evaluate the shared structured repository-policy store
-with opt-out, denylist, allowlist, and trust precedence. The remaining gap is the authenticated
-`patchhive.dev` owner opt-out service and ingestion path; local evaluations report that the store
-was checked, but cannot claim that public owner assertions have been synchronized.
+**B4 — Public opt-out authority and ingestion are implemented.**
+The Registry accepts assertions and revocations only after GitHub verifies repository-owner or
+administrator authority, retains both lifecycle states and their audit events, and exposes an
+authenticated typed feed. HiveCore synchronizes that feed into the shared repository-policy store
+atomically. Its durable sync lifecycle distinguishes not configured, running, succeeded, failed,
+and unknown; an unavailable or malformed feed never becomes permission or a reassuring success.
 
 **B5 — PR lifecycle reconciliation remains polling-dependent.**
 Reserved slots have a short lease and committed slots now have a bounded long lease (30 days by

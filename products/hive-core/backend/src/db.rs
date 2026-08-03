@@ -19,8 +19,9 @@ use crate::models::{
     ApprovalState, ApprovalSubject, FirstStackSmokeRun, PrBudgetLimitingLayer, PrBudgetReservation,
     PrBudgetUsage, PrReservationDecision, PrReservationDenial, PrReservationExpiration,
     PrReservationState, ProbeSample, ProductActionEvent, ProductOverride,
-    ProductRunsSnapshotResponse, ProductRuntimeItem, RepositoryPolicy, RunbookRun, SuiteSettings,
-    SuiteSnapshotCycle, SuiteSnapshotCycleState,
+    ProductRunsSnapshotResponse, ProductRuntimeItem, PublicOptOutFeed, PublicOptOutLifecycle,
+    PublicOptOutSyncState, RepositoryPolicy, RunbookRun, SuiteSettings, SuiteSnapshotCycle,
+    SuiteSnapshotCycleState,
 };
 
 static DB_POOL: Lazy<SqlitePool> = Lazy::new(|| {
@@ -62,6 +63,127 @@ pub fn init_db() -> Result<()> {
     migrate_service_token_storage(&conn)?;
     migrate_repository_policy(&conn)?;
     recover_interrupted_snapshot_cycles(&conn)?;
+    recover_interrupted_opt_out_sync(&conn)?;
+    Ok(())
+}
+
+pub fn record_opt_out_sync_state(state: &PublicOptOutSyncState) -> rusqlite::Result<()> {
+    let conn = connect()?;
+    let updated_at = crate::models::now_rfc3339();
+    conn.execute(
+        "INSERT INTO hive_core_opt_out_sync (singleton, state_kind, state_json, updated_at)
+         VALUES (1, ?1, ?2, ?3)
+         ON CONFLICT(singleton) DO UPDATE SET
+           state_kind=excluded.state_kind, state_json=excluded.state_json,
+           updated_at=excluded.updated_at",
+        params![state.kind(), json_string(state)?, updated_at],
+    )?;
+    Ok(())
+}
+
+pub fn public_opt_out_sync_state() -> rusqlite::Result<Option<PublicOptOutSyncState>> {
+    let conn = connect()?;
+    conn.query_row(
+        "SELECT state_kind, state_json FROM hive_core_opt_out_sync WHERE singleton=1",
+        [],
+        |row| {
+            let raw_state: String = row.get(0)?;
+            let encoded: String = row.get(1)?;
+            let raw_evidence = raw_json(encoded);
+            Ok(PublicOptOutSyncState::from_storage(raw_state, raw_evidence))
+        },
+    )
+    .optional()
+}
+
+pub fn apply_public_opt_out_feed(
+    feed: &PublicOptOutFeed,
+    started_at: &str,
+    completed_at: &str,
+) -> Result<PublicOptOutSyncState> {
+    anyhow::ensure!(
+        feed.schema_version == "patchhive.repository-opt-outs.v1",
+        "unsupported opt-out feed schema '{}'",
+        feed.schema_version
+    );
+    anyhow::ensure!(
+        feed.assertions
+            .iter()
+            .all(|assertion| !matches!(assertion.lifecycle, PublicOptOutLifecycle::Unknown { .. })),
+        "opt-out feed contains unknown lifecycle evidence"
+    );
+    let mut conn = connect()?;
+    let transaction = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let mut active = 0_u32;
+    let mut revoked = 0_u32;
+    for assertion in &feed.assertions {
+        match &assertion.lifecycle {
+            PublicOptOutLifecycle::Active { .. } => {
+                repo_policy::upsert_verified_opt_out(
+                    &transaction,
+                    &assertion.repository,
+                    "patchhive.dev",
+                    &assertion.reason,
+                    &assertion.updated_at,
+                )?;
+                active += 1;
+            }
+            PublicOptOutLifecycle::Revoked { .. } => {
+                repo_policy::revoke_verified_opt_out(
+                    &transaction,
+                    &assertion.repository,
+                    "patchhive.dev",
+                    &assertion.updated_at,
+                )?;
+                revoked += 1;
+            }
+            PublicOptOutLifecycle::Unknown { .. } => {
+                anyhow::bail!("opt-out feed contains unknown lifecycle evidence")
+            }
+        }
+    }
+    let lifecycle = PublicOptOutSyncState::Succeeded {
+        started_at: started_at.to_string(),
+        completed_at: completed_at.to_string(),
+        feed_generated_at: feed.generated_at.clone(),
+        active,
+        revoked,
+    };
+    transaction.execute(
+        "INSERT INTO hive_core_opt_out_sync (singleton, state_kind, state_json, updated_at)
+         VALUES (1, ?1, ?2, ?3)
+         ON CONFLICT(singleton) DO UPDATE SET
+           state_kind=excluded.state_kind, state_json=excluded.state_json,
+           updated_at=excluded.updated_at",
+        params![lifecycle.kind(), json_string(&lifecycle)?, completed_at],
+    )?;
+    transaction.commit()?;
+    Ok(lifecycle)
+}
+
+fn recover_interrupted_opt_out_sync(conn: &Connection) -> rusqlite::Result<()> {
+    let current = conn
+        .query_row(
+            "SELECT state_kind, state_json FROM hive_core_opt_out_sync WHERE singleton=1",
+            [],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+        )
+        .optional()?;
+    let Some((raw_state, encoded)) = current else {
+        return Ok(());
+    };
+    if raw_state != "running" {
+        return Ok(());
+    }
+    let lifecycle = PublicOptOutSyncState::Unknown {
+        raw_state,
+        raw_evidence: raw_json(encoded),
+    };
+    conn.execute(
+        "UPDATE hive_core_opt_out_sync SET state_kind='unknown', state_json=?1, updated_at=?2
+         WHERE singleton=1",
+        params![json_string(&lifecycle)?, crate::models::now_rfc3339()],
+    )?;
     Ok(())
 }
 
@@ -1807,6 +1929,13 @@ fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
           captured_at TEXT NOT NULL,
           snapshot_json TEXT NOT NULL,
           FOREIGN KEY (cycle_id) REFERENCES hive_core_snapshot_cycles(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS hive_core_opt_out_sync (
+          singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+          state_kind TEXT NOT NULL,
+          state_json TEXT NOT NULL,
+          updated_at TEXT NOT NULL
         );
 
         CREATE TABLE IF NOT EXISTS hive_core_runbook_runs (

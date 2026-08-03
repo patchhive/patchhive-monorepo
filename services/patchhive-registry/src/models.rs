@@ -153,6 +153,65 @@ pub struct OkResponse {
     pub ok: bool,
 }
 
+#[derive(Clone, Debug, Deserialize)]
+pub struct RepositoryOptOutRequest {
+    pub repository: String,
+    #[serde(default)]
+    pub reason: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum RepositoryOptOutState {
+    Active {
+        asserted_at: String,
+    },
+    Revoked {
+        revoked_at: String,
+    },
+    Unknown {
+        raw_state: String,
+        raw_evidence: serde_json::Value,
+    },
+}
+
+impl RepositoryOptOutState {
+    pub const fn kind(&self) -> &str {
+        match self {
+            Self::Active { .. } => "active",
+            Self::Revoked { .. } => "revoked",
+            Self::Unknown { .. } => "unknown",
+        }
+    }
+
+    pub fn from_storage(raw_state: String, raw_evidence: serde_json::Value) -> Self {
+        match serde_json::from_value::<Self>(raw_evidence.clone()) {
+            Ok(value) if value.kind() == raw_state => value,
+            _ => Self::Unknown {
+                raw_state,
+                raw_evidence,
+            },
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RepositoryOptOutAssertion {
+    pub repository: String,
+    pub actor_login: String,
+    pub reason: String,
+    pub lifecycle: RepositoryOptOutState,
+    pub verified_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct RepositoryOptOutFeed {
+    pub schema_version: &'static str,
+    pub generated_at: String,
+    pub assertions: Vec<RepositoryOptOutAssertion>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::RegistryMode;

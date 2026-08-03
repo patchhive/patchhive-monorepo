@@ -776,9 +776,12 @@ Important env vars:
 - HiveCore owns operator-managed repository exclusions/trust and atomic
   per-product plus suite-wide concurrent PR budgets. RepoReaper is the first
   enforcing client and fails closed when a configured HiveCore policy service
-  is unavailable. The suite ceiling always wins. The verified public
-  repository-owner opt-out on `patchhive.dev` and adoption by other future
-  write-capable products remain incomplete. See
+  is unavailable. The suite ceiling always wins. The Registry verifies GitHub
+  repository-owner/admin authority for public opt-out assertions and revocations;
+  HiveCore ingests its authenticated typed lifecycle feed atomically and reports
+  not-configured, running, succeeded, failed, and unknown sync states explicitly.
+  The public website form and adoption by other future write-capable products
+  remain incomplete. See
   `docs/hivecore-repository-safety-and-pr-budgets.md`.
 
 ## Git Conventions

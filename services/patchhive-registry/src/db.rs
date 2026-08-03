@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use crate::models::{
     PublicInstallSummary, RegisterInstallRequest, RegisterInstallResponse, RegistryMode,
-    RegistrySnapshot, SmokeUpdateRequest,
+    RegistrySnapshot, RepositoryOptOutAssertion, RepositoryOptOutState, SmokeUpdateRequest,
 };
 
 const SCHEMA: &str = r#"
@@ -27,6 +27,25 @@ CREATE TABLE IF NOT EXISTS installs (
     heartbeat_count INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_installs_public ON installs(install_mode, public_slug);
+CREATE TABLE IF NOT EXISTS repository_opt_outs (
+    repository TEXT PRIMARY KEY,
+    actor_login TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    state_kind TEXT NOT NULL,
+    state_json TEXT NOT NULL,
+    verified_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS repository_opt_out_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    repository TEXT NOT NULL,
+    actor_login TEXT NOT NULL,
+    event_kind TEXT NOT NULL,
+    evidence_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_repository_opt_out_events_repo
+ON repository_opt_out_events(repository, id DESC);
 "#;
 
 pub struct RegistryStore {
@@ -243,6 +262,147 @@ impl RegistryStore {
             .map(|value| public_snapshot_from_json(&value))
             .transpose()
     }
+
+    pub fn assert_repository_opt_out(
+        &self,
+        repository: &str,
+        actor_login: &str,
+        reason: &str,
+    ) -> Result<RepositoryOptOutAssertion> {
+        let repository = patchhive_product_core::scope_policy::normalize_repo_name(repository)
+            .ok_or_else(|| anyhow!("repository must be a GitHub owner/repository name"))?;
+        let actor_login = actor_login.trim();
+        if actor_login.is_empty() {
+            return Err(anyhow!("verified GitHub actor login must not be empty"));
+        }
+        let now = Utc::now().to_rfc3339();
+        let lifecycle = RepositoryOptOutState::Active {
+            asserted_at: now.clone(),
+        };
+        let encoded = serde_json::to_string(&lifecycle)?;
+        let conn = self.pool.get()?;
+        let transaction = conn.unchecked_transaction()?;
+        transaction.execute(
+            "INSERT INTO repository_opt_outs
+             (repository, actor_login, reason, state_kind, state_json, verified_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)
+             ON CONFLICT(repository) DO UPDATE SET
+               actor_login=excluded.actor_login, reason=excluded.reason,
+               state_kind=excluded.state_kind, state_json=excluded.state_json,
+               verified_at=excluded.verified_at, updated_at=excluded.updated_at",
+            params![
+                repository,
+                actor_login,
+                reason.trim(),
+                lifecycle.kind(),
+                encoded,
+                now
+            ],
+        )?;
+        transaction.execute(
+            "INSERT INTO repository_opt_out_events
+             (repository, actor_login, event_kind, evidence_json, created_at)
+             VALUES (?1, ?2, 'asserted', ?3, ?4)",
+            params![
+                repository,
+                actor_login,
+                serde_json::to_string(&lifecycle)?,
+                now
+            ],
+        )?;
+        transaction.commit()?;
+        Ok(RepositoryOptOutAssertion {
+            repository,
+            actor_login: actor_login.to_string(),
+            reason: reason.trim().to_string(),
+            lifecycle,
+            verified_at: now.clone(),
+            updated_at: now,
+        })
+    }
+
+    pub fn revoke_repository_opt_out(
+        &self,
+        repository: &str,
+        actor_login: &str,
+    ) -> Result<Option<RepositoryOptOutAssertion>> {
+        let repository = patchhive_product_core::scope_policy::normalize_repo_name(repository)
+            .ok_or_else(|| anyhow!("repository must be a GitHub owner/repository name"))?;
+        let now = Utc::now().to_rfc3339();
+        let lifecycle = RepositoryOptOutState::Revoked {
+            revoked_at: now.clone(),
+        };
+        let conn = self.pool.get()?;
+        let transaction = conn.unchecked_transaction()?;
+        let changed = transaction.execute(
+            "UPDATE repository_opt_outs SET actor_login=?2, state_kind=?3, state_json=?4,
+             updated_at=?5 WHERE repository=?1",
+            params![
+                repository,
+                actor_login,
+                lifecycle.kind(),
+                serde_json::to_string(&lifecycle)?,
+                now
+            ],
+        )?;
+        if changed == 0 {
+            return Ok(None);
+        }
+        transaction.execute(
+            "INSERT INTO repository_opt_out_events
+             (repository, actor_login, event_kind, evidence_json, created_at)
+             VALUES (?1, ?2, 'revoked', ?3, ?4)",
+            params![
+                repository,
+                actor_login,
+                serde_json::to_string(&lifecycle)?,
+                now
+            ],
+        )?;
+        transaction.commit()?;
+        self.repository_opt_out(&repository)
+    }
+
+    pub fn repository_opt_outs(&self) -> Result<Vec<RepositoryOptOutAssertion>> {
+        let conn = self.pool.get()?;
+        let mut statement = conn.prepare(
+            "SELECT repository, actor_login, reason, state_kind, state_json, verified_at, updated_at
+             FROM repository_opt_outs ORDER BY repository",
+        )?;
+        let assertions = statement
+            .query_map([], decode_repository_opt_out)?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(assertions)
+    }
+
+    fn repository_opt_out(&self, repository: &str) -> Result<Option<RepositoryOptOutAssertion>> {
+        let conn = self.pool.get()?;
+        Ok(conn
+            .query_row(
+                "SELECT repository, actor_login, reason, state_kind, state_json, verified_at, updated_at
+                 FROM repository_opt_outs WHERE repository=?1",
+                [repository],
+                decode_repository_opt_out,
+            )
+            .optional()?)
+    }
+}
+
+fn decode_repository_opt_out(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<RepositoryOptOutAssertion> {
+    let raw_state: String = row.get(3)?;
+    let encoded: String = row.get(4)?;
+    let raw_evidence = serde_json::from_str::<serde_json::Value>(&encoded)
+        .unwrap_or(serde_json::Value::String(encoded));
+    Ok(RepositoryOptOutAssertion {
+        repository: row.get(0)?,
+        actor_login: row.get(1)?,
+        reason: row.get(2)?,
+        lifecycle: RepositoryOptOutState::from_storage(raw_state, raw_evidence),
+        verified_at: row.get(5)?,
+        updated_at: row.get(6)?,
+    })
 }
 
 fn public_snapshot_from_json(value: &str) -> Result<RegistrySnapshot> {
@@ -492,5 +652,47 @@ mod tests {
             .products
             .iter()
             .all(|product| product.note.is_none()));
+    }
+
+    #[test]
+    fn verified_opt_out_lifecycle_is_durable_and_revocable() {
+        let store = test_store();
+        let asserted = store
+            .assert_repository_opt_out("Owner/Repo", "owner", "Please do not scan")
+            .expect("assertion should save");
+        assert_eq!(asserted.repository, "owner/repo");
+        assert!(matches!(
+            asserted.lifecycle,
+            RepositoryOptOutState::Active { .. }
+        ));
+
+        let revoked = store
+            .revoke_repository_opt_out("owner/repo", "owner")
+            .expect("revocation should save")
+            .expect("assertion should exist");
+        assert!(matches!(
+            revoked.lifecycle,
+            RepositoryOptOutState::Revoked { .. }
+        ));
+        assert_eq!(store.repository_opt_outs().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn contradictory_opt_out_storage_decodes_as_unknown() {
+        let store = test_store();
+        let conn = store.pool.get().expect("database should open");
+        conn.execute(
+            "INSERT INTO repository_opt_outs
+             (repository, actor_login, reason, state_kind, state_json, verified_at, updated_at)
+             VALUES ('owner/repo', 'owner', '', 'active',
+                     '{\"state\":\"revoked\",\"revoked_at\":\"now\"}', 'now', 'now')",
+            [],
+        )
+        .expect("fixture should insert");
+        let assertion = store.repository_opt_outs().unwrap().remove(0);
+        assert!(matches!(
+            assertion.lifecycle,
+            RepositoryOptOutState::Unknown { .. }
+        ));
     }
 }

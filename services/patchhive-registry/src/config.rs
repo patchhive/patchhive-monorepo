@@ -6,6 +6,7 @@ pub struct Config {
     pub bind_addr: SocketAddr,
     pub db_path: PathBuf,
     pub registration_key: Option<String>,
+    pub opt_out_sync_key: Option<String>,
 }
 
 impl Config {
@@ -23,6 +24,10 @@ impl Config {
             .ok()
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty());
+        let opt_out_sync_key = std::env::var("PATCHHIVE_REGISTRY_OPT_OUT_SYNC_KEY")
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
         if !bind_addr.ip().is_loopback() && registration_key.is_none() {
             anyhow::bail!(
                 "PATCHHIVE_REGISTRY_REGISTRATION_KEY is required for a non-loopback registry"
@@ -33,6 +38,7 @@ impl Config {
             bind_addr,
             db_path,
             registration_key,
+            opt_out_sync_key,
         })
     }
 }

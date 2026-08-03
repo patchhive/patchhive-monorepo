@@ -268,6 +268,9 @@ All errors are wrapped in the `ApiEnvelope` format:
 | `HIVE_CORE_AI_MODEL` | `gpt-4o-mini` | Model name sent to the gateway for narrative drafts |
 | `HIVE_CORE_DISPATCH_TIMEOUT_SECS` | `600` | How long HiveCore waits for a dispatched product action. Clamped to 5–3600. Separate from the short polling timeout used for health and status |
 | `HIVE_CORE_SNAPSHOT_INTERVAL_SECONDS` | `30` | Background suite snapshot interval, clamped to 5–300 seconds. Ordinary v3 reads use durable snapshots instead of probing products inline |
+| `PATCHHIVE_OPT_OUT_FEED_URL` | — | Canonical Registry repository-owner opt-out lifecycle feed. An absent URL is an explicit `not_configured` state |
+| `PATCHHIVE_OPT_OUT_SYNC_KEY` | — | Machine secret required to read the configured opt-out feed |
+| `HIVE_CORE_OPT_OUT_SYNC_INTERVAL_SECONDS` | `300` | Background opt-out synchronization interval, clamped to 30–3600 seconds |
 | `HIVECORE_APPROVAL_TTL_HOURS` | `24` | Pending/granted exact-dispatch approval lifetime. Clamped to 1–168 hours |
 | `RUST_LOG` | `info` | Logging level |
 

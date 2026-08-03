@@ -892,6 +892,7 @@ dependencies = [
  "chrono",
  "hex",
  "patchhive-product-core",
+ "reqwest",
  "rusqlite",
  "serde",
  "serde_json",

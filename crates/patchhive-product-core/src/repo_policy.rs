@@ -206,6 +206,54 @@ pub fn remove(conn: &Connection, repository: &str, kind: PolicyKind) -> Result<b
     Ok(changed > 0)
 }
 
+/// Apply a verified assertion from the named public opt-out authority.
+///
+/// Only the same authority may refresh its row, and an older feed cannot overwrite
+/// newer evidence already synchronized by another poller instance.
+pub fn upsert_verified_opt_out(
+    conn: &Connection,
+    repository: &str,
+    source: &str,
+    notes: &str,
+    updated_at: &str,
+) -> Result<bool> {
+    let repository = normalize_repo_name(repository)
+        .with_context(|| format!("repository `{repository}` must be owner/repo"))?;
+    let changed = conn.execute(
+        &format!(
+            "INSERT INTO {TABLE} (repository, kind, source, notes, verified, updated_at) \
+             VALUES (?1, 'opt_out', ?2, ?3, 1, ?4) \
+             ON CONFLICT(repository, kind) DO UPDATE SET \
+               source=excluded.source, notes=excluded.notes, verified=1, updated_at=excluded.updated_at \
+             WHERE {TABLE}.verified = 0 OR \
+                   ({TABLE}.source = excluded.source AND {TABLE}.updated_at <= excluded.updated_at)"
+        ),
+        params![repository, source, notes, updated_at],
+    )?;
+    Ok(changed > 0)
+}
+
+/// Revoke a synchronized public opt-out only when the same authority supplied it
+/// and the revocation is not older than the assertion currently stored.
+pub fn revoke_verified_opt_out(
+    conn: &Connection,
+    repository: &str,
+    source: &str,
+    updated_at: &str,
+) -> Result<bool> {
+    let Some(repository) = normalize_repo_name(repository) else {
+        return Ok(false);
+    };
+    let changed = conn.execute(
+        &format!(
+            "DELETE FROM {TABLE} WHERE repository=?1 AND kind='opt_out' AND verified=1 \
+             AND source=?2 AND updated_at <= ?3"
+        ),
+        params![repository, source, updated_at],
+    )?;
+    Ok(changed > 0)
+}
+
 fn decode(row: &rusqlite::Row<'_>) -> rusqlite::Result<RepoPolicyEntry> {
     let kind: String = row.get(1)?;
     Ok(RepoPolicyEntry {
@@ -1070,5 +1118,44 @@ mod tests {
         let second = migrate_legacy_tables(&conn).unwrap();
         assert_eq!(second.imported, 0);
         assert!(second.conflicts.is_empty(), "resolved conflict re-reported");
+    }
+
+    #[test]
+    fn public_authority_can_revoke_only_its_non_newer_assertion() {
+        let conn = conn();
+        upsert_verified_opt_out(
+            &conn,
+            "Owner/Repo",
+            "patchhive.dev",
+            "owner request",
+            "2026-08-02T12:00:00Z",
+        )
+        .unwrap();
+
+        assert!(!revoke_verified_opt_out(
+            &conn,
+            "owner/repo",
+            "patchhive.dev",
+            "2026-08-02T11:00:00Z"
+        )
+        .unwrap());
+        assert!(
+            !evaluate(&conn, "owner/repo", "signal-hive", "scan")
+                .unwrap()
+                .allowed
+        );
+
+        assert!(revoke_verified_opt_out(
+            &conn,
+            "owner/repo",
+            "patchhive.dev",
+            "2026-08-02T13:00:00Z"
+        )
+        .unwrap());
+        assert!(
+            evaluate(&conn, "owner/repo", "signal-hive", "scan")
+                .unwrap()
+                .allowed
+        );
     }
 }

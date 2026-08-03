@@ -84,7 +84,10 @@ The frontend uses `@patchhivehq/ui` and `@patchhivehq/product-shell`. Generate t
 
 | Variable | Purpose |
 | --- | --- |
-| `PATCHHIVE_GITHUB_TOKEN_RO` | Optional suite-wide classic PAT reserved for future control-plane reads. Use `public_repo` for public repositories or `repo` for private repositories. |
+| `PATCHHIVE_GITHUB_TOKEN_RO` | Optional suite-wide classic PAT reserved for control-plane GitHub reads. Use `public_repo` for public repositories or `repo` for private repositories. |
+| `PATCHHIVE_OPT_OUT_FEED_URL` | Canonical Registry repository-owner opt-out feed URL. Unset is recorded as `not_configured`, not synchronized. |
+| `PATCHHIVE_OPT_OUT_SYNC_KEY` | Machine secret for the configured opt-out feed. Required whenever the feed URL is set. |
+| `HIVE_CORE_OPT_OUT_SYNC_INTERVAL_SECONDS` | Opt-out synchronization cadence, clamped to 30-3600 seconds (default 300). |
 | `HIVE_CORE_API_KEY_HASH` | Optional pre-seeded app auth hash. Otherwise generate the first local key from the UI. |
 | `HIVE_CORE_SERVICE_TOKEN_HASH` | Optional service-token hash for HiveCore as a machine caller. |
 | `HIVE_CORE_DB_PATH` | SQLite path for suite settings, product overrides, and action events. |

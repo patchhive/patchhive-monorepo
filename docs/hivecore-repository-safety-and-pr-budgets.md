@@ -1,6 +1,6 @@
 # HiveCore Repository Safety and PR Budgets
 
-Status: **partially implemented (2026-07-13)**
+Status: **partially implemented (2026-08-02)**
 
 HiveCore now owns operator-managed repository exclusions and trust flags, typed
 repository-policy decisions, atomic per-product and suite-wide concurrent PR
@@ -10,9 +10,10 @@ meaningful work, uses HiveCore trust to permit sandboxed test execution,
 reserves capacity immediately before PR creation, releases failed attempts, and
 releases committed capacity when its PR monitor observes a merge or close.
 
-The verified public `patchhive.dev` repository-owner opt-out service is still a
-future boundary. Other write-capable products must adopt the shared typed
-client before their mutations can be described as suite-policy enforced.
+The Registry now owns the verified repository-owner opt-out authority and
+HiveCore atomically ingests its authenticated lifecycle feed. Other
+write-capable products must still adopt the shared typed client before their
+mutations can be described as suite-policy enforced.
 
 This document records three suite-wide controls that should exist before
 PatchHive expands autonomous outbound work:
@@ -30,13 +31,13 @@ HiveCore and the shared backend so every product reaches the same decision.
 Repository owners should be able to opt out of all PatchHive automation from
 `patchhive.dev`.
 
-### Minimal surface
+### Implemented service surface
 
-The first version should remain intentionally small:
+The first version remains intentionally small:
 
 - one `repository_opt_outs` table;
-- two API endpoints; and
-- one form page on `patchhive.dev`.
+- two owner mutation endpoints; and
+- one authenticated HiveCore synchronization feed.
 
 Suggested table:
 
@@ -51,18 +52,21 @@ repository_opt_outs
   updated_at           TEXT NOT NULL
 ```
 
-Suggested endpoints:
+Service endpoints:
 
 ```text
-GET  /api/repository-opt-outs/:owner/:repo
-POST /api/repository-opt-outs
+POST   /v1/repository-opt-outs
+DELETE /v1/repository-opt-outs/:owner/:repo
+GET    /v1/sync/repository-opt-outs
 ```
 
-The `GET` endpoint returns the current decision for product checks. The `POST`
-endpoint is an authenticated upsert and accepts both opt-out and restoration,
-so removal does not require a third endpoint.
+The mutation endpoints verify the presented GitHub identity and current
+administrator access before asserting or revoking. The feed is protected by a
+separate machine secret and carries active, revoked, and unknown lifecycle
+evidence. HiveCore applies a valid feed transactionally; an unknown lifecycle
+or unsupported schema rolls the whole synchronization back.
 
-The form page should:
+A future public form page should:
 
 1. authenticate the requester through GitHub;
 2. verify that the requester has repository administration or maintain-level
