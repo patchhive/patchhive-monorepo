@@ -1,10 +1,7 @@
-use std::sync::{Arc, OnceLock};
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use serde::Deserialize;
-use tokio::sync::RwLock;
-
-use crate::models::SetupFleetLaunchJob;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -22,7 +19,6 @@ pub struct AppState {
     /// up on it". Suite runs made it unmissable: the long actions are precisely the
     /// ones worth orchestrating.
     pub dispatch_client: reqwest::Client,
-    pub latest_fleet_launch: Arc<RwLock<Option<SetupFleetLaunchJob>>>,
 }
 
 impl Default for AppState {
@@ -50,7 +46,6 @@ impl AppState {
         Self {
             client,
             dispatch_client,
-            latest_fleet_launch: Arc::new(RwLock::new(None)),
         }
     }
 }

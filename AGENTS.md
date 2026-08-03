@@ -183,6 +183,12 @@ patchhive/
   conductor boundary is proposal-only: it may create `discovered` work but cannot
   dispatch or advance it. Unsupported or malformed stored lifecycle evidence decodes
   as `unknown`, never as ready work.
+- HiveCore fleet launches are durable SQLite jobs with non-defaultable job and
+  per-product step lifecycles. The active claim is transactional and leased; every
+  host-control phase is persisted before the next action. Restarted, expired,
+  malformed, or contradictory active evidence becomes `unknown` and releases the
+  claim instead of disappearing or being reported complete. HiveCore v3 reads and
+  polls this durable job rather than holding browser or process-local truth.
 - Concrete product findings enter the HiveCore work ledger through idempotent
   `FindingSource` receipts keyed by product, run, and finding ID. Reusing one source
   with changed evidence or a changed proposal is a conflict; different sources that

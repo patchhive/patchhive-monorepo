@@ -17,6 +17,8 @@ import {
   runSmoke,
   saveProductEnv,
   SMOKE_TIERS,
+  startAllFleet,
+  startReadyFleet,
   STATUS_TONE,
   validateGitHubToken,
   type BootstrapState,
@@ -61,6 +63,23 @@ export function BootstrapWizard({ syncVersion = 0 }: { syncVersion?: number }) {
     return () => controller.abort();
   }, [load, syncVersion]);
 
+  const fleetJob =
+    state?.latest_fleet_launch.state === "observed"
+      ? state.latest_fleet_launch.value
+      : null;
+  const fleetActive =
+    fleetJob?.lifecycle.state === "queued" || fleetJob?.lifecycle.state === "running";
+  const previousFleetJobs =
+    state?.fleet_launch_history.state === "observed"
+      ? state.fleet_launch_history.value.filter((job) => job.id !== fleetJob?.id).slice(0, 4)
+      : [];
+
+  useEffect(() => {
+    if (!fleetActive) return;
+    const timer = window.setInterval(() => load(), 2000);
+    return () => window.clearInterval(timer);
+  }, [fleetActive, load]);
+
   async function pair(): Promise<void> {
     setBusy("pair");
     const result = await pairFirstStack();
@@ -83,6 +102,18 @@ export function BootstrapWizard({ syncVersion = 0 }: { syncVersion?: number }) {
       toast.success(`Smoke: ${run?.status ?? "done"}`, { description: run?.summary });
     } else {
       toast.error("Smoke run failed", { description: result.message });
+    }
+  }
+
+  async function launchFleet(mode: "ready" | "all"): Promise<void> {
+    setBusy(`fleet-${mode}`);
+    const result = mode === "ready" ? await startReadyFleet() : await startAllFleet();
+    setBusy("");
+    if (result.data) {
+      setState(result.data);
+      toast.success(mode === "ready" ? "Ready fleet queued" : "Full fleet plan recorded");
+    } else {
+      toast.error("Fleet launch failed", { description: result.message });
     }
   }
 
@@ -213,9 +244,90 @@ export function BootstrapWizard({ syncVersion = 0 }: { syncVersion?: number }) {
         )}
       </Step>
 
-      {/* 4. Evidence. A ready screen that cites a smoke run rather than asserting. */}
+      {/* 4. Fleet launch. The durable job survives refresh and backend restart; the
+             lifecycle, not a browser spinner, is the authority. */}
       <Step
         index={4}
+        title="Fleet launch"
+        status={fleetStatus(state.latest_fleet_launch)}
+        detail={
+          fleetJob
+            ? `${fleetJob.mode.replaceAll("_", " ")} · ${fleetJob.summary}`
+            : state.latest_fleet_launch.state === "observed"
+              ? "Fleet-launch evidence is unavailable."
+              : state.latest_fleet_launch.reason
+        }
+      >
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          <button
+            onClick={() => launchFleet("ready")}
+            disabled={Boolean(busy) || fleetActive || !state.launcher.available}
+            className="inline-flex items-center gap-1 rounded border border-[var(--honey)]/40 px-2 py-1 font-display text-[9px] uppercase tracking-wider text-[var(--honey)] transition hover:bg-[var(--honey)]/10 disabled:opacity-40"
+          >
+            {busy === "fleet-ready" || fleetActive ? (
+              <Loader2 className="h-2.5 w-2.5 animate-spin" />
+            ) : (
+              <Rocket className="h-2.5 w-2.5" />
+            )}
+            Start ready
+          </button>
+          <button
+            onClick={() => launchFleet("all")}
+            disabled={Boolean(busy) || fleetActive || !state.launcher.available}
+            className="inline-flex items-center gap-1 rounded border border-border px-2 py-1 font-display text-[9px] uppercase tracking-wider text-muted-foreground transition hover:border-[var(--warn)]/50 hover:text-[var(--warn)] disabled:opacity-40"
+          >
+            {busy === "fleet-all" ? (
+              <Loader2 className="h-2.5 w-2.5 animate-spin" />
+            ) : (
+              <Play className="h-2.5 w-2.5" />
+            )}
+            Start all
+          </button>
+        </div>
+        {fleetJob && fleetJob.steps.length > 0 && (
+          <ul className="mt-2 space-y-1">
+            {fleetJob.steps.map((step) => (
+              <li key={step.slug} className="flex flex-wrap items-center gap-2 text-[11px]">
+                <span
+                  className={`rounded border px-1.5 py-0.5 font-display text-[9px] uppercase tracking-wider ${
+                    STATUS_TONE[step.lifecycle.state] ?? "border-border text-muted-foreground"
+                  }`}
+                >
+                  {step.lifecycle.state.replaceAll("_", " ")}
+                </span>
+                <span className="font-mono text-[10px] text-foreground">{step.title}</span>
+                <span className="flex-1 truncate text-muted-foreground">{step.message}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+        {previousFleetJobs.length > 0 && (
+          <details className="mt-2 rounded border border-border/70 bg-background/40 px-2 py-1.5">
+            <summary className="cursor-pointer font-display text-[9px] uppercase tracking-wider text-muted-foreground">
+              Recent launches · {previousFleetJobs.length}
+            </summary>
+            <ul className="mt-1 space-y-1">
+              {previousFleetJobs.map((job) => (
+                <li key={job.id} className="flex flex-wrap items-center gap-2 text-[10px]">
+                  <span
+                    className={`rounded border px-1 py-0.5 font-display text-[8px] uppercase tracking-wider ${
+                      STATUS_TONE[job.lifecycle.state] ?? "border-border text-muted-foreground"
+                    }`}
+                  >
+                    {job.lifecycle.state.replaceAll("_", " ")}
+                  </span>
+                  <span className="font-mono text-muted-foreground">{job.id}</span>
+                  <span className="flex-1 truncate text-muted-foreground">{job.summary}</span>
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
+      </Step>
+
+      {/* 5. Evidence. A ready screen that cites a smoke run rather than asserting. */}
+      <Step
+        index={5}
         title="Readiness evidence"
         status={
           state.latest_smoke
@@ -271,6 +383,28 @@ export function BootstrapWizard({ syncVersion = 0 }: { syncVersion?: number }) {
       </Step>
     </Section>
   );
+}
+
+function fleetStatus(
+  evidence: BootstrapState["latest_fleet_launch"],
+): "ok" | "warn" | "fail" | "unknown" {
+  if (evidence.state !== "observed") {
+    return evidence.state === "failed" ? "fail" : "unknown";
+  }
+  switch (evidence.value.lifecycle.state) {
+    case "succeeded":
+    case "no_op":
+      return "ok";
+    case "queued":
+    case "running":
+    case "needs_attention":
+    case "blocked":
+      return "warn";
+    case "failed":
+      return "fail";
+    case "unknown":
+      return "unknown";
+  }
 }
 
 function Section({ children }: { children: React.ReactNode }) {

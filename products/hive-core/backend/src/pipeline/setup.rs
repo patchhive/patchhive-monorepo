@@ -12,8 +12,9 @@ use tokio::{spawn, time::sleep};
 use crate::{
     db,
     models::{
-        now_rfc3339, ok, FirstStackSetupResponse, ProductRuntimeItem, SetupFleetLaunchJob,
-        SetupFleetLaunchStep, SetupLauncherProductStatus, SetupLauncherStatus,
+        now_rfc3339, ok, FirstStackSetupResponse, FleetLaunchJobState, FleetLaunchMode,
+        FleetLaunchPhase, FleetLaunchStepState, Observation, ProductRuntimeItem,
+        SetupFleetLaunchJob, SetupFleetLaunchStep, SetupLauncherProductStatus, SetupLauncherStatus,
         SetupProductCredentialRequirements, SetupProductLogsResponse, SetupProductStatus,
     },
     state::{product_catalog, AppState},
@@ -119,28 +120,6 @@ struct LauncherRequirementsSnapshot {
     products: HashMap<String, SetupProductCredentialRequirements>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum FleetLaunchMode {
-    StartReady,
-    StartAll,
-}
-
-impl FleetLaunchMode {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::StartReady => "start-ready",
-            Self::StartAll => "start-all",
-        }
-    }
-
-    fn label(self) -> &'static str {
-        match self {
-            Self::StartReady => "ready fleet",
-            Self::StartAll => "full fleet",
-        }
-    }
-}
-
 pub(super) async fn first_stack_status(
     State(state): State<AppState>,
 ) -> Json<crate::models::ApiEnvelope<FirstStackSetupResponse>> {
@@ -197,10 +176,6 @@ pub(super) async fn start_ready_fleet(
     (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
 > {
     let mut actions = Vec::new();
-    if fleet_launch_in_progress(&state).await {
-        actions.push("A fleet launch job is already running in HiveCore.".into());
-        return Ok(Json(ok(build_first_stack_response(&state, actions).await)));
-    }
     queue_fleet_launch(&state, FleetLaunchMode::StartReady, &mut actions).await?;
     Ok(Json(ok(build_first_stack_response(&state, actions).await)))
 }
@@ -212,10 +187,6 @@ pub(super) async fn start_all_fleet(
     (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
 > {
     let mut actions = Vec::new();
-    if fleet_launch_in_progress(&state).await {
-        actions.push("A fleet launch job is already running in HiveCore.".into());
-        return Ok(Json(ok(build_first_stack_response(&state, actions).await)));
-    }
     queue_fleet_launch(&state, FleetLaunchMode::StartAll, &mut actions).await?;
     Ok(Json(ok(build_first_stack_response(&state, actions).await)))
 }
@@ -531,6 +502,26 @@ pub(super) async fn build_first_stack_response(
         });
     }
 
+    let (latest_fleet_launch, fleet_launch_history) = match db::fleet_launch_jobs(20) {
+        Ok(jobs) => {
+            let latest = jobs
+                .first()
+                .cloned()
+                .map(Observation::observed)
+                .unwrap_or_else(|| {
+                    Observation::not_observed("No fleet launch has been requested yet.")
+                });
+            (latest, Observation::observed(jobs))
+        }
+        Err(error) => {
+            let reason = format!("Could not read durable fleet-launch state: {error}");
+            (
+                Observation::failed(reason.clone()),
+                Observation::failed(reason),
+            )
+        }
+    };
+
     FirstStackSetupResponse {
         stack_id: "first-stack".into(),
         launcher: launcher.status,
@@ -538,38 +529,10 @@ pub(super) async fn build_first_stack_response(
         requirements_error,
         suite_bootstrap_configured: configured_suite_bootstrap_secret().is_some(),
         latest_smoke: db::latest_first_stack_smoke_run(),
-        latest_fleet_launch: latest_fleet_launch_job(state).await,
+        latest_fleet_launch,
+        fleet_launch_history,
         actions,
         products,
-    }
-}
-
-async fn latest_fleet_launch_job(state: &AppState) -> Option<SetupFleetLaunchJob> {
-    state.latest_fleet_launch.read().await.clone()
-}
-
-async fn fleet_launch_in_progress(state: &AppState) -> bool {
-    matches!(
-        latest_fleet_launch_job(state)
-            .await
-            .as_ref()
-            .map(|job| job.status.as_str()),
-        Some("queued" | "running")
-    )
-}
-
-async fn replace_fleet_launch_job(state: &AppState, job: SetupFleetLaunchJob) {
-    *state.latest_fleet_launch.write().await = Some(job);
-}
-
-async fn update_fleet_launch_job<F>(state: &AppState, mutator: F)
-where
-    F: FnOnce(&mut SetupFleetLaunchJob),
-{
-    let mut guard = state.latest_fleet_launch.write().await;
-    if let Some(job) = guard.as_mut() {
-        mutator(job);
-        job.updated_at = now_rfc3339();
     }
 }
 
@@ -606,11 +569,11 @@ async fn queue_fleet_launch(
             steps.push(SetupFleetLaunchStep {
                 slug: runtime.slug,
                 title: runtime.title,
-                phase: "observe".into(),
-                status: "skipped".into(),
+                lifecycle: FleetLaunchStepState::Skipped {
+                    finished_at: now_rfc3339(),
+                    reason: "already_running".into(),
+                },
                 message: "Already running, so HiveCore left this product alone.".into(),
-                started_at: String::new(),
-                finished_at: now_rfc3339(),
             });
             continue;
         }
@@ -629,15 +592,18 @@ async fn queue_fleet_launch(
             steps.push(SetupFleetLaunchStep {
                 slug: runtime.slug,
                 title: runtime.title,
-                phase: "preflight".into(),
-                status: if mode == FleetLaunchMode::StartAll {
-                    "blocked".into()
+                lifecycle: if mode == FleetLaunchMode::StartAll {
+                    FleetLaunchStepState::Blocked {
+                        finished_at: now_rfc3339(),
+                        reason: "preflight_blocked".into(),
+                    }
                 } else {
-                    "skipped".into()
+                    FleetLaunchStepState::Skipped {
+                        finished_at: now_rfc3339(),
+                        reason: "preflight_not_ready".into(),
+                    }
                 },
                 message,
-                started_at: String::new(),
-                finished_at: now_rfc3339(),
             });
             continue;
         }
@@ -646,11 +612,10 @@ async fn queue_fleet_launch(
         steps.push(SetupFleetLaunchStep {
             slug: runtime.slug,
             title: runtime.title,
-            phase: launch_phase_for_product(launcher_product).into(),
-            status: "queued".into(),
+            lifecycle: FleetLaunchStepState::Queued {
+                phase: FleetLaunchPhase::Launch,
+            },
             message: launch_queue_message(launcher_product),
-            started_at: String::new(),
-            finished_at: String::new(),
         });
     }
 
@@ -661,17 +626,21 @@ async fn queue_fleet_launch(
     }
 
     let started_at = now_rfc3339();
-    let finished_at = if blocked_count > 0 || products_to_start.is_empty() {
-        started_at.clone()
-    } else {
-        String::new()
-    };
-    let status = if blocked_count > 0 {
-        "blocked"
+    let lifecycle = if blocked_count > 0 {
+        FleetLaunchJobState::Blocked {
+            finished_at: started_at.clone(),
+            blocked: blocked_count as u32,
+        }
     } else if products_to_start.is_empty() {
-        "ready"
+        FleetLaunchJobState::NoOp {
+            finished_at: started_at.clone(),
+            skipped: skipped_products.len() as u32,
+        }
     } else {
-        "queued"
+        FleetLaunchJobState::Queued {
+            queued_at: started_at.clone(),
+            lease_expires_at: fleet_job_lease_until(),
+        }
     };
     let summary = if blocked_count > 0 {
         format!(
@@ -690,21 +659,35 @@ async fn queue_fleet_launch(
 
     let job = SetupFleetLaunchJob {
         id: format!("fleet_{}", uuid::Uuid::now_v7()),
-        mode: mode.as_str().into(),
-        status: status.into(),
+        mode,
+        lifecycle,
         summary,
-        started_at: started_at.clone(),
+        created_at: started_at.clone(),
         updated_at: started_at,
-        finished_at,
         requested_products,
         started_products: Vec::new(),
         skipped_products,
         actions: Vec::new(),
         steps,
     };
-    replace_fleet_launch_job(state, job.clone()).await;
+    match db::insert_fleet_launch_job(&job).map_err(|error| {
+        api_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "fleet_launch_persist_failed",
+            format!("HiveCore could not persist the fleet launch: {error}"),
+        )
+    })? {
+        db::FleetLaunchInsertOutcome::Inserted => {}
+        db::FleetLaunchInsertOutcome::Active(active) => {
+            actions.push(format!(
+                "Fleet launch {} is already active; HiveCore did not queue another.",
+                active.id
+            ));
+            return Ok(());
+        }
+    }
 
-    if status == "blocked" {
+    if matches!(job.lifecycle, FleetLaunchJobState::Blocked { .. }) {
         actions.push(
             "HiveCore recorded the blocked fleet plan so you can see the exact gated products."
                 .into(),
@@ -737,62 +720,90 @@ async fn run_fleet_launch_job(
     secret: String,
     products: Vec<String>,
 ) {
-    update_fleet_launch_job(&state, |job| {
-        if job.id == job_id {
-            job.status = "running".into();
-            job.summary = format!(
-                "HiveCore is launching {} product(s) in the background.",
-                products.len()
-            );
-        }
-    })
-    .await;
+    let run_started_at = now_rfc3339();
+    if !persist_fleet_launch_update(&job_id, |job| {
+        job.lifecycle = FleetLaunchJobState::Running {
+            started_at: run_started_at,
+            lease_expires_at: fleet_job_lease_until(),
+        };
+        job.summary = format!(
+            "HiveCore is launching {} product(s) in the background.",
+            products.len()
+        );
+    }) {
+        return;
+    }
 
     for slug in products {
         let Some(definition) = product_catalog()
             .iter()
             .find(|product| product.slug == slug)
         else {
+            let finished_at = now_rfc3339();
+            persist_fleet_launch_update(&job_id, |job| {
+                if let Some(step) = job.steps.iter_mut().find(|step| step.slug == slug) {
+                    step.lifecycle = FleetLaunchStepState::Failed {
+                        finished_at,
+                        reason: "product_missing_from_registry".into(),
+                    };
+                    step.message = "The product disappeared from the canonical registry.".into();
+                }
+            });
             continue;
         };
         let start_at = now_rfc3339();
-        update_fleet_launch_job(&state, |job| {
-            if job.id == job_id {
-                if let Some(step) = job.steps.iter_mut().find(|step| step.slug == slug) {
-                    step.status = "running".into();
-                    step.started_at = start_at.clone();
-                    step.message = format!(
-                        "HiveCore handed {} to patchhive-launcher.",
-                        definition.title
-                    );
-                }
+        if !persist_fleet_launch_update(&job_id, |job| {
+            if let Some(step) = job.steps.iter_mut().find(|step| step.slug == slug) {
+                step.lifecycle = FleetLaunchStepState::Running {
+                    phase: FleetLaunchPhase::Launch,
+                    started_at: start_at.clone(),
+                };
+                step.message = format!(
+                    "HiveCore handed {} to patchhive-launcher.",
+                    definition.title
+                );
             }
-        })
-        .await;
+        }) {
+            return;
+        }
 
         let launcher_result =
             run_launcher_product_action(&state, &slug, "start", Some(&secret)).await;
         match launcher_result {
             Ok(response) => {
                 let mut job_actions = response.actions.clone();
-                update_fleet_launch_job(&state, |job| {
-                    if job.id == job_id {
-                        job.actions.extend(response.actions.clone());
-                        if !job.started_products.iter().any(|item| item == &slug) {
-                            job.started_products.push(slug.clone());
-                        }
-                        if let Some(step) = job.steps.iter_mut().find(|step| step.slug == slug) {
-                            step.phase = "health".into();
-                            step.message =
-                                "Launcher start returned; HiveCore is waiting for /health.".into();
-                        }
+                if !persist_fleet_launch_update(&job_id, |job| {
+                    job.actions.extend(response.actions.clone());
+                    if !job.started_products.iter().any(|item| item == &slug) {
+                        job.started_products.push(slug.clone());
                     }
-                })
-                .await;
+                    if let Some(step) = job.steps.iter_mut().find(|step| step.slug == slug) {
+                        step.lifecycle = FleetLaunchStepState::Running {
+                            phase: FleetLaunchPhase::Health,
+                            started_at: start_at.clone(),
+                        };
+                        step.message =
+                            "Launcher start returned; HiveCore is waiting for /health.".into();
+                    }
+                }) {
+                    return;
+                }
 
                 let (health_ok, health_message) = wait_for_product_slug(&state, &slug).await;
                 job_actions.push(health_message);
 
+                if !persist_fleet_launch_update(&job_id, |job| {
+                    if let Some(step) = job.steps.iter_mut().find(|step| step.slug == slug) {
+                        step.lifecycle = FleetLaunchStepState::Running {
+                            phase: FleetLaunchPhase::Pair,
+                            started_at: start_at.clone(),
+                        };
+                        step.message =
+                            "Health observation finished; HiveCore is reviewing pairing.".into();
+                    }
+                }) {
+                    return;
+                }
                 let mut pair_actions = Vec::new();
                 auto_pair_products(&state, &secret, &[slug.as_str()], &mut pair_actions).await;
                 let pair_note = pair_actions
@@ -800,27 +811,30 @@ async fn run_fleet_launch_job(
                     .cloned()
                     .unwrap_or_else(|| "No pairing note recorded.".into());
 
-                update_fleet_launch_job(&state, |job| {
-                    if job.id == job_id {
-                        job.actions.extend(job_actions.clone());
-                        job.actions.extend(pair_actions.clone());
-                        if let Some(step) = job.steps.iter_mut().find(|step| step.slug == slug) {
-                            step.phase = "pair".into();
-                            step.status = if health_ok {
-                                "ready".into()
-                            } else {
-                                "attention".into()
-                            };
-                            step.message = if health_ok {
-                                format!("Healthy and reviewed for pairing. {pair_note}")
-                            } else {
-                                format!("Launcher started the container, but health timed out. {pair_note}")
-                            };
-                            step.finished_at = now_rfc3339();
-                        }
+                if !persist_fleet_launch_update(&job_id, |job| {
+                    job.actions.extend(job_actions.clone());
+                    job.actions.extend(pair_actions.clone());
+                    if let Some(step) = job.steps.iter_mut().find(|step| step.slug == slug) {
+                        let finished_at = now_rfc3339();
+                        step.lifecycle = if health_ok {
+                            FleetLaunchStepState::Ready { finished_at }
+                        } else {
+                            FleetLaunchStepState::Attention {
+                                finished_at,
+                                reason: "health_timeout".into(),
+                            }
+                        };
+                        step.message = if health_ok {
+                            format!("Healthy and reviewed for pairing. {pair_note}")
+                        } else {
+                            format!(
+                                "Launcher started the container, but health timed out. {pair_note}"
+                            )
+                        };
                     }
-                })
-                .await;
+                }) {
+                    return;
+                }
             }
             Err((_status, body)) => {
                 let error = body
@@ -829,53 +843,102 @@ async fn run_fleet_launch_job(
                     .as_ref()
                     .map(|error| error.message.clone())
                     .unwrap_or_else(|| format!("HiveCore could not start {}.", definition.title));
-                update_fleet_launch_job(&state, |job| {
-                    if job.id == job_id {
-                        job.actions.push(error.clone());
-                        if let Some(step) = job.steps.iter_mut().find(|step| step.slug == slug) {
-                            step.status = "failed".into();
-                            step.message = error.clone();
-                            step.finished_at = now_rfc3339();
-                        }
+                if !persist_fleet_launch_update(&job_id, |job| {
+                    job.actions.push(error.clone());
+                    if let Some(step) = job.steps.iter_mut().find(|step| step.slug == slug) {
+                        step.lifecycle = FleetLaunchStepState::Failed {
+                            finished_at: now_rfc3339(),
+                            reason: "launcher_rejected_start".into(),
+                        };
+                        step.message = error.clone();
                     }
-                })
-                .await;
+                }) {
+                    return;
+                }
             }
         }
     }
 
-    update_fleet_launch_job(&state, |job| {
-        if job.id != job_id {
-            return;
-        }
-        let mut ready = 0usize;
-        let mut attention = 0usize;
-        let mut failed = 0usize;
+    persist_fleet_launch_update(&job_id, |job| {
+        let mut ready = 0_u32;
+        let mut attention = 0_u32;
+        let mut failed = 0_u32;
+        let mut skipped = 0_u32;
         for step in &job.steps {
-            match step.status.as_str() {
-                "ready" => ready += 1,
-                "attention" => attention += 1,
-                "failed" => failed += 1,
+            match &step.lifecycle {
+                FleetLaunchStepState::Ready { .. } => ready += 1,
+                FleetLaunchStepState::Attention { .. } => attention += 1,
+                FleetLaunchStepState::Failed { .. } => failed += 1,
+                FleetLaunchStepState::Skipped { .. } | FleetLaunchStepState::Blocked { .. } => {
+                    skipped += 1
+                }
                 _ => {}
             }
         }
-        job.status = if failed == 0 && attention == 0 {
-            "ready".into()
-        } else if ready == 0 && failed > 0 {
-            "failed".into()
+        let finished_at = now_rfc3339();
+        job.lifecycle = if failed == 0 && attention == 0 {
+            FleetLaunchJobState::Succeeded {
+                finished_at,
+                ready,
+                skipped,
+            }
+        } else if ready == 0 && attention == 0 && failed > 0 {
+            FleetLaunchJobState::Failed {
+                finished_at,
+                failed,
+                skipped,
+            }
         } else {
-            "attention".into()
+            FleetLaunchJobState::NeedsAttention {
+                finished_at,
+                ready,
+                attention,
+                failed,
+                skipped,
+            }
         };
         job.summary = format!(
-            "Fleet launch finished: {ready} ready, {attention} with notes, {failed} failed, {} skipped.",
-            job.steps
-                .iter()
-                .filter(|step| matches!(step.status.as_str(), "skipped" | "blocked"))
-                .count()
+            "Fleet launch finished: {ready} ready, {attention} with notes, {failed} failed, {skipped} skipped."
         );
-        job.finished_at = now_rfc3339();
-    })
-    .await;
+    });
+}
+
+fn persist_fleet_launch_update<F>(job_id: &str, mutator: F) -> bool
+where
+    F: FnOnce(&mut SetupFleetLaunchJob),
+{
+    match db::update_fleet_launch_job(job_id, |job| {
+        mutator(job);
+        if let FleetLaunchJobState::Running {
+            lease_expires_at, ..
+        } = &mut job.lifecycle
+        {
+            *lease_expires_at = fleet_job_lease_until();
+        }
+    }) {
+        Ok(Some(_)) => true,
+        Ok(None) => {
+            tracing::error!(job_id, "durable fleet-launch job disappeared");
+            false
+        }
+        Err(error) => {
+            tracing::error!(job_id, %error, "could not persist fleet-launch progress");
+            false
+        }
+    }
+}
+
+fn fleet_job_lease_until() -> String {
+    (chrono::Utc::now() + chrono::Duration::seconds(fleet_job_lease_seconds() as i64)).to_rfc3339()
+}
+
+fn fleet_job_lease_seconds() -> u64 {
+    std::env::var("HIVE_CORE_FLEET_JOB_LEASE_SECONDS")
+        .ok()
+        .and_then(|value| value.trim().parse::<u64>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(300)
+        .clamp(60, 3_600)
 }
 
 fn launcher_product_running(

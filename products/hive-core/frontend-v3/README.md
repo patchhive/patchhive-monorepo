@@ -55,7 +55,7 @@ remaining architecture work.
 | Conductor ticks | `GET/POST /conductor/ticks` | live bounded, leased, PR-capacity-aware proposal planning (§3.7) |
 | Blast radius | work items + mandates | inputs live; calculated radius not built (§3.8) |
 | Run volume | `suite_events` | ledger does not exist yet |
-| Runbook history | smoke tiers + fleet jobs | backend exists; fleet jobs need durable storage (B6) |
+| Runbook history | smoke tiers + fleet jobs | v3 polls durable typed fleet jobs; smoke history remains live (B6) |
 | Ask the hive | `POST /ask` | model call lives in Rust behind `PATCHHIVE_AI_URL` |
 | Change log | `suite_events` | `product_action_events` should fold into the ledger |
 

@@ -114,10 +114,13 @@ capacity, and releases only the exact reservation whose GitHub PR is positively 
 merged. Missing credentials, partial GitHub failures, malformed URLs, interrupted sweeps, and
 contradictory stored lifecycle evidence remain explicit states and never free capacity.
 
-**B6 — Fleet-launch state is in-memory only.**
-`AppState.latest_fleet_launch: Arc<RwLock<Option<SetupFleetLaunchJob>>>` — one job, no history,
-lost on restart, and `fleet_launch_in_progress` is a per-process guard. Wrong substrate for a
-supervisor.
+**B6 — Fleet-launch state is durable and typed.**
+Fleet plans and every product step are stored in SQLite before host control advances. One
+transactional claim prevents concurrent launches; a renewed lease bounds abandoned work. Job and
+step lifecycles distinguish queued, running phases, successful/no-op/attention/failure terminals,
+blocked work, and unknown evidence. Restarted, expired, malformed, or contradictory active state
+becomes `unknown` and releases its claim instead of disappearing or pretending to finish. The v3
+bootstrap panel reads, polls, and controls this durable state.
 
 **B7 — Smoke tiers encode product knowledge as literals and prose matching.**
 `expected_smoke_action` and `smoke_payload` hardcode per-slug action IDs, literal repositories
@@ -287,16 +290,17 @@ work_items
 The `fingerprint` unique constraint stops twelve products discovering nightly from re-processing
 the same issue forever, and stops PatchHive from re-opening a PR on something a maintainer already
 closed. That second case is reputation, so dedup is treated as safety-critical, not as an
-optimization. This table also replaces `Arc<RwLock<Option<SetupFleetLaunchJob>>>` as the durable
-substrate for long-running supervisor work.
+optimization. Repository work belongs here; broad fleet launches use the separate durable leased
+job substrate from B6 because they have no repository or subject identity to fingerprint.
 
 **Foundation built as of 2026-08-02:** HiveCore persists normalized work proposals behind
 `POST /work-items/proposals`, exposes list/detail reads, and records rediscovery without replacing
 the first plan. The stable fingerprint contains only kind, normalized GitHub repository, and
 subject reference, so a different discovering product still converges on the same row. The only
 creatable lifecycle is `discovered`; unsupported or malformed stored states decode as `unknown`.
-There is deliberately no work-item transition or conductor dispatch route yet. Durable fleet-job
-migration remains part of B6.
+There is deliberately no work-item transition or conductor dispatch route yet. Fleet launches now
+use their own durable leased job substrate from B6 rather than pretending a broad launch is a
+repository work item.
 
 Broad discovery intent is intentionally recorded in conductor-tick history rather than forced into
 `work_items`: before discovery there is no truthful repository or subject identity to fingerprint.
@@ -505,9 +509,9 @@ first-run host bring-up remains an HTTP daemon or becomes documented operator se
 3. **Approvals as objects.** Landed: exact durable subjects, atomic single-use claims, suite-run
    pending states, audit history, and the v3 operator inbox. (B3)
 4. **The conductor.** In progress: mandates, concrete finding receipts, the proposal-only work
-   ledger, fingerprint dedup, durable single-writer ticks, and PR-capacity-aware discovery planning
-   are built. Next are durable job state replacing the in-memory fleet job and the remaining
-   GitHub-rate, AI-spend, sandbox, and owner-politeness admission gates. Keep autonomy at `propose`;
+   ledger, fingerprint dedup, durable single-writer ticks, PR-capacity-aware discovery planning,
+   and durable leased fleet jobs are built. Next are the remaining GitHub-rate, AI-spend, sandbox,
+   and owner-politeness admission gates. Keep autonomy at `propose`;
    no conductor dispatch transition exists yet. (B6)
 5. **Cockpit and consolidation.** Kernel becomes a crate with the three authority implementations;
    outcome feedback and the reputation governor land; `products/hive-core/backend/` retires.

@@ -269,6 +269,7 @@ All errors are wrapped in the `ApiEnvelope` format:
 | `HIVE_CORE_DISPATCH_TIMEOUT_SECS` | `600` | How long HiveCore waits for a dispatched product action. Clamped to 5–3600. Separate from the short polling timeout used for health and status |
 | `HIVE_CORE_SNAPSHOT_INTERVAL_SECONDS` | `30` | Background suite snapshot interval, clamped to 5–300 seconds. Ordinary v3 reads use durable snapshots instead of probing products inline |
 | `HIVE_CORE_PR_RECONCILE_INTERVAL_SECONDS` | `300` | GitHub lifecycle reconciliation interval for committed PR reservations, clamped to 30–3600 seconds |
+| `HIVE_CORE_FLEET_JOB_LEASE_SECONDS` | `300` | Durable fleet-launch lease renewed before each host-control phase, clamped to 60–3600 seconds |
 | `PATCHHIVE_OPT_OUT_FEED_URL` | — | Canonical Registry repository-owner opt-out lifecycle feed. An absent URL is an explicit `not_configured` state |
 | `PATCHHIVE_OPT_OUT_SYNC_KEY` | — | Machine secret required to read the configured opt-out feed |
 | `HIVE_CORE_OPT_OUT_SYNC_INTERVAL_SECONDS` | `300` | Background opt-out synchronization interval, clamped to 30–3600 seconds |
@@ -373,7 +374,7 @@ products/hive-core/
 │       │   └── smoke.rs             ── Smoke test tiers for first-stack verification
 │       ├── secrets.rs               ── TokenProtector for at-rest encryption/decryption
 │       ├── startup.rs               ── Config validation checks, check caching, level summarization
-│       └── state.rs                 ── AppState (reqwest Client, fleet launch state),
+│       └── state.rs                 ── AppState (short-poll and long-dispatch HTTP clients),
 │                                      Canonical registry manifest snapshot (12 products)
 ├── frontend/                        ── HiveCore UI (React/Svelte, @patchhivehq/ui)
 ├── frontend-v2/                     ── UI v2 prototype

@@ -828,40 +828,185 @@ pub struct SetupProductStatus {
     pub credentials_known: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FleetLaunchMode {
+    StartReady,
+    StartAll,
+    Unknown,
+}
+
+impl FleetLaunchMode {
+    pub const fn as_str(&self) -> &str {
+        match self {
+            Self::StartReady => "start_ready",
+            Self::StartAll => "start_all",
+            Self::Unknown => "unknown",
+        }
+    }
+
+    pub fn from_storage(raw_mode: &str) -> Self {
+        match raw_mode {
+            "start_ready" => Self::StartReady,
+            "start_all" => Self::StartAll,
+            _ => Self::Unknown,
+        }
+    }
+
+    pub const fn label(&self) -> &str {
+        match self {
+            Self::StartReady => "ready fleet",
+            Self::StartAll => "full fleet",
+            Self::Unknown => "unknown fleet",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FleetLaunchPhase {
+    Observe,
+    Preflight,
+    Launch,
+    Health,
+    Pair,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum FleetLaunchStepState {
+    Queued {
+        phase: FleetLaunchPhase,
+    },
+    Running {
+        phase: FleetLaunchPhase,
+        started_at: String,
+    },
+    Ready {
+        finished_at: String,
+    },
+    Attention {
+        finished_at: String,
+        reason: String,
+    },
+    Failed {
+        finished_at: String,
+        reason: String,
+    },
+    Skipped {
+        finished_at: String,
+        reason: String,
+    },
+    Blocked {
+        finished_at: String,
+        reason: String,
+    },
+    Unknown {
+        raw_state: String,
+        raw_evidence: serde_json::Value,
+    },
+}
+
+impl FleetLaunchStepState {
+    pub const fn kind(&self) -> &str {
+        match self {
+            Self::Queued { .. } => "queued",
+            Self::Running { .. } => "running",
+            Self::Ready { .. } => "ready",
+            Self::Attention { .. } => "attention",
+            Self::Failed { .. } => "failed",
+            Self::Skipped { .. } => "skipped",
+            Self::Blocked { .. } => "blocked",
+            Self::Unknown { .. } => "unknown",
+        }
+    }
+
+    pub fn is_active(&self) -> bool {
+        matches!(self, Self::Queued { .. } | Self::Running { .. })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SetupFleetLaunchStep {
     pub slug: String,
     pub title: String,
-    #[serde(default)]
-    pub phase: String,
-    pub status: String,
+    pub lifecycle: FleetLaunchStepState,
     pub message: String,
-    #[serde(default)]
-    pub started_at: String,
-    #[serde(default)]
-    pub finished_at: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum FleetLaunchJobState {
+    Queued {
+        queued_at: String,
+        lease_expires_at: String,
+    },
+    Running {
+        started_at: String,
+        lease_expires_at: String,
+    },
+    Succeeded {
+        finished_at: String,
+        ready: u32,
+        skipped: u32,
+    },
+    NeedsAttention {
+        finished_at: String,
+        ready: u32,
+        attention: u32,
+        failed: u32,
+        skipped: u32,
+    },
+    Failed {
+        finished_at: String,
+        failed: u32,
+        skipped: u32,
+    },
+    Blocked {
+        finished_at: String,
+        blocked: u32,
+    },
+    NoOp {
+        finished_at: String,
+        skipped: u32,
+    },
+    Unknown {
+        raw_state: String,
+        raw_evidence: serde_json::Value,
+    },
+}
+
+impl FleetLaunchJobState {
+    pub const fn kind(&self) -> &str {
+        match self {
+            Self::Queued { .. } => "queued",
+            Self::Running { .. } => "running",
+            Self::Succeeded { .. } => "succeeded",
+            Self::NeedsAttention { .. } => "needs_attention",
+            Self::Failed { .. } => "failed",
+            Self::Blocked { .. } => "blocked",
+            Self::NoOp { .. } => "no_op",
+            Self::Unknown { .. } => "unknown",
+        }
+    }
+
+    pub fn is_active(&self) -> bool {
+        matches!(self, Self::Queued { .. } | Self::Running { .. })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SetupFleetLaunchJob {
     pub id: String,
-    #[serde(default)]
-    pub mode: String,
-    pub status: String,
+    pub mode: FleetLaunchMode,
+    pub lifecycle: FleetLaunchJobState,
     pub summary: String,
-    pub started_at: String,
+    pub created_at: String,
     pub updated_at: String,
-    #[serde(default)]
-    pub finished_at: String,
-    #[serde(default)]
     pub requested_products: Vec<String>,
-    #[serde(default)]
     pub started_products: Vec<String>,
-    #[serde(default)]
     pub skipped_products: Vec<String>,
-    #[serde(default)]
     pub actions: Vec<String>,
-    #[serde(default)]
     pub steps: Vec<SetupFleetLaunchStep>,
 }
 
@@ -877,7 +1022,8 @@ pub struct FirstStackSetupResponse {
     pub requirements_error: String,
     pub suite_bootstrap_configured: bool,
     pub latest_smoke: Option<FirstStackSmokeRun>,
-    pub latest_fleet_launch: Option<SetupFleetLaunchJob>,
+    pub latest_fleet_launch: Observation<SetupFleetLaunchJob>,
+    pub fleet_launch_history: Observation<Vec<SetupFleetLaunchJob>>,
     pub actions: Vec<String>,
     pub products: Vec<SetupProductStatus>,
 }

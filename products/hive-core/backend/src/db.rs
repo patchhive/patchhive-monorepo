@@ -16,12 +16,13 @@ use crate::conductor::{
 };
 use crate::models::{
     ApprovalConsumptionOutcome, ApprovalEvent, ApprovalExpirableState, ApprovalRecord,
-    ApprovalState, ApprovalSubject, FirstStackSmokeRun, PrBudgetLimitingLayer, PrBudgetReservation,
-    PrBudgetUsage, PrReconciliationState, PrReservationDecision, PrReservationDenial,
-    PrReservationExpiration, PrReservationState, ProbeSample, ProductActionEvent, ProductOverride,
+    ApprovalState, ApprovalSubject, FirstStackSmokeRun, FleetLaunchJobState, FleetLaunchMode,
+    FleetLaunchStepState, PrBudgetLimitingLayer, PrBudgetReservation, PrBudgetUsage,
+    PrReconciliationState, PrReservationDecision, PrReservationDenial, PrReservationExpiration,
+    PrReservationState, ProbeSample, ProductActionEvent, ProductOverride,
     ProductRunsSnapshotResponse, ProductRuntimeItem, PublicOptOutFeed, PublicOptOutLifecycle,
-    PublicOptOutSyncState, RepositoryPolicy, RunbookRun, SuiteSettings, SuiteSnapshotCycle,
-    SuiteSnapshotCycleState,
+    PublicOptOutSyncState, RepositoryPolicy, RunbookRun, SetupFleetLaunchJob, SuiteSettings,
+    SuiteSnapshotCycle, SuiteSnapshotCycleState,
 };
 
 static DB_POOL: Lazy<SqlitePool> = Lazy::new(|| {
@@ -65,6 +66,248 @@ pub fn init_db() -> Result<()> {
     recover_interrupted_snapshot_cycles(&conn)?;
     recover_interrupted_opt_out_sync(&conn)?;
     recover_interrupted_pr_reconciliation(&conn)?;
+    recover_interrupted_fleet_launches(&conn)?;
+    Ok(())
+}
+
+#[derive(Debug)]
+pub enum FleetLaunchInsertOutcome {
+    Inserted,
+    Active(Box<SetupFleetLaunchJob>),
+}
+
+pub fn insert_fleet_launch_job(
+    job: &SetupFleetLaunchJob,
+) -> rusqlite::Result<FleetLaunchInsertOutcome> {
+    let mut conn = connect()?;
+    insert_fleet_launch_job_with_connection(&mut conn, job)
+}
+
+fn insert_fleet_launch_job_with_connection(
+    conn: &mut Connection,
+    job: &SetupFleetLaunchJob,
+) -> rusqlite::Result<FleetLaunchInsertOutcome> {
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    recover_expired_fleet_launches(&tx)?;
+    let active = tx
+        .query_row(
+            "SELECT id, mode_kind, state_kind, job_json, created_at, updated_at
+             FROM hive_core_fleet_launch_jobs
+             WHERE state_kind IN ('queued', 'running')
+             ORDER BY created_at DESC LIMIT 1",
+            [],
+            decode_fleet_launch_job,
+        )
+        .optional()?;
+    if let Some(active) = active {
+        return Ok(FleetLaunchInsertOutcome::Active(Box::new(active)));
+    }
+    tx.execute(
+        "INSERT INTO hive_core_fleet_launch_jobs
+         (id, mode_kind, state_kind, job_json, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![
+            job.id,
+            job.mode.as_str(),
+            job.lifecycle.kind(),
+            json_string(job)?,
+            job.created_at,
+            job.updated_at
+        ],
+    )?;
+    tx.commit()?;
+    Ok(FleetLaunchInsertOutcome::Inserted)
+}
+
+pub fn update_fleet_launch_job<F>(
+    id: &str,
+    mutator: F,
+) -> rusqlite::Result<Option<SetupFleetLaunchJob>>
+where
+    F: FnOnce(&mut SetupFleetLaunchJob),
+{
+    let mut conn = connect()?;
+    update_fleet_launch_job_with_connection(&mut conn, id, mutator)
+}
+
+fn update_fleet_launch_job_with_connection<F>(
+    conn: &mut Connection,
+    id: &str,
+    mutator: F,
+) -> rusqlite::Result<Option<SetupFleetLaunchJob>>
+where
+    F: FnOnce(&mut SetupFleetLaunchJob),
+{
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let Some(mut job) = load_fleet_launch_job(&tx, id)? else {
+        return Ok(None);
+    };
+    mutator(&mut job);
+    job.updated_at = crate::models::now_rfc3339();
+    tx.execute(
+        "UPDATE hive_core_fleet_launch_jobs
+         SET mode_kind=?2, state_kind=?3, job_json=?4, updated_at=?5 WHERE id=?1",
+        params![
+            job.id,
+            job.mode.as_str(),
+            job.lifecycle.kind(),
+            json_string(&job)?,
+            job.updated_at
+        ],
+    )?;
+    tx.commit()?;
+    Ok(Some(job))
+}
+
+pub fn fleet_launch_jobs(limit: u32) -> rusqlite::Result<Vec<SetupFleetLaunchJob>> {
+    let conn = connect()?;
+    let mut statement = conn.prepare(
+        "SELECT id, mode_kind, state_kind, job_json, created_at, updated_at
+         FROM hive_core_fleet_launch_jobs ORDER BY created_at DESC LIMIT ?1",
+    )?;
+    let jobs = statement
+        .query_map([limit.clamp(1, 100)], decode_fleet_launch_job)?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(jobs)
+}
+
+fn load_fleet_launch_job(
+    conn: &Connection,
+    id: &str,
+) -> rusqlite::Result<Option<SetupFleetLaunchJob>> {
+    conn.query_row(
+        "SELECT id, mode_kind, state_kind, job_json, created_at, updated_at
+         FROM hive_core_fleet_launch_jobs WHERE id=?1",
+        [id],
+        decode_fleet_launch_job,
+    )
+    .optional()
+}
+
+fn decode_fleet_launch_job(row: &rusqlite::Row<'_>) -> rusqlite::Result<SetupFleetLaunchJob> {
+    let id: String = row.get(0)?;
+    let raw_mode: String = row.get(1)?;
+    let raw_state: String = row.get(2)?;
+    let encoded: String = row.get(3)?;
+    let created_at: String = row.get(4)?;
+    let updated_at: String = row.get(5)?;
+    let evidence = raw_json(encoded);
+    match serde_json::from_value::<SetupFleetLaunchJob>(evidence.clone()) {
+        Ok(mut job) => {
+            if job.mode.as_str() != raw_mode {
+                job.mode = FleetLaunchMode::Unknown;
+            }
+            if job.lifecycle.kind() != raw_state {
+                job.lifecycle = FleetLaunchJobState::Unknown {
+                    raw_state,
+                    raw_evidence: evidence,
+                };
+            }
+            Ok(job)
+        }
+        Err(_) => Ok(SetupFleetLaunchJob {
+            id,
+            mode: FleetLaunchMode::from_storage(&raw_mode),
+            lifecycle: FleetLaunchJobState::Unknown {
+                raw_state,
+                raw_evidence: evidence,
+            },
+            summary: "Stored fleet-launch evidence could not be decoded.".into(),
+            created_at,
+            updated_at,
+            requested_products: Vec::new(),
+            started_products: Vec::new(),
+            skipped_products: Vec::new(),
+            actions: Vec::new(),
+            steps: Vec::new(),
+        }),
+    }
+}
+
+fn recover_interrupted_fleet_launches(conn: &Connection) -> rusqlite::Result<()> {
+    let mut statement = conn.prepare(
+        "SELECT id, mode_kind, state_kind, job_json, created_at, updated_at
+         FROM hive_core_fleet_launch_jobs WHERE state_kind IN ('queued', 'running')",
+    )?;
+    let jobs = statement
+        .query_map([], decode_fleet_launch_job)?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    drop(statement);
+    for job in jobs {
+        mark_fleet_launch_unknown(
+            conn,
+            job,
+            "HiveCore restarted before this fleet launch settled.",
+        )?;
+    }
+    Ok(())
+}
+
+fn recover_expired_fleet_launches(conn: &Connection) -> rusqlite::Result<()> {
+    let mut statement = conn.prepare(
+        "SELECT id, mode_kind, state_kind, job_json, created_at, updated_at
+         FROM hive_core_fleet_launch_jobs WHERE state_kind IN ('queued', 'running')",
+    )?;
+    let jobs = statement
+        .query_map([], decode_fleet_launch_job)?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    drop(statement);
+    let now = chrono::Utc::now();
+    for job in jobs {
+        let expired = match &job.lifecycle {
+            FleetLaunchJobState::Running {
+                lease_expires_at, ..
+            } => chrono::DateTime::parse_from_rfc3339(lease_expires_at)
+                .map(|value| value.with_timezone(&chrono::Utc) <= now)
+                .unwrap_or(true),
+            FleetLaunchJobState::Queued {
+                lease_expires_at, ..
+            } => chrono::DateTime::parse_from_rfc3339(lease_expires_at)
+                .map(|value| value.with_timezone(&chrono::Utc) <= now)
+                .unwrap_or(true),
+            _ => false,
+        };
+        if expired {
+            mark_fleet_launch_unknown(
+                conn,
+                job,
+                "The fleet-launch lease expired before the job settled.",
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn mark_fleet_launch_unknown(
+    conn: &Connection,
+    mut job: SetupFleetLaunchJob,
+    reason: &str,
+) -> rusqlite::Result<()> {
+    let raw_state = job.lifecycle.kind().to_string();
+    let raw_evidence = serde_json::to_value(&job.lifecycle).unwrap_or(serde_json::Value::Null);
+    job.lifecycle = FleetLaunchJobState::Unknown {
+        raw_state,
+        raw_evidence,
+    };
+    for step in &mut job.steps {
+        if step.lifecycle.is_active() {
+            let raw_state = step.lifecycle.kind().to_string();
+            let raw_evidence =
+                serde_json::to_value(&step.lifecycle).unwrap_or(serde_json::Value::Null);
+            step.lifecycle = FleetLaunchStepState::Unknown {
+                raw_state,
+                raw_evidence,
+            };
+            step.message = reason.into();
+        }
+    }
+    job.summary = reason.into();
+    job.updated_at = crate::models::now_rfc3339();
+    conn.execute(
+        "UPDATE hive_core_fleet_launch_jobs
+         SET state_kind='unknown', job_json=?2, updated_at=?3 WHERE id=?1",
+        params![job.id, json_string(&job)?, job.updated_at],
+    )?;
     Ok(())
 }
 
@@ -2010,6 +2253,18 @@ fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
           steps_json TEXT NOT NULL
         );
 
+        CREATE TABLE IF NOT EXISTS hive_core_fleet_launch_jobs (
+          id TEXT PRIMARY KEY,
+          mode_kind TEXT NOT NULL,
+          state_kind TEXT NOT NULL,
+          job_json TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_hive_core_fleet_launch_jobs_created
+        ON hive_core_fleet_launch_jobs(created_at DESC);
+
         -- Namespaced: patchhive-backend already owns a suite-level `suite_runs`
         -- table with a different schema, and the suite database is shared. New
         -- product tables must be product-namespaced (CLAUDE.md § SQLite).
@@ -3762,15 +4017,18 @@ mod tests {
     use super::{
         claim_approval_with_connection, collapse_policies, consume_approval_with_connection,
         create_mandate_with_connection, expire_approvals, grant_approval_with_connection,
-        ingest_findings_with_connection, init_schema, insert_approval, json_string,
-        load_action_event, load_action_events, load_approval, load_latest_first_stack_smoke_run,
-        load_latest_suite_snapshot_cycle, load_mandate, load_pr_reservation,
-        load_product_overrides, load_service_token_storage_stats, load_suite_settings,
-        load_work_item_by_id, propose_work_with_connection, record_approval_event,
+        ingest_findings_with_connection, init_schema, insert_approval,
+        insert_fleet_launch_job_with_connection, json_string, load_action_event,
+        load_action_events, load_approval, load_fleet_launch_job,
+        load_latest_first_stack_smoke_run, load_latest_suite_snapshot_cycle, load_mandate,
+        load_pr_reservation, load_product_overrides, load_service_token_storage_stats,
+        load_suite_settings, load_work_item_by_id, propose_work_with_connection,
+        record_approval_event, recover_interrupted_fleet_launches,
         recover_interrupted_snapshot_cycles, release_reconciled_pr_reservation_with_connection,
         replace_overrides, replace_repository_policies_with_connection,
         reserve_pr_slot_with_connection, run_conductor_tick_with_connection,
-        update_mandate_with_connection, write_suite_settings, ServiceTokenStorageStats,
+        update_fleet_launch_job_with_connection, update_mandate_with_connection,
+        write_suite_settings, FleetLaunchInsertOutcome, ServiceTokenStorageStats,
     };
     use crate::conductor::{
         CapacityLimitingLayer, ConductorDecision, ConductorTickLifecycle, ConductorTickTrigger,
@@ -3780,9 +4038,10 @@ mod tests {
         WorkProposal,
     };
     use crate::models::{
-        now_rfc3339, FirstStackSmokeRun, FirstStackSmokeStep, PrBudgetReservation,
-        PrReservationDecision, PrReservationState, ProductActionEvent, ProductOverride,
-        RepositoryPolicy, SuiteSettings, SuiteSnapshotCycleState,
+        now_rfc3339, FirstStackSmokeRun, FirstStackSmokeStep, FleetLaunchJobState, FleetLaunchMode,
+        FleetLaunchPhase, FleetLaunchStepState, PrBudgetReservation, PrReservationDecision,
+        PrReservationState, ProductActionEvent, ProductOverride, RepositoryPolicy,
+        SetupFleetLaunchJob, SetupFleetLaunchStep, SuiteSettings, SuiteSnapshotCycleState,
     };
     use patchhive_product_core::secrets::TokenProtector;
     use patchhive_product_core::{
@@ -4796,6 +5055,135 @@ mod tests {
             .expect("event lookup should work")
             .expect("event should exist");
         assert_eq!(loaded.action_id, "scan");
+    }
+
+    #[test]
+    fn fleet_launch_claims_are_durable_single_writer_and_recover_on_restart() {
+        let mut conn = Connection::open_in_memory().expect("in-memory db should open");
+        init_schema(&conn).expect("schema should initialize");
+        let job = sample_fleet_launch_job("fleet_1");
+
+        assert!(matches!(
+            insert_fleet_launch_job_with_connection(&mut conn, &job)
+                .expect("first launch should insert"),
+            FleetLaunchInsertOutcome::Inserted
+        ));
+        assert!(matches!(
+            insert_fleet_launch_job_with_connection(
+                &mut conn,
+                &sample_fleet_launch_job("fleet_2")
+            )
+            .expect("second launch should resolve"),
+            FleetLaunchInsertOutcome::Active(active) if active.id == "fleet_1"
+        ));
+
+        update_fleet_launch_job_with_connection(&mut conn, "fleet_1", |stored| {
+            stored.lifecycle = FleetLaunchJobState::Running {
+                started_at: "2026-08-02T12:00:01Z".into(),
+                lease_expires_at: "2099-08-02T12:05:01Z".into(),
+            };
+            stored.steps[0].lifecycle = FleetLaunchStepState::Running {
+                phase: FleetLaunchPhase::Launch,
+                started_at: "2026-08-02T12:00:01Z".into(),
+            };
+        })
+        .expect("running transition should persist");
+
+        recover_interrupted_fleet_launches(&conn).expect("restart should recover active launch");
+        let recovered = load_fleet_launch_job(&conn, "fleet_1")
+            .expect("job should read")
+            .expect("job should exist");
+        assert!(matches!(
+            recovered.lifecycle,
+            FleetLaunchJobState::Unknown { ref raw_state, .. } if raw_state == "running"
+        ));
+        assert!(matches!(
+            recovered.steps[0].lifecycle,
+            FleetLaunchStepState::Unknown { ref raw_state, .. } if raw_state == "running"
+        ));
+        assert!(matches!(
+            insert_fleet_launch_job_with_connection(&mut conn, &sample_fleet_launch_job("fleet_2"))
+                .expect("recovered launch should not retain the claim"),
+            FleetLaunchInsertOutcome::Inserted
+        ));
+    }
+
+    #[test]
+    fn contradictory_fleet_launch_storage_decodes_as_unknown() {
+        let mut conn = Connection::open_in_memory().expect("in-memory db should open");
+        init_schema(&conn).expect("schema should initialize");
+        let job = sample_fleet_launch_job("fleet_bad");
+        insert_fleet_launch_job_with_connection(&mut conn, &job).expect("job should insert");
+        conn.execute(
+            "UPDATE hive_core_fleet_launch_jobs SET state_kind='succeeded' WHERE id=?1",
+            [&job.id],
+        )
+        .expect("fixture should corrupt state kind");
+
+        let decoded = load_fleet_launch_job(&conn, &job.id)
+            .expect("job should read")
+            .expect("job should exist");
+        assert!(matches!(
+            decoded.lifecycle,
+            FleetLaunchJobState::Unknown { ref raw_state, .. } if raw_state == "succeeded"
+        ));
+    }
+
+    #[test]
+    fn expired_fleet_launch_lease_releases_the_claim_as_unknown() {
+        let mut conn = Connection::open_in_memory().expect("in-memory db should open");
+        init_schema(&conn).expect("schema should initialize");
+        let job = sample_fleet_launch_job("fleet_expired");
+        insert_fleet_launch_job_with_connection(&mut conn, &job).expect("job should insert");
+        update_fleet_launch_job_with_connection(&mut conn, &job.id, |stored| {
+            stored.lifecycle = FleetLaunchJobState::Running {
+                started_at: "2000-01-01T00:00:00Z".into(),
+                lease_expires_at: "2000-01-01T00:05:00Z".into(),
+            };
+        })
+        .expect("fixture should expire");
+
+        assert!(matches!(
+            insert_fleet_launch_job_with_connection(
+                &mut conn,
+                &sample_fleet_launch_job("fleet_after_expiry")
+            )
+            .expect("expired lease should be reclaimed"),
+            FleetLaunchInsertOutcome::Inserted
+        ));
+        assert!(matches!(
+            load_fleet_launch_job(&conn, &job.id)
+                .expect("expired job should read")
+                .expect("expired job should exist")
+                .lifecycle,
+            FleetLaunchJobState::Unknown { .. }
+        ));
+    }
+
+    fn sample_fleet_launch_job(id: &str) -> SetupFleetLaunchJob {
+        SetupFleetLaunchJob {
+            id: id.into(),
+            mode: FleetLaunchMode::StartReady,
+            lifecycle: FleetLaunchJobState::Queued {
+                queued_at: "2099-08-02T12:00:00Z".into(),
+                lease_expires_at: "2099-08-02T12:05:00Z".into(),
+            },
+            summary: "queued".into(),
+            created_at: "2099-08-02T12:00:00Z".into(),
+            updated_at: "2099-08-02T12:00:00Z".into(),
+            requested_products: vec!["signal-hive".into()],
+            started_products: Vec::new(),
+            skipped_products: Vec::new(),
+            actions: Vec::new(),
+            steps: vec![SetupFleetLaunchStep {
+                slug: "signal-hive".into(),
+                title: "SignalHive".into(),
+                lifecycle: FleetLaunchStepState::Queued {
+                    phase: FleetLaunchPhase::Launch,
+                },
+                message: "queued".into(),
+            }],
+        }
     }
 
     #[test]

@@ -79,6 +79,53 @@ export interface SmokeRun {
   steps: SmokeStep[];
 }
 
+export type Observation<T> =
+  | { state: "observed"; value: T }
+  | { state: "failed" | "not_observed" | "not_applicable"; reason: string };
+
+export type FleetLaunchJobState =
+  | { state: "queued"; queued_at: string; lease_expires_at: string }
+  | { state: "running"; started_at: string; lease_expires_at: string }
+  | { state: "succeeded"; finished_at: string; ready: number; skipped: number }
+  | {
+      state: "needs_attention";
+      finished_at: string;
+      ready: number;
+      attention: number;
+      failed: number;
+      skipped: number;
+    }
+  | { state: "failed"; finished_at: string; failed: number; skipped: number }
+  | { state: "blocked"; finished_at: string; blocked: number }
+  | { state: "no_op"; finished_at: string; skipped: number }
+  | { state: "unknown"; raw_state: string; raw_evidence: unknown };
+
+export type FleetLaunchStepState =
+  | { state: "queued"; phase: string }
+  | { state: "running"; phase: string; started_at: string }
+  | { state: "ready"; finished_at: string }
+  | { state: "attention" | "failed" | "skipped" | "blocked"; finished_at: string; reason: string }
+  | { state: "unknown"; raw_state: string; raw_evidence: unknown };
+
+export interface FleetLaunchJob {
+  id: string;
+  mode: "start_ready" | "start_all" | "unknown";
+  lifecycle: FleetLaunchJobState;
+  summary: string;
+  created_at: string;
+  updated_at: string;
+  requested_products: string[];
+  started_products: string[];
+  skipped_products: string[];
+  actions: string[];
+  steps: Array<{
+    slug: string;
+    title: string;
+    lifecycle: FleetLaunchStepState;
+    message: string;
+  }>;
+}
+
 export interface BootstrapState {
   stack_id: string;
   launcher: LauncherStatus;
@@ -86,6 +133,8 @@ export interface BootstrapState {
   requirements_error: string;
   suite_bootstrap_configured: boolean;
   latest_smoke: SmokeRun | null;
+  latest_fleet_launch: Observation<FleetLaunchJob>;
+  fleet_launch_history: Observation<FleetLaunchJob[]>;
   actions: string[];
   products: SetupProduct[];
 }
@@ -153,6 +202,14 @@ export function startFirstStack(): Promise<{ data: BootstrapState | null; messag
   return post(`/setup/first-stack/start`);
 }
 
+export function startReadyFleet(): Promise<{ data: BootstrapState | null; message: string }> {
+  return post(`/setup/fleet/start-ready`);
+}
+
+export function startAllFleet(): Promise<{ data: BootstrapState | null; message: string }> {
+  return post(`/setup/fleet/start-all`);
+}
+
 export function runSmoke(tier: string): Promise<{ data: BootstrapState | null; message: string }> {
   return post(`/setup/smoke/${tier}`);
 }
@@ -171,5 +228,13 @@ export const STATUS_TONE: Record<string, string> = {
   fail: "text-[var(--crit)] border-[var(--crit)]/40",
   error: "text-[var(--crit)] border-[var(--crit)]/40",
   skipped: "text-muted-foreground border-border",
+  queued: "text-[var(--warn)] border-[var(--warn)]/40",
+  running: "text-[var(--honey)] border-[var(--honey)]/40",
+  ready: "text-[var(--ok)] border-[var(--ok)]/40",
+  attention: "text-[var(--warn)] border-[var(--warn)]/40",
+  blocked: "text-[var(--crit)] border-[var(--crit)]/40",
+  succeeded: "text-[var(--ok)] border-[var(--ok)]/40",
+  needs_attention: "text-[var(--warn)] border-[var(--warn)]/40",
+  no_op: "text-muted-foreground border-border",
   unknown: "text-muted-foreground border-border",
 };

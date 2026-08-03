@@ -523,5 +523,5 @@ standalone lockfile before the first export.
   canonical SQLite mandates, and a bounded background/operator proposal loop protected
   by a durable single-writer lease. It sizes SignalHive discovery plans against exact
   suite/RepoReaper PR headroom and mandate backlog, but cannot advance or dispatch them.
-  Durable suite snapshots are live; non-PR resource gates and durable fleet jobs remain future
-  architecture work.
+  Durable suite snapshots and leased fleet-launch jobs are live; non-PR resource gates remain
+  future architecture work.
