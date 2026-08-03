@@ -7,7 +7,7 @@
 //
 // Because no pull request is created, no PR budget reservation applies. Every
 // other gate does: watch mode, ownership of the pull request, a per-PR cap,
-// repository policy, review confidence, and recorded run evidence.
+// repository policy, review confidence, TrustGate, and recorded run evidence.
 
 use patchhive_github_pr::GitHubPrClient;
 use patchhive_product_core::hivecore_policy::{
@@ -48,6 +48,7 @@ pub enum FollowUpRefusal {
     NoSmithAgent,
     PullRequestNotDraft,
     SmithRejected,
+    TrustGateRejected,
     ConfidenceBelowFloor,
 }
 
@@ -62,6 +63,7 @@ impl FollowUpRefusal {
             Self::NoSmithAgent => "no_smith_agent",
             Self::PullRequestNotDraft => "pull_request_not_draft",
             Self::SmithRejected => "smith_rejected",
+            Self::TrustGateRejected => "trust_gate_rejected",
             Self::ConfidenceBelowFloor => "confidence_below_floor",
         }
     }
@@ -87,6 +89,9 @@ impl FollowUpRefusal {
                 "Automated follow-up commits are limited to draft pull requests.".into()
             }
             Self::SmithRejected => "Smith rejected the corrected patch as unsafe or incomplete.".into(),
+            Self::TrustGateRejected => {
+                "TrustGate did not authorize the corrected patch for publication.".into()
+            }
             Self::ConfidenceBelowFloor => {
                 "The corrected patch did not reach the configured review confidence floor.".into()
             }
@@ -432,6 +437,34 @@ async fn deliver(
         );
         return Ok(());
     }
+
+    let trust_gate_review = patchhive_product_core::trust_gate::require_safe_review(
+        &state.http,
+        &request.repo,
+        &patch,
+        "repo-reaper-follow-up",
+    )
+    .await
+    .map_err(|error| {
+        artifact(
+            run_id,
+            "policy",
+            "follow_up.trust_gate_blocked",
+            "blocked",
+            &format!("TrustGate blocked the follow-up patch: {error:#}"),
+        );
+        FollowUpRefusal::TrustGateRejected
+    })?;
+    artifact(
+        run_id,
+        "policy",
+        "follow_up.trust_gate_safe",
+        "succeeded",
+        &format!(
+            "TrustGate authorized follow-up review {} with risk score {}.",
+            trust_gate_review.id, trust_gate_review.risk_score
+        ),
+    );
 
     let test = run_tests(input.work_dir, input.repository_trusted).await;
     let validated = ValidatedChange::new(

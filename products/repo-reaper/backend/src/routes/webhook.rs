@@ -269,6 +269,10 @@ fn verify_webhook_signature_or_forbid(
     })
 }
 
+fn trusted_comment_author_association(value: Option<&str>) -> bool {
+    matches!(value, Some("OWNER" | "MEMBER" | "COLLABORATOR"))
+}
+
 async fn github_webhook(
     State(state): State<AppState>,
     req: Request<Body>,
@@ -323,6 +327,7 @@ async fn github_webhook(
         let comment = &payload["comment"];
         let bot = std::env::var("BOT_GITHUB_USER").unwrap_or_default();
         let author = comment["user"]["login"].as_str().unwrap_or("");
+        let author_association = comment["author_association"].as_str();
 
         if !issue["pull_request"].is_object() {
             return Ok(Json(
@@ -331,6 +336,12 @@ async fn github_webhook(
         }
         if author == bot {
             return Ok(Json(json!({"triggered":false,"reason":"own_comment"})));
+        }
+        if !trusted_comment_author_association(author_association) {
+            return Ok(Json(json!({
+                "triggered": false,
+                "reason": "commenter_not_authorized",
+            })));
         }
         // Watch mode governs every webhook-triggered write, not just new issues.
         if !state.watch_mode.load(std::sync::atomic::Ordering::SeqCst) {
@@ -645,7 +656,10 @@ async fn execute_saved_schedule(
 
 #[cfg(test)]
 mod tests {
-    use super::{normalize_schedule_payload, verify_webhook_signature_or_forbid};
+    use super::{
+        normalize_schedule_payload, trusted_comment_author_association,
+        verify_webhook_signature_or_forbid,
+    };
     use axum::http::{HeaderMap, StatusCode};
     use patchhive_product_core::contract::TargetSelectionMode;
 
@@ -660,6 +674,17 @@ mod tests {
         let result = verify_webhook_signature_or_forbid(&headers, b"{}", None);
 
         assert_eq!(result, Err(StatusCode::FORBIDDEN));
+    }
+
+    #[test]
+    fn follow_up_comments_require_repository_authority() {
+        for association in ["OWNER", "MEMBER", "COLLABORATOR"] {
+            assert!(trusted_comment_author_association(Some(association)));
+        }
+        for association in ["CONTRIBUTOR", "FIRST_TIME_CONTRIBUTOR", "NONE"] {
+            assert!(!trusted_comment_author_association(Some(association)));
+        }
+        assert!(!trusted_comment_author_association(None));
     }
 
     #[test]
