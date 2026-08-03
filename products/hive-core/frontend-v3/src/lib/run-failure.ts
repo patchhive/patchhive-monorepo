@@ -46,6 +46,6 @@ export function buildPayload(run: RunEvent) {
     status: run.status,
     duration_ms: run.durationMs,
     observed: run.ts,
-    detail_source: "GET /runs/:id (not yet wired)",
+    detail_source: "HiveCore product run-detail proxy (GET /products/:slug/runs/:id)",
   };
 }

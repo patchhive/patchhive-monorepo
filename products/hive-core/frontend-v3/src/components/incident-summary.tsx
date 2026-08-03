@@ -58,7 +58,7 @@ export function IncidentSummary({ incident, product }: { incident: Incident; pro
       detail: `${product?.name ?? incident.productId} · ${incident.severity}`,
       diff: original && original !== draft ? { before: original, after: draft } : undefined,
     });
-    toast.success("Postmortem accepted", { description: "Logged to audit trail" });
+    toast.success("Postmortem accepted", { description: "Added to this tab's session log" });
   };
 
   const discard = () => {
@@ -127,7 +127,7 @@ export function IncidentSummary({ incident, product }: { incident: Incident; pro
                 </button>
               )}
               {accepted && (
-                <span className="font-display text-[9px] uppercase tracking-wider text-[var(--ok)]">✓ logged</span>
+                <span className="font-display text-[9px] uppercase tracking-wider text-[var(--ok)]">✓ session log</span>
               )}
             </div>
           </div>

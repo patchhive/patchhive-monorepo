@@ -49,6 +49,7 @@ export interface SetupProduct {
   };
   auth_status_error: string;
   pairing_ready: boolean;
+  launcher: LauncherProductStatus | null;
   credentials: CredentialRequirement[];
   /**
    * Whether `credentials` is an answer or an absence. Empty-and-known means nothing
@@ -57,6 +58,44 @@ export interface SetupProduct {
    * is merely unmeasured.
    */
   credentials_known: boolean;
+}
+
+export interface LauncherProductStatus {
+  slug: string;
+  title: string;
+  product_dir: string;
+  compose_file: string;
+  compose_exists: boolean;
+  env_file: string;
+  env_exists: boolean;
+  env_example_exists: boolean;
+  suite_bootstrap_configured: boolean;
+  frontend_port: number;
+  api_port: number;
+  image_mode: string;
+  image_status: string;
+  image_tag: string;
+  image_pull_policy: string;
+  image_source: string;
+  image_ready: boolean;
+  compose_declares_images: boolean;
+  backend_image_ref: string;
+  frontend_image_ref: string;
+  frontend_port_open: boolean;
+  api_port_open: boolean;
+  compose_running: boolean;
+  first_stack: boolean;
+  start_ready: boolean;
+  start_blockers: string[];
+  preflight_status: string;
+  status: string;
+  blockers: string[];
+}
+
+export interface ProductLogs {
+  slug: string;
+  title: string;
+  logs: string;
 }
 
 export interface SmokeStep {
@@ -196,15 +235,15 @@ export function saveProductEnv(
   slug: string,
   values: Record<string, string>,
 ): Promise<{ data: unknown; message: string }> {
-  return post(`/setup/products/${slug}/env`, { values });
+  return post(`/setup/products/${slug}/env`, { values, restart: true });
 }
 
 /** Validate a GitHub token before it is written anywhere. */
 export function validateGitHubToken(
   token: string,
-  profile: string,
-): Promise<{ data: { valid?: boolean; login?: string; scopes?: string[]; message?: string } | null; message: string }> {
-  return post(`/setup/credentials/github/validate`, { token, profile });
+  expectedUser = "",
+): Promise<{ data: { ok: boolean; login: string; user_matches: boolean; message: string } | null; message: string }> {
+  return post(`/setup/credentials/github/validate`, { token, expected_user: expectedUser });
 }
 
 /** Mint scoped service tokens for products that are up but unpaired. */
@@ -214,6 +253,29 @@ export function pairFirstStack(): Promise<{ data: BootstrapState | null; message
 
 export function startFirstStack(): Promise<{ data: BootstrapState | null; message: string }> {
   return post(`/setup/first-stack/start`);
+}
+
+export function stopFirstStack(): Promise<{ data: BootstrapState | null; message: string }> {
+  return post(`/setup/first-stack/stop`);
+}
+
+export function runProductLifecycle(
+  slug: string,
+  action: "start" | "stop" | "restart",
+): Promise<{ data: BootstrapState | null; message: string }> {
+  return post(`/setup/products/${encodeURIComponent(slug)}/${action}`);
+}
+
+export async function fetchProductLogs(slug: string, tail = 160): Promise<ProductLogs> {
+  const response = await apiFetch(
+    `${BASE}/setup/products/${encodeURIComponent(slug)}/logs?tail=${tail}`,
+  );
+  const body = (await response.json().catch(() => null)) as Envelope<ProductLogs> | null;
+  if (!response.ok) {
+    throw new Error(body?.error?.message ?? `HiveCore returned HTTP ${response.status}.`);
+  }
+  if (!body?.data) throw new Error("HiveCore returned no product logs.");
+  return body.data;
 }
 
 export function startReadyFleet(): Promise<{ data: BootstrapState | null; message: string }> {

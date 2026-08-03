@@ -239,7 +239,7 @@ function compare(product: ApiProduct, actions: ApiAction[]): ConformanceFinding[
     findings.push({
       productKey: product.key,
       severity: "warning",
-      kind: "approval not implemented",
+      kind: "approval contract missing",
       detail:
         "Manifest declares operator approval, but no advertised action carries that gate. HiveCore cannot create a scoped approval for an action whose live contract omits it.",
       declared: "requires_operator_approval = true",

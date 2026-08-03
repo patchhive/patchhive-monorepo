@@ -84,6 +84,17 @@ pub fn materialized_product_runs(
     }
 }
 
+/// Compatibility entry point for the unified suite's historical
+/// `/api/setup/first-stack/pair` route.
+///
+/// The mounted engine owns pairing authority and evidence. Calling it in-process
+/// keeps the compatibility route from maintaining a second, weaker implementation
+/// or returning the old placeholder response.
+pub async fn pair_first_stack_setup(
+) -> axum::Json<models::ApiEnvelope<models::FirstStackSetupResponse>> {
+    pipeline::pair_first_stack(axum::extract::State(state::AppState::new())).await
+}
+
 /// Schema, startup diagnostics, and any background work. Idempotent: the unified
 /// backend calls this once per enabled engine at boot.
 pub async fn init_runtime() -> Result<()> {

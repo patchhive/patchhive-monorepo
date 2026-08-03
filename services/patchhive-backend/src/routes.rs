@@ -426,11 +426,18 @@ async fn first_stack_status(State(state): State<Arc<AppState>>) -> Json<SetupRes
     Json(state.first_stack_status(Vec::new()))
 }
 
-async fn pair_first_stack(State(state): State<Arc<AppState>>) -> Json<SetupResponse> {
-    Json(state.first_stack_status(vec![
-        "Unified backend is connected to HiveCore. Gateway pairing is not implemented yet."
-            .to_string(),
-    ]))
+async fn pair_first_stack(State(state): State<Arc<AppState>>) -> Response {
+    if !state.config.product_selection.enables("hive-core") {
+        return (
+            StatusCode::CONFLICT,
+            Json(ErrorResponse {
+                error: "hive-core-disabled",
+                message: "HiveCore must be enabled before the suite can pair products.".into(),
+            }),
+        )
+            .into_response();
+    }
+    hive_core::pair_first_stack_setup().await.into_response()
 }
 
 async fn runs(State(state): State<Arc<AppState>>) -> Json<Vec<crate::models::RunSummary>> {
@@ -574,6 +581,7 @@ mod tests {
             "repo-memory",
             "refactor-scout",
             "repo-reaper",
+            "hive-core",
         ];
 
         for key in integrated {

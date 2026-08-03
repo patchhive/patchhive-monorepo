@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { AlertCircle, CheckCircle2, Loader2, Play, Repeat, Send, Sparkles, Square, Trash2 } from "lucide-react";
+import { Loader2, Repeat, Send, Sparkles, Square, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useHiveCommand } from "./hive-command";
 import { apiFetch } from "@/lib/http";
@@ -44,21 +44,18 @@ export function AskHive() {
     }
   };
 
-  const runQuery = async (question: string, opts?: { resumeFrom?: string }) => {
+  const runQuery = async (question: string) => {
     if (!question.trim() || loading || streaming) return;
     setLoading(true);
     setStopped(false);
     setLastQ(question);
-    const resuming = !!opts?.resumeFrom;
-    if (!resuming) setAnswer(null);
+    setAnswer(null);
     const controller = new AbortController();
     abortRef.current = controller;
     try {
-      const body: Record<string, string> = { question };
-      if (opts?.resumeFrom) body.resumeFrom = opts.resumeFrom;
       const res = await apiFetch("/api/products/hive-core/ask", {
         method: "POST",
-        body: JSON.stringify(body),
+        body: JSON.stringify({ question }),
         signal: controller.signal,
       });
       if (!res.ok || !res.body) {
@@ -67,7 +64,7 @@ export function AskHive() {
       }
       setLoading(false);
       setStreaming(true);
-      let acc = resuming && opts?.resumeFrom ? `${opts.resumeFrom} ` : "";
+      let acc = "";
       setAnswer(acc);
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -83,7 +80,7 @@ export function AskHive() {
       setStreaming(false);
       logAudit({
         kind: "ai",
-        title: resuming ? "Resumed answer" : "Asked the hive",
+        title: "Asked the hive",
         detail: question,
       });
     } catch (e) {
@@ -93,7 +90,7 @@ export function AskHive() {
       if (aborted) {
         setStopped(true);
         setAnswer((prev) => (prev ? `${prev}\n\n_Stopped._` : "_Stopped._"));
-        toast("Stopped", { description: "Streaming interrupted — resume or re-run below" });
+        toast("Stopped", { description: "Streaming interrupted — re-run the question below" });
         logAudit({ kind: "ai", title: "Ask cancelled", detail: question });
       } else {
         const msg = e instanceof Error ? e.message : String(e);
@@ -109,12 +106,6 @@ export function AskHive() {
 
   const ask = (question: string) => runQuery(question);
 
-  const resume = () => {
-    if (!lastQ) return;
-    const partial = (answer ?? "").replace(/\n?_Stopped\._$/, "").trim();
-    runQuery(lastQ, { resumeFrom: partial });
-  };
-
   const rerun = () => {
     if (!lastQ) return;
     setAnswer(null);
@@ -125,8 +116,8 @@ export function AskHive() {
     setLastQ(null);
     setAnswer(null);
     setStopped(false);
-    toast.info("Cached context cleared");
-    logAudit({ kind: "ai", title: "Cleared cached context", detail: "" });
+    toast.info("Local answer cleared");
+    logAudit({ kind: "ai", title: "Cleared local answer", detail: "" });
   };
 
 
@@ -212,26 +203,16 @@ export function AskHive() {
                 {streaming && <span className="ml-0.5 inline-block h-3 w-1.5 -translate-y-px animate-pulse bg-[var(--honey)] align-middle" />}
               </p>
               {stopped && !streaming && (() => {
-                const partial = (answer ?? "").replace(/\n?_Stopped\._$/, "").trim();
-                const canResume = !!lastQ && partial.length > 0;
                 const canRerun = !!lastQ;
-                if (!canResume && !canRerun) {
+                if (!canRerun) {
                   return (
                     <div className="mt-3 font-display text-[10px] uppercase tracking-wider text-muted-foreground/70">
-                      No cached context to resume — ask a new question above.
+                      No previous question to re-run — ask a new question above.
                     </div>
                   );
                 }
                 return (
                   <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <button
-                      onClick={resume}
-                      disabled={!canResume}
-                      className="inline-flex items-center gap-1 rounded border border-[var(--honey)]/40 bg-[var(--honey)]/10 px-2 py-0.5 font-display text-[10px] uppercase tracking-wider text-[var(--honey)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:border-border disabled:bg-transparent disabled:text-muted-foreground/50 disabled:hover:brightness-100"
-                      title={canResume ? "Continue from where the stream stopped" : "Nothing was streamed yet — nothing to resume"}
-                    >
-                      <Play className="h-3 w-3" /> Resume
-                    </button>
                     <button
                       onClick={rerun}
                       disabled={!canRerun}
@@ -247,19 +228,6 @@ export function AskHive() {
                     >
                       <Trash2 className="h-3 w-3" /> Clear
                     </button>
-                    {canResume ? (
-                      <span className="inline-flex items-center gap-1 font-display text-[10px] uppercase tracking-wider text-ok/90">
-                        <CheckCircle2 className="h-3 w-3" /> Cached context ready
-                      </span>
-                    ) : canRerun ? (
-                      <span className="inline-flex items-center gap-1 font-display text-[10px] uppercase tracking-wider text-muted-foreground/60">
-                        <AlertCircle className="h-3 w-3" /> No partial answer — resume unavailable
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 font-display text-[10px] uppercase tracking-wider text-muted-foreground/60">
-                        <AlertCircle className="h-3 w-3" /> No cached context
-                      </span>
-                    )}
                   </div>
                 );
               })()}

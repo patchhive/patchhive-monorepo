@@ -7,7 +7,7 @@ interface CapEntry {
   providers: { id: string; name: string }[];
 }
 
-export function CapabilitySearch() {
+export function CapabilitySearch({ syncVersion = 0 }: { syncVersion?: number }) {
   const [q, setQ] = useState("");
   const allCaps = useMemo<CapEntry[]>(() => {
     const map = new Map<string, { id: string; name: string }[]>();
@@ -21,7 +21,7 @@ export function CapabilitySearch() {
     return [...map.entries()]
       .map(([capability, providers]) => ({ capability, providers }))
       .sort((a, b) => a.capability.localeCompare(b.capability));
-  }, []);
+  }, [syncVersion]);
 
   const query = q.trim().toLowerCase();
   const visible = query

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Clock, Loader2, ScrollText, Server, Trash2, User } from "lucide-react";
+import { Clock, Loader2, ScrollText, Server, Trash2, User, Zap } from "lucide-react";
 
 import { useHiveCommand, type AuditKind } from "./hive-command";
 import {
@@ -8,6 +8,7 @@ import {
   type SuiteEvent,
   type SuiteEventGroup,
 } from "@/lib/suite-events";
+import { fetchRecentActions, type ProductActionEvent } from "@/lib/control-plane";
 
 const toneCls: Record<AuditKind, string> = {
   info: "border-border text-muted-foreground",
@@ -35,15 +36,17 @@ const PAGE = 20;
 export function AuditLog({ syncVersion = 0 }: { syncVersion?: number }) {
   const { auditLog, clearAudit } = useHiveCommand();
   const [events, setEvents] = useState<SuiteEvent[]>([]);
+  const [actions, setActions] = useState<ProductActionEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [limit, setLimit] = useState(PAGE);
 
   useEffect(() => {
     const controller = new AbortController();
-    fetchSuiteEvents(controller.signal)
-      .then((next) => {
-        setEvents(next);
+    Promise.all([fetchSuiteEvents(controller.signal), fetchRecentActions(controller.signal)])
+      .then(([nextEvents, nextActions]) => {
+        setEvents(nextEvents);
+        setActions(nextActions);
         setError("");
       })
       .catch((cause) => {
@@ -74,7 +77,7 @@ export function AuditLog({ syncVersion = 0 }: { syncVersion?: number }) {
         <div className="flex items-center gap-2">
           {loading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
           <span className="rounded border border-border px-2 py-1 font-display text-[10px] uppercase tracking-wider text-muted-foreground">
-            {events.length} recorded
+            {events.length + actions.length} recorded
           </span>
         </div>
       </div>
@@ -107,6 +110,40 @@ export function AuditLog({ syncVersion = 0 }: { syncVersion?: number }) {
             </button>
           )}
         </>
+      )}
+
+      <div className="mb-2 mt-6 flex items-center gap-1.5 font-display text-[10px] uppercase tracking-wider text-muted-foreground">
+        <Zap className="h-3 w-3 text-[var(--honey)]" /> Product dispatches · persisted
+      </div>
+      {actions.length === 0 && !loading ? (
+        <div className="rounded-lg border border-dashed border-border p-4 text-center font-display text-[10px] uppercase tracking-wider text-muted-foreground">
+          No dispatch attempts recorded yet.
+        </div>
+      ) : (
+        <ol className="space-y-1.5">
+          {actions.slice(0, 20).map((action) => (
+            <li key={action.id} className="rounded border border-border/60 bg-background/40 px-2.5 py-1.5">
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <span className={`rounded border px-1.5 py-0.5 font-display text-[9px] uppercase tracking-wider ${action.status === "failed" ? "border-[var(--crit)]/40 text-[var(--crit)]" : "border-[var(--ok)]/40 text-[var(--ok)]"}`}>
+                  {action.status}
+                </span>
+                <strong>{action.product_slug} · {action.action_label || action.action_id}</strong>
+                <code className="text-[10px] text-muted-foreground">{action.method} {action.path}</code>
+                <span className="ml-auto font-mono text-[10px] text-muted-foreground">{new Date(action.created_at).toLocaleString()}</span>
+              </div>
+              {(action.error || action.remote_status !== null) && (
+                <div className="mt-1 text-[10px] text-muted-foreground">
+                  {action.remote_status !== null ? `remote HTTP ${action.remote_status}` : "no remote status"}
+                  {action.error ? ` · ${action.error}` : ""}
+                </div>
+              )}
+              <details className="mt-1 text-[10px] text-muted-foreground">
+                <summary className="cursor-pointer">Request and response evidence</summary>
+                <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded bg-background p-2 font-mono text-[9px]">{JSON.stringify({ target: action.target_url, request: action.request_json, response: action.response_json }, null, 2)}</pre>
+              </details>
+            </li>
+          ))}
+        </ol>
       )}
 
       <div className="mb-2 mt-6 flex items-center justify-between gap-2">

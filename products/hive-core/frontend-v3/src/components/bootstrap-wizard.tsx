@@ -6,24 +6,33 @@ import {
   ChevronRight,
   Loader2,
   Play,
+  Power,
+  RotateCw,
   Rocket,
+  ScrollText,
   ShieldCheck,
+  Square,
   XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
   fetchBootstrap,
+  fetchProductLogs,
   pairFirstStack,
   runSmoke,
+  runProductLifecycle,
   saveProductEnv,
   SMOKE_TIERS,
   startAllFleet,
+  startFirstStack,
   startReadyFleet,
+  stopFirstStack,
   STATUS_TONE,
   validateGitHubToken,
   type BootstrapState,
   type CredentialRequirement,
   type SetupProduct,
+  type ProductLogs,
 } from "@/lib/bootstrap";
 
 /**
@@ -47,6 +56,7 @@ export function BootstrapWizard({ syncVersion = 0 }: { syncVersion?: number }) {
   const [state, setState] = useState<BootstrapState | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
+  const [logs, setLogs] = useState<ProductLogs | null>(null);
 
   const load = useCallback((signal?: AbortSignal) => {
     fetchBootstrap(signal)
@@ -86,7 +96,9 @@ export function BootstrapWizard({ syncVersion = 0 }: { syncVersion?: number }) {
     setBusy("");
     if (result.data) {
       setState(result.data);
-      toast.success("Pairing complete");
+      toast.success("Pairing pass recorded", {
+        description: "The refreshed setup state shows which products accepted service tokens.",
+      });
     } else {
       toast.error("Pairing failed", { description: result.message });
     }
@@ -114,6 +126,43 @@ export function BootstrapWizard({ syncVersion = 0 }: { syncVersion?: number }) {
       toast.success(mode === "ready" ? "Ready fleet queued" : "Full fleet plan recorded");
     } else {
       toast.error("Fleet launch failed", { description: result.message });
+    }
+  }
+
+  async function firstStack(action: "start" | "stop"): Promise<void> {
+    setBusy(`first-stack-${action}`);
+    const result = action === "start" ? await startFirstStack() : await stopFirstStack();
+    setBusy("");
+    if (result.data) {
+      setState(result.data);
+      toast.success(`First stack ${action === "start" ? "started" : "stopped"}`);
+    } else {
+      toast.error(`First-stack ${action} failed`, { description: result.message });
+    }
+  }
+
+  async function productAction(slug: string, action: "start" | "stop" | "restart"): Promise<void> {
+    setBusy(`${slug}-${action}`);
+    const result = await runProductLifecycle(slug, action);
+    setBusy("");
+    if (result.data) {
+      setState(result.data);
+      toast.success(`${slug} ${action} requested`);
+    } else {
+      toast.error(`${slug} ${action} failed`, { description: result.message });
+    }
+  }
+
+  async function showLogs(slug: string): Promise<void> {
+    setBusy(`${slug}-logs`);
+    try {
+      setLogs(await fetchProductLogs(slug));
+    } catch (cause) {
+      toast.error(`Could not read ${slug} logs`, {
+        description: cause instanceof Error ? cause.message : String(cause),
+      });
+    } finally {
+      setBusy("");
     }
   }
 
@@ -202,7 +251,7 @@ export function BootstrapWizard({ syncVersion = 0 }: { syncVersion?: number }) {
         }
       >
         {state.requirements_known &&
-          needsCredentials.map((product) => (
+          state.products.filter((product) => product.credentials.length > 0).map((product) => (
             <CredentialForm
               key={product.runtime.slug}
               product={product}
@@ -261,6 +310,22 @@ export function BootstrapWizard({ syncVersion = 0 }: { syncVersion?: number }) {
       >
         <div className="mt-2 flex flex-wrap gap-1.5">
           <button
+            onClick={() => firstStack("start")}
+            disabled={Boolean(busy) || fleetActive || !state.launcher.available}
+            className="inline-flex items-center gap-1 rounded border border-[var(--ok)]/40 px-2 py-1 font-display text-[9px] uppercase tracking-wider text-[var(--ok)] transition hover:bg-[var(--ok)]/10 disabled:opacity-40"
+          >
+            {busy === "first-stack-start" ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Power className="h-2.5 w-2.5" />}
+            Start first stack
+          </button>
+          <button
+            onClick={() => firstStack("stop")}
+            disabled={Boolean(busy) || fleetActive || !state.launcher.available}
+            className="inline-flex items-center gap-1 rounded border border-[var(--warn)]/40 px-2 py-1 font-display text-[9px] uppercase tracking-wider text-[var(--warn)] transition hover:bg-[var(--warn)]/10 disabled:opacity-40"
+          >
+            {busy === "first-stack-stop" ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Square className="h-2.5 w-2.5" />}
+            Stop first stack
+          </button>
+          <button
             onClick={() => launchFleet("ready")}
             disabled={Boolean(busy) || fleetActive || !state.launcher.available}
             className="inline-flex items-center gap-1 rounded border border-[var(--honey)]/40 px-2 py-1 font-display text-[9px] uppercase tracking-wider text-[var(--honey)] transition hover:bg-[var(--honey)]/10 disabled:opacity-40"
@@ -285,6 +350,64 @@ export function BootstrapWizard({ syncVersion = 0 }: { syncVersion?: number }) {
             Start all
           </button>
         </div>
+        <details className="mt-2 rounded border border-border/70 bg-background/40 px-2 py-1.5">
+          <summary className="cursor-pointer font-display text-[9px] uppercase tracking-wider text-muted-foreground">
+            Product lifecycle · {state.products.filter((product) => product.launcher).length} launcher-managed
+          </summary>
+          <div className="mt-2 space-y-1.5">
+            {state.products.map((product) => {
+              const launcher = product.launcher;
+              const native = product.runtime.slug === "hive-core";
+              return (
+                <div key={product.runtime.slug} className="rounded border border-border/60 px-2 py-1.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={`h-1.5 w-1.5 rounded-full ${launcher?.compose_running ? "bg-[var(--ok)]" : "bg-muted-foreground"}`} />
+                    <strong className="font-display text-[10px]">{product.runtime.title}</strong>
+                    <span className="rounded border border-border px-1.5 py-0.5 font-display text-[8px] uppercase text-muted-foreground">
+                      {launcher ? launcher.status : native ? "in process" : "not observed"}
+                    </span>
+                    {launcher && (
+                      <span className="flex-1 truncate font-mono text-[9px] text-muted-foreground">
+                        API {launcher.api_port} · UI {launcher.frontend_port} · {launcher.preflight_status || "preflight unknown"}
+                      </span>
+                    )}
+                    {!native && launcher && (
+                      <div className="ml-auto flex gap-1">
+                        <LifecycleButton label="start" icon={Power} busy={busy === `${product.runtime.slug}-start`} disabled={Boolean(busy) || !launcher.start_ready || launcher.compose_running} onClick={() => productAction(product.runtime.slug, "start")} />
+                        <LifecycleButton label="restart" icon={RotateCw} busy={busy === `${product.runtime.slug}-restart`} disabled={Boolean(busy) || !launcher.compose_running} onClick={() => productAction(product.runtime.slug, "restart")} />
+                        <LifecycleButton label="stop" icon={Square} busy={busy === `${product.runtime.slug}-stop`} disabled={Boolean(busy) || !launcher.compose_running} onClick={() => productAction(product.runtime.slug, "stop")} />
+                        <LifecycleButton label="logs" icon={ScrollText} busy={busy === `${product.runtime.slug}-logs`} disabled={Boolean(busy)} onClick={() => showLogs(product.runtime.slug)} />
+                      </div>
+                    )}
+                  </div>
+                  {launcher && launcher.start_blockers.length > 0 && (
+                    <p className="mt-1 text-[9px] text-[var(--warn)]">{launcher.start_blockers.join(" · ")}</p>
+                  )}
+                  {launcher && (
+                    <details className="mt-1 text-[9px] text-muted-foreground">
+                      <summary className="cursor-pointer">Paths and image evidence</summary>
+                      <div className="mt-1 grid gap-1 font-mono sm:grid-cols-2">
+                        <span title={launcher.compose_file} className="truncate">compose: {launcher.compose_exists ? launcher.compose_file : "missing"}</span>
+                        <span title={launcher.env_file} className="truncate">env: {launcher.env_exists ? launcher.env_file : "missing"}</span>
+                        <span className="truncate">image: {launcher.image_status || "not observed"} {launcher.image_tag}</span>
+                        <span>ports: API {launcher.api_port_open ? "open" : "closed"} · UI {launcher.frontend_port_open ? "open" : "closed"}</span>
+                      </div>
+                    </details>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </details>
+        {logs && (
+          <details open className="mt-2 rounded border border-border/70 bg-background/60 p-2">
+            <summary className="cursor-pointer font-display text-[9px] uppercase tracking-wider text-muted-foreground">
+              {logs.title} logs · last 160 lines
+            </summary>
+            <div className="mt-2 flex justify-end"><button onClick={() => setLogs(null)} className="font-display text-[9px] uppercase text-muted-foreground hover:text-foreground">close</button></div>
+            <pre className="mt-1 max-h-72 overflow-auto whitespace-pre-wrap rounded bg-background p-2 font-mono text-[9px] text-muted-foreground">{logs.logs || "No log output returned."}</pre>
+          </details>
+        )}
         {fleetJob && fleetJob.steps.length > 0 && (
           <ul className="mt-2 space-y-1">
             {fleetJob.steps.map((step) => (
@@ -492,6 +615,33 @@ function Step({
   );
 }
 
+function LifecycleButton({
+  label,
+  icon: Icon,
+  busy,
+  disabled,
+  onClick,
+}: {
+  label: string;
+  icon: typeof Power;
+  busy: boolean;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      onClick={onClick}
+      disabled={disabled}
+      className="rounded border border-border p-1 text-muted-foreground transition hover:border-[var(--honey)]/50 hover:text-[var(--honey)] disabled:opacity-30"
+    >
+      {busy ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Icon className="h-2.5 w-2.5" />}
+    </button>
+  );
+}
+
 /**
  * Credential entry for one product.
  *
@@ -513,6 +663,19 @@ function CredentialForm({
   const [checking, setChecking] = useState("");
 
   const missing = product.credentials.filter((item) => item.required && !item.configured);
+  const hasDraft = Object.values(values).some((value) => value.trim().length > 0);
+
+  function generate(requirement: CredentialRequirement): void {
+    const bytes = new Uint8Array(24);
+    if (!globalThis.crypto?.getRandomValues) {
+      toast.error("Secure secret generation is unavailable in this browser context.");
+      return;
+    }
+    globalThis.crypto.getRandomValues(bytes);
+    const prefix = requirement.key.includes("WEBHOOK_SECRET") ? "ph-webhook" : "ph-local";
+    const secret = `${prefix}-${Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+    setValues((current) => ({ ...current, [requirement.key]: secret }));
+  }
 
   async function save(): Promise<void> {
     const filled = Object.fromEntries(
@@ -530,7 +693,7 @@ function CredentialForm({
     }
     // Clear immediately: the browser has no business holding these once written.
     setValues({});
-    toast.success(`${product.runtime.title} credentials saved`);
+    toast.success(`${product.runtime.title} credentials saved and product recreated`);
     onSaved();
   }
 
@@ -538,12 +701,14 @@ function CredentialForm({
     const token = values[requirement.key]?.trim();
     if (!token) return;
     setChecking(requirement.key);
-    const result = await validateGitHubToken(token, requirement.profile);
+    const result = await validateGitHubToken(token, values.BOT_GITHUB_USER ?? "");
     setChecking("");
-    if (result.data?.valid) {
+    if (result.data?.ok && result.data.user_matches) {
       toast.success(`Token valid${result.data.login ? ` · ${result.data.login}` : ""}`, {
-        description: result.data.scopes?.join(", "),
+        description: result.data.message,
       });
+    } else if (result.data?.ok) {
+      toast.warning("Token user mismatch", { description: result.data.message });
     } else {
       toast.error("Token rejected", {
         description: result.data?.message ?? result.message ?? "GitHub did not accept it.",
@@ -563,17 +728,19 @@ function CredentialForm({
           <ChevronRight className="h-3 w-3 text-muted-foreground" />
         )}
         <span className="font-display text-[11px] font-bold">{product.runtime.title}</span>
-        <span className="font-mono text-[10px] text-[var(--warn)]">
-          {missing.length} missing
+        <span className={`font-mono text-[10px] ${missing.length > 0 ? "text-[var(--warn)]" : "text-[var(--ok)]"}`}>
+          {missing.length > 0 ? `${missing.length} missing` : `${product.credentials.length} configured/optional`}
         </span>
       </button>
 
       {open && (
         <div className="space-y-2 border-t border-border/60 px-2 py-2">
-          {missing.map((requirement) => (
+          {product.credentials.map((requirement) => (
             <div key={requirement.key}>
               <label className="font-display text-[9px] uppercase tracking-wider text-muted-foreground">
                 {requirement.label}
+                {!requirement.required && <span className="ml-1">· optional</span>}
+                {requirement.configured && <span className="ml-1 text-[var(--ok)]">· configured</span>}
                 {requirement.placeholder && (
                   <span className="ml-1 text-[var(--warn)]">· placeholder present</span>
                 )}
@@ -583,7 +750,7 @@ function CredentialForm({
               )}
               <div className="mt-1 flex gap-1.5">
                 <input
-                  type={requirement.redact ? "password" : "text"}
+                  type={requirement.redact || requirement.kind === "github_token" ? "password" : requirement.kind === "email" ? "email" : "text"}
                   value={values[requirement.key] ?? ""}
                   onChange={(event) =>
                     setValues((current) => ({
@@ -593,7 +760,7 @@ function CredentialForm({
                   }
                   autoComplete="off"
                   spellCheck={false}
-                  placeholder={requirement.key}
+                  placeholder={requirement.configured ? "Configured — leave blank to keep" : requirement.key}
                   className="flex-1 rounded border border-border bg-background/60 px-2 py-1 font-mono text-[11px] text-foreground outline-none focus:border-[var(--honey)]/50"
                 />
                 {requirement.kind === "github_token" && (
@@ -606,13 +773,21 @@ function CredentialForm({
                     {checking === requirement.key ? "…" : "verify"}
                   </button>
                 )}
+                {requirement.kind === "generated_secret" && (
+                  <button
+                    onClick={() => generate(requirement)}
+                    className="rounded border border-border px-2 py-1 font-display text-[9px] uppercase tracking-wider text-muted-foreground transition hover:border-[var(--honey)]/50 hover:text-[var(--honey)]"
+                  >
+                    generate
+                  </button>
+                )}
               </div>
             </div>
           ))}
 
           <button
             onClick={save}
-            disabled={saving}
+            disabled={saving || !hasDraft}
             className="inline-flex items-center gap-1.5 rounded border border-[var(--honey)]/50 bg-[var(--honey)]/10 px-2 py-1 font-display text-[9px] uppercase tracking-wider text-[var(--honey)] transition hover:brightness-125 disabled:opacity-40"
           >
             {saving && <Loader2 className="h-2.5 w-2.5 animate-spin" />}

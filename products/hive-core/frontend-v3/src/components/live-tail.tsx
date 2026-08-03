@@ -37,7 +37,7 @@ export function LiveTail() {
       <div className="mx-auto flex max-w-[1400px] items-center gap-3 px-4 py-1.5">
         <div className="flex shrink-0 items-center gap-1.5 font-display text-[10px] uppercase tracking-[0.25em] text-[var(--honey)]">
           <Radio className={`h-3 w-3 ${paused ? "" : "animate-pulse-dot"}`} />
-          {paused ? "tail paused" : "live tail"}
+          {paused ? "index paused" : "run index"}
         </div>
         <button
           onClick={() => setPaused((p) => !p)}

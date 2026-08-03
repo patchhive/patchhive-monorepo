@@ -1,7 +1,8 @@
 # HiveCore Architecture
 
-Status: **design — supersedes scattered HiveCore direction, not yet implemented**
+Status: **active architecture — foundations implemented; conductor remains proposal-only**
 Written: 2026-07-25
+Updated: 2026-08-03
 
 This is the canonical design for HiveCore. It replaces the HiveCore direction previously spread
 across [suite-backend-direction.md](suite-backend-direction.md) (`## HiveCore Role`),
@@ -428,8 +429,9 @@ hides a bug until it becomes an incident.
 The existing tiers (`first-stack` → `read-only-fleet` → `write-dry-run` → `release-gate`) become
 autonomy gates: a mandate cannot be raised to `act` until the corresponding tier passes for the
 products it uses, and a tier regression automatically demotes it. This turns a manual validation
-ritual into an enforced invariant using machinery that already exists — but only after **B7** is
-fixed, since a gate that decides by substring-matching prose is not an invariant.
+ritual into an enforced invariant using the typed smoke-policy machinery completed in **B7**.
+Automatic autonomy promotion/demotion is not implemented yet, and the current conductor caps all
+mandates at `propose`.
 
 And the control that must exist before any of it: **a suite-wide pause taking effect within one
 tick**, draining in-flight work rather than abandoning it, losing no state; plus per-mandate,
@@ -591,5 +593,3 @@ that matters — whether external state, meaning state outside PatchHive, was to
   operator setup plus a compose file?
 - Does the kernel live in its own crate or grow inside `patchhive-product-core` alongside the
   existing `hivecore_policy` module?
-- Where does the public `patchhive.dev` opt-out API sit relative to the kernel — an upstream input
-  the kernel caches, or a peer authority the kernel calls?

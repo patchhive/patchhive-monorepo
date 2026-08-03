@@ -82,11 +82,10 @@ Routes:
 - `GET /api/runs`
 - `GET /api/events`
 
-MergeKeeper, ReleaseSentry, DepTriage, VulnTriage, FlakeSting, ReviewBee,
-TrustGate, RepoMemory, SignalHive, and RefactorScout are mounted as in-process
-product engines under their `/api/products/<product>/*` namespaces. RepoReaper
-and HiveCore still use their existing backend engines until they move into this
-runtime or temporarily connect through gateway routes.
+All twelve products, including RepoReaper and HiveCore, are mounted as in-process
+engines under their `/api/products/<product>/*` namespaces. The historical
+`POST /api/setup/first-stack/pair` compatibility route delegates to the mounted
+HiveCore pairing authority; it does not maintain a second pairing implementation.
 
 ## Product Registry
 

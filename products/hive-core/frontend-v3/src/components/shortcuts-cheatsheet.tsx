@@ -18,7 +18,10 @@ const groups: { heading: string; rows: { keys: string[]; label: string }[] }[] =
       { keys: ["g", "u"], label: "Jump to Runs" },
       { keys: ["g", "t"], label: "Jump to Tokens" },
       { keys: ["g", "i"], label: "Jump to Incidents" },
-      { keys: ["g", "s"], label: "Jump to SLOs" },
+      { keys: ["g", "s"], label: "Jump to Suite runs" },
+      { keys: ["g", "c"], label: "Jump to Controls" },
+      { keys: ["g", "p"], label: "Jump to Approvals" },
+      { keys: ["g", "b"], label: "Jump to Bootstrap" },
     ],
   },
   {

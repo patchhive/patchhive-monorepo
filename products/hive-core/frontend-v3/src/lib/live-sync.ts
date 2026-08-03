@@ -27,7 +27,14 @@ interface ApiProduct {
   slug: string;
   enabled: boolean;
   status: string;
+  frontend_url: string;
+  api_url: string;
   actions: { id: string }[];
+  health: {
+    capabilities:
+      | { state: "observed"; value: { action_count: number } }
+      | { state: "failed" | "not_observed" | "not_applicable"; reason: string };
+  };
 }
 
 /**
@@ -171,12 +178,15 @@ async function syncRuns(signal: AbortSignal): Promise<void> {
     if (Number.isNaN(at) || at < cutoff) continue;
     recent.set(event.product, (recent.get(event.product) ?? 0) + 1);
   }
+  // A product whose observation failed this cycle must not retain a reassuring
+  // count from the previous cycle. Stale evidence is unavailable evidence here.
+  for (const product of PRODUCTS) product.runs24h = null;
   for (const product of PRODUCTS) {
     product.runs24h = observedProducts.has(product.name) ? (recent.get(product.name) ?? 0) : null;
   }
 }
 
-export function useLiveSuite(pollMs = 10_000): LiveSuite {
+export function useLiveSuite(pollMs = 10_000, refreshKey = 0): LiveSuite {
   const [state, setState] = useState<LiveSuite>({
     live: false,
     error: "",
@@ -200,7 +210,19 @@ export function useLiveSuite(pollMs = 10_000): LiveSuite {
           const product = PRODUCTS.find((item) => item.id === id);
           if (!product) continue;
           product.status = toStatus(row);
-          if (row.actions.length > 0) product.capabilities = row.actions.map((action) => action.id);
+          product.frontend = row.frontend_url;
+          product.api = row.api_url;
+          product.capabilityState = row.health.capabilities.state;
+          product.capabilityReason =
+            row.health.capabilities.state === "observed"
+              ? row.actions.length === 0
+                ? "The runtime capability response was observed and advertised no actions."
+                : ""
+              : row.health.capabilities.reason;
+          product.capabilities =
+            row.health.capabilities.state === "observed"
+              ? row.actions.map((action) => action.id)
+              : [];
         }
 
         await Promise.all(
@@ -249,7 +271,7 @@ export function useLiveSuite(pollMs = 10_000): LiveSuite {
             return;
           }
           // Conformance is supplementary; a failure here must not blank the deck.
-          for (const product of PRODUCTS) product.contractDrift = 0;
+          for (const product of PRODUCTS) product.contractDrift = null;
         }
 
         setState((current) => ({
@@ -278,7 +300,7 @@ export function useLiveSuite(pollMs = 10_000): LiveSuite {
       controller.abort();
       clearInterval(timer);
     };
-  }, [pollMs]);
+  }, [pollMs, refreshKey]);
 
   return state;
 }

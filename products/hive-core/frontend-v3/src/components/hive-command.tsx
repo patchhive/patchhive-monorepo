@@ -48,6 +48,7 @@ import {
 import { PRODUCTS, type RunEvent, type Status } from "@/lib/hive-data";
 import { toast } from "sonner";
 import { ShortcutsCheatsheet } from "./shortcuts-cheatsheet";
+import { startReadyFleet } from "@/lib/bootstrap";
 
 export type RegistryFilter = "all" | "warn" | "crit";
 export type Theme = "amber" | "cyan";
@@ -90,9 +91,7 @@ interface Ctx {
   runbookProductId: string | null;
   openRunbook: (id: string) => void;
   closeRunbook: () => void;
-  // demo/tour/presence
-  demoMode: boolean;
-  toggleDemo: () => void;
+  // tour
   tourOpen: boolean;
   setTourOpen: (o: boolean) => void;
   // dispatch preview
@@ -146,7 +145,6 @@ export function HiveCommandProvider({ children }: { children: ReactNode }) {
   const [cheatsheetOpen, setCheatsheetOpen] = useState(false);
   const [auditLog, setAuditLog] = useState<AuditEvent[]>([]);
   const [runbookProductId, setRunbookProductId] = useState<string | null>(null);
-  const [demoMode, setDemoMode] = useState(false);
   const [tourOpen, setTourOpen] = useState(false);
 
   const [dispatchPreviewOpen, setDispatchPreviewOpen] = useState(false);
@@ -179,11 +177,11 @@ export function HiveCommandProvider({ children }: { children: ReactNode }) {
     // isn't empty after a reset. Uses the same keys defined by `commands`
     // below (nav.*, filter.*, action.*).
     const seed: Record<string, { count: number; last: number }> = {
-      "nav.registry": { count: 6, last: now - 60_000 },
-      "nav.runs": { count: 5, last: now - 120_000 },
-      "nav.incidents": { count: 4, last: now - 5 * 60_000 },
-      "filter.crit": { count: 3, last: now - 10 * 60_000 },
-      "action.repoll": { count: 3, last: now - 20 * 60_000 },
+      "nav:registry": { count: 6, last: now - 60_000 },
+      "nav:runs": { count: 5, last: now - 120_000 },
+      "nav:incidents": { count: 4, last: now - 5 * 60_000 },
+      "filter:crit": { count: 3, last: now - 10 * 60_000 },
+      "action:repoll": { count: 3, last: now - 20 * 60_000 },
     };
     setFrecency(seed);
     try { window.localStorage.setItem("hive.frecency", JSON.stringify(seed)); } catch { /* ignore */ }
@@ -198,7 +196,6 @@ export function HiveCommandProvider({ children }: { children: ReactNode }) {
   const clearAudit = useCallback(() => setAuditLog([]), []);
   const openRunbook = useCallback((id: string) => setRunbookProductId(id), []);
   const closeRunbook = useCallback(() => setRunbookProductId(null), []);
-  const toggleDemo = useCallback(() => setDemoMode((v) => !v), []);
 
   const pulseProduct = useCallback((id: string) => {
     setPulseProductId(id);
@@ -281,11 +278,14 @@ export function HiveCommandProvider({ children }: { children: ReactNode }) {
           d: "deck",
           r: "registry",
           u: "runs",
-          c: "capabilities",
+          c: "controls",
           i: "incidents",
           x: "drift",
-          p: "products",
+          p: "approvals",
           q: "cap-search",
+          t: "tokens",
+          s: "suite-runs",
+          b: "bootstrap",
         };
         const target = map[e.key.toLowerCase()];
         if (target) {
@@ -324,8 +324,6 @@ export function HiveCommandProvider({ children }: { children: ReactNode }) {
       runbookProductId,
       openRunbook,
       closeRunbook,
-      demoMode,
-      toggleDemo,
       tourOpen,
       setTourOpen,
       dispatchPreviewOpen,
@@ -335,7 +333,7 @@ export function HiveCommandProvider({ children }: { children: ReactNode }) {
       seedFrecency,
       frecency,
     }),
-    [open, registryFilter, scanlineOn, pulseProductId, pulseProduct, toggleScanline, repollKey, repoll, theme, setTheme, cycleTheme, soundOn, toggleSound, cheatsheetOpen, auditLog, logAudit, clearAudit, runbookProductId, openRunbook, closeRunbook, demoMode, toggleDemo, tourOpen, dispatchPreviewOpen, bumpFrecency, resetFrecency, seedFrecency, frecency],
+    [open, registryFilter, scanlineOn, pulseProductId, pulseProduct, toggleScanline, repollKey, repoll, theme, setTheme, cycleTheme, soundOn, toggleSound, cheatsheetOpen, auditLog, logAudit, clearAudit, runbookProductId, openRunbook, closeRunbook, tourOpen, dispatchPreviewOpen, bumpFrecency, resetFrecency, seedFrecency, frecency],
   );
 
   return (
@@ -403,24 +401,18 @@ export function HiveCommand() {
     [registryFilter, setRegistryFilter],
   );
 
-  const dispatchBootstrap = useCallback(() => {
-    let cancelled = false;
-    const t = window.setTimeout(() => {
-      if (cancelled) return;
-      toast.success("Bootstrap complete", { description: "All nodes warm" });
-    }, 2200);
-    toast.warning("Bootstrap dispatched", {
-      description: "Suite warm-up in progress · 2s window to abort",
-      action: {
-        label: "Abort",
-        onClick: () => {
-          cancelled = true;
-          window.clearTimeout(t);
-          toast("Bootstrap aborted");
-        },
-      },
-    });
-  }, []);
+  const dispatchBootstrap = useCallback(async () => {
+    const result = await startReadyFleet();
+    if (result.data) {
+      repoll();
+      toast.success("Ready-fleet launch recorded", {
+        description: "Follow the durable launch job in Suite Bootstrap.",
+      });
+      scrollToId("bootstrap");
+    } else {
+      toast.error("Fleet launch failed", { description: result.message });
+    }
+  }, [repoll]);
 
   const flipScanline = useCallback(() => {
     toggleScanline();
@@ -481,8 +473,12 @@ export function HiveCommand() {
     { id: "drift", label: "Contract drift", icon: GitCompare },
     { id: "cap-search", label: "Capability search", icon: Search },
     { id: "capabilities", label: "Capabilities", icon: Cpu },
-    { id: "products", label: "Products vs Mesh", icon: Hexagon },
-    { id: "setup", label: "Setup", icon: Settings },
+    { id: "suite-runs", label: "Suite runs", icon: GitBranch },
+    { id: "mandates", label: "Mandates", icon: Gauge },
+    { id: "ledger", label: "Work ledger", icon: Hexagon },
+    { id: "approvals", label: "Approvals", icon: Eye },
+    { id: "controls", label: "Controls", icon: Settings },
+    { id: "bootstrap", label: "Suite bootstrap", icon: Zap },
   ];
 
   const commands: Cmd[] = useMemo(() => {
@@ -524,15 +520,15 @@ export function HiveCommand() {
       {
         key: "action:bootstrap",
         group: "Actions",
-        label: "Dispatch suite bootstrap",
+        label: "Start ready fleet",
         value: "action bootstrap suite dispatch",
         icon: Zap,
         tail: <span className="font-display text-[9px] uppercase tracking-wider text-[var(--crit)]">confirm</span>,
         run: () =>
           requestConfirm({
-            title: "Dispatch suite bootstrap?",
-            description: "Warms every node in the mesh. Active sessions may see brief latency spikes while caches rebuild.",
-            confirmLabel: "Dispatch bootstrap",
+            title: "Start every launcher-ready product?",
+            description: "HiveCore will create a durable fleet-launch job. Products with blockers remain stopped and visible with exact evidence.",
+            confirmLabel: "Start ready fleet",
             tone: "destructive",
             onConfirm: dispatchBootstrap,
           }),
@@ -540,19 +536,19 @@ export function HiveCommand() {
       {
         key: "action:repoll",
         group: "Actions",
-        label: "Re-poll /health",
+        label: "Refresh deck snapshots",
         value: "action repoll health refresh",
         icon: RefreshCw,
-        tail: <span className="font-display text-[9px] uppercase tracking-wider text-[var(--crit)]">confirm</span>,
+        tail: <span className="font-display text-[9px] uppercase tracking-wider text-muted-foreground">refresh</span>,
         run: () =>
           requestConfirm({
-            title: "Re-poll /health across the mesh?",
-            description: "Forces every product to respond to a fresh health probe. Generates traffic on all services.",
-            confirmLabel: "Re-poll now",
-            tone: "destructive",
+            title: "Refresh the deck from durable suite snapshots?",
+            description: "Re-reads materialized runtime, run, probe, and conformance evidence now instead of waiting for the next ten-second deck refresh.",
+            confirmLabel: "Refresh now",
+            tone: "default",
             onConfirm: () => {
               repoll();
-              toast("Re-polling /health across the mesh");
+              toast("Refreshing durable suite snapshots");
             },
           }),
       },

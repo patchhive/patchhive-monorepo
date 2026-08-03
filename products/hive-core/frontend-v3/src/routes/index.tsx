@@ -15,6 +15,7 @@ import {
   Hexagon,
   KeyRound,
   ListTodo,
+  LogOut,
   Palette,
   Radar,
   Radio,
@@ -27,7 +28,7 @@ import {
   Zap,
 } from "lucide-react";
 import { PRODUCTS, RUNS, type Product, type RunEvent, type Status } from "@/lib/hive-data";
-import { Compass, FlaskConical, Users } from "lucide-react";
+import { Compass } from "lucide-react";
 import {
   HiveCommand,
   HiveCommandProvider,
@@ -62,11 +63,12 @@ import {
 } from "@/components/ui/context-menu";
 import { BookOpen } from "lucide-react";
 import { useLiveSuite } from "@/lib/live-sync";
-import { SessionGate } from "@/components/session-gate";
+import { SessionGate, useOperatorSession } from "@/components/session-gate";
 import { SuiteRuns } from "@/components/suite-runs";
 import { ApprovalInbox } from "@/components/approval-inbox";
 import { WorkLedger } from "@/components/work-ledger";
 import { MandateControl } from "@/components/mandate-control";
+import { ControlCenter } from "@/components/control-center";
 
 
 type IndexSearch = { run?: string; filter?: "all" | "warn" | "crit" };
@@ -140,10 +142,10 @@ function Deck() {
 
 function DeckInner() {
   const now = useClock();
-  const { scanlineOn } = useHiveCommand();
+  const { scanlineOn, repollKey } = useHiveCommand();
   // Patches PRODUCTS in place and bumps `version`; this component re-rendering is
   // what carries the refreshed status down to every panel below.
-  const suite = useLiveSuite();
+  const suite = useLiveSuite(10_000, repollKey);
   const ok = PRODUCTS.filter((p) => p.status === "ok").length;
   const warn = PRODUCTS.filter((p) => p.status === "warn").length;
   // "offline" covers both unreachable and engine-pending. Counting only `crit`
@@ -178,7 +180,7 @@ function DeckInner() {
         <TopBar now={now} />
         {suite.error && <SyncNotice error={suite.error} />}
         <section id="deck" className="scroll-mt-24 rounded-md">
-          <Hero />
+          <Hero live={suite.live} responding={ok + warn} />
           <KpiStrip
             ok={ok}
             warn={warn}
@@ -189,7 +191,7 @@ function DeckInner() {
           />
         </section>
         <section id="registry" className="mt-8 grid scroll-mt-24 gap-6 rounded-md lg:grid-cols-[1fr_380px]">
-          <Registry />
+          <Registry syncVersion={suite.version} />
           <div id="runs" className="scroll-mt-24"><RunsFeed syncVersion={suite.version} /></div>
         </section>
         <IncidentTimeline syncVersion={suite.version} />
@@ -198,8 +200,9 @@ function DeckInner() {
         <WorkLedger syncVersion={suite.version} />
         <ApprovalInbox syncVersion={suite.version} />
         <ContractDrift syncVersion={suite.version} />
-        <CapabilitySearch />
+        <CapabilitySearch syncVersion={suite.version} />
         <TokenVault />
+        <ControlCenter syncVersion={suite.version} />
         <BootstrapWizard syncVersion={suite.version} />
         <RunHeatmap syncVersion={suite.version} />
         <CapabilityGrid />
@@ -320,6 +323,7 @@ function DispatchPreviewWrapper() {
 
 
 function TopBar({ now }: { now: Date | null }) {
+  const { signOut } = useOperatorSession();
   const {
     setOpen,
     cycleTheme,
@@ -327,8 +331,6 @@ function TopBar({ now }: { now: Date | null }) {
     soundOn,
     toggleSound,
     setCheatsheetOpen,
-    demoMode,
-    toggleDemo,
     setTourOpen,
     setDispatchPreviewOpen,
   } = useHiveCommand();
@@ -339,7 +341,7 @@ function TopBar({ now }: { now: Date | null }) {
     { icon: Radar, label: "Mandates", id: "mandates" },
     { icon: ListTodo, label: "Ledger", id: "ledger" },
     { icon: AlertTriangle, label: "Incidents", id: "incidents" },
-    { icon: GitBranch, label: "Deps", id: "dependencies" },
+    { icon: Settings, label: "Controls", id: "controls" },
     { icon: KeyRound, label: "Tokens", id: "tokens" },
   ];
   return (
@@ -396,14 +398,6 @@ function TopBar({ now }: { now: Date | null }) {
           {soundOn ? <Bell className="h-3.5 w-3.5" /> : <BellOff className="h-3.5 w-3.5" />}
         </button>
         <button
-          onClick={toggleDemo}
-          className={`rounded-md border border-border bg-card/60 p-1.5 transition hover:border-[var(--honey)]/50 ${demoMode ? "text-[var(--honey)]" : "text-muted-foreground hover:text-[var(--honey)]"}`}
-          title={demoMode ? "Demo mode on" : "Demo mode off"}
-          aria-label="Toggle demo mode"
-        >
-          <FlaskConical className="h-3.5 w-3.5" />
-        </button>
-        <button
           onClick={() => setTourOpen(true)}
           className="rounded-md border border-border bg-card/60 p-1.5 text-muted-foreground transition hover:border-[var(--honey)]/50 hover:text-[var(--honey)]"
           title="Start guided tour"
@@ -447,13 +441,21 @@ function TopBar({ now }: { now: Date | null }) {
         >
           Dispatch
         </button>
+        <button
+          onClick={signOut}
+          className="rounded-md border border-border bg-card/60 p-1.5 text-muted-foreground transition hover:border-[var(--crit)]/50 hover:text-[var(--crit)]"
+          title="Sign out and clear the in-memory suite key"
+          aria-label="Sign out"
+        >
+          <LogOut className="h-3.5 w-3.5" />
+        </button>
       </div>
     </header>
   );
 
 }
 
-function Hero() {
+function Hero({ live, responding }: { live: boolean; responding: number }) {
   return (
     <section className="mt-10 grid gap-6 lg:grid-cols-[1.4fr_1fr]">
       <div className="animate-float-up">
@@ -462,7 +464,7 @@ function Hero() {
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--honey)] opacity-60" />
             <span className="relative inline-flex h-2 w-2 rounded-full bg-[var(--honey)]" />
           </span>
-          Suite online · 11 products tracked
+          {live ? `${responding} responding` : "Suite state unavailable"} · {PRODUCTS.length} products tracked
         </div>
         <h1 className="font-display text-5xl font-bold leading-[1.05] tracking-tight md:text-7xl">
           One hive.
@@ -478,10 +480,10 @@ function Hero() {
           then surfaces drift, dispatches advertised actions, and brokers service tokens — all from one operational deck.
         </p>
         <div className="mt-8 flex flex-wrap items-center gap-3">
-          <button className="glow-honey group inline-flex items-center gap-2 rounded-md bg-[var(--honey)] px-5 py-3 font-display text-sm font-bold uppercase tracking-wider text-primary-foreground transition hover:brightness-110">
+          <button onClick={() => document.getElementById("bootstrap")?.scrollIntoView({ behavior: "smooth", block: "start" })} className="glow-honey group inline-flex items-center gap-2 rounded-md bg-[var(--honey)] px-5 py-3 font-display text-sm font-bold uppercase tracking-wider text-primary-foreground transition hover:brightness-110">
             <Zap className="h-4 w-4" /> Bootstrap suite
           </button>
-          <button className="inline-flex items-center gap-2 rounded-md border border-border bg-card/60 px-5 py-3 font-display text-sm font-medium uppercase tracking-wider text-foreground backdrop-blur transition hover:border-[var(--honey)]/50 hover:text-[var(--honey)]">
+          <button onClick={() => document.getElementById("registry")?.scrollIntoView({ behavior: "smooth", block: "start" })} className="inline-flex items-center gap-2 rounded-md border border-border bg-card/60 px-5 py-3 font-display text-sm font-medium uppercase tracking-wider text-foreground backdrop-blur transition hover:border-[var(--honey)]/50 hover:text-[var(--honey)]">
             <Terminal className="h-4 w-4" /> Open registry
           </button>
         </div>
@@ -704,10 +706,10 @@ function KpiStrip({
     },
     {
       label: "Failed runs",
-      value: runStats.failed.toLocaleString(),
+      value: runStats.complete ? runStats.failed.toLocaleString() : "—",
       icon: Sparkles,
       accent: runStats.failed > 0 ? "var(--crit)" : "var(--honey)",
-      detail: "across retained history",
+      detail: runStats.complete ? "across retained history" : "run evidence unavailable",
       live,
     },
   ];
@@ -745,7 +747,7 @@ function KpiStrip({
   );
 }
 
-function Registry() {
+function Registry({ syncVersion }: { syncVersion: number }) {
   const { registryFilter, setRegistryFilter, pulseProductId } = useHiveCommand();
   const filtered =
     registryFilter === "all" ? PRODUCTS : PRODUCTS.filter((p) => p.status === registryFilter);
@@ -766,23 +768,23 @@ function Registry() {
           )}
         </div>
         <span className="font-display text-[10px] uppercase tracking-wider text-muted-foreground">
-          {filtered.length}/{PRODUCTS.length} · polling every 5s
+          {filtered.length}/{PRODUCTS.length} · polling every 10s
         </span>
       </div>
       <div className="grid gap-px bg-border/40 sm:grid-cols-2">
         {filtered.map((p, i) => (
-          <ProductCard key={p.id} product={p} index={i} pulse={pulseProductId === p.id} />
+          <ProductCard key={p.id} product={p} index={i} pulse={pulseProductId === p.id} syncVersion={syncVersion} />
         ))}
       </div>
     </div>
   );
 }
 
-function ProductCard({ product, index, pulse }: { product: Product; index: number; pulse?: boolean }) {
+function ProductCard({ product, index, pulse, syncVersion }: { product: Product; index: number; pulse?: boolean; syncVersion: number }) {
   // Real probe history from the control plane. Every figure below is null until
   // HiveCore has actually observed something, and renders as "—" rather than 0 —
   // "no data" and "zero" are different claims and only one of them was ever true here.
-  const probes = useProbes(slugForId(product.id));
+  const probes = useProbes(slugForId(product.id), syncVersion);
   const runs24h = product.runs24h;
   const { openRunbook, setDispatchPreviewOpen } = useHiveCommand();
   const sparkColor =
@@ -809,7 +811,7 @@ function ProductCard({ product, index, pulse }: { product: Product; index: numbe
               <div className="flex items-center gap-2">
                 <span className={`h-2 w-2 rounded-full ${statusDot[product.status]} animate-pulse-dot`} />
                 <h3 className="truncate font-display text-sm font-bold tracking-tight">{product.name}</h3>
-                {product.contractDrift > 0 && (
+                {product.contractDrift !== null && product.contractDrift > 0 && (
                   <span className="rounded bg-[var(--warn)]/15 px-1.5 py-0.5 font-display text-[9px] uppercase tracking-wider text-[var(--warn)]">
                     drift {product.contractDrift}
                   </span>
@@ -881,6 +883,11 @@ function ProductCard({ product, index, pulse }: { product: Product; index: numbe
                 {c}
               </span>
             ))}
+            {product.capabilities.length === 0 && (
+              <span className="font-display text-[9px] uppercase tracking-wider text-muted-foreground" title={product.capabilityReason}>
+                {product.capabilityState === "observed" ? "no actions advertised" : `actions ${product.capabilityState.replaceAll("_", " ")}`}
+              </span>
+            )}
           </div>
           {heatmapOpen && (
             <div
@@ -1026,7 +1033,7 @@ function RunsFeed({ syncVersion }: { syncVersion: number }) {
           <h2 className="font-display text-sm font-bold uppercase tracking-[0.2em]">Live Runs</h2>
         </div>
         <span className="font-display text-[10px] uppercase tracking-wider text-[var(--honey)]">
-          ● streaming
+          ● polling every 10s
         </span>
       </div>
       <div className="border-b border-border/60 bg-background/30 px-4 py-2.5">
@@ -1140,9 +1147,9 @@ function RunsFeed({ syncVersion }: { syncVersion: number }) {
       </ul>
 
       <div className="border-t border-border/60 px-4 py-2 text-center">
-        <button className="font-display text-[10px] uppercase tracking-wider text-muted-foreground transition hover:text-[var(--honey)]">
-          {visible.length} of {RUNS.length} runs →
-        </button>
+        <span className="font-display text-[10px] uppercase tracking-wider text-muted-foreground">
+          {visible.length} of {RUNS.length} runs
+        </span>
       </div>
       <RunDetailDrawer run={activeRun} onClose={() => setActiveRun(null)} />
     </div>
@@ -1152,12 +1159,12 @@ function RunsFeed({ syncVersion }: { syncVersion: number }) {
 function CapabilityGrid() {
   const allCaps = Array.from(new Set(PRODUCTS.flatMap((p) => p.capabilities)));
   return (
-    <section className="mt-8 rounded-xl border border-border bg-card/50 p-6 backdrop-blur">
+    <section id="capabilities" className="mt-8 scroll-mt-24 rounded-xl border border-border bg-card/50 p-6 backdrop-blur">
       <div className="mb-5 flex items-center justify-between">
         <div>
           <h2 className="font-display text-sm font-bold uppercase tracking-[0.2em]">Capability Matrix</h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            Advertised actions across the suite. Dispatch only through this contract — no hidden API drift.
+            Observed dispatch actions across the suite. Products without capability evidence remain explicitly unavailable.
           </p>
         </div>
         <div className="hidden items-center gap-4 font-display text-[10px] uppercase tracking-wider text-muted-foreground md:flex">
@@ -1166,6 +1173,12 @@ function CapabilityGrid() {
         </div>
       </div>
       <div className="overflow-x-auto">
+        {allCaps.length === 0 && (
+          <p className="rounded-lg border border-dashed border-border p-6 text-center font-display text-[10px] uppercase tracking-wider text-muted-foreground">
+            No runtime action catalog has been observed yet.
+          </p>
+        )}
+        {allCaps.length > 0 && (
         <table className="w-full min-w-[700px] border-collapse">
           <thead>
             <tr>
@@ -1204,6 +1217,7 @@ function CapabilityGrid() {
             ))}
           </tbody>
         </table>
+        )}
       </div>
     </section>
   );
@@ -1216,7 +1230,7 @@ function Footer() {
         <GitBranch className="h-3 w-3" />
         main · hivecore v0.1.0
       </div>
-      <div>polling /health · /capabilities · /runs · /startup/checks</div>
+      <div>durable runtime · run index · probes · startup evidence</div>
       <div>© PatchHive · the hive remembers</div>
     </footer>
   );

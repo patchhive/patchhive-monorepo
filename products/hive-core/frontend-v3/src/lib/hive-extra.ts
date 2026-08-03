@@ -151,7 +151,7 @@ export const DEPENDENCIES: SafetyEdge[] = [
     to: "trustgate",
     kind: "gate",
     effect: "Generated patches lose their risk review before write actions proceed.",
-    live: true,
+    live: false,
   },
   {
     from: "reporeaper",

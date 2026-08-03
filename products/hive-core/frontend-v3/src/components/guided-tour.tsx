@@ -5,10 +5,10 @@ import { useHiveCommand } from "./hive-command";
 const STEPS = [
   { id: "deck", title: "Deck", body: "Your top-level suite health. KPI strip, hero, honeycomb mesh." },
   { id: "registry", title: "Registry", body: "Every product with live status, latency, uptime, and drift." },
-  { id: "runs", title: "Live Runs", body: "Every capability call streams here. Click a row for the drawer." },
+  { id: "runs", title: "Live Runs", body: "The durable run index refreshes here every ten seconds. Click a row for the drawer." },
   { id: "incidents", title: "Incidents & Runbooks", body: "Open incidents surface here; click Runbook to execute a playbook." },
   { id: "ask", title: "Ask the Hive", body: "Natural-language query grounded on the live registry." },
-  { id: "audit", title: "Change Log", body: "Every operator action, timestamped and undoable via toasts." },
+  { id: "audit", title: "Change Log", body: "Durable suite events and dispatches stay separate from this tab's temporary session actions." },
 ];
 
 export function GuidedTour() {

@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { Hexagon, KeyRound, Loader2, ShieldAlert } from "lucide-react";
 
 import { API } from "@/config";
@@ -22,12 +22,36 @@ interface AuthStatus {
   bootstrap_required: boolean;
 }
 
+interface SessionContextValue {
+  signOut: () => void;
+}
+
+const SessionContext = createContext<SessionContextValue | null>(null);
+
+export function useOperatorSession(): SessionContextValue {
+  const value = useContext(SessionContext);
+  if (!value) throw new Error("useOperatorSession must be used inside SessionGate");
+  return value;
+}
+
 export function SessionGate({ children }: { children: ReactNode }) {
   const [phase, setPhase] = useState<Phase>("checking");
   const [error, setError] = useState("");
   const [key, setKey] = useState("");
   const [busy, setBusy] = useState(false);
   const [generated, setGenerated] = useState("");
+  const session = useMemo<SessionContextValue>(
+    () => ({
+      signOut: () => {
+        clearApiKey();
+        setKey("");
+        setGenerated("");
+        setError("");
+        setPhase("login");
+      },
+    }),
+    [],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -116,7 +140,9 @@ export function SessionGate({ children }: { children: ReactNode }) {
     }
   }
 
-  if (phase === "ready") return <>{children}</>;
+  if (phase === "ready") {
+    return <SessionContext.Provider value={session}>{children}</SessionContext.Provider>;
+  }
 
   return (
     <main className="hex-grid relative flex min-h-screen items-center justify-center px-6">
