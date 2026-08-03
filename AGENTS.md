@@ -74,7 +74,6 @@ RepoReaper was built first because it descended from Jeremy's earlier GitFix exp
 patchhive/
   packages/
     ui/                     @patchhivehq/ui shared React component library
-    ui-v2/                  quarantined HiveCore compatibility package; not an active workspace
     ui-v3/                  @patchhivehq/ui-v3 Lovable-derived specialist product UI
     product-shell/          @patchhivehq/product-shell shared frontend shell/auth helpers
     ai-models/              @patchhivehq/ai-models shared AI provider/model selector UX
@@ -752,10 +751,10 @@ Important env vars:
 - The canonical HiveCore design is `docs/hivecore-architecture.md`. It defines the four layers
   (Fleet, Kernel, Conductor, Cockpit), records the current implementation's blockers, and owns the
   build order. Read it before changing HiveCore; the notes below remain true but are narrower.
-- `products/hive-core/frontend-v3/` is the only active HiveCore frontend. Treat
-  `products/hive-core/frontend/` and `products/hive-core/frontend-v2/` as obsolete,
-  removal-bound code: do not extend, repair, or use them as implementation references.
-  New HiveCore frontend work and verification target `frontend-v3/` only.
+- `products/hive-core/frontend/` is the canonical HiveCore cockpit. Its v3 parity
+  audit passed and the obsolete versioned frontend trees were removed on 2026-08-03.
+  Do not recreate `frontend-v2`, `frontend-v3`, or another migration tree; change
+  and verify the canonical frontend directly.
 - HiveCore v3 keeps the operator API key in browser memory only. Never persist it in
   `localStorage`, `sessionStorage`, cookies, or another browser-owned durable store;
   a page reload intentionally requires login again. Retain best-effort deletion of

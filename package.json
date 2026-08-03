@@ -19,7 +19,7 @@
     "products/signal-hive/frontend",
     "products/trust-gate/frontend",
     "products/vuln-triage/frontend",
-    "products/hive-core/frontend-v3"
+    "products/hive-core/frontend"
   ],
   "scripts": {
     "dev:ai-local": "npm --workspace @patchhive/ai-local run dev",

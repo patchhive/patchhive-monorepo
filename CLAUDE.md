@@ -59,9 +59,9 @@ scripts/                              export, mirror, release, drift, lockfile t
 lockfile; the authoritative list is [scripts/rust-manifests.txt](scripts/rust-manifests.txt).
 Never run a bare workspace-wide `cargo` command — always `--manifest-path`.
 
-**npm workspaces explicitly list active packages and specialist `frontend/` trees,
-plus HiveCore's `frontend-v3/`.** Specialist products do not use versioned frontend
-directories; obsolete HiveCore frontends are not workspace members.
+**npm workspaces explicitly list active packages and every canonical product
+`frontend/` tree.** Neither specialist products nor HiveCore use versioned frontend
+directories.
 
 ### Product table
 
@@ -83,9 +83,9 @@ directories; obsolete HiveCore frontends are not workspace members.
 Ports are authoritative in [scripts/suite-common.sh](scripts/suite-common.sh); README,
 `docs/products/<slug>.md`, and `docker-compose.yml` must agree or `check:suite-drift` fails.
 All eleven specialist products and HiveCore are mounted in-process inside
-`patchhive-backend`. HiveCore remains the distinct control-plane product,
-with `frontend-v3/` as its only active cockpit. Its `frontend/` and `frontend-v2/`
-trees are obsolete and removal-bound; do not change or verify them.
+`patchhive-backend`. HiveCore remains the distinct control-plane product, with its
+canonical cockpit in `products/hive-core/frontend/`. Its v3 parity audit passed and
+the obsolete versioned frontend trees were removed on 2026-08-03.
 HiveCore v3 keeps the operator API key in memory only and deliberately requires a
 fresh login after reload. Never restore Web Storage or cookie persistence for it;
 retain best-effort cleanup of keys left by earlier builds.

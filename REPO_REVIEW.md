@@ -83,6 +83,11 @@ The loop iterates *every review ever submitted*, increments `requested_changes_r
 *Fix:* cursor-paginate threads/comments; return a `truncated` flag and surface it in product warnings.
 
 **H11 — HiveCore deck ("frontend-v3") renders seeded latency/uptime as a "Live mesh"**
+
+> Resolved after this review: HiveCore now uses explicit probe-backed observations,
+> and the audited cockpit was promoted to `products/hive-core/frontend/` on
+> 2026-08-03. The paths below describe the repository at review time.
+
 `products/hive-core/frontend-v3/src/lib/hive-data.ts:26-37`, `src/lib/live-sync.ts`, `src/routes/index.tsx:517,544,559,590`
 `PRODUCTS` carries hardcoded `latencyMs`, `uptime`, `status`, `runs24h` and a fabricated `RUNS` array. `live-sync.ts` patches status/capabilities/runs on successful poll but **never `latencyMs` or `uptime`**, and the "Live mesh" panel (header at index.tsx:517) renders the seeded numbers with no sampled label — including `12ms` for HiveCore itself, a value the backend deliberately refuses to fabricate (`local_hive_core_probe` sets `latency_ms: None` because "there is no round trip to measure", overview.rs:556-562). The seeds are admitted in a source comment and a sync-failure banner, but not at the point of display; "Copy registry as JSON" exports the seeded numbers too. This partially regresses the intent of commits `586e7af/3fc42cd` ("measure … instead of generating them").
 *Fix:* patch latency/uptime from `/products/:slug/probes` in the same sync pass, or render "—" until probes exist.
@@ -171,6 +176,10 @@ Claims frontends "should eventually talk to HiveCore instead of separate product
 33. **Publish workflows run `npm publish` with no build/lint/test gate and no provenance; actions are tag-pinned only** — `.github/workflows/publish-*.yml`; no SHA pinning, no Dependabot, `dtolnay/rust-toolchain@stable` is a moving ref. Base images also unpinned (`nginx-unprivileged:stable-alpine`, `rust:1.87-slim`), zero `healthcheck:` stanzas in 13 compose files.
 34. **`release-suite.sh` gaps** — `--packages none` makes the mandatory product smoke fail (missing tarball overrides → hard error for all 11 specialist frontends); fixed shared temp path `/tmp/patchhive-pack-output.txt`.
 35. **The live HiveCore deck is outside all repo machinery** — `products/hive-core/frontend-v3` (99 files): not in npm workspaces, not built by CI, not in docker-compose, and its README references a nonexistent `src/lib/suite-state.ts`; meanwhile the backend has a test pinning the deck's suite-run wire shape — a contract only one side of which CI can build. Relatedly, backend routes `/suite-runs`, `/ask`, `/runbooks`, `/incidents/summarize`, `/runs/explain` have **zero callers** in the shipped `frontend/` — the deployed UI cannot serve the newest backend features.
+   **Resolved 2026-08-03:** the audited cockpit is now the canonical
+   `products/hive-core/frontend/`, is an npm workspace and CI target, and is the
+   frontend built by HiveCore Docker packaging. The obsolete frontend trees and
+   unused compatibility package were removed.
 
 ### Docs drift (beyond H16/H17)
 

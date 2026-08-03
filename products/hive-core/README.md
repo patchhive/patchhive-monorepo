@@ -78,7 +78,9 @@ cd backend && cargo run
 cd ../frontend && npm install && npm run dev
 ```
 
-The frontend uses `@patchhivehq/ui` and `@patchhivehq/product-shell`. Generate the first local API key from `http://localhost:5183`.
+The canonical HiveCore cockpit is a standalone React/Vite application with its own
+honey/amber control-plane design. Generate the first local API key from
+`http://localhost:5183`.
 
 ## Configuration
 

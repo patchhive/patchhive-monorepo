@@ -23,7 +23,7 @@ services:
     image: "${PATCHHIVE_HIVE_CORE_FRONTEND_IMAGE:-ghcr.io/patchhive/hivecore-frontend}:${PATCHHIVE_IMAGE_TAG:-main}"
     build:
       context: ../..
-      dockerfile: products/hive-core/frontend-v3/Dockerfile
+      dockerfile: products/hive-core/frontend/Dockerfile
     pull_policy: "${PATCHHIVE_IMAGE_PULL_POLICY:-missing}"
     ports:
       - "5183:8080"

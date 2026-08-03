@@ -1,4 +1,4 @@
-# HiveCore deck (frontend-v3)
+# HiveCore cockpit
 
 The HiveCore cockpit. Derived from a Lovable export, converted to a Vite SPA, and
 re-pointed at the real PatchHive domain model.
@@ -15,8 +15,8 @@ npm run build        # vite build (generates routeTree.gen.ts) then tsc --noEmit
 
 ## Deliberate divergences
 
-**This is not a v3 product UI and is not meant to become one.** HiveCore is a control
-plane, not a specialist product, and stays outside the v3 migration (AGENTS.md). It
+**This is not a specialist product UI.** HiveCore is a control plane, not a
+specialist product, so it keeps a distinct cockpit architecture (AGENTS.md). It
 does not use `@patchhivehq/ui-v3`, keeps its own honey/amber visual language, and is
 dark-only rather than following the suite-wide `patchhive.theme` preference.
 
@@ -37,7 +37,18 @@ fresh login; the frontend also clears keys left in Web Storage by earlier builds
 Runtime values start unavailable and are populated only by live API responses;
 activity arrays start empty. See
 [docs/hivecore-architecture.md](../../../docs/hivecore-architecture.md) for the
-remaining architecture work.
+canonical control-plane architecture.
+
+## Promotion record
+
+The cockpit was promoted to the canonical `products/hive-core/frontend/` tree on
+2026-08-03 after its parity audit passed. The audit verified production build and
+type checking, API-contract tests, Docker and CI wiring, operator authentication,
+suite bootstrap, settings and repository policy, PR budgets, product dispatch,
+run details, approvals, mandates, conductor decisions, work ledger, governance,
+suite runs, runbooks, and Ask Hive. No missing workflow from the former production
+frontend remained. The obsolete frontend trees and unused Lovable-export residue
+were removed during promotion.
 
 ## Panels
 

@@ -6,9 +6,27 @@
 
 HiveCore is the PatchHive control plane. It brings standalone PatchHive products into one operational interface for health, launch links, shared defaults, run history, capability visibility, action dispatch, and product handoffs.
 
-`products/hive-core/frontend-v3/` is the sole active HiveCore cockpit. The older
-`frontend/` and `frontend-v2/` trees are obsolete and scheduled for removal; they
-must not receive new features, fixes, or quality-gate work.
+`products/hive-core/frontend/` is the sole active HiveCore cockpit. Its v3 parity
+audit passed on 2026-08-03, when the obsolete versioned frontend trees and unused
+Lovable-export residue were removed. Future cockpit work changes the canonical
+frontend directly.
+
+## Promotion Status
+
+| Area | Status |
+|------|--------|
+| Unified-backend HiveCore engine | ✅ Integrated and mounted in process |
+| V3 operator-workflow parity | ✅ Complete |
+| Canonical frontend, CI, Docker, and npm wiring | ✅ Promoted |
+| Obsolete frontend and UI-v2 compatibility code | ✅ Removed |
+| Missing workflows from the former production frontend | **None found** |
+
+The parity audit covered operator authentication, first-stack bootstrap, suite
+settings, repository policy, PR budgets, product dispatch and run details,
+approvals, governance, mandates and conductor decisions, the work ledger, suite
+runs and pipelines, runbooks, incident support, and Ask Hive. Future work in the
+HiveCore architecture is product evolution, not unfinished frontend migration or
+parity debt.
 
 ---
 
@@ -388,8 +406,7 @@ products/hive-core/
 │       ├── startup.rs               ── Config validation checks, check caching, level summarization
 │       └── state.rs                 ── AppState (short-poll and long-dispatch HTTP clients),
 │                                      Canonical registry manifest snapshot (12 products)
-├── frontend/                        ── HiveCore UI (React/Svelte, @patchhivehq/ui)
-├── frontend-v2/                     ── UI v2 prototype
+├── frontend/                        ── Canonical HiveCore React/Vite cockpit
 ├── docker-compose.yml               ── Docker deployment
 ├── .env.example                     ── Configuration template
 └── README.md                        ── Product README

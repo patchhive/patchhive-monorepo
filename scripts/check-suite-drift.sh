@@ -145,14 +145,15 @@ check_product() {
 
   require_contains "README.md" "$repo" "root README entry for ${product}"
   require_contains "docs/products/README.md" "${product}.md" "product docs index entry for ${product}"
+  for legacy_dir in frontend-v2 frontend-v3 frontend-legacy; do
+    if [[ -e "$product_dir/$legacy_dir" ]]; then
+      fail "$product still carries retired UI tree $legacy_dir"
+    fi
+  done
+
   if [[ "$product" != "hive-core" ]]; then
     require_contains "packages/ui-v3/src/index.jsx" "\"${product}\":" "specialist brand ${product}"
     require_contains "packages/ui-v3/src/styles.css" "html[data-product=\"${product}\"]" "specialist accent ${product}"
-    for legacy_dir in frontend-v2 frontend-v3 frontend-legacy; do
-      if [[ -e "$product_dir/$legacy_dir" ]]; then
-        fail "$product still carries retired specialist UI tree $legacy_dir"
-      fi
-    done
     require_contains "$frontend_dir/package.json" '"@patchhivehq/ui-v3"' "canonical specialist UI dependency"
     if command -v rg >/dev/null 2>&1; then
       if ! rg -q "productKey[=:][[:space:]]*[\"']${product}[\"']" "$frontend_dir/src"; then
@@ -161,21 +162,11 @@ check_product() {
     elif ! grep -R -Eq "productKey[=:][[:space:]]*[\"']${product}[\"']" "$frontend_dir/src"; then
       fail "$product frontend does not declare productKey ${product}"
     fi
+    check_frontend_dependencies "$frontend_dir/package.json" "$product"
   else
-    require_contains "packages/ui/src/theme.js" "\"${product}\":" "control-plane theme ${product}"
+    require_contains "$frontend_dir/package.json" '"name": "@patchhivehq/hive-core-frontend"' \
+      "canonical HiveCore package identity"
   fi
-
-  if [[ "$product" == "hive-core" ]]; then
-    if command -v rg >/dev/null 2>&1; then
-      if ! rg -q "applyTheme\\([\"']${product}[\"']" "$frontend_dir/src"; then
-        fail "$product frontend does not apply theme ${product}"
-      fi
-    elif ! grep -R -Eq "applyTheme\\([\"']${product}[\"']" "$frontend_dir/src"; then
-      fail "$product frontend does not apply theme ${product}"
-    fi
-  fi
-
-  check_frontend_dependencies "$frontend_dir/package.json" "$product"
 
   require_contains "$workflow_path" "FORCE_JAVASCRIPT_ACTIONS_TO_NODE24" "Node 24 action shim"
   require_contains "$workflow_path" "uses: actions/checkout@v5" "checkout v5"

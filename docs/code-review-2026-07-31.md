@@ -133,6 +133,10 @@ and no recovery when it does not fire.
 
 **Severity: high. Deployment/development divergence.**
 
+> Resolved 2026-08-03: the parity-audited cockpit was promoted to the canonical
+> `products/hive-core/frontend/`; Docker, npm workspaces, and frontend CI now use
+> that path, and the obsolete frontend trees were removed.
+
 `products/hive-core/docker-compose.yml:21` builds `./frontend`.
 
 All HiveCore UI work this week — the bootstrap wizard, runbooks, suite runs, Ask the Hive,
