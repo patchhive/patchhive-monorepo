@@ -47,7 +47,7 @@ remaining architecture work.
 | Suite timeline | `suite_events` | ledger does not exist yet (§3.3) |
 | Contract drift | manifest vs `GET /capabilities` | live manifest/runtime comparison |
 | Capability matrix | manifest + observed actions | manifest side real |
-| Outbound capacity | `GET /pr-budgets` | live, with bounded reserved and committed leases |
+| Outbound capacity | `GET /pr-budgets` | live, with bounded leases and durable GitHub reconciliation state (B5) |
 | Approvals | `GET/POST /approvals` | live, exact and single-use (B3) |
 | Work ledger | `GET /work-items` + `/work-items/findings` | live concrete work plus idempotent source receipts; transitions remain (B6) |
 | Repository policy | `GET /repository-policies` | structured rows plus durable public opt-out sync evidence (B4) |

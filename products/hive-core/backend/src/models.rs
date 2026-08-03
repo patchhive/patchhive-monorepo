@@ -567,6 +567,66 @@ pub struct ProductPrBudget {
     pub remaining: u32,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PrReconciliationFailure {
+    pub reservation_id: String,
+    pub pr_url: String,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum PrReconciliationState {
+    NotConfigured {
+        checked_at: String,
+    },
+    Running {
+        started_at: String,
+    },
+    Succeeded {
+        started_at: String,
+        completed_at: String,
+        checked: u32,
+        open: u32,
+        released: u32,
+    },
+    Failed {
+        started_at: String,
+        failed_at: String,
+        checked: u32,
+        open: u32,
+        released: u32,
+        reason: String,
+        failures: Vec<PrReconciliationFailure>,
+    },
+    Unknown {
+        raw_state: String,
+        raw_evidence: serde_json::Value,
+    },
+}
+
+impl PrReconciliationState {
+    pub const fn kind(&self) -> &str {
+        match self {
+            Self::NotConfigured { .. } => "not_configured",
+            Self::Running { .. } => "running",
+            Self::Succeeded { .. } => "succeeded",
+            Self::Failed { .. } => "failed",
+            Self::Unknown { .. } => "unknown",
+        }
+    }
+
+    pub fn from_storage(raw_state: String, raw_evidence: serde_json::Value) -> Self {
+        match serde_json::from_value::<Self>(raw_evidence.clone()) {
+            Ok(value) if value.kind() == raw_state => value,
+            _ => Self::Unknown {
+                raw_state,
+                raw_evidence,
+            },
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PrBudgetStatusResponse {
     pub suite_limit: u32,
@@ -574,6 +634,7 @@ pub struct PrBudgetStatusResponse {
     pub suite_remaining: u32,
     pub products: Vec<ProductPrBudget>,
     pub reservations: Vec<PrBudgetReservation>,
+    pub reconciliation: Observation<PrReconciliationState>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -916,7 +977,7 @@ pub struct ProductActionEvent {
 
 #[cfg(test)]
 mod evidence_tests {
-    use super::{Observation, PublicOptOutSyncState};
+    use super::{Observation, PrReconciliationState, PublicOptOutSyncState};
     use serde_json::json;
 
     #[test]
@@ -959,6 +1020,28 @@ mod evidence_tests {
                 raw_state,
                 raw_evidence
             } if raw_state == "failed" && raw_evidence == evidence
+        ));
+    }
+
+    #[test]
+    fn contradictory_pr_reconciliation_storage_is_unknown() {
+        let evidence = json!({
+            "state": "succeeded",
+            "started_at": "2026-08-02T00:00:00Z",
+            "completed_at": "2026-08-02T00:00:01Z",
+            "checked": 1,
+            "open": 1,
+            "released": 0
+        });
+
+        let decoded = PrReconciliationState::from_storage("running".into(), evidence.clone());
+
+        assert!(matches!(
+            decoded,
+            PrReconciliationState::Unknown {
+                raw_state,
+                raw_evidence
+            } if raw_state == "running" && raw_evidence == evidence
         ));
     }
 }

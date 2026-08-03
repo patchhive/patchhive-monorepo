@@ -463,12 +463,20 @@ fn build_pr_budget_status() -> InternalApiResult<PrBudgetStatusResponse> {
             }
         })
         .collect();
+    let reconciliation = match db::pr_reconciliation_state() {
+        Ok(Some(state)) => Observation::observed(state),
+        Ok(None) => Observation::not_observed("PR lifecycle reconciliation has not run yet."),
+        Err(error) => Observation::failed(format!(
+            "Could not read PR lifecycle reconciliation state: {error}"
+        )),
+    };
     Ok(PrBudgetStatusResponse {
         suite_limit,
         suite_used,
         suite_remaining: suite_limit.saturating_sub(suite_used),
         products,
         reservations,
+        reconciliation,
     })
 }
 

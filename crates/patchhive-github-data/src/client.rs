@@ -463,6 +463,27 @@ pub async fn fetch_pull_requests(
     .await
 }
 
+/// Fetch one pull request by its stable repository and number.
+pub async fn fetch_pull_request(
+    client: &Client,
+    repo: &str,
+    number: u32,
+) -> Result<GitHubPullRequest> {
+    ensure_valid_repo(repo)?;
+    if number == 0 {
+        return Err(anyhow!("Pull request number must be greater than zero"));
+    }
+
+    get_json(
+        client,
+        GITHUB_DATA_USER_AGENT,
+        &format!("/repos/{repo}/pulls/{number}"),
+        &[],
+        github_token().as_deref(),
+    )
+    .await
+}
+
 #[derive(Debug, Deserialize)]
 struct GitHubSearchIssuesResponse {
     #[serde(default)]

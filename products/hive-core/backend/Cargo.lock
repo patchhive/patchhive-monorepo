@@ -537,6 +537,7 @@ dependencies = [
  "dotenvy",
  "futures-util",
  "once_cell",
+ "patchhive-github-data",
  "patchhive-product-core",
  "reqwest",
  "rusqlite",
@@ -979,6 +980,19 @@ dependencies = [
  "redox_syscall",
  "smallvec",
  "windows-link",
+]
+
+[[package]]
+name = "patchhive-github-data"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "patchhive-product-core",
+ "reqwest",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]

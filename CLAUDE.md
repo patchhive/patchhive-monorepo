@@ -516,7 +516,9 @@ standalone lockfile before the first export.
   Squad substrate extraction.
 - HiveCore's target design is [docs/hivecore-architecture.md](docs/hivecore-architecture.md)
   (Fleet / Kernel / Conductor / Cockpit). Overview probes now run concurrently and
-  committed PR-budget slots carry a bounded lease. The Conductor now has a durable,
+  committed PR-budget slots carry a bounded lease plus durable GitHub lifecycle
+  reconciliation that releases only positively observed closed or merged PRs. The
+  Conductor now has a durable,
   fingerprint-deduplicated concrete-work ledger, idempotent product-finding receipts,
   canonical SQLite mandates, and a bounded background/operator proposal loop protected
   by a durable single-writer lease. It sizes SignalHive discovery plans against exact

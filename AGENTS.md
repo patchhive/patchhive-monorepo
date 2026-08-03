@@ -166,6 +166,11 @@ patchhive/
   tagged `PrReservationState`; contradictory or unrecognized legacy SQLite rows
   decode as `unknown`. Budget reads fail explicitly instead of substituting the
   default ceiling, zero usage, or an empty reservation list.
+- Committed PR reservations are reconciled proactively through the suite-wide
+  GitHub read credential. The durable `PrReconciliationState` distinguishes not
+  configured, running, succeeded, failed, and unknown. Only a positively observed
+  closed or merged GitHub PR releases the exact committed URL; unavailable or
+  malformed evidence preserves capacity until later reconciliation or lease expiry.
 - HiveCore approvals are durable, exact, and single-use. `ApprovalSubject` binds the
   product, action, normalized input hash, origin, run/repository context, effect, and
   required scopes. `ApprovalState` is a non-defaultable tagged lifecycle; a grant is

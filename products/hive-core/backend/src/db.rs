@@ -17,8 +17,8 @@ use crate::conductor::{
 use crate::models::{
     ApprovalConsumptionOutcome, ApprovalEvent, ApprovalExpirableState, ApprovalRecord,
     ApprovalState, ApprovalSubject, FirstStackSmokeRun, PrBudgetLimitingLayer, PrBudgetReservation,
-    PrBudgetUsage, PrReservationDecision, PrReservationDenial, PrReservationExpiration,
-    PrReservationState, ProbeSample, ProductActionEvent, ProductOverride,
+    PrBudgetUsage, PrReconciliationState, PrReservationDecision, PrReservationDenial,
+    PrReservationExpiration, PrReservationState, ProbeSample, ProductActionEvent, ProductOverride,
     ProductRunsSnapshotResponse, ProductRuntimeItem, PublicOptOutFeed, PublicOptOutLifecycle,
     PublicOptOutSyncState, RepositoryPolicy, RunbookRun, SuiteSettings, SuiteSnapshotCycle,
     SuiteSnapshotCycleState,
@@ -64,6 +64,67 @@ pub fn init_db() -> Result<()> {
     migrate_repository_policy(&conn)?;
     recover_interrupted_snapshot_cycles(&conn)?;
     recover_interrupted_opt_out_sync(&conn)?;
+    recover_interrupted_pr_reconciliation(&conn)?;
+    Ok(())
+}
+
+pub fn record_pr_reconciliation_state(state: &PrReconciliationState) -> rusqlite::Result<()> {
+    let conn = connect()?;
+    conn.execute(
+        "INSERT INTO hive_core_pr_reconciliation (singleton, state_kind, state_json, updated_at)
+         VALUES (1, ?1, ?2, ?3)
+         ON CONFLICT(singleton) DO UPDATE SET
+           state_kind=excluded.state_kind, state_json=excluded.state_json,
+           updated_at=excluded.updated_at",
+        params![
+            state.kind(),
+            json_string(state)?,
+            crate::models::now_rfc3339()
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn pr_reconciliation_state() -> rusqlite::Result<Option<PrReconciliationState>> {
+    let conn = connect()?;
+    conn.query_row(
+        "SELECT state_kind, state_json FROM hive_core_pr_reconciliation WHERE singleton=1",
+        [],
+        |row| {
+            let raw_state: String = row.get(0)?;
+            let encoded: String = row.get(1)?;
+            Ok(PrReconciliationState::from_storage(
+                raw_state,
+                raw_json(encoded),
+            ))
+        },
+    )
+    .optional()
+}
+
+fn recover_interrupted_pr_reconciliation(conn: &Connection) -> rusqlite::Result<()> {
+    let current = conn
+        .query_row(
+            "SELECT state_kind, state_json FROM hive_core_pr_reconciliation WHERE singleton=1",
+            [],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+        )
+        .optional()?;
+    let Some((raw_state, encoded)) = current else {
+        return Ok(());
+    };
+    if raw_state != "running" {
+        return Ok(());
+    }
+    let lifecycle = PrReconciliationState::Unknown {
+        raw_state,
+        raw_evidence: raw_json(encoded),
+    };
+    conn.execute(
+        "UPDATE hive_core_pr_reconciliation SET state_kind='unknown', state_json=?1, updated_at=?2
+         WHERE singleton=1",
+        params![json_string(&lifecycle)?, crate::models::now_rfc3339()],
+    )?;
     Ok(())
 }
 
@@ -1421,6 +1482,24 @@ pub fn pr_budget_reservations(limit: u32) -> rusqlite::Result<Vec<PrBudgetReserv
     load_pr_reservations(&conn, limit)
 }
 
+pub fn committed_pr_reservations() -> rusqlite::Result<Vec<PrBudgetReservation>> {
+    let mut conn = connect()?;
+    expire_pr_reservations(&mut conn)?;
+    let mut statement = conn.prepare(
+        r#"
+        SELECT id, product_slug, repository, run_id, action, status, pr_url,
+               reason, created_at, expires_at, updated_at
+        FROM pr_budget_reservations
+        WHERE status = 'committed'
+        ORDER BY updated_at ASC
+        "#,
+    )?;
+    let reservations = statement
+        .query_map([], decode_pr_reservation)?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(reservations)
+}
+
 pub fn active_pr_usage() -> rusqlite::Result<(u32, HashMap<String, u32>)> {
     let mut conn = connect()?;
     expire_pr_reservations(&mut conn)?;
@@ -1626,6 +1705,47 @@ pub fn release_pr_reservation(
     }
     tx.commit()?;
     Ok(reservation)
+}
+
+pub fn release_reconciled_pr_reservation(
+    id: &str,
+    expected_pr_url: &str,
+    reason: &str,
+    updated_at: &str,
+) -> rusqlite::Result<bool> {
+    let mut conn = connect()?;
+    release_reconciled_pr_reservation_with_connection(
+        &mut conn,
+        id,
+        expected_pr_url,
+        reason,
+        updated_at,
+    )
+}
+
+fn release_reconciled_pr_reservation_with_connection(
+    conn: &mut Connection,
+    id: &str,
+    expected_pr_url: &str,
+    reason: &str,
+    updated_at: &str,
+) -> rusqlite::Result<bool> {
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let changed = tx.execute(
+        r#"
+        UPDATE pr_budget_reservations
+        SET status = 'released', reason = ?3, updated_at = ?4
+        WHERE id = ?1 AND status = 'committed' AND pr_url = ?2
+        "#,
+        params![id, expected_pr_url, reason, updated_at],
+    )?;
+    if changed > 0 {
+        if let Some(reservation) = load_pr_reservation(&tx, id)? {
+            record_pr_budget_event(&tx, &reservation, "reconciled_release", reason, updated_at)?;
+        }
+    }
+    tx.commit()?;
+    Ok(changed > 0)
 }
 
 pub fn release_pr_reservations_for_run(
@@ -1932,6 +2052,13 @@ fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
         );
 
         CREATE TABLE IF NOT EXISTS hive_core_opt_out_sync (
+          singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+          state_kind TEXT NOT NULL,
+          state_json TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS hive_core_pr_reconciliation (
           singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
           state_kind TEXT NOT NULL,
           state_json TEXT NOT NULL,
@@ -3640,10 +3767,10 @@ mod tests {
         load_latest_suite_snapshot_cycle, load_mandate, load_pr_reservation,
         load_product_overrides, load_service_token_storage_stats, load_suite_settings,
         load_work_item_by_id, propose_work_with_connection, record_approval_event,
-        recover_interrupted_snapshot_cycles, replace_overrides,
-        replace_repository_policies_with_connection, reserve_pr_slot_with_connection,
-        run_conductor_tick_with_connection, update_mandate_with_connection, write_suite_settings,
-        ServiceTokenStorageStats,
+        recover_interrupted_snapshot_cycles, release_reconciled_pr_reservation_with_connection,
+        replace_overrides, replace_repository_policies_with_connection,
+        reserve_pr_slot_with_connection, run_conductor_tick_with_connection,
+        update_mandate_with_connection, write_suite_settings, ServiceTokenStorageStats,
     };
     use crate::conductor::{
         CapacityLimitingLayer, ConductorDecision, ConductorTickLifecycle, ConductorTickTrigger,
@@ -4303,6 +4430,53 @@ mod tests {
             .expect("denial audit count should load");
         assert_eq!(grants, 1);
         assert_eq!(denials, 1);
+    }
+
+    #[test]
+    fn reconciliation_releases_only_the_exact_committed_pull_request() {
+        let mut conn = Connection::open_in_memory().expect("in-memory db should open");
+        init_schema(&conn).expect("schema should initialize");
+        let reservation = sample_reservation("prr_reconcile", "run_reconcile");
+        reserve_pr_slot_with_connection(&mut conn, &reservation)
+            .expect("reservation should persist");
+        let pr_url = "https://github.com/patchhive/example/pull/42";
+        conn.execute(
+            "UPDATE pr_budget_reservations SET status='committed', pr_url=?1 WHERE id=?2",
+            [pr_url, &reservation.id],
+        )
+        .expect("fixture should commit");
+
+        assert!(!release_reconciled_pr_reservation_with_connection(
+            &mut conn,
+            &reservation.id,
+            "https://github.com/patchhive/example/pull/43",
+            "closed",
+            "2026-08-02T12:00:00Z",
+        )
+        .expect("mismatched URL should be ignored"));
+        assert!(matches!(
+            load_pr_reservation(&conn, &reservation.id)
+                .expect("reservation should read")
+                .expect("reservation should exist")
+                .lifecycle,
+            PrReservationState::Committed { .. }
+        ));
+
+        assert!(release_reconciled_pr_reservation_with_connection(
+            &mut conn,
+            &reservation.id,
+            pr_url,
+            "closed",
+            "2026-08-02T12:01:00Z",
+        )
+        .expect("matching URL should release"));
+        assert!(matches!(
+            load_pr_reservation(&conn, &reservation.id)
+                .expect("reservation should read")
+                .expect("reservation should exist")
+                .lifecycle,
+            PrReservationState::Released { .. }
+        ));
     }
 
     fn sample_reservation(id: &str, run_id: &str) -> PrBudgetReservation {

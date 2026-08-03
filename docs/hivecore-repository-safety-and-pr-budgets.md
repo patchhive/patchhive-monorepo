@@ -191,9 +191,9 @@ Reservation lifecycle:
 5. Product opens the PR and commits the reservation with the GitHub PR URL.
 6. If PR creation fails, the product releases the reservation.
 7. Expired uncommitted reservations are reclaimed automatically.
-8. RepoReaper's PR monitor releases committed reservations when it observes a
-   merge or close; broader HiveCore-owned GitHub reconciliation remains future
-   drift repair.
+8. RepoReaper's PR monitor remains a fast release path. HiveCore also sweeps all
+   committed reservations through GitHub and releases only an exact URL that is
+   positively observed merged or closed.
 
 Products must fail closed on PR creation when HiveCore cannot grant a
 reservation. A UI-side counter is informative only; the backend reservation is
@@ -275,7 +275,6 @@ independent product deployments do not become unusable by accident.
 
 Not yet implemented:
 
-- verified GitHub ownership and the public `patchhive.dev` opt-out API/form;
-- a HiveCore-owned periodic GitHub reconciliation sweep for all products;
+- the public `patchhive.dev` form over the Registry's verified owner API;
 - enforcement clients in products other than RepoReaper; and
 - rolling daily or weekly creation-rate limits separate from concurrent slots.

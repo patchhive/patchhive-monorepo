@@ -78,6 +78,8 @@ pub struct GitHubPullRequest {
     pub title: String,
     #[serde(default)]
     pub html_url: String,
+    #[serde(default)]
+    pub state: String,
     pub body: Option<String>,
     pub merged_at: Option<String>,
     #[serde(default)]

@@ -107,11 +107,12 @@ authenticated typed feed. HiveCore synchronizes that feed into the shared reposi
 atomically. Its durable sync lifecycle distinguishes not configured, running, succeeded, failed,
 and unknown; an unavailable or malformed feed never becomes permission or a reassuring success.
 
-**B5 — PR lifecycle reconciliation remains polling-dependent.**
-Reserved slots have a short lease and committed slots now have a bounded long lease (30 days by
-default), so a missed RepoReaper release cannot consume capacity forever. A future supervisor
-should still reconcile open/merged/closed PR state proactively instead of relying on release calls
-and lease expiry.
+**B5 — PR lifecycle reconciliation is proactive and durable.**
+Reserved slots have a short lease and committed slots have a bounded long lease (30 days by
+default). HiveCore now polls every committed PR through the suite read credential, preserves open
+capacity, and releases only the exact reservation whose GitHub PR is positively observed closed or
+merged. Missing credentials, partial GitHub failures, malformed URLs, interrupted sweeps, and
+contradictory stored lifecycle evidence remain explicit states and never free capacity.
 
 **B6 — Fleet-launch state is in-memory only.**
 `AppState.latest_fleet_launch: Arc<RwLock<Option<SetupFleetLaunchJob>>>` — one job, no history,
@@ -511,8 +512,7 @@ first-run host bring-up remains an HTTP daemon or becomes documented operator se
 5. **Cockpit and consolidation.** Kernel becomes a crate with the three authority implementations;
    outcome feedback and the reputation governor land; `products/hive-core/backend/` retires.
 
-The remaining item worth doing even if HiveCore never gains autonomy is **B5**, because proactive
-PR reconciliation closes a live correctness gap in the current write path.
+Proactive PR reconciliation in **B5** closes the live capacity-leak gap in the current write path.
 
 ---
 

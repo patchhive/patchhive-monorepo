@@ -665,6 +665,7 @@ dependencies = [
  "dotenvy",
  "futures-util",
  "once_cell",
+ "patchhive-github-data",
  "patchhive-product-core",
  "reqwest",
  "rusqlite",
