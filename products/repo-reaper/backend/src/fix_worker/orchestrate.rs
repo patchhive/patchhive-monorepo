@@ -254,7 +254,6 @@ pub async fn fix_one(job: FixIssueJob) {
     let sem = context.sem;
     let process_sem = context.process_sem;
     let params = context.params;
-    let run_cost = context.run_cost;
     let tx = context.tx;
     let http = context.http;
 
@@ -1578,10 +1577,6 @@ pub async fn fix_one(job: FixIssueJob) {
         cost,
     );
 
-    run_cost.fetch_add(
-        (cost * 1_000_000.0) as i64,
-        std::sync::atomic::Ordering::Relaxed,
-    );
     update_issue_status_comment(
         &http,
         &issue,

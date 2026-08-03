@@ -14,10 +14,11 @@ use std::sync::{
     Arc,
 };
 use tokio::sync::{mpsc, Semaphore};
+use tokio::task::JoinSet;
 use tokio_stream::wrappers::ReceiverStream;
 use uuid::Uuid;
 
-use crate::agents::{agent_dry_run_analysis, agent_score_issues};
+use crate::agents::{agent_dry_run_analysis, agent_score_issues, with_cost_budget, AiCostBudget};
 use crate::db::{
     finish_run, get_conn, get_lifetime_cost, record_run_artifact, save_dry_stalk_run, start_run,
     RunArtifactInput, RunStart, RunStatus,
@@ -136,6 +137,18 @@ fn cfg(k: &str) -> String {
     std::env::var(k).unwrap_or_default()
 }
 
+fn effective_cost_budget(requested: f64, configured_ceiling: f64) -> f64 {
+    let requested = (requested.is_finite() && requested > 0.0).then_some(requested);
+    let configured =
+        (configured_ceiling.is_finite() && configured_ceiling > 0.0).then_some(configured_ceiling);
+    match (requested, configured) {
+        (Some(requested), Some(configured)) => requested.min(configured),
+        (Some(requested), None) => requested,
+        (None, Some(configured)) => configured,
+        (None, None) => 0.0,
+    }
+}
+
 fn persist_run_phase(run_id: &str, phase: &str, message: &str) {
     if let Err(error) = record_run_artifact(RunArtifactInput {
         run_id,
@@ -170,6 +183,7 @@ struct FixWaveInput<'a> {
     fixable: &'a [Value],
     run_id: &'a str,
     run_cost: &'a Arc<AtomicI64>,
+    ai_budget: Arc<AiCostBudget>,
     cancel_requested: &'a Arc<AtomicBool>,
     budget: f64,
     min_conf: i32,
@@ -382,24 +396,25 @@ async fn finalize_run_with_summary(
     run_cost: &Arc<AtomicI64>,
     attempted: usize,
 ) -> RunExecutionResult {
-    let (total_fixed, failed_attempts, nonfixed_attempt_cost): (i64, i64, f64) = {
+    let (total_fixed, failed_attempts): (i64, i64) = {
         get_conn()
             .ok()
             .and_then(|conn| conn
             .query_row(
             "SELECT
                 COALESCE(SUM(CASE WHEN status='fixed' THEN 1 ELSE 0 END), 0),
-                COALESCE(SUM(CASE WHEN status IN ('error', 'failed', 'rejected', 'skipped') THEN 1 ELSE 0 END), 0),
-                COALESCE(SUM(CASE WHEN status!='fixed' THEN cost_usd ELSE 0 END), 0.0)
+                COALESCE(SUM(CASE WHEN status IN ('error', 'failed', 'rejected', 'skipped') THEN 1 ELSE 0 END), 0)
              FROM repo_reaper_issue_attempts WHERE run_id=?",
             [run_id],
-            |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?, r.get::<_, f64>(2)?)),
+            |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)),
             ).ok())
-            .unwrap_or((0, 0, 0.0))
+            .unwrap_or((0, 0))
     };
 
-    let rc = (run_cost.load(Ordering::Relaxed) as f64 / 1_000_000.0) + nonfixed_attempt_cost;
-    let run_status = if attempted == 0 || total_fixed == attempted as i64 {
+    let rc = run_cost.load(Ordering::Relaxed) as f64 / 1_000_000.0;
+    let run_status = if attempted == 0 {
+        RunStatus::Skipped
+    } else if total_fixed == attempted as i64 {
         RunStatus::Done
     } else if total_fixed > 0 {
         RunStatus::Partial
@@ -451,7 +466,7 @@ async fn finalize_run_with_summary(
     }
 }
 
-async fn run_fix_wave(input: FixWaveInput<'_>) {
+async fn run_fix_wave(input: FixWaveInput<'_>) -> usize {
     let FixWaveInput {
         state,
         req,
@@ -460,13 +475,12 @@ async fn run_fix_wave(input: FixWaveInput<'_>) {
         fixable,
         run_id,
         run_cost,
+        ai_budget,
         cancel_requested,
         budget,
         min_conf,
     } = input;
     let sem = Arc::new(Semaphore::new(req.concurrency));
-    let (done_tx, mut done_rx) = mpsc::channel::<()>(fixable.len());
-    let mut handles = Vec::new();
     let context = FixRunContext {
         agents: Arc::new(FixAgentPools {
             judges: team.judges.clone(),
@@ -483,29 +497,38 @@ async fn run_fix_wave(input: FixWaveInput<'_>) {
             cancel_requested: cancel_requested.clone(),
             hivecore_mandate_id: req.hivecore_mandate_id.clone(),
         },
-        run_cost: run_cost.clone(),
         tx: tx.clone(),
         http: state.http.clone(),
     };
 
-    for (idx, issue) in fixable.iter().enumerate() {
-        let handle = tokio::spawn(fix_one(FixIssueJob {
-            issue: issue.clone(),
-            idx,
-            context: context.clone(),
-        }));
-        let done_tx = done_tx.clone();
-        handles.push(tokio::spawn(async move {
-            handle.await.ok();
-            let _ = done_tx.send(()).await;
-        }));
-    }
-    drop(done_tx);
-
     let total = fixable.len();
-    let mut completed = 0;
-    while let Some(()) = done_rx.recv().await {
-        completed += 1;
+    let mut scheduled = 0;
+    let mut next = 0;
+    let mut workers = JoinSet::new();
+    loop {
+        while next < total
+            && workers.len() < req.concurrency
+            && !cancel_requested.load(Ordering::SeqCst)
+            && !ai_budget.is_exhausted()
+        {
+            let job = FixIssueJob {
+                issue: fixable[next].clone(),
+                idx: next,
+                context: context.clone(),
+            };
+            let task_budget = ai_budget.clone();
+            workers.spawn(async move {
+                with_cost_budget(task_budget, fix_one(job)).await;
+            });
+            next += 1;
+            scheduled += 1;
+        }
+        if workers.is_empty() {
+            break;
+        }
+        if let Some(Err(error)) = workers.join_next().await {
+            tracing::warn!("RepoReaper fix worker failed to join: {error}");
+        }
         let rc = run_cost.load(Ordering::Relaxed) as f64 / 1_000_000.0;
         let _ = tx
             .send(sse(
@@ -513,18 +536,14 @@ async fn run_fix_wave(input: FixWaveInput<'_>) {
                 json!({"run_cost": rc, "lifetime_cost": get_lifetime_cost()}),
             ))
             .await;
-        if budget > 0.0 && rc >= budget && !cancel_requested.load(Ordering::SeqCst) {
+        if (ai_budget.is_exhausted() || (budget > 0.0 && rc >= budget))
+            && !cancel_requested.load(Ordering::SeqCst)
+        {
             cancel_requested.store(true, Ordering::SeqCst);
-            let _ = tx.send(sse("log", json!({"msg":format!("Budget ${budget:.2} reached — finishing in-flight work and cancelling new hunts"),"type":"warn"}))).await;
-        }
-        if completed == total {
-            break;
+            let _ = tx.send(sse("log", json!({"msg":format!("Budget ${budget:.2} reached or cannot admit another model call — finishing in-flight work and cancelling new hunts"),"type":"warn"}))).await;
         }
     }
-
-    for handle in handles {
-        let _ = handle.await;
-    }
+    scheduled
 }
 
 async fn discover(
@@ -1020,9 +1039,11 @@ pub async fn execute_run(
     let run_id = Uuid::new_v4().to_string()[..12].to_string();
     let run_cost = Arc::new(AtomicI64::new(0));
     let cancel_requested = Arc::new(AtomicBool::new(false));
-    let budget = req
-        .cost_budget_usd
-        .max(cfg("COST_BUDGET_USD").parse().unwrap_or(0.0));
+    let budget = effective_cost_budget(
+        req.cost_budget_usd,
+        cfg("COST_BUDGET_USD").parse().unwrap_or(0.0),
+    );
+    let ai_budget = AiCostBudget::new(budget, run_cost.clone());
     let min_conf = cfg("MIN_REVIEW_CONFIDENCE").parse().unwrap_or(40i32);
 
     let agents_snap = agents_arc.read().await.clone();
@@ -1051,8 +1072,11 @@ pub async fn execute_run(
     );
     let _ = tx.send(astatus(&team.scout.id, "working", "Hunting")).await;
 
-    let (repos, mut all_issues, _ranked, scoring_available) =
-        collect_targets(&http, &req, &team.scout, &filters, &tx, Some(&run_cost)).await;
+    let (repos, mut all_issues, _ranked, scoring_available) = with_cost_budget(
+        ai_budget.clone(),
+        collect_targets(&http, &req, &team.scout, &filters, &tx, None),
+    )
+    .await;
     let fixable = classify_write_eligibility(
         &mut all_issues,
         scoring_available,
@@ -1084,7 +1108,7 @@ pub async fn execute_run(
 
     let _ = tx.send(sse("phase", json!({"phase":"fix"}))).await;
     persist_run_phase(&run_id, "patch", "Patch worker wave started");
-    run_fix_wave(FixWaveInput {
+    let attempted = run_fix_wave(FixWaveInput {
         state: &state,
         req: &req,
         tx: &tx,
@@ -1092,13 +1116,14 @@ pub async fn execute_run(
         fixable: &fixable,
         run_id: &run_id,
         run_cost: &run_cost,
+        ai_budget,
         cancel_requested: &cancel_requested,
         budget,
         min_conf,
     })
     .await;
 
-    Ok(finalize_run_with_summary(&tx, &run_id, &run_cost, fixable.len()).await)
+    Ok(finalize_run_with_summary(&tx, &run_id, &run_cost, attempted).await)
 }
 
 fn normalized_run_request(mut request: RunRequest) -> RunRequest {
@@ -1113,7 +1138,8 @@ fn normalized_run_request(mut request: RunRequest) -> RunRequest {
 mod tests {
     use super::{
         claim_active_run, classify_write_eligibility, discovery_query,
-        discovery_repository_search_limit, repository_noun, ActiveRunGuard, RunRequest,
+        discovery_repository_search_limit, effective_cost_budget, repository_noun, ActiveRunGuard,
+        RunRequest,
     };
     use patchhive_product_core::contract::TargetSelectionMode;
     use serde_json::json;
@@ -1133,6 +1159,15 @@ mod tests {
         drop(guard);
         assert!(!active.load(Ordering::SeqCst));
         assert!(ActiveRunGuard::claim(active).is_ok());
+    }
+
+    #[test]
+    fn configured_cost_budget_is_a_hard_ceiling() {
+        assert_eq!(effective_cost_budget(5.0, 1.0), 1.0);
+        assert_eq!(effective_cost_budget(0.25, 1.0), 0.25);
+        assert_eq!(effective_cost_budget(0.25, 0.0), 0.25);
+        assert_eq!(effective_cost_budget(0.0, 1.0), 1.0);
+        assert_eq!(effective_cost_budget(0.0, 0.0), 0.0);
     }
 
     #[tokio::test]

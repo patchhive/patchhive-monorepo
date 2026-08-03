@@ -4,7 +4,7 @@ use anyhow::Result as AnyhowResult;
 use serde_json::Value;
 use std::path::PathBuf;
 use std::sync::{
-    atomic::{AtomicBool, AtomicI64, Ordering},
+    atomic::{AtomicBool, Ordering},
     Arc,
 };
 
@@ -38,7 +38,6 @@ pub struct FixRunContext {
     pub sem: Arc<tokio::sync::Semaphore>,
     pub process_sem: Arc<tokio::sync::Semaphore>,
     pub params: FixParams,
-    pub run_cost: Arc<AtomicI64>,
     pub tx: Tx,
     pub http: reqwest::Client,
 }

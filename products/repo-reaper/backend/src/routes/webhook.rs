@@ -1,4 +1,4 @@
-use crate::agents::agent_score_issues;
+use crate::agents::{agent_score_issues, with_cost_budget, AiCostBudget};
 use crate::db::{
     delete_product_schedule, finish_run, get_conn, get_product_schedule, list_product_schedules,
     record_product_schedule_result, save_product_schedule, start_run, RunStart, RunStatus,
@@ -475,19 +475,27 @@ async fn webhook_single_fix(state: AppState, repo: &str, issue: Value) {
         "status": "queued", "fixability_score": 0, "fixability_reason": "awaiting Scout scoring",
     });
 
-    let mut scored_issues = vec![iss];
-    let scoring_cost = match agent_score_issues(&state.http, &mut scored_issues, &scout).await {
-        Ok(cost) => cost,
-        Err(error) => {
-            tracing::warn!(repo, %error, "RepoReaper webhook issue held because Scout scoring failed");
-            return;
-        }
-    };
     let cost_budget = std::env::var("COST_BUDGET_USD")
         .ok()
         .and_then(|value| value.parse::<f64>().ok())
         .unwrap_or(0.0);
-    if cost_budget > 0.0 && scoring_cost >= cost_budget {
+    let run_cost = std::sync::Arc::new(std::sync::atomic::AtomicI64::new(0));
+    let ai_budget = AiCostBudget::new(cost_budget, run_cost.clone());
+    let mut scored_issues = vec![iss];
+    match with_cost_budget(
+        ai_budget.clone(),
+        agent_score_issues(&state.http, &mut scored_issues, &scout),
+    )
+    .await
+    {
+        Ok(_) => {}
+        Err(error) => {
+            tracing::warn!(repo, %error, "RepoReaper webhook issue held because Scout scoring failed");
+            return;
+        }
+    }
+    let scoring_cost = run_cost.load(std::sync::atomic::Ordering::SeqCst) as f64 / 1_000_000.0;
+    if ai_budget.is_exhausted() || (cost_budget > 0.0 && scoring_cost >= cost_budget) {
         tracing::warn!(
             repo,
             scoring_cost,
@@ -504,10 +512,6 @@ async fn webhook_single_fix(state: AppState, repo: &str, issue: Value) {
         );
         return;
     };
-    let run_cost = std::sync::Arc::new(std::sync::atomic::AtomicI64::new(
-        (scoring_cost * 1_000_000.0) as i64,
-    ));
-
     let run_config_json =
         json!({"source":"webhook","repo":repo,"issue":issue["number"]}).to_string();
     let _ = start_run(RunStart {
@@ -537,15 +541,17 @@ async fn webhook_single_fix(state: AppState, repo: &str, issue: Value) {
             cancel_requested,
             hivecore_mandate_id: None,
         },
-        run_cost: run_cost.clone(),
         tx,
         http: state.http.clone(),
     };
-    fix_one(FixIssueJob {
-        issue: iss,
-        idx: 0,
-        context,
-    })
+    with_cost_budget(
+        ai_budget,
+        fix_one(FixIssueJob {
+            issue: iss,
+            idx: 0,
+            context,
+        }),
+    )
     .await;
     let _ = drain.await;
 

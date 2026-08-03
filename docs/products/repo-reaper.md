@@ -217,7 +217,7 @@ Run history keeps these modes visible:
 - **Sandboxed execution**: Docker sandbox with `--network none`, `--cap-drop ALL`, `--pids-limit 256`, `--memory 2g`, `--cpus 2`
 - **Host execution**: requires two env vars (`REAPER_ENABLE_UNTRUSTED_TESTS=true` + `REAPER_ALLOW_HOST_TESTS=true`)
 - **Test timeout**: configurable via `REAPER_TEST_TIMEOUT_SECONDS` (default: 600s)
-- **Cost budget**: `COST_BUDGET_USD` caps AI spend per run (0 = uncapped, with a warning)
+- **Cost budget**: `COST_BUDGET_USD` is the hard AI-spend ceiling per run (0 = uncapped, with a warning). A request may choose a smaller `cost_budget_usd`, but cannot raise the configured ceiling. Model calls reserve estimated capacity atomically before dispatch, including concurrent and failed work.
 - **Concurrency limiting**: Semaphore-based; configurable per run
 - **Only one run at a time**: `runActive` atomic flag prevents concurrent hunts
 - **Suite policy and PR capacity**: when `PATCHHIVE_HIVECORE_URL` is configured, RepoReaper fails closed on unavailable repository policy, atomically rechecks per-owner open-PR/cooldown limits, reserves both its product slot and suite-wide slot immediately before PR creation, and releases capacity on failed creation or observed PR closure/merge. Mandate runs use their canonical limits; direct and scheduled runs use conservative defaults.

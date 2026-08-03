@@ -8,6 +8,11 @@ use reqwest::Client;
 use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
+use std::future::Future;
+use std::sync::{
+    atomic::{AtomicI64, Ordering},
+    Arc,
+};
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 
@@ -15,6 +20,105 @@ pub const DEFAULT_MAX_TOKENS: u32 = 2000;
 pub const OPENROUTER_BASE_URL: &str = "https://openrouter.ai/api/v1";
 const PATCH_MAX_TOKENS: u32 = 8000;
 const REVIEW_MAX_TOKENS: u32 = 5000;
+
+tokio::task_local! {
+    static ACTIVE_COST_BUDGET: Arc<AiCostBudget>;
+}
+
+/// Run-scoped, atomic admission for model spend. Reservations are charged
+/// before transport begins and settled to actual estimated usage afterward.
+/// Failed or uncertain calls retain their reservation so failures cannot make
+/// the live budget look cheaper than the work already admitted.
+pub struct AiCostBudget {
+    limit_micros: i64,
+    used_micros: Arc<AtomicI64>,
+    exhausted: std::sync::atomic::AtomicBool,
+}
+
+impl AiCostBudget {
+    pub fn new(limit_usd: f64, used_micros: Arc<AtomicI64>) -> Arc<Self> {
+        Arc::new(Self {
+            limit_micros: usd_to_micros(limit_usd.max(0.0)),
+            used_micros,
+            exhausted: std::sync::atomic::AtomicBool::new(false),
+        })
+    }
+
+    pub fn is_exhausted(&self) -> bool {
+        self.exhausted.load(Ordering::SeqCst)
+    }
+
+    fn reserve(self: &Arc<Self>, amount_usd: f64) -> Result<CostReservation> {
+        let amount_micros = usd_to_micros(amount_usd).max(1);
+        loop {
+            let used = self.used_micros.load(Ordering::SeqCst);
+            let next = used.saturating_add(amount_micros);
+            if self.limit_micros > 0 && next > self.limit_micros {
+                self.exhausted.store(true, Ordering::SeqCst);
+                return Err(anyhow!(
+                    "AI cost budget exhausted: ${:.6} used or reserved of ${:.6}",
+                    used as f64 / 1_000_000.0,
+                    self.limit_micros as f64 / 1_000_000.0
+                ));
+            }
+            if self
+                .used_micros
+                .compare_exchange(used, next, Ordering::SeqCst, Ordering::SeqCst)
+                .is_ok()
+            {
+                return Ok(CostReservation {
+                    budget: self.clone(),
+                    reserved_micros: amount_micros,
+                    settled: false,
+                });
+            }
+        }
+    }
+}
+
+struct CostReservation {
+    budget: Arc<AiCostBudget>,
+    reserved_micros: i64,
+    settled: bool,
+}
+
+impl CostReservation {
+    fn settle(mut self, actual_usd: f64) {
+        let actual_micros = usd_to_micros(actual_usd).max(0);
+        if actual_micros < self.reserved_micros {
+            self.budget
+                .used_micros
+                .fetch_sub(self.reserved_micros - actual_micros, Ordering::SeqCst);
+        } else if actual_micros > self.reserved_micros {
+            self.budget
+                .used_micros
+                .fetch_add(actual_micros - self.reserved_micros, Ordering::SeqCst);
+        }
+        self.settled = true;
+    }
+}
+
+impl Drop for CostReservation {
+    fn drop(&mut self) {
+        if !self.settled {
+            tracing::warn!(
+                reserved_usd = self.reserved_micros as f64 / 1_000_000.0,
+                "retaining AI cost reservation after a failed or uncertain call"
+            );
+        }
+    }
+}
+
+fn usd_to_micros(value: f64) -> i64 {
+    if !value.is_finite() || value <= 0.0 {
+        return 0;
+    }
+    (value * 1_000_000.0).ceil().min(i64::MAX as f64) as i64
+}
+
+pub async fn with_cost_budget<T>(budget: Arc<AiCostBudget>, future: impl Future<Output = T>) -> T {
+    ACTIVE_COST_BUDGET.scope(budget, future).await
+}
 
 // ── Cost table ($/1k tokens: input, output) ───────────────────────────────────
 fn cost_rates(provider: &str, model: &str) -> (f64, f64) {
@@ -37,6 +141,15 @@ fn estimate_cost(prompt: &str, response: &str, provider: &str, model: &str) -> f
     // Use char count instead of byte count — more accurate for non-ASCII content.
     (prompt.chars().count() as f64 / 4.0 / 1000.0) * ic
         + (response.chars().count() as f64 / 4.0 / 1000.0) * oc
+}
+
+fn reserve_cost(p: &AgentCallParams<'_>) -> f64 {
+    let (input_rate, output_rate) = cost_rates(p.provider, p.model);
+    let input_tokens = (p.system.chars().count() + p.prompt.chars().count()) as f64 / 4.0;
+    // OpenAI-compatible transports can retry once with twice the output cap.
+    // Reserving three output windows and two input windows covers both calls.
+    (input_tokens * 2.0 / 1000.0) * input_rate
+        + (f64::from(p.max_tokens) * 3.0 / 1000.0) * output_rate
 }
 
 fn strip_json_fence(s: &str) -> &str {
@@ -225,6 +338,11 @@ pub async fn ai_call(http: &Client, p: &AgentCallParams<'_>) -> Result<(String, 
         return Err(anyhow!("Provider {} is cooling down", p.provider));
     }
 
+    let reservation = ACTIVE_COST_BUDGET
+        .try_with(|budget| budget.reserve(reserve_cost(p)))
+        .ok()
+        .transpose()?;
+
     let result = match p.provider {
         "anthropic" => anthropic_call(http, p).await,
         "openai" => {
@@ -279,6 +397,9 @@ pub async fn ai_call(http: &Client, p: &AgentCallParams<'_>) -> Result<(String, 
             p.model,
         )
     };
+    if let Some(reservation) = reservation {
+        reservation.settle(cost);
+    }
     Ok((text, cost))
 }
 
@@ -785,9 +906,27 @@ pub async fn agent_pr_comment_fix(
 #[cfg(test)]
 mod tests {
     use super::{
-        openai_reported_cost, openai_request_body, parse_typed_json, AgentCallParams,
+        openai_reported_cost, openai_request_body, parse_typed_json, AgentCallParams, AiCostBudget,
         DryRunAnalysisResponse, GeneratedPatchResponse, SmithReviewResponse,
     };
+    use std::sync::{atomic::AtomicI64, Arc};
+
+    #[test]
+    fn ai_budget_reservations_are_atomic_and_fail_closed() {
+        let used = Arc::new(AtomicI64::new(0));
+        let budget = AiCostBudget::new(0.10, used.clone());
+        let first = budget.reserve(0.06).expect("first reservation");
+        assert!(budget.reserve(0.05).is_err());
+        assert!(budget.is_exhausted());
+
+        first.settle(0.02);
+        let second = budget
+            .reserve(0.05)
+            .expect("capacity returned on settlement");
+        drop(second);
+
+        assert_eq!(used.load(std::sync::atomic::Ordering::SeqCst), 70_000);
+    }
 
     #[test]
     fn generated_patch_contract_requires_confidence_and_patch_field() {

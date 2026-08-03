@@ -75,7 +75,7 @@ cd ../frontend && npm install && npm run dev
 | `PROVIDER_API_KEY` | Direct AI provider API key when not using a local OpenAI-compatible gateway. |
 | `PATCHHIVE_AI_URL` | Optional OpenAI-compatible local gateway such as `@patchhive/ai-local`. |
 | `OLLAMA_BASE_URL` | Optional Ollama endpoint. |
-| `COST_BUDGET_USD` | Run budget cap. |
+| `COST_BUDGET_USD` | Hard run budget ceiling; request payloads may only lower it. |
 | `MIN_REVIEW_CONFIDENCE` | Minimum Smith confidence before validation and PR delivery. |
 | `RETRY_COUNT` | Patch or validation retry count. |
 | `REAPER_MAX_ACTIVE_WORKERS` | Process-wide cap shared by manual, scheduled, and webhook patch/test workers. Defaults to `3` and is clamped to `1..=128`. |
