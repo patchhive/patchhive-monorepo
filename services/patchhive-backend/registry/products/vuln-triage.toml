@@ -6,6 +6,15 @@ module_path = "crate::products::vuln_triage"
 route_prefix = "/api/products/vuln-triage"
 migration_stage = "integrated"
 
+[display]
+order = 8
+icon = "🚨"
+lane = "Security"
+description = "Turns security alerts into a practical engineering queue with clear next steps."
+repository = "patchhive/vulntriage"
+frontend_url = "http://localhost:5181"
+api_url = "http://localhost:8110"
+
 [safety]
 read_only = true
 credential_scopes = ["github:security_events:read", "github:dependabot:read"]

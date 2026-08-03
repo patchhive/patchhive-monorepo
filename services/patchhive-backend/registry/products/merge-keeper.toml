@@ -6,6 +6,15 @@ module_path = "crate::products::merge_keeper"
 route_prefix = "/api/products/merge-keeper"
 migration_stage = "integrated"
 
+[display]
+order = 5
+icon = "🔗"
+lane = "Merge"
+description = "Decides whether a pull request is truly merge-ready, blocked, or on hold."
+repository = "patchhive/mergekeeper"
+frontend_url = "http://localhost:5178"
+api_url = "http://localhost:8050"
+
 [safety]
 read_only = false
 writes_external_state = true

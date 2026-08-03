@@ -6,6 +6,15 @@ module_path = "crate::products::review_bee"
 route_prefix = "/api/products/review-bee"
 migration_stage = "integrated"
 
+[display]
+order = 2
+icon = "🐝"
+lane = "Review"
+description = "Turns review-thread churn into a concrete follow-up checklist."
+repository = "patchhive/reviewbee"
+frontend_url = "http://localhost:5177"
+api_url = "http://localhost:8040"
+
 [safety]
 read_only = false
 writes_external_state = true

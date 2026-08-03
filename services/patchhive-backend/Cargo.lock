@@ -672,6 +672,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "tokio",
+ "toml",
  "tower-http 0.5.2",
  "tracing",
  "tracing-subscriber",

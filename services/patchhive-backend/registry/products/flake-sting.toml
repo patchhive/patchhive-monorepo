@@ -6,6 +6,15 @@ module_path = "crate::products::flake_sting"
 route_prefix = "/api/products/flake-sting"
 migration_stage = "integrated"
 
+[display]
+order = 6
+icon = "🦂"
+lane = "CI"
+description = "Detects flaky workflow behavior and explains why teams should distrust it."
+repository = "patchhive/flakesting"
+frontend_url = "http://localhost:5179"
+api_url = "http://localhost:8060"
+
 [safety]
 read_only = true
 credential_scopes = ["github:actions:read"]

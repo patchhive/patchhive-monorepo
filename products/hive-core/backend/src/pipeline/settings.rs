@@ -34,7 +34,7 @@ pub(super) async fn save_settings(
 
     let known: Vec<&str> = product_catalog()
         .iter()
-        .map(|product| product.slug)
+        .map(|product| product.slug.as_str())
         .collect();
     for item in &products {
         if !known.contains(&item.slug.as_str()) {
@@ -104,7 +104,7 @@ pub(super) fn build_settings_response() -> SettingsResponse {
 
     let products = product_catalog()
         .iter()
-        .map(|definition| build_settings_product_item(definition, overrides.get(definition.slug)))
+        .map(|definition| build_settings_product_item(definition, overrides.get(&definition.slug)))
         .collect();
 
     SettingsResponse {
@@ -121,14 +121,14 @@ pub(super) fn build_settings_product_item(
 ) -> ProductSettingsItem {
     let auth = ProductStoredAuth::from_override(override_item);
     ProductSettingsItem {
-        slug: definition.slug.into(),
-        title: definition.title.into(),
-        icon: definition.icon.into(),
-        lane: definition.lane.into(),
-        role: definition.role.into(),
-        repo: definition.repo.into(),
-        default_frontend_url: definition.default_frontend_url.into(),
-        default_api_url: definition.default_api_url.into(),
+        slug: definition.slug.clone(),
+        title: definition.title.clone(),
+        icon: definition.icon.clone(),
+        lane: definition.lane.clone(),
+        role: definition.role.clone(),
+        repo: definition.repo.clone(),
+        default_frontend_url: definition.default_frontend_url.clone(),
+        default_api_url: definition.default_api_url.clone(),
         override_frontend_url: override_item
             .map(|item| item.frontend_url.clone())
             .unwrap_or_default(),

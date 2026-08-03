@@ -50,6 +50,18 @@ pub struct ProductManifest {
     pub health: ProductHealthContract,
     #[serde(default)]
     pub routes: Vec<RouteClaim>,
+    pub display: ProductDisplay,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct ProductDisplay {
+    pub order: usize,
+    pub icon: String,
+    pub lane: String,
+    pub description: String,
+    pub repository: String,
+    pub frontend_url: String,
+    pub api_url: String,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -65,13 +77,29 @@ fn default_route_prefix() -> String {
 impl ProductRegistry {
     pub fn load() -> Result<Self> {
         let mut products = Vec::with_capacity(MANIFEST_SOURCES.len());
-        for source in MANIFEST_SOURCES {
-            let mut product = toml::from_str::<ProductManifest>(source)
-                .context("could not parse product manifest")?;
+        for (index, source) in MANIFEST_SOURCES.iter().enumerate() {
+            let mut product = toml::from_str::<ProductManifest>(source).with_context(|| {
+                format!("could not parse product manifest at inventory index {index}")
+            })?;
             if product.route_prefix.is_empty() {
                 product.route_prefix = format!("/api/products/{}", product.key);
             }
+            product.validate()?;
             products.push(product);
+        }
+        let mut keys = std::collections::HashSet::with_capacity(products.len());
+        let mut orders = std::collections::HashSet::with_capacity(products.len());
+        for product in &products {
+            anyhow::ensure!(
+                keys.insert(product.key.as_str()),
+                "duplicate product key '{}' in registry",
+                product.key
+            );
+            anyhow::ensure!(
+                orders.insert(product.display.order),
+                "duplicate product display order {} in registry",
+                product.display.order
+            );
         }
         products.sort_by_key(|product| product.sort_index());
         Ok(Self { products })
@@ -87,6 +115,46 @@ impl ProductRegistry {
 }
 
 impl ProductManifest {
+    fn validate(&self) -> Result<()> {
+        anyhow::ensure!(!self.key.trim().is_empty(), "product key must not be empty");
+        anyhow::ensure!(
+            !self.name.trim().is_empty(),
+            "product '{}' has no name",
+            self.key
+        );
+        anyhow::ensure!(
+            !self.display.icon.trim().is_empty(),
+            "product '{}' has no display icon",
+            self.key
+        );
+        anyhow::ensure!(
+            !self.display.lane.trim().is_empty(),
+            "product '{}' has no display lane",
+            self.key
+        );
+        anyhow::ensure!(
+            !self.display.description.trim().is_empty(),
+            "product '{}' has no display description",
+            self.key
+        );
+        anyhow::ensure!(
+            !self.display.repository.trim().is_empty(),
+            "product '{}' has no repository",
+            self.key
+        );
+        anyhow::ensure!(
+            !self.display.frontend_url.trim().is_empty(),
+            "product '{}' has no frontend URL",
+            self.key
+        );
+        anyhow::ensure!(
+            !self.display.api_url.trim().is_empty(),
+            "product '{}' has no API URL",
+            self.key
+        );
+        Ok(())
+    }
+
     pub fn gateway_target_url(&self) -> Option<String> {
         self.gateway.as_ref().and_then(GatewayConfig::target_url)
     }
@@ -192,10 +260,7 @@ impl ProductManifest {
     }
 
     fn sort_index(&self) -> usize {
-        PRODUCT_ORDER
-            .iter()
-            .position(|key| *key == self.key.as_str())
-            .unwrap_or(usize::MAX)
+        self.display.order
     }
 
     fn gateway_status(&self) -> GatewayStatus {
@@ -264,21 +329,6 @@ pub fn contract_drift_count(
         0
     }
 }
-
-const PRODUCT_ORDER: &[&str] = &[
-    "hive-core",
-    "signal-hive",
-    "review-bee",
-    "trust-gate",
-    "repo-memory",
-    "merge-keeper",
-    "flake-sting",
-    "dep-triage",
-    "vuln-triage",
-    "refactor-scout",
-    "release-sentry",
-    "repo-reaper",
-];
 
 fn route_path_matches(pattern: &str, path: &str) -> bool {
     let pattern_parts = pattern.trim_matches('/').split('/').collect::<Vec<_>>();

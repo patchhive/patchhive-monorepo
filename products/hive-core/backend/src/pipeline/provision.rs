@@ -45,7 +45,7 @@ pub(super) async fn provision_service_token(
     }
 
     let overrides = db::product_overrides();
-    let override_item = overrides.get(definition.slug);
+    let override_item = overrides.get(&definition.slug);
     let api_url_override = body.api_url.unwrap_or_default().trim().to_string();
     let operator_api_key = body.operator_api_key.unwrap_or_default().trim().to_string();
     let suite_bootstrap_secret = configured_suite_bootstrap_secret();
@@ -173,7 +173,7 @@ pub(super) async fn provision_service_token_for_product(
         })?;
 
     let updated_override = ProductOverride {
-        slug: definition.slug.into(),
+        slug: definition.slug.clone(),
         frontend_url: override_item
             .map(|item| item.frontend_url.clone())
             .unwrap_or_default(),

@@ -6,6 +6,15 @@ module_path = "crate::products::hive_core"
 route_prefix = "/api/products/hive-core"
 migration_stage = "integrated"
 
+[display]
+order = 0
+icon = "⬢"
+lane = "Control Plane"
+description = "Centralizes suite visibility, shared defaults, and launch surfaces across PatchHive."
+repository = "patchhive/hivecore"
+frontend_url = "http://localhost:5183"
+api_url = "http://localhost:8100"
+
 [safety]
 read_only = false
 writes_external_state = false

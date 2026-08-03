@@ -180,7 +180,7 @@ pub(super) async fn save_pr_budgets(
     }
     let known = product_catalog()
         .iter()
-        .map(|product| product.slug)
+        .map(|product| product.slug.as_str())
         .collect::<HashSet<_>>();
     let mut products = Vec::new();
     let mut seen = HashSet::new();
@@ -443,12 +443,12 @@ fn build_pr_budget_status() -> InternalApiResult<PrBudgetStatusResponse> {
         .iter()
         .map(|definition| {
             let limit = configured
-                .get(definition.slug)
+                .get(&definition.slug)
                 .copied()
-                .unwrap_or_else(|| db::default_product_pr_limit(definition.slug));
-            let used = product_usage.get(definition.slug).copied().unwrap_or(0);
+                .unwrap_or_else(|| db::default_product_pr_limit(&definition.slug));
+            let used = product_usage.get(&definition.slug).copied().unwrap_or(0);
             ProductPrBudget {
-                product: definition.slug.into(),
+                product: definition.slug.clone(),
                 limit,
                 used,
                 remaining: limit.saturating_sub(used),

@@ -88,7 +88,7 @@ pub(super) async fn dispatch_with_approval(
     }
 
     let overrides = db::product_overrides();
-    let override_item = overrides.get(definition.slug);
+    let override_item = overrides.get(&definition.slug);
     let enabled = override_item.map(|item| item.enabled).unwrap_or(true);
     if !enabled {
         return Err(api_error(
@@ -121,7 +121,7 @@ pub(super) async fn dispatch_with_approval(
         .map_err(|message| {
             api_error(StatusCode::BAD_GATEWAY, "capabilities_unavailable", message)
         })?;
-    let safety = crate::state::product_safety(definition.slug).ok_or_else(|| {
+    let safety = crate::state::product_safety(&definition.slug).ok_or_else(|| {
         api_error(
             StatusCode::SERVICE_UNAVAILABLE,
             "product_safety_unavailable",
@@ -194,7 +194,7 @@ pub(super) async fn dispatch_with_approval(
             })?;
 
         if let Some((code, message)) =
-            dispatch_service_token_issue(definition.title, &action, &auth_status)
+            dispatch_service_token_issue(&definition.title, &action, &auth_status)
         {
             return Err(api_error(StatusCode::FORBIDDEN, code, message));
         }
@@ -226,7 +226,7 @@ pub(super) async fn dispatch_with_approval(
             }
         };
         ApprovalSubject::for_dispatch(
-            definition.slug,
+            definition.slug.clone(),
             &action,
             &input,
             repository,
@@ -328,7 +328,7 @@ pub(super) async fn dispatch_with_approval(
     let event_id = format!("evt_{}", Uuid::now_v7());
     let mut event = ProductActionEvent {
         id: event_id,
-        product_slug: definition.slug.into(),
+        product_slug: definition.slug.clone(),
         action_id: action.id.clone(),
         action_label: action.label.clone(),
         method: action.method.clone(),

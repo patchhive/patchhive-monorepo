@@ -68,7 +68,7 @@ pub(super) async fn run_product_runbook(
 
     let started_at = now_rfc3339();
     let overrides = db::product_overrides();
-    let override_item = overrides.get(definition.slug);
+    let override_item = overrides.get(&definition.slug);
     let auth = ProductStoredAuth::from_override(override_item);
     let api_url = resolve_api_url(override_item.map(|item| item.api_url.as_str()), definition);
 
@@ -76,7 +76,7 @@ pub(super) async fn run_product_runbook(
 
     // 1. Reachability. Everything below depends on this, so a failure here is
     //    reported once rather than repeated as five downstream mysteries.
-    let probe = fetch_product_health(&state.client, definition.slug, &api_url, &auth).await;
+    let probe = fetch_product_health(&state.client, &definition.slug, &api_url, &auth).await;
     let reachable = probe.health.status.is_reachable();
     steps.push(step(
         "reachable",
@@ -265,8 +265,8 @@ fn finish(
 
     let run = RunbookRun {
         id: format!("rbk_{}", Uuid::now_v7()),
-        product_slug: definition.slug.into(),
-        product_title: definition.title.into(),
+        product_slug: definition.slug.clone(),
+        product_title: definition.title.clone(),
         status: if failed > 0 {
             "failed"
         } else if warned > 0 {

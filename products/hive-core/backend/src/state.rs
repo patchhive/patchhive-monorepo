@@ -1,7 +1,7 @@
-use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
+use serde::Deserialize;
 use tokio::sync::RwLock;
 
 use crate::models::SetupFleetLaunchJob;
@@ -70,19 +70,20 @@ pub fn dispatch_timeout_secs() -> u64 {
         .clamp(5, 3_600)
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProductDefinition {
-    pub slug: &'static str,
-    pub title: &'static str,
-    pub icon: &'static str,
-    pub lane: &'static str,
-    pub role: &'static str,
-    pub repo: &'static str,
-    pub default_frontend_url: &'static str,
-    pub default_api_url: &'static str,
+    pub slug: String,
+    pub title: String,
+    pub icon: String,
+    pub lane: String,
+    pub role: String,
+    pub repo: String,
+    pub default_frontend_url: String,
+    pub default_api_url: String,
+    pub safety: ProductSafetyDefinition,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProductSafetyDefinition {
     pub writes_external_state: bool,
     pub mutates_repositories: bool,
@@ -90,143 +91,185 @@ pub struct ProductSafetyDefinition {
     pub requires_operator_approval: bool,
 }
 
-static PRODUCT_SAFETY: OnceLock<HashMap<String, ProductSafetyDefinition>> = OnceLock::new();
+static PRODUCT_REGISTRY: OnceLock<Vec<ProductDefinition>> = OnceLock::new();
 
-pub fn configure_product_safety(
-    entries: impl IntoIterator<Item = (String, ProductSafetyDefinition)>,
-) -> anyhow::Result<()> {
-    PRODUCT_SAFETY
-        .set(entries.into_iter().collect())
-        .map_err(|_| anyhow::anyhow!("HiveCore product safety registry was already configured"))
+const PRODUCT_MANIFESTS: &[(&str, &str)] = &[
+    (
+        "hive-core",
+        include_str!("../../../../services/patchhive-backend/registry/products/hive-core.toml"),
+    ),
+    (
+        "signal-hive",
+        include_str!("../../../../services/patchhive-backend/registry/products/signal-hive.toml"),
+    ),
+    (
+        "review-bee",
+        include_str!("../../../../services/patchhive-backend/registry/products/review-bee.toml"),
+    ),
+    (
+        "trust-gate",
+        include_str!("../../../../services/patchhive-backend/registry/products/trust-gate.toml"),
+    ),
+    (
+        "repo-memory",
+        include_str!("../../../../services/patchhive-backend/registry/products/repo-memory.toml"),
+    ),
+    (
+        "merge-keeper",
+        include_str!("../../../../services/patchhive-backend/registry/products/merge-keeper.toml"),
+    ),
+    (
+        "flake-sting",
+        include_str!("../../../../services/patchhive-backend/registry/products/flake-sting.toml"),
+    ),
+    (
+        "dep-triage",
+        include_str!("../../../../services/patchhive-backend/registry/products/dep-triage.toml"),
+    ),
+    (
+        "vuln-triage",
+        include_str!("../../../../services/patchhive-backend/registry/products/vuln-triage.toml"),
+    ),
+    (
+        "refactor-scout",
+        include_str!(
+            "../../../../services/patchhive-backend/registry/products/refactor-scout.toml"
+        ),
+    ),
+    (
+        "release-sentry",
+        include_str!(
+            "../../../../services/patchhive-backend/registry/products/release-sentry.toml"
+        ),
+    ),
+    (
+        "repo-reaper",
+        include_str!("../../../../services/patchhive-backend/registry/products/repo-reaper.toml"),
+    ),
+];
+
+#[derive(Deserialize)]
+struct RegistryManifest {
+    key: String,
+    name: String,
+    display: RegistryDisplay,
+    safety: RegistrySafety,
+}
+
+#[derive(Deserialize)]
+struct RegistryDisplay {
+    order: usize,
+    icon: String,
+    lane: String,
+    description: String,
+    repository: String,
+    frontend_url: String,
+    api_url: String,
+}
+
+#[derive(Deserialize)]
+struct RegistrySafety {
+    #[serde(default)]
+    writes_external_state: bool,
+    #[serde(default)]
+    mutates_repositories: bool,
+    #[serde(default)]
+    opens_pull_requests: bool,
+    #[serde(default)]
+    requires_operator_approval: bool,
+}
+
+pub fn load_product_registry() -> anyhow::Result<()> {
+    if PRODUCT_REGISTRY.get().is_some() {
+        return Ok(());
+    }
+
+    let mut entries = Vec::with_capacity(PRODUCT_MANIFESTS.len());
+    for (source_name, source) in PRODUCT_MANIFESTS {
+        let manifest = toml::from_str::<RegistryManifest>(source).map_err(|error| {
+            anyhow::anyhow!("could not parse canonical product manifest '{source_name}': {error}")
+        })?;
+        anyhow::ensure!(
+            manifest.key == *source_name,
+            "canonical product manifest '{source_name}' declares mismatched key '{}'",
+            manifest.key
+        );
+        entries.push((
+            manifest.display.order,
+            ProductDefinition {
+                slug: manifest.key,
+                title: manifest.name,
+                icon: manifest.display.icon,
+                lane: manifest.display.lane,
+                role: manifest.display.description,
+                repo: manifest.display.repository,
+                default_frontend_url: manifest.display.frontend_url,
+                default_api_url: manifest.display.api_url,
+                safety: ProductSafetyDefinition {
+                    writes_external_state: manifest.safety.writes_external_state,
+                    mutates_repositories: manifest.safety.mutates_repositories,
+                    opens_pull_requests: manifest.safety.opens_pull_requests,
+                    requires_operator_approval: manifest.safety.requires_operator_approval,
+                },
+            },
+        ));
+    }
+    entries.sort_by_key(|(order, _)| *order);
+    anyhow::ensure!(
+        entries.windows(2).all(|pair| pair[0].0 != pair[1].0),
+        "canonical product manifests contain duplicate display order values"
+    );
+    configure_product_registry(entries.into_iter().map(|(_, entry)| entry).collect())
+}
+
+pub fn configure_product_registry(entries: Vec<ProductDefinition>) -> anyhow::Result<()> {
+    anyhow::ensure!(!entries.is_empty(), "HiveCore product registry is empty");
+    let mut slugs = std::collections::HashSet::with_capacity(entries.len());
+    for entry in &entries {
+        anyhow::ensure!(
+            !entry.slug.trim().is_empty(),
+            "product registry contains an empty slug"
+        );
+        anyhow::ensure!(
+            slugs.insert(entry.slug.clone()),
+            "product registry contains duplicate slug '{}'",
+            entry.slug
+        );
+        anyhow::ensure!(
+            !entry.title.trim().is_empty()
+                && !entry.icon.trim().is_empty()
+                && !entry.lane.trim().is_empty()
+                && !entry.role.trim().is_empty()
+                && !entry.repo.trim().is_empty()
+                && !entry.default_frontend_url.trim().is_empty()
+                && !entry.default_api_url.trim().is_empty(),
+            "product registry entry '{}' has incomplete display or endpoint metadata",
+            entry.slug
+        );
+    }
+    PRODUCT_REGISTRY
+        .set(entries)
+        .map_err(|_| anyhow::anyhow!("HiveCore product registry was already configured"))
 }
 
 pub fn product_safety(slug: &str) -> Option<&'static ProductSafetyDefinition> {
-    PRODUCT_SAFETY.get()?.get(slug)
+    product_catalog()
+        .iter()
+        .find(|entry| entry.slug == slug)
+        .map(|entry| &entry.safety)
 }
 
-const PRODUCT_CATALOG: [ProductDefinition; 12] = [
-    ProductDefinition {
-        slug: "signal-hive",
-        title: "SignalHive",
-        icon: "📡",
-        lane: "Visibility",
-        role: "Surfaces maintenance drag, stale work, and recurring issue pressure before automation acts.",
-        repo: "patchhive/signalhive",
-        default_frontend_url: "http://localhost:5174",
-        default_api_url: "http://localhost:8010",
-    },
-    ProductDefinition {
-        slug: "repo-memory",
-        title: "RepoMemory",
-        icon: "🧠",
-        lane: "Memory",
-        role: "Captures durable repo conventions and lessons that later agents can reuse.",
-        repo: "patchhive/repomemory",
-        default_frontend_url: "http://localhost:5176",
-        default_api_url: "http://localhost:8030",
-    },
-    ProductDefinition {
-        slug: "trust-gate",
-        title: "TrustGate",
-        icon: "🛡",
-        lane: "Trust",
-        role: "Scores diffs against repo-specific safety rules and testing expectations.",
-        repo: "patchhive/trustgate",
-        default_frontend_url: "http://localhost:5175",
-        default_api_url: "http://localhost:8020",
-    },
-    ProductDefinition {
-        slug: "repo-reaper",
-        title: "RepoReaper",
-        icon: "⚔",
-        lane: "Action",
-        role: "Finds issues, generates fixes, validates them, and opens autonomous pull requests.",
-        repo: "patchhive/reporeaper",
-        default_frontend_url: "http://localhost:5173",
-        default_api_url: "http://localhost:8000",
-    },
-    ProductDefinition {
-        slug: "review-bee",
-        title: "ReviewBee",
-        icon: "🐝",
-        lane: "Review",
-        role: "Turns review-thread churn into a concrete follow-up checklist.",
-        repo: "patchhive/reviewbee",
-        default_frontend_url: "http://localhost:5177",
-        default_api_url: "http://localhost:8040",
-    },
-    ProductDefinition {
-        slug: "merge-keeper",
-        title: "MergeKeeper",
-        icon: "🔗",
-        lane: "Merge",
-        role: "Decides whether a pull request is truly merge-ready, blocked, or on hold.",
-        repo: "patchhive/mergekeeper",
-        default_frontend_url: "http://localhost:5178",
-        default_api_url: "http://localhost:8050",
-    },
-    ProductDefinition {
-        slug: "flake-sting",
-        title: "FlakeSting",
-        icon: "🦂",
-        lane: "CI",
-        role: "Detects flaky workflow behavior and explains why teams should distrust it.",
-        repo: "patchhive/flakesting",
-        default_frontend_url: "http://localhost:5179",
-        default_api_url: "http://localhost:8060",
-    },
-    ProductDefinition {
-        slug: "dep-triage",
-        title: "DepTriage",
-        icon: "📦",
-        lane: "Dependencies",
-        role: "Ranks dependency update noise into update now, watch, or ignore for now.",
-        repo: "patchhive/deptriage",
-        default_frontend_url: "http://localhost:5180",
-        default_api_url: "http://localhost:8070",
-    },
-    ProductDefinition {
-        slug: "vuln-triage",
-        title: "VulnTriage",
-        icon: "🚨",
-        lane: "Security",
-        role: "Turns security alerts into a practical engineering queue with clear next steps.",
-        repo: "patchhive/vulntriage",
-        default_frontend_url: "http://localhost:5181",
-        default_api_url: "http://localhost:8110",
-    },
-    ProductDefinition {
-        slug: "refactor-scout",
-        title: "RefactorScout",
-        icon: "🧭",
-        lane: "Quality",
-        role: "Surfaces safe refactor opportunities before code health drift compounds.",
-        repo: "patchhive/refactorscout",
-        default_frontend_url: "http://localhost:5182",
-        default_api_url: "http://localhost:8090",
-    },
-    ProductDefinition {
-        slug: "release-sentry",
-        title: "ReleaseSentry",
-        icon: "🚦",
-        lane: "Release",
-        role: "Checks whether a repo or product is actually ready to ship.",
-        repo: "patchhive/release-sentry",
-        default_frontend_url: "http://localhost:5184",
-        default_api_url: "http://localhost:8120",
-    },
-    ProductDefinition {
-        slug: "hive-core",
-        title: "HiveCore",
-        icon: "⬢",
-        lane: "Control Plane",
-        role: "Centralizes suite visibility, shared defaults, and launch surfaces across PatchHive.",
-        repo: "patchhive/hivecore",
-        default_frontend_url: "http://localhost:5183",
-        default_api_url: "http://localhost:8100",
-    },
-];
-
 pub fn product_catalog() -> &'static [ProductDefinition] {
-    &PRODUCT_CATALOG
+    PRODUCT_REGISTRY
+        .get()
+        .map(Vec::as_slice)
+        .unwrap_or_else(|| panic!("HiveCore product registry must be configured before routing"))
+}
+
+pub fn ensure_product_registry() -> anyhow::Result<()> {
+    anyhow::ensure!(
+        PRODUCT_REGISTRY.get().is_some(),
+        "HiveCore product registry was not configured"
+    );
+    Ok(())
 }

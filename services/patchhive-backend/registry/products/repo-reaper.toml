@@ -6,6 +6,15 @@ module_path = "crate::products::repo_reaper"
 route_prefix = "/api/products/repo-reaper"
 migration_stage = "integrated"
 
+[display]
+order = 11
+icon = "⚔"
+lane = "Action"
+description = "Finds issues, generates fixes, validates them, and opens autonomous pull requests."
+repository = "patchhive/reporeaper"
+frontend_url = "http://localhost:5173"
+api_url = "http://localhost:8000"
+
 [safety]
 read_only = false
 writes_external_state = true

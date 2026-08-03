@@ -72,14 +72,12 @@ and all of `src/pipeline/`.
 
 ### The blockers
 
-**B1 — Product identity decoration is still duplicated.**
-`state.rs` holds `const PRODUCT_CATALOG: [ProductDefinition; 12]` carrying slug, title, icon,
-lane, role, repo, and default URLs. `services/patchhive-backend/registry/products/*.toml` holds
-`[safety]`, `[[capabilities]]`, `[[routes]]`, `[health]`, and `migration_stage`.
-`patchhive-backend` now injects manifest-backed safety definitions into HiveCore before startup,
-and dispatch fails closed if those definitions are absent or disagree with a live action. The
-remaining duplication is presentation metadata and default standalone URLs; moving those fields
-into the manifests would eliminate the final parallel catalog.
+**B1 — Closed: product identity has one canonical registry.**
+`services/patchhive-backend/registry/products/*.toml` owns product identity, presentation order,
+display metadata, standalone URLs, safety posture, capabilities, routes, health contracts, and
+migration stage. HiveCore parses those same embedded manifests at startup; an invalid, incomplete,
+duplicate, or mismatched record fails startup instead of producing an empty or partially trusted
+catalog. The former `PRODUCT_CATALOG` and injected safety-only map are gone.
 
 **B2 — No durable knowledge of the suite.**
 HiveCore's tables are `suite_settings`, `product_overrides`, `product_action_events`,
@@ -498,9 +496,9 @@ first-run host bring-up remains an HTTP daemon or becomes documented operator se
 
 ## 6. Build order
 
-0. **One registry.** HiveCore reads `registry/products/*.toml`; delete `PRODUCT_CATALOG`. Ports
-   and URLs come from the manifest, which `check:suite-drift` already keeps aligned with
-   `scripts/suite-common.sh`. Prerequisite for HiveCore knowing what a product *is*. (B1)
+0. **One registry — landed.** HiveCore reads `registry/products/*.toml`; `PRODUCT_CATALOG` is
+   deleted, and identity, display metadata, safety posture, ports, and URLs come from the
+   manifests. Invalid registry state fails startup. (B1)
 1. **Materialize suite state.** Background poller, three snapshot tables, reads become table reads.
    (B2)
 2. **Structured policy + reconciliation.** Allow/deny/opt-out become rows; the evaluator becomes

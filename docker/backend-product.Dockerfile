@@ -6,6 +6,7 @@ RUN apt-get update \
     && apt-get install -y pkg-config libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 COPY crates ./crates
+COPY services/patchhive-backend/registry ./services/patchhive-backend/registry
 COPY products/${PRODUCT_SLUG}/backend ./products/${PRODUCT_SLUG}/backend
 RUN cargo build --release --locked --manifest-path products/${PRODUCT_SLUG}/backend/Cargo.toml \
     && cp products/${PRODUCT_SLUG}/backend/target/release/${BINARY_NAME} /tmp/patchhive-product

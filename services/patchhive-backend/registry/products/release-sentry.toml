@@ -6,6 +6,15 @@ module_path = "crate::products::release_sentry"
 route_prefix = "/api/products/release-sentry"
 migration_stage = "integrated"
 
+[display]
+order = 10
+icon = "🚦"
+lane = "Release"
+description = "Checks whether a repo or product is actually ready to ship."
+repository = "patchhive/release-sentry"
+frontend_url = "http://localhost:5184"
+api_url = "http://localhost:8120"
+
 [safety]
 read_only = true
 # github:issues:read is required by check_github_release, which scans blocker

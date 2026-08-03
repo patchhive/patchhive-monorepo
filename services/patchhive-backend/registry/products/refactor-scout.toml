@@ -6,6 +6,15 @@ module_path = "crate::products::refactor_scout"
 route_prefix = "/api/products/refactor-scout"
 migration_stage = "integrated"
 
+[display]
+order = 9
+icon = "🧭"
+lane = "Quality"
+description = "Surfaces safe refactor opportunities before code health drift compounds."
+repository = "patchhive/refactorscout"
+frontend_url = "http://localhost:5182"
+api_url = "http://localhost:8090"
+
 [safety]
 read_only = true
 credential_scopes = ["local:filesystem:read", "github:public-repo:clone"]

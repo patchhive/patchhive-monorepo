@@ -6,6 +6,15 @@ module_path = "crate::products::repo_memory"
 route_prefix = "/api/products/repo-memory"
 migration_stage = "integrated"
 
+[display]
+order = 4
+icon = "🧠"
+lane = "Memory"
+description = "Captures durable repo conventions and lessons that later agents can reuse."
+repository = "patchhive/repomemory"
+frontend_url = "http://localhost:5176"
+api_url = "http://localhost:8030"
+
 [safety]
 read_only = false
 writes_external_state = false

@@ -6,6 +6,15 @@ module_path = "crate::products::trust_gate"
 route_prefix = "/api/products/trust-gate"
 migration_stage = "integrated"
 
+[display]
+order = 3
+icon = "🛡"
+lane = "Trust"
+description = "Scores diffs against repo-specific safety rules and testing expectations."
+repository = "patchhive/trustgate"
+frontend_url = "http://localhost:5175"
+api_url = "http://localhost:8020"
+
 [safety]
 read_only = false
 writes_external_state = true

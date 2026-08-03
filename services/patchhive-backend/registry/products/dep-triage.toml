@@ -6,6 +6,15 @@ module_path = "crate::products::dep_triage"
 route_prefix = "/api/products/dep-triage"
 migration_stage = "integrated"
 
+[display]
+order = 7
+icon = "📦"
+lane = "Dependencies"
+description = "Ranks dependency update noise into update now, watch, or ignore for now."
+repository = "patchhive/deptriage"
+frontend_url = "http://localhost:5180"
+api_url = "http://localhost:8070"
+
 [safety]
 read_only = true
 credential_scopes = ["github:pull_requests:read", "github:dependabot:read"]

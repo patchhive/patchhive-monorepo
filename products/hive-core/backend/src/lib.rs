@@ -66,6 +66,7 @@ use crate::state::AppState;
 /// Schema, startup diagnostics, and any background work. Idempotent: the unified
 /// backend calls this once per enabled engine at boot.
 pub async fn init_runtime() -> Result<()> {
+    state::load_product_registry()?;
     db::init_db()?;
     let checks = startup::validate_config().await;
     log_checks(&checks);

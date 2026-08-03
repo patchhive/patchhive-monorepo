@@ -6,6 +6,15 @@ module_path = "crate::products::signal_hive"
 route_prefix = "/api/products/signal-hive"
 migration_stage = "integrated"
 
+[display]
+order = 1
+icon = "📡"
+lane = "Visibility"
+description = "Surfaces maintenance drag, stale work, and recurring issue pressure before automation acts."
+repository = "patchhive/signalhive"
+frontend_url = "http://localhost:5174"
+api_url = "http://localhost:8010"
+
 [safety]
 read_only = true
 credential_scopes = ["github:repo:read", "github:issues:read", "github:code:read"]

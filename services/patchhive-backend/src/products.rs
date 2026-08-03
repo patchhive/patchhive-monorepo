@@ -3,21 +3,6 @@ use anyhow::Result;
 use crate::config::Config;
 
 pub async fn init_enabled_products(config: &Config) -> Result<()> {
-    if config.product_selection.enables("hive-core") {
-        let registry = crate::registry::ProductRegistry::load()?;
-        hive_core::state::configure_product_safety(registry.products().iter().map(|product| {
-            (
-                product.key.clone(),
-                hive_core::state::ProductSafetyDefinition {
-                    writes_external_state: product.safety.writes_external_state,
-                    mutates_repositories: product.safety.mutates_repositories,
-                    opens_pull_requests: product.safety.opens_pull_requests,
-                    requires_operator_approval: product.safety.requires_operator_approval,
-                },
-            )
-        }))?;
-    }
-
     if config.product_selection.enables("merge-keeper") {
         merge_keeper::init_runtime().await?;
     }

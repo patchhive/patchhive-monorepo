@@ -63,15 +63,15 @@ pub(super) async fn product_runs(
         .find(|product| product.slug == slug)
         .ok_or_else(|| api_error(StatusCode::NOT_FOUND, "unknown_product", "Unknown product."))?;
     let overrides = db::product_overrides();
-    let override_item = overrides.get(definition.slug);
+    let override_item = overrides.get(&definition.slug);
     let api_url = resolve_api_url(override_item.map(|item| item.api_url.as_str()), definition);
     let auth = ProductStoredAuth::from_override(override_item);
 
     if definition.slug == "hive-core" {
         let runs = contract::runs_from_values("hive-core", hive_core_action_run_values(30)).runs;
         return Ok(Json(ok(ProductRunsSnapshotResponse {
-            slug: definition.slug.into(),
-            title: definition.title.into(),
+            slug: definition.slug.clone(),
+            title: definition.title.clone(),
             api_url,
             auth_mode: resolved_auth_mode(definition, &auth),
             machine_auth_configured: resolved_machine_auth_configured(definition, &auth),
@@ -95,8 +95,8 @@ pub(super) async fn product_runs(
         })
     };
     Ok(Json(ok(ProductRunsSnapshotResponse {
-        slug: definition.slug.into(),
-        title: definition.title.into(),
+        slug: definition.slug.clone(),
+        title: definition.title.clone(),
         api_url,
         auth_mode: resolved_auth_mode(definition, &auth),
         machine_auth_configured: resolved_machine_auth_configured(definition, &auth),
@@ -119,7 +119,7 @@ pub(super) async fn product_run_detail(
         .find(|product| product.slug == slug)
         .ok_or_else(|| api_error(StatusCode::NOT_FOUND, "unknown_product", "Unknown product."))?;
     let overrides = db::product_overrides();
-    let override_item = overrides.get(definition.slug);
+    let override_item = overrides.get(&definition.slug);
     let api_url = resolve_api_url(override_item.map(|item| item.api_url.as_str()), definition);
     let auth = ProductStoredAuth::from_override(override_item);
 
@@ -130,8 +130,8 @@ pub(super) async fn product_run_detail(
                 api_error(StatusCode::NOT_FOUND, "run_not_found", "Run was not found.")
             })?;
         return Ok(Json(ok(ProductRunDetailResponse {
-            slug: definition.slug.into(),
-            title: definition.title.into(),
+            slug: definition.slug.clone(),
+            title: definition.title.clone(),
             api_url,
             auth_mode: resolved_auth_mode(definition, &auth),
             machine_auth_configured: resolved_machine_auth_configured(definition, &auth),
@@ -217,8 +217,8 @@ pub(super) async fn product_run_detail(
     };
 
     Ok(Json(ok(ProductRunDetailResponse {
-        slug: definition.slug.into(),
-        title: definition.title.into(),
+        slug: definition.slug.clone(),
+        title: definition.title.clone(),
         api_url,
         auth_mode: resolved_auth_mode(definition, &auth),
         machine_auth_configured: resolved_machine_auth_configured(definition, &auth),
@@ -235,11 +235,9 @@ pub(super) async fn product_run_detail(
 
 pub(super) async fn build_runtime_products(state: &AppState) -> Vec<ProductRuntimeItem> {
     let overrides = db::product_overrides();
-    futures_util::future::join_all(
-        product_catalog().iter().map(|definition| {
-            build_product_runtime(state, definition, overrides.get(definition.slug))
-        }),
-    )
+    futures_util::future::join_all(product_catalog().iter().map(|definition| {
+        build_product_runtime(state, definition, overrides.get(&definition.slug))
+    }))
     .await
 }
 
@@ -251,7 +249,7 @@ pub(super) async fn build_product_runtime(
     let enabled = override_item.map(|item| item.enabled).unwrap_or(true);
     let frontend_url = pick_url(
         override_item.map(|item| item.frontend_url.as_str()),
-        definition.default_frontend_url,
+        &definition.default_frontend_url,
     );
     let api_url = resolve_api_url(override_item.map(|item| item.api_url.as_str()), definition);
     let notes = override_item
@@ -318,16 +316,16 @@ pub(super) async fn build_product_runtime(
             recent_runs: Vec::new(),
         }
     } else {
-        fetch_product_health(&state.client, definition.slug, &api_url, &auth).await
+        fetch_product_health(&state.client, &definition.slug, &api_url, &auth).await
     };
 
     ProductRuntimeItem {
-        slug: definition.slug.into(),
-        title: definition.title.into(),
-        icon: definition.icon.into(),
-        lane: definition.lane.into(),
-        role: definition.role.into(),
-        repo: definition.repo.into(),
+        slug: definition.slug.clone(),
+        title: definition.title.clone(),
+        icon: definition.icon.clone(),
+        lane: definition.lane.clone(),
+        role: definition.role.clone(),
+        repo: definition.repo.clone(),
         enabled,
         frontend_url,
         api_url,

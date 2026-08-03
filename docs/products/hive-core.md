@@ -369,7 +369,7 @@ products/hive-core/
 │       ├── secrets.rs               ── TokenProtector for at-rest encryption/decryption
 │       ├── startup.rs               ── Config validation checks, check caching, level summarization
 │       └── state.rs                 ── AppState (reqwest Client, fleet launch state),
-│                                      ProductDefinition catalog (12 built-in products)
+│                                      Canonical registry manifest snapshot (12 products)
 ├── frontend/                        ── HiveCore UI (React/Svelte, @patchhivehq/ui)
 ├── frontend-v2/                     ── UI v2 prototype
 ├── docker-compose.yml               ── Docker deployment
