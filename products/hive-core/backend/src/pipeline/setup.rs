@@ -11,7 +11,7 @@ use serde_json::Value;
 use tokio::{spawn, time::sleep};
 
 use crate::{
-    db,
+    bootstrap_authority, db,
     models::{
         now_rfc3339, ok, FirstStackSetupResponse, FleetLaunchJobState, FleetLaunchMode,
         FleetLaunchPhase, FleetLaunchStepState, Observation, ProductRuntimeItem,
@@ -140,13 +140,16 @@ pub(super) async fn pair_first_stack(
     State(state): State<AppState>,
 ) -> Json<crate::models::ApiEnvelope<FirstStackSetupResponse>> {
     let mut actions = Vec::new();
-    if let Some(secret) = configured_suite_bootstrap_secret() {
-        auto_pair_first_stack(&state, &secret, &mut actions).await;
-    } else {
-        actions.push(
-            "HiveCore does not have PATCHHIVE_SUITE_BOOTSTRAP_SECRET configured yet, so automatic pairing is not ready."
-                .into(),
-        );
+    let authority = bootstrap_authority::current();
+    match authority.secret() {
+        Some(secret) => auto_pair_first_stack(&state, secret, &mut actions).await,
+        None => actions.push(format!(
+            "Suite bootstrap authority is not ready: {}",
+            authority
+                .state
+                .reason()
+                .unwrap_or("authority state is unavailable")
+        )),
     }
 
     Json(ok(build_first_stack_response(&state, actions).await))
@@ -199,7 +202,7 @@ pub(super) async fn start_setup_product(
     if let Some(error) = launcher_product_slug_error(&slug) {
         return Err(error);
     }
-    let secret = ensure_suite_bootstrap_secret();
+    let secret = require_suite_bootstrap_secret().map_err(suite_bootstrap_api_error)?;
     let launcher = run_launcher_product_action(&state, &slug, "start", Some(&secret)).await?;
     let mut actions = launcher.actions;
     if !launcher.started_products.is_empty() {
@@ -242,7 +245,7 @@ pub(super) async fn restart_setup_product(
     if let Some(error) = launcher_product_slug_error(&slug) {
         return Err(error);
     }
-    let secret = ensure_suite_bootstrap_secret();
+    let secret = require_suite_bootstrap_secret().map_err(suite_bootstrap_api_error)?;
     let launcher = run_launcher_product_action(&state, &slug, "restart", Some(&secret)).await?;
     let mut actions = launcher.actions;
     if !launcher.started_products.is_empty() {
@@ -329,7 +332,7 @@ pub(super) async fn save_setup_product_env(
     let launcher = write_launcher_product_env(&state, &slug, &body.values).await?;
     let mut actions = launcher.actions;
     if body.restart {
-        let secret = ensure_suite_bootstrap_secret();
+        let secret = require_suite_bootstrap_secret().map_err(suite_bootstrap_api_error)?;
         let restarted =
             run_launcher_product_action(&state, &slug, "restart", Some(&secret)).await?;
         actions.extend(restarted.actions);
@@ -525,7 +528,7 @@ pub(super) async fn build_first_stack_response(
         launcher: launcher.status,
         requirements_known,
         requirements_error,
-        suite_bootstrap_configured: configured_suite_bootstrap_secret().is_some(),
+        suite_bootstrap_authority: bootstrap_authority::current().state,
         latest_smoke: db::latest_first_stack_smoke_run(),
         latest_fleet_launch,
         fleet_launch_history,
@@ -539,7 +542,7 @@ async fn queue_fleet_launch(
     mode: FleetLaunchMode,
     actions: &mut Vec<String>,
 ) -> Result<(), (StatusCode, Json<crate::models::ApiEnvelope<Value>>)> {
-    let secret = ensure_suite_bootstrap_secret();
+    let secret = require_suite_bootstrap_secret().map_err(suite_bootstrap_api_error)?;
     let launcher = fetch_launcher_snapshot(state)
         .await
         .map_err(|message| api_error(StatusCode::BAD_GATEWAY, "launcher_unavailable", message))?;
@@ -999,7 +1002,7 @@ pub(super) async fn prepare_first_stack_for_verification(
     state: &AppState,
     actions: &mut Vec<String>,
 ) -> Result<(), (StatusCode, Json<crate::models::ApiEnvelope<Value>>)> {
-    let secret = ensure_suite_bootstrap_secret();
+    let secret = require_suite_bootstrap_secret().map_err(suite_bootstrap_api_error)?;
     let launcher_base_url = launcher_base_url();
     let products_to_start = downstream_products_to_start(state).await;
     if products_to_start.is_empty() {
@@ -1024,8 +1027,18 @@ pub(super) async fn prepare_products_for_service_token_verification(
     slugs: &[&str],
     actions: &mut Vec<String>,
 ) {
-    let secret = ensure_suite_bootstrap_secret();
-    auto_pair_products(state, &secret, slugs, actions).await;
+    let authority = bootstrap_authority::current();
+    if let Some(secret) = authority.secret() {
+        auto_pair_products(state, secret, slugs, actions).await;
+    } else {
+        actions.push(format!(
+            "HiveCore skipped automatic pairing because suite bootstrap authority is not ready: {}",
+            authority
+                .state
+                .reason()
+                .unwrap_or("authority state is unavailable")
+        ));
+    }
 }
 
 fn launcher_base_url() -> String {
@@ -1043,21 +1056,22 @@ fn launcher_request(request: reqwest::RequestBuilder) -> reqwest::RequestBuilder
     }
 }
 
-fn configured_suite_bootstrap_secret() -> Option<String> {
-    env::var("PATCHHIVE_SUITE_BOOTSTRAP_SECRET")
-        .ok()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
+fn require_suite_bootstrap_secret() -> Result<String, crate::models::SuiteBootstrapAuthorityState> {
+    bootstrap_authority::current().into_secret()
 }
 
-fn ensure_suite_bootstrap_secret() -> String {
-    if let Some(secret) = configured_suite_bootstrap_secret() {
-        return secret;
-    }
-
-    let generated = format!("ph-suite-{}", uuid::Uuid::new_v4().simple());
-    env::set_var("PATCHHIVE_SUITE_BOOTSTRAP_SECRET", &generated);
-    generated
+fn suite_bootstrap_api_error(
+    state: crate::models::SuiteBootstrapAuthorityState,
+) -> (StatusCode, Json<crate::models::ApiEnvelope<Value>>) {
+    let message = state
+        .reason()
+        .unwrap_or("Suite bootstrap authority is unavailable.")
+        .to_string();
+    api_error(
+        StatusCode::CONFLICT,
+        "suite_bootstrap_authority_unavailable",
+        message,
+    )
 }
 
 async fn fetch_launcher_snapshot(state: &AppState) -> Result<LauncherSnapshot, String> {

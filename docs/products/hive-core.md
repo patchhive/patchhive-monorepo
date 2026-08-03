@@ -112,7 +112,7 @@ Operator / Frontend
 | Action event | `ProductActionEvent` | Record of a dispatched product action with request/response payloads |
 | Approval record | `ApprovalRecord` | Exact dispatch subject, normalized input, tagged lifecycle, and audit history |
 | Work item | `WorkItem` | Deduplicated proposal identity, intended dispatch, origin, and explicit durable lifecycle |
-| First-stack setup status | `FirstStackSetupResponse` | Launcher status, per-product credentials, pairing readiness, smoke run history, fleet launch jobs |
+| First-stack setup status | `FirstStackSetupResponse` | Launcher status, typed bootstrap authority (`ready`, `not_configured`, `invalid`, `unknown`), per-product credentials, pairing readiness, smoke run history, fleet launch jobs |
 | Contract drift report | `Vec<ProductContractCheck>` | Per-endpoint pass/fail/lock with error messages across health, startup, capabilities, runs, and run detail |
 
 ---
@@ -258,9 +258,9 @@ All errors are wrapped in the `ApiEnvelope` format:
 | `HIVE_CORE_DB_POOL_SIZE` | — | SQLite connection pool size |
 | `HIVE_CORE_API_KEY_HASH` | — | Argon2 hash for API key auth (optional) |
 | `HIVE_CORE_SERVICE_TOKEN_HASH` | — | Argon2 hash for HiveCore service token (optional) |
-| `HIVECORE_ENCRYPTION_KEY` | — | Encrypts saved downstream product service tokens at rest. Auto-migrates existing plaintext rows on boot |
+| `HIVECORE_ENCRYPTION_KEY` | — | Encrypts saved downstream product service tokens and generated suite bootstrap authority at rest. Auto-migrates existing plaintext token rows on boot; keep this key stable |
 | `PATCHHIVE_LAUNCHER_URL` | — | Base URL for the local `patchhive-launcher` service that controls Docker start/stop |
-| `PATCHHIVE_SUITE_BOOTSTRAP_SECRET` | — | Shared bootstrap secret for automatic service-token provisioning/rotation across products |
+| `PATCHHIVE_SUITE_BOOTSTRAP_SECRET` | — | Optional externally managed bootstrap authority for automatic service-token provisioning/rotation. When absent, HiveCore generates and encrypts durable authority only if `HIVECORE_ENCRYPTION_KEY` is valid |
 | `PATCHHIVE_ALLOW_REMOTE_BOOTSTRAP` | — | Set to `true` to allow API key generation from non-localhost clients |
 | `PATCHHIVE_GITHUB_TOKEN_RO` | — | Optional suite-wide classic PAT for future GitHub reads. Use `public_repo` for public repositories or `repo` for private repositories |
 | `PATCHHIVE_AI_URL` | — | OpenAI-compatible gateway used for incident postmortem and run-failure drafts. Suite-wide; prefer this over a raw provider endpoint |
@@ -331,7 +331,7 @@ reach no repository. With no gateway configured they return `ai_unavailable` nam
 missing variable rather than degrading to a canned answer. Grounding comes only from the
 caller's payload, so a draft cannot assert anything the deck did not already show.
 
-Generate `HIVECORE_ENCRYPTION_KEY` with `openssl rand -hex 32`. Startup checks
+Generate `HIVECORE_ENCRYPTION_KEY` with `openssl rand -hex 32` and keep it stable. Startup checks
 reject short values and obvious placeholders; retain the same key across
 restarts so existing encrypted service tokens remain readable.
 
@@ -550,14 +550,14 @@ The `docker-compose.yml` runs the backend as a single container with SQLite on a
 | `db_ok: false` | SQLite file path wrong or disk full | Check `HIVE_CORE_DB_PATH` and verify filesystem space |
 | `config_errors > 0` | Startup validation failures | Check `/startup/checks` endpoint for details; e.g., missing `HIVECORE_ENCRYPTION_KEY` with encrypted tokens in DB |
 | Service token provisioning fails with `502` | Product auth endpoint unreachable | Verify product is running; check product's `/auth/status` endpoint |
-| Service token provisioning fails with `operator_api_key_required` | Product requires auth but no operator key or bootstrap secret provided | Provide a one-time operator API key or configure `PATCHHIVE_SUITE_BOOTSTRAP_SECRET` |
+| Service token provisioning fails with `operator_api_key_required` | Product requires auth but no operator key or ready bootstrap authority is available | Provide a one-time operator API key, configure `PATCHHIVE_SUITE_BOOTSTRAP_SECRET`, or configure a stable `HIVECORE_ENCRYPTION_KEY` so HiveCore can create durable authority |
 | `destructive_action_blocked` on dispatch | Action has `destructive: true` | HiveCore does not dispatch destructive actions yet |
 | `service_token_scope_missing` on dispatch | Saved service token lacks required scopes | Rotate the service token to obtain scoped replacement |
 | `service_token_expired` on dispatch | Product reports the saved service token as expired | Rotate the service token |
 | Product run detail returns `BAD_REQUEST` | Product's API URL not configured or service token missing | Configure the API URL and provision a service token in Settings |
 | Setup tab shows launcher unavailable | `PATCHHIVE_LAUNCHER_URL` not set or launcher not running | Start patchhive-launcher on port 8210; set the env var |
 | Encrypted tokens unreadable | `HIVECORE_ENCRYPTION_KEY` changed or not set | Restore the original encryption key — encrypted tokens cannot be recovered without it |
-| First-stack pairing fails | Products running but not configured for suite bootstrap | Run `./scripts/set-suite-api-key.sh --stack first` and set `PATCHHIVE_SUITE_BOOTSTRAP_SECRET` |
+| First-stack pairing fails | Products are running but bootstrap authority is not ready or not synchronized | Inspect `suite_bootstrap_authority` in `/setup/first-stack`; restore the encryption key or configure an external suite secret, then restart/synchronize products through the launcher |
 
 ---
 
@@ -583,7 +583,7 @@ The `docker-compose.yml` runs the backend as a single container with SQLite on a
 | Suite settings (global defaults) | ✅ Implemented — topics, languages, repo guardrails, operator notes |
 | Product overrides (URL, enabled, notes) | ✅ Implemented — per-product frontend/API URL overrides |
 | Service token provisioning | ✅ Implemented — one-time operator key or suite bootstrap secret flow |
-| Service token encryption at rest | ✅ Implemented — via `HIVECORE_ENCRYPTION_KEY` |
+| Service token and generated bootstrap-authority encryption at rest | ✅ Implemented — via `HIVECORE_ENCRYPTION_KEY` |
 | Auth (API key + service token) | ✅ Implemented — bootstrap, login, generate, rotate |
 | Capabilities advertisement | ✅ Implemented |
 | Action dispatch (non-destructive) | ✅ Implemented — capability-driven, scope-checked |

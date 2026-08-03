@@ -189,6 +189,11 @@ patchhive/
   malformed, or contradictory active evidence becomes `unknown` and releases the
   claim instead of disappearing or being reported complete. HiveCore v3 reads and
   polls this durable job rather than holding browser or process-local truth.
+- HiveCore suite bootstrap authority is a non-defaultable tagged state: `ready`,
+  `not_configured`, `invalid`, or `unknown`. An externally configured
+  `PATCHHIVE_SUITE_BOOTSTRAP_SECRET` is valid authority; otherwise HiveCore may generate one only
+  when it can encrypt and persist it with a valid stable `HIVECORE_ENCRYPTION_KEY`. Never mint an
+  ephemeral process-only secret or mutate the live process environment to simulate persistence.
 - Concrete product findings enter the HiveCore work ledger through idempotent
   `FindingSource` receipts keyed by product, run, and finding ID. Reusing one source
   with changed evidence or a changed proposal is a conflict; different sources that

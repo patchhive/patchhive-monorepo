@@ -3,6 +3,8 @@ use patchhive_product_core::secrets::{validate_encryption_secret, TokenProtector
 use patchhive_product_core::sqlite::db_path_message;
 use patchhive_product_core::startup::{StartupCheck, StartupCheckLevel};
 
+use crate::models::{SuiteBootstrapAuthoritySource, SuiteBootstrapAuthorityState};
+
 static STARTUP_CHECKS: OnceCell<Vec<StartupCheck>> = OnceCell::new();
 
 pub fn set_startup_checks(checks: Vec<StartupCheck>) {
@@ -26,7 +28,7 @@ pub async fn validate_config() -> Vec<StartupCheck> {
     } else {
         checks.push(StartupCheck::warn(
             "API-key auth is not enabled yet. Generate a key before exposing HiveCore beyond local development.",
-        ));
+        ).with_identity("api_key_auth", "missing"));
     }
 
     checks.push(StartupCheck::info(
@@ -59,9 +61,38 @@ pub async fn validate_config() -> Vec<StartupCheck> {
             "HiveCore could not read the suite pull-request budget: {error}"
         ))),
     }
-    checks.push(StartupCheck::info(
-        "The public patchhive.dev repository-owner opt-out registry is not connected yet. HiveCore currently enforces operator-managed exclusions only.",
-    ));
+    let opt_out_feed_configured = std::env::var("PATCHHIVE_OPT_OUT_FEED_URL")
+        .ok()
+        .is_some_and(|value| !value.trim().is_empty());
+    let opt_out_key_configured = std::env::var("PATCHHIVE_OPT_OUT_SYNC_KEY")
+        .ok()
+        .is_some_and(|value| !value.trim().is_empty());
+    match (opt_out_feed_configured, opt_out_key_configured) {
+        (true, true) => checks.push(
+            StartupCheck::ok(
+                "Authenticated repository-owner opt-out synchronization is configured.",
+            )
+            .with_identity("public_opt_out_sync", "configured"),
+        ),
+        (true, false) => checks.push(
+            StartupCheck::error(
+                "PATCHHIVE_OPT_OUT_FEED_URL is configured without PATCHHIVE_OPT_OUT_SYNC_KEY; the canonical opt-out feed cannot be authenticated.",
+            )
+            .with_identity("public_opt_out_sync", "invalid"),
+        ),
+        (false, true) => checks.push(
+            StartupCheck::warn(
+                "PATCHHIVE_OPT_OUT_SYNC_KEY is configured without PATCHHIVE_OPT_OUT_FEED_URL; public opt-out synchronization is not active.",
+            )
+            .with_identity("public_opt_out_sync", "incomplete"),
+        ),
+        (false, false) => checks.push(
+            StartupCheck::info(
+                "Public repository-owner opt-out synchronization is not configured; HiveCore continues enforcing durable local repository policy.",
+            )
+            .with_identity("public_opt_out_sync", "not_configured"),
+        ),
+    }
 
     match std::env::var("HIVECORE_APPROVAL_TTL_HOURS") {
         Ok(raw) if !raw.trim().is_empty() => match raw.trim().parse::<u32>() {
@@ -76,6 +107,41 @@ pub async fn validate_config() -> Vec<StartupCheck> {
         _ => checks.push(StartupCheck::info(
             "HiveCore exact-dispatch approvals use the default 24-hour expiry.",
         )),
+    }
+
+    match crate::bootstrap_authority::current().state {
+        SuiteBootstrapAuthorityState::Ready {
+            source,
+            established_at,
+        } => {
+            let source_label = match source {
+                SuiteBootstrapAuthoritySource::Environment => "PATCHHIVE_SUITE_BOOTSTRAP_SECRET",
+                SuiteBootstrapAuthoritySource::PersistedEncrypted => "encrypted SQLite authority",
+            };
+            let established = established_at
+                .map(|value| format!(" Established at {value}."))
+                .unwrap_or_default();
+            checks.push(
+                StartupCheck::ok(format!(
+                    "Suite bootstrap authority is ready from {source_label}.{established}"
+                ))
+                .with_identity("suite_bootstrap_authority", "ready"),
+            );
+        }
+        SuiteBootstrapAuthorityState::NotConfigured { reason } => checks.push(
+            StartupCheck::warn(format!(
+                "Suite bootstrap authority is not configured: {reason}"
+            ))
+            .with_identity("suite_bootstrap_authority", "not_configured"),
+        ),
+        SuiteBootstrapAuthorityState::Invalid { reason, .. } => checks.push(
+            StartupCheck::error(format!("Suite bootstrap authority is invalid: {reason}"))
+                .with_identity("suite_bootstrap_authority", "invalid"),
+        ),
+        SuiteBootstrapAuthorityState::Unknown { reason } => checks.push(
+            StartupCheck::error(format!("Suite bootstrap authority is unknown: {reason}"))
+                .with_identity("suite_bootstrap_authority", "unknown"),
+        ),
     }
 
     let token_stats = crate::db::service_token_storage_stats();

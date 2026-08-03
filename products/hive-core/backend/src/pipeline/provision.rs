@@ -8,6 +8,7 @@ use axum::{
 use serde_json::Value;
 
 use crate::{
+    bootstrap_authority,
     models::{
         now_rfc3339, ok, ProductOverride, ProductSettingsItem, ProvisionServiceTokenRequest,
         ProvisionServiceTokenResponse,
@@ -48,7 +49,7 @@ pub(super) async fn provision_service_token(
     let override_item = overrides.get(&definition.slug);
     let api_url_override = body.api_url.unwrap_or_default().trim().to_string();
     let operator_api_key = body.operator_api_key.unwrap_or_default().trim().to_string();
-    let suite_bootstrap_secret = configured_suite_bootstrap_secret();
+    let suite_bootstrap_authority = bootstrap_authority::current();
 
     let (product, message) = provision_service_token_for_product(
         &state,
@@ -56,18 +57,11 @@ pub(super) async fn provision_service_token(
         override_item,
         &api_url_override,
         &operator_api_key,
-        suite_bootstrap_secret.as_deref(),
+        suite_bootstrap_authority.secret(),
     )
     .await?;
 
     Ok(Json(ok(ProvisionServiceTokenResponse { product, message })))
-}
-
-fn configured_suite_bootstrap_secret() -> Option<String> {
-    std::env::var("PATCHHIVE_SUITE_BOOTSTRAP_SECRET")
-        .ok()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
 }
 
 pub(super) async fn provision_service_token_for_product(
@@ -115,7 +109,7 @@ pub(super) async fn provision_service_token_for_product(
         return Err(api_error(
             StatusCode::BAD_REQUEST,
             "operator_api_key_required",
-            "This product already requires operator login. Paste a one-time operator API key or configure PATCHHIVE_SUITE_BOOTSTRAP_SECRET so HiveCore can mint or rotate a dedicated service token.",
+            "This product already requires operator login. Paste a one-time operator API key or make HiveCore suite bootstrap authority ready so it can mint or rotate a dedicated service token.",
         ));
     }
 

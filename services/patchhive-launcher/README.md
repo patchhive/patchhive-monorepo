@@ -7,7 +7,7 @@ Its job is intentionally narrow:
 - detect whether the PatchHive monorepo and `docker compose` are available
 - report product preflight details for compose files, `.env`, suite bootstrap, ports, and running state
 - prepare `.env` files for the first stack when needed
-- sync `PATCHHIVE_SUITE_BOOTSTRAP_SECRET` into HiveCore and the first-stack products
+- distribute HiveCore's supplied suite bootstrap authority into hardened product `.env` files; the launcher neither generates authority nor writes it back into HiveCore configuration
 - pull published GHCR images first, then start products without local builds when images are available
 - fail loudly on GHCR pull/start problems unless local build fallback is explicitly enabled
 - start, stop, restart, or read recent logs for first-stack products with approved `docker compose` commands
@@ -66,7 +66,7 @@ Optional env:
 - `PATCHHIVE_TRUST_GATE_FRONTEND_IMAGE`
 - `PATCHHIVE_VULN_TRIAGE_BACKEND_IMAGE`
 - `PATCHHIVE_VULN_TRIAGE_FRONTEND_IMAGE`
-- `PATCHHIVE_SUITE_BOOTSTRAP_SECRET`
+- `PATCHHIVE_SUITE_BOOTSTRAP_SECRET` (at least 32 characters of machine-random material; HiveCore may supply its encrypted durable authority)
 - `RUST_LOG`
 
 Image mode:

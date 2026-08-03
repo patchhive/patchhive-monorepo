@@ -49,6 +49,7 @@ patchhive_product_core::define_api_key_auth_module! {
 // product exposes so the unified backend can mount it in-process; main.rs is a thin
 // launcher over the same two calls. HiveCore was the last product still binary-only,
 // which is why it could not be mounted alongside the others.
+mod bootstrap_authority;
 pub mod conductor;
 pub mod db;
 pub mod models;
@@ -88,6 +89,7 @@ pub fn materialized_product_runs(
 pub async fn init_runtime() -> Result<()> {
     state::load_product_registry()?;
     db::init_db()?;
+    bootstrap_authority::initialize();
     let checks = startup::validate_config().await;
     log_checks(&checks);
     startup::set_startup_checks(checks);

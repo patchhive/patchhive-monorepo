@@ -36,6 +36,13 @@ pub struct ServiceTokenStorageStats {
     pub plaintext: usize,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredSuiteBootstrapAuthority {
+    pub secret_ciphertext: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
 /// Suite-first, exactly as every other integrated product resolves it.
 ///
 /// In suite mode the tables belong in PATCHHIVE_DB_PATH alongside the rest;
@@ -55,6 +62,55 @@ pub fn health_check() -> bool {
     connect()
         .and_then(|conn| conn.query_row("SELECT 1", [], |row| row.get::<_, i64>(0)))
         .is_ok()
+}
+
+pub fn stored_suite_bootstrap_authority() -> Result<Option<StoredSuiteBootstrapAuthority>> {
+    let conn = connect()?;
+    load_suite_bootstrap_authority(&conn).map_err(Into::into)
+}
+
+pub fn insert_suite_bootstrap_authority_if_absent(
+    secret_ciphertext: &str,
+    now: &str,
+) -> Result<StoredSuiteBootstrapAuthority> {
+    let mut conn = connect()?;
+    insert_suite_bootstrap_authority_with_connection(&mut conn, secret_ciphertext, now)
+}
+
+fn insert_suite_bootstrap_authority_with_connection(
+    conn: &mut Connection,
+    secret_ciphertext: &str,
+    now: &str,
+) -> Result<StoredSuiteBootstrapAuthority> {
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    tx.execute(
+        "INSERT OR IGNORE INTO hive_core_suite_bootstrap_authority
+         (id, secret_ciphertext, created_at, updated_at)
+         VALUES (1, ?1, ?2, ?2)",
+        params![secret_ciphertext, now],
+    )?;
+    let record =
+        load_suite_bootstrap_authority(&tx)?.ok_or_else(|| rusqlite::Error::QueryReturnedNoRows)?;
+    tx.commit()?;
+    Ok(record)
+}
+
+fn load_suite_bootstrap_authority(
+    conn: &Connection,
+) -> rusqlite::Result<Option<StoredSuiteBootstrapAuthority>> {
+    conn.query_row(
+        "SELECT secret_ciphertext, created_at, updated_at
+         FROM hive_core_suite_bootstrap_authority WHERE id = 1",
+        [],
+        |row| {
+            Ok(StoredSuiteBootstrapAuthority {
+                secret_ciphertext: row.get(0)?,
+                created_at: row.get(1)?,
+                updated_at: row.get(2)?,
+            })
+        },
+    )
+    .optional()
 }
 
 pub fn init_db() -> Result<()> {
@@ -2216,6 +2272,13 @@ fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
           updated_at TEXT NOT NULL
         );
 
+        CREATE TABLE IF NOT EXISTS hive_core_suite_bootstrap_authority (
+          id INTEGER PRIMARY KEY CHECK (id = 1),
+          secret_ciphertext TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS product_overrides (
           slug TEXT PRIMARY KEY,
           frontend_url TEXT NOT NULL,
@@ -4018,12 +4081,12 @@ mod tests {
         claim_approval_with_connection, collapse_policies, consume_approval_with_connection,
         create_mandate_with_connection, expire_approvals, grant_approval_with_connection,
         ingest_findings_with_connection, init_schema, insert_approval,
-        insert_fleet_launch_job_with_connection, json_string, load_action_event,
-        load_action_events, load_approval, load_fleet_launch_job,
+        insert_fleet_launch_job_with_connection, insert_suite_bootstrap_authority_with_connection,
+        json_string, load_action_event, load_action_events, load_approval, load_fleet_launch_job,
         load_latest_first_stack_smoke_run, load_latest_suite_snapshot_cycle, load_mandate,
         load_pr_reservation, load_product_overrides, load_service_token_storage_stats,
-        load_suite_settings, load_work_item_by_id, propose_work_with_connection,
-        record_approval_event, recover_interrupted_fleet_launches,
+        load_suite_bootstrap_authority, load_suite_settings, load_work_item_by_id,
+        propose_work_with_connection, record_approval_event, recover_interrupted_fleet_launches,
         recover_interrupted_snapshot_cycles, release_reconciled_pr_reservation_with_connection,
         replace_overrides, replace_repository_policies_with_connection,
         reserve_pr_slot_with_connection, run_conductor_tick_with_connection,
@@ -4054,6 +4117,29 @@ mod tests {
     };
     use rusqlite::Connection;
     use serde_json::json;
+
+    #[test]
+    fn suite_bootstrap_authority_insert_is_durable_and_singleton() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        init_schema(&conn).unwrap();
+
+        let first = insert_suite_bootstrap_authority_with_connection(
+            &mut conn,
+            "enc:v1:first",
+            "2026-08-02T00:00:00Z",
+        )
+        .unwrap();
+        let repeated = insert_suite_bootstrap_authority_with_connection(
+            &mut conn,
+            "enc:v1:second",
+            "2026-08-03T00:00:00Z",
+        )
+        .unwrap();
+
+        assert_eq!(first, repeated);
+        assert_eq!(repeated.secret_ciphertext, "enc:v1:first");
+        assert_eq!(load_suite_bootstrap_authority(&conn).unwrap(), Some(first));
+    }
 
     fn work_proposal(product_slug: &str) -> WorkProposal {
         WorkProposal {

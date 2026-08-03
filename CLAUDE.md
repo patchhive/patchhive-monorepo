@@ -399,7 +399,9 @@ typography scale, spacing system, or theme implementation.
   Preserve Anthropic, OpenAI, Gemini, Groq, Ollama, and custom OpenAI-compatible support.
 - Encryption keys (`REAPER_ENCRYPTION_KEY`, `PATCHHIVE_ENCRYPTION_KEY`,
   `HIVECORE_ENCRYPTION_KEY`) need ≥32 chars of machine-random material
-  (`openssl rand -hex 32`) and must stay stable across restarts.
+  (`openssl rand -hex 32`) and must stay stable across restarts. HiveCore uses its stable encryption
+  key to persist generated suite bootstrap authority; missing, invalid, and unknown authority states
+  stay explicit, and no runtime path may mint an ephemeral environment secret.
 - Backends bind `0.0.0.0` for Docker; `PATCHHIVE_BIND_ADDR=127.0.0.1` forces loopback.
 - Never commit secrets, SQLite DBs, runtime files, logs, or build output.
 

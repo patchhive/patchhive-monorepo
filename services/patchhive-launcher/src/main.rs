@@ -16,7 +16,6 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use tokio::process::Command;
 use tracing::info;
-use uuid::Uuid;
 
 const SUITE_BOOTSTRAP_KEY: &str = "PATCHHIVE_SUITE_BOOTSTRAP_SECRET";
 
@@ -412,8 +411,7 @@ async fn start_product(
     let requested_secret = body
         .map(|Json(body)| body.suite_bootstrap_secret)
         .unwrap_or_default();
-    let secret = requested_or_configured_secret(requested_secret)
-        .unwrap_or_else(|| format!("ph-suite-{}", Uuid::new_v4().simple()));
+    let secret = require_suite_bootstrap_secret(requested_secret)?;
     ensure_product_start_ready(repo_root, &product).await?;
     let actions = start_managed_products(repo_root, &[product], &secret).await?;
     Ok(Json(
@@ -453,8 +451,7 @@ async fn restart_product(
     let requested_secret = body
         .map(|Json(body)| body.suite_bootstrap_secret)
         .unwrap_or_default();
-    let secret = requested_or_configured_secret(requested_secret)
-        .unwrap_or_else(|| format!("ph-suite-{}", Uuid::new_v4().simple()));
+    let secret = require_suite_bootstrap_secret(requested_secret)?;
     ensure_product_start_ready(repo_root, &product).await?;
     let actions = start_managed_products(repo_root, &[product], &secret).await?;
     Ok(Json(
@@ -573,14 +570,9 @@ async fn start_first_stack(
     let repo_root = require_repo_root(&state)?;
     require_docker_compose().await?;
 
-    let secret = if body.suite_bootstrap_secret.trim().is_empty() {
-        format!("ph-suite-{}", Uuid::new_v4().simple())
-    } else {
-        body.suite_bootstrap_secret.trim().to_string()
-    };
+    let secret = require_suite_bootstrap_secret(body.suite_bootstrap_secret)?;
 
     let mut actions = Vec::new();
-    sync_hive_core_suite_bootstrap_secret(repo_root, &secret, &mut actions)?;
 
     let targets = selected_products(&body.products);
     if targets.is_empty() {
@@ -640,11 +632,9 @@ async fn start_ready_products(
     let repo_root = require_repo_root(&state)?;
     require_docker_compose().await?;
 
-    let secret = requested_or_configured_secret(body.suite_bootstrap_secret)
-        .unwrap_or_else(|| format!("ph-suite-{}", Uuid::new_v4().simple()));
+    let secret = require_suite_bootstrap_secret(body.suite_bootstrap_secret)?;
     let targets = selected_managed_products(&body.products);
     let mut actions = Vec::new();
-    sync_hive_core_suite_bootstrap_secret(repo_root, &secret, &mut actions)?;
 
     let selection = select_products_for_launch(repo_root, &targets, false).await?;
     let started_products = selection
@@ -676,11 +666,9 @@ async fn start_all_products(
     let repo_root = require_repo_root(&state)?;
     require_docker_compose().await?;
 
-    let secret = requested_or_configured_secret(body.suite_bootstrap_secret)
-        .unwrap_or_else(|| format!("ph-suite-{}", Uuid::new_v4().simple()));
+    let secret = require_suite_bootstrap_secret(body.suite_bootstrap_secret)?;
     let targets = selected_managed_products(&body.products);
     let mut actions = Vec::new();
-    sync_hive_core_suite_bootstrap_secret(repo_root, &secret, &mut actions)?;
 
     let selection = select_products_for_launch(repo_root, &targets, true).await?;
     let started_products = selection
@@ -1502,21 +1490,32 @@ fn configured_suite_bootstrap_secret() -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
-fn requested_or_configured_secret(requested_secret: String) -> Option<String> {
+fn require_suite_bootstrap_secret(
+    requested_secret: String,
+) -> Result<String, (StatusCode, Json<ApiError>)> {
     let requested = requested_secret.trim().to_string();
-    if requested.is_empty() {
+    let secret = if requested.is_empty() {
         configured_suite_bootstrap_secret()
     } else {
-        valid_suite_bootstrap_secret(&requested).then_some(requested)
+        Some(requested)
     }
+    .ok_or_else(|| {
+        error(
+            StatusCode::CONFLICT,
+            "Suite bootstrap authority is not configured. Supply HiveCore's durable authority or configure PATCHHIVE_SUITE_BOOTSTRAP_SECRET for the launcher.",
+        )
+    })?;
+    if !valid_suite_bootstrap_secret(&secret) {
+        return Err(error(
+            StatusCode::BAD_REQUEST,
+            "Suite bootstrap secret must contain at least 32 characters of machine-random material and only supported characters.",
+        ));
+    }
+    Ok(secret)
 }
 
 fn valid_suite_bootstrap_secret(secret: &str) -> bool {
-    !secret.trim().is_empty()
-        && !secret.contains(['\n', '\r'])
-        && secret.chars().all(|character| {
-            character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.')
-        })
+    patchhive_product_core::secrets::validate_suite_bootstrap_secret(secret).is_ok()
 }
 
 async fn start_managed_products(
@@ -1598,26 +1597,6 @@ async fn start_managed_products(
         }
     }
     Ok(actions)
-}
-
-fn sync_hive_core_suite_bootstrap_secret(
-    repo_root: &FsPath,
-    secret: &str,
-    actions: &mut Vec<String>,
-) -> Result<(), (StatusCode, Json<ApiError>)> {
-    if !valid_suite_bootstrap_secret(secret) {
-        return Err(error(
-            StatusCode::BAD_REQUEST,
-            "Suite bootstrap secret contains unsupported characters.",
-        ));
-    }
-    let hive_core_dir = product_dir(repo_root, "hive-core");
-    ensure_env_file(&hive_core_dir)?;
-    let env_file = hive_core_dir.join(".env");
-    upsert_env_value(&env_file, SUITE_BOOTSTRAP_KEY, secret)?;
-    harden_env_permissions(&env_file)?;
-    actions.push("Synced HiveCore suite bootstrap secret.".into());
-    Ok(())
 }
 
 async fn select_products_for_launch(

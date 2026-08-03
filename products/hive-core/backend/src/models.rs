@@ -1020,12 +1020,53 @@ pub struct FirstStackSetupResponse {
     /// Why requirements are unknown, when they are.
     #[serde(default)]
     pub requirements_error: String,
-    pub suite_bootstrap_configured: bool,
+    pub suite_bootstrap_authority: SuiteBootstrapAuthorityState,
     pub latest_smoke: Option<FirstStackSmokeRun>,
     pub latest_fleet_launch: Observation<SetupFleetLaunchJob>,
     pub fleet_launch_history: Observation<Vec<SetupFleetLaunchJob>>,
     pub actions: Vec<String>,
     pub products: Vec<SetupProductStatus>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum SuiteBootstrapAuthorityState {
+    Ready {
+        source: SuiteBootstrapAuthoritySource,
+        established_at: Option<String>,
+    },
+    NotConfigured {
+        reason: String,
+    },
+    Invalid {
+        source: SuiteBootstrapAuthoritySource,
+        reason: String,
+    },
+    Unknown {
+        reason: String,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SuiteBootstrapAuthoritySource {
+    Environment,
+    PersistedEncrypted,
+}
+
+impl SuiteBootstrapAuthorityState {
+    pub fn is_ready(&self) -> bool {
+        matches!(self, Self::Ready { .. })
+    }
+
+    pub fn reason(&self) -> Option<&str> {
+        match self {
+            Self::NotConfigured { reason }
+            | Self::Invalid { reason, .. }
+            | Self::Unknown { reason } => Some(reason),
+            Self::Ready { .. } => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

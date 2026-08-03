@@ -135,6 +135,7 @@ export function BootstrapWizard({ syncVersion = 0 }: { syncVersion?: number }) {
   }
 
   const unpaired = state.products.filter((product) => product.pairing_ready);
+  const bootstrapReady = state.suite_bootstrap_authority.state === "ready";
   const needsCredentials = state.products.filter((product) =>
     product.credentials.some((item) => item.required && !item.configured),
   );
@@ -214,16 +215,16 @@ export function BootstrapWizard({ syncVersion = 0 }: { syncVersion?: number }) {
       <Step
         index={3}
         title="Service tokens"
-        status={unpaired.length > 0 ? "warn" : "ok"}
+        status={bootstrapAuthorityStatus(state.suite_bootstrap_authority, unpaired.length)}
         detail={
-          state.suite_bootstrap_configured
+          bootstrapReady
             ? unpaired.length > 0
-              ? `${unpaired.length} product(s) reachable but unpaired.`
-              : "Every reachable product has a scoped service token."
-            : "PATCHHIVE_SUITE_BOOTSTRAP_SECRET is not set, so HiveCore cannot mint tokens."
+              ? `${unpaired.length} product(s) reachable but unpaired. ${bootstrapAuthorityDetail(state.suite_bootstrap_authority)}`
+              : `Every reachable product has a scoped service token. ${bootstrapAuthorityDetail(state.suite_bootstrap_authority)}`
+            : bootstrapAuthorityDetail(state.suite_bootstrap_authority)
         }
       >
-        {unpaired.length > 0 && state.suite_bootstrap_configured && (
+        {unpaired.length > 0 && bootstrapReady && (
           <div className="mt-2">
             <button
               onClick={pair}
@@ -404,6 +405,39 @@ function fleetStatus(
       return "fail";
     case "unknown":
       return "unknown";
+  }
+}
+
+function bootstrapAuthorityStatus(
+  authority: BootstrapState["suite_bootstrap_authority"],
+  unpairedCount: number,
+): "ok" | "warn" | "fail" | "unknown" {
+  switch (authority.state) {
+    case "ready":
+      return unpairedCount > 0 ? "warn" : "ok";
+    case "not_configured":
+      return "warn";
+    case "invalid":
+      return "fail";
+    case "unknown":
+      return "unknown";
+  }
+}
+
+function bootstrapAuthorityDetail(
+  authority: BootstrapState["suite_bootstrap_authority"],
+): string {
+  switch (authority.state) {
+    case "ready":
+      return authority.source === "environment"
+        ? "Bootstrap authority comes from the configured environment secret."
+        : `Bootstrap authority is encrypted and durable${authority.established_at ? ` since ${authority.established_at}` : ""}.`;
+    case "not_configured":
+      return `Bootstrap authority is not configured: ${authority.reason}`;
+    case "invalid":
+      return `Bootstrap authority is invalid: ${authority.reason}`;
+    case "unknown":
+      return `Bootstrap authority is unknown: ${authority.reason}`;
   }
 }
 

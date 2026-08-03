@@ -131,13 +131,27 @@ export interface BootstrapState {
   launcher: LauncherStatus;
   requirements_known: boolean;
   requirements_error: string;
-  suite_bootstrap_configured: boolean;
+  suite_bootstrap_authority: SuiteBootstrapAuthorityState;
   latest_smoke: SmokeRun | null;
   latest_fleet_launch: Observation<FleetLaunchJob>;
   fleet_launch_history: Observation<FleetLaunchJob[]>;
   actions: string[];
   products: SetupProduct[];
 }
+
+export type SuiteBootstrapAuthorityState =
+  | {
+      state: "ready";
+      source: "environment" | "persisted_encrypted";
+      established_at: string | null;
+    }
+  | { state: "not_configured"; reason: string }
+  | {
+      state: "invalid";
+      source: "environment" | "persisted_encrypted";
+      reason: string;
+    }
+  | { state: "unknown"; reason: string };
 
 interface Envelope<T> {
   data?: T;

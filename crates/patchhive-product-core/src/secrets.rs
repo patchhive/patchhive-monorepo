@@ -1,5 +1,5 @@
 use aes_gcm::{
-    aead::{Aead, AeadCore, KeyInit, OsRng},
+    aead::{rand_core::RngCore, Aead, AeadCore, KeyInit, OsRng},
     Aes256Gcm, Nonce,
 };
 use anyhow::{anyhow, Context, Result};
@@ -135,6 +135,36 @@ pub fn validate_encryption_secret(secret: &str) -> Result<()> {
     Ok(())
 }
 
+pub fn generate_suite_bootstrap_secret() -> String {
+    let mut bytes = [0_u8; 32];
+    OsRng.fill_bytes(&mut bytes);
+    format!("ph-suite-{}", hex::encode(bytes))
+}
+
+pub fn validate_suite_bootstrap_secret(secret: &str) -> Result<()> {
+    let secret = secret.trim();
+    anyhow::ensure!(
+        secret.len() >= 32,
+        "suite bootstrap secrets must contain at least 32 characters of machine-random material"
+    );
+    anyhow::ensure!(
+        !secret.contains(['\n', '\r'])
+            && secret.chars().all(|character| {
+                character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.')
+            }),
+        "suite bootstrap secrets contain unsupported characters"
+    );
+    let normalized = secret.to_ascii_lowercase();
+    anyhow::ensure!(
+        !normalized.contains("replace")
+            && !normalized.contains("example")
+            && !normalized.contains("your-")
+            && !normalized.contains("xxxxxxxx"),
+        "suite bootstrap secrets must not use placeholder material"
+    );
+    Ok(())
+}
+
 fn derive_key(secret: &str) -> [u8; 32] {
     let mut hasher = Sha256::new();
     hasher.update(secret.as_bytes());
@@ -143,7 +173,10 @@ fn derive_key(secret: &str) -> [u8; 32] {
 
 #[cfg(test)]
 mod tests {
-    use super::{validate_encryption_secret, TokenProtector};
+    use super::{
+        generate_suite_bootstrap_secret, validate_encryption_secret,
+        validate_suite_bootstrap_secret, TokenProtector,
+    };
 
     #[test]
     fn token_protector_round_trips_encrypted_values() {
@@ -158,6 +191,21 @@ mod tests {
                 .expect("token should decrypt"),
             "svc_signal"
         );
+    }
+
+    #[test]
+    fn generated_suite_bootstrap_secrets_are_valid_and_distinct() {
+        let first = generate_suite_bootstrap_secret();
+        let second = generate_suite_bootstrap_secret();
+        validate_suite_bootstrap_secret(&first).unwrap();
+        validate_suite_bootstrap_secret(&second).unwrap();
+        assert_ne!(first, second);
+    }
+
+    #[test]
+    fn suite_bootstrap_secrets_reject_short_or_placeholder_material() {
+        assert!(validate_suite_bootstrap_secret("short").is_err());
+        assert!(validate_suite_bootstrap_secret("replace-with-a-long-random-secret-now").is_err());
     }
 
     #[test]

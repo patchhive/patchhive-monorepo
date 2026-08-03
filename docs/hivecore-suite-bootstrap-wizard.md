@@ -135,7 +135,7 @@ Rules:
 - Write secrets only from the launcher, not from browser code.
 - Prefer `0600` permissions for generated `.env` files where the host supports it.
 - Recreate containers after env writes so Docker actually loads the new values.
-- Keep downstream service tokens in HiveCore server-side storage and encrypt them at rest when `HIVECORE_ENCRYPTION_KEY` is configured.
+- Keep downstream service tokens in HiveCore server-side storage and encrypt them at rest when `HIVECORE_ENCRYPTION_KEY` is configured. The same stable key protects HiveCore-generated suite bootstrap authority; without it, authority remains explicitly `not_configured` instead of becoming an ephemeral process secret.
 
 Operator GitHub/AI credentials and downstream product service tokens are different classes of secret. The wizard should keep that distinction visible.
 

@@ -94,7 +94,7 @@ Health, startup checks, capabilities, and run history retain tagged `observed`, 
 latency, or 100% uptime. Operational setup and smoke actions may still perform explicit live
 checks because their purpose is to test or change current state.
 
-**B3 — Approval authority is now a durable object.**
+**B3 — Closed: approval authority is a durable object.**
 `pipeline/dispatch.rs` still blocks destructive actions. Approval-gated and PR-opening actions
 instead create a durable pending record for the exact normalized dispatch. The operator grants
 that fingerprint once; HiveCore atomically changes it to `consuming` immediately before the
@@ -102,21 +102,21 @@ remote request and records a terminal `consumed` outcome even when the product r
 or the transport result is uncertain. A changed action contract, payload, origin, repository,
 run, scope, or effect cannot reuse the grant.
 
-**B4 — Public opt-out authority and ingestion are implemented.**
+**B4 — Closed: public opt-out authority and ingestion are implemented.**
 The Registry accepts assertions and revocations only after GitHub verifies repository-owner or
 administrator authority, retains both lifecycle states and their audit events, and exposes an
 authenticated typed feed. HiveCore synchronizes that feed into the shared repository-policy store
 atomically. Its durable sync lifecycle distinguishes not configured, running, succeeded, failed,
 and unknown; an unavailable or malformed feed never becomes permission or a reassuring success.
 
-**B5 — PR lifecycle reconciliation is proactive and durable.**
+**B5 — Closed: PR lifecycle reconciliation is proactive and durable.**
 Reserved slots have a short lease and committed slots have a bounded long lease (30 days by
 default). HiveCore now polls every committed PR through the suite read credential, preserves open
 capacity, and releases only the exact reservation whose GitHub PR is positively observed closed or
 merged. Missing credentials, partial GitHub failures, malformed URLs, interrupted sweeps, and
 contradictory stored lifecycle evidence remain explicit states and never free capacity.
 
-**B6 — Fleet-launch state is durable and typed.**
+**B6 — Closed: fleet-launch state is durable and typed.**
 Fleet plans and every product step are stored in SQLite before host control advances. One
 transactional claim prevents concurrent launches; a renewed lease bounds abandoned work. Job and
 step lifecycles distinguish queued, running phases, successful/no-op/attention/failure terminals,
@@ -132,13 +132,16 @@ identities, and a product manifest explicitly lists the identities acceptable fo
 Unidentified, unlisted, failed, or newly introduced warnings remain visible and cannot become an
 accepted autonomy signal merely because their prose resembles an old message.
 
-**B8 — Bootstrap secret is conjured, not persisted.**
-`ensure_suite_bootstrap_secret()` generates a random secret and `env::set_var`s it when
-`PATCHHIVE_SUITE_BOOTSTRAP_SECRET` is unset. Products validate against the value the launcher
-wrote into their `.env` at start, so a HiveCore restart without a configured secret mints a
-different one and bootstrap pairing against already-running products stops working until they are
-restarted. (Separately, `set_var` on a live multithreaded runtime is a soundness hazard Rust is
-tightening.) An unattended system must persist this.
+**B8 — Closed: bootstrap authority is durable, encrypted, and explicit.**
+HiveCore accepts a validated externally managed `PATCHHIVE_SUITE_BOOTSTRAP_SECRET`, or generates a
+machine-random authority only when a valid stable `HIVECORE_ENCRYPTION_KEY` is available. Generated
+authority is encrypted before a singleton SQLite insert and is reloaded after restarts; it is never
+placed into the live process environment. The launcher accepts authority from HiveCore and writes
+it only to the hardened downstream product environments that must validate pairing; it does not
+generate authority or write it back into HiveCore configuration. The setup contract and v3 wizard preserve `ready`,
+`not_configured`, `invalid`, and `unknown` states, including whether ready authority comes from the
+environment or encrypted persistence. Missing keys, wrong keys, plaintext rows, malformed secrets,
+and database failures cannot become permission to pair products.
 
 ---
 
