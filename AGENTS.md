@@ -317,6 +317,11 @@ Shared platform guidance:
   teach an in-process engine how to reach another mounted engine.
 - Startup warnings used by smoke policy require stable `(code, status)` identities. HiveCore accepts only identities explicitly listed by that product's manifest; never gate autonomy by matching warning prose.
 - The unified backend shared SQLite DB is configured with `PATCHHIVE_DB_PATH`; suite tables stay backend-owned, while product tables should be product-namespaced as engines migrate in-process.
+- Build `services/patchhive-backend/Dockerfile` from the monorepo root so every
+  Rust path dependency and generated product manifest is present. Keep its
+  dependency build locked, base images digest-pinned, runtime non-root, suite
+  database on `/var/lib/patchhive`, and Docker socket access opt-in rather than
+  part of the default container boundary.
 - All product routers should layer `patchhive_product_core::rate_limit::rate_limit_middleware` so auth, mutating, and run-triggering routes share backend rate limiting.
 - GitHub-enabled products should use `patchhive_product_core::github_auth::verify_github_token` at startup. Token presence is configuration, `github_ready` means GitHub accepted the authenticated identity request, target read access is verified during the run, and write readiness is only proven by a successful target-specific write.
 - When the same Rust backend seam exists in 2 or more products, prefer extracting it into `crates/patchhive-product-core` before starting another product.

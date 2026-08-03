@@ -28,6 +28,48 @@ Multiple products:
 PATCHHIVE_PRODUCTS=hive-core,signal-hive,trust-gate cargo run
 ```
 
+## Container Image
+
+Build the unified image from the monorepo root because its Cargo manifest uses
+the shared crates and every mounted product backend as path dependencies:
+
+```bash
+docker build \
+  --file services/patchhive-backend/Dockerfile \
+  --tag patchhive-backend:local \
+  .
+```
+
+The runtime is non-root, persists the canonical suite database under
+`/var/lib/patchhive`, includes `git`, and carries only the Docker client needed
+by RepoReaper's opt-in Docker validation path. A local-only hardened run is:
+
+```bash
+docker run --rm \
+  --publish 127.0.0.1:8100:8100 \
+  --env-file .env \
+  --volume patchhive-data:/var/lib/patchhive \
+  --cap-drop ALL \
+  --security-opt no-new-privileges \
+  patchhive-backend:local
+```
+
+Do not mount the Docker socket unless Docker-based validation is explicitly
+enabled. If it is required, mount only that socket and add its host group ID so
+the non-root runtime can reach it:
+
+```bash
+docker run --rm \
+  --publish 127.0.0.1:8100:8100 \
+  --env-file .env \
+  --volume patchhive-data:/var/lib/patchhive \
+  --volume /var/run/docker.sock:/var/run/docker.sock \
+  --group-add "$(stat -c '%g' /var/run/docker.sock)" \
+  --cap-drop ALL \
+  --security-opt no-new-privileges \
+  patchhive-backend:local
+```
+
 The backend listens on `127.0.0.1:8100` by default. Override it with:
 
 ```bash

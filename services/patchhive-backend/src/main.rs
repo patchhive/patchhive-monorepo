@@ -72,8 +72,35 @@ async fn main() -> Result<()> {
         listener,
         app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
     )
+    .with_graceful_shutdown(shutdown_signal())
     .await?;
     Ok(())
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        if let Err(error) = tokio::signal::ctrl_c().await {
+            tracing::error!(%error, "failed to install Ctrl+C shutdown handler");
+        }
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(mut signal) => {
+                signal.recv().await;
+            }
+            Err(error) => tracing::error!(%error, "failed to install SIGTERM shutdown handler"),
+        }
+    };
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        () = ctrl_c => {}
+        () = terminate => {}
+    }
+    info!("patchhive-backend shutdown requested");
 }
 
 fn init_tracing() {
