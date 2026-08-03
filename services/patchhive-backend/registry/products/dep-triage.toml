@@ -15,6 +15,13 @@ repository = "patchhive/deptriage"
 frontend_url = "http://localhost:5180"
 api_url = "http://localhost:8070"
 
+[smoke]
+tiers = ["read-only-fleet"]
+acknowledged_startup = [
+  { code = "api_key_auth", status = "missing" },
+  { code = "github_token", status = "missing" },
+]
+
 [safety]
 read_only = true
 credential_scopes = ["github:pull_requests:read", "github:dependabot:read"]

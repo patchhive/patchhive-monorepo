@@ -20,7 +20,7 @@ pub async fn validate_config(client: &reqwest::Client) -> Vec<StartupCheck> {
     } else {
         checks.push(StartupCheck::warn(
             "API-key auth is not enabled yet. Generate a key before exposing SignalHive beyond local development.",
-        ));
+        ).with_identity("api_key_auth", "missing"));
     }
 
     let github_profile = GitHubPermissionProfile::RepoDiscovery;

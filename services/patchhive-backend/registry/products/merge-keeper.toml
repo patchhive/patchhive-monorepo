@@ -15,6 +15,10 @@ repository = "patchhive/mergekeeper"
 frontend_url = "http://localhost:5178"
 api_url = "http://localhost:8050"
 
+[smoke]
+tiers = ["read-only-fleet"]
+acknowledged_startup = [{ code = "api_key_auth", status = "missing" }]
+
 [safety]
 read_only = false
 writes_external_state = true

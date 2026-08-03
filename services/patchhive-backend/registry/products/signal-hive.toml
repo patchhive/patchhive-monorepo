@@ -15,6 +15,15 @@ repository = "patchhive/signalhive"
 frontend_url = "http://localhost:5174"
 api_url = "http://localhost:8010"
 
+[smoke]
+tiers = ["first-stack", "read-only-fleet"]
+acknowledged_startup = [{ code = "api_key_auth", status = "missing" }]
+
+[smoke.action]
+id = "smoke_check"
+timeout_seconds = 15
+payload = {}
+
 [safety]
 read_only = true
 credential_scopes = ["github:repo:read", "github:issues:read", "github:code:read"]

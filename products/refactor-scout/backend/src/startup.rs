@@ -17,14 +17,14 @@ pub async fn validate_config(state: &AppState) -> Vec<StartupCheck> {
     } else {
         checks.push(StartupCheck::warn(
             "API-key auth is not enabled yet. Generate a key before exposing RefactorScout beyond local development.",
-        ));
+        ).with_identity("api_key_auth", "missing"));
     }
 
     let allowed_roots = state.allowed_root_labels();
     if allowed_roots.is_empty() {
         checks.push(StartupCheck::warn(
             "RefactorScout has no readable allowed roots configured, so local path scans will fail. Public GitHub repo scans can still use temporary clones.",
-        ));
+        ).with_identity("allowed_roots", "unreadable"));
     } else {
         checks.push(StartupCheck::info(format!(
             "Filesystem scans are confined to: {}",
@@ -36,13 +36,13 @@ pub async fn validate_config(state: &AppState) -> Vec<StartupCheck> {
         checks.push(StartupCheck::warn(format!(
             "REFACTOR_SCOUT_ALLOWED_ROOTS is not set, so RefactorScout currently defaults to the process working directory. Set it to a path list like {} before you point the app at broader local checkouts.",
             allowed_roots_env_example()
-        )));
+        )).with_identity("allowed_roots", "defaulted"));
     }
 
     if state.remote_fs_enabled {
         checks.push(StartupCheck::warn(
             "REFACTOR_SCOUT_ALLOW_REMOTE_FS is enabled. Authenticated non-local clients may trigger filesystem scans against the configured allowed roots.",
-        ));
+        ).with_identity("remote_filesystem", "enabled"));
     } else {
         checks.push(StartupCheck::info(
             "Filesystem scans are limited to localhost callers unless REFACTOR_SCOUT_ALLOW_REMOTE_FS=true.",
@@ -57,9 +57,12 @@ pub async fn validate_config(state: &AppState) -> Vec<StartupCheck> {
         Ok(output) if output.status.success() => checks.push(StartupCheck::info(
             "GitHub repo scans can use temporary git clones that are removed after analysis.",
         )),
-        _ => checks.push(StartupCheck::warn(
-            "GitHub repo scans require the git CLI. Local filesystem path scans still work.",
-        )),
+        _ => checks.push(
+            StartupCheck::warn(
+                "GitHub repo scans require the git CLI. Local filesystem path scans still work.",
+            )
+            .with_identity("git_cli", "missing"),
+        ),
     }
 
     checks.push(StartupCheck::info(

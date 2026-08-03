@@ -19,7 +19,7 @@ pub async fn validate_config(client: &Client) -> Vec<StartupCheck> {
     } else {
         checks.push(StartupCheck::warn(
             "API-key auth is not enabled yet. Generate a key before exposing ReviewBee beyond local development.",
-        ));
+        ).with_identity("api_key_auth", "missing"));
     }
 
     let github_profile = GitHubPermissionProfile::PrReview;
@@ -47,7 +47,7 @@ pub async fn validate_config(client: &Client) -> Vec<StartupCheck> {
     } else {
         checks.push(StartupCheck::warn(
             "REVIEW_BEE_GITHUB_WEBHOOK_SECRET is not configured. The /webhooks/github endpoint will reject webhook delivery until it is set.",
-        ));
+        ).with_identity("github_webhook_secret", "missing"));
     }
 
     if crate::github::public_url_configured() {
@@ -57,7 +57,7 @@ pub async fn validate_config(client: &Client) -> Vec<StartupCheck> {
     } else {
         checks.push(StartupCheck::warn(
             "REVIEW_BEE_PUBLIC_URL is not configured. ReviewBee can still post PR comments, but they will not include a public details link.",
-        ));
+        ).with_identity("public_url", "missing"));
     }
 
     checks.push(StartupCheck::info(

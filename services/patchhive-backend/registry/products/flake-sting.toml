@@ -15,6 +15,13 @@ repository = "patchhive/flakesting"
 frontend_url = "http://localhost:5179"
 api_url = "http://localhost:8060"
 
+[smoke]
+tiers = ["read-only-fleet"]
+acknowledged_startup = [
+  { code = "api_key_auth", status = "missing" },
+  { code = "github_token", status = "missing" },
+]
+
 [safety]
 read_only = true
 credential_scopes = ["github:actions:read"]

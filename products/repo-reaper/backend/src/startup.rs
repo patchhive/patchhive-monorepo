@@ -33,11 +33,12 @@ pub async fn validate_config(http: &Client) -> Vec<StartupCheck> {
             ));
             results.push(StartupCheck::warn(
                 "No PROVIDER_API_KEY set — Anthropic, Gemini, and Groq agents still need per-agent or global keys",
-            ));
+            ).with_identity("provider_api_key", "partially_available"));
         } else {
-            results.push(StartupCheck::warn(
-                "No PROVIDER_API_KEY set — each agent must carry its own key",
-            ));
+            results.push(
+                StartupCheck::warn("No PROVIDER_API_KEY set — each agent must carry its own key")
+                    .with_identity("provider_api_key", "missing"),
+            );
         }
     }
 
@@ -82,7 +83,7 @@ pub async fn validate_config(http: &Client) -> Vec<StartupCheck> {
             if ready.is_empty() {
                 results.push(StartupCheck::warn(
                     "PatchHive AI gateway is reachable, but no local providers are authenticated yet",
-                ));
+                ).with_identity("ai_gateway", "no_authenticated_provider"));
             } else {
                 results.push(StartupCheck::ok(format!(
                     "PatchHive AI gateway reachable — ready providers: {}",
@@ -90,10 +91,13 @@ pub async fn validate_config(http: &Client) -> Vec<StartupCheck> {
                 )));
             }
         } else {
-            results.push(StartupCheck::warn(format!(
-                "PATCHHIVE_AI_URL is set, but the local AI gateway is not ready: {}",
-                status["error"].as_str().unwrap_or("unknown error")
-            )));
+            results.push(
+                StartupCheck::warn(format!(
+                    "PATCHHIVE_AI_URL is set, but the local AI gateway is not ready: {}",
+                    status["error"].as_str().unwrap_or("unknown error")
+                ))
+                .with_identity("ai_gateway", "failed"),
+            );
         }
     }
 
@@ -137,7 +141,7 @@ pub async fn validate_config(http: &Client) -> Vec<StartupCheck> {
     } else {
         results.push(StartupCheck::warn(
             "REAPER_ENCRYPTION_KEY or PATCHHIVE_ENCRYPTION_KEY is not set. Active agent teams can persist, but per-agent API keys and bot token overrides remain memory-only and will not survive backend restarts.",
-        ));
+        ).with_identity("encryption_key", "missing"));
     }
 
     if std::env::var("WEBHOOK_SECRET")
@@ -146,7 +150,7 @@ pub async fn validate_config(http: &Client) -> Vec<StartupCheck> {
     {
         results.push(StartupCheck::warn(
             "WEBHOOK_SECRET is not set — the /webhook/github endpoint will reject webhook delivery until it is configured",
-        ));
+        ).with_identity("webhook_secret", "missing"));
     } else {
         results.push(StartupCheck::ok(
             "WEBHOOK_SECRET is set — GitHub webhook signatures will be verified",

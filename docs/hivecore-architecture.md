@@ -62,8 +62,10 @@ and all of `src/pipeline/`.
   server-side, encrypted at rest when `HIVECORE_ENCRYPTION_KEY` is set, and never exposed to the
   browser. `stored_service_token_cannot_read_runs` detects a stale token by observing 401/403 on
   `/runs` and re-pairs automatically.
-- **Tiered smoke proof.** `pipeline/smoke.rs` runs four tiers — `first-stack`, `read-only-fleet`,
-  `write-dry-run`, `release-gate` — with per-step evidence persisted to `first_stack_smoke_runs`.
+- **Tiered smoke proof.** `pipeline/smoke.rs` runs the manifest-declared `first-stack`,
+  `read-only-fleet`, `write-dry-run`, and `release-gate` tiers, with per-step evidence persisted to
+  `first_stack_smoke_runs`. Product manifests own action fixtures, timeouts, and accepted startup
+  check identities.
 - **Atomic PR budgets.** `db::reserve_pr_slot_with_connection` performs expiry, both budget-layer
   checks, insert, and audit inside one `TransactionBehavior::Immediate` transaction. The
   `min(product remaining, suite remaining)` rule holds and is unit-tested.
@@ -122,13 +124,13 @@ blocked work, and unknown evidence. Restarted, expired, malformed, or contradict
 becomes `unknown` and releases its claim instead of disappearing or pretending to finish. The v3
 bootstrap panel reads, polls, and controls this durable state.
 
-**B7 — Smoke tiers encode product knowledge as literals and prose matching.**
-`expected_smoke_action` and `smoke_payload` hardcode per-slug action IDs, literal repositories
-(`patchhive/patchhive2`, `patchhive/smoke-fixture`), and a literal diff.
-`acknowledged_startup_warning` decides which startup warnings are acceptable by **substring-matching
-warning text** (`"api-key auth is not enabled yet"`, `"public reads may still work"`). Rewording a
-startup check in any product silently changes what the gate means. If smoke tiers become autonomy
-gates, that is a policy decision made by string matching.
+**B7 — Closed: smoke policy is canonical, typed product metadata.**
+Every product manifest now declares its smoke-tier membership, optional action, payload fixture,
+and timeout. HiveCore derives its product sets and dispatch behavior from that registry instead of
+carrying per-slug literals. Startup warnings used by smoke gates carry stable `(code, status)`
+identities, and a product manifest explicitly lists the identities acceptable for local operation.
+Unidentified, unlisted, failed, or newly introduced warnings remain visible and cannot become an
+accepted autonomy signal merely because their prose resembles an old message.
 
 **B8 — Bootstrap secret is conjured, not persisted.**
 `ensure_suite_bootstrap_secret()` generates a random secret and `env::set_var`s it when
@@ -586,7 +588,5 @@ that matters — whether external state, meaning state outside PatchHive, was to
   operator setup plus a compose file?
 - Does the kernel live in its own crate or grow inside `patchhive-product-core` alongside the
   existing `hivecore_policy` module?
-- What replaces the smoke tiers' hardcoded per-slug payloads — manifest-declared smoke fixtures, or
-  a product-owned `/smoke` capability?
 - Where does the public `patchhive.dev` opt-out API sit relative to the kernel — an upstream input
   the kernel caches, or a peer authority the kernel calls?

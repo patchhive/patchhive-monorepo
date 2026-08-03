@@ -12,6 +12,7 @@ pub mod repo_policy;
 pub mod scheduling;
 pub mod scope_policy;
 pub mod secrets;
+pub mod smoke_manifest;
 pub mod sqlite;
 pub mod startup;
 pub mod validation;

@@ -15,6 +15,14 @@ repository = "patchhive/reviewbee"
 frontend_url = "http://localhost:5177"
 api_url = "http://localhost:8040"
 
+[smoke]
+tiers = ["read-only-fleet"]
+acknowledged_startup = [
+  { code = "api_key_auth", status = "missing" },
+  { code = "github_webhook_secret", status = "missing" },
+  { code = "public_url", status = "missing" },
+]
+
 [safety]
 read_only = false
 writes_external_state = true

@@ -5,6 +5,7 @@ use axum::{
     http::StatusCode,
     Json,
 };
+use patchhive_product_core::smoke_manifest::SmokeTier;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::{spawn, time::sleep};
@@ -23,9 +24,6 @@ use crate::{
 use super::overview::build_runtime_products;
 use super::provision::provision_service_token_for_product;
 use super::{api_error, fetch_product_auth_status, resolve_api_url};
-
-pub(super) const DOWNSTREAM_FIRST_STACK_SLUGS: [&str; 3] =
-    ["signal-hive", "trust-gate", "repo-reaper"];
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 struct LauncherStackStatusBody {
@@ -1377,7 +1375,8 @@ async fn launcher_rejected(
 }
 
 async fn wait_for_first_stack(state: &AppState, actions: &mut Vec<String>) {
-    wait_for_products(state, &DOWNSTREAM_FIRST_STACK_SLUGS, actions).await;
+    let slugs = first_stack_slugs();
+    wait_for_products(state, &slugs, actions).await;
 }
 
 async fn wait_for_products(state: &AppState, slugs: &[&str], actions: &mut Vec<String>) {
@@ -1433,7 +1432,16 @@ async fn wait_for_health(state: &AppState, api_url: &str) -> bool {
 }
 
 async fn auto_pair_first_stack(state: &AppState, secret: &str, actions: &mut Vec<String>) {
-    auto_pair_products(state, secret, &DOWNSTREAM_FIRST_STACK_SLUGS, actions).await;
+    let slugs = first_stack_slugs();
+    auto_pair_products(state, secret, &slugs, actions).await;
+}
+
+fn first_stack_slugs() -> Vec<&'static str> {
+    product_catalog()
+        .iter()
+        .filter(|product| product.smoke.participates_in(SmokeTier::FirstStack))
+        .map(|product| product.slug.as_str())
+        .collect()
 }
 
 async fn auto_pair_products(

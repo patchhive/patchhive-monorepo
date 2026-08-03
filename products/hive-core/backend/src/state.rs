@@ -1,6 +1,7 @@
 use std::sync::OnceLock;
 use std::time::Duration;
 
+use patchhive_product_core::smoke_manifest::ProductSmokeManifest;
 use serde::Deserialize;
 
 #[derive(Clone)]
@@ -65,7 +66,7 @@ pub fn dispatch_timeout_secs() -> u64 {
         .clamp(5, 3_600)
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ProductDefinition {
     pub slug: String,
     pub title: String,
@@ -76,6 +77,7 @@ pub struct ProductDefinition {
     pub default_frontend_url: String,
     pub default_api_url: String,
     pub safety: ProductSafetyDefinition,
+    pub smoke: ProductSmokeManifest,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -149,6 +151,8 @@ struct RegistryManifest {
     name: String,
     display: RegistryDisplay,
     safety: RegistrySafety,
+    #[serde(default)]
+    smoke: ProductSmokeManifest,
 }
 
 #[derive(Deserialize)]
@@ -206,6 +210,7 @@ pub fn load_product_registry() -> anyhow::Result<()> {
                     opens_pull_requests: manifest.safety.opens_pull_requests,
                     requires_operator_approval: manifest.safety.requires_operator_approval,
                 },
+                smoke: manifest.smoke,
             },
         ));
     }
@@ -225,6 +230,7 @@ pub fn configure_product_registry(entries: Vec<ProductDefinition>) -> anyhow::Re
             !entry.slug.trim().is_empty(),
             "product registry contains an empty slug"
         );
+        entry.smoke.validate(&entry.slug)?;
         anyhow::ensure!(
             slugs.insert(entry.slug.clone()),
             "product registry contains duplicate slug '{}'",

@@ -15,6 +15,13 @@ repository = "patchhive/refactorscout"
 frontend_url = "http://localhost:5182"
 api_url = "http://localhost:8090"
 
+[smoke]
+tiers = ["read-only-fleet"]
+acknowledged_startup = [
+  { code = "api_key_auth", status = "missing" },
+  { code = "allowed_roots", status = "defaulted" },
+]
+
 [safety]
 read_only = true
 credential_scopes = ["local:filesystem:read", "github:public-repo:clone"]

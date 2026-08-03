@@ -2,7 +2,8 @@ use std::time::Duration;
 
 use axum::{extract::State, Json};
 use patchhive_product_core::contract;
-use patchhive_product_core::startup::StartupCheckLevel;
+use patchhive_product_core::smoke_manifest::{SmokeActionManifest, SmokeTier};
+use patchhive_product_core::startup::{StartupCheck, StartupCheckLevel};
 use reqwest::Method;
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -21,25 +22,10 @@ use super::{
     fetch_product_capabilities, fetch_product_runs, parse_response_body, resolve_api_url,
     setup::{
         build_first_stack_response, prepare_first_stack_for_verification,
-        prepare_products_for_service_token_verification, DOWNSTREAM_FIRST_STACK_SLUGS,
+        prepare_products_for_service_token_verification,
     },
     ProductStoredAuth, StartupChecksBody,
 };
-
-const READ_ONLY_FLEET_SLUGS: [&str; 10] = [
-    "signal-hive",
-    "repo-memory",
-    "trust-gate",
-    "review-bee",
-    "merge-keeper",
-    "flake-sting",
-    "dep-triage",
-    "vuln-triage",
-    "refactor-scout",
-    "release-sentry",
-];
-const WRITE_DRY_RUN_SLUGS: [&str; 1] = ["repo-reaper"];
-const RELEASE_GATE_SLUGS: [&str; 1] = ["release-sentry"];
 
 macro_rules! push_step {
     (
@@ -62,44 +48,6 @@ macro_rules! push_step {
             evidence: $evidence,
         })
     };
-}
-
-#[derive(Clone, Copy)]
-enum SmokeTier {
-    FirstStack,
-    ReadOnlyFleet,
-    WriteDryRun,
-    ReleaseGate,
-}
-
-impl SmokeTier {
-    fn from_slug(slug: &str) -> Option<Self> {
-        match slug {
-            "first-stack" => Some(Self::FirstStack),
-            "read-only-fleet" => Some(Self::ReadOnlyFleet),
-            "write-dry-run" => Some(Self::WriteDryRun),
-            "release-gate" => Some(Self::ReleaseGate),
-            _ => None,
-        }
-    }
-
-    fn slug(self) -> &'static str {
-        match self {
-            Self::FirstStack => "first-stack",
-            Self::ReadOnlyFleet => "read-only-fleet",
-            Self::WriteDryRun => "write-dry-run",
-            Self::ReleaseGate => "release-gate",
-        }
-    }
-
-    fn label(self) -> &'static str {
-        match self {
-            Self::FirstStack => "First-stack smoke",
-            Self::ReadOnlyFleet => "Read-only fleet smoke",
-            Self::WriteDryRun => "RepoReaper dry-run smoke",
-            Self::ReleaseGate => "ReleaseSentry release-gate smoke",
-        }
-    }
 }
 
 pub(super) async fn run_first_stack_smoke(
@@ -133,7 +81,7 @@ async fn run_smoke_tier_response(
 ) -> Json<crate::models::ApiEnvelope<FirstStackSetupResponse>> {
     let mut actions = vec![format!(
         "HiveCore started {}: {}.",
-        tier.label(),
+        smoke_tier_label(tier),
         smoke_tier_description(tier)
     )];
     let mut preflight_steps = Vec::new();
@@ -176,21 +124,17 @@ async fn run_smoke_tier_response(
         tier,
         SmokeTier::ReadOnlyFleet | SmokeTier::WriteDryRun | SmokeTier::ReleaseGate
     ) {
-        prepare_products_for_service_token_verification(
-            state,
-            smoke_tier_slugs(tier),
-            &mut actions,
-        )
-        .await;
+        let tier_slugs = smoke_tier_slugs(tier);
+        prepare_products_for_service_token_verification(state, &tier_slugs, &mut actions).await;
         push_step!(
             &mut preflight_steps,
             tier.slug(),
-            tier.label(),
+            smoke_tier_label(tier),
             "pairing-preflight",
             "pass",
             format!(
                 "HiveCore checked running products for service-token pairing before {}.",
-                tier.label()
+                smoke_tier_label(tier)
             ),
             None,
             json!({ "tier": tier.slug(), "actions": actions }),
@@ -202,12 +146,16 @@ async fn run_smoke_tier_response(
     let summary = smoke.summary.clone();
 
     match db::record_first_stack_smoke_run(&smoke) {
-        Ok(()) => actions.push(format!("Recorded {} {}: {summary}", tier.label(), smoke.id)),
+        Ok(()) => actions.push(format!(
+            "Recorded {} {}: {summary}",
+            smoke_tier_label(tier),
+            smoke.id
+        )),
         Err(err) => {
             tracing::warn!("failed to record smoke run: {err}");
             actions.push(format!(
                 "{} finished as {status}, but HiveCore could not persist it: {err}",
-                tier.label()
+                smoke_tier_label(tier)
             ));
         }
     }
@@ -234,6 +182,15 @@ fn smoke_tier_description(tier: SmokeTier) -> &'static str {
     }
 }
 
+fn smoke_tier_label(tier: SmokeTier) -> &'static str {
+    match tier {
+        SmokeTier::FirstStack => "First-stack smoke",
+        SmokeTier::ReadOnlyFleet => "Read-only fleet smoke",
+        SmokeTier::WriteDryRun => "RepoReaper dry-run smoke",
+        SmokeTier::ReleaseGate => "ReleaseSentry release-gate smoke",
+    }
+}
+
 async fn execute_smoke_tier(
     state: &AppState,
     tier: SmokeTier,
@@ -245,7 +202,7 @@ async fn execute_smoke_tier(
 
     smoke_tier_coverage_check(tier, &runtimes, &mut steps);
 
-    for &slug in smoke_tier_slugs(tier) {
+    for slug in smoke_tier_slugs(tier) {
         let Some(runtime) = runtimes.iter().find(|item| item.slug == slug) else {
             push_step!(
                 &mut steps,
@@ -310,13 +267,12 @@ async fn execute_smoke_tier(
     }
 }
 
-fn smoke_tier_slugs(tier: SmokeTier) -> &'static [&'static str] {
-    match tier {
-        SmokeTier::FirstStack => &DOWNSTREAM_FIRST_STACK_SLUGS,
-        SmokeTier::ReadOnlyFleet => &READ_ONLY_FLEET_SLUGS,
-        SmokeTier::WriteDryRun => &WRITE_DRY_RUN_SLUGS,
-        SmokeTier::ReleaseGate => &RELEASE_GATE_SLUGS,
-    }
+fn smoke_tier_slugs(tier: SmokeTier) -> Vec<&'static str> {
+    product_catalog()
+        .iter()
+        .filter(|product| product.smoke.participates_in(tier))
+        .map(|product| product.slug.as_str())
+        .collect()
 }
 
 fn smoke_tier_coverage_check(
@@ -351,7 +307,7 @@ fn smoke_tier_coverage_check(
     push_step!(
         steps,
         tier.slug(),
-        tier.label(),
+        smoke_tier_label(tier),
         "fleet-coverage",
         if ok { "pass" } else { "fail" },
         if ok {
@@ -425,22 +381,35 @@ async fn smoke_runtime_checks(
     let mut evidence = json!(runtime.health.startup_checks);
 
     if startup.is_some_and(|summary| summary.errors == 0 && summary.warnings > 0) {
-        match fetch_startup_warning_messages(state, api_url, auth).await {
+        let warning_policy = product_catalog()
+            .iter()
+            .find(|product| product.slug == runtime.slug)
+            .map(|product| &product.smoke);
+        match fetch_startup_warning_checks(state, api_url, auth).await {
             Ok(warnings)
                 if !warnings.is_empty()
-                    && warnings
-                        .iter()
-                        .all(|warning| acknowledged_startup_warning(&runtime.slug, warning)) =>
+                    && warning_policy.is_some()
+                    && warnings.iter().all(|warning| {
+                        warning_policy.is_some_and(|policy| {
+                            policy.acknowledges(warning.code.as_deref(), warning.status.as_deref())
+                        })
+                    }) =>
             {
                 startup_status = "pass";
                 startup_message = format!(
-                    "Startup checks include only acknowledged local-first-stack warnings: {}",
+                    "Startup checks include only manifest-acknowledged warnings: {}",
                     startup_warning_summary(&warnings)
                 );
                 if let Some(map) = evidence.as_object_mut() {
                     map.insert("warnings".into(), json!(warnings));
-                    map.insert("acknowledged_warnings".into(), json!(warnings));
-                    map.insert("warning_policy".into(), json!("local_first_stack"));
+                    map.insert(
+                        "acknowledged_warnings".into(),
+                        json!(warnings
+                            .iter()
+                            .map(startup_check_identity)
+                            .collect::<Vec<_>>()),
+                    );
+                    map.insert("warning_policy".into(), json!("product_manifest"));
                 }
             }
             Ok(warnings) => {
@@ -468,11 +437,11 @@ async fn smoke_runtime_checks(
     );
 }
 
-async fn fetch_startup_warning_messages(
+async fn fetch_startup_warning_checks(
     state: &AppState,
     api_url: &str,
     auth: &ProductStoredAuth,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<StartupCheck>, String> {
     let checks_url = format!("{}/startup/checks", api_url.trim_end_matches('/'));
     let response = authorized_get(&state.client, &checks_url, auth)
         .timeout(Duration::from_secs(3))
@@ -496,42 +465,21 @@ async fn fetch_startup_warning_messages(
         .checks
         .into_iter()
         .filter(|check| check.level == StartupCheckLevel::Warn)
-        .map(|check| check.msg)
         .collect())
 }
 
-fn acknowledged_startup_warning(slug: &str, warning: &str) -> bool {
-    let normalized = warning.to_ascii_lowercase();
-    normalized.contains("api-key auth is not enabled yet")
-        || normalized.contains("public_url is not configured")
-        || normalized.contains("public url is not configured")
-        || normalized.contains("github webhook secret is not configured")
-        || normalized.contains("webhook delivery until it is set")
-        || normalized.contains("public-repo scans may still work")
-        || normalized.contains("public dependency pr scans may still work")
-        || normalized.contains("public reads may still work")
-        || normalized.contains("public github release checks may work")
-        || normalized.contains("rate limits and private repos will be limited")
-        || normalized.contains("github-backed ingestion is disabled")
-        || matches!(
-            slug,
-            "trust-gate"
-                if normalized.contains("trust_github_webhook_secret is not configured")
-                    || normalized.contains("bot_github_token is missing")
-        )
-        || matches!(
-            slug,
-            "refactor-scout"
-                if normalized.contains("refactor_scout_allowed_roots is not set")
-                    || normalized.contains("defaults to the process working directory")
-        )
+fn startup_check_identity(check: &StartupCheck) -> Value {
+    json!({
+        "code": check.code,
+        "status": check.status,
+    })
 }
 
-fn startup_warning_summary(warnings: &[String]) -> String {
+fn startup_warning_summary(warnings: &[StartupCheck]) -> String {
     truncate(
         &warnings
             .iter()
-            .map(|warning| warning.trim().trim_end_matches('.'))
+            .map(|warning| warning.msg.trim().trim_end_matches('.'))
             .collect::<Vec<_>>()
             .join("; "),
         320,
@@ -625,13 +573,26 @@ async fn smoke_capability_check(
     auth: &ProductStoredAuth,
     steps: &mut Vec<FirstStackSmokeStep>,
 ) {
+    let Some(smoke_action) = smoke_action_manifest(&runtime.slug) else {
+        push_step!(
+            steps,
+            &runtime.slug,
+            &runtime.title,
+            "capabilities",
+            "fail",
+            "The canonical product manifest does not declare a smoke action for this tier.",
+            None,
+            Value::Null,
+        );
+        return;
+    };
+
     match fetch_product_capabilities(&state.client, api_url, auth).await {
         Ok(capabilities) => {
-            let expected_action = expected_smoke_action(&runtime.slug);
             let has_action = capabilities
                 .actions
                 .iter()
-                .any(|action| action.id == expected_action);
+                .any(|action| action.id == smoke_action.id);
             push_step!(
                 steps,
                 &runtime.slug,
@@ -645,7 +606,7 @@ async fn smoke_capability_check(
                 },
                 None,
                 json!({
-                    "expected_action": expected_action,
+                    "expected_action": smoke_action.id,
                     "actions": capabilities.actions.iter().map(|action| action.id.clone()).collect::<Vec<_>>(),
                 }),
             );
@@ -785,11 +746,23 @@ async fn smoke_safe_action(
         return;
     };
 
-    let action_id = expected_smoke_action(&runtime.slug);
+    let Some(smoke_action) = smoke_action_manifest(&runtime.slug) else {
+        push_step!(
+            steps,
+            &runtime.slug,
+            &runtime.title,
+            "safe-action",
+            "fail",
+            "The canonical product manifest does not declare a smoke action for this tier.",
+            None,
+            Value::Null,
+        );
+        return;
+    };
     let Some(action) = capabilities
         .actions
         .iter()
-        .find(|action| action.id == action_id)
+        .find(|action| action.id == smoke_action.id)
     else {
         push_step!(
             steps,
@@ -799,7 +772,7 @@ async fn smoke_safe_action(
             "skip",
             "Skipped safe action because the product did not advertise it.",
             None,
-            json!({ "expected_action": action_id }),
+            json!({ "expected_action": smoke_action.id }),
         );
         return;
     };
@@ -818,8 +791,16 @@ async fn smoke_safe_action(
         return;
     }
 
-    let payload = smoke_payload(&runtime.slug);
-    match post_smoke_action(state, api_url, auth, action, payload).await {
+    match post_smoke_action(
+        state,
+        api_url,
+        auth,
+        action,
+        smoke_action.payload.clone(),
+        smoke_action.timeout_seconds,
+    )
+    .await
+    {
         Ok((remote_status, evidence)) => push_step!(
             steps,
             &runtime.slug,
@@ -852,6 +833,7 @@ async fn post_smoke_action(
     auth: &ProductStoredAuth,
     action: &contract::ProductAction,
     payload: Value,
+    timeout_seconds: u64,
 ) -> Result<(u16, Value), (Option<u16>, String, Value)> {
     let target_url =
         build_target_url(api_url, &action.path, &Default::default()).map_err(|message| {
@@ -869,7 +851,7 @@ async fn post_smoke_action(
         )
     })?;
     let mut request = authorized_request(state.client.request(method.clone(), target_url), auth)
-        .timeout(Duration::from_secs(smoke_timeout_secs(action.id.as_str())));
+        .timeout(Duration::from_secs(timeout_seconds));
     if method != Method::GET && method != Method::HEAD {
         request = request.json(&payload);
     }
@@ -895,53 +877,11 @@ async fn post_smoke_action(
     }
 }
 
-fn expected_smoke_action(slug: &str) -> &'static str {
-    match slug {
-        "signal-hive" => "smoke_check",
-        "trust-gate" => "review_diff",
-        "repo-reaper" => "dry_run",
-        "release-sentry" => "check_github_release",
-        _ => "unknown",
-    }
-}
-
-fn smoke_payload(slug: &str) -> Value {
-    match slug {
-        "signal-hive" => json!({}),
-        "trust-gate" => json!({
-            "repo": "patchhive/smoke-fixture",
-            "ai_source": "hivecore-smoke",
-            "diff": "diff --git a/src/lib.rs b/src/lib.rs\nindex 1111111..2222222 100644\n--- a/src/lib.rs\n+++ b/src/lib.rs\n@@ -1,3 +1,4 @@\n pub fn add(left: i32, right: i32) -> i32 {\n+    // HiveCore smoke check: harmless comment-only diff.\n     left + right\n }\n"
-        }),
-        "repo-reaper" => json!({
-            "language": "rust",
-            "min_stars": 0,
-            "max_repos": 1,
-            "max_issues": 1,
-            "labels": ["bug"],
-            "concurrency": 1,
-            "search_query": "repo:patchhive/patchhive2 is:issue is:open",
-            "cost_budget_usd": 0.0,
-            "retry_count": 0
-        }),
-        "release-sentry" => json!({
-            "repo": "patchhive/patchhive2",
-            "branch": "main",
-            "target_version": "",
-            "target_tag": "",
-            "changelog_path": "README.md",
-            "workflow_run_limit": 10,
-            "blocker_labels": ["release-blocker", "blocker", "critical", "regression"]
-        }),
-        _ => json!({}),
-    }
-}
-
-fn smoke_timeout_secs(action_id: &str) -> u64 {
-    match action_id {
-        "scan" | "dry_run" | "check_github_release" => 45,
-        _ => 15,
-    }
+fn smoke_action_manifest(slug: &str) -> Option<&'static SmokeActionManifest> {
+    product_catalog()
+        .iter()
+        .find(|product| product.slug == slug)
+        .and_then(|product| product.smoke.action.as_ref())
 }
 
 fn smoke_response_evidence(text: &str) -> Value {
@@ -984,19 +924,22 @@ fn summarize_smoke(tier: SmokeTier, steps: &[FirstStackSmokeStep], status: &str)
     match status {
         "ready" if acknowledged_warns > 0 => format!(
             "{} is suite-ready: {pass} checks passed, {acknowledged_warns} local warning{} acknowledged.",
-            tier.label(),
+            smoke_tier_label(tier),
             if acknowledged_warns == 1 { "" } else { "s" }
         ),
-        "ready" => format!("{} is suite-ready: {pass} checks passed.", tier.label()),
+        "ready" => format!(
+            "{} is suite-ready: {pass} checks passed.",
+            smoke_tier_label(tier)
+        ),
         "attention" => {
             format!(
                 "{} needs attention: {pass} passed, {warn} warned, {skip} skipped.",
-                tier.label()
+                smoke_tier_label(tier)
             )
         }
         _ => format!(
             "{} is blocked: {pass} passed, {warn} warned, {fail} failed, {skip} skipped.",
-            tier.label()
+            smoke_tier_label(tier)
         ),
     }
 }

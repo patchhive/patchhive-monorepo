@@ -15,6 +15,26 @@ repository = "patchhive/release-sentry"
 frontend_url = "http://localhost:5184"
 api_url = "http://localhost:8120"
 
+[smoke]
+tiers = ["read-only-fleet", "release-gate"]
+acknowledged_startup = [
+  { code = "api_key_auth", status = "missing" },
+  { code = "github_token", status = "missing" },
+]
+
+[smoke.action]
+id = "check_github_release"
+timeout_seconds = 45
+
+[smoke.action.payload]
+repo = "patchhive/patchhive2"
+branch = "main"
+target_version = ""
+target_tag = ""
+changelog_path = "README.md"
+workflow_run_limit = 10
+blocker_labels = ["release-blocker", "blocker", "critical", "regression"]
+
 [safety]
 read_only = true
 # github:issues:read is required by check_github_release, which scans blocker

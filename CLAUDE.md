@@ -167,9 +167,11 @@ gateway target, enforces `PATCHHIVE_PRODUCTS` enablement, and caps bodies at 25 
 `services/patchhive-backend/registry/products/<slug>.toml` declares identity (`key`, `code`,
 `name`, `role`), `module_path`, `route_prefix`, `migration_stage`, `[safety]`
 (`read_only`, `writes_external_state`, `mutates_repositories`, `opens_pull_requests`,
-`requires_operator_approval`, `credential_scopes`, `evidence_required`), `[health]`,
+`requires_operator_approval`, `credential_scopes`, `evidence_required`), `[smoke]`
+(tier membership, action fixture and timeout, acknowledged startup identities), `[health]`,
 `[[capabilities]]`, and `[[routes]]`. This is declarative product truth — **update the
-manifest whenever routes, capabilities, or the safety boundary change.** Do not hardcode
+manifest whenever routes, capabilities, the safety boundary, or smoke policy change.** Smoke
+warning policy matches stable `(code, status)` identities, never message prose. Do not hardcode
 product knowledge in `main.rs`.
 
 ### `patchhive-product-core` API surface

@@ -51,6 +51,8 @@ pub struct ProductManifest {
     #[serde(default)]
     pub routes: Vec<RouteClaim>,
     pub display: ProductDisplay,
+    #[serde(default)]
+    pub smoke: patchhive_product_core::smoke_manifest::ProductSmokeManifest,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -152,6 +154,7 @@ impl ProductManifest {
             "product '{}' has no API URL",
             self.key
         );
+        self.smoke.validate(&self.key)?;
         Ok(())
     }
 
@@ -354,6 +357,7 @@ fn route_path_matches(pattern: &str, path: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use crate::models::MigrationStage;
+    use patchhive_product_core::smoke_manifest::SmokeTier;
 
     use super::ProductRegistry;
 
@@ -372,6 +376,17 @@ mod tests {
         assert!(!signal_hive.capabilities.is_empty());
         assert!(!signal_hive.routes.is_empty());
         assert!(signal_hive.safety.read_only);
+        assert!(signal_hive.smoke.participates_in(SmokeTier::FirstStack));
+        assert!(signal_hive.smoke.participates_in(SmokeTier::ReadOnlyFleet));
+        assert_eq!(
+            signal_hive
+                .smoke
+                .action
+                .as_ref()
+                .expect("SignalHive smoke action should be declared")
+                .id,
+            "smoke_check"
+        );
         assert!(matches!(
             signal_hive.migration_stage(),
             MigrationStage::Integrated
