@@ -41,6 +41,7 @@ export interface SuiteRunStepInput {
   action: string;
   payload?: unknown;
   targets?: SuiteRunTargets;
+  gate?: string;
 }
 
 /**
@@ -137,6 +138,31 @@ export async function startSuiteRun(
       ok: run?.status === "completed",
       run,
       message: run?.summary ?? "Suite run finished.",
+    };
+  } catch {
+    return { ok: false, run: null, message: "Could not reach the control plane." };
+  }
+}
+
+export async function executePipelineToml(pipelineToml: string): Promise<StartResult> {
+  try {
+    const response = await apiFetch("/api/products/hive-core/pipelines/execute", {
+      method: "POST",
+      body: JSON.stringify({ pipeline_toml: pipelineToml }),
+    });
+    const body = (await response.json().catch(() => null)) as Envelope<SuiteRun> | null;
+    if (!response.ok) {
+      return {
+        ok: false,
+        run: null,
+        message: body?.error?.message ?? `HiveCore returned HTTP ${response.status}.`,
+      };
+    }
+    const run = body?.data ?? null;
+    return {
+      ok: run?.status === "completed",
+      run,
+      message: run?.summary ?? "Pipeline finished.",
     };
   } catch {
     return { ok: false, run: null, message: "Could not reach the control plane." };

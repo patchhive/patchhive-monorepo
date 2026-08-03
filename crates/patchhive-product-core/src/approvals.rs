@@ -11,6 +11,7 @@ use crate::contract::{ActionEffect, DispatchActionInput, ProductAction};
 pub enum ApprovalOrigin {
     OperatorDispatch,
     SuiteRun { run_id: String },
+    WorkItem { work_item_id: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

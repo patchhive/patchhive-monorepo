@@ -151,7 +151,7 @@ export const DEPENDENCIES: SafetyEdge[] = [
     to: "trustgate",
     kind: "gate",
     effect: "Generated patches lose their risk review before write actions proceed.",
-    live: false,
+    live: true,
   },
   {
     from: "reporeaper",
@@ -172,7 +172,7 @@ export const DEPENDENCIES: SafetyEdge[] = [
     to: "reporeaper",
     kind: "handoff",
     effect: "Discovered maintenance pressure has nowhere to be acted on.",
-    live: false,
+    live: true,
   },
   {
     from: "mergekeeper",

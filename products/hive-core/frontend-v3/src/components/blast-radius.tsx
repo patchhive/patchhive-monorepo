@@ -1,7 +1,8 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { GitBranch, ShieldCheck, ShieldOff } from "lucide-react";
 import { DEPENDENCIES, EDGE_LABEL, type SafetyEdge } from "@/lib/hive-extra";
 import { PRODUCTS } from "@/lib/hive-data";
+import { fetchLiveBlastRadius, type WorkHandoffEdge } from "@/lib/work-ledger";
 
 /**
  * What stops if this product is unavailable.
@@ -30,6 +31,14 @@ const kindTone: Record<SafetyEdge["kind"], string> = {
 
 export function BlastRadius({ productName }: { productName: string }) {
   const product = PRODUCTS.find((p) => p.name === productName);
+  const [observed, setObserved] = useState<WorkHandoffEdge[]>([]);
+  useEffect(() => {
+    if (!product) return;
+    const controller = new AbortController();
+    const slug = product.name.replace(/([a-z])([A-Z])/g, "$1-$2").toLowerCase();
+    fetchLiveBlastRadius(slug, controller.signal).then(setObserved).catch(() => setObserved([]));
+    return () => controller.abort();
+  }, [product]);
   const byId = useMemo(() => Object.fromEntries(PRODUCTS.map((p) => [p.id, p])), []);
   const upstream = useMemo(() => (product ? upstreamOf(product.id) : []), [product]);
   const dependents = useMemo(() => (product ? dependentsOf(product.id) : []), [product]);
@@ -67,7 +76,7 @@ export function BlastRadius({ productName }: { productName: string }) {
           </div>
           <ul className="space-y-1">
             {dependents.map((edge) => (
-              <EdgeRow key={`${edge.from}->${edge.to}`} edge={edge} name={byId[edge.from]?.name ?? edge.from} />
+              <EdgeRow key={`${edge.from}->${edge.to}`} edge={edge} name={byId[edge.from]?.name ?? edge.from} observed={observedFor(edge, observed)} />
             ))}
           </ul>
         </div>
@@ -80,7 +89,7 @@ export function BlastRadius({ productName }: { productName: string }) {
           </div>
           <ul className="space-y-1">
             {upstream.map((edge) => (
-              <EdgeRow key={`${edge.from}->${edge.to}`} edge={edge} name={byId[edge.to]?.name ?? edge.to} />
+              <EdgeRow key={`${edge.from}->${edge.to}`} edge={edge} name={byId[edge.to]?.name ?? edge.to} observed={observedFor(edge, observed)} />
             ))}
           </ul>
         </div>
@@ -89,7 +98,12 @@ export function BlastRadius({ productName }: { productName: string }) {
   );
 }
 
-function EdgeRow({ edge, name }: { edge: SafetyEdge; name: string }) {
+function observedFor(edge: SafetyEdge, observed: WorkHandoffEdge[]) {
+  const canonical = (value: string) => value.replaceAll("-", "").toLowerCase();
+  return observed.find((item) => canonical(item.from_product) === edge.from && canonical(item.to_product) === edge.to);
+}
+
+function EdgeRow({ edge, name, observed }: { edge: SafetyEdge; name: string; observed?: WorkHandoffEdge }) {
   const tone = kindTone[edge.kind];
   return (
     <li className="rounded border border-border/60 bg-background/50 px-2 py-1.5">
@@ -119,6 +133,11 @@ function EdgeRow({ edge, name }: { edge: SafetyEdge; name: string }) {
         )}
       </div>
       <div className="mt-0.5 text-[10px] leading-snug text-muted-foreground">{edge.effect}</div>
+      {observed && (
+        <div className="mt-1 font-mono text-[9px] text-muted-foreground">
+          {observed.active_work_items} active · {observed.work_items} observed in durable work
+        </div>
+      )}
     </li>
   );
 }

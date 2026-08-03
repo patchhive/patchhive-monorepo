@@ -26,6 +26,8 @@ use super::{
     ProductAuthStatusBody, ProductStoredAuth,
 };
 
+type BoxedApiError = Box<(StatusCode, Json<crate::models::ApiEnvelope<Value>>)>;
+
 pub(super) async fn recent_actions() -> Json<crate::models::ApiEnvelope<Vec<ProductActionEvent>>> {
     Json(ok(db::recent_action_events(30)))
 }
@@ -66,7 +68,7 @@ pub(super) async fn dispatch_once(
     .await
 }
 
-pub(super) async fn dispatch_with_approval(
+pub(crate) async fn dispatch_with_approval(
     state: &AppState,
     slug: &str,
     action_id: &str,
@@ -201,6 +203,12 @@ pub(super) async fn dispatch_with_approval(
     }
 
     let input = parse_dispatch_input(body);
+    let dispatch_repository = approval_string_field(
+        &input.payload,
+        &["repo", "repository", "repository_full_name", "target_repo"],
+    );
+    ensure_dispatch_not_paused(slug, None, dispatch_repository.as_deref())
+        .map_err(|error| *error)?;
     let path = fill_path_template(&action.path, &input.path_params)
         .map_err(|message| api_error(StatusCode::BAD_REQUEST, "invalid_action_path", message))?;
     let target_url = build_target_url(&api_url, &path, &input.query)
@@ -215,12 +223,10 @@ pub(super) async fn dispatch_with_approval(
 
     let approval_required = action.requires_approval() || action.opens_pull_request();
     let approval_subject = approval_required.then(|| {
-        let repository = approval_string_field(
-            &input.payload,
-            &["repo", "repository", "repository_full_name", "target_repo"],
-        );
+        let repository = dispatch_repository.clone();
         let run_id = match &origin {
             ApprovalOrigin::SuiteRun { run_id } => Some(run_id.clone()),
+            ApprovalOrigin::WorkItem { work_item_id } => Some(work_item_id.clone()),
             ApprovalOrigin::OperatorDispatch => {
                 approval_string_field(&input.payload, &["run_id", "scan_id", "job_id"])
             }
@@ -424,6 +430,35 @@ pub(super) async fn dispatch_with_approval(
         event: Box::new(event),
         started_run: action.starts_run,
     })
+}
+
+pub(super) fn ensure_dispatch_not_paused(
+    product_slug: &str,
+    mandate_id: Option<&str>,
+    repository: Option<&str>,
+) -> Result<(), BoxedApiError> {
+    let pauses =
+        db::blocking_pauses(Some(product_slug), mandate_id, repository).map_err(|error| {
+            tracing::error!(%error, "could not evaluate pause authority before dispatch");
+            Box::new(api_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "pause_authority_unavailable",
+                "HiveCore refuses dispatch because durable pause authority could not be read.",
+            ))
+        })?;
+    if pauses.is_empty() {
+        return Ok(());
+    }
+    let scopes = pauses
+        .iter()
+        .map(|pause| pause.target.storage_key())
+        .collect::<Vec<_>>()
+        .join(", ");
+    Err(Box::new(api_error(
+        StatusCode::LOCKED,
+        "dispatch_paused",
+        format!("HiveCore blocked new work because these scopes are paused: {scopes}."),
+    )))
 }
 
 fn approval_string_field(payload: &Value, keys: &[&str]) -> Option<String> {

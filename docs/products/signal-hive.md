@@ -721,7 +721,7 @@ services:
 | Star-based discovery | ❌ Future |
 | Webhook-triggered scans | ❌ Future |
 | Cross-product signal aggregation | ❌ Future |
-| Automated handoff to RepoReaper | ❌ Future |
+| Automated handoff to RepoReaper | ✅ Implemented through HiveCore finding receipts and the leased work engine |
 
 ---
 

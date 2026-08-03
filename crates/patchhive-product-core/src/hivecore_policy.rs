@@ -36,6 +36,11 @@ pub struct PrReservationRequest {
     pub repository: String,
     pub run_id: String,
     pub action: String,
+    /// Canonical HiveCore mandate whose limits govern this write, when the
+    /// run was dispatched from durable work. HiveCore resolves the record and
+    /// never accepts owner limits from the product caller.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mandate_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -124,6 +129,8 @@ pub struct PrBudgetUsage {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum PrBudgetLimitingLayer {
+    PauseAuthority,
+    OwnerPoliteness,
     RepositoryPolicy,
     Product,
     Suite,
@@ -132,6 +139,8 @@ pub enum PrBudgetLimitingLayer {
 impl PrBudgetLimitingLayer {
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::PauseAuthority => "pause_authority",
+            Self::OwnerPoliteness => "owner_politeness",
             Self::RepositoryPolicy => "repository_policy",
             Self::Product => "product",
             Self::Suite => "suite",

@@ -4,6 +4,7 @@ use crate::{
     db,
     models::{now_rfc3339, PrReconciliationFailure, PrReconciliationState, PrReservationState},
 };
+use patchhive_product_core::hivecore_kernel::WorkOutcomeKind;
 
 static RECONCILIATION_LOOP_STARTED: OnceLock<()> = OnceLock::new();
 
@@ -134,7 +135,8 @@ async fn reconcile_reservation(
     match pull.state.as_str() {
         "open" => Ok(ReconciliationOutcome::Open),
         "closed" => {
-            let reason = if pull.merged_at.is_some() {
+            let merged = pull.merged_at.is_some();
+            let reason = if merged {
                 "GitHub reconciliation observed the pull request was merged."
             } else {
                 "GitHub reconciliation observed the pull request was closed."
@@ -145,6 +147,68 @@ async fn reconcile_reservation(
                 reason,
                 &now_rfc3339(),
             )?;
+            if released {
+                let reservation = db::pr_budget_reservation(reservation_id)?
+                    .ok_or_else(|| anyhow::anyhow!("released reservation disappeared"))?;
+                let work = db::record_reconciled_pr_outcome(
+                    &reservation,
+                    pr_url,
+                    if merged {
+                        WorkOutcomeKind::Merged
+                    } else {
+                        WorkOutcomeKind::ClosedUnmerged
+                    },
+                    reason,
+                    &now_rfc3339(),
+                )?;
+                if !merged {
+                    if let Some(work) = work {
+                        let candidate = patchhive_product_core::repo_memory::FailGuardCandidateRequest {
+                            repo: reservation.repository.clone(),
+                            source_type: "HiveCore PR outcome".into(),
+                            source_ref: work.id.clone(),
+                            title: "PatchHive pull request closed without merge".into(),
+                            outcome: reason.into(),
+                            lesson: "Review the public maintainer outcome before similar autonomous work is attempted again.".into(),
+                            prevention: "Use the promoted lesson, owner cooldown, and reputation governor to narrow future work.".into(),
+                            affected_paths: Vec::new(),
+                            evidence: vec![pr_url.into(), format!("work_item:{}", work.id)],
+                            confidence: Some(1.0),
+                        };
+                        match patchhive_product_core::repo_memory::submit_failguard_candidate(
+                            client, &candidate,
+                        )
+                        .await
+                        {
+                            Ok(Some(response)) => {
+                                db::record_suite_event(
+                                    "work_item",
+                                    &work.id,
+                                    "failguard_feedback_submitted",
+                                    &serde_json::to_value(response)
+                                        .unwrap_or(serde_json::Value::Null),
+                                )?;
+                            }
+                            Ok(None) => {
+                                db::record_suite_event(
+                                    "work_item",
+                                    &work.id,
+                                    "failguard_feedback_not_configured",
+                                    &serde_json::json!({"repository": reservation.repository}),
+                                )?;
+                            }
+                            Err(error) => {
+                                db::record_suite_event(
+                                    "work_item",
+                                    &work.id,
+                                    "failguard_feedback_failed",
+                                    &serde_json::json!({"reason": error.to_string()}),
+                                )?;
+                            }
+                        }
+                    }
+                }
+            }
             Ok(if released {
                 ReconciliationOutcome::Released
             } else {

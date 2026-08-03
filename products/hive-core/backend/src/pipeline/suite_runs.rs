@@ -12,6 +12,7 @@
 //! privileged batch.
 
 use axum::{extract::State, http::StatusCode, Json};
+use serde::Deserialize;
 use serde_json::{Map, Value};
 use uuid::Uuid;
 
@@ -46,10 +47,115 @@ const MAX_TARGETS_PER_STEP: u32 = 25;
 /// twenty-five dispatches from a form that looked like five.
 const MAX_DISPATCHES_PER_RUN: usize = 100;
 
+#[derive(Debug, Deserialize)]
+pub struct TomlPipelineRequest {
+    pub pipeline_toml: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct PipelineDocument {
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    continue_on_failure: bool,
+    #[serde(rename = "stage")]
+    stages: Vec<PipelineStage>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PipelineStage {
+    product: String,
+    action: String,
+    #[serde(default)]
+    input: Option<toml::Value>,
+    #[serde(default)]
+    gate: Option<String>,
+    #[serde(default)]
+    targets: Option<SuiteRunTargets>,
+}
+
+pub(super) async fn execute_toml_pipeline(
+    State(state): State<AppState>,
+    Json(request): Json<TomlPipelineRequest>,
+) -> ApiResult<SuiteRun> {
+    if request.pipeline_toml.len() > 100_000 {
+        return Err(api_error(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "pipeline_toml_too_large",
+            "A declarative pipeline is limited to 100000 characters.",
+        ));
+    }
+    let document = toml::from_str::<PipelineDocument>(&request.pipeline_toml).map_err(|error| {
+        api_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_pipeline_toml",
+            format!("The pipeline TOML is invalid: {error}"),
+        )
+    })?;
+    let mut steps = Vec::with_capacity(document.stages.len());
+    for (index, stage) in document.stages.into_iter().enumerate() {
+        if stage.product.trim().is_empty() || stage.action.trim().is_empty() {
+            return Err(api_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_pipeline_stage",
+                format!("Stage {} requires product and action.", index + 1),
+            ));
+        }
+        let payload = stage
+            .input
+            .map(|value| serde_json::to_value(value).unwrap_or(Value::Null))
+            .unwrap_or_else(|| Value::Object(Map::new()));
+        if !payload.is_object() {
+            return Err(api_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_pipeline_input",
+                format!("Stage {} input must be a TOML table.", index + 1),
+            ));
+        }
+        steps.push(SuiteRunStepInput {
+            product: stage.product,
+            action: stage.action,
+            payload,
+            targets: stage.targets,
+            gate: stage.gate,
+        });
+    }
+    start_suite_run(
+        State(state),
+        Json(StartSuiteRunRequest {
+            name: document.name,
+            steps,
+            continue_on_failure: document.continue_on_failure,
+        }),
+    )
+    .await
+}
+
 pub(super) async fn start_suite_run(
     State(state): State<AppState>,
     Json(request): Json<StartSuiteRunRequest>,
 ) -> ApiResult<SuiteRun> {
+    let blocking_pauses = db::blocking_pauses(None, None, None).map_err(|error| {
+        api_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "pause_authority_unavailable",
+            format!("HiveCore could not read pause authority: {error}"),
+        )
+    })?;
+    if !blocking_pauses.is_empty() {
+        return Err(api_error(
+            StatusCode::LOCKED,
+            "suite_run_paused",
+            format!(
+                "HiveCore blocked the suite run because these scopes are paused: {}.",
+                blocking_pauses
+                    .iter()
+                    .map(|pause| pause.target.storage_key())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        ));
+    }
     if request.steps.is_empty() {
         return Err(api_error(
             StatusCode::BAD_REQUEST,
@@ -176,6 +282,34 @@ async fn execute(
             continue;
         }
 
+        if let Some(gate) = input
+            .gate
+            .as_deref()
+            .map(str::trim)
+            .filter(|gate| !gate.is_empty())
+        {
+            match evaluate_gate(gate, &outputs) {
+                Ok(true) => {}
+                Ok(false) => {
+                    run.steps.push(skipped_step(
+                        input,
+                        &format!("Result gate evaluated false: {gate}"),
+                    ));
+                    continue;
+                }
+                Err(message) => {
+                    run.steps.push(failed_step(
+                        input,
+                        &format!("Result gate could not be evaluated: {message}"),
+                    ));
+                    if !continue_on_failure {
+                        halted = true;
+                    }
+                    continue;
+                }
+            }
+        }
+
         // A plain step is one dispatch; a step with a target reference is one per
         // resolved target.
         let expansions = match plan_expansions(&outputs, input) {
@@ -244,7 +378,9 @@ async fn execute(
                         event.error
                     };
                     if dispatched {
-                        last_body = Some(event.response_json);
+                        last_body = Some(crate::work_engine::normalized_response(
+                            &event.response_json,
+                        ));
                     } else if !continue_on_failure {
                         halted = true;
                     }
@@ -526,6 +662,81 @@ fn resolve_targets(
     Ok(resolved)
 }
 
+fn evaluate_gate(expression: &str, outputs: &StepOutputs) -> Result<bool, String> {
+    let expression = expression.trim();
+    if let Some(reference) = expression
+        .strip_prefix("exists(")
+        .and_then(|value| value.strip_suffix(')'))
+    {
+        return Ok(resolve_gate_reference(outputs, reference.trim()).is_ok());
+    }
+    for operator in ["!=", "==", ">=", "<=", ">", "<"] {
+        if let Some((left, right)) = expression.split_once(operator) {
+            let actual = resolve_gate_reference(outputs, left.trim())?;
+            let expected = parse_gate_literal(right.trim())?;
+            return compare_gate_values(actual, &expected, operator);
+        }
+    }
+    Err("supported gates are exists(reference) or reference ==, !=, >, >=, <, <= literal".into())
+}
+
+fn resolve_gate_reference<'a>(
+    outputs: &'a StepOutputs,
+    reference: &str,
+) -> Result<&'a Value, String> {
+    let reference = reference.trim().trim_start_matches('$');
+    let mut parts = reference.split('.');
+    if parts.next() != Some("stages") {
+        return Err("gate references must start with $stages.<step-number>".into());
+    }
+    let step = parts
+        .next()
+        .ok_or_else(|| "gate reference omitted a step number".to_string())?
+        .parse::<usize>()
+        .map_err(|_| "gate step number must be a positive integer".to_string())?;
+    let mut value = outputs
+        .get(step)
+        .and_then(Option::as_ref)
+        .ok_or_else(|| format!("stage {step} has no successful result"))?;
+    for segment in parts {
+        value = value
+            .get(segment)
+            .ok_or_else(|| format!("stage {step} result has no `{segment}` field"))?;
+    }
+    Ok(value)
+}
+
+fn parse_gate_literal(value: &str) -> Result<Value, String> {
+    if value.starts_with('\'') && value.ends_with('\'') && value.len() >= 2 {
+        return Ok(Value::String(value[1..value.len() - 1].to_owned()));
+    }
+    serde_json::from_str(value)
+        .map_err(|_| "gate literals must be quoted strings, JSON numbers, booleans, or null".into())
+}
+
+fn compare_gate_values(actual: &Value, expected: &Value, operator: &str) -> Result<bool, String> {
+    match operator {
+        "==" => Ok(actual == expected),
+        "!=" => Ok(actual != expected),
+        ">" | ">=" | "<" | "<=" => {
+            let left = actual
+                .as_f64()
+                .ok_or_else(|| "ordered gate comparison requires a numeric result".to_string())?;
+            let right = expected
+                .as_f64()
+                .ok_or_else(|| "ordered gate comparison requires a numeric literal".to_string())?;
+            Ok(match operator {
+                ">" => left > right,
+                ">=" => left >= right,
+                "<" => left < right,
+                "<=" => left <= right,
+                _ => unreachable!(),
+            })
+        }
+        _ => Err("unsupported gate operator".into()),
+    }
+}
+
 pub(super) async fn list_suite_runs() -> Json<crate::models::ApiEnvelope<Vec<SuiteRun>>> {
     Json(ok(db::suite_runs(50)))
 }
@@ -560,6 +771,7 @@ mod tests {
             action: "scan".into(),
             payload: Value::Null,
             targets,
+            gate: None,
         }
     }
 
@@ -736,6 +948,40 @@ mod tests {
     }
 
     #[test]
+    fn result_gates_resolve_prior_stage_evidence_and_fail_closed() {
+        let outputs = vec![None, Some(json!({"recommendation": "safe", "risk": 12}))];
+        assert!(evaluate_gate("$stages.1.recommendation == 'safe'", &outputs).unwrap());
+        assert!(!evaluate_gate("$stages.1.risk > 20", &outputs).unwrap());
+        assert!(evaluate_gate("exists($stages.1.recommendation)", &outputs).unwrap());
+        assert!(evaluate_gate("$stages.2.recommendation == 'safe'", &outputs).is_err());
+    }
+
+    #[test]
+    fn declarative_pipeline_toml_decodes_stage_gates() {
+        let document: PipelineDocument = toml::from_str(
+            r#"
+name = "safe maintenance"
+
+[[stage]]
+product = "signal-hive"
+action = "scan"
+input = { max_repos = 2 }
+
+[[stage]]
+product = "repo-reaper"
+action = "dry_run"
+gate = "$stages.1.summary.total_repos > 0"
+"#,
+        )
+        .expect("pipeline TOML should decode");
+        assert_eq!(document.stages.len(), 2);
+        assert_eq!(
+            document.stages[1].gate.as_deref(),
+            Some("$stages.1.summary.total_repos > 0")
+        );
+    }
+
+    #[test]
     fn approved_suite_dispatch_reconciles_without_resuming_skipped_steps() {
         let mut approval_step =
             stub_step(&step("repo-reaper", None), "pending_approval", "waiting");
@@ -839,6 +1085,7 @@ mod tests {
             action: "scan".into(),
             payload,
             targets,
+            gate: None,
         }
     }
 

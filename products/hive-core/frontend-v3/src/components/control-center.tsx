@@ -11,6 +11,7 @@ import {
   Save,
   Settings,
   ShieldCheck,
+  ShieldOff,
   Trash2,
   XCircle,
 } from "lucide-react";
@@ -19,17 +20,22 @@ import { toast } from "sonner";
 import {
   fetchDiagnostics,
   fetchFleetRuntime,
+  fetchGovernance,
   fetchPrBudgets,
   fetchRepositoryPolicies,
   fetchSettings,
   releasePrReservation,
+  pauseSuite,
+  resumeSuite,
   savePrBudgets,
   saveRepositoryPolicies,
+  saveResourcePolicy,
   saveSettings,
   type PrBudgetStatus,
   type RepositoryPoliciesResponse,
   type SettingsResponse,
   type ProductRuntimeDetail,
+  type GovernanceStatus,
   type RuntimeObservation,
 } from "@/lib/control-plane";
 
@@ -45,6 +51,7 @@ export function ControlCenter({ syncVersion = 0 }: { syncVersion?: number }) {
   const [budgets, setBudgets] = useState<PrBudgetStatus | null>(null);
   const [diagnostics, setDiagnostics] = useState<Awaited<ReturnType<typeof fetchDiagnostics>> | null>(null);
   const [fleet, setFleet] = useState<ProductRuntimeDetail[]>([]);
+  const [governance, setGovernance] = useState<GovernanceStatus | null>(null);
   const [newRepository, setNewRepository] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
@@ -58,13 +65,15 @@ export function ControlCenter({ syncVersion = 0 }: { syncVersion?: number }) {
       fetchPrBudgets(signal),
       fetchDiagnostics(signal),
       fetchFleetRuntime(signal),
+      fetchGovernance(signal),
     ])
-      .then(([nextSettings, nextPolicies, nextBudgets, nextDiagnostics, nextFleet]) => {
+      .then(([nextSettings, nextPolicies, nextBudgets, nextDiagnostics, nextFleet, nextGovernance]) => {
         setSettings(nextSettings);
         setPolicies(nextPolicies);
         setBudgets(nextBudgets);
         setDiagnostics(nextDiagnostics);
         setFleet(nextFleet);
+        setGovernance(nextGovernance);
         setError("");
       })
       .catch((cause) => {
@@ -81,7 +90,7 @@ export function ControlCenter({ syncVersion = 0 }: { syncVersion?: number }) {
   }, [load, syncVersion]);
 
   async function persistAll() {
-    if (!settings || !policies || !budgets || busy) return;
+    if (!settings || !policies || !budgets || !governance || busy) return;
     setBusy("save");
     setError("");
     const completed: string[] = [];
@@ -103,9 +112,16 @@ export function ControlCenter({ syncVersion = 0 }: { syncVersion?: number }) {
       completed.push("repository policy");
       const nextBudgets = await savePrBudgets(budgets);
       completed.push("PR budgets");
+      const nextResourcePolicy = governance.resource_policy.state === "observed"
+        ? await saveResourcePolicy(governance.resource_policy.value)
+        : null;
+      if (nextResourcePolicy) completed.push("resource admission");
       setSettings(nextSettings);
       setPolicies(nextPolicies);
       setBudgets(nextBudgets);
+      if (nextResourcePolicy) {
+        setGovernance({ ...governance, resource_policy: { state: "observed", value: nextResourcePolicy, observed_at: new Date().toISOString() } });
+      }
       toast.success("Control-plane policy saved", {
         description: "Suite defaults, repository policy, product overrides, and PR budgets are durable.",
       });
@@ -120,6 +136,34 @@ export function ControlCenter({ syncVersion = 0 }: { syncVersion?: number }) {
     } finally {
       setBusy("");
     }
+  }
+
+  async function setEmergencyPause(paused: boolean) {
+    if (busy) return;
+    setBusy("emergency-pause");
+    try {
+      if (paused) await pauseSuite("Suite-wide emergency pause requested by the HiveCore operator.");
+      else await resumeSuite();
+      setGovernance(await fetchGovernance());
+      toast.success(paused ? "Emergency pause engaged" : "Suite dispatch resumed");
+    } catch (cause) {
+      toast.error(paused ? "Could not pause the suite" : "Could not resume the suite", {
+        description: cause instanceof Error ? cause.message : String(cause),
+      });
+    } finally {
+      setBusy("");
+    }
+  }
+
+  function updateResourcePolicy(field: "github_min_remaining" | "suite_ai_daily_limit_cents" | "sandbox_slots", value: number) {
+    if (!governance || governance.resource_policy.state !== "observed") return;
+    setGovernance({
+      ...governance,
+      resource_policy: {
+        ...governance.resource_policy,
+        value: { ...governance.resource_policy.value, [field]: value },
+      },
+    });
   }
 
   async function releaseReservation(id: string) {
@@ -178,7 +222,7 @@ export function ControlCenter({ syncVersion = 0 }: { syncVersion?: number }) {
           <button onClick={() => load()} disabled={loading || Boolean(busy)} className={buttonClass}>
             <RefreshCw className={`h-3 w-3 ${loading ? "animate-spin" : ""}`} /> Reload
           </button>
-          <button onClick={persistAll} disabled={!settings || !policies || !budgets || Boolean(busy)} className={primaryButtonClass}>
+          <button onClick={persistAll} disabled={!settings || !policies || !budgets || !governance || Boolean(busy)} className={primaryButtonClass}>
             {busy === "save" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />} Save all
           </button>
         </div>
@@ -208,6 +252,39 @@ export function ControlCenter({ syncVersion = 0 }: { syncVersion?: number }) {
           </div>
         )}
       </details>
+
+      {governance && (
+        <details open className="group mt-2 rounded-lg border border-[var(--warn)]/35 bg-background/40">
+          <Summary icon={ShieldOff} title="Autonomy authority" detail="Emergency pause, smoke ladder, resources, and reputation" />
+          <div className="border-t border-border/60 p-3">
+            <div className="flex flex-wrap items-center gap-2 rounded border border-border/70 p-2">
+              <strong className="font-display text-xs">Suite emergency authority</strong>
+              <span className={`rounded border px-1.5 py-0.5 font-display text-[9px] uppercase ${suitePaused(governance) ? "border-[var(--crit)]/50 text-[var(--crit)]" : "border-[var(--ok)]/50 text-[var(--ok)]"}`}>
+                {suitePaused(governance) ? "paused" : "running"}
+              </span>
+              <button onClick={() => setEmergencyPause(!suitePaused(governance))} disabled={Boolean(busy)} className="ml-auto inline-flex items-center gap-1.5 rounded border border-[var(--crit)]/50 bg-[var(--crit)]/10 px-2.5 py-1.5 font-display text-[9px] uppercase tracking-wider text-[var(--crit)] disabled:opacity-40">
+                {busy === "emergency-pause" && <Loader2 className="h-3 w-3 animate-spin" />}
+                {suitePaused(governance) ? "Resume dispatch" : "Emergency pause"}
+              </button>
+            </div>
+            <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+              <Diagnostic label="Runtime topology" ok={governance.topology !== "unknown"} value={governance.topology.replaceAll("_", " ")} />
+              {Object.entries(governance.smoke_authority).map(([tier, evidence]) => <Diagnostic key={tier} label={tier.replaceAll("_", " ")} ok={evidence.state === "observed"} value={kernelEvidenceText(evidence)} />)}
+              <Diagnostic label="GitHub rate" ok={governance.github_rate.state === "observed"} value={governance.github_rate.state === "observed" ? `${governance.github_rate.value.remaining}/${governance.github_rate.value.limit} remaining` : governance.github_rate.reason} />
+              <Diagnostic label="AI daily budget" ok={governance.ai_spend.state === "observed"} value={governance.ai_spend.state === "observed" ? `${governance.ai_spend.value.spent_cents} spent · ${governance.ai_spend.value.reserved_cents} reserved` : governance.ai_spend.reason} />
+              <Diagnostic label="Sandbox slots" ok={governance.sandbox.state === "observed"} value={governance.sandbox.state === "observed" ? `${governance.sandbox.value.in_use}/${governance.sandbox.value.slots} in use` : governance.sandbox.reason} />
+              <Diagnostic label="Reputation governor" ok={governance.reputation.state === "observed" && !governance.reputation.value.slowdown_active} value={governance.reputation.state === "observed" ? `${governance.reputation.value.merged} merged · ${governance.reputation.value.closed_unmerged} closed${governance.reputation.value.slowdown_active ? " · slowdown active" : ""}` : governance.reputation.reason} />
+            </div>
+            {governance.resource_policy.state === "observed" && (
+              <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                <NumberField label="GitHub reserved floor" value={governance.resource_policy.value.github_min_remaining} onChange={(value) => updateResourcePolicy("github_min_remaining", value)} />
+                <NumberField label="Suite AI cents / day" value={governance.resource_policy.value.suite_ai_daily_limit_cents} onChange={(value) => updateResourcePolicy("suite_ai_daily_limit_cents", value)} />
+                <NumberField label="Sandbox slots" value={governance.resource_policy.value.sandbox_slots} onChange={(value) => updateResourcePolicy("sandbox_slots", Math.max(1, value))} />
+              </div>
+            )}
+          </div>
+        </details>
+      )}
 
       <details className="group mt-2 rounded-lg border border-border bg-background/40">
         <Summary icon={Database} title="Fleet contract evidence" detail={`${fleet.length} products · health, startup, auth, and route checks`} />
@@ -345,6 +422,15 @@ function Summary({ icon: Icon, title, detail }: { icon: typeof Settings; title: 
 function Diagnostic({ label, ok, value }: { label: string; ok: boolean; value: string }) {
   const Icon = ok ? CheckCircle2 : value === "not observed" ? AlertTriangle : XCircle;
   return <div className="rounded border border-border/70 p-2"><div className="flex items-center gap-1.5 font-display text-[9px] uppercase tracking-wider text-muted-foreground"><Icon className={`h-3 w-3 ${ok ? "text-[var(--ok)]" : "text-[var(--warn)]"}`} />{label}</div><div className="mt-1 truncate font-mono text-[10px] text-foreground" title={value}>{value}</div></div>;
+}
+
+function suitePaused(governance: GovernanceStatus) {
+  return governance.pauses.some((record) => record.target.scope === "suite" && record.lifecycle.state !== "running");
+}
+
+function kernelEvidenceText(evidence: { state: string; value?: { finished_at?: string }; reason?: string }) {
+  if (evidence.state === "observed") return evidence.value?.finished_at ? `passed ${new Date(evidence.value.finished_at).toLocaleString()}` : "observed";
+  return evidence.reason ?? evidence.state;
 }
 
 function Field({ label, value, onChange, placeholder = "", type = "text" }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string; type?: string }) {

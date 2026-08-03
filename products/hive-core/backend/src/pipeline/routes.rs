@@ -177,7 +177,7 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
                 "Ingest product findings",
                 "POST",
                 "/work-items/findings",
-                "Persist concrete product-run findings and deduplicate them into the proposal-only work ledger.",
+                "Persist concrete product-run findings and deduplicate them into the executable work ledger.",
                 false,
                 contract::ActionSafety::automatic(contract::ActionEffect::WritesLocalState),
             )
@@ -194,10 +194,40 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
             .credential_requirements(["suite:control"]),
             contract::action(
                 "run_conductor_tick",
-                "Run proposal tick",
+                "Run conductor tick",
                 "POST",
                 "/conductor/ticks",
-                "Plan bounded mandate work and record it without dispatching products.",
+                "Dispatch admitted SignalHive discovery, ingest concrete findings, and advance governed work.",
+                true,
+                contract::ActionSafety::operator_required(contract::ActionEffect::WritesLocalState),
+            )
+            .credential_requirements(["suite:control"]),
+            contract::action(
+                "save_resource_policy",
+                "Save resource policy",
+                "PUT",
+                "/governance/resources",
+                "Persist GitHub-rate, AI-spend, and sandbox admission ceilings.",
+                false,
+                contract::ActionSafety::operator_required(contract::ActionEffect::WritesLocalState),
+            )
+            .credential_requirements(["suite:control"]),
+            contract::action(
+                "pause_suite",
+                "Emergency pause",
+                "POST",
+                "/governance/pause",
+                "Block new matching work under durable pause authority while in-flight work drains.",
+                false,
+                contract::ActionSafety::operator_required(contract::ActionEffect::WritesLocalState),
+            )
+            .credential_requirements(["suite:control"]),
+            contract::action(
+                "execute_pipeline",
+                "Execute TOML pipeline",
+                "POST",
+                "/pipelines/execute",
+                "Execute guarded ordered product stages with fail-closed result gates.",
                 true,
                 contract::ActionSafety::operator_required(contract::ActionEffect::WritesLocalState),
             )
@@ -221,6 +251,9 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
             ),
             contract::link("mandates", "Mandates", "/mandates"),
             contract::link("conductor_ticks", "Conductor ticks", "/conductor/ticks"),
+            contract::link("governance", "Suite governance", "/governance"),
+            contract::link("suite_runs", "Suite runs", "/suite-runs"),
+            contract::link("suite_events", "Work and outcome ledger", "/events"),
         ],
     );
     caps.hivecore.can_apply_settings = true;
@@ -301,6 +334,16 @@ pub async fn suite_run_detail(
     (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
 > {
     super::suite_runs::suite_run_detail(id).await
+}
+
+pub async fn execute_toml_pipeline(
+    State(state): State<AppState>,
+    Json(body): Json<super::suite_runs::TomlPipelineRequest>,
+) -> Result<
+    Json<crate::models::ApiEnvelope<crate::models::SuiteRun>>,
+    (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
+> {
+    super::suite_runs::execute_toml_pipeline(State(state), Json(body)).await
 }
 
 /// Retained health-probe samples for one product.

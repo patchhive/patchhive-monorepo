@@ -1,4 +1,8 @@
-use axum::{extract::Path, http::StatusCode, Json};
+use axum::{
+    extract::{Path, State},
+    http::StatusCode,
+    Json,
+};
 use serde_json::Value;
 
 use crate::{
@@ -8,6 +12,7 @@ use crate::{
     },
     db::{self, MandateWriteError},
     models::{ok, ApiEnvelope},
+    state::AppState,
 };
 
 use super::types::api_error;
@@ -81,9 +86,11 @@ pub async fn archive_mandate(
         .map_err(write_error)
 }
 
-pub async fn run_conductor_tick() -> Result<Json<ApiEnvelope<RunConductorTickOutcome>>, ApiFailure>
-{
-    db::run_conductor_tick(ConductorTickTrigger::Operator)
+pub async fn run_conductor_tick(
+    State(state): State<AppState>,
+) -> Result<Json<ApiEnvelope<RunConductorTickOutcome>>, ApiFailure> {
+    crate::conductor::run_tick_and_dispatch(&state, ConductorTickTrigger::Operator)
+        .await
         .map(|outcome| Json(ok(outcome)))
         .map_err(storage_error)
 }

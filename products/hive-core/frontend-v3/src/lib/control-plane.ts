@@ -119,6 +119,36 @@ export interface PrBudgetStatus {
   reconciliation: Observation<Record<string, unknown>>;
 }
 
+export type KernelEvidence<T> =
+  | { state: "observed"; value: T; observed_at: string }
+  | { state: "failed" | "not_observed" | "not_applicable"; reason: string };
+
+export interface ResourcePolicy {
+  github_min_remaining: number;
+  suite_ai_daily_limit_cents: number;
+  sandbox_slots: number;
+  updated_at: string;
+}
+
+export interface PauseRecord {
+  target: { scope: "suite" } | { scope: "product"; product_slug: string } | { scope: "mandate"; mandate_id: string } | { scope: "repository"; repository: string };
+  lifecycle: { state: "running"; resumed_at: string } | { state: "paused"; paused_at: string; reason: string; drain: Record<string, unknown> } | { state: "unknown"; raw_state: string; raw_evidence: unknown };
+  revision: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GovernanceStatus {
+  topology: "unified_in_process" | "gateway_compatibility" | "unknown";
+  pauses: PauseRecord[];
+  smoke_authority: Record<string, KernelEvidence<{ run_id: string; finished_at: string }>>;
+  resource_policy: KernelEvidence<ResourcePolicy>;
+  github_rate: KernelEvidence<{ limit: number; remaining: number; reset_at: string }>;
+  ai_spend: KernelEvidence<{ daily_limit_cents: number; spent_cents: number; reserved_cents: number; day: string }>;
+  sandbox: KernelEvidence<{ slots: number; in_use: number }>;
+  reputation: KernelEvidence<{ shipped: number; merged: number; closed_unmerged: number; rolling_decisions: number; rolling_rejections: number; slowdown_active: boolean }>;
+}
+
 export interface StartupCheck {
   level: "ok" | "info" | "warn" | "error";
   msg: string;
@@ -246,6 +276,31 @@ export function saveRepositoryPolicies(value: RepositoryPoliciesResponse): Promi
 
 export function fetchPrBudgets(signal?: AbortSignal): Promise<PrBudgetStatus> {
   return request<PrBudgetStatus>("/pr-budgets", { signal });
+}
+
+export function fetchGovernance(signal?: AbortSignal): Promise<GovernanceStatus> {
+  return request<GovernanceStatus>("/governance", { signal });
+}
+
+export function saveResourcePolicy(policy: ResourcePolicy): Promise<ResourcePolicy> {
+  return request<ResourcePolicy>("/governance/resources", {
+    method: "PUT",
+    body: JSON.stringify(policy),
+  });
+}
+
+export function pauseSuite(reason: string): Promise<PauseRecord> {
+  return request<PauseRecord>("/governance/pause", {
+    method: "POST",
+    body: JSON.stringify({ target: { scope: "suite" }, reason }),
+  });
+}
+
+export function resumeSuite(): Promise<PauseRecord> {
+  return request<PauseRecord>("/governance/resume", {
+    method: "POST",
+    body: JSON.stringify({ target: { scope: "suite" }, reason: "" }),
+  });
 }
 
 export function savePrBudgets(value: PrBudgetStatus): Promise<PrBudgetStatus> {

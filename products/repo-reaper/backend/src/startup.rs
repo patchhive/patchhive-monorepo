@@ -121,6 +121,16 @@ pub async fn validate_config(http: &Client) -> Vec<StartupCheck> {
         ));
     }
 
+    if let Some(url) = patchhive_product_core::trust_gate::trust_gate_url() {
+        results.push(StartupCheck::ok(format!(
+            "TrustGate release review is configured at {url}; every generated diff must receive an explicit safe recommendation before publication."
+        )));
+    } else {
+        results.push(StartupCheck::info(
+            "TrustGate release review is not configured. RepoReaper may assess and generate patches, but it will fail closed before publishing a pull request until PATCHHIVE_TRUST_GATE_URL is set.",
+        ));
+    }
+
     let encryption_secret = ["REAPER_ENCRYPTION_KEY", "PATCHHIVE_ENCRYPTION_KEY"]
         .iter()
         .find_map(|name| {

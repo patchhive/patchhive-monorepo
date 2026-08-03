@@ -97,7 +97,7 @@ export function MandateControl({ syncVersion = 0 }: { syncVersion?: number }) {
         ...form,
         scope: { ...form.scope, topics: csv(topics), languages: csv(languages) },
       });
-      toast.success("Mandate created", { description: "The next conductor tick may plan discovery, but cannot dispatch it." });
+      toast.success("Mandate created", { description: "The next admitted conductor tick can dispatch bounded discovery." });
       setForm(EMPTY_FORM);
       setTopics("");
       setLanguages("rust");
@@ -145,13 +145,13 @@ export function MandateControl({ syncVersion = 0 }: { syncVersion?: number }) {
       <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="flex items-center gap-2 font-display text-sm font-bold uppercase tracking-[0.2em]"><Radar className="h-4 w-4 text-[var(--honey)]" /> Mandates & Conductor</h2>
-          <p className="mt-1 max-w-3xl text-xs text-muted-foreground">Standing operator intent in SQLite. Every tick is bounded, lease-owned, restartable, and capped at propose—regardless of requested future autonomy.</p>
+          <p className="mt-1 max-w-3xl text-xs text-muted-foreground">Standing operator intent in SQLite. Every tick is bounded, lease-owned, restartable, resource-gated, and limited to autonomy earned by durable smoke evidence.</p>
         </div>
         <div className="flex flex-wrap gap-2 font-display text-[9px] uppercase tracking-wider">
           <span className="rounded border border-[var(--ok)]/40 px-2 py-1 text-[var(--ok)]">{counts.active} active</span>
           <span className="rounded border border-[var(--warn)]/40 px-2 py-1 text-[var(--warn)]">{counts.paused} paused</span>
           {counts.unknown > 0 && <span className="rounded border border-[var(--crit)]/40 px-2 py-1 text-[var(--crit)]">{counts.unknown} unknown</span>}
-          <button disabled={busy !== ""} onClick={() => void tick()} className="inline-flex items-center gap-1 rounded border border-[var(--honey)]/40 px-2 py-1 text-[var(--honey)] hover:bg-[var(--honey)]/10 disabled:opacity-40"><RefreshCw className={`h-3 w-3 ${busy === "tick" ? "animate-spin" : ""}`} /> Run proposal tick</button>
+          <button disabled={busy !== ""} onClick={() => void tick()} className="inline-flex items-center gap-1 rounded border border-[var(--honey)]/40 px-2 py-1 text-[var(--honey)] hover:bg-[var(--honey)]/10 disabled:opacity-40"><RefreshCw className={`h-3 w-3 ${busy === "tick" ? "animate-spin" : ""}`} /> Run conductor tick</button>
         </div>
       </div>
 
@@ -172,7 +172,7 @@ export function MandateControl({ syncVersion = 0 }: { syncVersion?: number }) {
           <NumberField label="Daily cost budget (cents)" value={form.limits.cost_budget_cents_per_day} onChange={(cost_budget_cents_per_day) => setForm((current) => ({ ...current, limits: { ...current.limits, cost_budget_cents_per_day } }))} />
         </div>
         <div className="mt-4 flex items-center justify-between gap-3">
-          <span className="text-[10px] text-muted-foreground">Requested act modes are stored honestly but effectively capped to propose.</span>
+          <span className="text-[10px] text-muted-foreground">Effective autonomy is recalculated from smoke and reputation evidence at each dispatch.</span>
           <button disabled={busy !== "" || !form.name.trim() || !form.objective.trim()} onClick={() => void submitMandate()} className="inline-flex items-center gap-1.5 rounded border border-[var(--honey)]/40 px-3 py-2 font-display text-[9px] font-bold uppercase tracking-wider text-[var(--honey)] hover:bg-[var(--honey)]/10 disabled:opacity-40"><Plus className="h-3 w-3" /> Create mandate</button>
         </div>
       </details>
@@ -185,7 +185,7 @@ export function MandateControl({ syncVersion = 0 }: { syncVersion?: number }) {
       {loading ? (
         <div className="flex items-center gap-2 py-8 text-xs text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Reading mandates…</div>
       ) : mandates.length === 0 ? (
-        <div className="mt-4 rounded-lg border border-dashed border-border p-8 text-center text-xs text-muted-foreground">No standing intent yet. Create a mandate to let the conductor plan discovery.</div>
+        <div className="mt-4 rounded-lg border border-dashed border-border p-8 text-center text-xs text-muted-foreground">No standing intent yet. Create a mandate to let the conductor admit and dispatch discovery.</div>
       ) : (
         <div className="mt-4 grid gap-3 lg:grid-cols-2">
           {mandates.map((mandate) => <MandateCard key={mandate.id} mandate={mandate} busy={busy === mandate.id} reasonReady={Boolean(reason.trim())} onAction={transition} />)}
@@ -208,7 +208,7 @@ function MandateCard({ mandate, busy, reasonReady, onAction }: { mandate: Mandat
       </div>
       <div className="mt-3 grid grid-cols-2 gap-2 text-[10px]">
         <Fact label="Requested" value={autonomy} />
-        <Fact label="Effective" value={mandate.config.requested_autonomy === "observe" ? "observe" : "propose"} />
+        <Fact label="Effective" value="evaluated per dispatch" />
         <Fact label="Discovery" value={[...mandate.config.scope.topics, ...mandate.config.scope.languages].join(", ") || mandate.config.scope.search_query} />
         <Fact label="Bounds" value={`${mandate.config.scope.max_repositories} repos · ${mandate.config.limits.pr_budget} PR budget`} />
       </div>
@@ -226,11 +226,11 @@ function TickHistory({ ticks, mandates }: { ticks: ConductorTickRecord[]; mandat
   const names = Object.fromEntries(mandates.map((mandate) => [mandate.id, mandate.config.name]));
   return (
     <div className="mt-6 border-t border-border/70 pt-4">
-      <div className="mb-3 flex items-center gap-2 font-display text-[10px] font-bold uppercase tracking-[0.18em]"><Eye className="h-3.5 w-3.5 text-[var(--honey)]" /> Proposal tick history</div>
+      <div className="mb-3 flex items-center gap-2 font-display text-[10px] font-bold uppercase tracking-[0.18em]"><Eye className="h-3.5 w-3.5 text-[var(--honey)]" /> Conductor tick history</div>
       {ticks.length === 0 ? <div className="text-xs text-muted-foreground">No conductor tick has run yet.</div> : (
         <div className="space-y-2">{ticks.slice(0, 8).map((tick) => {
           const decisions = tick.lifecycle.state === "completed" ? tick.lifecycle.decisions : [];
-          return <details key={tick.id} className="rounded border border-border/70 bg-background/40 p-3"><summary className="cursor-pointer"><span className="font-mono text-[10px] text-foreground">{tick.id}</span><span className="ml-2 font-display text-[9px] uppercase tracking-wider text-muted-foreground">{tick.trigger} · {tick.lifecycle.state} · {decisions.length} decisions</span></summary><div className="mt-2 space-y-1">{decisions.map((decision, index) => <DecisionRow key={`${tick.id}:${index}`} decision={decision} name={names[decision.mandate_id] ?? decision.mandate_id} />)}{decisions.length === 0 && <div className="text-[10px] text-muted-foreground">No active mandate required a proposal.</div>}</div></details>;
+          return <details key={tick.id} className="rounded border border-border/70 bg-background/40 p-3"><summary className="cursor-pointer"><span className="font-mono text-[10px] text-foreground">{tick.id}</span><span className="ml-2 font-display text-[9px] uppercase tracking-wider text-muted-foreground">{tick.trigger} · {tick.lifecycle.state} · {decisions.length} decisions</span></summary><div className="mt-2 space-y-1">{decisions.map((decision, index) => <DecisionRow key={`${tick.id}:${index}`} decision={decision} name={names[decision.mandate_id] ?? decision.mandate_id} />)}{decisions.length === 0 && <div className="text-[10px] text-muted-foreground">No active mandate required a conductor decision.</div>}</div></details>;
         })}</div>
       )}
     </div>
@@ -255,7 +255,7 @@ function NumberField({ label, value, onChange }: { label: string; value: number;
 }
 
 function Select({ label, value, onChange }: { label: string; value: MandateAutonomy; onChange: (value: MandateAutonomy) => void }) {
-  return <label><span className="font-display text-[9px] uppercase tracking-wider text-muted-foreground">{label}</span><select value={value} onChange={(event) => onChange(event.target.value as MandateAutonomy)} className="mt-1 w-full rounded border border-border bg-background/60 px-2 py-1.5 text-[11px] outline-none focus:border-[var(--honey)]/50"><option value="observe">Observe</option><option value="propose">Propose</option><option value="act_with_approval">Act with approval (future)</option><option value="act">Act (future)</option></select></label>;
+  return <label><span className="font-display text-[9px] uppercase tracking-wider text-muted-foreground">{label}</span><select value={value} onChange={(event) => onChange(event.target.value as MandateAutonomy)} className="mt-1 w-full rounded border border-border bg-background/60 px-2 py-1.5 text-[11px] outline-none focus:border-[var(--honey)]/50"><option value="observe">Observe</option><option value="propose">Propose</option><option value="act_with_approval">Act with approval</option><option value="act">Act</option></select></label>;
 }
 
 function Fact({ label, value }: { label: string; value: string }) {

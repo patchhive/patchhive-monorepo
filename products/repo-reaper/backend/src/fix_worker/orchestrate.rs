@@ -1353,6 +1353,60 @@ pub async fn fix_one(job: FixIssueJob) {
         ))
         .await;
 
+    let trust_gate_review = match patchhive_product_core::trust_gate::require_safe_review(
+        &http,
+        &scope.repo,
+        &smith_review.final_patch,
+        "repo-reaper",
+    )
+    .await
+    {
+        Ok(review) => review,
+        Err(error) => {
+            let detail = format!("TrustGate blocked publication: {error:#}");
+            artifact(
+                &params.run_id,
+                &attempt_id,
+                "policy",
+                "trust_gate.blocked",
+                "blocked",
+                &detail,
+                json!({"repo": scope.repo}),
+            );
+            update_issue_status_comment(
+                &http,
+                &issue,
+                &scope,
+                &bot_token,
+                issue_comment_held(&issue, &params.run_id, &attempt_id, "trust_gate_blocked"),
+            )
+            .await;
+            attempt_finisher
+                .skipped_with_error(
+                    "trust_gate_blocked",
+                    Some(&detail),
+                    cost,
+                    Some(&smith_review.final_patch),
+                    confidence,
+                )
+                .await;
+            return;
+        }
+    };
+    artifact(
+        &params.run_id,
+        &attempt_id,
+        "policy",
+        "trust_gate.safe",
+        "succeeded",
+        "TrustGate authorized the generated diff for publication.",
+        json!({
+            "review_id": trust_gate_review.id,
+            "recommendation": trust_gate_review.recommendation,
+            "risk_score": trust_gate_review.risk_score,
+        }),
+    );
+
     let budget = match request_pr_budget(
         http.clone(),
         &PrReservationRequest {
@@ -1360,6 +1414,7 @@ pub async fn fix_one(job: FixIssueJob) {
             repository: scope.repo.clone(),
             run_id: params.run_id.clone(),
             action: "open_pull_request".into(),
+            mandate_id: params.hivecore_mandate_id.clone(),
         },
     )
     .await

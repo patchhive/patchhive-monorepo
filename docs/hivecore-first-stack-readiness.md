@@ -171,5 +171,5 @@ TrustGate and RepoReaper submit candidates best-effort. RepoMemory owns review, 
 - The first-stack products expose the shared contract endpoints HiveCore needs for visibility.
 - RepoReaper's `.env.example` now documents `REAPER_API_KEY_HASH`, matching the backend auth module.
 - The first-stack path is ready for health, startup, capabilities, and run-history testing.
-- Automatic SignalHive -> TrustGate -> RepoReaper handoff is still future orchestration work. Tomorrow's test should prove visibility and contract health first.
+- Automatic SignalHive -> RepoReaper discovery handoff is active, and RepoReaper requires a fail-closed TrustGate review immediately before PR publication.
 - Real RepoReaper PR delivery should stay behind strict GitHub permissions, dry-run checks, cost caps, confidence thresholds, and validation gates.

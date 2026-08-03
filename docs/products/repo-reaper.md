@@ -220,7 +220,8 @@ Run history keeps these modes visible:
 - **Cost budget**: `COST_BUDGET_USD` caps AI spend per run (0 = uncapped, with a warning)
 - **Concurrency limiting**: Semaphore-based; configurable per run
 - **Only one run at a time**: `runActive` atomic flag prevents concurrent hunts
-- **Suite policy and PR capacity**: when `PATCHHIVE_HIVECORE_URL` is configured, RepoReaper fails closed on unavailable repository policy, reserves both its product slot and suite-wide slot immediately before PR creation, and releases capacity on failed creation or observed PR closure/merge
+- **Suite policy and PR capacity**: when `PATCHHIVE_HIVECORE_URL` is configured, RepoReaper fails closed on unavailable repository policy, atomically rechecks per-owner open-PR/cooldown limits, reserves both its product slot and suite-wide slot immediately before PR creation, and releases capacity on failed creation or observed PR closure/merge. Mandate runs use their canonical limits; direct and scheduled runs use conservative defaults.
+- **TrustGate release review**: every generated diff requires an explicit `safe` TrustGate recommendation immediately before PR reservation and publication. Missing, unreachable, malformed, `warn`, or `block` evidence holds the attempt closed.
 - **Existing PR guard**: before starting patch generation, RepoReaper checks the
   GitHub issue timeline for open pull requests already linked to the issue. If
   one exists, RepoReaper records a held attempt and does not open a competing PR.
@@ -424,6 +425,11 @@ REAPER_TEST_TIMEOUT_SECONDS=600
 # RepoMemory integration (optional)
 PATCHHIVE_REPO_MEMORY_URL=http://...
 PATCHHIVE_REPO_MEMORY_API_KEY=...
+
+# TrustGate release authority (required to publish a PR)
+PATCHHIVE_TRUST_GATE_URL=http://localhost:8100/api/products/trust-gate
+PATCHHIVE_TRUST_GATE_SERVICE_TOKEN=...
+# PATCHHIVE_TRUST_GATE_API_KEY=...  # compatibility alternative
 ```
 
 ---
@@ -464,6 +470,9 @@ PATCHHIVE_REPO_MEMORY_API_KEY=...
 | `REAPER_TEST_TIMEOUT_SECONDS` | ❌ | `600` | Test timeout |
 | `PATCHHIVE_REPO_MEMORY_URL` | ❌ | — | RepoMemory API endpoint |
 | `PATCHHIVE_REPO_MEMORY_API_KEY` | ❌ | — | RepoMemory API key |
+| `PATCHHIVE_TRUST_GATE_URL` | PR publication | Unified-suite TrustGate URL when `PATCHHIVE_SUITE_BASE_URL` is unavailable |
+| `PATCHHIVE_TRUST_GATE_SERVICE_TOKEN` | If TrustGate auth is enabled | Scoped TrustGate machine credential |
+| `PATCHHIVE_TRUST_GATE_API_KEY` | ❌ | — | Compatibility operator-key alternative to the service token |
 
 Generate `REAPER_ENCRYPTION_KEY` or `PATCHHIVE_ENCRYPTION_KEY` with
 `openssl rand -hex 32`. Startup checks reject short values and obvious

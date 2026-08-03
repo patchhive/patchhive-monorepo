@@ -4,7 +4,7 @@ use serde_json::Value;
 use crate::{
     conductor::{
         FindingReceipt, IngestFindingsOutcome, IngestFindingsRequest, ProposeWorkOutcome,
-        ProposeWorkRequest, WorkItem, WorkProposal,
+        ProposeWorkRequest, SuiteLedgerEvent, WorkHandoffEdge, WorkItem, WorkProposal,
     },
     db::{self, FindingIngestionError},
     models::{ok, ApiEnvelope},
@@ -107,6 +107,47 @@ pub async fn work_item_detail(
             ))
         }
     }
+}
+
+pub async fn live_blast_radius(
+    Path(slug): Path<String>,
+) -> Result<Json<ApiEnvelope<Vec<WorkHandoffEdge>>>, (StatusCode, Json<ApiEnvelope<Value>>)> {
+    if !product_catalog().iter().any(|product| product.slug == slug) {
+        return Err(api_error(
+            StatusCode::NOT_FOUND,
+            "unknown_product",
+            "Unknown product.",
+        ));
+    }
+    db::work_handoff_edges()
+        .map(|edges| {
+            Json(ok(edges
+                .into_iter()
+                .filter(|edge| edge.from_product == slug || edge.to_product == slug)
+                .collect()))
+        })
+        .map_err(|error| {
+            tracing::error!(%error, "could not derive live blast radius");
+            api_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "blast_radius_unavailable",
+                "HiveCore could not derive blast radius from the work ledger.",
+            )
+        })
+}
+
+pub async fn list_suite_ledger(
+) -> Result<Json<ApiEnvelope<Vec<SuiteLedgerEvent>>>, (StatusCode, Json<ApiEnvelope<Value>>)> {
+    db::suite_ledger_events(200)
+        .map(|events| Json(ok(events)))
+        .map_err(|error| {
+            tracing::error!(%error, "could not read unified suite ledger");
+            api_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "suite_ledger_unavailable",
+                "HiveCore could not read the unified work and outcome ledger.",
+            )
+        })
 }
 
 fn finding_ingestion_error(error: FindingIngestionError) -> (StatusCode, Json<ApiEnvelope<Value>>) {

@@ -1,6 +1,6 @@
 # HiveCore Architecture
 
-Status: **active architecture — foundations implemented; conductor remains proposal-only**
+Status: **active architecture — executable conductor and governance kernel implemented**
 Written: 2026-07-25
 Updated: 2026-08-03
 
@@ -26,7 +26,7 @@ inside budgets, and stopping when something is wrong. The twelve products are it
 | Layer | Question it answers | Where it should live |
 | --- | --- | --- |
 | **Fleet** | Is it running, healthy, paired, proven? | supervisor task in `patchhive-backend` |
-| **Kernel** | May this happen? | `patchhive-hive-kernel` crate, in-process |
+| **Kernel** | May this happen? | typed modules in `patchhive-product-core`, in-process |
 | **Conductor** | What should happen next, right now? | supervisor loop in `patchhive-backend` |
 | **Cockpit** | What is happening, and how do I intervene? | frontend, no backend of its own |
 
@@ -178,8 +178,8 @@ pub fn evaluate(inputs: &PolicyInputs, req: &OperationRequest) -> Decision
 ```
 
 Fixed precedence, exactly the documented order: public opt-out → operator denylist →
-allowlist/scope → operation trust requirement → product safety and approval → per-product PR
-capacity → suite ceiling → atomic reservation. A pure function makes the whole matrix
+allowlist/scope → operation trust requirement → product safety and approval → per-owner open-PR
+and cooldown policy → per-product PR capacity → suite ceiling → atomic reservation. A pure function makes the whole matrix
 table-driven-testable, which is the only basis on which to trust a safety kernel.
 
 Every `Decision` carries the full reason chain, not a verdict.
@@ -273,13 +273,13 @@ Each tick is bounded, idempotent, and written to the ledger. Dispatch is keyed o
 lease, not on loop position, so a crash mid-tick recomputes cleanly. If HiveCore ever runs
 multi-process, add a leader lease; the loop logic is unchanged.
 
-**Proposal loop built as of 2026-08-02:** HiveCore runs the loop every five minutes and on an
+**Executable loop:** HiveCore runs the loop every five minutes and on an
 operator request. A durable SQLite lease makes it single-writer across processes; an expired lease
 turns the abandoned running tick into an explicit failure before another tick claims leadership.
 Each tick considers at most 10 active mandates by default (configurable up to 25), records the exact
-SignalHive discovery payload it would use, and dispatches nothing. `observe` mandates produce an
-`observed_only` decision; every higher requested autonomy produces `planned_discovery` with
-effective autonomy `propose`.
+SignalHive discovery payload, dispatches admitted discovery, ingests concrete findings, and invokes
+the leased work worker. `observe` mandates produce an `observed_only` decision; higher requested
+authority is bounded by durable smoke proof and the reputation governor.
 
 ### 3.8 Work ledger, with dedup as a safety property
 
@@ -299,14 +299,14 @@ closed. That second case is reputation, so dedup is treated as safety-critical, 
 optimization. Repository work belongs here; broad fleet launches use the separate durable leased
 job substrate from B6 because they have no repository or subject identity to fingerprint.
 
-**Foundation built as of 2026-08-02:** HiveCore persists normalized work proposals behind
+HiveCore persists normalized work proposals behind
 `POST /work-items/proposals`, exposes list/detail reads, and records rediscovery without replacing
 the first plan. The stable fingerprint contains only kind, normalized GitHub repository, and
-subject reference, so a different discovering product still converges on the same row. The only
-creatable lifecycle is `discovered`; unsupported or malformed stored states decode as `unknown`.
-There is deliberately no work-item transition or conductor dispatch route yet. Fleet launches now
-use their own durable leased job substrate from B6 rather than pretending a broad launch is a
-repository work item.
+subject reference, so a different discovering product still converges on the same row. New rows
+begin `discovered`; the worker atomically claims them as `dispatching`, then records approval,
+dispatch, shipment, completion, blocking, or failure. Expired claims recover without treating
+uncertain work as complete, and malformed stored states decode as `unknown`. Fleet launches use a
+separate durable leased job substrate because a broad launch is not repository work.
 
 Broad discovery intent is intentionally recorded in conductor-tick history rather than forced into
 `work_items`: before discovery there is no truthful repository or subject identity to fingerprint.
@@ -319,7 +319,8 @@ product/run/finding source, normalized work identity, proposed dispatch, optiona
 rationale, and structured evidence. Exact retries return the original receipt without another
 event. Reusing a source with changed evidence or intent is a conflict. Independent sources that
 identify the same work fingerprint deduplicate to one work item while every source receipt remains
-queryable. This is an ingestion boundary, not permission to dispatch the proposal.
+queryable. Ingestion does not itself grant permission: smoke, pause, resource, product capability,
+approval, and release-gate checks still apply before the proposal can advance.
 
 ### 3.9 Backpressure: shape the funnel by what can actually ship
 
@@ -330,9 +331,8 @@ suite burns GitHub rate limit and AI spend generating patches that will never sh
 The conductor pulls, never pushes, sized to
 `min(product remaining, suite remaining, cost headroom, sandbox slots)`. Governed resources:
 
-- **GitHub API rate limit** — twelve products share `PATCHHIVE_GITHUB_TOKEN_RO` and nothing
-  coordinates that today; the first wide discovery can starve the other eleven. The kernel hands
-  out leases from one token bucket per token identity.
+- **GitHub API rate limit** — the conductor observes the shared read identity's live GitHub core
+  rate evidence and preserves a configured remaining-request floor before admitting discovery.
 - **AI spend** — per-mandate and suite-wide daily caps, checked before dispatch.
 - **Sandbox and clone slots** — bounded concurrent test execution, the highest-risk resource.
 - **Per-owner politeness** — one open PR per owner, cooldown after close-without-merge.
@@ -342,16 +342,19 @@ usage after expiring stale leases, then derives exact suite and RepoReaper headr
 non-observe mandate it subtracts concrete discovered backlog from the mandate PR limit, fairly
 allocates the shared remaining headroom across the current bounded slice, and narrows SignalHive's
 `max_repos` to that admitted amount. No capacity produces a typed `capacity_deferred` decision with
-all limiting layers. Invalid stored limits fail the tick. GitHub-rate, AI-spend, sandbox, and
-per-owner gates above remain unimplemented and are not represented as observed capacity.
+all limiting layers. Invalid stored limits fail the tick. Live GitHub-rate evidence gates discovery;
+atomic AI-spend reservations, sandbox leases, per-mandate spend limits, and per-owner PR/cooldown
+evidence gate concrete work. The final PR reservation repeats the per-owner check inside its
+immediate transaction, resolving canonical mandate limits or conservative direct-run defaults, so
+standalone and concurrent run paths cannot bypass politeness. Missing or contradictory evidence
+fails closed.
 
 ### 3.10 Outcome feedback
 
-Every shipped PR resolves to merged / closed-unmerged / stale-ignored — the only real signal
-PatchHive receives. Those outcomes drive repo and owner scoring, automatic cooldown or denylist
-proposals after repeated rejection, a **global slowdown** when the rolling rejection rate crosses a
-threshold, and FailGuard candidates. The FailGuard loop is wired product-by-product today; the
-conductor is where it closes across the suite.
+Every reconciled PR resolves to merged or closed-unmerged and is written to the unified outcome
+ledger. Those outcomes drive per-owner cooldown and a **global slowdown** when the rolling
+closed-unmerged rate crosses the configured invariant. Slowdown caps effective authority at
+`propose`; closed-unmerged work is submitted to RepoMemory as a FailGuard candidate when configured.
 
 The GitHub reconciliation sweep that fixes **B5** produces exactly this signal, so the leak fix and
 the feedback loop are the same piece of work.
@@ -363,16 +366,12 @@ No bespoke workflow engine. A suite run is **a run whose steps are runs**:
 ```toml
 [[stage]]
 product = "signal-hive"
-action  = "run_scan"
+action  = "scan"
 [[stage]]
-product = "trust-gate"
-action  = "review_repo"
-input   = { repos = "$stages.signal-hive.artifacts.candidates" }
-gate    = "decision != 'block'"
-[[stage]]
-product  = "repo-reaper"
-action   = "fix_issue"
-approval = "required"
+product = "repo-reaper"
+action  = "dry_run"
+targets = { from_step = 1, path = "repos", field = "full_name", assign_to = "target_repo", max_targets = 5 }
+gate    = "exists($stages.1.repos)"
 ```
 
 Stages resolve inputs from prior stage artifacts, each stage produces a normal product run
@@ -380,9 +379,11 @@ inspectable in normal history, and the kernel evaluates the gate. **Orchestratio
 safety boundary** — a stage dispatch passes through `evaluate()` identically to an operator click.
 HiveCore composes; it never elevates.
 
-**Built as of 2026-07-27** (`pipeline/suite_runs.rs`): ordered steps, per-step payloads, and
-explicit target references between steps. Gates and TOML pipelines are not built; the composer
-is the deck's Suite Runs panel.
+**Built** (`pipeline/suite_runs.rs`): ordered steps, per-step payloads, explicit target references,
+declarative TOML submission, and bounded result gates. Gates accept only `exists(path)` and simple
+comparisons against JSON/string literals; there is no arbitrary evaluator, and unresolved or
+malformed evidence fails the stage closed. The deck's Suite Runs panel exposes both the composer
+and TOML submission.
 
 Target references are explicit, never inferred. A step declares `targets = { from_step, path,
 field, assign_to, max_targets }`; HiveCore resolves that path in the referenced step's response
@@ -430,12 +431,13 @@ The existing tiers (`first-stack` → `read-only-fleet` → `write-dry-run` → 
 autonomy gates: a mandate cannot be raised to `act` until the corresponding tier passes for the
 products it uses, and a tier regression automatically demotes it. This turns a manual validation
 ritual into an enforced invariant using the typed smoke-policy machinery completed in **B7**.
-Automatic autonomy promotion/demotion is not implemented yet, and the current conductor caps all
-mandates at `propose`.
+The conductor computes earned authority from durable tier evidence on every tick and work claim.
+It automatically demotes a request when proof is missing or regresses; it never raises authority
+beyond the mandate request. A rolling outcome slowdown can independently cap writes at `propose`.
 
-And the control that must exist before any of it: **a suite-wide pause taking effect within one
-tick**, draining in-flight work rather than abandoning it, losing no state; plus per-mandate,
-per-product, and per-repo pause.
+Durable suite-wide, per-mandate, per-product, and per-repository pause authority takes effect before
+new dispatch. Existing work drains without being abandoned, and the pause record exposes that drain
+state. Unknown pause evidence blocks new work.
 
 ### 3.14 Conformance is a product feature
 
@@ -494,11 +496,12 @@ What survives is smaller and differently shaped:
 Service-token pairing largely disappears too: in-process products share the backend's auth, so
 there is no twelve-way token mesh to mint, rotate, store encrypted, and detect staleness in.
 
-**Decision:** the launcher is not part of the target architecture's steady state. It stays for the
-gateway-mode migration and for host-level `.env` writes, and the Fleet layer's job shrinks from
-"supervise twelve containers" to "supervise product enablement and readiness inside one runtime."
-Do not invest further in the per-product container lifecycle path. Open question: whether
-first-run host bring-up remains an HTTP daemon or becomes documented operator setup.
+**Implemented decision:** the shared kernel records either `unified_in_process` or
+`gateway_compatibility` topology. Under the unified topology the per-product launcher lifecycle
+routes fail explicitly as retired, while fleet-start routes report that mounted engines are already
+running and `PATCHHIVE_PRODUCTS` owns enablement. The launcher remains only for gateway migration
+and host-level `.env` writes. Open question: whether first-run host bring-up remains an HTTP daemon
+or becomes documented operator setup.
 
 ---
 
@@ -515,13 +518,13 @@ first-run host bring-up remains an HTTP daemon or becomes documented operator se
    closed committed reservations. (B4, B5)
 3. **Approvals as objects.** Landed: exact durable subjects, atomic single-use claims, suite-run
    pending states, audit history, and the v3 operator inbox. (B3)
-4. **The conductor.** In progress: mandates, concrete finding receipts, the proposal-only work
-   ledger, fingerprint dedup, durable single-writer ticks, PR-capacity-aware discovery planning,
-   and durable leased fleet jobs are built. Next are the remaining GitHub-rate, AI-spend, sandbox,
-   and owner-politeness admission gates. Keep autonomy at `propose`;
-   no conductor dispatch transition exists yet. (B6)
-5. **Cockpit and consolidation.** Kernel becomes a crate with the three authority implementations;
-   outcome feedback and the reputation governor land; `products/hive-core/backend/` retires.
+4. **The conductor — landed.** Mandates, concrete finding receipts, fingerprint dedup, leased work
+   claims, exact approvals, resource admission, SignalHive discovery dispatch, RepoReaper handoff,
+   TrustGate release enforcement, and outcome feedback are active. (B6)
+5. **Cockpit and consolidation — landed for the unified runtime.** Shared typed kernel primitives
+   live in `patchhive-product-core`; the cockpit exposes governance and outcome evidence; unified
+   topology retires the per-product launcher lifecycle. Gateway compatibility remains available
+   during migration.
 
 Proactive PR reconciliation in **B5** closes the live capacity-leak gap in the current write path.
 
@@ -591,5 +594,6 @@ that matters — whether external state, meaning state outside PatchHive, was to
 
 - Does first-run host bring-up stay an HTTP daemon (`patchhive-launcher`) or become documented
   operator setup plus a compose file?
-- Does the kernel live in its own crate or grow inside `patchhive-product-core` alongside the
-  existing `hivecore_policy` module?
+
+The kernel location is settled: shared authority types and evaluators live in
+`patchhive-product-core` beside `hivecore_policy`; HiveCore owns only persistence and orchestration.

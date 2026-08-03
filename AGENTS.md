@@ -166,6 +166,10 @@ patchhive/
   tagged `PrReservationState`; contradictory or unrecognized legacy SQLite rows
   decode as `unknown`. Budget reads fail explicitly instead of substituting the
   default ceiling, zero usage, or an empty reservation list.
+- Final PR authorization rechecks per-owner open-PR and closed-unmerged cooldown
+  policy inside the same immediate transaction that reserves PR capacity. Mandate
+  work resolves limits from its active canonical mandate; direct and scheduled
+  runs use conservative suite defaults and cannot claim unlimited owner capacity.
 - Committed PR reservations are reconciled proactively through the suite-wide
   GitHub read credential. The durable `PrReconciliationState` distinguishes not
   configured, running, succeeded, failed, and unknown. Only a positively observed
@@ -179,10 +183,10 @@ patchhive/
   stored lifecycle evidence decodes as `unknown`, never as permission to act.
 - HiveCore work proposals are durable and idempotent. `WorkIdentity` normalizes the
   work kind and GitHub `owner/repository`, then fingerprints only kind, repository,
-  and subject identity so different products converge on one work item. The current
-  conductor boundary is proposal-only: it may create `discovered` work but cannot
-  dispatch or advance it. Unsupported or malformed stored lifecycle evidence decodes
-  as `unknown`, never as ready work.
+  and subject identity so different products converge on one work item. A leased
+  background worker advances admitted items through dispatch, exact approval,
+  completion, shipment, failure, and retryable blocking states. Unsupported or
+  malformed stored lifecycle evidence decodes as `unknown`, never as ready work.
 - HiveCore fleet launches are durable SQLite jobs with non-defaultable job and
   per-product step lifecycles. The active claim is transactional and leased; every
   host-control phase is persisted before the next action. Restarted, expired,
@@ -205,15 +209,30 @@ patchhive/
   concrete work items: a conductor tick records a typed `planned_discovery` decision,
   and only a later product finding with a real repository and subject may enter the
   fingerprinted work ledger. Ticks use a durable single-writer lease, are bounded to
-  10 active mandates by default, and cap every requested act mode to `propose`; the
-  current conductor has no dispatch transition.
+  10 active mandates by default. Durable smoke evidence determines earned autonomy;
+  requested authority is automatically demoted to the highest proven tier and never
+  promoted beyond the mandate's request.
 - Conductor discovery planning is backpressured by observed suite and RepoReaper PR
   headroom plus each mandate's PR limit and concrete discovered backlog. A tick fairly
   allocates remaining capacity across the active mandate slice and narrows SignalHive's
   repository bound to the admitted units. Zero capacity is a typed
   `capacity_deferred` decision with exact limiting layers; malformed capacity evidence
-  fails the tick closed. Cost, GitHub-rate, sandbox, and owner-politeness admission are
-  still future resource gates and must not be claimed as observed.
+  fails the tick closed. Live GitHub-rate evidence gates discovery, while AI-spend,
+  sandbox-slot, per-mandate spend, and per-owner politeness evidence gate concrete
+  execution through atomic reservations and leases.
+- HiveCore has durable pause authority at suite, product, mandate, and repository
+  scope. Pausing blocks new matching dispatches immediately and records whether
+  already-running work is draining; unknown pause evidence blocks rather than permits.
+- SignalHive findings enter the unified ledger as idempotent receipts and are handed
+  to RepoReaper through the leased work engine. RepoReaper's only PR-publication path
+  requires an explicit `safe` TrustGate review and fails closed when the gate is
+  missing, unreachable, malformed, or non-safe.
+- PR reconciliation writes merged and closed-unmerged outcomes into the suite ledger.
+  A rolling rejection governor automatically limits autonomous writes to `propose`,
+  and closed-unmerged work is offered to RepoMemory as FailGuard evidence.
+- Suite pipelines may be submitted as declarative TOML. Result gates use the bounded,
+  non-evaluating `exists(...)`/comparison expression grammar and fail closed on missing
+  or malformed evidence.
 - Booleans remain appropriate for complete binary facts such as whether an action
   is scheduleable. The rule is to eliminate ambiguous state, not booleans generally.
 

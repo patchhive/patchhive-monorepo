@@ -45,7 +45,10 @@ pub async fn init_enabled_products(config: &Config) -> Result<()> {
         unsafe {
             std::env::set_var("PATCHHIVE_SUITE_BASE_URL", suite_base_url(config));
         }
-        hive_core::init_runtime().await?;
+        hive_core::init_runtime_for_topology(
+            patchhive_product_core::hivecore_kernel::DeploymentTopology::UnifiedInProcess,
+        )
+        .await?;
     }
     Ok(())
 }

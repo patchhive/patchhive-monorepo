@@ -1293,6 +1293,9 @@ pub struct SuiteRunStepInput {
     /// Run this step once per target produced by an earlier step.
     #[serde(default)]
     pub targets: Option<SuiteRunTargets>,
+    /// A fail-closed expression over prior stage results.
+    #[serde(default)]
+    pub gate: Option<String>,
 }
 
 /// An explicit reference from one step to an earlier step's output.

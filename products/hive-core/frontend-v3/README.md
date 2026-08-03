@@ -45,34 +45,33 @@ remaining architecture work.
 | --- | --- | --- |
 | Product registry | product manifests + `GET /api/products/runtime` | live columns come from durable typed background snapshots (B1, B2) |
 | Live runs | `GET /api/products/runs` | durable materialized run index with explicit unavailable states (B2) |
-| Suite timeline | `suite_events` | durable event feed; not yet the unified work/outcome ledger (§3.3) |
+| Suite timeline | service events + HiveCore ledger events | unified durable work, dispatch, and outcome activity |
 | Contract drift | manifest vs `GET /capabilities` | live manifest/runtime comparison |
 | Capability matrix | manifest + observed actions | manifest side real |
 | Outbound capacity | `GET /pr-budgets` | live, with bounded leases and durable GitHub reconciliation state (B5) |
 | Approvals | `GET/POST /approvals` | live, exact and single-use (B3) |
-| Work ledger | `GET /work-items` + `/work-items/findings` | live concrete work plus idempotent source receipts; transitions remain (B6) |
+| Work ledger | `GET /work-items` + `/work-items/findings` | live concrete work, idempotent receipts, leased dispatch, approvals, and outcomes |
 | Repository policy | `GET /repository-policies` | structured rows plus durable public opt-out sync evidence (B4) |
-| Control Center | `GET/PUT /settings`, `/repository-policies`, `/pr-budgets`; `/products`; `/health`; `/startup/checks` | v1 policy, per-product contract evidence, and diagnostics parity in compact collapsible v3 sections |
+| Control Center | settings, policy, budgets, governance, products, health, startup | compact controls for pause authority, resources, smoke authority, reputation, and diagnostics |
 | Mandates | `GET/POST /mandates` | live SQLite intent, lifecycle, limits, and autonomy (§3.6) |
-| Conductor ticks | `GET/POST /conductor/ticks` | live bounded, leased, PR-capacity-aware proposal planning (§3.7) |
-| Blast radius | documented safety dependency edges | labels enforced edges as live and incomplete handoffs as planned; work-ledger-derived radius is not built (§3.8) |
+| Conductor ticks | `GET/POST /conductor/ticks` | live bounded, leased, resource-gated discovery and downstream work dispatch (§3.7) |
+| Blast radius | documented edges + `GET /blast-radius/:slug` | live ledger-derived affected work and finding counts over the safety graph (§3.8) |
 | Run volume | durable materialized run index | live retained run totals and 24-hour window |
 | Suite bootstrap | launcher + durable smoke/fleet jobs | start/stop first stack, ready/all launch, per-product lifecycle, logs, credentials, pairing, and all smoke tiers |
 | Runbook history | runbook records + smoke/fleet evidence | live durable reads (B6) |
 | Ask the hive | `POST /ask` | model call lives in Rust behind `PATCHHIVE_AI_URL` |
-| Change log | `suite_events` + `product_action_events` | both durable sources shown separately from tab-local audit events |
+| Change log | service events + HiveCore suite ledger + product action events | durable sources merged into one ordered operator timeline |
 
-## Deliberate current boundaries
+## Implemented orchestration boundaries
 
-- The conductor is proposal-only. It records discovery plans and concrete finding
-  receipts but has no work-item dispatch or lifecycle-advance transition.
-- PR headroom backpressures discovery. GitHub-rate, AI-spend, sandbox-slot, and
-  per-owner-politeness admission gates are not implemented and are never displayed
-  as observed capacity.
-- Suite Runs supports ordered dispatch steps and explicit target fan-out. Declarative
-  TOML pipelines and result-expression gates remain design work.
-- The blast-radius drawer uses the documented safety-edge inventory. It does not infer
-  a radius from the work ledger or pretend planned product handoffs are enforced.
+- The conductor dispatches admitted SignalHive discovery, ingests concrete findings,
+  and advances the resulting RepoReaper work through durable leased lifecycle states.
+- PR headroom and live GitHub-rate evidence backpressure discovery. AI spend,
+  sandbox slots, mandate spend, and owner politeness gate concrete work.
+- Suite Runs supports ordered dispatch, explicit target fan-out, declarative TOML,
+  and bounded fail-closed result-expression gates.
+- The blast-radius drawer combines the documented dependency graph with live
+  work-ledger and finding-receipt impact counts.
 
 ## Rules that still bind
 

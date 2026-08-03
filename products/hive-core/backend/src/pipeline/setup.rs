@@ -25,6 +25,8 @@ use super::overview::build_runtime_products;
 use super::provision::provision_service_token_for_product;
 use super::{api_error, fetch_product_auth_status, resolve_api_url};
 
+type BoxedApiError = Box<(StatusCode, Json<crate::models::ApiEnvelope<Value>>)>;
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 struct LauncherStackStatusBody {
     launcher_available: bool,
@@ -130,6 +132,15 @@ pub(super) async fn start_first_stack(
     Json<crate::models::ApiEnvelope<FirstStackSetupResponse>>,
     (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
 > {
+    if crate::runtime_topology()
+        == patchhive_product_core::hivecore_kernel::DeploymentTopology::UnifiedInProcess
+    {
+        return Ok(Json(ok(build_first_stack_response(
+            &state,
+            vec!["The unified backend already owns the mounted product engines; no per-product launcher action was needed.".into()],
+        )
+        .await)));
+    }
     let mut actions = Vec::new();
     prepare_first_stack_for_verification(&state, &mut actions).await?;
 
@@ -161,6 +172,7 @@ pub(super) async fn stop_first_stack(
     Json<crate::models::ApiEnvelope<FirstStackSetupResponse>>,
     (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
 > {
+    refuse_unified_product_lifecycle().map_err(|error| *error)?;
     let launcher_base_url = launcher_base_url();
     let launcher = stop_launcher_stack(&state, &launcher_base_url).await?;
     Ok(Json(ok(build_first_stack_response(
@@ -176,6 +188,15 @@ pub(super) async fn start_ready_fleet(
     Json<crate::models::ApiEnvelope<FirstStackSetupResponse>>,
     (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
 > {
+    if crate::runtime_topology()
+        == patchhive_product_core::hivecore_kernel::DeploymentTopology::UnifiedInProcess
+    {
+        return Ok(Json(ok(build_first_stack_response(
+            &state,
+            vec!["Enabled product engines are already mounted in the unified backend.".into()],
+        )
+        .await)));
+    }
     let mut actions = Vec::new();
     queue_fleet_launch(&state, FleetLaunchMode::StartReady, &mut actions).await?;
     Ok(Json(ok(build_first_stack_response(&state, actions).await)))
@@ -187,6 +208,15 @@ pub(super) async fn start_all_fleet(
     Json<crate::models::ApiEnvelope<FirstStackSetupResponse>>,
     (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
 > {
+    if crate::runtime_topology()
+        == patchhive_product_core::hivecore_kernel::DeploymentTopology::UnifiedInProcess
+    {
+        return Ok(Json(ok(build_first_stack_response(
+            &state,
+            vec!["PATCHHIVE_PRODUCTS controls in-process enablement; per-product launcher jobs are retired in unified mode.".into()],
+        )
+        .await)));
+    }
     let mut actions = Vec::new();
     queue_fleet_launch(&state, FleetLaunchMode::StartAll, &mut actions).await?;
     Ok(Json(ok(build_first_stack_response(&state, actions).await)))
@@ -199,6 +229,7 @@ pub(super) async fn start_setup_product(
     Json<crate::models::ApiEnvelope<FirstStackSetupResponse>>,
     (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
 > {
+    refuse_unified_product_lifecycle().map_err(|error| *error)?;
     if let Some(error) = launcher_product_slug_error(&slug) {
         return Err(error);
     }
@@ -224,6 +255,7 @@ pub(super) async fn stop_setup_product(
     Json<crate::models::ApiEnvelope<FirstStackSetupResponse>>,
     (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
 > {
+    refuse_unified_product_lifecycle().map_err(|error| *error)?;
     if let Some(error) = launcher_product_slug_error(&slug) {
         return Err(error);
     }
@@ -242,6 +274,7 @@ pub(super) async fn restart_setup_product(
     Json<crate::models::ApiEnvelope<FirstStackSetupResponse>>,
     (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
 > {
+    refuse_unified_product_lifecycle().map_err(|error| *error)?;
     if let Some(error) = launcher_product_slug_error(&slug) {
         return Err(error);
     }
@@ -268,6 +301,7 @@ pub(super) async fn setup_product_logs(
     Json<crate::models::ApiEnvelope<SetupProductLogsResponse>>,
     (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
 > {
+    refuse_unified_product_lifecycle().map_err(|error| *error)?;
     if let Some(error) = launcher_product_slug_error(&slug) {
         return Err(error);
     }
@@ -308,6 +342,19 @@ pub(super) async fn setup_product_logs(
         })?;
 
     Ok(Json(ok(body)))
+}
+
+fn refuse_unified_product_lifecycle() -> Result<(), BoxedApiError> {
+    if crate::runtime_topology()
+        == patchhive_product_core::hivecore_kernel::DeploymentTopology::UnifiedInProcess
+    {
+        return Err(Box::new(api_error(
+            StatusCode::CONFLICT,
+            "per_product_launcher_retired",
+            "Per-product container lifecycle is retired in unified mode. Configure PATCHHIVE_PRODUCTS and restart the single backend process to change mounted engines.",
+        )));
+    }
+    Ok(())
 }
 
 pub(super) async fn save_setup_product_env(

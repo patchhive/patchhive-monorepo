@@ -10,6 +10,7 @@ mod ai;
 mod approvals;
 mod ask;
 pub mod dispatch;
+pub(crate) mod governance;
 mod mandates;
 pub(crate) mod overview;
 mod policy;
@@ -42,9 +43,9 @@ pub(crate) use patchhive_product_core::auth::SERVICE_TOKEN_HEADER;
 
 pub use routes::{
     approvals, auth_status, capabilities, commit_pr_budget_reservation, deny_approval,
-    dispatch_approved, dispatch_product_action, first_stack_status, gen_key, gen_service_token,
-    grant_approval, health, list_runbook_runs, list_suite_runs, login, overview, pair_first_stack,
-    pr_budget_status, product_probes, product_run_detail, product_runs, products,
+    dispatch_approved, dispatch_product_action, execute_toml_pipeline, first_stack_status, gen_key,
+    gen_service_token, grant_approval, health, list_runbook_runs, list_suite_runs, login, overview,
+    pair_first_stack, pr_budget_status, product_probes, product_run_detail, product_runs, products,
     provision_service_token, recent_actions, release_pr_budget_reservation,
     release_pr_budget_reservations_for_run, repository_policies, repository_policy_check,
     reserve_pr_budget, restart_setup_product, revoke_approval, rotate_service_token, run_detail,
@@ -55,12 +56,14 @@ pub use routes::{
     validate_github_token,
 };
 
+pub use governance::{governance_status, pause, resume, save_resource_policy};
 pub use mandates::{
     activate_mandate, archive_mandate, create_mandate, list_conductor_ticks, list_mandates,
     mandate_detail, pause_mandate, run_conductor_tick, update_mandate,
 };
 pub use work_ledger::{
-    ingest_findings, list_finding_receipts, list_work_items, propose_work, work_item_detail,
+    ingest_findings, list_finding_receipts, list_suite_ledger, list_work_items, live_blast_radius,
+    propose_work, work_item_detail,
 };
 
 fn hive_core_action_run_values(limit: u32) -> Vec<Value> {

@@ -4,7 +4,16 @@ use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 use uuid::Uuid;
 
-use crate::models::now_rfc3339;
+pub use patchhive_product_core::hivecore_kernel::AutonomyLevel as MandateAutonomy;
+use patchhive_product_core::hivecore_kernel::{
+    AdmissionDecision, AdmissionEvidence, AutonomyDecision,
+};
+
+use crate::{
+    models::{now_rfc3339, DispatchActionResponse},
+    pipeline::dispatch::dispatch_with_approval,
+    state::AppState,
+};
 
 /// The stable identity of one piece of maintenance work.
 ///
@@ -142,14 +151,59 @@ impl WorkProposal {
     }
 }
 
-/// Durable work state. This intentionally starts small: transitions beyond
-/// discovery are not implemented yet, so pretending to understand their stored
-/// evidence would be worse than decoding them as unknown.
+/// Durable, restart-safe state for one concrete repository work item.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "state", rename_all = "snake_case")]
 pub enum WorkLifecycle {
     Discovered {
         discovered_at: String,
+    },
+    Dispatching {
+        claim_id: String,
+        started_at: String,
+        lease_until: String,
+    },
+    AwaitingApproval {
+        approval_id: String,
+        requested_at: String,
+    },
+    Gated {
+        gate_product: String,
+        gate_run_id: String,
+        recommendation: String,
+        gated_at: String,
+    },
+    Dispatched {
+        action_event_id: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        receiving_run_id: Option<String>,
+        dispatched_at: String,
+    },
+    Shipped {
+        pr_url: String,
+        shipped_at: String,
+    },
+    Completed {
+        outcome: String,
+        completed_at: String,
+    },
+    Blocked {
+        reason: String,
+        blocked_at: String,
+        retryable: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        next_attempt_at: Option<String>,
+    },
+    Failed {
+        reason: String,
+        failed_at: String,
+        retryable: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        next_attempt_at: Option<String>,
+    },
+    Abandoned {
+        reason: String,
+        abandoned_at: String,
     },
     Unknown {
         raw_state: String,
@@ -161,6 +215,15 @@ impl WorkLifecycle {
     pub const fn kind(&self) -> &str {
         match self {
             Self::Discovered { .. } => "discovered",
+            Self::Dispatching { .. } => "dispatching",
+            Self::AwaitingApproval { .. } => "awaiting_approval",
+            Self::Gated { .. } => "gated",
+            Self::Dispatched { .. } => "dispatched",
+            Self::Shipped { .. } => "shipped",
+            Self::Completed { .. } => "completed",
+            Self::Blocked { .. } => "blocked",
+            Self::Failed { .. } => "failed",
+            Self::Abandoned { .. } => "abandoned",
             Self::Unknown { .. } => "unknown",
         }
     }
@@ -175,6 +238,29 @@ impl WorkLifecycle {
             },
         }
     }
+
+    pub fn active_claim(&self) -> Option<&str> {
+        match self {
+            Self::Dispatching { claim_id, .. } => Some(claim_id),
+            _ => None,
+        }
+    }
+
+    pub fn is_terminal(&self) -> bool {
+        matches!(
+            self,
+            Self::Completed { .. }
+                | Self::Abandoned { .. }
+                | Self::Blocked {
+                    retryable: false,
+                    ..
+                }
+                | Self::Failed {
+                    retryable: false,
+                    ..
+                }
+        )
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -186,6 +272,31 @@ pub struct WorkItem {
     pub attempts: u32,
     pub created_at: String,
     pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WorkClaim {
+    pub claim_id: String,
+    pub item: WorkItem,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WorkHandoffEdge {
+    pub from_product: String,
+    pub to_product: String,
+    pub work_items: u32,
+    pub active_work_items: u32,
+    pub last_observed_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SuiteLedgerEvent {
+    pub id: String,
+    pub entity_kind: String,
+    pub entity_id: String,
+    pub event_kind: String,
+    pub evidence: Value,
+    pub created_at: String,
 }
 
 impl WorkItem {
@@ -345,26 +456,6 @@ pub struct FindingIngestionResult {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct IngestFindingsOutcome {
     pub results: Vec<FindingIngestionResult>,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum MandateAutonomy {
-    Observe,
-    Propose,
-    ActWithApproval,
-    Act,
-}
-
-impl MandateAutonomy {
-    /// The conductor has not earned dispatch authority yet. Requested autonomy is
-    /// retained, while every executable plan is capped at propose.
-    pub const fn effective_now(self) -> Self {
-        match self {
-            Self::Observe => Self::Observe,
-            Self::Propose | Self::ActWithApproval | Self::Act => Self::Propose,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -648,10 +739,25 @@ pub enum ConductorDecision {
         limiting_layers: Vec<CapacityLimitingLayer>,
         reason: String,
     },
+    SmokeDeferred {
+        mandate_id: String,
+        requested_autonomy: MandateAutonomy,
+        earned_autonomy: MandateAutonomy,
+        reason: String,
+    },
+    ResourceDeferred {
+        mandate_id: String,
+        admission: AdmissionDecision,
+        evidence: AdmissionEvidence,
+        reason: String,
+    },
     PlannedDiscovery {
         mandate_id: String,
         requested_autonomy: MandateAutonomy,
         effective_autonomy: MandateAutonomy,
+        earned_autonomy: MandateAutonomy,
+        admission: AdmissionDecision,
+        admission_evidence: AdmissionEvidence,
         capacity: DiscoveryCapacity,
         proposed_dispatch: ProposedDispatch,
         rationale: String,
@@ -673,7 +779,13 @@ impl ConductorDecision {
         }
     }
 
-    pub fn with_capacity(mandate: &MandateRecord, capacity: DiscoveryCapacity) -> Self {
+    pub fn with_capacity(
+        mandate: &MandateRecord,
+        capacity: DiscoveryCapacity,
+        autonomy: AutonomyDecision,
+        admission: AdmissionDecision,
+        admission_evidence: AdmissionEvidence,
+    ) -> Self {
         if !mandate.lifecycle.is_active() {
             return Self::Deferred {
                 mandate_id: mandate.id.clone(),
@@ -691,11 +803,24 @@ impl ConductorDecision {
                     .into(),
             };
         }
+        if autonomy.effective == MandateAutonomy::Observe {
+            return Self::SmokeDeferred {
+                mandate_id: mandate.id.clone(),
+                requested_autonomy: autonomy.requested,
+                earned_autonomy: autonomy.earned,
+                reason: autonomy.demotion_reason.unwrap_or_else(|| {
+                    "Durable smoke evidence has not earned proposal authority.".into()
+                }),
+            };
+        }
         let admitted_repositories = capacity.admitted_repositories;
         Self::PlannedDiscovery {
             mandate_id: mandate.id.clone(),
             requested_autonomy: mandate.config.requested_autonomy,
-            effective_autonomy: mandate.config.requested_autonomy.effective_now(),
+            effective_autonomy: autonomy.effective,
+            earned_autonomy: autonomy.earned,
+            admission,
+            admission_evidence,
             capacity,
             proposed_dispatch: ProposedDispatch {
                 product_slug: "signal-hive".into(),
@@ -811,14 +936,15 @@ pub fn start_background_loop() {
         return;
     }
     tokio::spawn(async {
+        let state = crate::state::AppState::new();
         loop {
             tokio::time::sleep(std::time::Duration::from_secs(
                 crate::db::conductor_interval_seconds(),
             ))
             .await;
-            match crate::db::run_conductor_tick(ConductorTickTrigger::Background) {
+            match run_tick_and_dispatch(&state, ConductorTickTrigger::Background).await {
                 Ok(RunConductorTickOutcome::Settled { tick }) => {
-                    tracing::debug!(tick_id = %tick.id, "proposal-only conductor tick settled");
+                    tracing::debug!(tick_id = %tick.id, "conductor tick settled");
                 }
                 Ok(RunConductorTickOutcome::Busy {
                     active_tick_id,
@@ -832,6 +958,148 @@ pub fn start_background_loop() {
             }
         }
     });
+}
+
+pub async fn run_tick_and_dispatch(
+    state: &AppState,
+    trigger: ConductorTickTrigger,
+) -> rusqlite::Result<RunConductorTickOutcome> {
+    let admission = crate::pipeline::governance::discovery_admission_evidence(state).await;
+    let outcome = crate::db::run_conductor_tick(trigger, admission)?;
+    let RunConductorTickOutcome::Settled { tick } = &outcome else {
+        return Ok(outcome);
+    };
+    let ConductorTickLifecycle::Completed { decisions, .. } = &tick.lifecycle else {
+        return Ok(outcome);
+    };
+    for decision in decisions {
+        let ConductorDecision::PlannedDiscovery {
+            mandate_id,
+            proposed_dispatch,
+            ..
+        } = decision
+        else {
+            continue;
+        };
+        let response = dispatch_with_approval(
+            state,
+            &proposed_dispatch.product_slug,
+            &proposed_dispatch.action_id,
+            proposed_dispatch.input.clone(),
+            patchhive_product_core::approvals::ApprovalOrigin::SuiteRun {
+                run_id: tick.id.clone(),
+            },
+            None,
+        )
+        .await;
+        match response {
+            Ok(DispatchActionResponse::Dispatched { event, .. })
+                if event.status == "dispatched" =>
+            {
+                let scan = crate::work_engine::normalized_response(&event.response_json);
+                let findings = signal_hive_findings(mandate_id, &scan);
+                let ingestion = if findings.is_empty() {
+                    None
+                } else {
+                    Some(crate::db::ingest_findings(findings).map_err(|error| {
+                        rusqlite::Error::ToSqlConversionFailure(Box::new(error))
+                    })?)
+                };
+                crate::db::record_suite_event(
+                    "conductor_tick",
+                    &tick.id,
+                    "discovery_settled",
+                    &serde_json::json!({
+                        "mandate_id": mandate_id,
+                        "action_event_id": event.id,
+                        "ingestion": ingestion,
+                    }),
+                )?;
+            }
+            Ok(response) => {
+                crate::db::record_suite_event(
+                    "conductor_tick",
+                    &tick.id,
+                    "discovery_not_accepted",
+                    &serde_json::to_value(response).unwrap_or(Value::Null),
+                )?;
+            }
+            Err((status, body)) => {
+                crate::db::record_suite_event(
+                    "conductor_tick",
+                    &tick.id,
+                    "discovery_failed",
+                    &serde_json::json!({"status": status.as_u16(), "body": body.0}),
+                )?;
+            }
+        }
+    }
+    let _ = crate::work_engine::run_once(state, 3).await;
+    Ok(outcome)
+}
+
+fn signal_hive_findings(mandate_id: &str, scan: &Value) -> Vec<ProductFinding> {
+    let run_id = scan
+        .get("id")
+        .and_then(Value::as_str)
+        .unwrap_or("unknown-signal-hive-run");
+    scan.get("repos")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|repo| {
+            let repository = repo.get("full_name")?.as_str()?.to_ascii_lowercase();
+            let issue = repo
+                .get("issue_examples")
+                .and_then(Value::as_array)
+                .and_then(|issues| issues.first());
+            let (kind, subject_ref, finding_id) = match issue {
+                Some(issue) => {
+                    let number = issue.get("number")?.as_u64()?;
+                    (
+                        "github_issue".to_string(),
+                        format!("issue:{number}"),
+                        format!("issue:{number}"),
+                    )
+                }
+                None => (
+                    "maintenance_pressure".to_string(),
+                    "signal-hive:repository-pressure".to_string(),
+                    "repository-pressure".to_string(),
+                ),
+            };
+            Some(ProductFinding {
+                mandate_id: Some(mandate_id.to_owned()),
+                source: FindingSource {
+                    product_slug: "signal-hive".into(),
+                    run_id: run_id.to_owned(),
+                    finding_id,
+                },
+                identity: WorkIdentity {
+                    kind,
+                    repository: repository.clone(),
+                    subject_ref,
+                },
+                proposed_dispatch: ProposedDispatch {
+                    product_slug: "repo-reaper".into(),
+                    action_id: "run".into(),
+                    input: serde_json::json!({
+                        "target_selection_mode": "direct",
+                        "target_repo": repository,
+                        "max_repos": 1,
+                        "max_issues": 1,
+                    }),
+                },
+                rationale: format!(
+                    "SignalHive identified {} as concrete maintenance work for this mandate.",
+                    repo.get("full_name")
+                        .and_then(Value::as_str)
+                        .unwrap_or("the repository")
+                ),
+                evidence: repo.clone(),
+            })
+        })
+        .collect()
 }
 
 fn required(field: &str, value: String, max_len: usize) -> Result<String, String> {

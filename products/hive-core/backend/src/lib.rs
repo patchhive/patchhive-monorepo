@@ -58,6 +58,7 @@ pub mod pr_reconciliation;
 pub mod public_opt_out;
 pub mod startup;
 pub mod state;
+pub mod work_engine;
 
 use anyhow::Result;
 use axum::{middleware, routing::get, Router};
@@ -65,6 +66,16 @@ use patchhive_product_core::rate_limit::rate_limit_middleware;
 use patchhive_product_core::startup::log_checks;
 
 use crate::state::AppState;
+use patchhive_product_core::hivecore_kernel::DeploymentTopology;
+
+static RUNTIME_TOPOLOGY: std::sync::OnceLock<DeploymentTopology> = std::sync::OnceLock::new();
+
+pub fn runtime_topology() -> DeploymentTopology {
+    RUNTIME_TOPOLOGY
+        .get()
+        .copied()
+        .unwrap_or(DeploymentTopology::Unknown)
+}
 
 pub fn materialized_products() -> Vec<models::ProductRuntimeItem> {
     pipeline::overview::materialized_runtime_products(&AppState::new())
@@ -98,6 +109,11 @@ pub async fn pair_first_stack_setup(
 /// Schema, startup diagnostics, and any background work. Idempotent: the unified
 /// backend calls this once per enabled engine at boot.
 pub async fn init_runtime() -> Result<()> {
+    init_runtime_for_topology(DeploymentTopology::GatewayCompatibility).await
+}
+
+pub async fn init_runtime_for_topology(topology: DeploymentTopology) -> Result<()> {
+    let _ = RUNTIME_TOPOLOGY.set(topology);
     state::load_product_registry()?;
     db::init_db()?;
     bootstrap_authority::initialize();
@@ -108,6 +124,7 @@ pub async fn init_runtime() -> Result<()> {
     public_opt_out::start_background_loop();
     pr_reconciliation::start_background_loop();
     conductor::start_background_loop();
+    work_engine::start_background_loop();
     Ok(())
 }
 
@@ -207,6 +224,15 @@ pub fn router() -> Router {
             get(pipeline::list_finding_receipts).post(pipeline::ingest_findings),
         )
         .route("/work-items/:id", get(pipeline::work_item_detail))
+        .route("/events", get(pipeline::list_suite_ledger))
+        .route("/blast-radius/:slug", get(pipeline::live_blast_radius))
+        .route("/governance", get(pipeline::governance_status))
+        .route(
+            "/governance/resources",
+            axum::routing::put(pipeline::save_resource_policy),
+        )
+        .route("/governance/pause", axum::routing::post(pipeline::pause))
+        .route("/governance/resume", axum::routing::post(pipeline::resume))
         .route(
             "/mandates",
             get(pipeline::list_mandates).post(pipeline::create_mandate),
@@ -252,6 +278,10 @@ pub fn router() -> Router {
             get(pipeline::list_suite_runs).post(pipeline::start_suite_run),
         )
         .route("/suite-runs/:id", get(pipeline::suite_run_detail))
+        .route(
+            "/pipelines/execute",
+            axum::routing::post(pipeline::execute_toml_pipeline),
+        )
         // Narrative drafts. Operator-only: these produce text for a human to edit,
         // never a dispatch, so they are not service-token dispatch paths.
         // Runbooks: a recorded read-only diagnostic pass over one product.

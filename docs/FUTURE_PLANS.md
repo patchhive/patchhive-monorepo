@@ -34,7 +34,7 @@ back here instead of living in parallel long-term.
 ## TrustGate
 
 - Add incident-informed rule tuning later so painful failures can become future guardrails.
-- Make TrustGate the gate before RepoReaper opens or advances autonomous PRs.
+- TrustGate is now the mandatory fail-closed release gate before RepoReaper opens an autonomous PR.
 - FailGuard producer wiring is complete for TrustGate and RepoReaper: TrustGate `warn`/`block` reviews and Smith rejections now submit reviewable candidates when RepoMemory is configured.
 - Extend promoted FailGuard guardrails with machine-checkable predicates so selected lessons can become exact TrustGate rules and deterministic RepoReaper preflight validators instead of contextual instructions.
 - Add inline file-level findings with stronger path anchors so repo owners can see exactly which parts of a diff triggered the risk call.
@@ -128,9 +128,8 @@ back here instead of living in parallel long-term.
 - Add the documented `patchhive.dev` repository-owner opt-out API and form.
   Structured trusted-repository policy and atomic per-product plus suite-wide PR
   budgets are implemented. See `docs/hivecore-repository-safety-and-pr-budgets.md`.
-- Add cross-product handoff flows such as SignalHive -> RepoReaper candidate
-  revalidation and patch planning -> TrustGate diff review -> guarded delivery,
-  after approval and safety controls are visible in HiveCore.
+- Extend the implemented SignalHive -> RepoReaper -> TrustGate work path with
+  product-specific mappings for the remaining read-only specialists.
 - Add a deterministic repository-profile intake that records a pinned commit,
   languages, manifests, CI, tests, docs, entry-point signals, coverage limits,
   and unavailable inputs, then recommends capability-advertised specialist

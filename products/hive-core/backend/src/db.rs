@@ -2,6 +2,13 @@ use anyhow::{Context, Result};
 use std::collections::{BTreeMap, HashMap};
 
 use once_cell::sync::Lazy;
+use patchhive_product_core::hivecore_kernel::{
+    evaluate_autonomy, evaluate_resource_admission, AdmissionDecision, AdmissionEvidence,
+    AdmissionRequirements, AiBudgetReservationState, AiSpendEvidence, DrainState,
+    Evidence as KernelEvidence, GithubRateEvidence, OwnerPolitenessEvidence, PauseLifecycle,
+    PauseRecord, PauseTarget, ResourcePolicy, SandboxEvidence, SandboxLeaseState, SmokeAuthority,
+    SmokeProof, WorkOutcomeKind,
+};
 use patchhive_product_core::repo_policy;
 use patchhive_product_core::secrets::TokenProtector;
 use patchhive_product_core::sqlite::{product_db_path, PooledSqliteConnection, SqlitePool};
@@ -11,8 +18,9 @@ use crate::conductor::{
     CapacityLayer, ConductorDecision, ConductorTickLifecycle, ConductorTickRecord,
     ConductorTickTrigger, DiscoveryCapacity, FindingIngestionDisposition, FindingIngestionResult,
     FindingReceipt, FindingSource, IngestFindingsOutcome, MandateAutonomy, MandateConfig,
-    MandateLifecycle, MandateRecord, ProductFinding, ProposeWorkOutcome, RunConductorTickOutcome,
-    WorkItem, WorkLifecycle, WorkProposal,
+    MandateLifecycle, MandateRecord, ProductFinding, ProposeWorkOutcome, ProposedDispatch,
+    RunConductorTickOutcome, SuiteLedgerEvent, WorkClaim, WorkHandoffEdge, WorkIdentity, WorkItem,
+    WorkLifecycle, WorkOrigin, WorkProposal,
 };
 use crate::models::{
     ApprovalConsumptionOutcome, ApprovalEvent, ApprovalExpirableState, ApprovalRecord,
@@ -124,6 +132,876 @@ pub fn init_db() -> Result<()> {
     recover_interrupted_pr_reconciliation(&conn)?;
     recover_interrupted_fleet_launches(&conn)?;
     Ok(())
+}
+
+fn seed_resource_policy(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute(
+        "INSERT OR IGNORE INTO hive_core_resource_policy
+         (singleton, github_min_remaining, suite_ai_daily_limit_cents, sandbox_slots, updated_at)
+         VALUES (1, 500, 2500, 2, ?1)",
+        [crate::models::now_rfc3339()],
+    )?;
+    Ok(())
+}
+
+pub fn resource_policy() -> rusqlite::Result<ResourcePolicy> {
+    let conn = connect()?;
+    load_resource_policy(&conn)
+}
+
+fn load_resource_policy(conn: &Connection) -> rusqlite::Result<ResourcePolicy> {
+    let policy = conn.query_row(
+        "SELECT github_min_remaining, suite_ai_daily_limit_cents, sandbox_slots, updated_at
+         FROM hive_core_resource_policy WHERE singleton = 1",
+        [],
+        |row| {
+            Ok(ResourcePolicy {
+                github_min_remaining: checked_u32(
+                    0,
+                    row.get::<_, i64>(0)?,
+                    "GitHub reserved rate floor",
+                )?,
+                suite_ai_daily_limit_cents: u64::try_from(row.get::<_, i64>(1)?).map_err(
+                    |error| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            1,
+                            rusqlite::types::Type::Integer,
+                            Box::new(error),
+                        )
+                    },
+                )?,
+                sandbox_slots: checked_u32(2, row.get::<_, i64>(2)?, "sandbox slots")?,
+                updated_at: row.get(3)?,
+            })
+        },
+    )?;
+    policy.validate().map_err(|message| {
+        rusqlite::Error::FromSqlConversionFailure(
+            0,
+            rusqlite::types::Type::Integer,
+            Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                message,
+            )),
+        )
+    })?;
+    Ok(policy)
+}
+
+pub fn save_resource_policy(mut policy: ResourcePolicy) -> rusqlite::Result<ResourcePolicy> {
+    policy.validate().map_err(|message| {
+        rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            message,
+        )))
+    })?;
+    let conn = connect()?;
+    policy.updated_at = crate::models::now_rfc3339();
+    conn.execute(
+        "INSERT INTO hive_core_resource_policy
+         (singleton, github_min_remaining, suite_ai_daily_limit_cents, sandbox_slots, updated_at)
+         VALUES (1, ?1, ?2, ?3, ?4)
+         ON CONFLICT(singleton) DO UPDATE SET
+           github_min_remaining = excluded.github_min_remaining,
+           suite_ai_daily_limit_cents = excluded.suite_ai_daily_limit_cents,
+           sandbox_slots = excluded.sandbox_slots,
+           updated_at = excluded.updated_at",
+        params![
+            policy.github_min_remaining,
+            i64::try_from(policy.suite_ai_daily_limit_cents)
+                .map_err(|error| { rusqlite::Error::ToSqlConversionFailure(Box::new(error)) })?,
+            policy.sandbox_slots,
+            policy.updated_at,
+        ],
+    )?;
+    Ok(policy)
+}
+
+pub fn ai_spend_for_day(day: &str) -> rusqlite::Result<(u64, u64)> {
+    let conn = connect()?;
+    expire_work_resources(&conn)?;
+    ai_spend_for_day_with_connection(&conn, day, None)
+}
+
+fn ai_spend_for_day_with_connection(
+    conn: &Connection,
+    day: &str,
+    mandate_id: Option<&str>,
+) -> rusqlite::Result<(u64, u64)> {
+    let (spent, reserved) = conn.query_row(
+        "SELECT
+           COALESCE(SUM(CASE WHEN state_kind = 'committed' THEN actual_cents ELSE 0 END), 0),
+           COALESCE(SUM(CASE WHEN state_kind = 'reserved' THEN reserved_cents ELSE 0 END), 0)
+         FROM hive_core_ai_budget_reservations
+         WHERE day = ?1 AND (?2 IS NULL OR mandate_id = ?2)",
+        params![day, mandate_id],
+        |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
+    )?;
+    Ok((
+        u64::try_from(spent).map_err(|error| {
+            rusqlite::Error::FromSqlConversionFailure(
+                0,
+                rusqlite::types::Type::Integer,
+                Box::new(error),
+            )
+        })?,
+        u64::try_from(reserved).map_err(|error| {
+            rusqlite::Error::FromSqlConversionFailure(
+                1,
+                rusqlite::types::Type::Integer,
+                Box::new(error),
+            )
+        })?,
+    ))
+}
+
+pub fn sandbox_slots_in_use() -> rusqlite::Result<u32> {
+    let conn = connect()?;
+    expire_work_resources(&conn)?;
+    sandbox_slots_in_use_with_connection(&conn)
+}
+
+fn sandbox_slots_in_use_with_connection(conn: &Connection) -> rusqlite::Result<u32> {
+    let count = conn.query_row(
+        "SELECT COUNT(*) FROM hive_core_sandbox_leases WHERE state_kind = 'claimed'",
+        [],
+        |row| row.get::<_, i64>(0),
+    )?;
+    checked_u32(0, count, "sandbox slots in use")
+}
+
+#[derive(Debug, Clone)]
+pub struct WorkResourceClaim {
+    pub ai_reservation_id: String,
+    pub sandbox_lease_id: String,
+    pub admission: AdmissionDecision,
+    pub evidence: AdmissionEvidence,
+}
+
+pub fn claim_work_resources(
+    item: &WorkItem,
+    github_rate: KernelEvidence<GithubRateEvidence>,
+    estimated_ai_cents: u64,
+    lease_seconds: u32,
+) -> rusqlite::Result<Result<WorkResourceClaim, (AdmissionDecision, AdmissionEvidence)>> {
+    let mut conn = connect()?;
+    let transaction = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    expire_work_resources(&transaction)?;
+    let policy = load_resource_policy(&transaction)?;
+    let mandate = item
+        .proposal
+        .mandate_id
+        .as_deref()
+        .map(|id| load_mandate(&transaction, id))
+        .transpose()?
+        .flatten();
+    let day = chrono::Utc::now().format("%Y-%m-%d").to_string();
+    let (spent_cents, reserved_cents) = ai_spend_for_day_with_connection(&transaction, &day, None)?;
+    let (mandate_spent_cents, mandate_reserved_cents) = match &mandate {
+        Some(mandate) => ai_spend_for_day_with_connection(&transaction, &day, Some(&mandate.id))?,
+        None => (0, 0),
+    };
+    let sandbox_in_use = sandbox_slots_in_use_with_connection(&transaction)?;
+    let owner = item
+        .proposal
+        .identity
+        .repository
+        .split_once('/')
+        .map(|(owner, _)| owner.to_owned())
+        .unwrap_or_default();
+    let owner_limit = mandate
+        .as_ref()
+        .map(|value| value.config.limits.per_owner_open_prs)
+        .unwrap_or(1);
+    let owner_open = active_owner_pr_count(&transaction, &owner)?;
+    let cooldown_until = owner_cooldown_until(
+        &transaction,
+        &owner,
+        mandate
+            .as_ref()
+            .map(|value| value.config.limits.cooldown_after_close_days)
+            .unwrap_or(14),
+    )?;
+    let now = crate::models::now_rfc3339();
+    let evidence = AdmissionEvidence {
+        github_rate,
+        ai_spend: KernelEvidence::Observed {
+            value: AiSpendEvidence {
+                daily_limit_cents: policy.suite_ai_daily_limit_cents,
+                spent_cents,
+                reserved_cents,
+                mandate_daily_limit_cents: mandate
+                    .as_ref()
+                    .map(|value| value.config.limits.cost_budget_cents_per_day),
+                mandate_spent_cents,
+                mandate_reserved_cents,
+                day: day.clone(),
+            },
+            observed_at: now.clone(),
+        },
+        sandbox: KernelEvidence::Observed {
+            value: SandboxEvidence {
+                slots: policy.sandbox_slots,
+                in_use: sandbox_in_use,
+            },
+            observed_at: now.clone(),
+        },
+        owner_politeness: KernelEvidence::Observed {
+            value: OwnerPolitenessEvidence {
+                owner,
+                open_pull_requests: owner_open,
+                limit: owner_limit,
+                cooldown_until,
+            },
+            observed_at: now.clone(),
+        },
+    };
+    let admission = evaluate_resource_admission(
+        &evidence,
+        AdmissionRequirements {
+            github_rate: true,
+            ai_spend: true,
+            sandbox: true,
+            owner_politeness: true,
+        },
+        policy.github_min_remaining,
+        estimated_ai_cents,
+        now.clone(),
+    );
+    if matches!(admission, AdmissionDecision::Denied { .. }) {
+        transaction.commit()?;
+        return Ok(Err((admission, evidence)));
+    }
+    let ai_reservation_id = format!("ai_{}", uuid::Uuid::now_v7());
+    let expires_at = (chrono::Utc::now()
+        + chrono::Duration::seconds(i64::from(lease_seconds.max(30))))
+    .to_rfc3339();
+    let ai_lifecycle = AiBudgetReservationState::Reserved {
+        expires_at: expires_at.clone(),
+    };
+    transaction.execute(
+        "INSERT INTO hive_core_ai_budget_reservations
+         (id, work_item_id, mandate_id, reserved_cents, actual_cents, state_kind,
+          state_json, day, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, 0, ?5, ?6, ?7, ?8, ?8)",
+        params![
+            ai_reservation_id,
+            item.id,
+            item.proposal.mandate_id,
+            i64::try_from(estimated_ai_cents).map_err(integer_conversion_error)?,
+            ai_lifecycle.kind(),
+            json_string(&ai_lifecycle)?,
+            day,
+            now
+        ],
+    )?;
+    let sandbox_lease_id = format!("sandbox_{}", uuid::Uuid::now_v7());
+    let sandbox_lifecycle = SandboxLeaseState::Claimed { expires_at };
+    transaction.execute(
+        "INSERT INTO hive_core_sandbox_leases
+         (id, work_item_id, state_kind, state_json, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?5)
+         ON CONFLICT(work_item_id) DO UPDATE SET
+           id = excluded.id,
+           state_kind = excluded.state_kind,
+           state_json = excluded.state_json,
+           updated_at = excluded.updated_at",
+        params![
+            sandbox_lease_id,
+            item.id,
+            sandbox_lifecycle.kind(),
+            json_string(&sandbox_lifecycle)?,
+            now
+        ],
+    )?;
+    transaction.commit()?;
+    Ok(Ok(WorkResourceClaim {
+        ai_reservation_id,
+        sandbox_lease_id,
+        admission,
+        evidence,
+    }))
+}
+
+pub fn settle_work_resources(
+    claim: &WorkResourceClaim,
+    actual_ai_cents: Option<u64>,
+    reason: &str,
+) -> rusqlite::Result<()> {
+    let mut conn = connect()?;
+    let transaction = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let now = crate::models::now_rfc3339();
+    let ai_lifecycle = match actual_ai_cents {
+        Some(actual_cents) => AiBudgetReservationState::Committed { actual_cents },
+        None => AiBudgetReservationState::Released {
+            reason: reason.to_owned(),
+        },
+    };
+    transaction.execute(
+        "UPDATE hive_core_ai_budget_reservations
+         SET actual_cents = ?1, state_kind = ?2, state_json = ?3, updated_at = ?4
+         WHERE id = ?5 AND state_kind = 'reserved'",
+        params![
+            i64::try_from(actual_ai_cents.unwrap_or(0)).map_err(integer_conversion_error)?,
+            ai_lifecycle.kind(),
+            json_string(&ai_lifecycle)?,
+            now,
+            claim.ai_reservation_id
+        ],
+    )?;
+    let sandbox_lifecycle = SandboxLeaseState::Released {
+        reason: reason.to_owned(),
+    };
+    transaction.execute(
+        "UPDATE hive_core_sandbox_leases SET state_kind = 'released', state_json = ?1,
+         updated_at = ?2 WHERE id = ?3 AND state_kind = 'claimed'",
+        params![
+            json_string(&sandbox_lifecycle)?,
+            now,
+            claim.sandbox_lease_id
+        ],
+    )?;
+    transaction.commit()
+}
+
+pub fn renew_work_claim_resources(
+    work_item_id: &str,
+    claim_id: &str,
+    resources: &WorkResourceClaim,
+    lease_seconds: u32,
+) -> rusqlite::Result<bool> {
+    let mut conn = connect()?;
+    let transaction = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let Some(item) = load_work_item_by_id(&transaction, work_item_id)? else {
+        transaction.commit()?;
+        return Ok(false);
+    };
+    let WorkLifecycle::Dispatching {
+        claim_id: stored_claim,
+        started_at,
+        ..
+    } = item.lifecycle
+    else {
+        transaction.commit()?;
+        return Ok(false);
+    };
+    if stored_claim != claim_id {
+        transaction.commit()?;
+        return Ok(false);
+    }
+    let ai_active = transaction.query_row(
+        "SELECT COUNT(*) FROM hive_core_ai_budget_reservations
+         WHERE id = ?1 AND state_kind = 'reserved'",
+        [&resources.ai_reservation_id],
+        |row| row.get::<_, i64>(0),
+    )? == 1;
+    let sandbox_active = transaction.query_row(
+        "SELECT COUNT(*) FROM hive_core_sandbox_leases
+         WHERE id = ?1 AND state_kind = 'claimed'",
+        [&resources.sandbox_lease_id],
+        |row| row.get::<_, i64>(0),
+    )? == 1;
+    if !ai_active || !sandbox_active {
+        transaction.commit()?;
+        return Ok(false);
+    }
+
+    let now = chrono::Utc::now();
+    let now_text = now.to_rfc3339();
+    let expires_at =
+        (now + chrono::Duration::seconds(i64::from(lease_seconds.max(30)))).to_rfc3339();
+    let work_lifecycle = WorkLifecycle::Dispatching {
+        claim_id: claim_id.to_owned(),
+        started_at,
+        lease_until: expires_at.clone(),
+    };
+    let ai_lifecycle = AiBudgetReservationState::Reserved {
+        expires_at: expires_at.clone(),
+    };
+    let sandbox_lifecycle = SandboxLeaseState::Claimed { expires_at };
+    transaction.execute(
+        "UPDATE hive_core_work_items SET state_json = ?1, updated_at = ?2
+         WHERE id = ?3 AND state_kind = 'dispatching'",
+        params![json_string(&work_lifecycle)?, now_text, work_item_id],
+    )?;
+    transaction.execute(
+        "UPDATE hive_core_ai_budget_reservations SET state_json = ?1, updated_at = ?2
+         WHERE id = ?3 AND state_kind = 'reserved'",
+        params![
+            json_string(&ai_lifecycle)?,
+            now_text,
+            resources.ai_reservation_id
+        ],
+    )?;
+    transaction.execute(
+        "UPDATE hive_core_sandbox_leases SET state_json = ?1, updated_at = ?2
+         WHERE id = ?3 AND state_kind = 'claimed'",
+        params![
+            json_string(&sandbox_lifecycle)?,
+            now_text,
+            resources.sandbox_lease_id
+        ],
+    )?;
+    transaction.commit()?;
+    Ok(true)
+}
+
+pub fn renew_work_resources(
+    resources: &WorkResourceClaim,
+    lease_seconds: u32,
+) -> rusqlite::Result<bool> {
+    let mut conn = connect()?;
+    let transaction = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let ai_active = transaction.query_row(
+        "SELECT COUNT(*) FROM hive_core_ai_budget_reservations
+         WHERE id = ?1 AND state_kind = 'reserved'",
+        [&resources.ai_reservation_id],
+        |row| row.get::<_, i64>(0),
+    )? == 1;
+    let sandbox_active = transaction.query_row(
+        "SELECT COUNT(*) FROM hive_core_sandbox_leases
+         WHERE id = ?1 AND state_kind = 'claimed'",
+        [&resources.sandbox_lease_id],
+        |row| row.get::<_, i64>(0),
+    )? == 1;
+    if !ai_active || !sandbox_active {
+        transaction.commit()?;
+        return Ok(false);
+    }
+    let now = chrono::Utc::now();
+    let now_text = now.to_rfc3339();
+    let expires_at =
+        (now + chrono::Duration::seconds(i64::from(lease_seconds.max(30)))).to_rfc3339();
+    let ai_lifecycle = AiBudgetReservationState::Reserved {
+        expires_at: expires_at.clone(),
+    };
+    let sandbox_lifecycle = SandboxLeaseState::Claimed { expires_at };
+    transaction.execute(
+        "UPDATE hive_core_ai_budget_reservations SET state_json = ?1, updated_at = ?2
+         WHERE id = ?3 AND state_kind = 'reserved'",
+        params![
+            json_string(&ai_lifecycle)?,
+            now_text,
+            resources.ai_reservation_id
+        ],
+    )?;
+    transaction.execute(
+        "UPDATE hive_core_sandbox_leases SET state_json = ?1, updated_at = ?2
+         WHERE id = ?3 AND state_kind = 'claimed'",
+        params![
+            json_string(&sandbox_lifecycle)?,
+            now_text,
+            resources.sandbox_lease_id
+        ],
+    )?;
+    transaction.commit()?;
+    Ok(true)
+}
+
+fn expire_work_resources(conn: &Connection) -> rusqlite::Result<()> {
+    let now = chrono::Utc::now();
+    let now_text = now.to_rfc3339();
+    let mut ai_statement = conn.prepare(
+        "SELECT id, state_json FROM hive_core_ai_budget_reservations
+         WHERE state_kind = 'reserved'",
+    )?;
+    let ai_rows = ai_statement
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    drop(ai_statement);
+    for (id, encoded) in ai_rows {
+        let lifecycle =
+            AiBudgetReservationState::from_storage("reserved".into(), raw_json(encoded));
+        let AiBudgetReservationState::Reserved { expires_at } = lifecycle else {
+            continue;
+        };
+        if chrono::DateTime::parse_from_rfc3339(&expires_at)
+            .map(|value| value.with_timezone(&chrono::Utc) <= now)
+            .unwrap_or(false)
+        {
+            let expired = AiBudgetReservationState::Expired {
+                expired_at: now_text.clone(),
+            };
+            conn.execute(
+                "UPDATE hive_core_ai_budget_reservations
+                 SET state_kind = 'expired', state_json = ?1, updated_at = ?2
+                 WHERE id = ?3 AND state_kind = 'reserved'",
+                params![json_string(&expired)?, now_text, id],
+            )?;
+        }
+    }
+
+    let mut sandbox_statement = conn.prepare(
+        "SELECT id, state_json FROM hive_core_sandbox_leases WHERE state_kind = 'claimed'",
+    )?;
+    let sandbox_rows = sandbox_statement
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    drop(sandbox_statement);
+    for (id, encoded) in sandbox_rows {
+        let lifecycle = SandboxLeaseState::from_storage("claimed".into(), raw_json(encoded));
+        let SandboxLeaseState::Claimed { expires_at } = lifecycle else {
+            continue;
+        };
+        if chrono::DateTime::parse_from_rfc3339(&expires_at)
+            .map(|value| value.with_timezone(&chrono::Utc) <= now)
+            .unwrap_or(false)
+        {
+            let expired = SandboxLeaseState::Expired {
+                expired_at: now_text.clone(),
+            };
+            conn.execute(
+                "UPDATE hive_core_sandbox_leases SET state_kind = 'expired', state_json = ?1,
+                 updated_at = ?2 WHERE id = ?3 AND state_kind = 'claimed'",
+                params![json_string(&expired)?, now_text, id],
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn active_owner_pr_count(conn: &Connection, owner: &str) -> rusqlite::Result<u32> {
+    let count = conn.query_row(
+        "SELECT COUNT(*) FROM pr_budget_reservations
+         WHERE status IN ('reserved', 'committed') AND LOWER(repository) LIKE LOWER(?1)",
+        [format!("{owner}/%")],
+        |row| row.get::<_, i64>(0),
+    )?;
+    checked_u32(0, count, "owner open pull requests")
+}
+
+fn owner_cooldown_until(
+    conn: &Connection,
+    owner: &str,
+    cooldown_days: u32,
+) -> rusqlite::Result<Option<String>> {
+    let last_closed = conn
+        .query_row(
+            "SELECT observed_at FROM hive_core_work_outcomes
+             WHERE owner = ?1 AND outcome_kind = 'closed_unmerged'
+             ORDER BY observed_at DESC LIMIT 1",
+            [owner],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?;
+    let Some(last_closed) = last_closed else {
+        return Ok(None);
+    };
+    let until = chrono::DateTime::parse_from_rfc3339(&last_closed)
+        .map(|value| {
+            value.with_timezone(&chrono::Utc) + chrono::Duration::days(i64::from(cooldown_days))
+        })
+        .map_err(|error| invalid_datetime(0, error))?;
+    Ok((until > chrono::Utc::now()).then(|| until.to_rfc3339()))
+}
+
+fn integer_conversion_error(error: std::num::TryFromIntError) -> rusqlite::Error {
+    rusqlite::Error::ToSqlConversionFailure(Box::new(error))
+}
+
+fn seed_pause_authority(conn: &Connection) -> rusqlite::Result<()> {
+    let now = crate::models::now_rfc3339();
+    let target = PauseTarget::Suite;
+    let lifecycle = PauseLifecycle::Running {
+        resumed_at: now.clone(),
+    };
+    conn.execute(
+        "INSERT OR IGNORE INTO hive_core_pause_authority
+         (target_key, target_json, state_kind, state_json, revision, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, 1, ?5, ?5)",
+        params![
+            target.storage_key(),
+            json_string(&target)?,
+            lifecycle.kind(),
+            json_string(&lifecycle)?,
+            now,
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn pause_records() -> rusqlite::Result<Vec<PauseRecord>> {
+    let conn = connect()?;
+    load_pause_records(&conn)
+}
+
+fn load_pause_records(conn: &Connection) -> rusqlite::Result<Vec<PauseRecord>> {
+    let mut statement = conn.prepare(
+        "SELECT target_json, state_kind, state_json, revision, created_at, updated_at
+         FROM hive_core_pause_authority ORDER BY target_key",
+    )?;
+    let records = statement
+        .query_map([], pause_record_from_row)?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(records)
+}
+
+pub fn pause_record(target: &PauseTarget) -> rusqlite::Result<Option<PauseRecord>> {
+    let conn = connect()?;
+    conn.query_row(
+        "SELECT target_json, state_kind, state_json, revision, created_at, updated_at
+         FROM hive_core_pause_authority WHERE target_key = ?1",
+        [target.storage_key()],
+        pause_record_from_row,
+    )
+    .optional()
+}
+
+pub fn blocking_pauses(
+    product_slug: Option<&str>,
+    mandate_id: Option<&str>,
+    repository: Option<&str>,
+) -> rusqlite::Result<Vec<PauseRecord>> {
+    let records = pause_records()?;
+    Ok(records
+        .into_iter()
+        .filter(|record| {
+            let applies = match &record.target {
+                PauseTarget::Suite => true,
+                PauseTarget::Product {
+                    product_slug: paused,
+                } => product_slug.is_some_and(|value| value == paused),
+                PauseTarget::Mandate { mandate_id: paused } => {
+                    mandate_id.is_some_and(|value| value == paused)
+                }
+                PauseTarget::Repository { repository: paused } => {
+                    repository.is_some_and(|value| value.eq_ignore_ascii_case(paused))
+                }
+            };
+            applies && record.lifecycle.blocks_new_work()
+        })
+        .collect())
+}
+
+pub fn pause_target(
+    target: PauseTarget,
+    reason: String,
+    observed_in_flight: u32,
+) -> rusqlite::Result<PauseRecord> {
+    let mut conn = connect()?;
+    let transaction = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let now = crate::models::now_rfc3339();
+    let target_key = target.storage_key();
+    let current = transaction
+        .query_row(
+            "SELECT target_json, state_kind, state_json, revision, created_at, updated_at
+             FROM hive_core_pause_authority WHERE target_key = ?1",
+            [&target_key],
+            pause_record_from_row,
+        )
+        .optional()?;
+    let revision = current.as_ref().map_or(1, |record| record.revision + 1);
+    let created_at = current
+        .as_ref()
+        .map(|record| record.created_at.clone())
+        .unwrap_or_else(|| now.clone());
+    let drain = if observed_in_flight == 0 {
+        DrainState::Drained {
+            drained_at: now.clone(),
+        }
+    } else {
+        DrainState::Draining {
+            observed_in_flight,
+            checked_at: now.clone(),
+        }
+    };
+    let lifecycle = PauseLifecycle::Paused {
+        paused_at: now.clone(),
+        reason,
+        drain,
+    };
+    transaction.execute(
+        "INSERT INTO hive_core_pause_authority
+         (target_key, target_json, state_kind, state_json, revision, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+         ON CONFLICT(target_key) DO UPDATE SET
+           target_json = excluded.target_json,
+           state_kind = excluded.state_kind,
+           state_json = excluded.state_json,
+           revision = excluded.revision,
+           updated_at = excluded.updated_at",
+        params![
+            target_key,
+            json_string(&target)?,
+            lifecycle.kind(),
+            json_string(&lifecycle)?,
+            revision,
+            created_at,
+            now,
+        ],
+    )?;
+    let record = transaction.query_row(
+        "SELECT target_json, state_kind, state_json, revision, created_at, updated_at
+         FROM hive_core_pause_authority WHERE target_key = ?1",
+        [target.storage_key()],
+        pause_record_from_row,
+    )?;
+    transaction.commit()?;
+    Ok(record)
+}
+
+pub fn in_flight_for_pause_target(target: &PauseTarget) -> rusqlite::Result<u32> {
+    let conn = connect()?;
+    in_flight_for_pause_target_with_connection(&conn, target)
+}
+
+fn in_flight_for_pause_target_with_connection(
+    conn: &Connection,
+    target: &PauseTarget,
+) -> rusqlite::Result<u32> {
+    let work = match target {
+        PauseTarget::Suite => conn.query_row(
+            "SELECT COUNT(*) FROM hive_core_work_items WHERE state_kind = 'dispatching'",
+            [],
+            |row| row.get::<_, i64>(0),
+        )?,
+        PauseTarget::Product { product_slug } => conn.query_row(
+            "SELECT COUNT(*) FROM hive_core_work_items
+             WHERE state_kind = 'dispatching'
+               AND json_extract(proposal_json, '$.proposed_dispatch.product_slug') = ?1",
+            [product_slug],
+            |row| row.get::<_, i64>(0),
+        )?,
+        PauseTarget::Mandate { mandate_id } => conn.query_row(
+            "SELECT COUNT(*) FROM hive_core_work_items
+             WHERE state_kind = 'dispatching' AND mandate_id = ?1",
+            [mandate_id],
+            |row| row.get::<_, i64>(0),
+        )?,
+        PauseTarget::Repository { repository } => conn.query_row(
+            "SELECT COUNT(*) FROM hive_core_work_items
+             WHERE state_kind = 'dispatching' AND repository = ?1",
+            [repository],
+            |row| row.get::<_, i64>(0),
+        )?,
+    };
+    let mut total = checked_u32(0, work, "in-flight work")?;
+    if matches!(target, PauseTarget::Suite) {
+        let suite_runs = conn.query_row(
+            "SELECT COUNT(*) FROM hive_core_suite_runs WHERE status = 'running'",
+            [],
+            |row| row.get::<_, i64>(0),
+        )?;
+        let fleet_jobs = conn.query_row(
+            "SELECT COUNT(*) FROM hive_core_fleet_launch_jobs
+             WHERE state_kind IN ('queued', 'running')",
+            [],
+            |row| row.get::<_, i64>(0),
+        )?;
+        total = total
+            .saturating_add(checked_u32(0, suite_runs, "in-flight suite runs")?)
+            .saturating_add(checked_u32(0, fleet_jobs, "in-flight fleet jobs")?);
+    }
+    Ok(total)
+}
+
+pub fn reconcile_pause_drains() -> rusqlite::Result<()> {
+    let mut conn = connect()?;
+    let transaction = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    for record in load_pause_records(&transaction)? {
+        let PauseLifecycle::Paused {
+            paused_at,
+            reason,
+            drain: DrainState::Draining { .. },
+        } = record.lifecycle
+        else {
+            continue;
+        };
+        if in_flight_for_pause_target_with_connection(&transaction, &record.target)? != 0 {
+            continue;
+        }
+        let lifecycle = PauseLifecycle::Paused {
+            paused_at,
+            reason,
+            drain: DrainState::Drained {
+                drained_at: crate::models::now_rfc3339(),
+            },
+        };
+        transaction.execute(
+            "UPDATE hive_core_pause_authority
+             SET state_kind = 'paused', state_json = ?1, revision = revision + 1, updated_at = ?2
+             WHERE target_key = ?3 AND state_kind = 'paused'",
+            params![
+                json_string(&lifecycle)?,
+                crate::models::now_rfc3339(),
+                record.target.storage_key()
+            ],
+        )?;
+    }
+    transaction.commit()
+}
+
+pub fn resume_target(target: PauseTarget) -> rusqlite::Result<PauseRecord> {
+    let mut conn = connect()?;
+    let transaction = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let now = crate::models::now_rfc3339();
+    let target_key = target.storage_key();
+    let current = transaction
+        .query_row(
+            "SELECT target_json, state_kind, state_json, revision, created_at, updated_at
+             FROM hive_core_pause_authority WHERE target_key = ?1",
+            [&target_key],
+            pause_record_from_row,
+        )
+        .optional()?;
+    let revision = current.as_ref().map_or(1, |record| record.revision + 1);
+    let created_at = current
+        .as_ref()
+        .map(|record| record.created_at.clone())
+        .unwrap_or_else(|| now.clone());
+    let lifecycle = PauseLifecycle::Running {
+        resumed_at: now.clone(),
+    };
+    transaction.execute(
+        "INSERT INTO hive_core_pause_authority
+         (target_key, target_json, state_kind, state_json, revision, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+         ON CONFLICT(target_key) DO UPDATE SET
+           target_json = excluded.target_json,
+           state_kind = excluded.state_kind,
+           state_json = excluded.state_json,
+           revision = excluded.revision,
+           updated_at = excluded.updated_at",
+        params![
+            target_key,
+            json_string(&target)?,
+            lifecycle.kind(),
+            json_string(&lifecycle)?,
+            revision,
+            created_at,
+            now,
+        ],
+    )?;
+    let record = transaction.query_row(
+        "SELECT target_json, state_kind, state_json, revision, created_at, updated_at
+         FROM hive_core_pause_authority WHERE target_key = ?1",
+        [target.storage_key()],
+        pause_record_from_row,
+    )?;
+    transaction.commit()?;
+    Ok(record)
+}
+
+fn pause_record_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<PauseRecord> {
+    let target_json = row.get::<_, String>(0)?;
+    let state_kind = row.get::<_, String>(1)?;
+    let state_json = row.get::<_, String>(2)?;
+    let target = serde_json::from_str(&target_json).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(error))
+    })?;
+    let raw_evidence = serde_json::from_str(&state_json)
+        .unwrap_or_else(|_| serde_json::json!({ "malformed_state_json": state_json }));
+    Ok(PauseRecord {
+        target,
+        lifecycle: PauseLifecycle::from_storage(state_kind, raw_evidence),
+        revision: row.get::<_, i64>(3)?.max(0) as u64,
+        created_at: row.get(4)?,
+        updated_at: row.get(5)?,
+    })
 }
 
 #[derive(Debug)]
@@ -805,6 +1683,14 @@ fn propose_work_in_transaction(
             "INSERT INTO hive_core_work_item_events (work_item_id, event, evidence_json, created_at) VALUES (?1, ?2, ?3, ?4)",
             params![existing.id, rediscovered_event, event_evidence, observed_at],
         )?;
+        insert_suite_event(
+            transaction,
+            "work_item",
+            &existing.id,
+            rediscovered_event,
+            &raw_json(event_evidence.to_owned()),
+            observed_at,
+        )?;
         let item = load_work_item_by_fingerprint(transaction, &fingerprint)?
             .expect("work item updated in the same transaction must still exist");
         return Ok(ProposeWorkOutcome::Deduplicated {
@@ -835,6 +1721,14 @@ fn propose_work_in_transaction(
             item.created_at,
             item.updated_at,
         ],
+    )?;
+    insert_suite_event(
+        transaction,
+        "work_item",
+        &item.id,
+        created_event,
+        &raw_json(event_evidence.to_owned()),
+        observed_at,
     )?;
     transaction.execute(
         "INSERT INTO hive_core_work_item_events (work_item_id, event, evidence_json, created_at) VALUES (?1, ?2, ?3, ?4)",
@@ -971,6 +1865,10 @@ fn ingest_findings_with_connection(
 
 pub fn finding_receipts(limit: u32) -> rusqlite::Result<Vec<FindingReceipt>> {
     let conn = connect()?;
+    load_finding_receipts(&conn, limit.clamp(1, 500))
+}
+
+fn load_finding_receipts(conn: &Connection, limit: u32) -> rusqlite::Result<Vec<FindingReceipt>> {
     let mut statement = conn.prepare(
         r#"
         SELECT source_fingerprint, product_slug, run_id, finding_id, mandate_id,
@@ -980,8 +1878,87 @@ pub fn finding_receipts(limit: u32) -> rusqlite::Result<Vec<FindingReceipt>> {
         LIMIT ?1
         "#,
     )?;
-    let rows = statement.query_map([limit.clamp(1, 500)], finding_receipt_from_row)?;
+    let rows = statement.query_map([limit], finding_receipt_from_row)?;
     rows.collect()
+}
+
+fn load_all_finding_receipts(conn: &Connection) -> rusqlite::Result<Vec<FindingReceipt>> {
+    let mut statement = conn.prepare(
+        r#"
+        SELECT source_fingerprint, product_slug, run_id, finding_id, mandate_id,
+               work_item_id, work_fingerprint, finding_fingerprint, finding_json, ingested_at
+        FROM hive_core_finding_receipts
+        ORDER BY ingested_at DESC, source_fingerprint DESC
+        "#,
+    )?;
+    let rows = statement.query_map([], finding_receipt_from_row)?;
+    rows.collect()
+}
+
+pub fn work_handoff_edges() -> rusqlite::Result<Vec<WorkHandoffEdge>> {
+    let conn = connect()?;
+    let receipts = load_all_finding_receipts(&conn)?;
+    let items = load_all_work_items(&conn)?
+        .into_iter()
+        .map(|item| (item.id.clone(), item))
+        .collect::<HashMap<_, _>>();
+    let mut edges: BTreeMap<(String, String), WorkHandoffEdge> = BTreeMap::new();
+    let mut identities: HashMap<(String, String), std::collections::HashSet<String>> =
+        HashMap::new();
+    for receipt in receipts {
+        let Some(item) = items.get(&receipt.work_item_id) else {
+            continue;
+        };
+        let key = (
+            receipt.finding.source.product_slug.clone(),
+            item.proposal.proposed_dispatch.product_slug.clone(),
+        );
+        let edge = edges.entry(key.clone()).or_insert_with(|| WorkHandoffEdge {
+            from_product: key.0.clone(),
+            to_product: key.1.clone(),
+            work_items: 0,
+            active_work_items: 0,
+            last_observed_at: receipt.ingested_at.clone(),
+        });
+        let seen = identities.entry(key).or_default();
+        if seen.insert(item.id.clone()) {
+            edge.work_items = edge.work_items.saturating_add(1);
+            if !item.lifecycle.is_terminal() {
+                edge.active_work_items = edge.active_work_items.saturating_add(1);
+            }
+        }
+        if receipt.ingested_at > edge.last_observed_at {
+            edge.last_observed_at = receipt.ingested_at;
+        }
+    }
+    for item in items.values().filter(|item| {
+        item.proposal.proposed_dispatch.product_slug == "repo-reaper"
+            && item.proposal.proposed_dispatch.action_id == "run"
+    }) {
+        for key in [
+            ("repo-reaper".to_string(), "trust-gate".to_string()),
+            ("repo-reaper".to_string(), "hive-core".to_string()),
+        ] {
+            let edge = edges.entry(key.clone()).or_insert_with(|| WorkHandoffEdge {
+                from_product: key.0.clone(),
+                to_product: key.1.clone(),
+                work_items: 0,
+                active_work_items: 0,
+                last_observed_at: item.updated_at.clone(),
+            });
+            let seen = identities.entry(key).or_default();
+            if seen.insert(item.id.clone()) {
+                edge.work_items = edge.work_items.saturating_add(1);
+                if !item.lifecycle.is_terminal() {
+                    edge.active_work_items = edge.active_work_items.saturating_add(1);
+                }
+            }
+            if item.updated_at > edge.last_observed_at {
+                edge.last_observed_at.clone_from(&item.updated_at);
+            }
+        }
+    }
+    Ok(edges.into_values().collect())
 }
 
 pub fn work_items(limit: u32) -> rusqlite::Result<Vec<WorkItem>> {
@@ -992,6 +1969,488 @@ pub fn work_items(limit: u32) -> rusqlite::Result<Vec<WorkItem>> {
 pub fn work_item(id: &str) -> rusqlite::Result<Option<WorkItem>> {
     let conn = connect()?;
     load_work_item_by_id(&conn, id)
+}
+
+pub fn record_suite_event(
+    entity_kind: &str,
+    entity_id: &str,
+    event_kind: &str,
+    evidence: &serde_json::Value,
+) -> rusqlite::Result<String> {
+    let conn = connect()?;
+    let id = format!("suite_evt_{}", uuid::Uuid::now_v7());
+    conn.execute(
+        "INSERT INTO hive_core_suite_events
+         (id, entity_kind, entity_id, event_kind, evidence_json, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![
+            id,
+            entity_kind,
+            entity_id,
+            event_kind,
+            json_string(evidence)?,
+            crate::models::now_rfc3339()
+        ],
+    )?;
+    Ok(id)
+}
+
+pub fn suite_ledger_events(limit: u32) -> rusqlite::Result<Vec<SuiteLedgerEvent>> {
+    let conn = connect()?;
+    let mut statement = conn.prepare(
+        "SELECT id, entity_kind, entity_id, event_kind, evidence_json, created_at
+         FROM hive_core_suite_events ORDER BY created_at DESC, id DESC LIMIT ?1",
+    )?;
+    let rows = statement
+        .query_map([limit.clamp(1, 500)], |row| {
+            let encoded: String = row.get(4)?;
+            Ok(SuiteLedgerEvent {
+                id: row.get(0)?,
+                entity_kind: row.get(1)?,
+                entity_id: row.get(2)?,
+                event_kind: row.get(3)?,
+                evidence: serde_json::from_str(&encoded).map_err(|error| invalid_json(4, error))?,
+                created_at: row.get(5)?,
+            })
+        })?
+        .collect();
+    rows
+}
+
+fn insert_suite_event(
+    conn: &Connection,
+    entity_kind: &str,
+    entity_id: &str,
+    event_kind: &str,
+    evidence: &serde_json::Value,
+    created_at: &str,
+) -> rusqlite::Result<()> {
+    conn.execute(
+        "INSERT INTO hive_core_suite_events
+         (id, entity_kind, entity_id, event_kind, evidence_json, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![
+            format!("suite_evt_{}", uuid::Uuid::now_v7()),
+            entity_kind,
+            entity_id,
+            event_kind,
+            json_string(evidence)?,
+            created_at
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn record_reconciled_pr_outcome(
+    reservation: &PrBudgetReservation,
+    pr_url: &str,
+    outcome: WorkOutcomeKind,
+    reason: &str,
+    observed_at: &str,
+) -> rusqlite::Result<Option<WorkItem>> {
+    let mut conn = connect()?;
+    let transaction = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let work = load_reconcilable_work_items(&transaction)?
+        .into_iter()
+        .find(|item| match &item.lifecycle {
+            WorkLifecycle::Shipped { pr_url: stored, .. } => stored == pr_url,
+            WorkLifecycle::Dispatched {
+                receiving_run_id: Some(run_id),
+                ..
+            } => run_id == &reservation.run_id,
+            _ => false,
+        });
+    let item = match work {
+        Some(item) => item,
+        None => {
+            let proposal = WorkProposal {
+                mandate_id: None,
+                identity: WorkIdentity {
+                    kind: "pull_request".into(),
+                    repository: reservation.repository.clone(),
+                    subject_ref: pr_url.to_owned(),
+                },
+                proposed_dispatch: ProposedDispatch {
+                    product_slug: reservation.product.clone(),
+                    action_id: reservation.action.clone(),
+                    input: serde_json::json!({
+                        "repository": reservation.repository,
+                        "run_id": reservation.run_id,
+                    }),
+                },
+                origin: WorkOrigin::ProductRun {
+                    product_slug: reservation.product.clone(),
+                    run_id: reservation.run_id.clone(),
+                },
+                rationale: "Backfilled from a reconciled PatchHive pull-request reservation."
+                    .into(),
+            };
+            match propose_work_in_transaction(
+                &transaction,
+                proposal,
+                "outcome_work_backfilled",
+                "outcome_work_rediscovered",
+                &json_string(&serde_json::json!({"pr_url": pr_url}))?,
+                observed_at,
+            )? {
+                ProposeWorkOutcome::Created { item }
+                | ProposeWorkOutcome::Deduplicated { item, .. } => item,
+            }
+        }
+    };
+    let owner = reservation
+        .repository
+        .split_once('/')
+        .map(|(owner, _)| owner.to_ascii_lowercase())
+        .unwrap_or_default();
+    let evidence = serde_json::json!({
+        "reservation_id": reservation.id,
+        "product_slug": reservation.product,
+        "repository": reservation.repository,
+        "run_id": reservation.run_id,
+        "pr_url": pr_url,
+        "outcome": outcome,
+        "reason": reason,
+    });
+    transaction.execute(
+        "INSERT INTO hive_core_work_outcomes
+         (id, work_item_id, product_slug, repository, owner, pr_url, outcome_kind,
+          reason, evidence_json, observed_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+         ON CONFLICT(work_item_id, outcome_kind, pr_url) DO NOTHING",
+        params![
+            format!("outcome_{}", uuid::Uuid::now_v7()),
+            item.id,
+            reservation.product,
+            reservation.repository,
+            owner,
+            pr_url,
+            outcome.as_str(),
+            reason,
+            json_string(&evidence)?,
+            observed_at
+        ],
+    )?;
+    let lifecycle = WorkLifecycle::Completed {
+        outcome: outcome.as_str().into(),
+        completed_at: observed_at.into(),
+    };
+    transaction.execute(
+        "UPDATE hive_core_work_items SET state_kind = 'completed', state_json = ?1,
+         updated_at = ?2 WHERE id = ?3",
+        params![json_string(&lifecycle)?, observed_at, item.id],
+    )?;
+    transaction.execute(
+        "INSERT INTO hive_core_work_item_events
+         (work_item_id, event, evidence_json, created_at)
+         VALUES (?1, 'outcome_observed', ?2, ?3)",
+        params![item.id, json_string(&evidence)?, observed_at],
+    )?;
+    let suite_event_id = format!("suite_evt_{}", uuid::Uuid::now_v7());
+    transaction.execute(
+        "INSERT INTO hive_core_suite_events
+         (id, entity_kind, entity_id, event_kind, evidence_json, created_at)
+         VALUES (?1, 'work_item', ?2, 'outcome_observed', ?3, ?4)",
+        params![
+            suite_event_id,
+            item.id,
+            json_string(&evidence)?,
+            observed_at
+        ],
+    )?;
+    let updated = load_work_item_by_id(&transaction, &item.id)?;
+    transaction.commit()?;
+    Ok(updated)
+}
+
+pub fn reputation_summary(
+) -> rusqlite::Result<patchhive_product_core::hivecore_kernel::ReputationSummary> {
+    let conn = connect()?;
+    reputation_summary_with_connection(&conn)
+}
+
+fn reputation_summary_with_connection(
+    conn: &Connection,
+) -> rusqlite::Result<patchhive_product_core::hivecore_kernel::ReputationSummary> {
+    let (shipped, merged, closed_unmerged, stale_ignored) = conn.query_row(
+        "SELECT COUNT(*),
+         COALESCE(SUM(outcome_kind = 'merged'), 0),
+         COALESCE(SUM(outcome_kind = 'closed_unmerged'), 0),
+         COALESCE(SUM(outcome_kind = 'stale_ignored'), 0)
+         FROM hive_core_work_outcomes",
+        [],
+        |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, i64>(2)?,
+                row.get::<_, i64>(3)?,
+            ))
+        },
+    )?;
+    let (rolling_decisions, rolling_rejections) = conn.query_row(
+        "SELECT COUNT(*), COALESCE(SUM(outcome_kind = 'closed_unmerged'), 0)
+         FROM (SELECT outcome_kind FROM hive_core_work_outcomes
+               WHERE outcome_kind IN ('merged', 'closed_unmerged')
+               ORDER BY observed_at DESC LIMIT 20)",
+        [],
+        |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
+    )?;
+    let checked = |index, value, label| checked_u32(index, value, label);
+    let rolling_decisions = checked(4, rolling_decisions, "rolling reputation decisions")?;
+    let rolling_rejections = checked(5, rolling_rejections, "rolling reputation rejections")?;
+    Ok(patchhive_product_core::hivecore_kernel::ReputationSummary {
+        shipped: checked(0, shipped, "shipped outcomes")?,
+        merged: checked(1, merged, "merged outcomes")?,
+        closed_unmerged: checked(2, closed_unmerged, "closed outcomes")?,
+        stale_ignored: checked(3, stale_ignored, "stale outcomes")?,
+        rolling_decisions,
+        rolling_rejections,
+        slowdown_active: rolling_decisions >= 5
+            && rolling_rejections.saturating_mul(100) / rolling_decisions >= 40,
+        evaluated_at: crate::models::now_rfc3339(),
+    })
+}
+
+pub fn claim_next_work(lease_seconds: u32) -> rusqlite::Result<Option<WorkClaim>> {
+    let mut conn = connect()?;
+    claim_next_work_with_connection(&mut conn, lease_seconds)
+}
+
+fn claim_next_work_with_connection(
+    conn: &mut Connection,
+    lease_seconds: u32,
+) -> rusqlite::Result<Option<WorkClaim>> {
+    let transaction = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    recover_expired_work_claims(&transaction)?;
+    let now = chrono::Utc::now();
+    let now_text = now.to_rfc3339();
+    let candidate = load_claimable_work_items(&transaction)?
+        .into_iter()
+        .filter(|item| work_is_claimable(item, now))
+        .min_by(|left, right| {
+            left.updated_at
+                .cmp(&right.updated_at)
+                .then_with(|| left.id.cmp(&right.id))
+        });
+    let Some(mut item) = candidate else {
+        transaction.commit()?;
+        return Ok(None);
+    };
+    let previous_kind = item.lifecycle.kind().to_owned();
+    let claim_id = format!("claim_{}", uuid::Uuid::now_v7());
+    let lifecycle = WorkLifecycle::Dispatching {
+        claim_id: claim_id.clone(),
+        started_at: now_text.clone(),
+        lease_until: (now + chrono::Duration::seconds(i64::from(lease_seconds.max(30))))
+            .to_rfc3339(),
+    };
+    let changed = transaction.execute(
+        "UPDATE hive_core_work_items
+         SET state_kind = ?1, state_json = ?2, attempts = attempts + 1, updated_at = ?3
+         WHERE id = ?4 AND state_kind = ?5",
+        params![
+            lifecycle.kind(),
+            json_string(&lifecycle)?,
+            now_text,
+            item.id,
+            previous_kind
+        ],
+    )?;
+    if changed != 1 {
+        transaction.commit()?;
+        return Ok(None);
+    }
+    transaction.execute(
+        "INSERT INTO hive_core_work_item_events
+         (work_item_id, event, evidence_json, created_at) VALUES (?1, 'claimed', ?2, ?3)",
+        params![
+            item.id,
+            json_string(&serde_json::json!({"claim_id": claim_id}))?,
+            now_text
+        ],
+    )?;
+    insert_suite_event(
+        &transaction,
+        "work_item",
+        &item.id,
+        "claimed",
+        &serde_json::json!({"claim_id": claim_id}),
+        &now_text,
+    )?;
+    item = load_work_item_by_id(&transaction, &item.id)?
+        .expect("claimed work item must remain readable in its transaction");
+    transaction.commit()?;
+    Ok(Some(WorkClaim { claim_id, item }))
+}
+
+pub fn settle_work_claim(
+    work_item_id: &str,
+    claim_id: &str,
+    lifecycle: WorkLifecycle,
+    event: &str,
+    evidence: &serde_json::Value,
+) -> rusqlite::Result<Option<WorkItem>> {
+    if lifecycle.active_claim().is_some() {
+        return Err(rusqlite::Error::InvalidParameterName(
+            "settled work lifecycle cannot retain an active claim".into(),
+        ));
+    }
+    let mut conn = connect()?;
+    let transaction = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let Some(current) = load_work_item_by_id(&transaction, work_item_id)? else {
+        transaction.commit()?;
+        return Ok(None);
+    };
+    if current.lifecycle.active_claim() != Some(claim_id) {
+        transaction.commit()?;
+        return Ok(None);
+    }
+    let now = crate::models::now_rfc3339();
+    let changed = transaction.execute(
+        "UPDATE hive_core_work_items SET state_kind = ?1, state_json = ?2, updated_at = ?3
+         WHERE id = ?4 AND state_kind = 'dispatching' AND state_json = ?5",
+        params![
+            lifecycle.kind(),
+            json_string(&lifecycle)?,
+            now,
+            work_item_id,
+            json_string(&current.lifecycle)?
+        ],
+    )?;
+    if changed != 1 {
+        transaction.commit()?;
+        return Ok(None);
+    }
+    transaction.execute(
+        "INSERT INTO hive_core_work_item_events
+         (work_item_id, event, evidence_json, created_at) VALUES (?1, ?2, ?3, ?4)",
+        params![work_item_id, event, json_string(evidence)?, now],
+    )?;
+    insert_suite_event(
+        &transaction,
+        "work_item",
+        work_item_id,
+        event,
+        evidence,
+        &now,
+    )?;
+    let updated = load_work_item_by_id(&transaction, work_item_id)?;
+    transaction.commit()?;
+    Ok(updated)
+}
+
+pub fn settle_work_approval(
+    approval_id: &str,
+    lifecycle: WorkLifecycle,
+    event: &str,
+    evidence: &serde_json::Value,
+) -> rusqlite::Result<Option<WorkItem>> {
+    let mut conn = connect()?;
+    let transaction = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let mut statement = transaction.prepare(&format!(
+        "{WORK_ITEM_SELECT} WHERE state_kind = 'awaiting_approval' ORDER BY updated_at ASC"
+    ))?;
+    let candidates = statement
+        .query_map([], work_item_from_row)?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    drop(statement);
+    let Some(item) = candidates.into_iter().find(|item| {
+        matches!(
+            &item.lifecycle,
+            WorkLifecycle::AwaitingApproval { approval_id: stored, .. } if stored == approval_id
+        )
+    }) else {
+        transaction.commit()?;
+        return Ok(None);
+    };
+    let now = crate::models::now_rfc3339();
+    transaction.execute(
+        "UPDATE hive_core_work_items SET state_kind = ?1, state_json = ?2, updated_at = ?3
+         WHERE id = ?4 AND state_kind = 'awaiting_approval'",
+        params![lifecycle.kind(), json_string(&lifecycle)?, now, item.id],
+    )?;
+    transaction.execute(
+        "INSERT INTO hive_core_work_item_events
+         (work_item_id, event, evidence_json, created_at) VALUES (?1, ?2, ?3, ?4)",
+        params![item.id, event, json_string(evidence)?, now],
+    )?;
+    insert_suite_event(&transaction, "work_item", &item.id, event, evidence, &now)?;
+    let updated = load_work_item_by_id(&transaction, &item.id)?;
+    transaction.commit()?;
+    Ok(updated)
+}
+
+pub fn work_item_for_approval(approval_id: &str) -> rusqlite::Result<Option<WorkItem>> {
+    let conn = connect()?;
+    load_work_items_by_state(&conn, &["awaiting_approval"]).map(|items| {
+        items.into_iter().find(|item| {
+            matches!(
+                &item.lifecycle,
+                WorkLifecycle::AwaitingApproval { approval_id: stored, .. } if stored == approval_id
+            )
+        })
+    })
+}
+
+fn work_is_claimable(item: &WorkItem, now: chrono::DateTime<chrono::Utc>) -> bool {
+    match &item.lifecycle {
+        WorkLifecycle::Discovered { .. } => true,
+        WorkLifecycle::Blocked {
+            retryable: true,
+            next_attempt_at,
+            ..
+        }
+        | WorkLifecycle::Failed {
+            retryable: true,
+            next_attempt_at,
+            ..
+        } => next_attempt_at.as_deref().is_none_or(|value| {
+            chrono::DateTime::parse_from_rfc3339(value)
+                .map(|value| value.with_timezone(&chrono::Utc) <= now)
+                .unwrap_or(false)
+        }),
+        _ => false,
+    }
+}
+
+fn recover_expired_work_claims(conn: &Connection) -> rusqlite::Result<()> {
+    let now = chrono::Utc::now();
+    for item in load_work_items_by_state(conn, &["dispatching"])? {
+        let WorkLifecycle::Dispatching { lease_until, .. } = &item.lifecycle else {
+            continue;
+        };
+        let expired = chrono::DateTime::parse_from_rfc3339(lease_until)
+            .map(|value| value.with_timezone(&chrono::Utc) <= now)
+            .unwrap_or(true);
+        if !expired {
+            continue;
+        }
+        let failed_at = now.to_rfc3339();
+        let lifecycle = WorkLifecycle::Failed {
+            reason: "The prior dispatch lease expired before its outcome was durably settled."
+                .into(),
+            failed_at: failed_at.clone(),
+            retryable: false,
+            next_attempt_at: None,
+        };
+        conn.execute(
+            "UPDATE hive_core_work_items SET state_kind = 'failed', state_json = ?1, updated_at = ?2
+             WHERE id = ?3 AND state_kind = 'dispatching'",
+            params![json_string(&lifecycle)?, failed_at, item.id],
+        )?;
+        conn.execute(
+            "INSERT INTO hive_core_work_item_events
+             (work_item_id, event, evidence_json, created_at)
+             VALUES (?1, 'lease_expired', ?2, ?3)",
+            params![
+                item.id,
+                json_string(&serde_json::json!({"previous": item.lifecycle}))?,
+                failed_at
+            ],
+        )?;
+    }
+    Ok(())
 }
 
 #[derive(Debug)]
@@ -1819,14 +3278,18 @@ pub fn active_pr_usage() -> rusqlite::Result<(u32, HashMap<String, u32>)> {
 
 pub fn reserve_pr_slot(
     reservation: &PrBudgetReservation,
+    owner_limit: u32,
+    cooldown_days: u32,
 ) -> rusqlite::Result<PrReservationDecision> {
     let mut conn = connect()?;
-    reserve_pr_slot_with_connection(&mut conn, reservation)
+    reserve_pr_slot_with_connection(&mut conn, reservation, owner_limit, cooldown_days)
 }
 
 fn reserve_pr_slot_with_connection(
     conn: &mut Connection,
     reservation: &PrBudgetReservation,
+    owner_limit: u32,
+    cooldown_days: u32,
 ) -> rusqlite::Result<PrReservationDecision> {
     let PrReservationState::Reserved { expires_at } = &reservation.lifecycle else {
         return Err(rusqlite::Error::InvalidParameterName(
@@ -1852,6 +3315,13 @@ fn reserve_pr_slot_with_connection(
         .unwrap_or_else(|| default_product_pr_limit(&reservation.product));
     let suite_used = active_pr_count(&tx, None)?;
     let product_used = active_pr_count(&tx, Some(&reservation.product))?;
+    let owner = reservation
+        .repository
+        .split_once('/')
+        .map(|(owner, _)| owner)
+        .unwrap_or_default();
+    let owner_used = active_owner_pr_count(&tx, owner)?;
+    let cooldown_until = owner_cooldown_until(&tx, owner, cooldown_days)?;
 
     let usage = PrBudgetUsage {
         product_limit,
@@ -1859,7 +3329,21 @@ fn reserve_pr_slot_with_connection(
         suite_limit,
         suite_used,
     };
-    let denial = if product_limit == 0 {
+    let denial = if let Some(cooldown_until) = cooldown_until {
+        Some((
+            PrBudgetLimitingLayer::OwnerPoliteness,
+            format!(
+                "PatchHive is cooling down writes to owner '{owner}' until {cooldown_until} after a closed-unmerged pull request."
+            ),
+        ))
+    } else if owner_used >= owner_limit {
+        Some((
+            PrBudgetLimitingLayer::OwnerPoliteness,
+            format!(
+                "Owner '{owner}' already has {owner_used} active PatchHive pull request(s), reaching the limit of {owner_limit}."
+            ),
+        ))
+    } else if product_limit == 0 {
         Some((
             PrBudgetLimitingLayer::Product,
             format!(
@@ -2255,6 +3739,81 @@ pub fn latest_first_stack_smoke_run() -> Option<FirstStackSmokeRun> {
     load_latest_first_stack_smoke_run(&conn).ok().flatten()
 }
 
+pub fn latest_smoke_run_for_tier(tier: &str) -> rusqlite::Result<Option<FirstStackSmokeRun>> {
+    let conn = connect()?;
+    load_smoke_run_for_tier(&conn, tier)
+}
+
+fn load_smoke_run_for_tier(
+    conn: &Connection,
+    tier: &str,
+) -> rusqlite::Result<Option<FirstStackSmokeRun>> {
+    conn.query_row(
+        r#"
+        SELECT id, tier, status, started_at, finished_at, summary, steps_json
+        FROM first_stack_smoke_runs
+        WHERE tier = ?1
+        ORDER BY finished_at DESC
+        LIMIT 1
+        "#,
+        [tier],
+        smoke_run_from_row,
+    )
+    .optional()
+}
+
+pub fn smoke_authority() -> SmokeAuthority {
+    match connect() {
+        Ok(conn) => load_smoke_authority(&conn),
+        Err(error) => failed_smoke_authority(format!("Could not open HiveCore storage: {error}")),
+    }
+}
+
+fn load_smoke_authority(conn: &Connection) -> SmokeAuthority {
+    SmokeAuthority {
+        first_stack: smoke_tier_evidence(conn, "first-stack"),
+        read_only_fleet: smoke_tier_evidence(conn, "read-only-fleet"),
+        write_dry_run: smoke_tier_evidence(conn, "write-dry-run"),
+        release_gate: smoke_tier_evidence(conn, "release-gate"),
+    }
+}
+
+fn smoke_tier_evidence(conn: &Connection, tier: &str) -> KernelEvidence<SmokeProof> {
+    match load_smoke_run_for_tier(conn, tier) {
+        Ok(Some(run)) if run.status == "ready" => KernelEvidence::Observed {
+            observed_at: run.finished_at.clone(),
+            value: SmokeProof {
+                run_id: run.id,
+                finished_at: run.finished_at,
+            },
+        },
+        Ok(Some(run)) => KernelEvidence::Failed {
+            reason: format!(
+                "Latest {tier} smoke {} finished as {}: {}",
+                run.id, run.status, run.summary
+            ),
+        },
+        Ok(None) => KernelEvidence::NotObserved {
+            reason: format!("No durable {tier} smoke run has been recorded."),
+        },
+        Err(error) => KernelEvidence::Failed {
+            reason: format!("Could not read durable {tier} smoke evidence: {error}"),
+        },
+    }
+}
+
+fn failed_smoke_authority(reason: String) -> SmokeAuthority {
+    let failed = || KernelEvidence::Failed {
+        reason: reason.clone(),
+    };
+    SmokeAuthority {
+        first_stack: failed(),
+        read_only_fleet: failed(),
+        write_dry_run: failed(),
+        release_gate: failed(),
+    }
+}
+
 fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute_batch(
         r#"
@@ -2496,6 +4055,90 @@ fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
           lease_until TEXT NOT NULL
         );
 
+        CREATE TABLE IF NOT EXISTS hive_core_pause_authority (
+          target_key TEXT PRIMARY KEY,
+          target_json TEXT NOT NULL,
+          state_kind TEXT NOT NULL,
+          state_json TEXT NOT NULL,
+          revision INTEGER NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_hive_core_pause_authority_state
+          ON hive_core_pause_authority (state_kind, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS hive_core_resource_policy (
+          singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+          github_min_remaining INTEGER NOT NULL,
+          suite_ai_daily_limit_cents INTEGER NOT NULL,
+          sandbox_slots INTEGER NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS hive_core_ai_budget_reservations (
+          id TEXT PRIMARY KEY,
+          work_item_id TEXT NOT NULL,
+          mandate_id TEXT,
+          reserved_cents INTEGER NOT NULL,
+          actual_cents INTEGER NOT NULL DEFAULT 0,
+          state_kind TEXT NOT NULL,
+          state_json TEXT NOT NULL,
+          day TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          FOREIGN KEY (work_item_id) REFERENCES hive_core_work_items(id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_hive_core_ai_budget_day
+          ON hive_core_ai_budget_reservations (day, state_kind, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS hive_core_sandbox_leases (
+          id TEXT PRIMARY KEY,
+          work_item_id TEXT NOT NULL UNIQUE,
+          state_kind TEXT NOT NULL,
+          state_json TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          FOREIGN KEY (work_item_id) REFERENCES hive_core_work_items(id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_hive_core_sandbox_state
+          ON hive_core_sandbox_leases (state_kind, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS hive_core_work_outcomes (
+          id TEXT PRIMARY KEY,
+          work_item_id TEXT NOT NULL,
+          product_slug TEXT NOT NULL,
+          repository TEXT NOT NULL,
+          owner TEXT NOT NULL,
+          pr_url TEXT NOT NULL DEFAULT '',
+          outcome_kind TEXT NOT NULL,
+          reason TEXT NOT NULL,
+          evidence_json TEXT NOT NULL,
+          observed_at TEXT NOT NULL,
+          UNIQUE (work_item_id, outcome_kind, pr_url),
+          FOREIGN KEY (work_item_id) REFERENCES hive_core_work_items(id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_hive_core_work_outcomes_owner
+          ON hive_core_work_outcomes (owner, outcome_kind, observed_at DESC);
+
+        CREATE TABLE IF NOT EXISTS hive_core_suite_events (
+          id TEXT PRIMARY KEY,
+          entity_kind TEXT NOT NULL,
+          entity_id TEXT NOT NULL,
+          event_kind TEXT NOT NULL,
+          evidence_json TEXT NOT NULL,
+          created_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_hive_core_suite_events_created
+          ON hive_core_suite_events (created_at DESC, id DESC);
+
+        CREATE INDEX IF NOT EXISTS idx_hive_core_suite_events_entity
+          ON hive_core_suite_events (entity_kind, entity_id, created_at ASC);
+
         CREATE TABLE IF NOT EXISTS approval_records (
           id TEXT PRIMARY KEY,
           subject_hash TEXT NOT NULL,
@@ -2583,6 +4226,8 @@ fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
         "INSERT INTO pr_budget_settings (id, suite_limit, updated_at) VALUES (1, 10, datetime('now')) ON CONFLICT(id) DO NOTHING",
         [],
     )?;
+    seed_pause_authority(conn)?;
+    seed_resource_policy(conn)?;
     migrate_schema(conn)?;
     Ok(())
 }
@@ -2597,6 +4242,44 @@ fn load_work_items(conn: &Connection, limit: u32) -> rusqlite::Result<Vec<WorkIt
     let sql = format!("{WORK_ITEM_SELECT} ORDER BY updated_at DESC, id DESC LIMIT ?1");
     let mut statement = conn.prepare(&sql)?;
     let rows = statement.query_map([limit], work_item_from_row)?;
+    rows.collect()
+}
+
+fn load_all_work_items(conn: &Connection) -> rusqlite::Result<Vec<WorkItem>> {
+    let sql = format!("{WORK_ITEM_SELECT} ORDER BY updated_at DESC, id DESC");
+    let mut statement = conn.prepare(&sql)?;
+    let rows = statement.query_map([], work_item_from_row)?;
+    rows.collect()
+}
+
+fn load_claimable_work_items(conn: &Connection) -> rusqlite::Result<Vec<WorkItem>> {
+    load_work_items_by_state(conn, &["discovered", "blocked", "failed"])
+}
+
+fn load_work_items_by_state(conn: &Connection, states: &[&str]) -> rusqlite::Result<Vec<WorkItem>> {
+    if states.is_empty() {
+        return Ok(Vec::new());
+    }
+    let placeholders = std::iter::repeat_n("?", states.len())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let sql = format!(
+        "{WORK_ITEM_SELECT} WHERE state_kind IN ({placeholders}) ORDER BY updated_at DESC, id DESC"
+    );
+    let mut statement = conn.prepare(&sql)?;
+    let rows = statement.query_map(
+        rusqlite::params_from_iter(states.iter()),
+        work_item_from_row,
+    )?;
+    rows.collect()
+}
+
+fn load_reconcilable_work_items(conn: &Connection) -> rusqlite::Result<Vec<WorkItem>> {
+    let sql = format!(
+        "{WORK_ITEM_SELECT} WHERE state_kind IN ('dispatched', 'shipped') ORDER BY updated_at DESC, id DESC"
+    );
+    let mut statement = conn.prepare(&sql)?;
+    let rows = statement.query_map([], work_item_from_row)?;
     rows.collect()
 }
 
@@ -2848,6 +4531,7 @@ fn checked_u32(column: usize, value: i64, label: &str) -> rusqlite::Result<u32> 
 
 pub fn run_conductor_tick(
     trigger: ConductorTickTrigger,
+    admission_evidence: AdmissionEvidence,
 ) -> rusqlite::Result<RunConductorTickOutcome> {
     let mut conn = connect()?;
     run_conductor_tick_with_connection(
@@ -2855,6 +4539,7 @@ pub fn run_conductor_tick(
         trigger,
         conductor_mandates_per_tick(),
         conductor_lease_seconds(),
+        &admission_evidence,
     )
 }
 
@@ -2863,6 +4548,7 @@ fn run_conductor_tick_with_connection(
     trigger: ConductorTickTrigger,
     mandate_limit: u32,
     lease_seconds: u32,
+    admission_evidence: &AdmissionEvidence,
 ) -> rusqlite::Result<RunConductorTickOutcome> {
     let started_at = crate::models::now_rfc3339();
     let lease_until =
@@ -2907,7 +4593,9 @@ fn run_conductor_tick_with_connection(
     }
 
     let plan = (|| -> rusqlite::Result<(Vec<ConductorDecision>, u32)> {
-        let shared_capacity = load_shared_discovery_capacity(conn)?;
+        let pauses = load_pause_records(conn)?;
+        let smoke = load_smoke_authority(conn);
+        let resource_policy = load_resource_policy(conn)?;
         let active_count = u32::try_from(conn.query_row(
             "SELECT COUNT(*) FROM hive_core_mandates WHERE state_kind = 'active'",
             [],
@@ -2931,12 +4619,86 @@ fn run_conductor_tick_with_connection(
         )
         .unwrap_or(u32::MAX);
         let mut allocated_in_tick = 0_u32;
+        let mut shared_capacity: Option<SharedDiscoveryCapacity> = None;
         let mut decisions = Vec::with_capacity(mandates.len());
         for mandate in mandates {
+            let blocking = pauses
+                .iter()
+                .filter(|pause| {
+                    pause.lifecycle.blocks_new_work()
+                        && match &pause.target {
+                            PauseTarget::Suite => true,
+                            PauseTarget::Mandate { mandate_id } => mandate_id == &mandate.id,
+                            PauseTarget::Product { .. } | PauseTarget::Repository { .. } => false,
+                        }
+                })
+                .map(|pause| pause.target.storage_key())
+                .collect::<Vec<_>>();
+            if !blocking.is_empty() {
+                decisions.push(ConductorDecision::Deferred {
+                    mandate_id: mandate.id.clone(),
+                    reason: format!(
+                        "Conductor planning is paused by durable authority: {}.",
+                        blocking.join(", ")
+                    ),
+                });
+                continue;
+            }
             if mandate.config.requested_autonomy == MandateAutonomy::Observe {
                 decisions.push(ConductorDecision::observed_only(&mandate));
                 continue;
             }
+            let mut autonomy = evaluate_autonomy(mandate.config.requested_autonomy, &smoke);
+            let reputation = reputation_summary_with_connection(conn)?;
+            if reputation.slowdown_active && autonomy.effective > MandateAutonomy::Propose {
+                autonomy.effective = MandateAutonomy::Propose;
+                autonomy.demotion_reason = Some(format!(
+                    "Rolling reputation governor limited autonomy to propose after {} rejected outcomes in {} decisions.",
+                    reputation.rolling_rejections, reputation.rolling_decisions
+                ));
+            }
+            if autonomy.effective == MandateAutonomy::Observe {
+                decisions.push(ConductorDecision::SmokeDeferred {
+                    mandate_id: mandate.id.clone(),
+                    requested_autonomy: autonomy.requested,
+                    earned_autonomy: autonomy.earned,
+                    reason: autonomy.demotion_reason.unwrap_or_else(|| {
+                        "Durable smoke evidence has not earned proposal authority.".into()
+                    }),
+                });
+                continue;
+            }
+            let admission = evaluate_resource_admission(
+                admission_evidence,
+                AdmissionRequirements {
+                    github_rate: true,
+                    ai_spend: false,
+                    sandbox: false,
+                    owner_politeness: false,
+                },
+                resource_policy.github_min_remaining,
+                0,
+                crate::models::now_rfc3339(),
+            );
+            if matches!(admission, AdmissionDecision::Denied { .. }) {
+                decisions.push(ConductorDecision::ResourceDeferred {
+                    mandate_id: mandate.id.clone(),
+                    admission,
+                    evidence: admission_evidence.clone(),
+                    reason:
+                        "SignalHive discovery failed closed at the resource-admission boundary."
+                            .into(),
+                });
+                continue;
+            }
+            let shared_capacity = match &shared_capacity {
+                Some(capacity) => capacity.clone(),
+                None => {
+                    let capacity = load_shared_discovery_capacity(conn)?;
+                    shared_capacity = Some(capacity.clone());
+                    capacity
+                }
+            };
             let concrete_backlog = mandate_concrete_backlog(conn, &mandate.id)?;
             let mandate_remaining = mandate
                 .config
@@ -2968,7 +4730,13 @@ fn run_conductor_tick_with_connection(
                 allocated_earlier_in_tick: allocated_in_tick,
                 admitted_repositories,
             };
-            decisions.push(ConductorDecision::with_capacity(&mandate, capacity));
+            decisions.push(ConductorDecision::with_capacity(
+                &mandate,
+                capacity,
+                autonomy,
+                admission,
+                admission_evidence.clone(),
+            ));
             allocated_in_tick = allocated_in_tick.saturating_add(admitted_repositories);
             actionable_remaining = actionable_remaining.saturating_sub(1);
         }
@@ -3193,6 +4961,10 @@ fn json_string(value: &impl serde::Serialize) -> rusqlite::Result<String> {
 }
 
 fn invalid_json(index: usize, error: serde_json::Error) -> rusqlite::Error {
+    rusqlite::Error::FromSqlConversionFailure(index, rusqlite::types::Type::Text, Box::new(error))
+}
+
+fn invalid_datetime(index: usize, error: chrono::ParseError) -> rusqlite::Error {
     rusqlite::Error::FromSqlConversionFailure(index, rusqlite::types::Type::Text, Box::new(error))
 }
 
@@ -3773,20 +5545,22 @@ fn load_latest_first_stack_smoke_run(
         LIMIT 1
         "#,
         [],
-        |row| {
-            let steps_json = row.get::<_, String>(6)?;
-            Ok(FirstStackSmokeRun {
-                id: row.get(0)?,
-                tier: row.get(1)?,
-                status: row.get(2)?,
-                started_at: row.get(3)?,
-                finished_at: row.get(4)?,
-                summary: row.get(5)?,
-                steps: serde_json::from_str(&steps_json).unwrap_or_default(),
-            })
-        },
+        smoke_run_from_row,
     )
     .optional()
+}
+
+fn smoke_run_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<FirstStackSmokeRun> {
+    let steps_json = row.get::<_, String>(6)?;
+    Ok(FirstStackSmokeRun {
+        id: row.get(0)?,
+        tier: row.get(1)?,
+        status: row.get(2)?,
+        started_at: row.get(3)?,
+        finished_at: row.get(4)?,
+        steps: serde_json::from_str(&steps_json).map_err(|error| invalid_json(6, error))?,
+        summary: row.get(5)?,
+    })
 }
 
 // The legacy `repository_policies` loaders are gone: that table is now migration
@@ -4078,11 +5852,12 @@ fn decode_suite_run(row: &rusqlite::Row<'_>) -> rusqlite::Result<crate::models::
 #[cfg(test)]
 mod tests {
     use super::{
-        claim_approval_with_connection, collapse_policies, consume_approval_with_connection,
-        create_mandate_with_connection, expire_approvals, grant_approval_with_connection,
-        ingest_findings_with_connection, init_schema, insert_approval,
-        insert_fleet_launch_job_with_connection, insert_suite_bootstrap_authority_with_connection,
-        json_string, load_action_event, load_action_events, load_approval, load_fleet_launch_job,
+        claim_approval_with_connection, claim_next_work_with_connection, collapse_policies,
+        consume_approval_with_connection, create_mandate_with_connection, expire_approvals,
+        grant_approval_with_connection, ingest_findings_with_connection, init_schema,
+        insert_approval, insert_fleet_launch_job_with_connection,
+        insert_suite_bootstrap_authority_with_connection, json_string, load_action_event,
+        load_action_events, load_approval, load_fleet_launch_job,
         load_latest_first_stack_smoke_run, load_latest_suite_snapshot_cycle, load_mandate,
         load_pr_reservation, load_product_overrides, load_service_token_storage_stats,
         load_suite_bootstrap_authority, load_suite_settings, load_work_item_by_id,
@@ -4113,6 +5888,7 @@ mod tests {
             ApprovalState, ApprovalSubject,
         },
         contract::{self, ActionEffect, ActionSafety, DispatchActionInput},
+        hivecore_kernel::{AdmissionEvidence, Evidence as KernelEvidence},
         repo_policy,
     };
     use rusqlite::Connection;
@@ -4182,6 +5958,46 @@ mod tests {
         }
     }
 
+    fn seed_ready_smoke_authority(conn: &Connection) {
+        for tier in [
+            "first-stack",
+            "read-only-fleet",
+            "write-dry-run",
+            "release-gate",
+        ] {
+            conn.execute(
+                "INSERT INTO first_stack_smoke_runs
+                 (id, tier, status, started_at, finished_at, summary, steps_json)
+                 VALUES (?1, ?2, 'ready', '2026-08-03T00:00:00Z',
+                         '2026-08-03T00:01:00Z', 'ready', '[]')",
+                rusqlite::params![format!("smoke_{tier}"), tier],
+            )
+            .expect("ready smoke authority should persist");
+        }
+    }
+
+    fn discovery_admission_evidence() -> AdmissionEvidence {
+        AdmissionEvidence {
+            github_rate: KernelEvidence::Observed {
+                value: patchhive_product_core::hivecore_kernel::GithubRateEvidence {
+                    limit: 5_000,
+                    remaining: 4_500,
+                    reset_at: "2026-08-03T01:00:00Z".into(),
+                },
+                observed_at: "2026-08-03T00:00:00Z".into(),
+            },
+            ai_spend: KernelEvidence::NotApplicable {
+                reason: "discovery does not use AI".into(),
+            },
+            sandbox: KernelEvidence::NotApplicable {
+                reason: "discovery does not use a sandbox".into(),
+            },
+            owner_politeness: KernelEvidence::NotApplicable {
+                reason: "discovery does not open a pull request".into(),
+            },
+        }
+    }
+
     fn product_finding(
         mandate_id: Option<String>,
         run_id: &str,
@@ -4216,6 +6032,7 @@ mod tests {
     fn conductor_tick_records_bounded_plans_without_dispatching() {
         let mut conn = Connection::open_in_memory().expect("in-memory db should open");
         init_schema(&conn).expect("schema should initialize");
+        seed_ready_smoke_authority(&conn);
         create_mandate_with_connection(&conn, mandate_config("rust-cli", MandateAutonomy::Act))
             .expect("act mandate should persist");
         create_mandate_with_connection(
@@ -4224,9 +6041,14 @@ mod tests {
         )
         .expect("observe mandate should persist");
 
-        let outcome =
-            run_conductor_tick_with_connection(&mut conn, ConductorTickTrigger::Operator, 10, 60)
-                .expect("tick should settle");
+        let outcome = run_conductor_tick_with_connection(
+            &mut conn,
+            ConductorTickTrigger::Operator,
+            10,
+            60,
+            &discovery_admission_evidence(),
+        )
+        .expect("tick should settle");
         let RunConductorTickOutcome::Settled { tick } = outcome else {
             panic!("the first tick should own the lease");
         };
@@ -4243,7 +6065,8 @@ mod tests {
             decision,
             ConductorDecision::PlannedDiscovery {
                 requested_autonomy: MandateAutonomy::Act,
-                effective_autonomy: MandateAutonomy::Propose,
+                effective_autonomy: MandateAutonomy::Act,
+                earned_autonomy: MandateAutonomy::Act,
                 ..
             }
         )));
@@ -4401,6 +6224,7 @@ mod tests {
     fn conductor_uses_backlog_and_shared_capacity_without_double_allocating() {
         let mut conn = Connection::open_in_memory().expect("in-memory db should open");
         init_schema(&conn).expect("schema should initialize");
+        seed_ready_smoke_authority(&conn);
         conn.execute(
             "UPDATE pr_budget_settings SET suite_limit = 2 WHERE id = 1",
             [],
@@ -4423,9 +6247,14 @@ mod tests {
         )
         .expect("concrete backlog should ingest");
 
-        let outcome =
-            run_conductor_tick_with_connection(&mut conn, ConductorTickTrigger::Operator, 10, 60)
-                .expect("tick should settle");
+        let outcome = run_conductor_tick_with_connection(
+            &mut conn,
+            ConductorTickTrigger::Operator,
+            10,
+            60,
+            &discovery_admission_evidence(),
+        )
+        .expect("tick should settle");
         let RunConductorTickOutcome::Settled { tick } = outcome else {
             panic!("tick should own the lease");
         };
@@ -4470,6 +6299,7 @@ mod tests {
     fn malformed_capacity_evidence_fails_the_tick_closed() {
         let mut conn = Connection::open_in_memory().expect("in-memory db should open");
         init_schema(&conn).expect("schema should initialize");
+        seed_ready_smoke_authority(&conn);
         create_mandate_with_connection(
             &conn,
             mandate_config("bad-capacity", MandateAutonomy::Propose),
@@ -4486,6 +6316,7 @@ mod tests {
             ConductorTickTrigger::Operator,
             10,
             60,
+            &discovery_admission_evidence(),
         )
         .is_err());
         assert_eq!(
@@ -4509,9 +6340,14 @@ mod tests {
         )
         .expect("lease fixture should persist");
 
-        let outcome =
-            run_conductor_tick_with_connection(&mut conn, ConductorTickTrigger::Operator, 10, 60)
-                .expect("busy is an explicit outcome");
+        let outcome = run_conductor_tick_with_connection(
+            &mut conn,
+            ConductorTickTrigger::Operator,
+            10,
+            60,
+            &discovery_admission_evidence(),
+        )
+        .expect("busy is an explicit outcome");
         assert!(matches!(
             outcome,
             RunConductorTickOutcome::Busy { active_tick_id, .. } if active_tick_id == "tick_existing"
@@ -4527,9 +6363,14 @@ mod tests {
         create_mandate_with_connection(&conn, mandate_config("second", MandateAutonomy::Propose))
             .expect("second mandate should persist");
 
-        let outcome =
-            run_conductor_tick_with_connection(&mut conn, ConductorTickTrigger::Operator, 1, 60)
-                .expect("tick should settle");
+        let outcome = run_conductor_tick_with_connection(
+            &mut conn,
+            ConductorTickTrigger::Operator,
+            1,
+            60,
+            &discovery_admission_evidence(),
+        )
+        .expect("tick should settle");
         let RunConductorTickOutcome::Settled { tick } = outcome else {
             panic!("tick should own the lease");
         };
@@ -4565,6 +6406,7 @@ mod tests {
             ConductorTickTrigger::Operator,
             10,
             60,
+            &discovery_admission_evidence(),
         )
         .is_err());
         assert_eq!(
@@ -4669,6 +6511,43 @@ mod tests {
     }
 
     #[test]
+    fn work_claiming_does_not_starve_items_behind_large_terminal_history() {
+        let mut conn = Connection::open_in_memory().expect("in-memory db should open");
+        init_schema(&conn).expect("schema should initialize");
+        let target = match propose_work_with_connection(&mut conn, work_proposal("repo-reaper"))
+            .expect("target proposal should persist")
+        {
+            ProposeWorkOutcome::Created { item } => item,
+            ProposeWorkOutcome::Deduplicated { .. } => panic!("target must be new"),
+        };
+        for index in 0..205 {
+            let mut proposal = work_proposal("repo-reaper");
+            proposal.identity.subject_ref = format!("terminal:{index}");
+            let item = match propose_work_with_connection(&mut conn, proposal)
+                .expect("terminal fixture should persist")
+            {
+                ProposeWorkOutcome::Created { item } => item,
+                ProposeWorkOutcome::Deduplicated { .. } => panic!("fixture must be new"),
+            };
+            let lifecycle = WorkLifecycle::Completed {
+                outcome: "fixture".into(),
+                completed_at: now_rfc3339(),
+            };
+            conn.execute(
+                "UPDATE hive_core_work_items SET state_kind = 'completed', state_json = ?1,
+                 updated_at = ?2 WHERE id = ?3",
+                rusqlite::params![json_string(&lifecycle).unwrap(), now_rfc3339(), item.id],
+            )
+            .expect("fixture should become terminal");
+        }
+
+        let claim = claim_next_work_with_connection(&mut conn, 900)
+            .expect("claim should succeed")
+            .expect("the older target should remain claimable");
+        assert_eq!(claim.item.id, target.id);
+    }
+
+    #[test]
     fn unrecognized_work_state_decodes_as_unknown() {
         let mut conn = Connection::open_in_memory().expect("in-memory db should open");
         init_schema(&conn).expect("schema should initialize");
@@ -4746,12 +6625,12 @@ mod tests {
         .expect("product limit should insert");
 
         let first = sample_reservation("prr_1", "run_1");
-        let granted = reserve_pr_slot_with_connection(&mut conn, &first)
+        let granted = reserve_pr_slot_with_connection(&mut conn, &first, 20, 14)
             .expect("first reservation should evaluate");
         assert!(matches!(granted, PrReservationDecision::Granted { .. }));
 
         let second = sample_reservation("prr_2", "run_2");
-        let denied = reserve_pr_slot_with_connection(&mut conn, &second)
+        let denied = reserve_pr_slot_with_connection(&mut conn, &second, 20, 14)
             .expect("second reservation should evaluate");
         let PrReservationDecision::Denied { denial } = denied else {
             panic!("second reservation should be denied");
@@ -4778,11 +6657,31 @@ mod tests {
     }
 
     #[test]
+    fn pr_reservations_enforce_owner_politeness_atomically() {
+        let mut conn = Connection::open_in_memory().expect("in-memory db should open");
+        init_schema(&conn).expect("schema should initialize");
+
+        let first = sample_reservation("prr_owner_1", "run_owner_1");
+        let granted = reserve_pr_slot_with_connection(&mut conn, &first, 1, 14)
+            .expect("first owner reservation should evaluate");
+        assert!(matches!(granted, PrReservationDecision::Granted { .. }));
+
+        let second = sample_reservation("prr_owner_2", "run_owner_2");
+        let denied = reserve_pr_slot_with_connection(&mut conn, &second, 1, 14)
+            .expect("second owner reservation should evaluate");
+        let PrReservationDecision::Denied { denial } = denied else {
+            panic!("second owner reservation should be denied");
+        };
+        assert_eq!(denial.limiting_layer.as_str(), "owner_politeness");
+        assert!(denial.reason.contains("reaching the limit of 1"));
+    }
+
+    #[test]
     fn reconciliation_releases_only_the_exact_committed_pull_request() {
         let mut conn = Connection::open_in_memory().expect("in-memory db should open");
         init_schema(&conn).expect("schema should initialize");
         let reservation = sample_reservation("prr_reconcile", "run_reconcile");
-        reserve_pr_slot_with_connection(&mut conn, &reservation)
+        reserve_pr_slot_with_connection(&mut conn, &reservation, 20, 14)
             .expect("reservation should persist");
         let pr_url = "https://github.com/patchhive/example/pull/42";
         conn.execute(

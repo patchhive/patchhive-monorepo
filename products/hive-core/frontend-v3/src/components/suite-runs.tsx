@@ -9,6 +9,7 @@ import {
 } from "@/lib/dispatch";
 import {
   fetchSuiteRuns,
+  executePipelineToml,
   startSuiteRun,
   MAX_TARGETS_PER_STEP,
   TARGET_PRESETS,
@@ -52,6 +53,7 @@ export function SuiteRuns({ syncVersion = 0 }: { syncVersion?: number }) {
   const [steps, setSteps] = useState<SuiteRunStepInput[]>([]);
   const [name, setName] = useState("");
   const [continueOnFailure, setContinueOnFailure] = useState(false);
+  const [pipelineToml, setPipelineToml] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -111,6 +113,27 @@ export function SuiteRuns({ syncVersion = 0 }: { syncVersion?: number }) {
       return;
     }
 
+    setRuns((current) => [result.run as SuiteRun, ...current]);
+    if (result.ok) {
+      toast.success(result.run.name, { description: result.message });
+    } else if (result.run.status === "awaiting_approval") {
+      toast.warning(`${result.run.name} — approval required`, { description: result.message });
+    } else {
+      toast.error(`${result.run.name} — ${result.run.status}`, { description: result.message });
+    }
+  }
+
+  async function startTomlPipeline() {
+    if (!pipelineToml.trim() || busy) return;
+    setBusy(true);
+    setError("");
+    const result = await executePipelineToml(pipelineToml);
+    setBusy(false);
+    if (!result.run) {
+      setError(result.message);
+      toast.error("Pipeline did not start", { description: result.message });
+      return;
+    }
     setRuns((current) => [result.run as SuiteRun, ...current]);
     if (result.ok) {
       toast.success(result.run.name, { description: result.message });
@@ -232,6 +255,31 @@ export function SuiteRuns({ syncVersion = 0 }: { syncVersion?: number }) {
             Run
           </button>
         </div>
+        <details className="mt-3 border-t border-border/70 pt-3">
+          <summary className="cursor-pointer font-display text-[10px] uppercase tracking-wider text-muted-foreground">
+            Declarative TOML pipeline
+          </summary>
+          <p className="mt-2 text-[11px] text-muted-foreground">
+            Define ordered stages and optional fail-closed result gates. Every stage still uses
+            the same dispatch, approval, pause, and safety boundaries as the composer.
+          </p>
+          <textarea
+            value={pipelineToml}
+            onChange={(event) => setPipelineToml(event.target.value)}
+            placeholder={'name = "Maintenance pipeline"\ncontinue_on_failure = false\n\n[[stage]]\nproduct = "signal-hive"\naction = "scan"\ngate = "exists($stages.1.repos)"'}
+            rows={9}
+            spellCheck={false}
+            className="mt-2 w-full rounded border border-border bg-background/60 px-3 py-2 font-mono text-[11px] text-foreground outline-none focus:border-[var(--honey)]/50"
+          />
+          <button
+            onClick={startTomlPipeline}
+            disabled={!pipelineToml.trim() || busy}
+            className="mt-2 inline-flex items-center gap-2 rounded border border-[var(--honey)]/50 px-3 py-1.5 font-display text-[10px] font-bold uppercase tracking-wider text-[var(--honey)] transition hover:bg-[var(--honey)]/10 disabled:opacity-40"
+          >
+            {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
+            Run TOML
+          </button>
+        </details>
         {error && <p className="mt-2 text-[11px] text-[var(--crit)]">{error}</p>}
       </div>
 

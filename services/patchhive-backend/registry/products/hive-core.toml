@@ -10,7 +10,7 @@ migration_stage = "integrated"
 order = 0
 icon = "⬢"
 lane = "Control Plane"
-description = "Centralizes suite visibility, shared defaults, and launch surfaces across PatchHive."
+description = "Runs suite discovery, governed work handoffs, policy, approvals, outcomes, and operator controls."
 repository = "patchhive/hivecore"
 frontend_url = "http://localhost:5183"
 api_url = "http://localhost:8100"
@@ -42,6 +42,26 @@ id = "run-index"
 label = "Run index"
 description = "Read suite-wide run summaries and event history."
 
+[[capabilities]]
+id = "governed-conductor"
+label = "Governed conductor"
+description = "Dispatch admitted discovery and advance durable work through resource, smoke, pause, and approval gates."
+
+[[capabilities]]
+id = "suite-governance"
+label = "Suite governance"
+description = "Manage durable pause authority, resource admission, smoke autonomy, PR outcomes, and reputation slowdown."
+
+[[capabilities]]
+id = "declarative-pipelines"
+label = "Declarative pipelines"
+description = "Execute guarded ordered suite runs from TOML with bounded result expressions."
+
+[[capabilities]]
+id = "work-outcome-ledger"
+label = "Work and outcome ledger"
+description = "Correlate product findings, handoffs, dispatches, pull requests, outcomes, and live blast radius."
+
 [[routes]]
 method = "GET"
 path = "/api/products"
@@ -56,3 +76,83 @@ description = "List suite-wide run summaries."
 method = "GET"
 path = "/api/events"
 description = "List suite-wide events."
+
+[[routes]]
+method = "GET"
+path = "/api/products/hive-core/governance"
+description = "Read topology, pause, smoke, resource, rate, and reputation evidence."
+
+[[routes]]
+method = "PUT"
+path = "/api/products/hive-core/governance/resources"
+description = "Configure durable resource-admission ceilings."
+
+[[routes]]
+method = "POST"
+path = "/api/products/hive-core/governance/pause"
+description = "Pause new suite, product, mandate, or repository work."
+
+[[routes]]
+method = "POST"
+path = "/api/products/hive-core/governance/resume"
+description = "Resume one exact paused scope."
+
+[[routes]]
+method = "GET"
+path = "/api/products/hive-core/work-items"
+description = "List durable deduplicated work items."
+
+[[routes]]
+method = "POST"
+path = "/api/products/hive-core/work-items/proposals"
+description = "Record one concrete work proposal."
+
+[[routes]]
+method = "GET"
+path = "/api/products/hive-core/work-items/findings"
+description = "List idempotent product-finding receipts."
+
+[[routes]]
+method = "POST"
+path = "/api/products/hive-core/work-items/findings"
+description = "Ingest idempotent product-finding receipts."
+
+[[routes]]
+method = "GET"
+path = "/api/products/hive-core/work-items/:id"
+description = "Read one work item and its source receipts."
+
+[[routes]]
+method = "GET"
+path = "/api/products/hive-core/events"
+description = "Read the unified HiveCore work and outcome ledger."
+
+[[routes]]
+method = "GET"
+path = "/api/products/hive-core/blast-radius/:slug"
+description = "Read work-ledger-derived product impact."
+
+[[routes]]
+method = "GET"
+path = "/api/products/hive-core/conductor/ticks"
+description = "Read durable conductor decisions."
+
+[[routes]]
+method = "POST"
+path = "/api/products/hive-core/conductor/ticks"
+description = "Run one admitted discovery and work-handoff tick."
+
+[[routes]]
+method = "GET"
+path = "/api/products/hive-core/suite-runs"
+description = "Read ordered suite-run history."
+
+[[routes]]
+method = "POST"
+path = "/api/products/hive-core/suite-runs"
+description = "Execute one guarded ordered suite run."
+
+[[routes]]
+method = "POST"
+path = "/api/products/hive-core/pipelines/execute"
+description = "Execute a guarded declarative TOML pipeline."

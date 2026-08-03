@@ -21,6 +21,7 @@ pub struct FixParams {
     pub min_conf: i32,
     pub run_id: String,
     pub cancel_requested: Arc<AtomicBool>,
+    pub hivecore_mandate_id: Option<String>,
 }
 
 #[derive(Clone)]

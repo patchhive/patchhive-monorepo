@@ -258,6 +258,65 @@ pub(super) async fn reserve_pr_budget(
         ));
     }
 
+    let pauses = db::blocking_pauses(Some(&product), None, Some(&repository)).map_err(|error| {
+        tracing::error!(%error, "could not evaluate pause authority before PR reservation");
+        api_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "pause_authority_unavailable",
+            "HiveCore refuses PR authorization because durable pause authority could not be read.",
+        )
+    })?;
+    if !pauses.is_empty() {
+        return Ok(Json(ok(PrReservationDecision::Denied {
+            denial: PrReservationDenial {
+                reason: format!(
+                    "PR authorization is paused by: {}.",
+                    pauses
+                        .iter()
+                        .map(|pause| pause.target.storage_key())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+                limiting_layer: PrBudgetLimitingLayer::PauseAuthority,
+                usage: current_pr_budget_usage(&product).map_err(|error| *error)?,
+            },
+        })));
+    }
+
+    let (owner_limit, cooldown_days) = match request.mandate_id.as_deref() {
+        Some(mandate_id) => {
+            let mandate = db::mandate(mandate_id).map_err(|error| {
+                tracing::error!(%error, mandate_id, "could not resolve mandate before PR reservation");
+                api_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "mandate_policy_unavailable",
+                    "HiveCore refuses PR authorization because mandate policy could not be read.",
+                )
+            })?;
+            let mandate = mandate.ok_or_else(|| {
+                api_error(
+                    StatusCode::CONFLICT,
+                    "mandate_not_found",
+                    "HiveCore refuses PR authorization because the originating mandate no longer exists.",
+                )
+            })?;
+            if !mandate.lifecycle.is_active() {
+                return Err(api_error(
+                    StatusCode::CONFLICT,
+                    "mandate_not_active",
+                    "HiveCore refuses PR authorization because the originating mandate is not active.",
+                ));
+            }
+            (
+                mandate.config.limits.per_owner_open_prs,
+                mandate.config.limits.cooldown_after_close_days,
+            )
+        }
+        // Direct and scheduled runs have no mandate. Keep the write boundary
+        // conservative instead of treating absent governance as unlimited.
+        None => (1, 14),
+    };
+
     let policy = evaluate_repository_policy(&RepositoryPolicyDecisionRequest {
         repository: repository.clone(),
         product: product.clone(),
@@ -287,7 +346,7 @@ pub(super) async fn reserve_pr_budget(
         created_at: now.to_rfc3339(),
         updated_at: now.to_rfc3339(),
     };
-    let attempt = db::reserve_pr_slot(&reservation).map_err(|err| {
+    let attempt = db::reserve_pr_slot(&reservation, owner_limit, cooldown_days).map_err(|err| {
         api_error(
             StatusCode::INTERNAL_SERVER_ERROR,
             "pr_reservation_failed",

@@ -54,6 +54,11 @@ pub struct RunRequest {
     pub cost_budget_usd: f64,
     #[serde(default = "default_retry_count")]
     pub retry_count: usize,
+    /// Set by HiveCore when this run originates from durable mandate work.
+    /// The identifier is carried to the final PR authorization boundary; the
+    /// owner limits themselves are always resolved by HiveCore.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hivecore_mandate_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -476,6 +481,7 @@ async fn run_fix_wave(input: FixWaveInput<'_>) {
             min_conf,
             run_id: run_id.to_string(),
             cancel_requested: cancel_requested.clone(),
+            hivecore_mandate_id: req.hivecore_mandate_id.clone(),
         },
         run_cost: run_cost.clone(),
         tx: tx.clone(),
@@ -1162,6 +1168,7 @@ mod tests {
             target_selection_mode: Some(TargetSelectionMode::Discovery),
             cost_budget_usd: 0.5,
             retry_count: 3,
+            hivecore_mandate_id: None,
         };
 
         assert_eq!(

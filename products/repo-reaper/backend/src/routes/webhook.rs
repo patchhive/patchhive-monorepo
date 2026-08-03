@@ -524,6 +524,7 @@ async fn webhook_single_fix(state: AppState, repo: &str, issue: Value) {
             min_conf,
             run_id: run_id.clone(),
             cancel_requested,
+            hivecore_mandate_id: None,
         },
         run_cost: run_cost.clone(),
         tx,
