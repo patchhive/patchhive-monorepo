@@ -40,6 +40,7 @@ Key environment variables include:
 - `PATCHHIVE_AI_HOST`
 - `PATCHHIVE_AI_PORT`
 - `PATCHHIVE_AI_PROVIDER_ORDER`
+- `PATCHHIVE_AI_ADAPTER_POOL_SIZE` (Rust gateway, default `2`, clamped to `1-8`)
 - `PATCHHIVE_AI_TIMEOUT_MS`
 - `PATCHHIVE_AI_CODEX_MODEL`
 - `PATCHHIVE_AI_COPILOT_MODEL`
@@ -47,6 +48,11 @@ Key environment variables include:
 - `PATCHHIVE_AI_COPILOT_USE_LOGGED_IN_USER`
 - `PATCHHIVE_AI_COPILOT_HOME`
 - `PATCHHIVE_AI_ENABLE_COPILOT`
+
+Rust gateway requests may lower their deadline with `patchhive_timeout_ms`, but
+the gateway clamps it to `1-300` seconds. Each provider uses a small process pool
+so one slow completion does not block unrelated health, model, or completion
+requests; a timed-out process is restarted before it serves more work.
 
 ## Repository Model
 

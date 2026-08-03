@@ -203,6 +203,8 @@ Status:
 - implemented for multi-provider fallback
 - implemented for Copilot auth/bootstrap hints and env-driven auth config
 - implemented for automatic adapter restart and restart metadata in `/health`
+- implemented for bounded request deadlines and per-provider process pools, so
+  one hung adapter call is isolated and replaced without blocking every caller
 - still pending for production-hardening work
 
 ### Stage 4

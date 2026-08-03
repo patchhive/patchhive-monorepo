@@ -273,6 +273,10 @@ AI provider integration:
 - Preserve support for Anthropic, OpenAI, Gemini, Groq, Ollama, and custom OpenAI-compatible endpoints
 - No provider SDK dependencies unless there is a compelling repo-wide change
 - Prefer `PATCHHIVE_AI_URL` for PatchHive-wide OpenAI-compatible local gateways before falling back to raw provider endpoints
+- The Rust `@patchhive/ai-local` gateway clamps completion deadlines to 1-300
+  seconds and uses a bounded per-provider adapter-process pool (default 2,
+  configurable to 1-8). A timed-out process is restarted; do not restore a
+  single unbounded mutex-held process that serializes every gateway caller.
 
 Data/storage:
 - SQLite only

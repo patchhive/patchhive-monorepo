@@ -23,11 +23,17 @@ use serde_json::{json, Map, Value};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines},
     process::{Child, ChildStdin, ChildStdout, Command},
-    sync::Mutex,
+    sync::{Mutex, Semaphore},
+    time::Instant,
 };
 use tracing::{info, warn};
 
 const DEFAULT_TIMEOUT_MS: u64 = 120_000;
+const MIN_TIMEOUT_MS: u64 = 1_000;
+const MAX_TIMEOUT_MS: u64 = 300_000;
+const CONTROL_TIMEOUT_MS: u64 = 10_000;
+const DEFAULT_ADAPTER_POOL_SIZE: usize = 2;
+const MAX_ADAPTER_POOL_SIZE: usize = 8;
 const DEFAULT_PROVIDER_ORDER: &[&str] = &["codex", "copilot"];
 
 #[derive(Clone)]
@@ -43,9 +49,11 @@ struct AdapterClient {
     name: &'static str,
     script_path: PathBuf,
     next_id: AtomicU64,
+    next_process: AtomicU64,
     restart_count: AtomicU64,
     last_restart_reason: Mutex<Option<String>>,
-    process: Mutex<AdapterProcess>,
+    processes: Vec<Mutex<AdapterProcess>>,
+    available: Semaphore,
 }
 
 struct AdapterProcess {
@@ -79,8 +87,19 @@ impl AdapterError {
         }
     }
 
+    fn timeout(message: impl Into<String>) -> Self {
+        Self {
+            code: "gateway_timeout".to_string(),
+            message: message.into(),
+            retryable: true,
+        }
+    }
+
     fn is_transport(&self) -> bool {
-        self.code == "gateway_transport_error"
+        matches!(
+            self.code.as_str(),
+            "gateway_transport_error" | "gateway_timeout"
+        )
     }
 }
 
@@ -431,10 +450,7 @@ async fn complete_with_fallback(
         .get("model")
         .and_then(Value::as_str)
         .map(|value| value.to_string());
-    let timeout_ms = body
-        .get("patchhive_timeout_ms")
-        .and_then(Value::as_u64)
-        .unwrap_or(DEFAULT_TIMEOUT_MS);
+    let timeout_ms = bounded_timeout_ms(body.get("patchhive_timeout_ms").and_then(Value::as_u64));
     let request_id = next_request_id(state, "ph_req");
     let product = body
         .get("patchhive_product")
@@ -466,7 +482,7 @@ async fn complete_with_fallback(
             }
         });
 
-        match adapter.complete(params).await {
+        match adapter.complete(params, timeout_ms).await {
             Ok(result) => {
                 attempts.push(CompletionAttempt {
                     provider,
@@ -544,16 +560,32 @@ fn authorize_request(
 
 async fn spawn_adapter(name: &'static str) -> Result<AdapterClient> {
     let adapter_path = adapter_script_path(name)?;
+    let pool_size = adapter_pool_size();
+    let mut spawned = Vec::with_capacity(pool_size);
+    for _ in 0..pool_size {
+        match spawn_initialized_process(name, &adapter_path).await {
+            Ok(process) => spawned.push(process),
+            Err(error) => {
+                for process in &mut spawned {
+                    shutdown_adapter_process(process).await;
+                }
+                return Err(error);
+            }
+        }
+    }
+    let processes = spawned.into_iter().map(Mutex::new).collect();
     let client = AdapterClient {
         name,
         script_path: adapter_path.clone(),
         next_id: AtomicU64::new(1),
+        next_process: AtomicU64::new(0),
         restart_count: AtomicU64::new(0),
         last_restart_reason: Mutex::new(None),
-        process: Mutex::new(spawn_initialized_process(name, &adapter_path).await?),
+        processes,
+        available: Semaphore::new(pool_size),
     };
 
-    info!("spawned {name} adapter");
+    info!(pool_size, "spawned {name} adapter pool");
     Ok(client)
 }
 
@@ -591,17 +623,21 @@ async fn spawn_initialized_process(name: &str, script_path: &PathBuf) -> Result<
 }
 
 async fn initialize_adapter_process(name: &str, process: &mut AdapterProcess) -> Result<()> {
-    let init = send_request_to_process(
-        name,
-        process,
-        0,
-        "initialize",
-        json!({
-            "adapter": name,
-            "protocol_version": 1,
-        }),
+    let init = tokio::time::timeout(
+        Duration::from_millis(CONTROL_TIMEOUT_MS),
+        send_request_to_process(
+            name,
+            process,
+            0,
+            "initialize",
+            json!({
+                "adapter": name,
+                "protocol_version": 1,
+            }),
+        ),
     )
     .await
+    .map_err(|_| anyhow!("{name} adapter initialization timed out"))?
     .map_err(|error| anyhow!(error.to_string()))?;
 
     let init: InitializeResult =
@@ -704,7 +740,7 @@ async fn send_request_to_process(
 impl AdapterClient {
     async fn health(&self) -> Result<AdapterHealth> {
         let value = self
-            .call("health", json!({}))
+            .call("health", json!({}), CONTROL_TIMEOUT_MS)
             .await
             .map_err(|error| anyhow!(error.to_string()))?;
         let mut health: AdapterHealth =
@@ -716,7 +752,7 @@ impl AdapterClient {
 
     async fn list_models(&self) -> Result<Vec<String>> {
         let value = self
-            .call("list_models", json!({}))
+            .call("list_models", json!({}), CONTROL_TIMEOUT_MS)
             .await
             .map_err(|error| anyhow!(error.to_string()))?;
         let models: AdapterModels =
@@ -724,18 +760,58 @@ impl AdapterClient {
         Ok(models.models)
     }
 
-    async fn complete(&self, params: Value) -> std::result::Result<CompletionResult, AdapterError> {
-        let value = self.call("complete", params).await?;
+    async fn complete(
+        &self,
+        params: Value,
+        timeout_ms: u64,
+    ) -> std::result::Result<CompletionResult, AdapterError> {
+        let value = self.call("complete", params, timeout_ms).await?;
         serde_json::from_value(value).map_err(|error| {
             AdapterError::transport(format!("failed to decode completion response: {error}"))
         })
     }
 
-    async fn call(&self, method: &str, params: Value) -> std::result::Result<Value, AdapterError> {
+    async fn call(
+        &self,
+        method: &str,
+        params: Value,
+        timeout_ms: u64,
+    ) -> std::result::Result<Value, AdapterError> {
+        let deadline = Instant::now() + Duration::from_millis(timeout_ms);
+        let _permit = tokio::time::timeout_at(deadline, self.available.acquire())
+            .await
+            .map_err(|_| {
+                AdapterError::timeout(format!(
+                    "{method} timed out waiting for an available {} adapter process",
+                    self.name
+                ))
+            })?
+            .map_err(|_| AdapterError::transport("adapter process pool is closed"))?;
+        let process_count = self.processes.len();
+        let start = self.next_process.fetch_add(1, Ordering::SeqCst) as usize % process_count;
+        let mut process = loop {
+            let mut selected = None;
+            for offset in 0..process_count {
+                let index = (start + offset) % process_count;
+                if let Ok(guard) = self.processes[index].try_lock() {
+                    selected = Some(guard);
+                    break;
+                }
+            }
+            if let Some(process) = selected {
+                break process;
+            }
+            if Instant::now() >= deadline {
+                return Err(AdapterError::timeout(format!(
+                    "{method} timed out acquiring an {} adapter process",
+                    self.name
+                )));
+            }
+            tokio::task::yield_now().await;
+        };
+
         let mut attempt = 0;
         loop {
-            let mut process = self.process.lock().await;
-
             if let Some(status) = process.child.try_wait().map_err(|error| {
                 AdapterError::transport(format!("failed to inspect adapter status: {error}"))
             })? {
@@ -747,17 +823,39 @@ impl AdapterClient {
             }
 
             let request_id = self.next_id.fetch_add(1, Ordering::SeqCst);
-            match send_request_to_process(
-                self.name,
-                &mut process,
-                request_id,
-                method,
-                params.clone(),
+            let response = tokio::time::timeout_at(
+                deadline,
+                send_request_to_process(
+                    self.name,
+                    &mut process,
+                    request_id,
+                    method,
+                    params.clone(),
+                ),
             )
-            .await
-            {
-                Ok(value) => return Ok(value),
-                Err(error) if error.is_transport() && attempt == 0 => {
+            .await;
+            match response {
+                Err(_) => {
+                    let error = AdapterError::timeout(format!(
+                        "{method} exceeded the bounded {timeout_ms}ms {} adapter deadline",
+                        self.name
+                    ));
+                    if let Err(restart_error) = self
+                        .restart_locked(&mut process, error.message.clone())
+                        .await
+                    {
+                        warn!(
+                            "failed to restart {} adapter after timeout: {}",
+                            self.name, restart_error
+                        );
+                    }
+                    return Err(error);
+                }
+                Ok(Ok(value)) => return Ok(value),
+                Ok(Err(error)) if error.is_transport() && attempt == 0 => {
+                    if Instant::now() >= deadline {
+                        return Err(error);
+                    }
                     self.restart_locked(
                         &mut process,
                         format!("{method} transport failure: {}", error.message),
@@ -765,7 +863,7 @@ impl AdapterClient {
                     .await?;
                     attempt += 1;
                 }
-                Err(error) => return Err(error),
+                Ok(Err(error)) => return Err(error),
             }
         }
     }
@@ -817,6 +915,20 @@ fn env_bool(key: &str, fallback: bool) -> bool {
         ),
         Err(_) => fallback,
     }
+}
+
+fn adapter_pool_size() -> usize {
+    std::env::var("PATCHHIVE_AI_ADAPTER_POOL_SIZE")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(DEFAULT_ADAPTER_POOL_SIZE)
+        .clamp(1, MAX_ADAPTER_POOL_SIZE)
+}
+
+fn bounded_timeout_ms(requested: Option<u64>) -> u64 {
+    requested
+        .unwrap_or(DEFAULT_TIMEOUT_MS)
+        .clamp(MIN_TIMEOUT_MS, MAX_TIMEOUT_MS)
 }
 
 fn resolved_provider_order(adapters: &HashMap<String, Arc<AdapterClient>>) -> Vec<String> {
@@ -1000,4 +1112,17 @@ fn unix_timestamp() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_secs())
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{bounded_timeout_ms, DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS, MIN_TIMEOUT_MS};
+
+    #[test]
+    fn completion_deadlines_are_always_bounded() {
+        assert_eq!(bounded_timeout_ms(None), DEFAULT_TIMEOUT_MS);
+        assert_eq!(bounded_timeout_ms(Some(0)), MIN_TIMEOUT_MS);
+        assert_eq!(bounded_timeout_ms(Some(u64::MAX)), MAX_TIMEOUT_MS);
+        assert_eq!(bounded_timeout_ms(Some(42_000)), 42_000);
+    }
 }

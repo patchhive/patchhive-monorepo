@@ -13,6 +13,9 @@ Its responsibility is to expose the product-facing localhost HTTP API, supervise
 - adapter supervision over stdin and stdout
 - ordered provider fallback such as `codex -> copilot`
 - adapter restart tracking and health reporting
+- bounded 1-300 second completion deadlines with timed-out process replacement
+- per-provider adapter pools (default 2, configurable to 1-8) to prevent one
+  slow request from serializing every caller
 
 ## Design Boundary
 
