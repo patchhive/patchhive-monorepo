@@ -74,6 +74,10 @@ and all of `src/pipeline/`.
   acknowledgements retain capacity while RepoReaper retries the exact PR URL from durable state.
 - **Contract drift reporting.** Per-product `/health`, `/startup/checks`, `/capabilities`,
   `/runs`, `/runs/{id}` checks, with `locked` / `skipped` states excluded from the drift count.
+- **Explicit dispatch persistence.** A completed remote request becomes
+  `persistence_uncertain`, never `dispatched`, if the action event or approval
+  consumption cannot be stored. The response retains remote evidence, blocks
+  replay, and action-history read failures remain explicit unavailable evidence.
 
 ### The blockers
 

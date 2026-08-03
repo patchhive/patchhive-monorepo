@@ -66,8 +66,8 @@ pub use work_ledger::{
     propose_work, work_item_detail,
 };
 
-fn hive_core_action_run_values(limit: u32) -> Vec<Value> {
-    crate::db::recent_action_events(limit)
+fn hive_core_action_run_values(limit: u32) -> rusqlite::Result<Vec<Value>> {
+    Ok(crate::db::recent_action_events(limit)?
         .into_iter()
         .map(|event| {
             let summary = if event.error.is_empty() {
@@ -93,7 +93,7 @@ fn hive_core_action_run_values(limit: u32) -> Vec<Value> {
                 "raw": event,
             })
         })
-        .collect()
+        .collect())
 }
 
 #[cfg(test)]

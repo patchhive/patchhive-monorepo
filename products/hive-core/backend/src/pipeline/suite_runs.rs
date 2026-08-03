@@ -394,6 +394,21 @@ async fn execute(
                     );
                     halted = true;
                 }
+                Ok(crate::models::DispatchActionResponse::PersistenceUncertain {
+                    event,
+                    persistence_errors,
+                    ..
+                }) => {
+                    step.status = "failed".into();
+                    step.remote_status = event.remote_status;
+                    step.event_id = event.id;
+                    step.message = format!(
+                        "{} Persistence failures: {}",
+                        event.error,
+                        persistence_errors.join("; ")
+                    );
+                    halted = true;
+                }
                 Err((_status, body)) => {
                     // HiveCore refused before reaching the product — a guard, a
                     // missing token, an unknown action. Recorded as the step's own

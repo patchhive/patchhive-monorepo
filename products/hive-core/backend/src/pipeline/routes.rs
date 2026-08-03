@@ -261,17 +261,32 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
     Json(caps)
 }
 
-pub async fn runs() -> Json<contract::ProductRunsResponse> {
-    Json(contract::runs_from_values(
-        "hive-core",
-        super::hive_core_action_run_values(30),
-    ))
+pub async fn runs() -> Result<
+    Json<contract::ProductRunsResponse>,
+    (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
+> {
+    super::hive_core_action_run_values(30)
+        .map(|runs| Json(contract::runs_from_values("hive-core", runs)))
+        .map_err(|error| {
+            api_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "action_history_read_failed",
+                format!("HiveCore could not read durable run history: {error}"),
+            )
+        })
 }
 
 pub async fn run_detail(
     Path(id): Path<String>,
 ) -> Result<Json<ProductActionEvent>, (StatusCode, Json<crate::models::ApiEnvelope<Value>>)> {
     db::action_event(&id)
+        .map_err(|error| {
+            api_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "action_history_read_failed",
+                format!("HiveCore could not read durable run detail: {error}"),
+            )
+        })?
         .map(Json)
         .ok_or_else(|| api_error(StatusCode::NOT_FOUND, "run_not_found", "Run was not found."))
 }
@@ -384,7 +399,10 @@ pub async fn list_runbook_runs() -> Json<crate::models::ApiEnvelope<Vec<crate::m
     super::runbook::list_runbook_runs().await
 }
 
-pub async fn recent_actions() -> Json<crate::models::ApiEnvelope<Vec<ProductActionEvent>>> {
+pub async fn recent_actions() -> Result<
+    Json<crate::models::ApiEnvelope<Vec<ProductActionEvent>>>,
+    (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
+> {
     super::dispatch::recent_actions().await
 }
 

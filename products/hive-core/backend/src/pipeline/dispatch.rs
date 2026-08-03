@@ -28,8 +28,19 @@ use super::{
 
 type BoxedApiError = Box<(StatusCode, Json<crate::models::ApiEnvelope<Value>>)>;
 
-pub(super) async fn recent_actions() -> Json<crate::models::ApiEnvelope<Vec<ProductActionEvent>>> {
-    Json(ok(db::recent_action_events(30)))
+pub(super) async fn recent_actions() -> Result<
+    Json<crate::models::ApiEnvelope<Vec<ProductActionEvent>>>,
+    (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
+> {
+    db::recent_action_events(30)
+        .map(|events| Json(ok(events)))
+        .map_err(|error| {
+            api_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "action_history_read_failed",
+                format!("HiveCore could not read durable action history: {error}"),
+            )
+        })
 }
 
 pub(super) async fn dispatch_product_action(
@@ -409,14 +420,12 @@ pub(crate) async fn dispatch_with_approval(
         }
     };
 
-    if let Err(err) = db::record_action_event(&event) {
-        tracing::warn!("failed to record HiveCore product action event: {err}");
-    }
-
+    let mut persistence_errors = Vec::new();
     if let Some(approval_id) = claimed_approval_id {
         if let Err(error) =
             db::consume_approval(&approval_id, &event.id, approval_outcome, &now_rfc3339())
         {
+            persistence_errors.push(format!("approval {approval_id}: {error}"));
             tracing::error!(
                 approval_id,
                 event_id = %event.id,
@@ -424,6 +433,35 @@ pub(crate) async fn dispatch_with_approval(
                 "dispatch completed but HiveCore could not finalize its consumed approval"
             );
         }
+    }
+
+    if !persistence_errors.is_empty() {
+        event.status = "persistence_uncertain".into();
+        event.error = format!(
+            "The product request completed, but HiveCore could not persist its full outcome: {}. Do not replay this action.",
+            persistence_errors.join("; ")
+        );
+    }
+    if let Err(error) = db::record_action_event(&event) {
+        persistence_errors.push(format!("action event {}: {error}", event.id));
+        tracing::error!(
+            event_id = %event.id,
+            %error,
+            "dispatch completed but HiveCore could not persist its action event"
+        );
+    }
+
+    if !persistence_errors.is_empty() {
+        event.status = "persistence_uncertain".into();
+        event.error = format!(
+            "The product request completed, but HiveCore could not persist its full outcome: {}. Do not replay this action.",
+            persistence_errors.join("; ")
+        );
+        return Ok(DispatchActionResponse::PersistenceUncertain {
+            event: Box::new(event),
+            started_run: action.starts_run,
+            persistence_errors,
+        });
     }
 
     Ok(DispatchActionResponse::Dispatched {

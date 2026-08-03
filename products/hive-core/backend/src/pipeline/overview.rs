@@ -120,10 +120,23 @@ pub(super) async fn product_run_detail(
 
     if definition.slug == "hive-core" {
         let detail = db::action_event(&id)
-            .map(|event| serde_json::to_value(event).unwrap_or(Value::Null))
+            .map_err(|error| {
+                api_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "action_history_read_failed",
+                    format!("HiveCore could not read durable run detail: {error}"),
+                )
+            })?
             .ok_or_else(|| {
                 api_error(StatusCode::NOT_FOUND, "run_not_found", "Run was not found.")
             })?;
+        let detail = serde_json::to_value(detail).map_err(|error| {
+            api_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "action_history_encode_failed",
+                format!("HiveCore could not encode durable run detail: {error}"),
+            )
+        })?;
         return Ok(Json(ok(ProductRunDetailResponse {
             slug: definition.slug.clone(),
             title: definition.title.clone(),
@@ -830,7 +843,9 @@ pub(super) fn local_hive_core_probe() -> ProductProbeSnapshot {
     let checks = startup::startup_checks();
     let (startup_errors, startup_warns, startup_infos) = startup::summarize_check_levels(&checks);
     let db_ok = db::health_check();
-    let status = if startup_errors > 0 || !db_ok {
+    let action_runs = hive_core_action_run_values(6);
+    let action_runs_failed = action_runs.is_err();
+    let status = if startup_errors > 0 || !db_ok || action_runs_failed {
         "degraded"
     } else {
         "online"
@@ -845,7 +860,19 @@ pub(super) fn local_hive_core_probe() -> ProductProbeSnapshot {
         contract::ActionSafety::operator_required(contract::ActionEffect::WritesLocalState),
     )
     .credential_requirements(["suite:control"])];
-    let recent_runs = contract::runs_from_values("hive-core", hive_core_action_run_values(6)).runs;
+    let (recent_runs, runs_evidence) = match action_runs {
+        Ok(values) => {
+            let runs = contract::runs_from_values("hive-core", values).runs;
+            let evidence = Observation::observed(RunsEvidence {
+                run_count: runs.len() as u32,
+            });
+            (runs, evidence)
+        }
+        Err(error) => (
+            Vec::new(),
+            Observation::failed(format!("Could not read HiveCore action history: {error}")),
+        ),
+    };
     ProductProbeSnapshot {
         health: ProductHealthSnapshot {
             status: if status == "online" {
@@ -866,9 +893,7 @@ pub(super) fn local_hive_core_probe() -> ProductProbeSnapshot {
             capabilities: Observation::observed(CapabilitiesEvidence {
                 action_count: actions.len() as u32,
             }),
-            runs: Observation::observed(RunsEvidence {
-                run_count: recent_runs.len() as u32,
-            }),
+            runs: runs_evidence,
             checked_at: now_rfc3339(),
         },
         hivecore: Some(contract::HiveCoreLifecycleSupport {

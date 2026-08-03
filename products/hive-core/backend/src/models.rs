@@ -1170,7 +1170,10 @@ pub struct ProductActionEvent {
 
 #[cfg(test)]
 mod evidence_tests {
-    use super::{Observation, PrReconciliationState, PublicOptOutSyncState};
+    use super::{
+        DispatchActionResponse, Observation, PrReconciliationState, ProductActionEvent,
+        PublicOptOutSyncState,
+    };
     use serde_json::json;
 
     #[test]
@@ -1237,6 +1240,34 @@ mod evidence_tests {
             } if raw_state == "running" && raw_evidence == evidence
         ));
     }
+
+    #[test]
+    fn dispatch_persistence_failures_are_an_explicit_wire_outcome() {
+        let response = DispatchActionResponse::PersistenceUncertain {
+            event: Box::new(ProductActionEvent {
+                id: "evt_1".into(),
+                product_slug: "signal-hive".into(),
+                action_id: "scan".into(),
+                action_label: "Scan".into(),
+                method: "POST".into(),
+                path: "/scan".into(),
+                target_url: "http://signal-hive/scan".into(),
+                status: "persistence_uncertain".into(),
+                remote_status: Some(202),
+                request_json: json!({}),
+                response_json: json!({"accepted": true}),
+                error: "audit write failed; do not replay".into(),
+                created_at: "2026-08-03T00:00:00Z".into(),
+            }),
+            started_run: true,
+            persistence_errors: vec!["audit write failed".into()],
+        };
+
+        let encoded = serde_json::to_value(response).expect("response should encode");
+        assert_eq!(encoded["outcome"], "persistence_uncertain");
+        assert_eq!(encoded["event"]["remote_status"], 202);
+        assert_eq!(encoded["persistence_errors"][0], "audit write failed");
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1248,6 +1279,13 @@ pub enum DispatchActionResponse {
     },
     ApprovalRequired {
         approval: Box<ApprovalRecord>,
+    },
+    /// The product request completed, but HiveCore could not durably record
+    /// every audit or approval transition. Callers must not replay it.
+    PersistenceUncertain {
+        event: Box<ProductActionEvent>,
+        started_run: bool,
+        persistence_errors: Vec<String>,
     },
 }
 

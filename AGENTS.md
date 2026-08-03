@@ -185,6 +185,11 @@ patchhive/
   atomically claimed as `consuming` immediately before dispatch and becomes
   `consumed` for accepted, rejected, and uncertain remote outcomes. Contradictory
   stored lifecycle evidence decodes as `unknown`, never as permission to act.
+- Product dispatch is not reported as `dispatched` when HiveCore cannot persist
+  its action event or approval consumption. The response is the explicit
+  `persistence_uncertain` outcome with the remote evidence and storage failures;
+  callers halt and must not replay it. Action-history read failures remain API or
+  observation failures, never empty run lists or false not-found responses.
 - HiveCore work proposals are durable and idempotent. `WorkIdentity` normalizes the
   work kind and GitHub `owner/repository`, then fingerprints only kind, repository,
   and subject identity so different products converge on one work item. A leased

@@ -245,6 +245,23 @@ async fn execute_claim(state: &AppState, claim: WorkClaim) -> WorkSettlement {
                 json!({"event": event, "normalized_response": normalized, "admission": resources.admission, "evidence": resources.evidence}),
             )
         }
+        Ok(DispatchActionResponse::PersistenceUncertain {
+            event,
+            persistence_errors,
+            ..
+        }) => {
+            let _ = db::settle_work_resources(
+                &resources,
+                None,
+                "Dispatch persistence outcome uncertain",
+            );
+            settle_failed(
+                &claim,
+                &event.error,
+                false,
+                json!({"event": event, "persistence_errors": persistence_errors}),
+            )
+        }
         Err((status, body)) => {
             let _ = db::settle_work_resources(&resources, None, "Dispatch failed");
             settle_failed(

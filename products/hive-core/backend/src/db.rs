@@ -2766,11 +2766,9 @@ pub fn record_action_event(event: &ProductActionEvent) -> rusqlite::Result<()> {
     Ok(())
 }
 
-pub fn recent_action_events(limit: u32) -> Vec<ProductActionEvent> {
-    let Ok(conn) = connect() else {
-        return Vec::new();
-    };
-    load_action_events(&conn, limit).unwrap_or_default()
+pub fn recent_action_events(limit: u32) -> rusqlite::Result<Vec<ProductActionEvent>> {
+    let conn = connect()?;
+    load_action_events(&conn, limit)
 }
 
 pub fn approvals(limit: u32) -> rusqlite::Result<Vec<ApprovalRecord>> {
@@ -3630,11 +3628,9 @@ pub fn default_product_pr_limit(product: &str) -> u32 {
     }
 }
 
-pub fn action_event(id: &str) -> Option<ProductActionEvent> {
-    let Ok(conn) = connect() else {
-        return None;
-    };
-    load_action_event(&conn, id).ok().flatten()
+pub fn action_event(id: &str) -> rusqlite::Result<Option<ProductActionEvent>> {
+    let conn = connect()?;
+    load_action_event(&conn, id)
 }
 
 pub fn record_first_stack_smoke_run(run: &FirstStackSmokeRun) -> rusqlite::Result<()> {

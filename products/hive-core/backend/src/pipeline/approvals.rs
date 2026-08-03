@@ -168,6 +168,7 @@ pub(super) async fn dispatch_approved(
                 crate::work_engine::response_cost_cents(&normalized).or(Some(100))
             }
             Ok(DispatchActionResponse::Dispatched { .. })
+            | Ok(DispatchActionResponse::PersistenceUncertain { .. })
             | Ok(DispatchActionResponse::ApprovalRequired { .. })
             | Err(_) => None,
         };
@@ -197,6 +198,23 @@ pub(super) async fn dispatch_approved(
             )
         })?;
     }
+    if let (
+        Some(run_id),
+        DispatchActionResponse::PersistenceUncertain {
+            event, started_run, ..
+        },
+    ) = (&suite_run_id, &response)
+    {
+        record_approved_dispatch(run_id, &id, event, *started_run).map_err(|message| {
+            api_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "suite_run_uncertain_reconcile_failed",
+                format!(
+                    "The approved product action has an uncertain persistence outcome, and HiveCore could not update its suite-run evidence: {message}"
+                ),
+            )
+        })?;
+    }
     if let (Some(work_item_id), DispatchActionResponse::Dispatched { event, .. }) =
         (&work_item_id, &response)
     {
@@ -222,6 +240,32 @@ pub(super) async fn dispatch_approved(
             &serde_json::json!({"work_item_id": work_item_id, "event": event}),
         )
         .map_err(|error| approval_store_error("settle work item after", error))?;
+    }
+    if let (
+        Some(work_item_id),
+        DispatchActionResponse::PersistenceUncertain {
+            event,
+            persistence_errors,
+            ..
+        },
+    ) = (&work_item_id, &response)
+    {
+        db::settle_work_approval(
+            &id,
+            crate::conductor::WorkLifecycle::Failed {
+                reason: event.error.clone(),
+                failed_at: now_rfc3339(),
+                retryable: false,
+                next_attempt_at: None,
+            },
+            "approved_dispatch_persistence_uncertain",
+            &serde_json::json!({
+                "work_item_id": work_item_id,
+                "event": event,
+                "persistence_errors": persistence_errors,
+            }),
+        )
+        .map_err(|error| approval_store_error("settle uncertain work item after", error))?;
     }
     Ok(Json(ok(response)))
 }
