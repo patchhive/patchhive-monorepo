@@ -246,6 +246,10 @@ patchhive/
   is scheduleable. The rule is to eliminate ambiguous state, not booleans generally.
 
 GitHub Actions:
+- Third-party workflow actions are pinned to full commit SHAs with their release
+  channel in a trailing comment. Dependabot owns weekly SHA refreshes through
+  `.github/dependabot.yml`; do not restore mutable `@v*`, branch, or `@stable`
+  execution refs.
 - `.github/workflows/cleanup-action-runs.yml` deletes workflow runs older than
   three days once per day. Keep its `actions: write` permission narrowly scoped
   to that workflow; do not give ordinary build/test workflows write access merely
