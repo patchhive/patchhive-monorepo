@@ -105,12 +105,14 @@ const statusColor: Record<Status, string> = {
   warn: "text-[var(--warn)]",
   crit: "text-[var(--crit)]",
   offline: "text-muted-foreground",
+  unknown: "text-muted-foreground",
 };
 const statusDot: Record<Status, string> = {
   ok: "bg-[var(--ok)] shadow-[0_0_12px_var(--ok)]",
   warn: "bg-[var(--warn)] shadow-[0_0_12px_var(--warn)]",
   crit: "bg-[var(--crit)] shadow-[0_0_12px_var(--crit)]",
   offline: "bg-muted-foreground",
+  unknown: "bg-muted-foreground",
 };
 
 /** Operator-local wall clock, 12-hour. The deck is a single-operator console; UTC
@@ -147,6 +149,7 @@ function DeckInner() {
   // "offline" covers both unreachable and engine-pending. Counting only `crit`
   // left products missing from the strip entirely — 11/0/0 across twelve products.
   const down = PRODUCTS.filter((p) => p.status === "crit" || p.status === "offline").length;
+  const unknown = PRODUCTS.filter((p) => p.status === "unknown").length;
 
   // Both derived from the real run index rather than seeded per-product numbers.
   const runStats = useMemo(() => {
@@ -158,7 +161,12 @@ function DeckInner() {
       if (!Number.isNaN(at) && at >= cutoff) recent += 1;
       if (run.status === "failed") failed += 1;
     }
-    return { total: RUNS.length, recent, failed };
+    return {
+      total: RUNS.length,
+      recent,
+      failed,
+      complete: PRODUCTS.every((product) => product.runs24h !== null),
+    };
   }, [suite.version]);
 
   return (
@@ -175,6 +183,7 @@ function DeckInner() {
             ok={ok}
             warn={warn}
             down={down}
+            unknown={unknown}
             runStats={runStats}
             live={suite.live}
           />
@@ -508,7 +517,13 @@ function HiveOrb() {
           ? "var(--crit)"
           : "var(--muted-foreground)";
   const latColor = (s: Status) =>
-    s === "warn" ? "var(--warn)" : s === "crit" || s === "offline" ? "var(--crit)" : "var(--ok)";
+    s === "warn"
+      ? "var(--warn)"
+      : s === "crit" || s === "offline"
+        ? "var(--crit)"
+        : s === "unknown"
+          ? "var(--muted-foreground)"
+          : "var(--ok)";
 
   const HEX = "polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)";
 
@@ -595,7 +610,9 @@ function HiveOrb() {
                       className="mt-1 font-mono text-[9px]"
                       style={{ color: `color-mix(in oklab, ${latColor(p.status)} 70%, transparent)` }}
                     >
-                      {p.status === "crit" || p.status === "offline"
+                      {p.status === "unknown"
+                        ? "UNKNOWN"
+                        : p.status === "crit" || p.status === "offline"
                         ? "OFFLINE"
                         : p.latencyMs !== null
                           ? `${p.latencyMs}ms`
@@ -629,13 +646,15 @@ function KpiStrip({
   ok,
   warn,
   down,
+  unknown,
   runStats,
   live,
 }: {
   ok: number;
   warn: number;
   down: number;
-  runStats: { total: number; recent: number; failed: number };
+  unknown: number;
+  runStats: { total: number; recent: number; failed: number; complete: boolean };
   live: boolean;
 }) {
   // Every card is now derived from live state: health from the synced registry,
@@ -666,11 +685,21 @@ function KpiStrip({
       live,
     },
     {
+      label: "Unknown",
+      value: unknown,
+      icon: CircleDot,
+      accent: "var(--muted-foreground)",
+      detail: "not observed or unavailable",
+      live,
+    },
+    {
       label: "Runs / 24h",
-      value: runStats.recent.toLocaleString(),
+      value: runStats.complete ? runStats.recent.toLocaleString() : "—",
       icon: Activity,
       accent: "var(--honey)",
-      detail: `${runStats.total.toLocaleString()} retained`,
+      detail: runStats.complete
+        ? `${runStats.total.toLocaleString()} retained`
+        : "run evidence unavailable",
       live,
     },
     {
@@ -683,7 +712,7 @@ function KpiStrip({
     },
   ];
   return (
-    <div className="mt-10 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+    <div className="mt-10 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
       {kpis.map((k, i) => (
         <div
           key={k.label}
@@ -754,17 +783,7 @@ function ProductCard({ product, index, pulse }: { product: Product; index: numbe
   // HiveCore has actually observed something, and renders as "—" rather than 0 —
   // "no data" and "zero" are different claims and only one of them was ever true here.
   const probes = useProbes(slugForId(product.id));
-  // Runs in the last 24h, counted from the feed instead of a seeded constant.
-  const runs24h = useMemo(
-    () =>
-      RUNS.filter(
-        (run) =>
-          run.product === product.name &&
-          run.startedAt &&
-          Date.now() - Date.parse(run.startedAt) < 86_400_000,
-      ).length,
-    [product.name],
-  );
+  const runs24h = product.runs24h;
   const { openRunbook, setDispatchPreviewOpen } = useHiveCommand();
   const sparkColor =
     product.status === "crit"
@@ -854,7 +873,7 @@ function ProductCard({ product, index, pulse }: { product: Product; index: numbe
               label={`uptime · ${probes.observations}`}
               value={probes.uptime === null ? "—" : `${(probes.uptime * 100).toFixed(1)}%`}
             />
-            <Stat label="runs 24h" value={runs24h.toLocaleString()} />
+            <Stat label="runs 24h" value={runs24h === null ? "—" : runs24h.toLocaleString()} />
           </div>
           <div className="mt-3 flex flex-wrap gap-1">
             {product.capabilities.map((c) => (

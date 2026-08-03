@@ -241,9 +241,9 @@ pub fn provision_service_token(
 /// Run summaries for one product engine, contract-shaped.
 #[derive(serde::Serialize)]
 pub struct ProductRuns {
-    pub key: &'static str,
-    /// None when the engine is not enabled in this runtime.
-    pub runs: Option<serde_json::Value>,
+    pub key: String,
+    pub runs:
+        hive_core::models::Observation<Vec<patchhive_product_core::contract::ProductRunSummary>>,
 }
 
 /// Suite-wide run index, read in-process.
@@ -251,49 +251,22 @@ pub struct ProductRuns {
 /// Ten engines expose a zero-argument `runs()` handler; RepoReaper exposes
 /// `run_summaries()` for the same data. Either way this is a direct call — the
 /// backend does not issue HTTP requests to routers mounted in its own binary.
-pub async fn all_runs(config: &Config) -> Vec<ProductRuns> {
-    macro_rules! runs_for {
-        ($key:literal, $module:ident) => {
-            ProductRuns {
-                key: $key,
-                runs: if config.product_selection.enables($key) {
-                    Some(
-                        serde_json::to_value($module::pipeline::runs().await.0).unwrap_or_default(),
-                    )
-                } else {
-                    None
-                },
-            }
-        };
-    }
-
-    let mut out = vec![
-        runs_for!("merge-keeper", merge_keeper),
-        runs_for!("release-sentry", release_sentry),
-        runs_for!("dep-triage", dep_triage),
-        runs_for!("vuln-triage", vuln_triage),
-        runs_for!("flake-sting", flake_sting),
-        runs_for!("review-bee", review_bee),
-        runs_for!("trust-gate", trust_gate),
-        runs_for!("repo-memory", repo_memory),
-        runs_for!("signal-hive", signal_hive),
-        runs_for!("refactor-scout", refactor_scout),
-        runs_for!("hive-core", hive_core),
-    ];
-
-    out.push(ProductRuns {
-        key: "repo-reaper",
-        runs: if config.product_selection.enables("repo-reaper") {
-            Some(
-                serde_json::to_value(repo_reaper::routes::history::run_summaries())
-                    .unwrap_or_default(),
-            )
-        } else {
-            None
-        },
-    });
-
-    out
+pub fn materialized_runs(
+    config: &Config,
+    keys: impl IntoIterator<Item = String>,
+) -> Vec<ProductRuns> {
+    keys.into_iter()
+        .map(|key| ProductRuns {
+            runs: if config.product_selection.enables(&key) {
+                hive_core::materialized_product_runs(&key)
+            } else {
+                hive_core::models::Observation::not_applicable(
+                    "Product is disabled by PATCHHIVE_PRODUCTS.",
+                )
+            },
+            key,
+        })
+        .collect()
 }
 
 /// Declared-vs-advertised capability comparison for one engine.

@@ -107,7 +107,7 @@ Operator / Frontend
 |--------|-------|-------------|
 | Overview response | `OverviewResponse` | All runtime products with health, capabilities, contract checks, recent runs, and aggregated summary |
 | Settings response | `SettingsResponse` | Suite settings + all products with default/override URLs, auth mode, enabled state |
-| Product runs snapshot | `ProductRunsSnapshotResponse` | A product's run list fetched through its `/runs` contract |
+| Product runs snapshot | `ProductRunsSnapshotResponse` | A product's run list captured by the background poller and served from durable materialized state |
 | Product run detail | `ProductRunDetailResponse` | A single run's detail fetched through the product's `/runs/:id` contract |
 | Action event | `ProductActionEvent` | Record of a dispatched product action with request/response payloads |
 | Approval record | `ApprovalRecord` | Exact dispatch subject, normalized input, tagged lifecycle, and audit history |
@@ -267,6 +267,7 @@ All errors are wrapped in the `ApiEnvelope` format:
 | `PATCHHIVE_AI_API_KEY` | — | Bearer for `PATCHHIVE_AI_URL` when it is **not** a loopback address. A local gateway holds the provider key itself and needs none |
 | `HIVE_CORE_AI_MODEL` | `gpt-4o-mini` | Model name sent to the gateway for narrative drafts |
 | `HIVE_CORE_DISPATCH_TIMEOUT_SECS` | `600` | How long HiveCore waits for a dispatched product action. Clamped to 5–3600. Separate from the short polling timeout used for health and status |
+| `HIVE_CORE_SNAPSHOT_INTERVAL_SECONDS` | `30` | Background suite snapshot interval, clamped to 5–300 seconds. Ordinary v3 reads use durable snapshots instead of probing products inline |
 | `HIVECORE_APPROVAL_TTL_HOURS` | `24` | Pending/granted exact-dispatch approval lifetime. Clamped to 1–168 hours |
 | `RUST_LOG` | `info` | Logging level |
 

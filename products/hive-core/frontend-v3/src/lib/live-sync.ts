@@ -24,10 +24,10 @@ import { fetchConformance } from "./conformance";
 import { fetchProbes, summarise } from "./probes";
 
 interface ApiProduct {
-  key: string;
+  slug: string;
   enabled: boolean;
   status: string;
-  capabilities: string[];
+  actions: { id: string }[];
 }
 
 /**
@@ -44,8 +44,10 @@ function toStatus(item: ApiProduct): Status {
       return "warn";
     case "offline":
       return "crit";
+    case "unknown":
+      return "unknown";
     default:
-      return "offline";
+      return "unknown";
   }
 }
 
@@ -61,7 +63,9 @@ interface ApiRunSummary {
 
 interface ApiProductRuns {
   key: string;
-  runs: { runs: ApiRunSummary[] } | null;
+  runs:
+    | { state: "observed"; value: ApiRunSummary[] }
+    | { state: "failed" | "not_observed" | "not_applicable"; reason: string };
 }
 
 function toRunStatus(summary: ApiRunSummary): RunLifecycleStatus {
@@ -127,10 +131,12 @@ async function syncRuns(signal: AbortSignal): Promise<void> {
   const rows = (await response.json()) as ApiProductRuns[];
 
   const collected: { summary: ApiRunSummary; product: string }[] = [];
+  const observedProducts = new Set<string>();
   for (const row of rows) {
-    if (!row.runs) continue;
+    if (row.runs.state !== "observed") continue;
     const product = TITLE_BY_SLUG[row.key] ?? row.key;
-    for (const summary of row.runs.runs) collected.push({ summary, product });
+    observedProducts.add(product);
+    for (const summary of row.runs.value) collected.push({ summary, product });
   }
 
   // Run ids are UUIDs, so they carry no ordering. Sort on the recorded start.
@@ -166,7 +172,7 @@ async function syncRuns(signal: AbortSignal): Promise<void> {
     recent.set(event.product, (recent.get(event.product) ?? 0) + 1);
   }
   for (const product of PRODUCTS) {
-    product.runs24h = recent.get(product.name) ?? 0;
+    product.runs24h = observedProducts.has(product.name) ? (recent.get(product.name) ?? 0) : null;
   }
 }
 
@@ -184,17 +190,17 @@ export function useLiveSuite(pollMs = 10_000): LiveSuite {
 
     async function sync() {
       try {
-        const response = await apiFetch("/api/products", { signal: controller.signal });
+        const response = await apiFetch("/api/products/runtime", { signal: controller.signal });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const rows = (await response.json()) as ApiProduct[];
         if (cancelled) return;
 
         for (const row of rows) {
-          const id = ID_BY_SLUG[row.key] ?? row.key;
+          const id = ID_BY_SLUG[row.slug] ?? row.slug;
           const product = PRODUCTS.find((item) => item.id === id);
           if (!product) continue;
           product.status = toStatus(row);
-          if (row.capabilities.length > 0) product.capabilities = row.capabilities;
+          if (row.actions.length > 0) product.capabilities = row.actions.map((action) => action.id);
         }
 
         await Promise.all(

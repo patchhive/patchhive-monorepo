@@ -359,6 +359,7 @@ const statusDotCls: Record<Status, string> = {
   warn: "bg-[var(--warn)]",
   crit: "bg-[var(--crit)]",
   offline: "bg-muted-foreground",
+  unknown: "bg-muted-foreground",
 };
 
 export function HiveCommand() {

@@ -31,6 +31,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/auth/generate-key", post(generate_key))
         .route("/api/auth/session", get(session))
         .route("/api/products", get(products))
+        .route("/api/products/runtime", get(products_runtime))
         .route("/api/products/auth-status", get(products_auth_status))
         .route(
             "/api/products/:product_key/service-token",
@@ -444,7 +445,22 @@ async fn products_runs(
     if !aggregate_access_allowed(peer.map(|ConnectInfo(addr)| addr)) {
         return aggregate_forbidden();
     }
-    Json(products::all_runs(&state.config).await).into_response()
+    Json(products::materialized_runs(
+        &state.config,
+        state
+            .registry
+            .products()
+            .iter()
+            .map(|product| product.key.clone()),
+    ))
+    .into_response()
+}
+
+async fn products_runtime(peer: Option<ConnectInfo<SocketAddr>>) -> Response {
+    if !aggregate_access_allowed(peer.map(|ConnectInfo(addr)| addr)) {
+        return aggregate_forbidden();
+    }
+    Json(hive_core::materialized_products()).into_response()
 }
 
 /// Runtime-advertised capabilities per engine, for drift comparison against the

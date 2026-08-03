@@ -42,10 +42,10 @@ remaining architecture work.
 
 | Panel | Backing state | Status |
 | --- | --- | --- |
-| Product registry | product manifests + `GET /products` | manifest data real; observed columns need the poller (B1, B2) |
-| Live runs | `product_runs_index` | needs materialized run index (B2) |
+| Product registry | product manifests + `GET /api/products/runtime` | live columns come from durable typed background snapshots (B1, B2) |
+| Live runs | `GET /api/products/runs` | durable materialized run index with explicit unavailable states (B2) |
 | Suite timeline | `suite_events` | ledger does not exist yet (§3.3) |
-| Contract drift | manifest vs `GET /capabilities` | needs the poller (B2) |
+| Contract drift | manifest vs `GET /capabilities` | live manifest/runtime comparison |
 | Capability matrix | manifest + observed actions | manifest side real |
 | Outbound capacity | `GET /pr-budgets` | live, with bounded reserved and committed leases |
 | Approvals | `GET/POST /approvals` | live, exact and single-use (B3) |

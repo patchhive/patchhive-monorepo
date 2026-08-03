@@ -146,6 +146,11 @@ patchhive/
   database read or an unattempted product probe with an empty collection, zero
   latency, zero uptime, or zero findings. An observed empty collection is valid
   evidence and must remain distinguishable from all three unavailable states.
+- HiveCore suite reads use durable background snapshots. Snapshot cycles have a
+  non-defaultable typed lifecycle; interrupted or contradictory stored cycles decode
+  as `unknown`. The v3 runtime and run feeds read materialized tables, and missing or
+  unreadable snapshots remain explicit `not_observed` or `failed` evidence instead
+  of triggering request-time fleet fan-out or reporting products offline.
 - Product run summaries require a non-defaultable `RunLifecycleStatus`. Missing or
   unrecognized lifecycle evidence is `unknown`, never `completed`; product-owned
   decision `status` remains a separate field. HiveCore v3 must preserve every

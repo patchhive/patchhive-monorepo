@@ -167,6 +167,7 @@ pub enum ProductHealthStatus {
     Offline,
     Disabled,
     Unconfigured,
+    Unknown,
 }
 
 impl ProductHealthStatus {
@@ -177,6 +178,7 @@ impl ProductHealthStatus {
             Self::Offline => "offline",
             Self::Disabled => "disabled",
             Self::Unconfigured => "unconfigured",
+            Self::Unknown => "unknown",
         }
     }
 
@@ -335,6 +337,58 @@ pub struct OverviewSummary {
     pub offline_products: u32,
     pub disabled_products: u32,
     pub unconfigured_products: u32,
+    pub unknown_products: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum SuiteSnapshotCycleState {
+    Running {
+        started_at: String,
+    },
+    Succeeded {
+        started_at: String,
+        completed_at: String,
+        product_count: u32,
+    },
+    Failed {
+        started_at: String,
+        failed_at: String,
+        reason: String,
+    },
+    Unknown {
+        raw_state: String,
+        raw_evidence: serde_json::Value,
+    },
+}
+
+impl SuiteSnapshotCycleState {
+    pub const fn kind(&self) -> &str {
+        match self {
+            Self::Running { .. } => "running",
+            Self::Succeeded { .. } => "succeeded",
+            Self::Failed { .. } => "failed",
+            Self::Unknown { .. } => "unknown",
+        }
+    }
+
+    pub fn from_storage(raw_state: String, raw_evidence: serde_json::Value) -> Self {
+        match serde_json::from_value::<Self>(raw_evidence.clone()) {
+            Ok(value) if value.kind() == raw_state => value,
+            _ => Self::Unknown {
+                raw_state,
+                raw_evidence,
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SuiteSnapshotCycle {
+    pub id: String,
+    pub lifecycle: SuiteSnapshotCycleState,
+    pub created_at: String,
+    pub updated_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -342,6 +396,7 @@ pub struct OverviewResponse {
     pub product: &'static str,
     pub tagline: &'static str,
     pub suite_settings: SuiteSettings,
+    pub snapshot: Observation<SuiteSnapshotCycle>,
     pub summary: OverviewSummary,
     pub products: Vec<ProductRuntimeItem>,
 }

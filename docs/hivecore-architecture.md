@@ -79,23 +79,18 @@ migration stage. HiveCore parses those same embedded manifests at startup; an in
 duplicate, or mismatched record fails startup instead of producing an empty or partially trusted
 catalog. The former `PRODUCT_CATALOG` and injected safety-only map are gone.
 
-**B2 — No durable knowledge of the suite.**
-HiveCore's tables are `suite_settings`, `product_overrides`, `product_action_events`,
-`first_stack_smoke_runs`, `repository_policies`, `pr_budget_*`. Product runs are proxied live and
-never stored. Consequently every read is a fan-out: `overview::build_runtime_products` probes all
-twelve products concurrently for `/health`, `/startup/checks`, `/capabilities`, and `/runs` with a
-3s timeout, on **every** `/overview` and `/products` call. `build_first_stack_response` adds
-`/auth/status` per product plus two launcher calls, and runs after every setup action and every
-smoke tier. The frontend polls `/products` every 10 seconds. There is no cache, no snapshot table,
-and no background poller. A conductor tick layered on this would multiply an already expensive
-fan-out and still have no history to reconcile against.
+**B2 — Closed: suite observations are durably materialized.**
+A bounded background poller captures all product runtime and run evidence into current snapshot
+tables and records every refresh in a typed snapshot-cycle ledger. Cycles are `running`,
+`succeeded`, `failed`, or `unknown`; a process restart converts an interrupted `running` record to
+`unknown`, and contradictory stored evidence decodes the same way. Normal overview, product, Ask,
+v3 runtime, and v3 run-index reads use those tables instead of probing the fleet at request time.
 
-The live snapshot preserves evidence semantics while that larger persistence work
-remains open. Health, startup checks, capabilities, and run history are tagged as
-`observed`, `failed`, `not_observed`, or `not_applicable`; an observed empty run list
-is not interchangeable with an unreadable endpoint. Probe-history storage errors
-propagate from the API, and the cockpit renders unavailable latency and uptime as
-`null`/“—” rather than zero.
+Health, startup checks, capabilities, and run history retain tagged `observed`, `failed`,
+`not_observed`, or `not_applicable` evidence in storage. A missing first snapshot is
+`not_observed`, a storage failure is `failed`, and neither becomes `offline`, zero runs, zero
+latency, or 100% uptime. Operational setup and smoke actions may still perform explicit live
+checks because their purpose is to test or change current state.
 
 **B3 — Approval authority is now a durable object.**
 `pipeline/dispatch.rs` still blocks destructive actions. Approval-gated and PR-opening actions
@@ -499,8 +494,9 @@ first-run host bring-up remains an HTTP daemon or becomes documented operator se
 0. **One registry — landed.** HiveCore reads `registry/products/*.toml`; `PRODUCT_CATALOG` is
    deleted, and identity, display metadata, safety posture, ports, and URLs come from the
    manifests. Invalid registry state fails startup. (B1)
-1. **Materialize suite state.** Background poller, three snapshot tables, reads become table reads.
-   (B2)
+1. **Materialize suite state — landed.** A background poller writes typed cycle, product, and run
+   snapshot tables; normal control-plane and v3 reads are table reads with explicit unavailable
+   evidence. (B2)
 2. **Structured policy + reconciliation.** Allow/deny/opt-out become rows; the evaluator becomes
    the pure eight-step function with a persisted reason chain; a GitHub sweep releases merged and
    closed committed reservations. (B4, B5)
@@ -514,9 +510,8 @@ first-run host bring-up remains an HTTP daemon or becomes documented operator se
 5. **Cockpit and consolidation.** Kernel becomes a crate with the three authority implementations;
    outcome feedback and the reputation governor land; `products/hive-core/backend/` retires.
 
-Two items are worth doing even if HiveCore never gains autonomy: **B5** is a live correctness bug
-in the current write path, and **B2** is a scaling problem the frontend already pays for every ten
-seconds.
+The remaining item worth doing even if HiveCore never gains autonomy is **B5**, because proactive
+PR reconciliation closes a live correctness gap in the current write path.
 
 ---
 

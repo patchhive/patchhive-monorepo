@@ -18,8 +18,9 @@ use crate::models::{
     ApprovalConsumptionOutcome, ApprovalEvent, ApprovalExpirableState, ApprovalRecord,
     ApprovalState, ApprovalSubject, FirstStackSmokeRun, PrBudgetLimitingLayer, PrBudgetReservation,
     PrBudgetUsage, PrReservationDecision, PrReservationDenial, PrReservationExpiration,
-    PrReservationState, ProbeSample, ProductActionEvent, ProductOverride, RepositoryPolicy,
-    RunbookRun, SuiteSettings,
+    PrReservationState, ProbeSample, ProductActionEvent, ProductOverride,
+    ProductRunsSnapshotResponse, ProductRuntimeItem, RepositoryPolicy, RunbookRun, SuiteSettings,
+    SuiteSnapshotCycle, SuiteSnapshotCycleState,
 };
 
 static DB_POOL: Lazy<SqlitePool> = Lazy::new(|| {
@@ -60,6 +61,223 @@ pub fn init_db() -> Result<()> {
     seed_defaults(&conn)?;
     migrate_service_token_storage(&conn)?;
     migrate_repository_policy(&conn)?;
+    recover_interrupted_snapshot_cycles(&conn)?;
+    Ok(())
+}
+
+pub fn start_suite_snapshot_cycle(cycle_id: &str, started_at: &str) -> rusqlite::Result<()> {
+    let lifecycle = SuiteSnapshotCycleState::Running {
+        started_at: started_at.to_string(),
+    };
+    let conn = connect()?;
+    conn.execute(
+        "INSERT INTO hive_core_snapshot_cycles
+         (id, state_kind, state_json, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?4)",
+        params![
+            cycle_id,
+            lifecycle.kind(),
+            json_string(&lifecycle)?,
+            started_at
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn complete_suite_snapshot_cycle(
+    cycle_id: &str,
+    started_at: &str,
+    completed_at: &str,
+    products: &[ProductRuntimeItem],
+) -> rusqlite::Result<()> {
+    let mut conn = connect()?;
+    let transaction = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    transaction.execute("DELETE FROM hive_core_product_snapshots", [])?;
+    transaction.execute("DELETE FROM hive_core_product_run_snapshots", [])?;
+    for product in products {
+        transaction.execute(
+            "INSERT INTO hive_core_product_snapshots
+             (product_slug, cycle_id, captured_at, snapshot_json)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![product.slug, cycle_id, completed_at, json_string(product)?],
+        )?;
+        let runs = match &product.health.runs {
+            crate::models::Observation::Observed { .. } => {
+                crate::models::Observation::observed(product.recent_runs.clone())
+            }
+            crate::models::Observation::Failed { reason } => {
+                crate::models::Observation::failed(reason.clone())
+            }
+            crate::models::Observation::NotObserved { reason } => {
+                crate::models::Observation::not_observed(reason.clone())
+            }
+            crate::models::Observation::NotApplicable { reason } => {
+                crate::models::Observation::not_applicable(reason.clone())
+            }
+        };
+        let snapshot = ProductRunsSnapshotResponse {
+            slug: product.slug.clone(),
+            title: product.title.clone(),
+            api_url: product.api_url.clone(),
+            auth_mode: product.auth_mode.clone(),
+            machine_auth_configured: product.machine_auth_configured,
+            service_token_configured: product.service_token_configured,
+            legacy_api_key_configured: product.legacy_api_key_configured,
+            checked_at: product.health.checked_at.clone(),
+            runs,
+        };
+        transaction.execute(
+            "INSERT INTO hive_core_product_run_snapshots
+             (product_slug, cycle_id, captured_at, snapshot_json)
+             VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params![
+                product.slug,
+                cycle_id,
+                completed_at,
+                json_string(&snapshot)?
+            ],
+        )?;
+    }
+    let lifecycle = SuiteSnapshotCycleState::Succeeded {
+        started_at: started_at.to_string(),
+        completed_at: completed_at.to_string(),
+        product_count: products.len() as u32,
+    };
+    let changed = transaction.execute(
+        "UPDATE hive_core_snapshot_cycles
+         SET state_kind = ?2, state_json = ?3, updated_at = ?4
+         WHERE id = ?1 AND state_kind = 'running'",
+        params![
+            cycle_id,
+            lifecycle.kind(),
+            json_string(&lifecycle)?,
+            completed_at
+        ],
+    )?;
+    if changed != 1 {
+        return Err(rusqlite::Error::QueryReturnedNoRows);
+    }
+    transaction.execute(
+        "DELETE FROM hive_core_snapshot_cycles
+         WHERE id NOT IN (
+           SELECT id FROM hive_core_snapshot_cycles
+           ORDER BY created_at DESC, id DESC LIMIT 240
+         )",
+        [],
+    )?;
+    transaction.commit()
+}
+
+pub fn fail_suite_snapshot_cycle(
+    cycle_id: &str,
+    started_at: &str,
+    failed_at: &str,
+    reason: &str,
+) -> rusqlite::Result<()> {
+    let lifecycle = SuiteSnapshotCycleState::Failed {
+        started_at: started_at.to_string(),
+        failed_at: failed_at.to_string(),
+        reason: reason.to_string(),
+    };
+    let conn = connect()?;
+    conn.execute(
+        "UPDATE hive_core_snapshot_cycles
+         SET state_kind = ?2, state_json = ?3, updated_at = ?4
+         WHERE id = ?1 AND state_kind = 'running'",
+        params![
+            cycle_id,
+            lifecycle.kind(),
+            json_string(&lifecycle)?,
+            failed_at
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn materialized_product_snapshots() -> rusqlite::Result<Vec<ProductRuntimeItem>> {
+    let conn = connect()?;
+    let mut statement = conn
+        .prepare("SELECT snapshot_json FROM hive_core_product_snapshots ORDER BY product_slug")?;
+    let snapshots = statement
+        .query_map([], |row| {
+            let encoded: String = row.get(0)?;
+            serde_json::from_str::<ProductRuntimeItem>(&encoded)
+                .map_err(|error| invalid_json(0, error))
+        })?
+        .collect();
+    snapshots
+}
+
+pub fn materialized_product_run_snapshot(
+    slug: &str,
+) -> rusqlite::Result<Option<ProductRunsSnapshotResponse>> {
+    let conn = connect()?;
+    let encoded = conn
+        .query_row(
+            "SELECT snapshot_json FROM hive_core_product_run_snapshots WHERE product_slug = ?1",
+            params![slug],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?;
+    encoded
+        .map(|value| {
+            serde_json::from_str::<ProductRunsSnapshotResponse>(&value)
+                .map_err(|error| invalid_json(0, error))
+        })
+        .transpose()
+}
+
+pub fn latest_suite_snapshot_cycle() -> rusqlite::Result<Option<SuiteSnapshotCycle>> {
+    let conn = connect()?;
+    load_latest_suite_snapshot_cycle(&conn)
+}
+
+fn load_latest_suite_snapshot_cycle(
+    conn: &Connection,
+) -> rusqlite::Result<Option<SuiteSnapshotCycle>> {
+    conn.query_row(
+        "SELECT id, state_kind, state_json, created_at, updated_at
+         FROM hive_core_snapshot_cycles ORDER BY created_at DESC, id DESC LIMIT 1",
+        [],
+        |row| {
+            let raw_state: String = row.get(1)?;
+            let encoded: String = row.get(2)?;
+            let raw_evidence = serde_json::from_str::<serde_json::Value>(&encoded)
+                .map_err(|error| invalid_json(2, error))?;
+            Ok(SuiteSnapshotCycle {
+                id: row.get(0)?,
+                lifecycle: SuiteSnapshotCycleState::from_storage(raw_state, raw_evidence),
+                created_at: row.get(3)?,
+                updated_at: row.get(4)?,
+            })
+        },
+    )
+    .optional()
+}
+
+fn recover_interrupted_snapshot_cycles(conn: &Connection) -> rusqlite::Result<()> {
+    let mut statement = conn.prepare(
+        "SELECT id, state_json FROM hive_core_snapshot_cycles WHERE state_kind = 'running'",
+    )?;
+    let interrupted = statement
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    drop(statement);
+    let updated_at = crate::models::now_rfc3339();
+    for (id, encoded) in interrupted {
+        let raw_evidence = raw_json(encoded);
+        let lifecycle = SuiteSnapshotCycleState::Unknown {
+            raw_state: "running".into(),
+            raw_evidence,
+        };
+        conn.execute(
+            "UPDATE hive_core_snapshot_cycles
+             SET state_kind = 'unknown', state_json = ?2, updated_at = ?3 WHERE id = ?1",
+            params![id, json_string(&lifecycle)?, updated_at],
+        )?;
+    }
     Ok(())
 }
 
@@ -1563,6 +1781,33 @@ fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
 
         CREATE INDEX IF NOT EXISTS idx_hive_core_product_probes_slug
         ON hive_core_product_probes(product_slug, id DESC);
+
+        CREATE TABLE IF NOT EXISTS hive_core_snapshot_cycles (
+          id TEXT PRIMARY KEY,
+          state_kind TEXT NOT NULL,
+          state_json TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_hive_core_snapshot_cycles_created
+        ON hive_core_snapshot_cycles(created_at DESC, id DESC);
+
+        CREATE TABLE IF NOT EXISTS hive_core_product_snapshots (
+          product_slug TEXT PRIMARY KEY,
+          cycle_id TEXT NOT NULL,
+          captured_at TEXT NOT NULL,
+          snapshot_json TEXT NOT NULL,
+          FOREIGN KEY (cycle_id) REFERENCES hive_core_snapshot_cycles(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS hive_core_product_run_snapshots (
+          product_slug TEXT PRIMARY KEY,
+          cycle_id TEXT NOT NULL,
+          captured_at TEXT NOT NULL,
+          snapshot_json TEXT NOT NULL,
+          FOREIGN KEY (cycle_id) REFERENCES hive_core_snapshot_cycles(id)
+        );
 
         CREATE TABLE IF NOT EXISTS hive_core_runbook_runs (
           id TEXT PRIMARY KEY,
@@ -3261,13 +3506,15 @@ mod tests {
     use super::{
         claim_approval_with_connection, collapse_policies, consume_approval_with_connection,
         create_mandate_with_connection, expire_approvals, grant_approval_with_connection,
-        ingest_findings_with_connection, init_schema, insert_approval, load_action_event,
-        load_action_events, load_approval, load_latest_first_stack_smoke_run, load_mandate,
-        load_pr_reservation, load_product_overrides, load_service_token_storage_stats,
-        load_suite_settings, load_work_item_by_id, propose_work_with_connection,
-        record_approval_event, replace_overrides, replace_repository_policies_with_connection,
-        reserve_pr_slot_with_connection, run_conductor_tick_with_connection,
-        update_mandate_with_connection, write_suite_settings, ServiceTokenStorageStats,
+        ingest_findings_with_connection, init_schema, insert_approval, json_string,
+        load_action_event, load_action_events, load_approval, load_latest_first_stack_smoke_run,
+        load_latest_suite_snapshot_cycle, load_mandate, load_pr_reservation,
+        load_product_overrides, load_service_token_storage_stats, load_suite_settings,
+        load_work_item_by_id, propose_work_with_connection, record_approval_event,
+        recover_interrupted_snapshot_cycles, replace_overrides,
+        replace_repository_policies_with_connection, reserve_pr_slot_with_connection,
+        run_conductor_tick_with_connection, update_mandate_with_connection, write_suite_settings,
+        ServiceTokenStorageStats,
     };
     use crate::conductor::{
         CapacityLimitingLayer, ConductorDecision, ConductorTickLifecycle, ConductorTickTrigger,
@@ -3279,7 +3526,7 @@ mod tests {
     use crate::models::{
         now_rfc3339, FirstStackSmokeRun, FirstStackSmokeStep, PrBudgetReservation,
         PrReservationDecision, PrReservationState, ProductActionEvent, ProductOverride,
-        RepositoryPolicy, SuiteSettings,
+        RepositoryPolicy, SuiteSettings, SuiteSnapshotCycleState,
     };
     use patchhive_product_core::secrets::TokenProtector;
     use patchhive_product_core::{
@@ -4440,5 +4687,56 @@ mod tests {
         assert!(rows[0].allowlisted && rows[0].trusted);
         assert!(!rows[0].public_opt_out);
         assert!(rows[1].public_opt_out);
+    }
+
+    #[test]
+    fn malformed_snapshot_cycle_decodes_as_unknown() {
+        let conn = Connection::open_in_memory().expect("in-memory db should open");
+        init_schema(&conn).expect("schema should initialize");
+        conn.execute(
+            "INSERT INTO hive_core_snapshot_cycles
+             (id, state_kind, state_json, created_at, updated_at)
+             VALUES ('snapshot_bad', 'succeeded', '{\"state\":\"running\",\"started_at\":\"now\"}', 'now', 'now')",
+            [],
+        )
+        .expect("fixture should insert");
+
+        let cycle = load_latest_suite_snapshot_cycle(&conn)
+            .expect("cycle read should succeed")
+            .expect("cycle should exist");
+        assert!(matches!(
+            cycle.lifecycle,
+            SuiteSnapshotCycleState::Unknown { .. }
+        ));
+    }
+
+    #[test]
+    fn interrupted_snapshot_cycle_is_recovered_as_unknown() {
+        let conn = Connection::open_in_memory().expect("in-memory db should open");
+        init_schema(&conn).expect("schema should initialize");
+        let lifecycle = SuiteSnapshotCycleState::Running {
+            started_at: "2026-08-02T00:00:00Z".into(),
+        };
+        conn.execute(
+            "INSERT INTO hive_core_snapshot_cycles
+             (id, state_kind, state_json, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?4)",
+            rusqlite::params![
+                "snapshot_interrupted",
+                lifecycle.kind(),
+                json_string(&lifecycle).unwrap(),
+                "2026-08-02T00:00:00Z"
+            ],
+        )
+        .expect("fixture should insert");
+
+        recover_interrupted_snapshot_cycles(&conn).expect("recovery should succeed");
+        let cycle = load_latest_suite_snapshot_cycle(&conn)
+            .expect("cycle read should succeed")
+            .expect("cycle should exist");
+        assert!(matches!(
+            cycle.lifecycle,
+            SuiteSnapshotCycleState::Unknown { raw_state, .. } if raw_state == "running"
+        ));
     }
 }

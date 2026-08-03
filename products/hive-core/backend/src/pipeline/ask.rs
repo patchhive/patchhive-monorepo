@@ -26,7 +26,7 @@ use serde_json::{json, Value};
 
 use crate::{db, state::AppState};
 
-use super::overview::build_runtime_products;
+use super::overview::materialized_runtime_products;
 
 #[derive(Debug, Deserialize)]
 pub struct AskRequest {
@@ -53,7 +53,7 @@ fine; do not imply that you have done anything.";
 /// one, since a model asked to find one failing product in thousands of run rows will
 /// often pick a plausible wrong one.
 async fn build_context(state: &AppState) -> Value {
-    let products = build_runtime_products(state).await;
+    let products = materialized_runtime_products(state);
 
     let product_context: Vec<Value> = products
         .iter()

@@ -63,6 +63,24 @@ use patchhive_product_core::startup::log_checks;
 
 use crate::state::AppState;
 
+pub fn materialized_products() -> Vec<models::ProductRuntimeItem> {
+    pipeline::overview::materialized_runtime_products(&AppState::new())
+}
+
+pub fn materialized_product_runs(
+    slug: &str,
+) -> models::Observation<Vec<patchhive_product_core::contract::ProductRunSummary>> {
+    match db::materialized_product_run_snapshot(slug) {
+        Ok(Some(snapshot)) => snapshot.runs,
+        Ok(None) => models::Observation::not_observed(
+            "The background poller has not captured this product yet.",
+        ),
+        Err(error) => models::Observation::failed(format!(
+            "Could not read the materialized run snapshot: {error}"
+        )),
+    }
+}
+
 /// Schema, startup diagnostics, and any background work. Idempotent: the unified
 /// backend calls this once per enabled engine at boot.
 pub async fn init_runtime() -> Result<()> {
@@ -71,6 +89,7 @@ pub async fn init_runtime() -> Result<()> {
     let checks = startup::validate_config().await;
     log_checks(&checks);
     startup::set_startup_checks(checks);
+    pipeline::overview::start_snapshot_loop();
     conductor::start_background_loop();
     Ok(())
 }

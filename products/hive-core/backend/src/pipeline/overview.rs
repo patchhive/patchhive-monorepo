@@ -34,12 +34,18 @@ pub(super) async fn overview(
     State(state): State<AppState>,
 ) -> Json<crate::models::ApiEnvelope<OverviewResponse>> {
     let suite_settings = db::suite_settings();
-    let products = build_runtime_products(&state).await;
+    let products = materialized_runtime_products(&state);
     let summary = summarize_products(&products);
+    let snapshot = match db::latest_suite_snapshot_cycle() {
+        Ok(Some(cycle)) => Observation::observed(cycle),
+        Ok(None) => Observation::not_observed("No background suite snapshot has completed yet."),
+        Err(error) => Observation::failed(format!("Could not read suite snapshot state: {error}")),
+    };
     Json(ok(OverviewResponse {
         product: PRODUCT_TITLE,
         tagline: PRODUCT_TAGLINE,
         suite_settings,
+        snapshot,
         summary,
         products,
     }))
@@ -48,7 +54,7 @@ pub(super) async fn overview(
 pub(super) async fn products(
     State(state): State<AppState>,
 ) -> Json<crate::models::ApiEnvelope<Vec<ProductRuntimeItem>>> {
-    Json(ok(build_runtime_products(&state).await))
+    Json(ok(materialized_runtime_products(&state)))
 }
 
 pub(super) async fn product_runs(
@@ -62,49 +68,38 @@ pub(super) async fn product_runs(
         .iter()
         .find(|product| product.slug == slug)
         .ok_or_else(|| api_error(StatusCode::NOT_FOUND, "unknown_product", "Unknown product."))?;
-    let overrides = db::product_overrides();
-    let override_item = overrides.get(&definition.slug);
-    let api_url = resolve_api_url(override_item.map(|item| item.api_url.as_str()), definition);
-    let auth = ProductStoredAuth::from_override(override_item);
-
-    if definition.slug == "hive-core" {
-        let runs = contract::runs_from_values("hive-core", hive_core_action_run_values(30)).runs;
-        return Ok(Json(ok(ProductRunsSnapshotResponse {
-            slug: definition.slug.clone(),
-            title: definition.title.clone(),
-            api_url,
-            auth_mode: resolved_auth_mode(definition, &auth),
-            machine_auth_configured: resolved_machine_auth_configured(definition, &auth),
-            service_token_configured: resolved_service_token_configured(definition, &auth),
-            legacy_api_key_configured: resolved_legacy_api_key_configured(definition, &auth),
-            checked_at: now_rfc3339(),
-            runs: Observation::observed(runs),
-        })));
-    }
-
-    let (runs_ok, runs, error) = fetch_product_runs(&state.client, &api_url, &auth).await;
-    let runs = if runs_ok {
-        Observation::observed(runs)
-    } else if auth.machine_auth_configured() {
-        Observation::failed(error)
-    } else {
-        Observation::not_observed(if error.is_empty() {
-            "HiveCore has no machine credential for protected run history.".into()
-        } else {
-            error
-        })
+    let snapshot = match db::materialized_product_run_snapshot(&definition.slug) {
+        Ok(Some(snapshot)) => snapshot,
+        Ok(None) => unavailable_runs_snapshot(
+            definition,
+            Observation::not_observed("The background poller has not captured this product yet."),
+        ),
+        Err(error) => unavailable_runs_snapshot(
+            definition,
+            Observation::failed(format!(
+                "Could not read the materialized run snapshot: {error}"
+            )),
+        ),
     };
-    Ok(Json(ok(ProductRunsSnapshotResponse {
+    let _ = state;
+    Ok(Json(ok(snapshot)))
+}
+
+fn unavailable_runs_snapshot(
+    definition: &ProductDefinition,
+    runs: Observation<Vec<contract::ProductRunSummary>>,
+) -> ProductRunsSnapshotResponse {
+    ProductRunsSnapshotResponse {
         slug: definition.slug.clone(),
         title: definition.title.clone(),
-        api_url,
-        auth_mode: resolved_auth_mode(definition, &auth),
-        machine_auth_configured: resolved_machine_auth_configured(definition, &auth),
-        service_token_configured: resolved_service_token_configured(definition, &auth),
-        legacy_api_key_configured: resolved_legacy_api_key_configured(definition, &auth),
+        api_url: definition.default_api_url.clone(),
+        auth_mode: "unknown".into(),
+        machine_auth_configured: false,
+        service_token_configured: false,
+        legacy_api_key_configured: false,
         checked_at: now_rfc3339(),
         runs,
-    })))
+    }
 }
 
 pub(super) async fn product_run_detail(
@@ -239,6 +234,157 @@ pub(super) async fn build_runtime_products(state: &AppState) -> Vec<ProductRunti
         build_product_runtime(state, definition, overrides.get(&definition.slug))
     }))
     .await
+}
+
+pub(crate) fn materialized_runtime_products(_state: &AppState) -> Vec<ProductRuntimeItem> {
+    let overrides = db::product_overrides();
+    match db::materialized_product_snapshots() {
+        Ok(snapshots) => {
+            let mut by_slug = snapshots
+                .into_iter()
+                .map(|snapshot| (snapshot.slug.clone(), snapshot))
+                .collect::<HashMap<_, _>>();
+            product_catalog()
+                .iter()
+                .map(|definition| {
+                    by_slug.remove(&definition.slug).unwrap_or_else(|| {
+                        unavailable_product_runtime(
+                            definition,
+                            overrides.get(&definition.slug),
+                            false,
+                            "The background poller has not captured this product yet.",
+                        )
+                    })
+                })
+                .collect()
+        }
+        Err(error) => product_catalog()
+            .iter()
+            .map(|definition| {
+                unavailable_product_runtime(
+                    definition,
+                    overrides.get(&definition.slug),
+                    true,
+                    &format!("Could not read the materialized suite snapshot: {error}"),
+                )
+            })
+            .collect(),
+    }
+}
+
+fn unavailable_product_runtime(
+    definition: &ProductDefinition,
+    override_item: Option<&crate::models::ProductOverride>,
+    failed: bool,
+    reason: &str,
+) -> ProductRuntimeItem {
+    let auth = ProductStoredAuth::from_override(override_item);
+    let enabled = override_item.map(|item| item.enabled).unwrap_or(true);
+    let not_applicable = !enabled;
+    let reason = if not_applicable {
+        "Product is disabled in HiveCore settings."
+    } else {
+        reason
+    };
+    let health_status = if enabled {
+        ProductHealthStatus::Unknown
+    } else {
+        ProductHealthStatus::Disabled
+    };
+    ProductRuntimeItem {
+        slug: definition.slug.clone(),
+        title: definition.title.clone(),
+        icon: definition.icon.clone(),
+        lane: definition.lane.clone(),
+        role: definition.role.clone(),
+        repo: definition.repo.clone(),
+        enabled,
+        frontend_url: pick_url(
+            override_item.map(|item| item.frontend_url.as_str()),
+            &definition.default_frontend_url,
+        ),
+        api_url: resolve_api_url(override_item.map(|item| item.api_url.as_str()), definition),
+        auth_mode: resolved_auth_mode(definition, &auth),
+        machine_auth_configured: resolved_machine_auth_configured(definition, &auth),
+        service_token_configured: resolved_service_token_configured(definition, &auth),
+        legacy_api_key_configured: resolved_legacy_api_key_configured(definition, &auth),
+        notes: override_item
+            .map(|item| item.notes.clone())
+            .unwrap_or_default(),
+        status: health_status.as_str().into(),
+        health: ProductHealthSnapshot {
+            status: health_status,
+            health_endpoint: unavailable_observation(failed, not_applicable, reason),
+            version: unavailable_observation(failed, not_applicable, reason),
+            database_ok: unavailable_observation(failed, not_applicable, reason),
+            startup_checks: unavailable_observation(failed, not_applicable, reason),
+            capabilities: unavailable_observation(failed, not_applicable, reason),
+            runs: unavailable_observation(failed, not_applicable, reason),
+            checked_at: now_rfc3339(),
+        },
+        hivecore: None,
+        actions: Vec::new(),
+        links: Vec::new(),
+        contract_checks: contract_checks_for_unavailable_product("snapshot_unavailable"),
+        contract_drift_count: 0,
+        run_detail_template: String::new(),
+        recent_runs: Vec::new(),
+    }
+}
+
+fn unavailable_observation<T>(failed: bool, not_applicable: bool, reason: &str) -> Observation<T> {
+    if not_applicable {
+        Observation::not_applicable(reason)
+    } else if failed {
+        Observation::failed(reason)
+    } else {
+        Observation::not_observed(reason)
+    }
+}
+
+static SNAPSHOT_LOOP_STARTED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+
+pub(crate) fn start_snapshot_loop() {
+    if SNAPSHOT_LOOP_STARTED.set(()).is_err() {
+        return;
+    }
+    tokio::spawn(async {
+        let state = AppState::new();
+        loop {
+            refresh_suite_snapshot(&state).await;
+            tokio::time::sleep(Duration::from_secs(snapshot_interval_seconds())).await;
+        }
+    });
+}
+
+async fn refresh_suite_snapshot(state: &AppState) {
+    let cycle_id = format!("snapshot_{}", uuid::Uuid::now_v7());
+    let started_at = now_rfc3339();
+    if let Err(error) = db::start_suite_snapshot_cycle(&cycle_id, &started_at) {
+        tracing::error!(%error, %cycle_id, "could not start suite snapshot cycle");
+        return;
+    }
+    let products = build_runtime_products(state).await;
+    let completed_at = now_rfc3339();
+    if let Err(error) =
+        db::complete_suite_snapshot_cycle(&cycle_id, &started_at, &completed_at, &products)
+    {
+        tracing::error!(%error, %cycle_id, "could not materialize suite snapshot");
+        if let Err(settle_error) =
+            db::fail_suite_snapshot_cycle(&cycle_id, &started_at, &completed_at, &error.to_string())
+        {
+            tracing::error!(%settle_error, %cycle_id, "could not record failed suite snapshot cycle");
+        }
+    }
+}
+
+fn snapshot_interval_seconds() -> u64 {
+    std::env::var("HIVE_CORE_SNAPSHOT_INTERVAL_SECONDS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(30)
+        .clamp(5, 300)
 }
 
 pub(super) async fn build_product_runtime(
@@ -804,9 +950,12 @@ pub(super) fn summarize_products(products: &[ProductRuntimeItem]) -> OverviewSum
             "disabled" => {
                 summary.disabled_products += 1;
             }
-            _ => {
+            "unknown" => {
                 summary.enabled_products += 1;
-                summary.offline_products += 1;
+                summary.unknown_products += 1;
+            }
+            _ => {
+                summary.unknown_products += 1;
             }
         }
     }
