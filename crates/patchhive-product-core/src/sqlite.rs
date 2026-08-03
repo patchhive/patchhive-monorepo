@@ -2,12 +2,13 @@ use rusqlite::{ffi::ErrorCode, Connection, Error, Result};
 use std::{
     fmt,
     path::{Path, PathBuf},
-    sync::{Condvar, Mutex},
+    sync::Mutex,
     time::Duration,
 };
 
 const DEFAULT_MAX_CONNECTIONS: usize = 4;
-const DEFAULT_BUSY_TIMEOUT_SECS: u64 = 5;
+const DEFAULT_BUSY_TIMEOUT_MS: u64 = 250;
+const BUSY_TIMEOUT_ENV: &str = "PATCHHIVE_DB_BUSY_TIMEOUT_MS";
 const DEFAULT_PRAGMAS: &str = "PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;";
 const SUITE_DB_PATH_ENV: &str = "PATCHHIVE_DB_PATH";
 
@@ -23,7 +24,6 @@ pub struct SqlitePool {
     busy_timeout: Duration,
     pragmas: String,
     state: Mutex<PoolState>,
-    available: Condvar,
 }
 
 pub struct PooledSqliteConnection<'a> {
@@ -76,13 +76,12 @@ impl SqlitePool {
             path: path.into(),
             label: label.into(),
             max_connections: configured_pool_size(None),
-            busy_timeout: Duration::from_secs(DEFAULT_BUSY_TIMEOUT_SECS),
+            busy_timeout: configured_busy_timeout(),
             pragmas: DEFAULT_PRAGMAS.into(),
             state: Mutex::new(PoolState {
                 idle: Vec::new(),
                 open_connections: 0,
             }),
-            available: Condvar::new(),
         }
     }
 
@@ -127,41 +126,34 @@ impl SqlitePool {
     }
 
     pub fn get(&self) -> Result<PooledSqliteConnection<'_>> {
-        loop {
-            let mut state = self.state.lock().map_err(|_| Error::InvalidQuery)?;
-            if let Some(conn) = state.idle.pop() {
-                return Ok(PooledSqliteConnection {
-                    pool: self,
-                    conn: Some(conn),
-                });
-            }
+        let mut state = self.state.lock().map_err(|_| Error::InvalidQuery)?;
+        if let Some(conn) = state.idle.pop() {
+            return Ok(PooledSqliteConnection {
+                pool: self,
+                conn: Some(conn),
+            });
+        }
 
-            if state.open_connections < self.max_connections {
-                state.open_connections += 1;
-                drop(state);
+        if state.open_connections < self.max_connections {
+            state.open_connections += 1;
+            drop(state);
 
-                match self.open_connection() {
-                    Ok(conn) => {
-                        return Ok(PooledSqliteConnection {
-                            pool: self,
-                            conn: Some(conn),
-                        });
-                    }
-                    Err(err) => {
-                        let mut state = self.state.lock().map_err(|_| Error::InvalidQuery)?;
-                        state.open_connections = state.open_connections.saturating_sub(1);
-                        self.available.notify_one();
-                        return Err(err);
-                    }
+            match self.open_connection() {
+                Ok(conn) => {
+                    return Ok(PooledSqliteConnection {
+                        pool: self,
+                        conn: Some(conn),
+                    });
+                }
+                Err(err) => {
+                    let mut state = self.state.lock().map_err(|_| Error::InvalidQuery)?;
+                    state.open_connections = state.open_connections.saturating_sub(1);
+                    return Err(err);
                 }
             }
-
-            drop(
-                self.available
-                    .wait(state)
-                    .map_err(|_| Error::InvalidQuery)?,
-            );
         }
+
+        Err(pool_at_capacity_error(&self.label, self.max_connections))
     }
 
     fn open_connection(&self) -> Result<Connection> {
@@ -295,7 +287,6 @@ impl Drop for PooledSqliteConnection<'_> {
 
         if let Ok(mut state) = self.pool.state.lock() {
             state.idle.push(conn);
-            self.pool.available.notify_one();
         }
     }
 }
@@ -333,6 +324,27 @@ fn read_pool_size(env_var: &str) -> Option<usize> {
         .filter(|value| *value > 0)
 }
 
+fn configured_busy_timeout() -> Duration {
+    let milliseconds = std::env::var(BUSY_TIMEOUT_ENV)
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(DEFAULT_BUSY_TIMEOUT_MS)
+        .clamp(1, 30_000);
+    Duration::from_millis(milliseconds)
+}
+
+fn pool_at_capacity_error(label: &str, max_connections: usize) -> Error {
+    Error::SqliteFailure(
+        rusqlite::ffi::Error {
+            code: ErrorCode::DatabaseBusy,
+            extended_code: 5,
+        },
+        Some(format!(
+            "{label} SQLite connection pool is at its {max_connections}-connection capacity; retry after active database work completes"
+        )),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -365,6 +377,28 @@ mod tests {
             .expect("query should work");
         assert_eq!(count, 1);
 
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn pool_capacity_is_fail_fast_instead_of_blocking_the_caller() {
+        let path = std::env::temp_dir().join(format!(
+            "patchhive-core-pool-capacity-test-{}.db",
+            uuid::Uuid::new_v4()
+        ));
+        let pool = SqlitePool::new(&path, "test").with_max_connections(1);
+        let held = pool.get().expect("first connection should open");
+
+        let started = std::time::Instant::now();
+        let error = match pool.get() {
+            Ok(_) => panic!("the full pool should fail fast"),
+            Err(error) => error,
+        };
+        assert_eq!(classify_error(&error), SqliteOperatorIssue::Busy);
+        assert!(started.elapsed() < std::time::Duration::from_millis(100));
+
+        drop(held);
+        pool.get().expect("returned connection should be available");
         let _ = std::fs::remove_file(path);
     }
 

@@ -11,10 +11,13 @@ The shared pool:
 
 - defaults to 4 connections
 - enables WAL mode and foreign keys by default
-- applies a 5 second SQLite busy timeout
+- fails fast when all pooled connections are active instead of blocking the
+  calling async runtime worker on a condition variable
+- applies a bounded 250ms SQLite busy timeout by default
 - returns connections to the pool on drop
 - can be tuned globally with `PATCHHIVE_DB_POOL_SIZE`
 - can be tuned per product with `<PRODUCT>_DB_POOL_SIZE`
+- can tune lock waits with `PATCHHIVE_DB_BUSY_TIMEOUT_MS` (clamped to 1-30000ms)
 - exposes operator-facing helpers for DB path wording, backup guidance,
   migration guidance, and SQLite error classification
 
@@ -38,6 +41,9 @@ wide.
   `REAPER_DB_PATH`.
 - Keep pool size small by default, for example 4 connections, because SQLite
   still has one writer at a time.
+- Pool exhaustion must remain a typed busy error, not an unbounded synchronous
+  wait. Larger database jobs should run on Tokio's blocking pool rather than
+  holding an async worker.
 - Startup checks should use `patchhive_product_core::sqlite::db_path_message`
   so every product tells operators to back up the database plus any matching
   `-wal` and `-shm` files before manual cleanup.

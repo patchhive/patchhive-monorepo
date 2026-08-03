@@ -259,7 +259,7 @@ Backend:
 - Rust
 - `axum`, `rusqlite`, `reqwest`, `tokio`, `serde`, `serde_json`, `chrono`, `uuid`, `anyhow`, `tracing`
 - Shared API rate limiting defaults to 300 standard requests/minute and 30 auth or mutating requests/minute; tune with `PATCHHIVE_RATE_LIMIT_MAX`, `PATCHHIVE_RATE_LIMIT_SENSITIVE_MAX`, and `PATCHHIVE_RATE_LIMIT_WINDOW_SECS`.
-- Shared SQLite pools default to 4 connections; tune with `PATCHHIVE_DB_POOL_SIZE` or a product-specific `<PRODUCT>_DB_POOL_SIZE`.
+- Shared SQLite pools default to 4 connections; tune with `PATCHHIVE_DB_POOL_SIZE` or a product-specific `<PRODUCT>_DB_POOL_SIZE`. Pool exhaustion fails fast instead of blocking an async runtime worker, and SQLite lock waits default to 250ms; tune the bounded wait with `PATCHHIVE_DB_BUSY_TIMEOUT_MS` (1-30000ms).
 - Write-capable validation uses `patchhive_product_core::validation::TestExecutionStatus`; only `passed` permits a non-draft autonomous PR.
 
 Frontend:
@@ -408,6 +408,9 @@ Rules:
 - Keep the crate focused on backend primitives, not product behavior.
 - Product backends should use `listen_addr()` so `PATCHHIVE_BIND_ADDR` can force loopback-only local runs when Docker-style `0.0.0.0` binding is not desired.
 - Product backends should use `SqlitePool` from `patchhive-product-core` instead of a single global `Mutex<Connection>` or ad hoc connection opens. Tune globally with `PATCHHIVE_DB_POOL_SIZE` or with a product-specific `<PRODUCT>_DB_POOL_SIZE`.
+- `SqlitePool::get` is intentionally fail-fast at capacity. Do not restore a
+  condition-variable wait in request paths; surface busy evidence or move a
+  larger synchronous database unit onto a bounded blocking worker.
 - Product backends should define their `crate::auth` module with `define_api_key_auth_module!` in `main.rs` instead of carrying one-file delegation wrappers.
 - Good candidates: auth middleware, SQLite pooling, startup/health helpers,
   generic ID or envelope helpers, generic named preset storage interfaces, and
