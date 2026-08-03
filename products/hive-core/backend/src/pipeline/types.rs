@@ -86,6 +86,8 @@ pub struct ProductAuthStatusBody {
     #[serde(default)]
     pub service_auth_supported: bool,
     #[serde(default)]
+    pub service_auth_configured: bool,
+    #[serde(default)]
     pub service_auth_enabled: bool,
     #[serde(default)]
     pub service_auth_scoped: bool,
@@ -96,7 +98,27 @@ pub struct ProductAuthStatusBody {
     #[serde(default)]
     pub service_auth_expired: bool,
     #[serde(default)]
+    pub service_auth_expires_soon: bool,
+    #[serde(default)]
+    pub service_auth_known_scopes: Vec<String>,
+    #[serde(default)]
+    pub service_auth_token: Option<ProductAuthTokenStatus>,
+    #[serde(default)]
     pub suite_bootstrap_enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ProductAuthTokenStatus {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub fingerprint: Option<String>,
+    #[serde(default)]
+    pub created_at: Option<String>,
+    #[serde(default)]
+    pub rotated_at: Option<String>,
+    #[serde(default)]
+    pub expires_at: Option<String>,
 }
 
 pub struct ProductProbeSnapshot {
@@ -151,8 +173,8 @@ pub fn resolved_legacy_api_key_configured(
 /// standalone port there would send every dispatch, health poll, and smoke check to
 /// a port nothing is listening on.
 ///
-/// PATCHHIVE_SUITE_BASE_URL is set by the unified backend at startup. Unset means
-/// HiveCore is running standalone, so the per-product ports are correct.
+/// The unified backend supplies its base URL explicitly at startup. An absent URL
+/// means HiveCore is running standalone, so the per-product ports are correct.
 pub fn resolve_api_url(
     override_url: Option<&str>,
     definition: &crate::state::ProductDefinition,
@@ -174,8 +196,8 @@ pub fn resolve_api_url(
 
 /// Base URL of the unified backend when HiveCore is mounted inside it.
 pub fn suite_base_url() -> Option<String> {
-    std::env::var("PATCHHIVE_SUITE_BASE_URL")
-        .ok()
+    crate::suite_base_url()
+        .map(str::to_string)
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
 }

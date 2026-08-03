@@ -2,9 +2,8 @@ key = "vuln-triage"
 code = "VT"
 name = "VulnTriage"
 role = "security finding triage"
-module_path = "crate::products::vuln_triage"
+module_path = "vuln_triage"
 route_prefix = "/api/products/vuln-triage"
-migration_stage = "integrated"
 
 [display]
 order = 8
@@ -26,10 +25,6 @@ acknowledged_startup = [
 read_only = true
 credential_scopes = ["github:security_events:read", "github:dependabot:read"]
 evidence_required = ["security alert snapshot", "severity inputs", "reachability hints"]
-
-[gateway]
-default_url = "http://127.0.0.1:8110"
-env_var = "VULN_TRIAGE_GATEWAY_URL"
 
 [health]
 endpoint = "/api/products/vuln-triage/health"

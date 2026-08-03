@@ -2,9 +2,8 @@ key = "refactor-scout"
 code = "RS"
 name = "RefactorScout"
 role = "conservative refactor discovery"
-module_path = "crate::products::refactor_scout"
+module_path = "refactor_scout"
 route_prefix = "/api/products/refactor-scout"
-migration_stage = "integrated"
 
 [display]
 order = 9

@@ -4,7 +4,7 @@ use chrono::Utc;
 use crate::{
     config::Config,
     db::SharedDb,
-    models::{LauncherStatus, RunSummary, SetupResponse, SuiteEvent},
+    models::{RunSummary, SuiteEvent},
     registry::ProductRegistry,
 };
 
@@ -12,7 +12,6 @@ use crate::{
 pub struct AppState {
     pub config: Config,
     pub registry: ProductRegistry,
-    pub http: reqwest::Client,
     db: SharedDb,
     started_at: chrono::DateTime<Utc>,
 }
@@ -25,7 +24,6 @@ impl AppState {
         let state = Self {
             config,
             registry,
-            http: reqwest::Client::new(),
             db,
             started_at,
         };
@@ -52,38 +50,20 @@ impl AppState {
             .count()
     }
 
-    pub fn db_ok(&self) -> bool {
-        self.db.ping()
+    pub async fn db_ok(&self) -> bool {
+        self.db.ping().await
     }
 
-    pub fn product_override_count(&self) -> usize {
-        self.db.product_override_count()
+    pub async fn product_override_count(&self) -> usize {
+        self.db.product_override_count().await
     }
 
-    pub fn runs(&self) -> Vec<RunSummary> {
-        self.db.runs()
+    pub async fn runs(&self) -> Vec<RunSummary> {
+        self.db.runs().await
     }
 
-    pub fn first_stack_status(&self, actions: Vec<String>) -> SetupResponse {
-        SetupResponse {
-            suite_bootstrap_configured: false,
-            launcher: LauncherStatus {
-                available: false,
-                status: "not-configured",
-                message: "Launcher authority still lives in the existing HiveCore backend during this migration step.",
-            },
-            products: self
-                .registry
-                .products()
-                .iter()
-                .map(|product| product.to_setup_product(self.product_enabled(product.key.as_str())))
-                .collect(),
-            actions,
-        }
-    }
-
-    pub fn events(&self) -> Vec<SuiteEvent> {
-        let events = self.db.events();
+    pub async fn events(&self) -> Vec<SuiteEvent> {
+        let events = self.db.events().await;
         if events.is_empty() {
             vec![SuiteEvent {
                 id: "evt-backend-started".to_string(),

@@ -66,10 +66,8 @@ export function TokenVault() {
   const [nonce, setNonce] = useState(0);
   const [busy, setBusy] = useState<string | null>(null);
 
-  // Provision through HiveCore, not the suite route. The suite route mints a token
-  // and discards it, which leaves the product authenticated but leaves HiveCore
-  // unable to dispatch to it. HiveCore's own route stores the token server-side
-  // where its dispatcher reads from, which is the point of having a broker.
+  // Provision through HiveCore so the broker stores the token server-side where
+  // its dispatcher reads from.
   async function provision(row: TokenStatus) {
     setBusy(row.productId);
     const result = await provisionThroughHiveCore(row.slug);

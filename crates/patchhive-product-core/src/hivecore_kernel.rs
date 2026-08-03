@@ -10,7 +10,8 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "snake_case")]
 pub enum DeploymentTopology {
     UnifiedInProcess,
-    GatewayCompatibility,
+    #[serde(rename = "standalone_network", alias = "gateway_compatibility")]
+    StandaloneNetwork,
     Unknown,
 }
 

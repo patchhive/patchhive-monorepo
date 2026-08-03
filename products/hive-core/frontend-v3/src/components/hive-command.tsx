@@ -607,10 +607,13 @@ export function HiveCommand() {
       {
         key: "action:open-frontend",
         group: "Actions",
-        label: `Open ${PRODUCTS[0].name} frontend`,
+        label: `Open ${PRODUCTS[0]?.name ?? "product"} frontend`,
         value: "action open frontend top product",
         icon: ExternalLink,
-        run: () => window.open(PRODUCTS[0].frontend, "_blank", "noopener"),
+        run: () => {
+          const frontend = PRODUCTS[0]?.frontend;
+          if (frontend) window.open(frontend, "_blank", "noopener");
+        },
       },
       {
         key: "filter:warn",

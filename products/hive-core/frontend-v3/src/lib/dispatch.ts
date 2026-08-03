@@ -51,9 +51,15 @@ interface ApiAction {
   credential_requirements?: string[];
 }
 
-interface ApiCapabilityReport {
-  key: string;
-  advertised: { display_name?: string; actions: ApiAction[] } | null;
+interface ApiRuntimeProduct {
+  slug: string;
+  title: string;
+  actions: ApiAction[];
+  health: {
+    capabilities:
+      | { state: "observed"; value: { action_count: number } }
+      | { state: "failed" | "not_observed" | "not_applicable"; reason: string };
+  };
 }
 
 function parseEffect(raw: ApiAction): ActionEffect {
@@ -115,16 +121,16 @@ export function actionRequiresApproval(action: DispatchableAction): boolean {
 export async function fetchDispatchableActions(
   signal?: AbortSignal,
 ): Promise<ProductActions[]> {
-  const response = await apiFetch("/api/products/capabilities", { signal });
-  if (!response.ok) throw new Error(`HTTP ${response.status} from /api/products/capabilities`);
-  const rows = (await response.json()) as ApiCapabilityReport[];
+  const response = await apiFetch("/api/products/runtime", { signal });
+  if (!response.ok) throw new Error(`HTTP ${response.status} from /api/products/runtime`);
+  const rows = (await response.json()) as ApiRuntimeProduct[];
 
   return rows
-    .filter((row) => row.advertised && row.key !== "hive-core")
+    .filter((row) => row.health.capabilities.state === "observed" && row.slug !== "hive-core")
     .map((row) => ({
-      productKey: row.key,
-      productName: row.advertised?.display_name ?? row.key,
-      actions: (row.advertised?.actions ?? []).map(toAction),
+      productKey: row.slug,
+      productName: row.title,
+      actions: row.actions.map(toAction),
     }))
     .filter((row) => row.actions.length > 0);
 }

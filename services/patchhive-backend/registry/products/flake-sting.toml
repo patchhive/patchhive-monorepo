@@ -2,9 +2,8 @@ key = "flake-sting"
 code = "FS"
 name = "FlakeSting"
 role = "CI flake detection"
-module_path = "crate::products::flake_sting"
+module_path = "flake_sting"
 route_prefix = "/api/products/flake-sting"
-migration_stage = "integrated"
 
 [display]
 order = 6

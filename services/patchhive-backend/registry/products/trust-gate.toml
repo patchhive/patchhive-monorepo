@@ -2,9 +2,8 @@ key = "trust-gate"
 code = "TG"
 name = "TrustGate"
 role = "diff policy and risk review"
-module_path = "crate::products::trust_gate"
+module_path = "trust_gate"
 route_prefix = "/api/products/trust-gate"
-migration_stage = "integrated"
 
 [display]
 order = 3

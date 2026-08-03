@@ -62,12 +62,13 @@ tables to `refactor_scout_*`, merges shared schedules by their product-aware
 keys, and records per-table source counts in
 `database_consolidation_manifest`. Re-running it is safe: new rows are imported
 by their existing keys without overwriting newer consolidated state, and the
-manifest is refreshed. RepoReaper and HiveCore remain outside this importer
-until their engines move in-process.
+manifest is refreshed. All product engines now run in-process; importer coverage
+is based on preserved standalone schema needs, not migration state.
 
 ## First Contract
 
-This first skeleton is intentionally control-plane-first. It gives HiveCore a stable backend to connect to before product engines are migrated.
+The suite runtime mounts every product router and gives HiveCore one stable,
+middleware-preserving control-plane boundary.
 
 Routes:
 
@@ -76,32 +77,30 @@ Routes:
 - `GET /api/auth/status`
 - `GET /api/auth/session`
 - `GET /api/products`
+- `GET /api/products/runtime`
+- `GET /api/products/runs`
 - `GET /api/products/:product_key/health`
-- `GET /api/setup/first-stack`
-- `POST /api/setup/first-stack/pair`
 - `GET /api/runs`
 - `GET /api/events`
 
 All twelve products, including RepoReaper and HiveCore, are mounted as in-process
-engines under their `/api/products/<product>/*` namespaces. The historical
-`POST /api/setup/first-stack/pair` compatibility route delegates to the mounted
-HiveCore pairing authority; it does not maintain a second pairing implementation.
+engines under their `/api/products/<product>/*` namespaces. Setup and pairing are
+owned exclusively by the mounted HiveCore router.
 
 ## Product Registry
 
-Product registration lives in `registry/products/*.toml`. The backend embeds
-these manifests at compile time and exposes them through `GET /api/products` so
-HiveCore does not need to hardcode product wiring.
+Product registration lives in `registry/products/*.toml`. Build scripts discover
+and embed those manifests, generate backend initialization/router wiring, and
+generate HiveCore's compiled catalog. `GET /api/products` exposes the same source
+to browser consumers, so no handwritten 12-product inventory remains.
 
 Each manifest declares:
 
 - `key`, `code`, `name`, and `role` for product identity.
-- `module_path` for the eventual in-process Rust product module.
+- `module_path` for the in-process Rust product module.
 - `route_prefix` for the product-owned API namespace.
-- `migration_stage` so HiveCore can tell shell, gateway, and integrated products apart.
 - `[[capabilities]]` entries with `id`, `label`, `description`, and optional `mutating`.
 - `[safety]` boundaries such as read-only status, external writes, repo mutation, approval requirements, credential scopes, and required evidence.
-- Optional `[gateway]` settings with `default_url` and `env_var` while a product still runs in its existing backend.
 - `[health]` settings with the suite endpoint, timeout budget, and expected healthy status.
 - `[[routes]]` claims with method, path, and description.
 
@@ -112,18 +111,13 @@ key = "signal-hive"
 code = "SH"
 name = "SignalHive"
 role = "maintenance signal reconnaissance"
-module_path = "crate::products::signal_hive"
+module_path = "signal_hive"
 route_prefix = "/api/products/signal-hive"
-migration_stage = "not-started"
 
 [safety]
 read_only = true
 credential_scopes = ["github:repo:read", "github:issues:read"]
 evidence_required = ["scan parameters", "repo sample list"]
-
-[gateway]
-default_url = "http://127.0.0.1:8010"
-env_var = "SIGNAL_HIVE_GATEWAY_URL"
 
 [health]
 endpoint = "/api/products/signal-hive/health"
@@ -141,10 +135,8 @@ path = "/api/products/signal-hive/scan"
 description = "Start a maintenance signal scan."
 ```
 
-MergeKeeper, ReleaseSentry, DepTriage, VulnTriage, FlakeSting, ReviewBee,
-TrustGate, and RepoMemory are mounted in-process
-from their product backend libraries. The manifest contract also drives gateway
-dispatch and is the shape future in-process mounting should use.
+Every product is mounted in-process from its backend library. The manifest
+contract drives generated wiring and control-plane metadata.
 
 Run the suite backend with only MergeKeeper enabled:
 
@@ -311,63 +303,27 @@ legacy token string. API-key login is unaffected, but HiveCore service-token
 pairing should use quoted exports, product wrapper `dotenvy` loading, or freshly
 rotated scoped service tokens.
 
-## Gateway Dispatch
+## Product Invocation
 
-Gateway dispatch lets the unified backend expose stable suite URLs while the
-actual product engine still runs in its existing backend.
-
-SignalHive is the first gateway target:
-
-```bash
-SIGNAL_HIVE_GATEWAY_URL=http://127.0.0.1:8010 \
-PATCHHIVE_BIND_ADDR=127.0.0.1:8120 \
-PATCHHIVE_PRODUCTS=hive-core,signal-hive \
-cargo run
-```
-
-Requests under `/api/products/signal-hive/*` are validated against the
-SignalHive manifest route claims. Non-health requests first run the manifest
-health check, then forward to the SignalHive backend with the product prefix
-stripped. For example:
-
-```text
-GET  /api/products/signal-hive/health  -> GET  http://127.0.0.1:8010/health
-POST /api/products/signal-hive/scan    -> POST http://127.0.0.1:8010/scan
-```
-
-Unclaimed routes return `route-not-claimed`; disabled products return
-`product-disabled`; missing gateway targets return `gateway-unconfigured`;
-unhealthy gateway targets return `product-unavailable`.
+HiveCore observes capabilities, auth posture, health, startup checks, and runs
+through the products' mounted HTTP routers. The background poller materializes
+those observations in SQLite; suite runtime, run, token, dispatch-preview, and
+conformance reads use that durable snapshot. This keeps authentication, rate
+limiting, telemetry, and error behavior identical to standalone product calls
+without browser request fan-out or direct handler bypasses.
 
 ## Shared DB
 
-The backend opens one shared SQLite database and initializes these first suite
-tables:
+The backend uses `patchhive_product_core::sqlite::SqlitePool` for the shared
+SQLite database and initializes these suite tables:
 
 - `suite_events` for backend and orchestration events.
 - `suite_runs` for a suite-wide run index.
 - `product_registry_overrides` for future runtime enablement and route overrides.
 - `shared_config` for future global defaults.
 
-Product modules should add namespaced tables as they move in, such as
-`signal_hive_scans` or `trust_gate_reviews`, while shared run/event indexes stay
-owned by the backend.
-
-## HiveCore v2 Smoke Test
-
-Run the unified backend:
-
-```bash
-PATCHHIVE_BIND_ADDR=127.0.0.1:8120 PATCHHIVE_PRODUCTS=hive-core,signal-hive cargo run
-```
-
-Then run HiveCore v2 from the monorepo with:
-
-```bash
-VITE_API_URL=http://127.0.0.1:8120/api npm --prefix products/hive-core/frontend-v2 run dev
-```
-
-HiveCore should enter without API-key bootstrap and show the unified backend product registry. Product engines still report as pending until they are migrated into this backend.
+Product tables are product-namespaced, such as `signal_hive_scans` and
+`trust_gate_reviews`, while shared run/event indexes stay owned by the backend.
 
 ## Docker Direction
 

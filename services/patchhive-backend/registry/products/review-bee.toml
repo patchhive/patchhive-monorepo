@@ -2,9 +2,8 @@ key = "review-bee"
 code = "RB"
 name = "ReviewBee"
 role = "PR review feedback checklist"
-module_path = "crate::products::review_bee"
+module_path = "review_bee"
 route_prefix = "/api/products/review-bee"
-migration_stage = "integrated"
 
 [display]
 order = 2

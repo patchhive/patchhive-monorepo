@@ -2,9 +2,8 @@ key = "merge-keeper"
 code = "MK"
 name = "MergeKeeper"
 role = "merge readiness assessment"
-module_path = "crate::products::merge_keeper"
+module_path = "merge_keeper"
 route_prefix = "/api/products/merge-keeper"
-migration_stage = "integrated"
 
 [display]
 order = 5

@@ -35,8 +35,8 @@ fn suite_public_paths() -> Vec<String> {
 
 mod config;
 mod db;
-mod gateway;
 mod models;
+include!(concat!(env!("OUT_DIR"), "/product_inventory.rs"));
 mod products;
 mod registry;
 mod routes;

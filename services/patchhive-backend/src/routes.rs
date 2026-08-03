@@ -1,20 +1,15 @@
 use std::sync::Arc;
 
 use axum::{
-    body::Body,
     extract::{ConnectInfo, Path, State},
-    http::{Request, StatusCode},
+    http::StatusCode,
     response::{IntoResponse, Response},
     routing::{any, get, post},
     Json, Router,
 };
 
 use crate::{
-    gateway,
-    models::{
-        AuthStatusResponse, ErrorResponse, HealthResponse, ProductResponse, SessionResponse,
-        SetupResponse,
-    },
+    models::{AuthStatusResponse, ErrorResponse, HealthResponse, ProductResponse, SessionResponse},
     products,
     state::AppState,
 };
@@ -32,21 +27,12 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/auth/session", get(session))
         .route("/api/products", get(products))
         .route("/api/products/runtime", get(products_runtime))
-        .route("/api/products/auth-status", get(products_auth_status))
         .route(
-            "/api/products/:product_key/service-token",
-            post(provision_service_token),
+            "/api/products/:product_key/*unmatched_path",
+            any(product_route_not_mounted),
         )
-        .route("/api/products/:product_key/health", get(product_health))
-        .route(
-            "/api/products/:product_key/*gateway_path",
-            any(product_gateway),
-        )
-        .route("/api/setup/first-stack", get(first_stack_status))
-        .route("/api/setup/first-stack/pair", post(pair_first_stack))
         .route("/api/runs", get(runs))
         .route("/api/products/runs", get(products_runs))
-        .route("/api/products/capabilities", get(products_capabilities))
         .route("/api/events", get(events))
         .with_state(state)
         // Operator auth guards the *suite* API only. Product routers nest below and
@@ -61,60 +47,17 @@ pub fn router(state: Arc<AppState>) -> Router {
         .layer(axum::middleware::from_fn(crate::auth::auth_middleware));
 
     let mut product_routes = Router::new();
-    if selection.enables("merge-keeper") {
-        product_routes = product_routes.nest(
-            "/api/products/merge-keeper",
-            products::merge_keeper_router(),
-        );
+    macro_rules! mount_all {
+        ($(($module:ident, $key:literal)),* $(,)?) => {
+            $(
+                if selection.enables($key) {
+                    let prefix = format!("/api/products/{}", $key);
+                    product_routes = product_routes.nest(&prefix, $module::router());
+                }
+            )*
+        };
     }
-    if selection.enables("release-sentry") {
-        product_routes = product_routes.nest(
-            "/api/products/release-sentry",
-            products::release_sentry_router(),
-        );
-    }
-    if selection.enables("dep-triage") {
-        product_routes =
-            product_routes.nest("/api/products/dep-triage", products::dep_triage_router());
-    }
-    if selection.enables("vuln-triage") {
-        product_routes =
-            product_routes.nest("/api/products/vuln-triage", products::vuln_triage_router());
-    }
-    if selection.enables("flake-sting") {
-        product_routes =
-            product_routes.nest("/api/products/flake-sting", products::flake_sting_router());
-    }
-    if selection.enables("review-bee") {
-        product_routes =
-            product_routes.nest("/api/products/review-bee", products::review_bee_router());
-    }
-    if selection.enables("trust-gate") {
-        product_routes =
-            product_routes.nest("/api/products/trust-gate", products::trust_gate_router());
-    }
-    if selection.enables("repo-memory") {
-        product_routes =
-            product_routes.nest("/api/products/repo-memory", products::repo_memory_router());
-    }
-    if selection.enables("signal-hive") {
-        product_routes =
-            product_routes.nest("/api/products/signal-hive", products::signal_hive_router());
-    }
-    if selection.enables("refactor-scout") {
-        product_routes = product_routes.nest(
-            "/api/products/refactor-scout",
-            products::refactor_scout_router(),
-        );
-    }
-    if selection.enables("repo-reaper") {
-        product_routes =
-            product_routes.nest("/api/products/repo-reaper", products::repo_reaper_router());
-    }
-    if selection.enables("hive-core") {
-        product_routes =
-            product_routes.nest("/api/products/hive-core", products::hive_core_router());
-    }
+    for_each_product!(mount_all);
     product_routes.merge(suite_routes)
 }
 
@@ -137,8 +80,8 @@ async fn health(State(state): State<Arc<AppState>>) -> Json<HealthResponse> {
         version: env!("CARGO_PKG_VERSION"),
         mode: state.config.product_selection.mode_label(),
         enabled_products: state.enabled_product_count(),
-        db_ok: state.db_ok(),
-        product_override_count: state.product_override_count(),
+        db_ok: state.db_ok().await,
+        product_override_count: state.product_override_count().await,
     })
 }
 
@@ -247,12 +190,11 @@ async fn session(State(state): State<Arc<AppState>>) -> Json<SessionResponse> {
     })
 }
 
-/// Loopback guard for the in-process aggregates.
+/// Loopback guard for suite snapshot aggregates.
 ///
-/// These read data each product protects behind its own auth middleware — run
-/// history, auth posture, advertised capabilities. Calling the handlers directly
-/// bypasses that middleware, which is correct for a same-process read but must not
-/// become a remotely readable hole if the backend is bound beyond localhost.
+/// The background worker captured these observations through product middleware,
+/// then materialized them for bounded reads. They remain product-protected evidence
+/// and must not become remotely readable if the suite is bound beyond localhost.
 ///
 /// With suite auth configured, the middleware has already verified the operator key
 /// before a request reaches here, so this adds nothing and defers.
@@ -282,10 +224,11 @@ fn aggregate_forbidden() -> Response {
         StatusCode::FORBIDDEN,
         Json(ErrorResponse {
             error: "aggregate-local-only",
-            message: "Suite aggregates read product-protected data. Configure a suite API key \
+            message:
+                "Suite aggregates expose product-protected snapshots. Configure a suite API key \
 (POST /api/auth/generate-key from localhost), or set PATCHHIVE_ALLOW_REMOTE_AGGREGATES=true \
 only behind your own authenticated proxy."
-                .into(),
+                    .into(),
         }),
     )
         .into_response()
@@ -302,100 +245,27 @@ async fn products(State(state): State<Arc<AppState>>) -> Json<Vec<ProductRespons
     )
 }
 
-/// Server-side aggregate of every mounted engine's auth posture.
-async fn products_auth_status(
+async fn product_route_not_mounted(
     State(state): State<Arc<AppState>>,
-    peer: Option<ConnectInfo<SocketAddr>>,
-) -> Response {
-    if !aggregate_access_allowed(peer.map(|ConnectInfo(addr)| addr)) {
-        return aggregate_forbidden();
-    }
-    Json(products::auth_statuses(&state.config)).into_response()
-}
-
-#[derive(serde::Deserialize, Default)]
-#[serde(default)]
-struct ProvisionRequest {
-    rotate: bool,
-}
-
-/// Mint or rotate a product's service token. Returns the resulting posture only —
-/// the token is written to the product's own storage and never sent to the browser.
-async fn provision_service_token(
-    State(state): State<Arc<AppState>>,
-    Path(product_key): Path<String>,
-    peer: Option<ConnectInfo<SocketAddr>>,
-    headers: axum::http::HeaderMap,
-    body: Option<Json<ProvisionRequest>>,
-) -> Response {
-    let rotate = body.map(|Json(request)| request.rotate).unwrap_or(false);
-    let peer_addr = peer.map(|ConnectInfo(addr)| addr);
-
-    match products::provision_service_token(&state.config, &product_key, &headers, peer_addr, rotate)
-    {
-        products::ProvisionOutcome::Provisioned(status) => Json(serde_json::json!({
-            "key": product_key,
-            "provisioned": true,
-            "status": status,
-        }))
-        .into_response(),
-        products::ProvisionOutcome::Forbidden => (
-            StatusCode::FORBIDDEN,
-            Json(ErrorResponse {
-                error: "provisioning-forbidden",
-                message: format!(
-                    "{product_key} refused this caller. Provisioning is localhost-only unless an operator key or the suite bootstrap secret is supplied."
-                ),
-            }),
-        )
-            .into_response(),
-        products::ProvisionOutcome::NotEnabled => (
-            StatusCode::CONFLICT,
-            Json(ErrorResponse {
-                error: "product-not-enabled",
-                message: format!("`{product_key}` is not enabled in this runtime."),
-            }),
-        )
-            .into_response(),
-        products::ProvisionOutcome::Unknown => (
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse {
-                error: "unknown-product",
-                message: format!("No PatchHive product is registered with key `{product_key}`."),
-            }),
-        )
-            .into_response(),
-        products::ProvisionOutcome::Failed(message) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse {
-                error: "provisioning-failed",
-                message: format!("Could not provision a service token for {product_key}: {message}"),
-            }),
-        )
-            .into_response(),
-    }
-}
-
-async fn product_health(
-    State(state): State<Arc<AppState>>,
-    Path(product_key): Path<String>,
-    peer: Option<ConnectInfo<SocketAddr>>,
-    request: Request<Body>,
+    Path((product_key, _unmatched_path)): Path<(String, String)>,
 ) -> Response {
     match state.registry.find(&product_key) {
-        Some(product) if product.gateway_target_url().is_some() => {
-            gateway::proxy_product_request(
-                state,
-                product_key,
-                request,
-                peer.map(|ConnectInfo(addr)| addr),
-            )
-            .await
-        }
-        Some(product) => {
-            Json(product.to_health_response(state.product_enabled(product.key.as_str())))
-                .into_response()
-        }
+        Some(_) if !state.product_enabled(&product_key) => (
+            StatusCode::FORBIDDEN,
+            Json(ErrorResponse {
+                error: "product-disabled",
+                message: format!("`{product_key}` is disabled by PATCHHIVE_PRODUCTS."),
+            }),
+        )
+            .into_response(),
+        Some(_) => (
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse {
+                error: "product-route-not-found",
+                message: format!("`{product_key}` does not expose that route."),
+            }),
+        )
+            .into_response(),
         None => (
             StatusCode::NOT_FOUND,
             Json(ErrorResponse {
@@ -407,41 +277,8 @@ async fn product_health(
     }
 }
 
-async fn product_gateway(
-    State(state): State<Arc<AppState>>,
-    Path((product_key, _gateway_path)): Path<(String, String)>,
-    peer: Option<ConnectInfo<SocketAddr>>,
-    request: Request<Body>,
-) -> Response {
-    gateway::proxy_product_request(
-        state,
-        product_key,
-        request,
-        peer.map(|ConnectInfo(addr)| addr),
-    )
-    .await
-}
-
-async fn first_stack_status(State(state): State<Arc<AppState>>) -> Json<SetupResponse> {
-    Json(state.first_stack_status(Vec::new()))
-}
-
-async fn pair_first_stack(State(state): State<Arc<AppState>>) -> Response {
-    if !state.config.product_selection.enables("hive-core") {
-        return (
-            StatusCode::CONFLICT,
-            Json(ErrorResponse {
-                error: "hive-core-disabled",
-                message: "HiveCore must be enabled before the suite can pair products.".into(),
-            }),
-        )
-            .into_response();
-    }
-    hive_core::pair_first_stack_setup().await.into_response()
-}
-
 async fn runs(State(state): State<Arc<AppState>>) -> Json<Vec<crate::models::RunSummary>> {
-    Json(state.runs())
+    Json(state.runs().await)
 }
 
 /// Server-side aggregate of every mounted engine's run history.
@@ -470,20 +307,8 @@ async fn products_runtime(peer: Option<ConnectInfo<SocketAddr>>) -> Response {
     Json(hive_core::materialized_products()).into_response()
 }
 
-/// Runtime-advertised capabilities per engine, for drift comparison against the
-/// manifest data already served by /api/products.
-async fn products_capabilities(
-    State(state): State<Arc<AppState>>,
-    peer: Option<ConnectInfo<SocketAddr>>,
-) -> Response {
-    if !aggregate_access_allowed(peer.map(|ConnectInfo(addr)| addr)) {
-        return aggregate_forbidden();
-    }
-    Json(products::advertised_capabilities(&state.config).await).into_response()
-}
-
 async fn events(State(state): State<Arc<AppState>>) -> Json<Vec<crate::models::SuiteEvent>> {
-    Json(state.events())
+    Json(state.events().await)
 }
 
 #[cfg(test)]
@@ -548,7 +373,6 @@ mod tests {
             "/api/health",
             "/api/auth/status",
             "/api/products",
-            "/api/setup/first-stack",
             "/api/runs",
             "/api/events",
         ] {
@@ -565,31 +389,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn registry_and_mounted_routers_agree_on_integrated_products() {
+    async fn registry_and_mounted_routers_agree() {
         let (app, db_path) = test_app();
         let (_, products) = get_json(&app, "/api/products").await;
         let products = products.as_array().expect("product list");
-        let integrated = [
-            "signal-hive",
-            "merge-keeper",
-            "release-sentry",
-            "dep-triage",
-            "vuln-triage",
-            "flake-sting",
-            "review-bee",
-            "trust-gate",
-            "repo-memory",
-            "refactor-scout",
-            "repo-reaper",
-            "hive-core",
-        ];
-
-        for key in integrated {
-            let product = products
-                .iter()
-                .find(|product| product["key"] == key)
-                .unwrap_or_else(|| panic!("missing registry entry for {key}"));
-            assert_eq!(product["migration_stage"], "integrated");
+        for product in products {
+            let key = product["key"].as_str().expect("product key");
             assert_eq!(product["status"], "online");
             assert_eq!(product["route_prefix"], format!("/api/products/{key}"));
 

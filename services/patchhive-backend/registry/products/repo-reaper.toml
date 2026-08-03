@@ -2,9 +2,8 @@ key = "repo-reaper"
 code = "RR"
 name = "RepoReaper"
 role = "autonomous patch and PR execution"
-module_path = "crate::products::repo_reaper"
+module_path = "repo_reaper"
 route_prefix = "/api/products/repo-reaper"
-migration_stage = "integrated"
 
 [display]
 order = 11

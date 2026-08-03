@@ -2,9 +2,8 @@ key = "hive-core"
 code = "HC"
 name = "HiveCore"
 role = "control plane and suite cockpit"
-module_path = "crate::products::hive_core"
+module_path = "hive_core"
 route_prefix = "/api/products/hive-core"
-migration_stage = "integrated"
 
 [display]
 order = 0

@@ -148,7 +148,7 @@ function DeckInner() {
   const suite = useLiveSuite(10_000, repollKey);
   const ok = PRODUCTS.filter((p) => p.status === "ok").length;
   const warn = PRODUCTS.filter((p) => p.status === "warn").length;
-  // "offline" covers both unreachable and engine-pending. Counting only `crit`
+  // "offline" covers disabled or unreachable products. Counting only `crit`
   // left products missing from the strip entirely — 11/0/0 across twelve products.
   const down = PRODUCTS.filter((p) => p.status === "crit" || p.status === "offline").length;
   const unknown = PRODUCTS.filter((p) => p.status === "unknown").length;

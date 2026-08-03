@@ -82,8 +82,8 @@ directories; obsolete HiveCore frontends are not workspace members.
 
 Ports are authoritative in [scripts/suite-common.sh](scripts/suite-common.sh); README,
 `docs/products/<slug>.md`, and `docker-compose.yml` must agree or `check:suite-drift` fails.
-All eleven specialist products and HiveCore are `migration_stage = "integrated"`
-inside `patchhive-backend`. HiveCore remains the distinct control-plane product,
+All eleven specialist products and HiveCore are mounted in-process inside
+`patchhive-backend`. HiveCore remains the distinct control-plane product,
 with `frontend-v3/` as its only active cockpit. Its `frontend/` and `frontend-v2/`
 trees are obsolete and removal-bound; do not change or verify them.
 HiveCore v3 keeps the operator API key in memory only and deliberately requires a
@@ -158,14 +158,15 @@ Consequence: **every route must work under both the bare path and the
 `/api/products/<slug>` prefix.** That is why auth public-path lists in `lib.rs` enumerate
 both spellings. When you add a public route, add both forms.
 
-Products not mounted in-process are reached through the gateway proxy
-([gateway.rs](services/patchhive-backend/src/gateway.rs)), which resolves the manifest's
-gateway target, enforces `PATCHHIVE_PRODUCTS` enablement, and caps bodies at 25 MB.
+The manifest inventory generates product initialization and router mounting at
+build time. HiveCore observes and dispatches through each mounted HTTP router so
+middleware behavior matches standalone operation; read surfaces use its durable
+SQLite snapshots rather than direct handler calls.
 
 ### Product registry manifests
 
 `services/patchhive-backend/registry/products/<slug>.toml` declares identity (`key`, `code`,
-`name`, `role`), `module_path`, `route_prefix`, `migration_stage`, `[safety]`
+`name`, `role`), `module_path`, `route_prefix`, `[safety]`
 (`read_only`, `writes_external_state`, `mutates_repositories`, `opens_pull_requests`,
 `requires_operator_approval`, `credential_scopes`, `evidence_required`), `[smoke]`
 (tier membership, action fixture and timeout, acknowledged startup identities), `[health]`,
@@ -508,7 +509,7 @@ standalone lockfile before the first export.
 
 ## 9. Current state
 
-- All twelve product engines are `integrated` in `patchhive-backend`; HiveCore stays
+- All twelve product engines are mounted in-process in `patchhive-backend`; HiveCore stays
   a distinct control-plane product and cockpit.
 - Eleven products use canonical specialist frontends at `products/<slug>/frontend/`.
   RepoReaper's canonical interface is

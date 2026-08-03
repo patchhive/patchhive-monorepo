@@ -3,6 +3,31 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+static IN_PROCESS_TRUST_GATE_URL: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+pub fn configure_in_process_trust_gate_url(url: impl Into<String>) -> Result<()> {
+    let url = url.into().trim().trim_end_matches('/').to_owned();
+    if url.is_empty() {
+        return Err(anyhow!("in-process TrustGate URL must not be empty"));
+    }
+    if let Some(configured) = IN_PROCESS_TRUST_GATE_URL.get() {
+        return if configured == &url {
+            Ok(())
+        } else {
+            Err(anyhow!(
+                "in-process TrustGate URL is already configured as {configured}"
+            ))
+        };
+    }
+    IN_PROCESS_TRUST_GATE_URL.set(url.clone()).map_err(|_| {
+        let configured = IN_PROCESS_TRUST_GATE_URL
+            .get()
+            .map(String::as_str)
+            .unwrap_or("another value");
+        anyhow!("in-process TrustGate URL is already configured as {configured}")
+    })
+}
+
 #[derive(Debug, Clone, Serialize)]
 struct ReviewRequest<'a> {
     repo: &'a str,
@@ -32,14 +57,7 @@ pub fn trust_gate_url() -> Option<String> {
         .or_else(|| std::env::var("TRUST_GATE_URL").ok())
         .map(|value| value.trim().trim_end_matches('/').to_owned())
         .filter(|value| !value.is_empty())
-        .or_else(|| {
-            std::env::var("PATCHHIVE_SUITE_BASE_URL")
-                .ok()
-                .and_then(|value| {
-                    let base = value.trim().trim_end_matches('/');
-                    (!base.is_empty()).then(|| format!("{base}/api/products/trust-gate"))
-                })
-        })
+        .or_else(|| IN_PROCESS_TRUST_GATE_URL.get().cloned())
 }
 
 fn apply_auth(request: reqwest::RequestBuilder) -> reqwest::RequestBuilder {

@@ -68,13 +68,26 @@ use patchhive_product_core::startup::log_checks;
 use crate::state::AppState;
 use patchhive_product_core::hivecore_kernel::DeploymentTopology;
 
-static RUNTIME_TOPOLOGY: std::sync::OnceLock<DeploymentTopology> = std::sync::OnceLock::new();
+#[derive(Clone, Debug)]
+pub struct RuntimeConfiguration {
+    pub topology: DeploymentTopology,
+    pub suite_base_url: Option<String>,
+}
+
+static RUNTIME_CONFIGURATION: std::sync::OnceLock<RuntimeConfiguration> =
+    std::sync::OnceLock::new();
 
 pub fn runtime_topology() -> DeploymentTopology {
-    RUNTIME_TOPOLOGY
+    RUNTIME_CONFIGURATION
         .get()
-        .copied()
+        .map(|configuration| configuration.topology)
         .unwrap_or(DeploymentTopology::Unknown)
+}
+
+pub fn suite_base_url() -> Option<&'static str> {
+    RUNTIME_CONFIGURATION
+        .get()
+        .and_then(|configuration| configuration.suite_base_url.as_deref())
 }
 
 pub fn materialized_products() -> Vec<models::ProductRuntimeItem> {
@@ -95,25 +108,28 @@ pub fn materialized_product_runs(
     }
 }
 
-/// Compatibility entry point for the unified suite's historical
-/// `/api/setup/first-stack/pair` route.
-///
-/// The mounted engine owns pairing authority and evidence. Calling it in-process
-/// keeps the compatibility route from maintaining a second, weaker implementation
-/// or returning the old placeholder response.
-pub async fn pair_first_stack_setup(
-) -> axum::Json<models::ApiEnvelope<models::FirstStackSetupResponse>> {
-    pipeline::pair_first_stack(axum::extract::State(state::AppState::new())).await
-}
-
 /// Schema, startup diagnostics, and any background work. Idempotent: the unified
 /// backend calls this once per enabled engine at boot.
 pub async fn init_runtime() -> Result<()> {
-    init_runtime_for_topology(DeploymentTopology::GatewayCompatibility).await
+    init_runtime_for_topology(DeploymentTopology::StandaloneNetwork).await
 }
 
 pub async fn init_runtime_for_topology(topology: DeploymentTopology) -> Result<()> {
-    let _ = RUNTIME_TOPOLOGY.set(topology);
+    init_runtime_with_configuration(RuntimeConfiguration {
+        topology,
+        suite_base_url: None,
+    })
+    .await
+}
+
+pub async fn init_runtime_with_configuration(configuration: RuntimeConfiguration) -> Result<()> {
+    if let Some(base_url) = configuration.suite_base_url.as_deref() {
+        anyhow::ensure!(
+            !base_url.trim().is_empty(),
+            "HiveCore suite base URL must not be empty"
+        );
+    }
+    let _ = RUNTIME_CONFIGURATION.set(configuration);
     state::load_product_registry()?;
     db::init_db()?;
     bootstrap_authority::initialize();

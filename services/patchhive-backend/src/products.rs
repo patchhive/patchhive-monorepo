@@ -3,53 +3,34 @@ use anyhow::Result;
 use crate::config::Config;
 
 pub async fn init_enabled_products(config: &Config) -> Result<()> {
-    if config.product_selection.enables("merge-keeper") {
-        merge_keeper::init_runtime().await?;
+    let suite_base_url = suite_base_url(config);
+    patchhive_product_core::trust_gate::configure_in_process_trust_gate_url(format!(
+        "{}/api/products/trust-gate",
+        suite_base_url.trim_end_matches('/')
+    ))?;
+
+    macro_rules! init_one {
+        (hive_core, $key:literal) => {
+            if config.product_selection.enables($key) {
+                hive_core::init_runtime_with_configuration(hive_core::RuntimeConfiguration {
+                    topology: patchhive_product_core::hivecore_kernel::DeploymentTopology::UnifiedInProcess,
+                    suite_base_url: Some(suite_base_url.clone()),
+                })
+                .await?;
+            }
+        };
+        ($module:ident, $key:literal) => {
+            if config.product_selection.enables($key) {
+                $module::init_runtime().await?;
+            }
+        };
     }
-    if config.product_selection.enables("release-sentry") {
-        release_sentry::init_runtime().await?;
+    macro_rules! init_all {
+        ($(($module:ident, $key:literal)),* $(,)?) => {
+            $(init_one!($module, $key);)*
+        };
     }
-    if config.product_selection.enables("dep-triage") {
-        dep_triage::init_runtime().await?;
-    }
-    if config.product_selection.enables("vuln-triage") {
-        vuln_triage::init_runtime().await?;
-    }
-    if config.product_selection.enables("flake-sting") {
-        flake_sting::init_runtime().await?;
-    }
-    if config.product_selection.enables("review-bee") {
-        review_bee::init_runtime().await?;
-    }
-    if config.product_selection.enables("trust-gate") {
-        trust_gate::init_runtime().await?;
-    }
-    if config.product_selection.enables("repo-memory") {
-        repo_memory::init_runtime().await?;
-    }
-    if config.product_selection.enables("signal-hive") {
-        signal_hive::init_runtime().await?;
-    }
-    if config.product_selection.enables("refactor-scout") {
-        refactor_scout::init_runtime().await?;
-    }
-    if config.product_selection.enables("repo-reaper") {
-        repo_reaper::init_runtime().await?;
-    }
-    if config.product_selection.enables("hive-core") {
-        // HiveCore reaches other products over HTTP. Mounted in this process they
-        // live at <suite>/api/products/<slug>, not on their standalone ports, so it
-        // needs to know where "here" is before it resolves any product URL.
-        //
-        // SAFETY: single-threaded startup, before the server accepts connections.
-        unsafe {
-            std::env::set_var("PATCHHIVE_SUITE_BASE_URL", suite_base_url(config));
-        }
-        hive_core::init_runtime_for_topology(
-            patchhive_product_core::hivecore_kernel::DeploymentTopology::UnifiedInProcess,
-        )
-        .await?;
-    }
+    for_each_product!(init_all);
     Ok(())
 }
 
@@ -71,176 +52,6 @@ fn suite_base_url(config: &Config) -> String {
     format!("http://{host}:{}", addr.port())
 }
 
-pub fn hive_core_router() -> axum::Router {
-    hive_core::router()
-}
-
-pub fn merge_keeper_router() -> axum::Router {
-    merge_keeper::router()
-}
-
-pub fn release_sentry_router() -> axum::Router {
-    release_sentry::router()
-}
-
-pub fn dep_triage_router() -> axum::Router {
-    dep_triage::router()
-}
-
-pub fn vuln_triage_router() -> axum::Router {
-    vuln_triage::router()
-}
-
-pub fn flake_sting_router() -> axum::Router {
-    flake_sting::router()
-}
-
-pub fn review_bee_router() -> axum::Router {
-    review_bee::router()
-}
-
-pub fn trust_gate_router() -> axum::Router {
-    trust_gate::router()
-}
-
-pub fn repo_memory_router() -> axum::Router {
-    repo_memory::router()
-}
-
-pub fn signal_hive_router() -> axum::Router {
-    signal_hive::router()
-}
-
-pub fn refactor_scout_router() -> axum::Router {
-    refactor_scout::router()
-}
-
-pub fn repo_reaper_router() -> axum::Router {
-    repo_reaper::router()
-}
-
-/// Auth posture for one mounted product engine.
-///
-/// Read in-process. HiveCore previously fanned out one `/auth/status` request per
-/// product from the browser, which is both N calls per refresh and enough traffic to
-/// trip the sensitive-route rate limiter. Every engine is compiled into this binary,
-/// so the same information is a direct call — no HTTP, no rate limit, one response.
-#[derive(serde::Serialize)]
-pub struct ProductAuthStatus {
-    pub key: &'static str,
-    /// None when the product is not enabled in this runtime.
-    pub status: Option<serde_json::Value>,
-}
-
-pub fn auth_statuses(config: &Config) -> Vec<ProductAuthStatus> {
-    macro_rules! status_for {
-        ($key:literal, $module:ident) => {
-            ProductAuthStatus {
-                key: $key,
-                status: if config.product_selection.enables($key) {
-                    Some($module::auth::auth_status_payload())
-                } else {
-                    None
-                },
-            }
-        };
-    }
-
-    vec![
-        status_for!("merge-keeper", merge_keeper),
-        status_for!("release-sentry", release_sentry),
-        status_for!("dep-triage", dep_triage),
-        status_for!("vuln-triage", vuln_triage),
-        status_for!("flake-sting", flake_sting),
-        status_for!("review-bee", review_bee),
-        status_for!("trust-gate", trust_gate),
-        status_for!("repo-memory", repo_memory),
-        status_for!("signal-hive", signal_hive),
-        status_for!("refactor-scout", refactor_scout),
-        status_for!("repo-reaper", repo_reaper),
-        status_for!("hive-core", hive_core),
-    ]
-}
-
-/// Outcome of a provisioning attempt. The minted token is deliberately absent:
-/// it is written to the product's own storage and never travels to the caller.
-pub enum ProvisionOutcome {
-    /// New posture after the mint or rotation.
-    Provisioned(serde_json::Value),
-    /// The product's own guard refused this caller.
-    Forbidden,
-    /// The engine is not enabled in this runtime.
-    NotEnabled,
-    /// No engine is registered under that key.
-    Unknown,
-    Failed(String),
-}
-
-/// Mint or rotate a product's service token, in-process.
-///
-/// Authorization is delegated to the product's own auth module rather than
-/// re-implemented here, so the suite route cannot be a softer door than the
-/// product's own `/auth/generate-service-token`. Same guard, same answer.
-pub fn provision_service_token(
-    config: &Config,
-    key: &str,
-    headers: &axum::http::HeaderMap,
-    peer: Option<std::net::SocketAddr>,
-    rotate: bool,
-) -> ProvisionOutcome {
-    macro_rules! provision_with {
-        ($module:ident) => {{
-            let allowed = if rotate {
-                $module::auth::service_token_rotation_allowed_from_peer(headers, peer)
-            } else {
-                $module::auth::service_token_generation_allowed_from_peer(headers, peer)
-            };
-            if !allowed {
-                return ProvisionOutcome::Forbidden;
-            }
-
-            // Rotation is the correct verb once a token exists; minting again would
-            // leave the previous one valid.
-            let should_rotate = rotate || $module::auth::service_auth_enabled();
-            let result = if should_rotate {
-                $module::auth::rotate_and_save_service_token()
-            } else {
-                $module::auth::generate_and_save_service_token()
-            };
-
-            match result {
-                // The token itself is dropped here on purpose.
-                Ok(_) => ProvisionOutcome::Provisioned($module::auth::auth_status_payload()),
-                Err(error) => ProvisionOutcome::Failed(error.to_string()),
-            }
-        }};
-    }
-
-    if !config.product_selection.enables(key) {
-        return match key {
-            "merge-keeper" | "release-sentry" | "dep-triage" | "vuln-triage" | "flake-sting"
-            | "review-bee" | "trust-gate" | "repo-memory" | "signal-hive" | "refactor-scout"
-            | "repo-reaper" => ProvisionOutcome::NotEnabled,
-            _ => ProvisionOutcome::Unknown,
-        };
-    }
-
-    match key {
-        "merge-keeper" => provision_with!(merge_keeper),
-        "release-sentry" => provision_with!(release_sentry),
-        "dep-triage" => provision_with!(dep_triage),
-        "vuln-triage" => provision_with!(vuln_triage),
-        "flake-sting" => provision_with!(flake_sting),
-        "review-bee" => provision_with!(review_bee),
-        "trust-gate" => provision_with!(trust_gate),
-        "repo-memory" => provision_with!(repo_memory),
-        "signal-hive" => provision_with!(signal_hive),
-        "refactor-scout" => provision_with!(refactor_scout),
-        "repo-reaper" => provision_with!(repo_reaper),
-        _ => ProvisionOutcome::Unknown,
-    }
-}
-
 /// Run summaries for one product engine, contract-shaped.
 #[derive(serde::Serialize)]
 pub struct ProductRuns {
@@ -249,11 +60,10 @@ pub struct ProductRuns {
         hive_core::models::Observation<Vec<patchhive_product_core::contract::ProductRunSummary>>,
 }
 
-/// Suite-wide run index, read in-process.
+/// Suite-wide run index from HiveCore's durable background snapshots.
 ///
-/// Ten engines expose a zero-argument `runs()` handler; RepoReaper exposes
-/// `run_summaries()` for the same data. Either way this is a direct call — the
-/// backend does not issue HTTP requests to routers mounted in its own binary.
+/// The snapshot worker observed each product through its mounted HTTP router, so
+/// this read performs no request-time fleet fan-out and bypasses no middleware.
 pub fn materialized_runs(
     config: &Config,
     keys: impl IntoIterator<Item = String>,
@@ -270,59 +80,4 @@ pub fn materialized_runs(
             key,
         })
         .collect()
-}
-
-/// Declared-vs-advertised capability comparison for one engine.
-///
-/// `declared` is the manifest's `[[capabilities]]`; `advertised` is what the engine's
-/// own `/capabilities` handler returns at runtime. Drift is the difference, and this
-/// is the only place both sides are known without a network round trip.
-#[derive(serde::Serialize)]
-pub struct ProductCapabilityReport {
-    pub key: &'static str,
-    /// None when the engine is not enabled in this runtime.
-    pub advertised: Option<serde_json::Value>,
-}
-
-pub async fn advertised_capabilities(config: &Config) -> Vec<ProductCapabilityReport> {
-    macro_rules! caps_for {
-        ($key:literal, $module:ident) => {
-            ProductCapabilityReport {
-                key: $key,
-                advertised: if config.product_selection.enables($key) {
-                    Some(
-                        serde_json::to_value($module::pipeline::capabilities().await.0)
-                            .unwrap_or_default(),
-                    )
-                } else {
-                    None
-                },
-            }
-        };
-    }
-
-    let mut out = vec![
-        caps_for!("merge-keeper", merge_keeper),
-        caps_for!("release-sentry", release_sentry),
-        caps_for!("dep-triage", dep_triage),
-        caps_for!("vuln-triage", vuln_triage),
-        caps_for!("flake-sting", flake_sting),
-        caps_for!("review-bee", review_bee),
-        caps_for!("trust-gate", trust_gate),
-        caps_for!("repo-memory", repo_memory),
-        caps_for!("signal-hive", signal_hive),
-        caps_for!("refactor-scout", refactor_scout),
-        caps_for!("hive-core", hive_core),
-    ];
-
-    out.push(ProductCapabilityReport {
-        key: "repo-reaper",
-        advertised: if config.product_selection.enables("repo-reaper") {
-            Some(serde_json::to_value(repo_reaper::advertised_capabilities()).unwrap_or_default())
-        } else {
-            None
-        },
-    });
-
-    out
 }

@@ -86,9 +86,14 @@ interface ApiAction {
   credential_requirements?: string[];
 }
 
-interface ApiCapabilityReport {
-  key: string;
-  advertised: { actions: ApiAction[] } | null;
+interface ApiRuntimeProduct {
+  slug: string;
+  actions: ApiAction[];
+  health: {
+    capabilities:
+      | { state: "observed"; value: { action_count: number } }
+      | { state: "failed" | "not_observed" | "not_applicable"; reason: string };
+  };
 }
 
 function effectKind(action: ApiAction): ApiActionEffect["kind"] | null {
@@ -263,22 +268,22 @@ function compare(product: ApiProduct, actions: ApiAction[]): ConformanceFinding[
 }
 
 export async function fetchConformance(signal?: AbortSignal): Promise<ProductConformance[]> {
-  const [productsResponse, capabilitiesResponse] = await Promise.all([
+  const [productsResponse, runtimeResponse] = await Promise.all([
     apiFetch("/api/products", { signal }),
-    apiFetch("/api/products/capabilities", { signal }),
+    apiFetch("/api/products/runtime", { signal }),
   ]);
-  if (!productsResponse.ok || !capabilitiesResponse.ok) {
-    throw new Error(`HTTP ${productsResponse.status}/${capabilitiesResponse.status}`);
+  if (!productsResponse.ok || !runtimeResponse.ok) {
+    throw new Error(`HTTP ${productsResponse.status}/${runtimeResponse.status}`);
   }
 
   const products = (await productsResponse.json()) as ApiProduct[];
-  const reports = (await capabilitiesResponse.json()) as ApiCapabilityReport[];
-  const byKey = new Map(reports.map((report) => [report.key, report]));
+  const runtime = (await runtimeResponse.json()) as ApiRuntimeProduct[];
+  const byKey = new Map(runtime.map((product) => [product.slug, product]));
 
   return products.map((product) => {
-    const report = byKey.get(product.key);
-    const actions = report?.advertised?.actions ?? [];
-    const observed = Boolean(report?.advertised);
+    const observedRuntime = byKey.get(product.key);
+    const observed = observedRuntime?.health.capabilities.state === "observed";
+    const actions = observed ? observedRuntime.actions : [];
     return {
       productKey: product.key,
       productName: product.name,

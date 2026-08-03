@@ -316,6 +316,8 @@ pub struct ProductRuntimeItem {
     pub machine_auth_configured: bool,
     pub service_token_configured: bool,
     pub legacy_api_key_configured: bool,
+    #[serde(default = "default_product_auth_observation")]
+    pub auth_status: Observation<crate::pipeline::ProductAuthStatusBody>,
     pub notes: String,
     pub status: String,
     pub health: ProductHealthSnapshot,
@@ -326,6 +328,10 @@ pub struct ProductRuntimeItem {
     pub contract_drift_count: u32,
     pub run_detail_template: String,
     pub recent_runs: Vec<contract::ProductRunSummary>,
+}
+
+fn default_product_auth_observation() -> Observation<crate::pipeline::ProductAuthStatusBody> {
+    Observation::not_observed("The stored snapshot predates product auth observations.")
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

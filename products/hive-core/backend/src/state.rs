@@ -90,60 +90,7 @@ pub struct ProductSafetyDefinition {
 
 static PRODUCT_REGISTRY: OnceLock<Vec<ProductDefinition>> = OnceLock::new();
 
-const PRODUCT_MANIFESTS: &[(&str, &str)] = &[
-    (
-        "hive-core",
-        include_str!("../../../../services/patchhive-backend/registry/products/hive-core.toml"),
-    ),
-    (
-        "signal-hive",
-        include_str!("../../../../services/patchhive-backend/registry/products/signal-hive.toml"),
-    ),
-    (
-        "review-bee",
-        include_str!("../../../../services/patchhive-backend/registry/products/review-bee.toml"),
-    ),
-    (
-        "trust-gate",
-        include_str!("../../../../services/patchhive-backend/registry/products/trust-gate.toml"),
-    ),
-    (
-        "repo-memory",
-        include_str!("../../../../services/patchhive-backend/registry/products/repo-memory.toml"),
-    ),
-    (
-        "merge-keeper",
-        include_str!("../../../../services/patchhive-backend/registry/products/merge-keeper.toml"),
-    ),
-    (
-        "flake-sting",
-        include_str!("../../../../services/patchhive-backend/registry/products/flake-sting.toml"),
-    ),
-    (
-        "dep-triage",
-        include_str!("../../../../services/patchhive-backend/registry/products/dep-triage.toml"),
-    ),
-    (
-        "vuln-triage",
-        include_str!("../../../../services/patchhive-backend/registry/products/vuln-triage.toml"),
-    ),
-    (
-        "refactor-scout",
-        include_str!(
-            "../../../../services/patchhive-backend/registry/products/refactor-scout.toml"
-        ),
-    ),
-    (
-        "release-sentry",
-        include_str!(
-            "../../../../services/patchhive-backend/registry/products/release-sentry.toml"
-        ),
-    ),
-    (
-        "repo-reaper",
-        include_str!("../../../../services/patchhive-backend/registry/products/repo-reaper.toml"),
-    ),
-];
+include!(concat!(env!("OUT_DIR"), "/product_manifests.rs"));
 
 #[derive(Deserialize)]
 struct RegistryManifest {
@@ -184,15 +131,10 @@ pub fn load_product_registry() -> anyhow::Result<()> {
     }
 
     let mut entries = Vec::with_capacity(PRODUCT_MANIFESTS.len());
-    for (source_name, source) in PRODUCT_MANIFESTS {
+    for source in PRODUCT_MANIFESTS {
         let manifest = toml::from_str::<RegistryManifest>(source).map_err(|error| {
-            anyhow::anyhow!("could not parse canonical product manifest '{source_name}': {error}")
+            anyhow::anyhow!("could not parse a canonical product manifest: {error}")
         })?;
-        anyhow::ensure!(
-            manifest.key == *source_name,
-            "canonical product manifest '{source_name}' declares mismatched key '{}'",
-            manifest.key
-        );
         entries.push((
             manifest.display.order,
             ProductDefinition {

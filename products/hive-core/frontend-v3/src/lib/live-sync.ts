@@ -12,7 +12,7 @@
 import { useEffect, useState } from "react";
 
 import { apiFetch } from "./http";
-import { ID_BY_SLUG, SLUG_BY_ID, TITLE_BY_SLUG } from "./product-slugs";
+import { registerProductSlug, SLUG_BY_ID, TITLE_BY_SLUG } from "./product-slugs";
 import {
   PRODUCTS,
   RUNS,
@@ -25,6 +25,8 @@ import { fetchProbes, summarise } from "./probes";
 
 interface ApiProduct {
   slug: string;
+  title: string;
+  role: string;
   enabled: boolean;
   status: string;
   frontend_url: string;
@@ -37,11 +39,13 @@ interface ApiProduct {
   };
 }
 
-/**
- * `engine-pending` means the manifest is registered but no engine is mounted in this
- * runtime — reachable as a record, not as a service. That is closer to offline than
- * to healthy, and flattening it to "ok" would misreport HiveCore itself.
- */
+interface ApiRegistryProduct {
+  key: string;
+  name: string;
+  capabilities: string[];
+}
+
+/** Translate the typed runtime status without inventing health for unknown values. */
 function toStatus(item: ApiProduct): Status {
   if (!item.enabled) return "offline";
   switch (item.status) {
@@ -200,15 +204,48 @@ export function useLiveSuite(pollMs = 10_000, refreshKey = 0): LiveSuite {
 
     async function sync() {
       try {
-        const response = await apiFetch("/api/products/runtime", { signal: controller.signal });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const rows = (await response.json()) as ApiProduct[];
+        const [runtimeResponse, registryResponse] = await Promise.all([
+          apiFetch("/api/products/runtime", { signal: controller.signal }),
+          apiFetch("/api/products", { signal: controller.signal }),
+        ]);
+        if (!runtimeResponse.ok || !registryResponse.ok) {
+          throw new Error(`HTTP ${runtimeResponse.status}/${registryResponse.status}`);
+        }
+        const rows = (await runtimeResponse.json()) as ApiProduct[];
+        const registry = (await registryResponse.json()) as ApiRegistryProduct[];
+        const registryByKey = new Map(registry.map((product) => [product.key, product]));
         if (cancelled) return;
 
         for (const row of rows) {
-          const id = ID_BY_SLUG[row.slug] ?? row.slug;
-          const product = PRODUCTS.find((item) => item.id === id);
-          if (!product) continue;
+          const id = registerProductSlug(row.slug, row.title);
+          let product = PRODUCTS.find((item) => item.id === id);
+          if (!product) {
+            product = {
+              id,
+              name: row.title,
+              tagline: row.role,
+              frontend: row.frontend_url,
+              api: row.api_url,
+              status: "unknown",
+              latencyMs: null,
+              uptime: null,
+              probeState: row.slug === "hive-core" ? "not_applicable" : "not_observed",
+              probeReason:
+                row.slug === "hive-core"
+                  ? "HiveCore has no network round trip to measure in-process."
+                  : "Probe history has not been observed yet.",
+              runs24h: null,
+              declaredCapabilities: registryByKey.get(row.slug)?.capabilities ?? [],
+              capabilities: [],
+              capabilityState: "not_observed",
+              capabilityReason: "Runtime capabilities have not been observed yet.",
+              contractDrift: null,
+            };
+            PRODUCTS.push(product);
+          }
+          product.name = row.title;
+          product.tagline = row.role;
+          product.declaredCapabilities = registryByKey.get(row.slug)?.capabilities ?? [];
           product.status = toStatus(row);
           product.frontend = row.frontend_url;
           product.api = row.api_url;

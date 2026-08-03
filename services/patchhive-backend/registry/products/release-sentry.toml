@@ -2,9 +2,8 @@ key = "release-sentry"
 code = "RSY"
 name = "ReleaseSentry"
 role = "release readiness evidence"
-module_path = "crate::products::release_sentry"
+module_path = "release_sentry"
 route_prefix = "/api/products/release-sentry"
-migration_stage = "integrated"
 
 [display]
 order = 10

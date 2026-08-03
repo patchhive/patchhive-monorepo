@@ -40,43 +40,19 @@ pub struct ProductResponse {
     pub module_path: String,
     pub enabled: bool,
     pub status: ProductStatus,
-    pub migration_stage: MigrationStage,
     pub route_prefix: String,
     pub capabilities: Vec<String>,
     pub capability_metadata: Vec<CapabilityMetadata>,
     pub safety: SafetyBoundary,
-    pub gateway: GatewayStatus,
     pub health: ProductHealthContract,
     pub routes: Vec<RouteClaim>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-#[allow(dead_code)]
 #[serde(rename_all = "kebab-case")]
 pub enum ProductStatus {
     Disabled,
     Online,
-    GatewayPending,
-    EnginePending,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[allow(dead_code)]
-#[serde(rename_all = "kebab-case")]
-pub enum MigrationStage {
-    NotStarted,
-    GatewayReady,
-    Integrated,
-}
-
-#[derive(Clone, Debug, Serialize)]
-pub struct ProductHealthResponse {
-    pub key: String,
-    pub name: String,
-    pub enabled: bool,
-    pub status: ProductStatus,
-    pub migration_stage: MigrationStage,
-    pub message: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -84,13 +60,6 @@ pub struct RouteClaim {
     pub method: String,
     pub path: String,
     pub description: String,
-}
-
-#[derive(Clone, Debug, Default, Serialize)]
-pub struct GatewayStatus {
-    pub configured: bool,
-    pub target_url: Option<String>,
-    pub env_var: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -135,43 +104,6 @@ pub struct SafetyBoundary {
     pub credential_scopes: Vec<String>,
     #[serde(default)]
     pub evidence_required: Vec<String>,
-}
-
-#[derive(Clone, Debug, Serialize)]
-pub struct SetupResponse {
-    pub suite_bootstrap_configured: bool,
-    pub launcher: LauncherStatus,
-    pub products: Vec<SetupProduct>,
-    pub actions: Vec<String>,
-}
-
-#[derive(Clone, Debug, Serialize)]
-pub struct LauncherStatus {
-    pub available: bool,
-    pub status: &'static str,
-    pub message: &'static str,
-}
-
-#[derive(Clone, Debug, Serialize)]
-pub struct SetupProduct {
-    pub runtime: RuntimeProduct,
-    pub pairing_ready: bool,
-    pub auth_status: AuthStatusResponse,
-    pub auth_status_error: Option<String>,
-}
-
-#[derive(Clone, Debug, Serialize)]
-pub struct RuntimeProduct {
-    pub slug: String,
-    pub icon: String,
-    pub title: String,
-    pub role: String,
-    pub status: &'static str,
-    pub api_url: String,
-    pub enabled: bool,
-    pub service_token_configured: bool,
-    pub legacy_api_key_configured: bool,
-    pub contract_drift_count: usize,
 }
 
 #[derive(Clone, Debug, Serialize)]

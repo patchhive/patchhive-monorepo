@@ -12,42 +12,22 @@
 // is `reporeaper` but `hive-core` could as easily have been `hivecore` or `core` — so
 // the mapping is explicit and lives here.
 
-/** API slug → the deck's product id. */
-export const ID_BY_SLUG: Record<string, string> = {
-  "repo-reaper": "reporeaper",
-  "signal-hive": "signalhive",
-  "trust-gate": "trustgate",
-  "repo-memory": "repomemory",
-  "review-bee": "reviewbee",
-  "merge-keeper": "mergekeeper",
-  "flake-sting": "flakesting",
-  "dep-triage": "deptriage",
-  "vuln-triage": "vulntriage",
-  "refactor-scout": "refactorscout",
-  "release-sentry": "releasesentry",
-  "hive-core": "hivecore",
-};
+/** API slug → the deck's historical hyphen-free id. */
+export const ID_BY_SLUG: Record<string, string> = {};
 
 /** The deck's product id → API slug. Derived, so the two cannot disagree. */
-export const SLUG_BY_ID: Record<string, string> = Object.fromEntries(
-  Object.entries(ID_BY_SLUG).map(([slug, id]) => [id, slug]),
-);
+export const SLUG_BY_ID: Record<string, string> = {};
 
 /** Display names, keyed by API slug. */
-export const TITLE_BY_SLUG: Record<string, string> = {
-  "repo-reaper": "RepoReaper",
-  "signal-hive": "SignalHive",
-  "trust-gate": "TrustGate",
-  "repo-memory": "RepoMemory",
-  "review-bee": "ReviewBee",
-  "merge-keeper": "MergeKeeper",
-  "flake-sting": "FlakeSting",
-  "dep-triage": "DepTriage",
-  "vuln-triage": "VulnTriage",
-  "refactor-scout": "RefactorScout",
-  "release-sentry": "ReleaseSentry",
-  "hive-core": "HiveCore",
-};
+export const TITLE_BY_SLUG: Record<string, string> = {};
+
+export function registerProductSlug(slug: string, title: string): string {
+  const id = slug.replaceAll("-", "");
+  ID_BY_SLUG[slug] = id;
+  SLUG_BY_ID[id] = slug;
+  TITLE_BY_SLUG[slug] = title;
+  return id;
+}
 
 /**
  * Falls back to the input rather than throwing.

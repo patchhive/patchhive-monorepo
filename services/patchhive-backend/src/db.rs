@@ -1,29 +1,41 @@
-use std::sync::Mutex;
-
 use anyhow::{Context, Result as AnyResult};
 use chrono::{DateTime, Utc};
-use rusqlite::{params, Connection};
+use patchhive_product_core::sqlite::SqlitePool;
+use rusqlite::params;
+use std::sync::Arc;
 
 use crate::models::{RunSummary, SuiteEvent};
 
-#[derive(Debug)]
+#[derive(Clone)]
 pub struct SharedDb {
-    conn: Mutex<Connection>,
+    pool: Arc<SqlitePool>,
+}
+
+impl std::fmt::Debug for SharedDb {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("SharedDb")
+            .field("path", &self.pool.path())
+            .finish()
+    }
 }
 
 impl SharedDb {
     pub fn open(path: &std::path::Path) -> AnyResult<Self> {
-        let conn = Connection::open(path)
-            .with_context(|| format!("could not open shared PatchHive DB at {}", path.display()))?;
         let db = Self {
-            conn: Mutex::new(conn),
+            pool: Arc::new(SqlitePool::new(path, "PatchHive suite")),
         };
         db.init()?;
         Ok(db)
     }
 
     fn init(&self) -> AnyResult<()> {
-        let conn = self.conn.lock().expect("shared db mutex poisoned");
+        let conn = self.pool.get().with_context(|| {
+            format!(
+                "could not open shared PatchHive DB at {}",
+                self.pool.path().display()
+            )
+        })?;
         conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.pragma_update(None, "foreign_keys", "ON")?;
         conn.execute_batch(
@@ -60,13 +72,31 @@ impl SharedDb {
         Ok(())
     }
 
-    pub fn ping(&self) -> bool {
-        let conn = self.conn.lock().expect("shared db mutex poisoned");
+    pub async fn ping(&self) -> bool {
+        let db = self.clone();
+        tokio::task::spawn_blocking(move || db.ping_sync())
+            .await
+            .unwrap_or(false)
+    }
+
+    fn ping_sync(&self) -> bool {
+        let Ok(conn) = self.pool.get() else {
+            return false;
+        };
         conn.query_row("SELECT 1", [], |_| Ok(())).is_ok()
     }
 
-    pub fn product_override_count(&self) -> usize {
-        let conn = self.conn.lock().expect("shared db mutex poisoned");
+    pub async fn product_override_count(&self) -> usize {
+        let db = self.clone();
+        tokio::task::spawn_blocking(move || db.product_override_count_sync())
+            .await
+            .unwrap_or(0)
+    }
+
+    fn product_override_count_sync(&self) -> usize {
+        let Ok(conn) = self.pool.get() else {
+            return 0;
+        };
         conn.query_row(
             "SELECT COUNT(*) FROM product_registry_overrides",
             [],
@@ -77,7 +107,13 @@ impl SharedDb {
     }
 
     pub fn record_event(&self, id: &str, kind: &str, message: &str, created_at: DateTime<Utc>) {
-        let conn = self.conn.lock().expect("shared db mutex poisoned");
+        let conn = match self.pool.get() {
+            Ok(conn) => conn,
+            Err(err) => {
+                tracing::warn!(%err, "could not acquire suite database connection");
+                return;
+            }
+        };
         if let Err(err) = conn.execute(
             "INSERT OR REPLACE INTO suite_events (id, kind, message, created_at) VALUES (?1, ?2, ?3, ?4)",
             params![id, kind, message, created_at.to_rfc3339()],
@@ -86,8 +122,21 @@ impl SharedDb {
         }
     }
 
-    pub fn runs(&self) -> Vec<RunSummary> {
-        let conn = self.conn.lock().expect("shared db mutex poisoned");
+    pub async fn runs(&self) -> Vec<RunSummary> {
+        let db = self.clone();
+        tokio::task::spawn_blocking(move || db.runs_sync())
+            .await
+            .unwrap_or_default()
+    }
+
+    fn runs_sync(&self) -> Vec<RunSummary> {
+        let conn = match self.pool.get() {
+            Ok(conn) => conn,
+            Err(err) => {
+                tracing::warn!(%err, "could not acquire suite database connection");
+                return Vec::new();
+            }
+        };
         let mut stmt = match conn.prepare(
             "SELECT id, product_key, status, message FROM suite_runs ORDER BY created_at DESC LIMIT 100",
         ) {
@@ -115,8 +164,21 @@ impl SharedDb {
         rows
     }
 
-    pub fn events(&self) -> Vec<SuiteEvent> {
-        let conn = self.conn.lock().expect("shared db mutex poisoned");
+    pub async fn events(&self) -> Vec<SuiteEvent> {
+        let db = self.clone();
+        tokio::task::spawn_blocking(move || db.events_sync())
+            .await
+            .unwrap_or_default()
+    }
+
+    fn events_sync(&self) -> Vec<SuiteEvent> {
+        let conn = match self.pool.get() {
+            Ok(conn) => conn,
+            Err(err) => {
+                tracing::warn!(%err, "could not acquire suite database connection");
+                return Vec::new();
+            }
+        };
         let mut stmt = match conn.prepare(
             "SELECT id, kind, message, created_at FROM suite_events ORDER BY created_at DESC LIMIT 100",
         ) {

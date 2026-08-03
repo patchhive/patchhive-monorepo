@@ -1,28 +1,10 @@
-use std::env;
-
 use anyhow::{Context, Result};
 use serde::Deserialize;
 
 use crate::models::{
-    AuthStatusResponse, CapabilityMetadata, GatewayStatus, MigrationStage, ProductHealthContract,
-    ProductHealthResponse, ProductResponse, ProductStatus, RouteClaim, RuntimeProduct,
-    SafetyBoundary, SetupProduct,
+    CapabilityMetadata, ProductHealthContract, ProductResponse, ProductStatus, RouteClaim,
+    SafetyBoundary,
 };
-
-const MANIFEST_SOURCES: &[&str] = &[
-    include_str!("../registry/products/hive-core.toml"),
-    include_str!("../registry/products/signal-hive.toml"),
-    include_str!("../registry/products/review-bee.toml"),
-    include_str!("../registry/products/trust-gate.toml"),
-    include_str!("../registry/products/repo-memory.toml"),
-    include_str!("../registry/products/merge-keeper.toml"),
-    include_str!("../registry/products/flake-sting.toml"),
-    include_str!("../registry/products/dep-triage.toml"),
-    include_str!("../registry/products/vuln-triage.toml"),
-    include_str!("../registry/products/refactor-scout.toml"),
-    include_str!("../registry/products/release-sentry.toml"),
-    include_str!("../registry/products/repo-reaper.toml"),
-];
 
 #[derive(Clone, Debug)]
 pub struct ProductRegistry {
@@ -39,14 +21,9 @@ pub struct ProductManifest {
     #[serde(default = "default_route_prefix")]
     pub route_prefix: String,
     #[serde(default)]
-    pub migration_stage: Option<MigrationStage>,
-    #[serde(default)]
     pub capabilities: Vec<CapabilityMetadata>,
     #[serde(default)]
     pub safety: SafetyBoundary,
-    #[serde(default)]
-    pub gateway: Option<GatewayConfig>,
-    #[serde(default)]
     pub health: ProductHealthContract,
     #[serde(default)]
     pub routes: Vec<RouteClaim>,
@@ -66,20 +43,14 @@ pub struct ProductDisplay {
     pub api_url: String,
 }
 
-#[derive(Clone, Debug, Default, Deserialize)]
-pub struct GatewayConfig {
-    pub default_url: Option<String>,
-    pub env_var: Option<String>,
-}
-
 fn default_route_prefix() -> String {
     String::new()
 }
 
 impl ProductRegistry {
     pub fn load() -> Result<Self> {
-        let mut products = Vec::with_capacity(MANIFEST_SOURCES.len());
-        for (index, source) in MANIFEST_SOURCES.iter().enumerate() {
+        let mut products = Vec::with_capacity(crate::PRODUCT_MANIFEST_SOURCES.len());
+        for (index, source) in crate::PRODUCT_MANIFEST_SOURCES.iter().enumerate() {
             let mut product = toml::from_str::<ProductManifest>(source).with_context(|| {
                 format!("could not parse product manifest at inventory index {index}")
             })?;
@@ -158,18 +129,7 @@ impl ProductManifest {
         Ok(())
     }
 
-    pub fn gateway_target_url(&self) -> Option<String> {
-        self.gateway.as_ref().and_then(GatewayConfig::target_url)
-    }
-
-    pub fn route_claim_for(&self, method: &str, path: &str) -> Option<&RouteClaim> {
-        self.routes.iter().find(|route| {
-            route.method.eq_ignore_ascii_case(method) && route_path_matches(&route.path, path)
-        })
-    }
-
     pub fn to_response(&self, enabled: bool) -> ProductResponse {
-        let gateway = self.gateway_status();
         ProductResponse {
             key: self.key.clone(),
             slug: self.key.clone(),
@@ -179,12 +139,7 @@ impl ProductManifest {
             role: self.role.clone(),
             module_path: self.module_path.clone(),
             enabled,
-            status: product_status(
-                enabled,
-                gateway.configured,
-                matches!(self.migration_stage(), MigrationStage::Integrated),
-            ),
-            migration_stage: self.migration_stage(),
+            status: product_status(enabled),
             route_prefix: self.route_prefix.clone(),
             capabilities: self
                 .capabilities
@@ -193,170 +148,26 @@ impl ProductManifest {
                 .collect(),
             capability_metadata: self.capabilities.clone(),
             safety: self.safety.clone(),
-            gateway,
             health: self.health.clone(),
             routes: self.routes.clone(),
         }
     }
 
-    pub fn to_setup_product(&self, enabled: bool) -> SetupProduct {
-        SetupProduct {
-            runtime: RuntimeProduct {
-                slug: self.key.clone(),
-                icon: self.code.clone(),
-                title: self.name.clone(),
-                role: self.role.clone(),
-                status: runtime_status(
-                    &self.key,
-                    enabled,
-                    self.gateway_target_url().is_some(),
-                    matches!(self.migration_stage(), MigrationStage::Integrated),
-                ),
-                api_url: self.route_prefix.clone(),
-                enabled,
-                service_token_configured: false,
-                legacy_api_key_configured: false,
-                contract_drift_count: contract_drift_count(
-                    &self.key,
-                    enabled,
-                    self.gateway_target_url().is_some(),
-                    matches!(self.migration_stage(), MigrationStage::Integrated),
-                ),
-            },
-            pairing_ready: false,
-            auth_status: AuthStatusResponse {
-                auth_enabled: false,
-                bootstrap_required: false,
-                service_auth_enabled: false,
-                suite_bootstrap_enabled: false,
-            },
-            auth_status_error: None,
-        }
-    }
-
-    pub fn to_health_response(&self, enabled: bool) -> ProductHealthResponse {
-        ProductHealthResponse {
-            key: self.key.clone(),
-            name: self.name.clone(),
-            enabled,
-            status: product_status(
-                enabled,
-                self.gateway_target_url().is_some(),
-                matches!(self.migration_stage(), MigrationStage::Integrated),
-            ),
-            migration_stage: self.migration_stage(),
-            message: if enabled {
-                format!(
-                    "{} is enabled in patchhive-backend, but its engine has not been migrated yet.",
-                    self.name
-                )
-            } else {
-                "Product is disabled by PATCHHIVE_PRODUCTS.".to_string()
-            },
-        }
-    }
-
-    fn migration_stage(&self) -> MigrationStage {
-        self.migration_stage
-            .clone()
-            .unwrap_or(MigrationStage::NotStarted)
-    }
-
     fn sort_index(&self) -> usize {
         self.display.order
     }
-
-    fn gateway_status(&self) -> GatewayStatus {
-        let target_url = self.gateway_target_url();
-        GatewayStatus {
-            configured: target_url.is_some(),
-            target_url,
-            env_var: self
-                .gateway
-                .as_ref()
-                .and_then(|gateway| gateway.env_var.clone()),
-        }
-    }
 }
 
-impl GatewayConfig {
-    pub fn target_url(&self) -> Option<String> {
-        self.env_var
-            .as_ref()
-            .and_then(|key| env::var(key).ok())
-            .filter(|value| !value.trim().is_empty())
-            .or_else(|| self.default_url.clone())
-            .map(|value| value.trim().trim_end_matches('/').to_string())
-            .filter(|value| !value.is_empty())
-    }
-}
-
-pub fn product_status(enabled: bool, gateway_configured: bool, integrated: bool) -> ProductStatus {
+pub fn product_status(enabled: bool) -> ProductStatus {
     if !enabled {
         ProductStatus::Disabled
-    } else if integrated {
+    } else {
         ProductStatus::Online
-    } else if gateway_configured {
-        ProductStatus::GatewayPending
-    } else {
-        ProductStatus::EnginePending
     }
-}
-
-pub fn runtime_status(
-    key: &str,
-    enabled: bool,
-    gateway_configured: bool,
-    integrated: bool,
-) -> &'static str {
-    if !enabled {
-        "disabled"
-    } else if key == "hive-core" || integrated {
-        "online"
-    } else if gateway_configured {
-        "gateway-pending"
-    } else {
-        "degraded"
-    }
-}
-
-pub fn contract_drift_count(
-    key: &str,
-    enabled: bool,
-    gateway_configured: bool,
-    integrated: bool,
-) -> usize {
-    if enabled && key != "hive-core" && !gateway_configured && !integrated {
-        1
-    } else {
-        0
-    }
-}
-
-fn route_path_matches(pattern: &str, path: &str) -> bool {
-    let pattern_parts = pattern.trim_matches('/').split('/').collect::<Vec<_>>();
-    let path_parts = path.trim_matches('/').split('/').collect::<Vec<_>>();
-
-    let mut path_index = 0;
-    for part in pattern_parts {
-        if part.starts_with('*') {
-            return true;
-        }
-        let Some(path_part) = path_parts.get(path_index) else {
-            return false;
-        };
-        if !part.starts_with(':') && part != *path_part {
-            return false;
-        }
-        path_index += 1;
-    }
-
-    path_index == path_parts.len()
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::models::MigrationStage;
     use patchhive_product_core::smoke_manifest::SmokeTier;
 
     use super::ProductRegistry;
@@ -387,28 +198,15 @@ mod tests {
                 .id,
             "smoke_check"
         );
-        assert!(matches!(
-            signal_hive.migration_stage(),
-            MigrationStage::Integrated
-        ));
-        assert!(signal_hive.gateway_target_url().is_none());
         assert_eq!(
             signal_hive.health.endpoint,
             "/api/products/signal-hive/health"
         );
         assert_eq!(signal_hive.health.timeout_ms, 2_000);
         assert!(signal_hive
-            .route_claim_for("GET", "/api/products/signal-hive/health")
-            .is_some());
-        assert!(signal_hive
-            .route_claim_for("GET", "/api/products/signal-hive/history/scan-1/timeline")
-            .is_some());
-        assert!(signal_hive
-            .route_claim_for("DELETE", "/api/products/signal-hive/repo-lists/owner/repo")
-            .is_some());
-        assert!(signal_hive
-            .route_claim_for("POST", "/api/products/signal-hive/not-a-real-route")
-            .is_none());
-        assert_eq!(signal_hive.module_path, "crate::products::signal_hive");
+            .routes
+            .iter()
+            .any(|route| route.path.ends_with("/health")));
+        assert_eq!(signal_hive.module_path, "signal_hive");
     }
 }

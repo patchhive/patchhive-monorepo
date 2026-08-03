@@ -6,16 +6,14 @@
 // returns only posture: is a service token configured, is it scoped or legacy, has
 // it expired, which scopes does it carry, when was it rotated. No token values.
 //
-// One request. GET /api/products/auth-status is a server-side aggregate: every
-// product engine is compiled into the unified backend, so it reads each engine's
-// auth posture in-process and returns them together. The browser previously fanned
-// out one call per product, which is N requests per refresh and enough traffic to
-// trip the sensitive-route rate limiter — blocker B2 in the architecture doc, fixed
-// at the source rather than papered over with a smaller client-side pool.
+// One request reads HiveCore's durable runtime snapshot. Its background poller
+// observes each product through the normal HTTP router, including authentication,
+// rate limiting, and telemetry, so the browser neither fans out nor bypasses product
+// middleware.
 
 import { apiFetch } from "./http";
 import { PRODUCTS } from "./hive-data";
-import { slugForId } from "./product-slugs";
+import { registerProductSlug, slugForId } from "./product-slugs";
 
 interface AuthStatusBody {
   auth_enabled?: boolean;
@@ -129,20 +127,22 @@ function shortFingerprint(raw: string | null | undefined): string {
 }
 
 interface AggregateRow {
-  key: string;
-  /** null when the engine is not enabled in this runtime. */
-  status: AuthStatusBody | null;
+  slug: string;
+  title: string;
+  auth_status:
+    | { state: "observed"; value: AuthStatusBody }
+    | { state: "failed" | "not_observed" | "not_applicable"; reason: string };
 }
 
 export async function fetchTokenStatuses(signal?: AbortSignal): Promise<TokenStatus[]> {
   let rows: AggregateRow[];
   try {
-    const response = await apiFetch("/api/products/auth-status", { signal });
+    const response = await apiFetch("/api/products/runtime", { signal });
     if (!response.ok) {
       return PRODUCTS.map((product) => ({
         ...blank(product.id, product.name),
         state: "unreachable" as const,
-        detail: `HTTP ${response.status} from /api/products/auth-status.`,
+        detail: `HTTP ${response.status} from /api/products/runtime.`,
       }));
     }
     rows = (await response.json()) as AggregateRow[];
@@ -155,25 +155,15 @@ export async function fetchTokenStatuses(signal?: AbortSignal): Promise<TokenSta
     }));
   }
 
-  const bySlug = new Map(rows.map((row) => [row.key, row]));
-
-  return PRODUCTS.map((product) => {
-    const slug = slugForId(product.id);
-    const base = { ...blank(product.id, product.name), slug };
-    const row = bySlug.get(slug);
-
-    if (!row) {
+  return rows.map((row) => {
+    const slug = row.slug;
+    const productId = registerProductSlug(slug, row.title);
+    const base = { ...blank(productId, row.title), slug };
+    if (row.auth_status.state !== "observed") {
       return {
         ...base,
-        state: "unsupported" as const,
-        detail: "Engine is not mounted in this runtime.",
-      };
-    }
-    if (!row.status) {
-      return {
-        ...base,
-        state: "unsupported" as const,
-        detail: "Product is not enabled in this runtime.",
+        state: row.auth_status.state === "not_applicable" ? ("unsupported" as const) : ("unreachable" as const),
+        detail: row.auth_status.reason,
       };
     }
 
@@ -188,11 +178,11 @@ export async function fetchTokenStatuses(signal?: AbortSignal): Promise<TokenSta
         state: "broker" as const,
         detail:
           "HiveCore issues service tokens; it does not hold one for itself. Operators authenticate to it with the suite key.",
-        knownScopes: row.status.service_auth_known_scopes ?? [],
+        knownScopes: row.auth_status.value.service_auth_known_scopes ?? [],
       };
     }
 
-    const body = row.status;
+    const body = row.auth_status.value;
     const { state, detail } = classify(body);
     return {
       ...base,

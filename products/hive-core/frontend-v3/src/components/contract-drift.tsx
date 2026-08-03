@@ -86,7 +86,7 @@ export function ContractDrift({ syncVersion = 0 }: { syncVersion?: number }) {
       {error ? (
         <div className="rounded-lg border border-[var(--crit)]/40 bg-[var(--crit)]/[0.06] p-4 text-xs text-muted-foreground">
           {error} Conformance needs both <code className="font-mono">/api/products</code> and{" "}
-          <code className="font-mono">/api/products/capabilities</code>.
+          <code className="font-mono">/api/products/runtime</code>.
         </div>
       ) : drifted.length === 0 && !loading ? (
         <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border/70 py-10 text-center">

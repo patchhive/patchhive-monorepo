@@ -2,9 +2,8 @@ key = "repo-memory"
 code = "RM"
 name = "RepoMemory"
 role = "durable repo memory and prompt packs"
-module_path = "crate::products::repo_memory"
+module_path = "repo_memory"
 route_prefix = "/api/products/repo-memory"
-migration_stage = "integrated"
 
 [display]
 order = 4

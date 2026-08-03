@@ -22,11 +22,11 @@ use crate::{
 use super::{
     api_error, authorized_get, build_target_url, contract_check, contract_checks_for_failed_health,
     contract_checks_for_unavailable_product, contract_checks_with_health_error,
-    contract_drift_count, fetch_product_capabilities, fetch_product_runs,
-    hive_core_action_run_values, parse_response_body, pick_url, resolve_api_url,
-    resolved_auth_mode, resolved_legacy_api_key_configured, resolved_machine_auth_configured,
-    resolved_service_token_configured, ProductHealthBody, ProductProbeSnapshot, ProductStoredAuth,
-    StartupChecksBody,
+    contract_drift_count, fetch_product_auth_status, fetch_product_capabilities,
+    fetch_product_runs, hive_core_action_run_values, parse_response_body, pick_url,
+    resolve_api_url, resolved_auth_mode, resolved_legacy_api_key_configured,
+    resolved_machine_auth_configured, resolved_service_token_configured, ProductAuthStatusBody,
+    ProductHealthBody, ProductProbeSnapshot, ProductStoredAuth, StartupChecksBody,
 };
 use patchhive_product_core::contract;
 
@@ -279,6 +279,7 @@ fn unavailable_product_runtime(
     reason: &str,
 ) -> ProductRuntimeItem {
     let auth = ProductStoredAuth::from_override(override_item);
+
     let enabled = override_item.map(|item| item.enabled).unwrap_or(true);
     let not_applicable = !enabled;
     let reason = if not_applicable {
@@ -308,6 +309,7 @@ fn unavailable_product_runtime(
         machine_auth_configured: resolved_machine_auth_configured(definition, &auth),
         service_token_configured: resolved_service_token_configured(definition, &auth),
         legacy_api_key_configured: resolved_legacy_api_key_configured(definition, &auth),
+        auth_status: unavailable_observation(failed, not_applicable, reason),
         notes: override_item
             .map(|item| item.notes.clone())
             .unwrap_or_default(),
@@ -402,6 +404,22 @@ pub(super) async fn build_product_runtime(
         .map(|item| item.notes.clone())
         .unwrap_or_default();
     let auth = ProductStoredAuth::from_override(override_item);
+    let auth_status = if definition.slug == "hive-core" {
+        serde_json::from_value::<ProductAuthStatusBody>(crate::auth::auth_status_payload())
+            .map(Observation::observed)
+            .unwrap_or_else(|error| {
+                Observation::failed(format!("Could not decode HiveCore auth posture: {error}"))
+            })
+    } else if !enabled {
+        Observation::not_applicable("Product is disabled in HiveCore settings.")
+    } else if api_url.is_empty() {
+        Observation::not_observed("Product API URL is required before auth posture can be queried.")
+    } else {
+        match fetch_product_auth_status(&state.client, &api_url).await {
+            Ok(status) => Observation::observed(status),
+            Err(error) => Observation::failed(error),
+        }
+    };
 
     let probe = if definition.slug == "hive-core" {
         local_hive_core_probe()
@@ -479,6 +497,7 @@ pub(super) async fn build_product_runtime(
         machine_auth_configured: resolved_machine_auth_configured(definition, &auth),
         service_token_configured: resolved_service_token_configured(definition, &auth),
         legacy_api_key_configured: resolved_legacy_api_key_configured(definition, &auth),
+        auth_status,
         notes,
         status: probe.health.status.as_str().into(),
         health: probe.health,
