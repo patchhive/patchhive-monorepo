@@ -24,7 +24,7 @@ use crate::db::{
 };
 use crate::git_ops::{
     apply_patch, collect_files_all, git_checkout_remote_branch, git_clone, git_commit_push,
-    run_tests,
+    run_tests, stage_and_read_diff,
 };
 use crate::github::{gh_comment_issue, gh_fork, repo_reaper_github_token};
 use crate::state::AppState;
@@ -438,34 +438,6 @@ async fn deliver(
         return Ok(());
     }
 
-    let trust_gate_review = patchhive_product_core::trust_gate::require_safe_review(
-        &state.http,
-        &request.repo,
-        &patch,
-        "repo-reaper-follow-up",
-    )
-    .await
-    .map_err(|error| {
-        artifact(
-            run_id,
-            "policy",
-            "follow_up.trust_gate_blocked",
-            "blocked",
-            &format!("TrustGate blocked the follow-up patch: {error:#}"),
-        );
-        FollowUpRefusal::TrustGateRejected
-    })?;
-    artifact(
-        run_id,
-        "policy",
-        "follow_up.trust_gate_safe",
-        "succeeded",
-        &format!(
-            "TrustGate authorized follow-up review {} with risk score {}.",
-            trust_gate_review.id, trust_gate_review.risk_score
-        ),
-    );
-
     let test = run_tests(input.work_dir, input.repository_trusted).await;
     let validated = ValidatedChange::new(
         &test,
@@ -480,6 +452,54 @@ async fn deliver(
         &test.output,
     );
 
+    let final_diff = stage_and_read_diff(input.work_dir).await.map_err(|error| {
+        artifact(
+            run_id,
+            "policy",
+            "follow_up.final_diff_failed",
+            "failed",
+            &format!("Could not stage the post-test diff: {error:#}"),
+        );
+        FollowUpRefusal::TrustGateRejected
+    })?;
+    if final_diff.trim().is_empty() {
+        artifact(
+            run_id,
+            "policy",
+            "follow_up.final_diff_empty",
+            "blocked",
+            "No commit-ready diff remained after validation.",
+        );
+        return Err(FollowUpRefusal::TrustGateRejected);
+    }
+    let trust_gate_review = patchhive_product_core::trust_gate::require_safe_review(
+        &state.http,
+        &request.repo,
+        &final_diff,
+        "repo-reaper-follow-up",
+    )
+    .await
+    .map_err(|error| {
+        artifact(
+            run_id,
+            "policy",
+            "follow_up.trust_gate_blocked",
+            "blocked",
+            &format!("TrustGate blocked the post-test diff: {error:#}"),
+        );
+        FollowUpRefusal::TrustGateRejected
+    })?;
+    artifact(
+        run_id,
+        "policy",
+        "follow_up.trust_gate_safe",
+        "succeeded",
+        &format!(
+            "TrustGate authorized final diff review {} with risk score {}.",
+            trust_gate_review.id, trust_gate_review.risk_score
+        ),
+    );
+
     let commit_message = format!(
         "fix: follow-up based on maintainer feedback (re #{})",
         request.pr_number
@@ -490,6 +510,7 @@ async fn deliver(
         &commit_message,
         Some(input.bot_user),
         Some(input.bot_token),
+        &final_diff,
     )
     .await
     .is_err()

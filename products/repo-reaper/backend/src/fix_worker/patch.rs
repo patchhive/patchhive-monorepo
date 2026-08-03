@@ -130,6 +130,9 @@ pub struct PullRequestPublishInput<'a> {
     /// The validation evidence for this change. The draft decision is derived
     /// from it here; callers cannot pass a draft flag of their own.
     pub change: &'a ValidatedChange<&'a crate::git_ops::TestResult>,
+    /// Exact staged diff authorized after validation. Publication refuses any
+    /// staged change that is not byte-for-byte identical.
+    pub reviewed_diff: &'a str,
 }
 
 /// The one place RepoReaper creates a pull request.
@@ -153,6 +156,7 @@ pub async fn publish_pull_request(
         result,
         smith_note,
         change,
+        reviewed_diff,
     } = input;
     let confidence = change.confidence();
     let test = *change.payload();
@@ -182,6 +186,7 @@ pub async fn publish_pull_request(
         &commit_msg,
         Some(bot_user),
         Some(bot_token),
+        reviewed_diff,
     )
     .await?;
 

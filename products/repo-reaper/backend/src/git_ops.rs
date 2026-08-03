@@ -190,12 +190,66 @@ pub async fn has_changes(dest: &Path) -> Result<bool> {
     Ok(!status.trim().is_empty())
 }
 
+/// Stage the complete checkout state and return the exact diff that a later
+/// commit will contain. This includes untracked files and binary changes, so
+/// policy engines review the same bytes Git will publish.
+pub async fn stage_and_read_diff(dest: &Path) -> Result<String> {
+    runcmd_ok(&["git", "add", "-A"], Some(dest)).await?;
+    let paths = runcmd_ok(
+        &["git", "diff", "--cached", "--name-only", "-z", "HEAD"],
+        Some(dest),
+    )
+    .await?;
+    let file_count = paths.split('\0').filter(|path| !path.is_empty()).count();
+    let max_files = env_usize("REAPER_MAX_PUBLISH_FILES", 100);
+    if file_count > max_files {
+        return Err(anyhow!(
+            "refusing to publish {file_count} files; the safety limit is {max_files}"
+        ));
+    }
+
+    let diff = staged_diff(dest).await?;
+    let max_bytes = env_usize("REAPER_MAX_PUBLISH_DIFF_BYTES", 1_000_000);
+    if diff.len() > max_bytes {
+        return Err(anyhow!(
+            "refusing to publish a {}-byte diff; the safety limit is {max_bytes} bytes",
+            diff.len()
+        ));
+    }
+    Ok(diff)
+}
+
+fn env_usize(key: &str, default: usize) -> usize {
+    std::env::var(key)
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(default)
+}
+
+async fn staged_diff(dest: &Path) -> Result<String> {
+    runcmd_ok(
+        &[
+            "git",
+            "diff",
+            "--cached",
+            "--binary",
+            "--no-ext-diff",
+            "--full-index",
+            "HEAD",
+        ],
+        Some(dest),
+    )
+    .await
+}
+
 pub async fn git_commit_push(
     dest: &Path,
     branch: &str,
     msg: &str,
     bot_user: Option<&str>,
     bot_token: Option<&str>,
+    reviewed_diff: &str,
 ) -> Result<()> {
     let user = bot_user
         .map(|s| s.to_string())
@@ -211,7 +265,15 @@ pub async fn git_commit_push(
         user.as_str()
     };
     let (_auth_dir, askpass_path) = write_askpass_script(askpass_user, &token)?;
-    runcmd_ok(&["git", "add", "-A"], Some(dest)).await?;
+    let current_diff = staged_diff(dest).await?;
+    if current_diff.is_empty() {
+        return Err(anyhow!("refusing to publish an empty staged diff"));
+    }
+    if current_diff != reviewed_diff {
+        return Err(anyhow!(
+            "refusing to publish because the staged diff changed after safety review"
+        ));
+    }
     runcmd_ok(&["git", "commit", "-m", msg], Some(dest)).await?;
     let push = runcmd_ok_with_env(
         &["git", "-c", "credential.helper=", "push", "origin", branch],
@@ -750,7 +812,9 @@ pub async fn run_tests(repo_dir: &Path, repository_trusted: bool) -> TestResult 
 
 #[cfg(test)]
 mod tests {
-    use super::{apply_patch, collect_files_selective_sync, run_tests};
+    use super::{
+        apply_patch, collect_files_selective_sync, run_tests, stage_and_read_diff, staged_diff,
+    };
     use patchhive_product_core::validation::TestExecutionStatus;
     use std::{env, fs, process::Command};
     use tokio::sync::Mutex;
@@ -819,6 +883,38 @@ mod tests {
             contents,
             "one\ntwo\nTHREE\nfour\nfive\nSIX\nseven\neight\nnine\nten\n"
         );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn staged_diff_includes_untracked_files_and_detects_later_staging() {
+        let root = std::env::temp_dir().join(format!(
+            "repo-reaper-reviewed-diff-{}",
+            uuid::Uuid::new_v4()
+        ));
+        fs::create_dir_all(&root).expect("create repo root");
+        assert!(git(&root, &["init", "-q"]).status.success());
+        assert!(git(&root, &["config", "user.email", "reaper@example.test"])
+            .status
+            .success());
+        assert!(git(&root, &["config", "user.name", "RepoReaper Test"])
+            .status
+            .success());
+        fs::write(root.join("tracked.txt"), "before\n").expect("write base");
+        assert!(git(&root, &["add", "tracked.txt"]).status.success());
+        assert!(git(&root, &["commit", "-qm", "base"]).status.success());
+
+        fs::write(root.join("tracked.txt"), "after\n").expect("update tracked");
+        fs::write(root.join("generated.txt"), "test output\n").expect("write untracked");
+        let reviewed = stage_and_read_diff(&root).await.expect("stage final diff");
+        assert!(reviewed.contains("tracked.txt"));
+        assert!(reviewed.contains("generated.txt"));
+
+        fs::write(root.join("late.txt"), "not reviewed\n").expect("write late file");
+        assert!(git(&root, &["add", "late.txt"]).status.success());
+        let changed = staged_diff(&root).await.expect("read changed diff");
+        assert_ne!(reviewed, changed);
+
         let _ = fs::remove_dir_all(&root);
     }
 

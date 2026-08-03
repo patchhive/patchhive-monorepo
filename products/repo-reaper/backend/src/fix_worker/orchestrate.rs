@@ -1295,9 +1295,9 @@ pub async fn fix_one(job: FixIssueJob) {
         return;
     }
 
-    match crate::git_ops::has_changes(&scope.work_path).await {
-        Ok(true) => {}
-        Ok(false) => {
+    let final_diff = match crate::git_ops::stage_and_read_diff(&scope.work_path).await {
+        Ok(diff) if !diff.trim().is_empty() => diff,
+        Ok(_) => {
             let detail = compact_no_change_detail(&test);
             let _ = tx
                 .send(alog(
@@ -1343,7 +1343,8 @@ pub async fn fix_one(job: FixIssueJob) {
                 .await;
             return;
         }
-    }
+    };
+    smith_review.final_patch = final_diff.clone();
 
     let _ = tx
         .send(astatus(
@@ -1356,7 +1357,7 @@ pub async fn fix_one(job: FixIssueJob) {
     let trust_gate_review = match patchhive_product_core::trust_gate::require_safe_review(
         &http,
         &scope.repo,
-        &smith_review.final_patch,
+        &final_diff,
         "repo-reaper",
     )
     .await
@@ -1509,6 +1510,7 @@ pub async fn fix_one(job: FixIssueJob) {
             result: &result,
             smith_note: &smith_review.smith_note,
             change: &validated,
+            reviewed_diff: &final_diff,
         },
         budget,
     )
