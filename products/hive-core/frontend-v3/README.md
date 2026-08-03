@@ -48,10 +48,11 @@ remaining architecture work.
 | Contract drift | manifest vs `GET /capabilities` | needs the poller (B2) |
 | Capability matrix | manifest + observed actions | manifest side real |
 | Outbound capacity | `GET /pr-budgets` | live, with bounded reserved and committed leases |
-| Approvals | `POST /approvals` | not built — this is what unblocks dispatch (B3) |
+| Approvals | `GET/POST /approvals` | live, exact and single-use (B3) |
+| Work ledger | `GET /work-items` | live proposal-only foundation; transitions and conductor tick remain (B6) |
 | Repository policy | `GET /repository-policies` | endpoint exists; needs structured rows (B4) |
 | Mandates | `GET /mandates` | not built (§3.6) |
-| Blast radius | work items + mandates | not built (§3.8) |
+| Blast radius | work items + mandates | work items live; mandates and calculated radius not built (§3.8) |
 | Run volume | `suite_events` | ledger does not exist yet |
 | Runbook history | smoke tiers + fleet jobs | backend exists; fleet jobs need durable storage (B6) |
 | Ask the hive | `POST /ask` | model call lives in Rust behind `PATCHHIVE_AI_URL` |

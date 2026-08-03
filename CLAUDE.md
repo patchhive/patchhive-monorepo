@@ -515,5 +515,7 @@ standalone lockfile before the first export.
   Squad substrate extraction.
 - HiveCore's target design is [docs/hivecore-architecture.md](docs/hivecore-architecture.md)
   (Fleet / Kernel / Conductor / Cockpit). Overview probes now run concurrently and
-  committed PR-budget slots carry a bounded lease. Durable fleet snapshots and a
-  background reconciliation loop remain future architecture work.
+  committed PR-budget slots carry a bounded lease. The Conductor now has a durable,
+  fingerprint-deduplicated proposal-only work ledger; it cannot advance or dispatch
+  work yet. Durable fleet snapshots and a background reconciliation loop remain
+  future architecture work.

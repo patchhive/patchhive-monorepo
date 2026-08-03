@@ -14,6 +14,7 @@ import {
   GitBranch,
   Hexagon,
   KeyRound,
+  ListTodo,
   Palette,
   Radio,
   Repeat,
@@ -63,6 +64,7 @@ import { useLiveSuite } from "@/lib/live-sync";
 import { SessionGate } from "@/components/session-gate";
 import { SuiteRuns } from "@/components/suite-runs";
 import { ApprovalInbox } from "@/components/approval-inbox";
+import { WorkLedger } from "@/components/work-ledger";
 
 
 type IndexSearch = { run?: string; filter?: "all" | "warn" | "crit" };
@@ -181,6 +183,7 @@ function DeckInner() {
         </section>
         <IncidentTimeline syncVersion={suite.version} />
         <SuiteRuns syncVersion={suite.version} />
+        <WorkLedger syncVersion={suite.version} />
         <ApprovalInbox syncVersion={suite.version} />
         <ContractDrift syncVersion={suite.version} />
         <CapabilitySearch />
@@ -321,6 +324,7 @@ function TopBar({ now }: { now: Date | null }) {
     { icon: Command, label: "Deck", id: "deck" },
     { icon: Radio, label: "Registry", id: "registry" },
     { icon: Terminal, label: "Runs", id: "runs" },
+    { icon: ListTodo, label: "Ledger", id: "ledger" },
     { icon: AlertTriangle, label: "Incidents", id: "incidents" },
     { icon: GitBranch, label: "Deps", id: "dependencies" },
     { icon: KeyRound, label: "Tokens", id: "tokens" },

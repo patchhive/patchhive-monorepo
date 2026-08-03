@@ -47,6 +47,7 @@ patchhive_product_core::define_api_key_auth_module! {
 // product exposes so the unified backend can mount it in-process; main.rs is a thin
 // launcher over the same two calls. HiveCore was the last product still binary-only,
 // which is why it could not be mounted alongside the others.
+pub mod conductor;
 pub mod db;
 pub mod models;
 pub mod pipeline;
@@ -156,6 +157,12 @@ pub fn router() -> Router {
         )
         .route("/actions/recent", get(pipeline::recent_actions))
         .route("/approvals", get(pipeline::approvals))
+        .route("/work-items", get(pipeline::list_work_items))
+        .route(
+            "/work-items/proposals",
+            axum::routing::post(pipeline::propose_work),
+        )
+        .route("/work-items/:id", get(pipeline::work_item_detail))
         .route(
             "/approvals/:id/grant",
             axum::routing::post(pipeline::grant_approval),

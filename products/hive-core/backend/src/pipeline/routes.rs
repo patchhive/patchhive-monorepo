@@ -162,6 +162,16 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
                 contract::ActionSafety::operator_required(contract::ActionEffect::WritesLocalState),
             )
             .credential_requirements(["suite:control"]),
+            contract::action(
+                "propose_work",
+                "Propose work",
+                "POST",
+                "/work-items/proposals",
+                "Record one deduplicated work proposal without dispatching it.",
+                false,
+                contract::ActionSafety::operator_required(contract::ActionEffect::WritesLocalState),
+            )
+            .credential_requirements(["suite:control"]),
         ],
         vec![
             contract::link("overview", "Overview", "/overview"),
@@ -173,6 +183,7 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
                 "/repository-policies",
             ),
             contract::link("pr_budgets", "Pull-request budgets", "/pr-budgets"),
+            contract::link("work_items", "Work ledger", "/work-items"),
         ],
     );
     caps.hivecore.can_apply_settings = true;

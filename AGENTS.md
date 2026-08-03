@@ -167,6 +167,12 @@ patchhive/
   atomically claimed as `consuming` immediately before dispatch and becomes
   `consumed` for accepted, rejected, and uncertain remote outcomes. Contradictory
   stored lifecycle evidence decodes as `unknown`, never as permission to act.
+- HiveCore work proposals are durable and idempotent. `WorkIdentity` normalizes the
+  work kind and GitHub `owner/repository`, then fingerprints only kind, repository,
+  and subject identity so different products converge on one work item. The current
+  conductor boundary is proposal-only: it may create `discovered` work but cannot
+  dispatch or advance it. Unsupported or malformed stored lifecycle evidence decodes
+  as `unknown`, never as ready work.
 - Booleans remain appropriate for complete binary facts such as whether an action
   is scheduleable. The rule is to eliminate ambiguous state, not booleans generally.
 

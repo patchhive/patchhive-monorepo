@@ -111,6 +111,7 @@ Operator / Frontend
 | Product run detail | `ProductRunDetailResponse` | A single run's detail fetched through the product's `/runs/:id` contract |
 | Action event | `ProductActionEvent` | Record of a dispatched product action with request/response payloads |
 | Approval record | `ApprovalRecord` | Exact dispatch subject, normalized input, tagged lifecycle, and audit history |
+| Work item | `WorkItem` | Deduplicated proposal identity, intended dispatch, origin, and explicit durable lifecycle |
 | First-stack setup status | `FirstStackSetupResponse` | Launcher status, per-product credentials, pairing readiness, smoke run history, fleet launch jobs |
 | Contract drift report | `Vec<ProductContractCheck>` | Per-endpoint pass/fail/lock with error messages across health, startup, capabilities, runs, and run detail |
 
@@ -122,6 +123,7 @@ Operator / Frontend
 - **Action dispatch is capability-driven:** only actions advertised by the product's `/capabilities` endpoint can be dispatched. Destructive actions are blocked server-side.
 - **Approvals are exact and single-use:** approval-gated or PR-opening actions create a pending record instead of dispatching. Product, action, input, origin, target/run context, effect, and scopes are fingerprinted; grants are atomically claimed before one remote attempt.
 - **Suite-run evidence stays truthful:** a pending approval makes the run `awaiting_approval`; consuming it reconciles that exact step to the action event without silently resuming later steps that were skipped when the run halted.
+- **The work ledger is proposal-only:** normalized kind, repository, and subject identity produce one stable fingerprint across discovering products. HiveCore can record `discovered` work but has no route that advances or dispatches it; unsupported stored states are `unknown`.
 - **Service-token scoping:** dispatch checks that the saved service token's scopes cover the action's `required_scopes`. Legacy tokens limited to `runs:read` are rejected for action dispatch.
 - **Self-actions blocked:** HiveCore refuses to dispatch actions to itself — native HiveCore routes handle HiveCore operations.
 - **Disabled products are skipped:** HiveCore does not poll, fetch runs, or dispatch actions for disabled products.

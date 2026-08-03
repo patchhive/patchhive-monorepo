@@ -19,6 +19,7 @@ pub mod settings;
 mod setup;
 mod smoke;
 mod suite_runs;
+mod work_ledger;
 
 pub use ai::{explain_failure, summarize_incident};
 pub use ask::ask;
@@ -52,6 +53,8 @@ pub use routes::{
     startup_checks_route, stop_first_stack, stop_setup_product, suite_run_detail,
     validate_github_token,
 };
+
+pub use work_ledger::{list_work_items, propose_work, work_item_detail};
 
 fn hive_core_action_run_values(limit: u32) -> Vec<Value> {
     crate::db::recent_action_events(limit)

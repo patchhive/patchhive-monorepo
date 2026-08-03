@@ -7,6 +7,7 @@ use patchhive_product_core::secrets::TokenProtector;
 use patchhive_product_core::sqlite::{product_db_path, PooledSqliteConnection, SqlitePool};
 use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBehavior};
 
+use crate::conductor::{ProposeWorkOutcome, WorkItem, WorkLifecycle, WorkProposal};
 use crate::models::{
     ApprovalConsumptionOutcome, ApprovalEvent, ApprovalExpirableState, ApprovalRecord,
     ApprovalState, ApprovalSubject, FirstStackSmokeRun, PrBudgetLimitingLayer, PrBudgetReservation,
@@ -54,6 +55,75 @@ pub fn init_db() -> Result<()> {
     migrate_service_token_storage(&conn)?;
     migrate_repository_policy(&conn)?;
     Ok(())
+}
+
+pub fn propose_work(proposal: WorkProposal) -> rusqlite::Result<ProposeWorkOutcome> {
+    let mut conn = connect()?;
+    propose_work_with_connection(&mut conn, proposal)
+}
+
+fn propose_work_with_connection(
+    conn: &mut Connection,
+    proposal: WorkProposal,
+) -> rusqlite::Result<ProposeWorkOutcome> {
+    let transaction = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let fingerprint = proposal.identity.fingerprint();
+    let observed_at = crate::models::now_rfc3339();
+
+    if let Some(existing) = load_work_item_by_fingerprint(&transaction, &fingerprint)? {
+        transaction.execute(
+            "UPDATE hive_core_work_items SET updated_at = ?1 WHERE id = ?2",
+            params![observed_at, existing.id],
+        )?;
+        transaction.execute(
+            "INSERT INTO hive_core_work_item_events (work_item_id, event, evidence_json, created_at) VALUES (?1, 'rediscovered', ?2, ?3)",
+            params![existing.id, json_string(&proposal)?, observed_at],
+        )?;
+        let item = load_work_item_by_fingerprint(&transaction, &fingerprint)?
+            .expect("work item updated in the same transaction must still exist");
+        transaction.commit()?;
+        return Ok(ProposeWorkOutcome::Deduplicated { item, observed_at });
+    }
+
+    let item = WorkItem::discovered(proposal);
+    transaction.execute(
+        r#"
+        INSERT INTO hive_core_work_items (
+          id, mandate_id, kind, repository, subject_ref, fingerprint,
+          proposal_json, state_kind, state_json, attempts, created_at, updated_at
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+        "#,
+        params![
+            item.id,
+            item.proposal.mandate_id,
+            item.proposal.identity.kind,
+            item.proposal.identity.repository,
+            item.proposal.identity.subject_ref,
+            item.fingerprint,
+            json_string(&item.proposal)?,
+            item.lifecycle.kind(),
+            json_string(&item.lifecycle)?,
+            item.attempts,
+            item.created_at,
+            item.updated_at,
+        ],
+    )?;
+    transaction.execute(
+        "INSERT INTO hive_core_work_item_events (work_item_id, event, evidence_json, created_at) VALUES (?1, 'proposed', ?2, ?3)",
+        params![item.id, json_string(&item.proposal)?, item.created_at],
+    )?;
+    transaction.commit()?;
+    Ok(ProposeWorkOutcome::Created { item })
+}
+
+pub fn work_items(limit: u32) -> rusqlite::Result<Vec<WorkItem>> {
+    let conn = connect()?;
+    load_work_items(&conn, limit.clamp(1, 200))
+}
+
+pub fn work_item(id: &str) -> rusqlite::Result<Option<WorkItem>> {
+    let conn = connect()?;
+    load_work_item_by_id(&conn, id)
 }
 
 /// Fold HiveCore's two legacy stores into the shared suite-wide policy table.
@@ -1166,6 +1236,39 @@ fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
         CREATE INDEX IF NOT EXISTS idx_hive_core_suite_runs_started
           ON hive_core_suite_runs (started_at DESC);
 
+        CREATE TABLE IF NOT EXISTS hive_core_work_items (
+          id TEXT PRIMARY KEY,
+          mandate_id TEXT,
+          kind TEXT NOT NULL,
+          repository TEXT NOT NULL,
+          subject_ref TEXT NOT NULL,
+          fingerprint TEXT NOT NULL UNIQUE,
+          proposal_json TEXT NOT NULL,
+          state_kind TEXT NOT NULL,
+          state_json TEXT NOT NULL,
+          attempts INTEGER NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_hive_core_work_items_updated
+          ON hive_core_work_items (updated_at DESC, id DESC);
+
+        CREATE INDEX IF NOT EXISTS idx_hive_core_work_items_state
+          ON hive_core_work_items (state_kind, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS hive_core_work_item_events (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          work_item_id TEXT NOT NULL,
+          event TEXT NOT NULL,
+          evidence_json TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          FOREIGN KEY (work_item_id) REFERENCES hive_core_work_items(id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_hive_core_work_item_events_item
+          ON hive_core_work_item_events (work_item_id, created_at ASC, id ASC);
+
         CREATE TABLE IF NOT EXISTS approval_records (
           id TEXT PRIMARY KEY,
           subject_hash TEXT NOT NULL,
@@ -1255,6 +1358,78 @@ fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
     )?;
     migrate_schema(conn)?;
     Ok(())
+}
+
+const WORK_ITEM_SELECT: &str = r#"
+    SELECT id, fingerprint, proposal_json, state_kind, state_json,
+           attempts, created_at, updated_at
+    FROM hive_core_work_items
+"#;
+
+fn load_work_items(conn: &Connection, limit: u32) -> rusqlite::Result<Vec<WorkItem>> {
+    let sql = format!("{WORK_ITEM_SELECT} ORDER BY updated_at DESC, id DESC LIMIT ?1");
+    let mut statement = conn.prepare(&sql)?;
+    let rows = statement.query_map([limit], work_item_from_row)?;
+    rows.collect()
+}
+
+fn load_work_item_by_id(conn: &Connection, id: &str) -> rusqlite::Result<Option<WorkItem>> {
+    let sql = format!("{WORK_ITEM_SELECT} WHERE id = ?1");
+    conn.query_row(&sql, [id], work_item_from_row).optional()
+}
+
+fn load_work_item_by_fingerprint(
+    conn: &Connection,
+    fingerprint: &str,
+) -> rusqlite::Result<Option<WorkItem>> {
+    let sql = format!("{WORK_ITEM_SELECT} WHERE fingerprint = ?1");
+    conn.query_row(&sql, [fingerprint], work_item_from_row)
+        .optional()
+}
+
+fn work_item_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<WorkItem> {
+    let fingerprint: String = row.get(1)?;
+    let proposal_json: String = row.get(2)?;
+    let proposal = serde_json::from_str::<WorkProposal>(&proposal_json)
+        .map_err(|error| invalid_json(2, error))?;
+    if proposal.identity.fingerprint() != fingerprint {
+        return Err(rusqlite::Error::FromSqlConversionFailure(
+            1,
+            rusqlite::types::Type::Text,
+            Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "stored work fingerprint does not match its proposal identity",
+            )),
+        ));
+    }
+    let state_kind: String = row.get(3)?;
+    let state_json: String = row.get(4)?;
+    let raw_evidence = serde_json::from_str::<serde_json::Value>(&state_json)
+        .unwrap_or(serde_json::Value::String(state_json));
+    let attempts = u32::try_from(row.get::<_, i64>(5)?).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(
+            5,
+            rusqlite::types::Type::Integer,
+            Box::new(error),
+        )
+    })?;
+    Ok(WorkItem {
+        id: row.get(0)?,
+        fingerprint,
+        proposal,
+        lifecycle: WorkLifecycle::from_storage(state_kind, raw_evidence),
+        attempts,
+        created_at: row.get(6)?,
+        updated_at: row.get(7)?,
+    })
+}
+
+fn json_string(value: &impl serde::Serialize) -> rusqlite::Result<String> {
+    serde_json::to_string(value).map_err(|error| invalid_json(0, error))
+}
+
+fn invalid_json(index: usize, error: serde_json::Error) -> rusqlite::Error {
+    rusqlite::Error::FromSqlConversionFailure(index, rusqlite::types::Type::Text, Box::new(error))
 }
 
 fn migrate_schema(conn: &Connection) -> rusqlite::Result<()> {
@@ -2143,9 +2318,12 @@ mod tests {
         expire_approvals, grant_approval_with_connection, init_schema, insert_approval,
         load_action_event, load_action_events, load_approval, load_latest_first_stack_smoke_run,
         load_pr_reservation, load_product_overrides, load_service_token_storage_stats,
-        load_suite_settings, record_approval_event, replace_overrides,
-        replace_repository_policies_with_connection, reserve_pr_slot_with_connection,
-        write_suite_settings, ServiceTokenStorageStats,
+        load_suite_settings, load_work_item_by_id, propose_work_with_connection,
+        record_approval_event, replace_overrides, replace_repository_policies_with_connection,
+        reserve_pr_slot_with_connection, write_suite_settings, ServiceTokenStorageStats,
+    };
+    use crate::conductor::{
+        ProposeWorkOutcome, ProposedDispatch, WorkIdentity, WorkLifecycle, WorkOrigin, WorkProposal,
     };
     use crate::models::{
         now_rfc3339, FirstStackSmokeRun, FirstStackSmokeStep, PrBudgetReservation,
@@ -2163,6 +2341,102 @@ mod tests {
     };
     use rusqlite::Connection;
     use serde_json::json;
+
+    fn work_proposal(product_slug: &str) -> WorkProposal {
+        WorkProposal {
+            mandate_id: None,
+            identity: WorkIdentity {
+                kind: "github_issue".into(),
+                repository: "nousresearch/hermes-agent".into(),
+                subject_ref: "issue:72086".into(),
+            },
+            proposed_dispatch: ProposedDispatch {
+                product_slug: product_slug.into(),
+                action_id: "assess".into(),
+                input: json!({"repository": "NousResearch/hermes-agent"}),
+            },
+            origin: WorkOrigin::Operator,
+            rationale: "Persistent maintenance signal".into(),
+        }
+    }
+
+    #[test]
+    fn work_proposals_deduplicate_by_identity_without_overwriting_first_plan() {
+        let mut conn = Connection::open_in_memory().expect("in-memory db should open");
+        init_schema(&conn).expect("schema should initialize");
+
+        let first = propose_work_with_connection(&mut conn, work_proposal("signal-hive"))
+            .expect("first proposal should persist");
+        assert!(matches!(first, ProposeWorkOutcome::Created { .. }));
+
+        let second = propose_work_with_connection(&mut conn, work_proposal("repo-reaper"))
+            .expect("duplicate proposal should converge");
+        let ProposeWorkOutcome::Deduplicated { item, .. } = second else {
+            panic!("second proposal should be deduplicated");
+        };
+        assert_eq!(item.proposal.proposed_dispatch.product_slug, "signal-hive");
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM hive_core_work_items", [], |row| row
+                .get::<_, i64>(
+                0
+            ))
+            .expect("work count should read"),
+            1
+        );
+        assert_eq!(
+            conn.query_row(
+                "SELECT COUNT(*) FROM hive_core_work_item_events",
+                [],
+                |row| row.get::<_, i64>(0)
+            )
+            .expect("event count should read"),
+            2
+        );
+    }
+
+    #[test]
+    fn unrecognized_work_state_decodes_as_unknown() {
+        let mut conn = Connection::open_in_memory().expect("in-memory db should open");
+        init_schema(&conn).expect("schema should initialize");
+        let outcome = propose_work_with_connection(&mut conn, work_proposal("signal-hive"))
+            .expect("proposal should persist");
+        let id = match outcome {
+            ProposeWorkOutcome::Created { item } => item.id,
+            ProposeWorkOutcome::Deduplicated { .. } => panic!("first proposal must be created"),
+        };
+        conn.execute(
+            "UPDATE hive_core_work_items SET state_kind = 'ready', state_json = ?1 WHERE id = ?2",
+            [
+                json!({"state": "ready", "ready_at": "2026-08-02T12:00:00Z"}).to_string(),
+                id.clone(),
+            ],
+        )
+        .expect("fixture state should update");
+
+        let item = load_work_item_by_id(&conn, &id)
+            .expect("work item should read")
+            .expect("work item should exist");
+        assert!(matches!(item.lifecycle, WorkLifecycle::Unknown { .. }));
+    }
+
+    #[test]
+    fn mismatched_work_fingerprint_fails_the_read() {
+        let mut conn = Connection::open_in_memory().expect("in-memory db should open");
+        init_schema(&conn).expect("schema should initialize");
+        let outcome = propose_work_with_connection(&mut conn, work_proposal("signal-hive"))
+            .expect("proposal should persist");
+        let id = match outcome {
+            ProposeWorkOutcome::Created { item } => item.id,
+            ProposeWorkOutcome::Deduplicated { .. } => panic!("first proposal must be created"),
+        };
+        conn.execute(
+            "UPDATE hive_core_work_items SET fingerprint = 'corrupt' WHERE id = ?1",
+            [&id],
+        )
+        .expect("fixture fingerprint should update");
+
+        assert!(load_work_item_by_id(&conn, &id).is_err());
+    }
 
     #[test]
     fn suite_settings_round_trip_in_memory() {

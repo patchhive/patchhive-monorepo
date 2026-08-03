@@ -282,6 +282,14 @@ closed. That second case is reputation, so dedup is treated as safety-critical, 
 optimization. This table also replaces `Arc<RwLock<Option<SetupFleetLaunchJob>>>` as the durable
 substrate for long-running supervisor work.
 
+**Foundation built as of 2026-08-02:** HiveCore persists normalized work proposals behind
+`POST /work-items/proposals`, exposes list/detail reads, and records rediscovery without replacing
+the first plan. The stable fingerprint contains only kind, normalized GitHub repository, and
+subject reference, so a different discovering product still converges on the same row. The only
+creatable lifecycle is `discovered`; unsupported or malformed stored states decode as `unknown`.
+There is deliberately no transition or dispatch route yet. Mandates, reconciliation ticks, leases,
+backpressure, and durable fleet-job migration remain part of B6.
+
 ### 3.9 Backpressure: shape the funnel by what can actually ship
 
 The scarce resource at the bottom is outbound PR slots. If the ceiling is 10 and 10 are open,
@@ -466,9 +474,10 @@ first-run host bring-up remains an HTTP daemon or becomes documented operator se
    closed committed reservations. (B4, B5)
 3. **Approvals as objects.** Landed: exact durable subjects, atomic single-use claims, suite-run
    pending states, audit history, and the v3 operator inbox. (B3)
-4. **The conductor.** Work ledger with fingerprint dedup, durable job state replacing the in-memory
-   fleet job, reconciliation tick, backpressure sized by real remaining capacity. Ship at autonomy
-   `propose` first — it plans and records what it would do, dispatching nothing. (B6)
+4. **The conductor.** In progress: the proposal-only work ledger and fingerprint dedup foundation
+   are built. Next are mandates, durable job state replacing the in-memory fleet job, the bounded
+   reconciliation tick, and backpressure sized by real remaining capacity. Keep autonomy at
+   `propose` until those layers can plan and record without dispatching anything. (B6)
 5. **Cockpit and consolidation.** Kernel becomes a crate with the three authority implementations;
    outcome feedback and the reputation governor land; `products/hive-core/backend/` retires.
 
