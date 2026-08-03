@@ -73,7 +73,7 @@ export function WorkLedger({ syncVersion = 0 }: { syncVersion?: number }) {
       ) : error ? (
         <div className="rounded-lg border border-[var(--crit)]/40 bg-[var(--crit)]/[0.06] p-3 text-xs text-muted-foreground">{error}</div>
       ) : items.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-border p-8 text-center text-xs text-muted-foreground">No work has been proposed. The ledger is ready, but no reconciliation tick is running yet.</div>
+        <div className="rounded-lg border border-dashed border-border p-8 text-center text-xs text-muted-foreground">No concrete repository work has been proposed. Mandate ticks record broad discovery plans separately until product findings identify a real repository and subject.</div>
       ) : (
         <>
           <div className="space-y-3">

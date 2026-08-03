@@ -173,6 +173,13 @@ patchhive/
   conductor boundary is proposal-only: it may create `discovered` work but cannot
   dispatch or advance it. Unsupported or malformed stored lifecycle evidence decodes
   as `unknown`, never as ready work.
+- HiveCore mandates are canonical SQLite records with non-defaultable autonomy and
+  lifecycle types plus optimistic revisions. Broad mandate discovery plans are not
+  concrete work items: a conductor tick records a typed `planned_discovery` decision,
+  and only a later product finding with a real repository and subject may enter the
+  fingerprinted work ledger. Ticks use a durable single-writer lease, are bounded to
+  10 active mandates by default, and cap every requested act mode to `propose`; the
+  current conductor has no dispatch transition.
 - Booleans remain appropriate for complete binary facts such as whether an action
   is scheduleable. The rule is to eliminate ambiguous state, not booleans generally.
 

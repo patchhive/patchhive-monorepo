@@ -7,7 +7,11 @@ use patchhive_product_core::secrets::TokenProtector;
 use patchhive_product_core::sqlite::{product_db_path, PooledSqliteConnection, SqlitePool};
 use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBehavior};
 
-use crate::conductor::{ProposeWorkOutcome, WorkItem, WorkLifecycle, WorkProposal};
+use crate::conductor::{
+    ConductorDecision, ConductorTickLifecycle, ConductorTickRecord, ConductorTickTrigger,
+    MandateConfig, MandateLifecycle, MandateRecord, ProposeWorkOutcome, RunConductorTickOutcome,
+    WorkItem, WorkLifecycle, WorkProposal,
+};
 use crate::models::{
     ApprovalConsumptionOutcome, ApprovalEvent, ApprovalExpirableState, ApprovalRecord,
     ApprovalState, ApprovalSubject, FirstStackSmokeRun, PrBudgetLimitingLayer, PrBudgetReservation,
@@ -124,6 +128,193 @@ pub fn work_items(limit: u32) -> rusqlite::Result<Vec<WorkItem>> {
 pub fn work_item(id: &str) -> rusqlite::Result<Option<WorkItem>> {
     let conn = connect()?;
     load_work_item_by_id(&conn, id)
+}
+
+#[derive(Debug)]
+pub enum MandateWriteError {
+    NotFound,
+    RevisionConflict,
+    DuplicateName,
+    InvalidLifecycle,
+    Storage(rusqlite::Error),
+}
+
+impl std::fmt::Display for MandateWriteError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotFound => formatter.write_str("mandate was not found"),
+            Self::RevisionConflict => formatter.write_str("mandate revision no longer matches"),
+            Self::DuplicateName => formatter.write_str("a mandate with that name already exists"),
+            Self::InvalidLifecycle => {
+                formatter.write_str("mandate lifecycle does not allow this change")
+            }
+            Self::Storage(error) => error.fmt(formatter),
+        }
+    }
+}
+
+impl std::error::Error for MandateWriteError {}
+
+impl From<rusqlite::Error> for MandateWriteError {
+    fn from(error: rusqlite::Error) -> Self {
+        Self::Storage(error)
+    }
+}
+
+pub fn create_mandate(config: MandateConfig) -> Result<MandateRecord, MandateWriteError> {
+    let conn = connect()?;
+    create_mandate_with_connection(&conn, config)
+}
+
+fn create_mandate_with_connection(
+    conn: &Connection,
+    config: MandateConfig,
+) -> Result<MandateRecord, MandateWriteError> {
+    let mandate = MandateRecord::active(config);
+    let inserted = conn.execute(
+        r#"
+        INSERT INTO hive_core_mandates (
+          id, name, config_json, state_kind, state_json, revision, created_at, updated_at
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+        "#,
+        params![
+            mandate.id,
+            mandate.config.name,
+            json_string(&mandate.config)?,
+            mandate.lifecycle.kind(),
+            json_string(&mandate.lifecycle)?,
+            mandate.revision,
+            mandate.created_at,
+            mandate.updated_at,
+        ],
+    );
+    match inserted {
+        Ok(_) => Ok(mandate),
+        Err(error)
+            if error.sqlite_error_code() == Some(rusqlite::ErrorCode::ConstraintViolation) =>
+        {
+            Err(MandateWriteError::DuplicateName)
+        }
+        Err(error) => Err(error.into()),
+    }
+}
+
+pub fn mandates(limit: u32) -> rusqlite::Result<Vec<MandateRecord>> {
+    let conn = connect()?;
+    load_mandates(&conn, limit.clamp(1, 200), false)
+}
+
+pub fn mandate(id: &str) -> rusqlite::Result<Option<MandateRecord>> {
+    let conn = connect()?;
+    load_mandate(&conn, id)
+}
+
+pub fn update_mandate(
+    id: &str,
+    expected_revision: u64,
+    config: MandateConfig,
+) -> Result<MandateRecord, MandateWriteError> {
+    let mut conn = connect()?;
+    update_mandate_with_connection(&mut conn, id, expected_revision, config)
+}
+
+fn update_mandate_with_connection(
+    conn: &mut Connection,
+    id: &str,
+    expected_revision: u64,
+    config: MandateConfig,
+) -> Result<MandateRecord, MandateWriteError> {
+    let transaction = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let current = load_mandate(&transaction, id)?.ok_or(MandateWriteError::NotFound)?;
+    if current.revision != expected_revision {
+        return Err(MandateWriteError::RevisionConflict);
+    }
+    if matches!(
+        current.lifecycle,
+        MandateLifecycle::Archived { .. } | MandateLifecycle::Unknown { .. }
+    ) {
+        return Err(MandateWriteError::InvalidLifecycle);
+    }
+    let updated_at = crate::models::now_rfc3339();
+    let revision = current.revision + 1;
+    let result = transaction.execute(
+        "UPDATE hive_core_mandates SET name = ?1, config_json = ?2, revision = ?3, updated_at = ?4 WHERE id = ?5 AND revision = ?6",
+        params![config.name, json_string(&config)?, revision, updated_at, id, expected_revision],
+    );
+    match result {
+        Ok(1) => {}
+        Ok(_) => return Err(MandateWriteError::RevisionConflict),
+        Err(error)
+            if error.sqlite_error_code() == Some(rusqlite::ErrorCode::ConstraintViolation) =>
+        {
+            return Err(MandateWriteError::DuplicateName);
+        }
+        Err(error) => return Err(error.into()),
+    }
+    let mandate = load_mandate(&transaction, id)?.ok_or(MandateWriteError::NotFound)?;
+    transaction.commit()?;
+    Ok(mandate)
+}
+
+pub fn activate_mandate(id: &str) -> Result<MandateRecord, MandateWriteError> {
+    transition_mandate(id, |current, now| match current {
+        MandateLifecycle::Active { .. } => Ok(current.clone()),
+        MandateLifecycle::Paused { .. } => Ok(MandateLifecycle::Active {
+            activated_at: now.to_owned(),
+        }),
+        MandateLifecycle::Archived { .. } | MandateLifecycle::Unknown { .. } => {
+            Err(MandateWriteError::InvalidLifecycle)
+        }
+    })
+}
+
+pub fn pause_mandate(id: &str, reason: String) -> Result<MandateRecord, MandateWriteError> {
+    transition_mandate(id, move |current, now| match current {
+        MandateLifecycle::Active { .. } | MandateLifecycle::Paused { .. } => {
+            Ok(MandateLifecycle::Paused {
+                paused_at: now.to_owned(),
+                reason,
+            })
+        }
+        MandateLifecycle::Archived { .. } | MandateLifecycle::Unknown { .. } => {
+            Err(MandateWriteError::InvalidLifecycle)
+        }
+    })
+}
+
+pub fn archive_mandate(id: &str, reason: String) -> Result<MandateRecord, MandateWriteError> {
+    transition_mandate(id, move |current, now| match current {
+        MandateLifecycle::Archived { .. } => Ok(current.clone()),
+        MandateLifecycle::Active { .. } | MandateLifecycle::Paused { .. } => {
+            Ok(MandateLifecycle::Archived {
+                archived_at: now.to_owned(),
+                reason,
+            })
+        }
+        MandateLifecycle::Unknown { .. } => Err(MandateWriteError::InvalidLifecycle),
+    })
+}
+
+fn transition_mandate(
+    id: &str,
+    transition: impl FnOnce(&MandateLifecycle, &str) -> Result<MandateLifecycle, MandateWriteError>,
+) -> Result<MandateRecord, MandateWriteError> {
+    let mut conn = connect()?;
+    let transaction = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let current = load_mandate(&transaction, id)?.ok_or(MandateWriteError::NotFound)?;
+    let updated_at = crate::models::now_rfc3339();
+    let lifecycle = transition(&current.lifecycle, &updated_at)?;
+    if lifecycle == current.lifecycle {
+        transaction.commit()?;
+        return Ok(current);
+    }
+    transaction.execute(
+        "UPDATE hive_core_mandates SET state_kind = ?1, state_json = ?2, revision = revision + 1, updated_at = ?3 WHERE id = ?4",
+        params![lifecycle.kind(), json_string(&lifecycle)?, updated_at, id],
+    )?;
+    let mandate = load_mandate(&transaction, id)?.ok_or(MandateWriteError::NotFound)?;
+    transaction.commit()?;
+    Ok(mandate)
 }
 
 /// Fold HiveCore's two legacy stores into the shared suite-wide policy table.
@@ -1269,6 +1460,38 @@ fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
         CREATE INDEX IF NOT EXISTS idx_hive_core_work_item_events_item
           ON hive_core_work_item_events (work_item_id, created_at ASC, id ASC);
 
+        CREATE TABLE IF NOT EXISTS hive_core_mandates (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+          config_json TEXT NOT NULL,
+          state_kind TEXT NOT NULL,
+          state_json TEXT NOT NULL,
+          revision INTEGER NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_hive_core_mandates_state
+          ON hive_core_mandates (state_kind, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS hive_core_conductor_ticks (
+          id TEXT PRIMARY KEY,
+          trigger_kind TEXT NOT NULL,
+          state_kind TEXT NOT NULL,
+          state_json TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_hive_core_conductor_ticks_created
+          ON hive_core_conductor_ticks (created_at DESC, id DESC);
+
+        CREATE TABLE IF NOT EXISTS hive_core_conductor_lease (
+          singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+          tick_id TEXT NOT NULL,
+          lease_until TEXT NOT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS approval_records (
           id TEXT PRIMARY KEY,
           subject_hash TEXT NOT NULL,
@@ -1387,6 +1610,332 @@ fn load_work_item_by_fingerprint(
         .optional()
 }
 
+const MANDATE_SELECT: &str = r#"
+    SELECT id, name, config_json, state_kind, state_json, revision, created_at, updated_at
+    FROM hive_core_mandates
+"#;
+
+fn load_mandates(
+    conn: &Connection,
+    limit: u32,
+    active_only: bool,
+) -> rusqlite::Result<Vec<MandateRecord>> {
+    let filter = if active_only {
+        " WHERE state_kind = 'active'"
+    } else {
+        ""
+    };
+    let sql = format!("{MANDATE_SELECT}{filter} ORDER BY updated_at DESC, id DESC LIMIT ?1");
+    let mut statement = conn.prepare(&sql)?;
+    let rows = statement.query_map([limit], mandate_from_row)?;
+    rows.collect()
+}
+
+fn load_mandate(conn: &Connection, id: &str) -> rusqlite::Result<Option<MandateRecord>> {
+    let sql = format!("{MANDATE_SELECT} WHERE id = ?1");
+    conn.query_row(&sql, [id], mandate_from_row).optional()
+}
+
+fn mandate_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<MandateRecord> {
+    let stored_name: String = row.get(1)?;
+    let config_json: String = row.get(2)?;
+    let config = serde_json::from_str::<MandateConfig>(&config_json)
+        .map_err(|error| invalid_json(2, error))?
+        .validated()
+        .map_err(|message| {
+            rusqlite::Error::FromSqlConversionFailure(
+                2,
+                rusqlite::types::Type::Text,
+                Box::new(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    message,
+                )),
+            )
+        })?;
+    if stored_name != config.name {
+        return Err(rusqlite::Error::FromSqlConversionFailure(
+            1,
+            rusqlite::types::Type::Text,
+            Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "stored mandate name does not match its config",
+            )),
+        ));
+    }
+    let state_kind: String = row.get(3)?;
+    let state_json: String = row.get(4)?;
+    let revision = u64::try_from(row.get::<_, i64>(5)?).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(
+            5,
+            rusqlite::types::Type::Integer,
+            Box::new(error),
+        )
+    })?;
+    Ok(MandateRecord {
+        id: row.get(0)?,
+        config,
+        lifecycle: MandateLifecycle::from_storage(state_kind, raw_json(state_json)),
+        revision,
+        created_at: row.get(6)?,
+        updated_at: row.get(7)?,
+    })
+}
+
+pub fn run_conductor_tick(
+    trigger: ConductorTickTrigger,
+) -> rusqlite::Result<RunConductorTickOutcome> {
+    let mut conn = connect()?;
+    run_conductor_tick_with_connection(
+        &mut conn,
+        trigger,
+        conductor_mandates_per_tick(),
+        conductor_lease_seconds(),
+    )
+}
+
+fn run_conductor_tick_with_connection(
+    conn: &mut Connection,
+    trigger: ConductorTickTrigger,
+    mandate_limit: u32,
+    lease_seconds: u32,
+) -> rusqlite::Result<RunConductorTickOutcome> {
+    let started_at = crate::models::now_rfc3339();
+    let lease_until =
+        (chrono::Utc::now() + chrono::Duration::seconds(i64::from(lease_seconds))).to_rfc3339();
+    let tick_id = format!("tick_{}", uuid::Uuid::now_v7());
+
+    {
+        let transaction = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let active_lease = transaction
+            .query_row(
+                "SELECT tick_id, lease_until FROM hive_core_conductor_lease WHERE singleton = 1",
+                [],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+            )
+            .optional()?;
+        if let Some((active_tick_id, active_lease_until)) = active_lease {
+            let lease_is_active = chrono::DateTime::parse_from_rfc3339(&active_lease_until)
+                .map(|value| value.with_timezone(&chrono::Utc) > chrono::Utc::now())
+                .unwrap_or(false);
+            if lease_is_active {
+                return Ok(RunConductorTickOutcome::Busy {
+                    active_tick_id,
+                    lease_until: active_lease_until,
+                });
+            }
+            fail_expired_tick(&transaction, &active_tick_id, &started_at)?;
+        }
+
+        let lifecycle = ConductorTickLifecycle::Running {
+            started_at: started_at.clone(),
+            lease_until: lease_until.clone(),
+        };
+        transaction.execute(
+            "INSERT INTO hive_core_conductor_ticks (id, trigger_kind, state_kind, state_json, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![tick_id, tick_trigger_kind(trigger), lifecycle.kind(), json_string(&lifecycle)?, started_at, started_at],
+        )?;
+        transaction.execute(
+            "INSERT INTO hive_core_conductor_lease (singleton, tick_id, lease_until) VALUES (1, ?1, ?2) ON CONFLICT(singleton) DO UPDATE SET tick_id = excluded.tick_id, lease_until = excluded.lease_until",
+            params![tick_id, lease_until],
+        )?;
+        transaction.commit()?;
+    }
+
+    let plan = (|| -> rusqlite::Result<(Vec<ConductorDecision>, u32)> {
+        let active_count = u32::try_from(conn.query_row(
+            "SELECT COUNT(*) FROM hive_core_mandates WHERE state_kind = 'active'",
+            [],
+            |row| row.get::<_, i64>(0),
+        )?)
+        .map_err(|error| {
+            rusqlite::Error::FromSqlConversionFailure(
+                0,
+                rusqlite::types::Type::Integer,
+                Box::new(error),
+            )
+        })?;
+        let mandates = load_mandates(conn, mandate_limit, true)?;
+        let selected_count = u32::try_from(mandates.len()).unwrap_or(u32::MAX);
+        let remaining = active_count.saturating_sub(selected_count);
+        let decisions = mandates
+            .into_iter()
+            .map(|mandate| ConductorDecision::for_mandate(&mandate))
+            .collect::<Vec<_>>();
+        Ok((decisions, remaining))
+    })();
+    let (decisions, remaining_active_mandates) = match plan {
+        Ok(plan) => plan,
+        Err(error) => {
+            settle_tick_failure(conn, &tick_id, &started_at, &error.to_string())?;
+            return Err(error);
+        }
+    };
+    let finished_at = crate::models::now_rfc3339();
+    let lifecycle = ConductorTickLifecycle::Completed {
+        started_at: started_at.clone(),
+        finished_at: finished_at.clone(),
+        decisions,
+        remaining_active_mandates,
+    };
+    let transaction = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let current_holder = transaction
+        .query_row(
+            "SELECT tick_id FROM hive_core_conductor_lease WHERE singleton = 1",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?;
+    if current_holder.as_deref() != Some(tick_id.as_str()) {
+        return Err(rusqlite::Error::InvalidQuery);
+    }
+    let changed = transaction.execute(
+        "UPDATE hive_core_conductor_ticks SET state_kind = ?1, state_json = ?2, updated_at = ?3 WHERE id = ?4 AND state_kind = 'running'",
+        params![lifecycle.kind(), json_string(&lifecycle)?, finished_at, tick_id],
+    )?;
+    if changed != 1 {
+        return Err(rusqlite::Error::InvalidQuery);
+    }
+    transaction.execute(
+        "DELETE FROM hive_core_conductor_lease WHERE singleton = 1 AND tick_id = ?1",
+        [&tick_id],
+    )?;
+    let tick = load_conductor_tick(&transaction, &tick_id)?
+        .expect("settled conductor tick must exist in the same transaction");
+    transaction.commit()?;
+    Ok(RunConductorTickOutcome::Settled { tick })
+}
+
+fn fail_expired_tick(conn: &Connection, tick_id: &str, failed_at: &str) -> rusqlite::Result<()> {
+    let Some(tick) = load_conductor_tick(conn, tick_id)? else {
+        return Ok(());
+    };
+    let ConductorTickLifecycle::Running { started_at, .. } = tick.lifecycle else {
+        return Ok(());
+    };
+    let lifecycle = ConductorTickLifecycle::Failed {
+        started_at,
+        failed_at: failed_at.to_owned(),
+        reason: "Conductor lease expired before the tick settled.".into(),
+    };
+    conn.execute(
+        "UPDATE hive_core_conductor_ticks SET state_kind = ?1, state_json = ?2, updated_at = ?3 WHERE id = ?4 AND state_kind = 'running'",
+        params![lifecycle.kind(), json_string(&lifecycle)?, failed_at, tick_id],
+    )?;
+    Ok(())
+}
+
+fn settle_tick_failure(
+    conn: &mut Connection,
+    tick_id: &str,
+    started_at: &str,
+    reason: &str,
+) -> rusqlite::Result<()> {
+    let failed_at = crate::models::now_rfc3339();
+    let lifecycle = ConductorTickLifecycle::Failed {
+        started_at: started_at.to_owned(),
+        failed_at: failed_at.clone(),
+        reason: format!("Conductor planning failed: {reason}"),
+    };
+    let transaction = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    transaction.execute(
+        "UPDATE hive_core_conductor_ticks SET state_kind = ?1, state_json = ?2, updated_at = ?3 WHERE id = ?4 AND state_kind = 'running'",
+        params![lifecycle.kind(), json_string(&lifecycle)?, failed_at, tick_id],
+    )?;
+    transaction.execute(
+        "DELETE FROM hive_core_conductor_lease WHERE singleton = 1 AND tick_id = ?1",
+        [tick_id],
+    )?;
+    transaction.commit()
+}
+
+pub fn conductor_ticks(limit: u32) -> rusqlite::Result<Vec<ConductorTickRecord>> {
+    let conn = connect()?;
+    let mut statement = conn.prepare(
+        r#"
+        SELECT id, trigger_kind, state_kind, state_json, created_at, updated_at
+        FROM hive_core_conductor_ticks
+        ORDER BY created_at DESC, id DESC
+        LIMIT ?1
+        "#,
+    )?;
+    let rows = statement.query_map([limit.clamp(1, 200)], conductor_tick_from_row)?;
+    rows.collect()
+}
+
+fn load_conductor_tick(
+    conn: &Connection,
+    id: &str,
+) -> rusqlite::Result<Option<ConductorTickRecord>> {
+    conn.query_row(
+        r#"
+        SELECT id, trigger_kind, state_kind, state_json, created_at, updated_at
+        FROM hive_core_conductor_ticks
+        WHERE id = ?1
+        "#,
+        [id],
+        conductor_tick_from_row,
+    )
+    .optional()
+}
+
+fn conductor_tick_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ConductorTickRecord> {
+    let raw_trigger: String = row.get(1)?;
+    let trigger = match raw_trigger.as_str() {
+        "operator" => ConductorTickTrigger::Operator,
+        "background" => ConductorTickTrigger::Background,
+        _ => {
+            return Err(rusqlite::Error::FromSqlConversionFailure(
+                1,
+                rusqlite::types::Type::Text,
+                Box::new(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("unknown conductor tick trigger: {raw_trigger}"),
+                )),
+            ));
+        }
+    };
+    let state_kind: String = row.get(2)?;
+    let state_json: String = row.get(3)?;
+    Ok(ConductorTickRecord {
+        id: row.get(0)?,
+        trigger,
+        lifecycle: ConductorTickLifecycle::from_storage(state_kind, raw_json(state_json)),
+        created_at: row.get(4)?,
+        updated_at: row.get(5)?,
+    })
+}
+
+const fn tick_trigger_kind(trigger: ConductorTickTrigger) -> &'static str {
+    match trigger {
+        ConductorTickTrigger::Operator => "operator",
+        ConductorTickTrigger::Background => "background",
+    }
+}
+
+pub fn conductor_interval_seconds() -> u64 {
+    std::env::var("HIVE_CORE_CONDUCTOR_INTERVAL_SECS")
+        .ok()
+        .and_then(|value| value.trim().parse::<u64>().ok())
+        .unwrap_or(300)
+        .clamp(30, 86_400)
+}
+
+fn conductor_lease_seconds() -> u32 {
+    std::env::var("HIVE_CORE_CONDUCTOR_LEASE_SECS")
+        .ok()
+        .and_then(|value| value.trim().parse::<u32>().ok())
+        .unwrap_or(60)
+        .clamp(30, 600)
+}
+
+fn conductor_mandates_per_tick() -> u32 {
+    std::env::var("HIVE_CORE_CONDUCTOR_MAX_MANDATES_PER_TICK")
+        .ok()
+        .and_then(|value| value.trim().parse::<u32>().ok())
+        .unwrap_or(10)
+        .clamp(1, 25)
+}
+
 fn work_item_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<WorkItem> {
     let fingerprint: String = row.get(1)?;
     let proposal_json: String = row.get(2)?;
@@ -1422,6 +1971,10 @@ fn work_item_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<WorkItem> {
         created_at: row.get(6)?,
         updated_at: row.get(7)?,
     })
+}
+
+fn raw_json(value: String) -> serde_json::Value {
+    serde_json::from_str::<serde_json::Value>(&value).unwrap_or(serde_json::Value::String(value))
 }
 
 fn json_string(value: &impl serde::Serialize) -> rusqlite::Result<String> {
@@ -2315,15 +2868,20 @@ fn decode_suite_run(row: &rusqlite::Row<'_>) -> rusqlite::Result<crate::models::
 mod tests {
     use super::{
         claim_approval_with_connection, collapse_policies, consume_approval_with_connection,
-        expire_approvals, grant_approval_with_connection, init_schema, insert_approval,
-        load_action_event, load_action_events, load_approval, load_latest_first_stack_smoke_run,
-        load_pr_reservation, load_product_overrides, load_service_token_storage_stats,
-        load_suite_settings, load_work_item_by_id, propose_work_with_connection,
-        record_approval_event, replace_overrides, replace_repository_policies_with_connection,
-        reserve_pr_slot_with_connection, write_suite_settings, ServiceTokenStorageStats,
+        create_mandate_with_connection, expire_approvals, grant_approval_with_connection,
+        init_schema, insert_approval, load_action_event, load_action_events, load_approval,
+        load_latest_first_stack_smoke_run, load_mandate, load_pr_reservation,
+        load_product_overrides, load_service_token_storage_stats, load_suite_settings,
+        load_work_item_by_id, propose_work_with_connection, record_approval_event,
+        replace_overrides, replace_repository_policies_with_connection,
+        reserve_pr_slot_with_connection, run_conductor_tick_with_connection,
+        update_mandate_with_connection, write_suite_settings, ServiceTokenStorageStats,
     };
     use crate::conductor::{
-        ProposeWorkOutcome, ProposedDispatch, WorkIdentity, WorkLifecycle, WorkOrigin, WorkProposal,
+        ConductorDecision, ConductorTickLifecycle, ConductorTickTrigger, MandateAutonomy,
+        MandateConfig, MandateLifecycle, MandateLimits, MandateScope, ProposeWorkOutcome,
+        ProposedDispatch, RunConductorTickOutcome, WorkIdentity, WorkLifecycle, WorkOrigin,
+        WorkProposal,
     };
     use crate::models::{
         now_rfc3339, FirstStackSmokeRun, FirstStackSmokeStep, PrBudgetReservation,
@@ -2358,6 +2916,220 @@ mod tests {
             origin: WorkOrigin::Operator,
             rationale: "Persistent maintenance signal".into(),
         }
+    }
+
+    fn mandate_config(name: &str, autonomy: MandateAutonomy) -> MandateConfig {
+        MandateConfig {
+            name: name.into(),
+            objective: "Reduce Rust CLI maintenance pressure".into(),
+            scope: MandateScope {
+                search_query: "archived:false".into(),
+                topics: vec!["cli".into()],
+                languages: vec!["rust".into()],
+                min_stars: 50,
+                max_repositories: 8,
+                issues_per_repository: 30,
+                stale_days: 45,
+            },
+            requested_autonomy: autonomy,
+            limits: MandateLimits {
+                pr_budget: 3,
+                cost_budget_cents_per_day: 500,
+                per_owner_open_prs: 1,
+                cooldown_after_close_days: 14,
+            },
+        }
+    }
+
+    #[test]
+    fn conductor_tick_records_bounded_plans_without_dispatching() {
+        let mut conn = Connection::open_in_memory().expect("in-memory db should open");
+        init_schema(&conn).expect("schema should initialize");
+        create_mandate_with_connection(&conn, mandate_config("rust-cli", MandateAutonomy::Act))
+            .expect("act mandate should persist");
+        create_mandate_with_connection(
+            &conn,
+            mandate_config("observe-only", MandateAutonomy::Observe),
+        )
+        .expect("observe mandate should persist");
+
+        let outcome =
+            run_conductor_tick_with_connection(&mut conn, ConductorTickTrigger::Operator, 10, 60)
+                .expect("tick should settle");
+        let RunConductorTickOutcome::Settled { tick } = outcome else {
+            panic!("the first tick should own the lease");
+        };
+        let ConductorTickLifecycle::Completed {
+            decisions,
+            remaining_active_mandates,
+            ..
+        } = tick.lifecycle
+        else {
+            panic!("tick should complete");
+        };
+        assert_eq!(remaining_active_mandates, 0);
+        assert!(decisions.iter().any(|decision| matches!(
+            decision,
+            ConductorDecision::PlannedDiscovery {
+                requested_autonomy: MandateAutonomy::Act,
+                effective_autonomy: MandateAutonomy::Propose,
+                ..
+            }
+        )));
+        assert!(decisions
+            .iter()
+            .any(|decision| matches!(decision, ConductorDecision::ObservedOnly { .. })));
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM product_action_events", [], |row| row
+                .get::<_, i64>(
+                0
+            ))
+            .expect("action count should read"),
+            0
+        );
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM hive_core_work_items", [], |row| row
+                .get::<_, i64>(
+                0
+            ))
+            .expect("work count should read"),
+            0
+        );
+    }
+
+    #[test]
+    fn conductor_tick_refuses_a_second_writer_with_an_active_lease() {
+        let mut conn = Connection::open_in_memory().expect("in-memory db should open");
+        init_schema(&conn).expect("schema should initialize");
+        conn.execute(
+            "INSERT INTO hive_core_conductor_lease (singleton, tick_id, lease_until) VALUES (1, 'tick_existing', '2999-01-01T00:00:00+00:00')",
+            [],
+        )
+        .expect("lease fixture should persist");
+
+        let outcome =
+            run_conductor_tick_with_connection(&mut conn, ConductorTickTrigger::Operator, 10, 60)
+                .expect("busy is an explicit outcome");
+        assert!(matches!(
+            outcome,
+            RunConductorTickOutcome::Busy { active_tick_id, .. } if active_tick_id == "tick_existing"
+        ));
+    }
+
+    #[test]
+    fn conductor_tick_reports_exact_backlog_beyond_its_bound() {
+        let mut conn = Connection::open_in_memory().expect("in-memory db should open");
+        init_schema(&conn).expect("schema should initialize");
+        create_mandate_with_connection(&conn, mandate_config("first", MandateAutonomy::Propose))
+            .expect("first mandate should persist");
+        create_mandate_with_connection(&conn, mandate_config("second", MandateAutonomy::Propose))
+            .expect("second mandate should persist");
+
+        let outcome =
+            run_conductor_tick_with_connection(&mut conn, ConductorTickTrigger::Operator, 1, 60)
+                .expect("tick should settle");
+        let RunConductorTickOutcome::Settled { tick } = outcome else {
+            panic!("tick should own the lease");
+        };
+        let ConductorTickLifecycle::Completed {
+            decisions,
+            remaining_active_mandates,
+            ..
+        } = tick.lifecycle
+        else {
+            panic!("tick should complete");
+        };
+        assert_eq!(decisions.len(), 1);
+        assert_eq!(remaining_active_mandates, 1);
+    }
+
+    #[test]
+    fn conductor_tick_settles_failed_and_releases_lease_when_planning_data_is_invalid() {
+        let mut conn = Connection::open_in_memory().expect("in-memory db should open");
+        init_schema(&conn).expect("schema should initialize");
+        let mandate = create_mandate_with_connection(
+            &conn,
+            mandate_config("invalid-plan", MandateAutonomy::Propose),
+        )
+        .expect("mandate should persist");
+        conn.execute(
+            "UPDATE hive_core_mandates SET config_json = '{}' WHERE id = ?1",
+            [&mandate.id],
+        )
+        .expect("fixture should corrupt config");
+
+        assert!(run_conductor_tick_with_connection(
+            &mut conn,
+            ConductorTickTrigger::Operator,
+            10,
+            60,
+        )
+        .is_err());
+        assert_eq!(
+            conn.query_row(
+                "SELECT state_kind FROM hive_core_conductor_ticks ORDER BY created_at DESC LIMIT 1",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .expect("tick state should read"),
+            "failed"
+        );
+        assert_eq!(
+            conn.query_row(
+                "SELECT COUNT(*) FROM hive_core_conductor_lease",
+                [],
+                |row| row.get::<_, i64>(0)
+            )
+            .expect("lease count should read"),
+            0
+        );
+    }
+
+    #[test]
+    fn malformed_mandate_lifecycle_is_unknown_not_active() {
+        let conn = Connection::open_in_memory().expect("in-memory db should open");
+        init_schema(&conn).expect("schema should initialize");
+        let mandate = create_mandate_with_connection(
+            &conn,
+            mandate_config("unknown-state", MandateAutonomy::Propose),
+        )
+        .expect("mandate should persist");
+        conn.execute(
+            "UPDATE hive_core_mandates SET state_json = ?1 WHERE id = ?2",
+            [json!({"state": "active"}).to_string(), mandate.id.clone()],
+        )
+        .expect("fixture should update");
+
+        let loaded = load_mandate(&conn, &mandate.id)
+            .expect("mandate should read")
+            .expect("mandate should exist");
+        assert!(matches!(loaded.lifecycle, MandateLifecycle::Unknown { .. }));
+        assert!(!loaded.lifecycle.is_active());
+    }
+
+    #[test]
+    fn mandate_updates_require_the_loaded_revision() {
+        let mut conn = Connection::open_in_memory().expect("in-memory db should open");
+        init_schema(&conn).expect("schema should initialize");
+        let mandate = create_mandate_with_connection(
+            &conn,
+            mandate_config("revisioned", MandateAutonomy::Propose),
+        )
+        .expect("mandate should persist");
+        let mut changed = mandate_config("revisioned", MandateAutonomy::Observe);
+        changed.objective = "Observe Rust CLI maintenance pressure".into();
+        let updated = update_mandate_with_connection(
+            &mut conn,
+            &mandate.id,
+            mandate.revision,
+            changed.clone(),
+        )
+        .expect("matching revision should update");
+        assert_eq!(updated.revision, mandate.revision + 1);
+        assert!(matches!(
+            update_mandate_with_connection(&mut conn, &mandate.id, mandate.revision, changed,),
+            Err(super::MandateWriteError::RevisionConflict)
+        ));
     }
 
     #[test]

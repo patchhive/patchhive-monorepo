@@ -172,6 +172,26 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
                 contract::ActionSafety::operator_required(contract::ActionEffect::WritesLocalState),
             )
             .credential_requirements(["suite:control"]),
+            contract::action(
+                "create_mandate",
+                "Create mandate",
+                "POST",
+                "/mandates",
+                "Persist standing operator intent with explicit autonomy and limits.",
+                false,
+                contract::ActionSafety::operator_required(contract::ActionEffect::WritesLocalState),
+            )
+            .credential_requirements(["suite:control"]),
+            contract::action(
+                "run_conductor_tick",
+                "Run proposal tick",
+                "POST",
+                "/conductor/ticks",
+                "Plan bounded mandate work and record it without dispatching products.",
+                true,
+                contract::ActionSafety::operator_required(contract::ActionEffect::WritesLocalState),
+            )
+            .credential_requirements(["suite:control"]),
         ],
         vec![
             contract::link("overview", "Overview", "/overview"),
@@ -184,6 +204,8 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
             ),
             contract::link("pr_budgets", "Pull-request budgets", "/pr-budgets"),
             contract::link("work_items", "Work ledger", "/work-items"),
+            contract::link("mandates", "Mandates", "/mandates"),
+            contract::link("conductor_ticks", "Conductor ticks", "/conductor/ticks"),
         ],
     );
     caps.hivecore.can_apply_settings = true;

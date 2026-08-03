@@ -124,6 +124,8 @@ Operator / Frontend
 - **Approvals are exact and single-use:** approval-gated or PR-opening actions create a pending record instead of dispatching. Product, action, input, origin, target/run context, effect, and scopes are fingerprinted; grants are atomically claimed before one remote attempt.
 - **Suite-run evidence stays truthful:** a pending approval makes the run `awaiting_approval`; consuming it reconciles that exact step to the action event without silently resuming later steps that were skipped when the run halted.
 - **The work ledger is proposal-only:** normalized kind, repository, and subject identity produce one stable fingerprint across discovering products. HiveCore can record `discovered` work but has no route that advances or dispatches it; unsupported stored states are `unknown`.
+- **Mandates are standing intent, not runs:** canonical SQLite records preserve requested autonomy, bounded discovery scope, budgets, politeness, lifecycle, and revision. The current effective autonomy ceiling is always `propose`.
+- **Conductor ticks are durable and single-writer:** operator and five-minute background ticks claim a SQLite lease, consider a bounded active-mandate set, and record exact SignalHive discovery plans. They never dispatch. Broad plans remain tick decisions until concrete product evidence supplies a repository and subject for the work ledger.
 - **Service-token scoping:** dispatch checks that the saved service token's scopes cover the action's `required_scopes`. Legacy tokens limited to `runs:read` are rejected for action dispatch.
 - **Self-actions blocked:** HiveCore refuses to dispatch actions to itself — native HiveCore routes handle HiveCore operations.
 - **Disabled products are skipped:** HiveCore does not poll, fetch runs, or dispatch actions for disabled products.
@@ -173,6 +175,14 @@ opt-out service remains future work; see
 | `POST` | `/approvals/:id/deny` | Operator API key | Deny a pending dispatch with a reason |
 | `POST` | `/approvals/:id/revoke` | Operator API key | Revoke a pending or granted dispatch with a reason |
 | `POST` | `/approvals/:id/dispatch` | Operator API key | Atomically claim and dispatch the stored exact input once |
+| `GET` / `POST` | `/mandates` | Operator API key | List or create durable standing intent |
+| `GET` / `PUT` | `/mandates/:id` | Operator API key | Read or revision-check an exact mandate update |
+| `POST` | `/mandates/:id/activate` | Operator API key | Reactivate a paused mandate |
+| `POST` | `/mandates/:id/pause` | Operator API key | Pause an active mandate with a reason |
+| `POST` | `/mandates/:id/archive` | Operator API key | Archive a mandate terminally with a reason |
+| `GET` / `POST` | `/conductor/ticks` | Operator API key | Read tick history or run one proposal-only tick |
+| `GET` | `/work-items` | Operator API key | List concrete deduplicated repository work |
+| `POST` | `/work-items/proposals` | Operator API key | Record one concrete proposal without dispatching it |
 | `GET` | `/actions/recent` | API key / Service token | Recent 30 action events |
 | `GET` | `/runs` | API key / Service token | HiveCore's own action events as contract-compatible run summaries |
 | `GET` | `/runs/:id` | API key / Service token | Single action event detail |

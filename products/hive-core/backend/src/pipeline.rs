@@ -10,6 +10,7 @@ mod ai;
 mod approvals;
 mod ask;
 pub mod dispatch;
+mod mandates;
 pub(crate) mod overview;
 mod policy;
 mod provision;
@@ -54,6 +55,10 @@ pub use routes::{
     validate_github_token,
 };
 
+pub use mandates::{
+    activate_mandate, archive_mandate, create_mandate, list_conductor_ticks, list_mandates,
+    mandate_detail, pause_mandate, run_conductor_tick, update_mandate,
+};
 pub use work_ledger::{list_work_items, propose_work, work_item_detail};
 
 fn hive_core_action_run_values(limit: u32) -> Vec<Value> {

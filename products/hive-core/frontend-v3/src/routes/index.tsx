@@ -16,6 +16,7 @@ import {
   KeyRound,
   ListTodo,
   Palette,
+  Radar,
   Radio,
   Repeat,
   Search,
@@ -65,6 +66,7 @@ import { SessionGate } from "@/components/session-gate";
 import { SuiteRuns } from "@/components/suite-runs";
 import { ApprovalInbox } from "@/components/approval-inbox";
 import { WorkLedger } from "@/components/work-ledger";
+import { MandateControl } from "@/components/mandate-control";
 
 
 type IndexSearch = { run?: string; filter?: "all" | "warn" | "crit" };
@@ -183,6 +185,7 @@ function DeckInner() {
         </section>
         <IncidentTimeline syncVersion={suite.version} />
         <SuiteRuns syncVersion={suite.version} />
+        <MandateControl syncVersion={suite.version} />
         <WorkLedger syncVersion={suite.version} />
         <ApprovalInbox syncVersion={suite.version} />
         <ContractDrift syncVersion={suite.version} />
@@ -324,6 +327,7 @@ function TopBar({ now }: { now: Date | null }) {
     { icon: Command, label: "Deck", id: "deck" },
     { icon: Radio, label: "Registry", id: "registry" },
     { icon: Terminal, label: "Runs", id: "runs" },
+    { icon: Radar, label: "Mandates", id: "mandates" },
     { icon: ListTodo, label: "Ledger", id: "ledger" },
     { icon: AlertTriangle, label: "Incidents", id: "incidents" },
     { icon: GitBranch, label: "Deps", id: "dependencies" },

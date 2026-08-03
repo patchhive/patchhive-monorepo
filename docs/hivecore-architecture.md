@@ -247,6 +247,11 @@ politeness   = { per_owner_open_prs = 1, cooldown_after_close = "14d" }
 Runs are the *output* of a mandate. This is the difference between a suite that can be
 orchestrated and a suite that runs itself.
 
+**Built as of 2026-08-02:** mandates live canonically in HiveCore SQLite and are managed through
+the operator API and v3 deck. Their lifecycle is `active | paused | archived | unknown`; edits use
+an optimistic revision, and malformed stored lifecycle evidence is never treated as active.
+Requested autonomy is retained exactly, but the current effective ceiling is `propose`.
+
 ### 3.7 The Conductor: a reconciliation loop, not a workflow engine
 
 Single-writer, tick-based, fully restartable, no in-memory state that matters:
@@ -263,6 +268,14 @@ settle    → ingest results, update work ledger, feed outcomes back
 Each tick is bounded, idempotent, and written to the ledger. Dispatch is keyed on a work item's
 lease, not on loop position, so a crash mid-tick recomputes cleanly. If HiveCore ever runs
 multi-process, add a leader lease; the loop logic is unchanged.
+
+**Proposal loop built as of 2026-08-02:** HiveCore runs the loop every five minutes and on an
+operator request. A durable SQLite lease makes it single-writer across processes; an expired lease
+turns the abandoned running tick into an explicit failure before another tick claims leadership.
+Each tick considers at most 10 active mandates by default (configurable up to 25), records the exact
+SignalHive discovery payload it would use, and dispatches nothing. `observe` mandates produce an
+`observed_only` decision; every higher requested autonomy produces `planned_discovery` with
+effective autonomy `propose`.
 
 ### 3.8 Work ledger, with dedup as a safety property
 
@@ -287,8 +300,13 @@ substrate for long-running supervisor work.
 the first plan. The stable fingerprint contains only kind, normalized GitHub repository, and
 subject reference, so a different discovering product still converges on the same row. The only
 creatable lifecycle is `discovered`; unsupported or malformed stored states decode as `unknown`.
-There is deliberately no transition or dispatch route yet. Mandates, reconciliation ticks, leases,
+There is deliberately no work-item transition or conductor dispatch route yet. Finding ingestion,
 backpressure, and durable fleet-job migration remain part of B6.
+
+Broad discovery intent is intentionally recorded in conductor-tick history rather than forced into
+`work_items`: before discovery there is no truthful repository or subject identity to fingerprint.
+Only concrete findings enter the work ledger. This keeps a planned search distinguishable from a
+piece of repository work and prevents fake sentinel repositories from becoming dedup identities.
 
 ### 3.9 Backpressure: shape the funnel by what can actually ship
 
@@ -474,10 +492,11 @@ first-run host bring-up remains an HTTP daemon or becomes documented operator se
    closed committed reservations. (B4, B5)
 3. **Approvals as objects.** Landed: exact durable subjects, atomic single-use claims, suite-run
    pending states, audit history, and the v3 operator inbox. (B3)
-4. **The conductor.** In progress: the proposal-only work ledger and fingerprint dedup foundation
-   are built. Next are mandates, durable job state replacing the in-memory fleet job, the bounded
-   reconciliation tick, and backpressure sized by real remaining capacity. Keep autonomy at
-   `propose` until those layers can plan and record without dispatching anything. (B6)
+4. **The conductor.** In progress: mandates, the proposal-only work ledger, fingerprint dedup,
+   durable single-writer ticks, and bounded discovery planning are built. Next are ingestion of
+   concrete product findings, durable job state replacing the in-memory fleet job, and backpressure
+   sized by real remaining capacity. Keep autonomy at `propose`; no conductor dispatch transition
+   exists yet. (B6)
 5. **Cockpit and consolidation.** Kernel becomes a crate with the three authority implementations;
    outcome feedback and the reputation governor land; `products/hive-core/backend/` retires.
 
@@ -555,7 +574,5 @@ that matters — whether external state, meaning state outside PatchHive, was to
   existing `hivecore_policy` module?
 - What replaces the smoke tiers' hardcoded per-slug payloads — manifest-declared smoke fixtures, or
   a product-owned `/smoke` capability?
-- Does the mandate live in SQLite, in a TOML file, or both (file as source, table as materialized
-  state)?
 - Where does the public `patchhive.dev` opt-out API sit relative to the kernel — an upstream input
   the kernel caches, or a peer authority the kernel calls?

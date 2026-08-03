@@ -89,6 +89,9 @@ The frontend uses `@patchhivehq/ui` and `@patchhivehq/product-shell`. Generate t
 | `HIVE_CORE_SERVICE_TOKEN_HASH` | Optional service-token hash for HiveCore as a machine caller. |
 | `HIVE_CORE_DB_PATH` | SQLite path for suite settings, product overrides, and action events. |
 | `HIVE_CORE_PORT` | Backend port for split local runs. |
+| `HIVE_CORE_CONDUCTOR_INTERVAL_SECS` | Proposal-only background tick cadence, clamped to 30-86400 seconds. |
+| `HIVE_CORE_CONDUCTOR_LEASE_SECS` | Durable single-writer tick lease, clamped to 30-600 seconds. |
+| `HIVE_CORE_CONDUCTOR_MAX_MANDATES_PER_TICK` | Active mandates considered per tick, clamped to 1-25. |
 | `HIVECORE_ENCRYPTION_KEY` | Encrypts saved downstream product service tokens at rest in HiveCore SQLite and auto-migrates existing plaintext rows on boot. |
 | `PATCHHIVE_LAUNCHER_URL` | Base URL for the local `patchhive-launcher` service that starts or stops the first stack. |
 | `PATCHHIVE_SUITE_BOOTSTRAP_SECRET` | Shared bootstrap secret HiveCore can use to rotate or provision downstream product service tokens automatically. |

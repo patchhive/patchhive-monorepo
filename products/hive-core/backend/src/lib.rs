@@ -68,6 +68,7 @@ pub async fn init_runtime() -> Result<()> {
     let checks = startup::validate_config().await;
     log_checks(&checks);
     startup::set_startup_checks(checks);
+    conductor::start_background_loop();
     Ok(())
 }
 
@@ -163,6 +164,30 @@ pub fn router() -> Router {
             axum::routing::post(pipeline::propose_work),
         )
         .route("/work-items/:id", get(pipeline::work_item_detail))
+        .route(
+            "/mandates",
+            get(pipeline::list_mandates).post(pipeline::create_mandate),
+        )
+        .route(
+            "/mandates/:id",
+            get(pipeline::mandate_detail).put(pipeline::update_mandate),
+        )
+        .route(
+            "/mandates/:id/activate",
+            axum::routing::post(pipeline::activate_mandate),
+        )
+        .route(
+            "/mandates/:id/pause",
+            axum::routing::post(pipeline::pause_mandate),
+        )
+        .route(
+            "/mandates/:id/archive",
+            axum::routing::post(pipeline::archive_mandate),
+        )
+        .route(
+            "/conductor/ticks",
+            get(pipeline::list_conductor_ticks).post(pipeline::run_conductor_tick),
+        )
         .route(
             "/approvals/:id/grant",
             axum::routing::post(pipeline::grant_approval),
