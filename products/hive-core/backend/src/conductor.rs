@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+use std::collections::HashSet;
 use uuid::Uuid;
 
 use crate::models::now_rfc3339;
@@ -211,6 +212,141 @@ pub enum ProposeWorkOutcome {
     Deduplicated { item: WorkItem, observed_at: String },
 }
 
+/// Stable evidence identity supplied by the product that observed a finding.
+/// A retry of the same product/run/finding tuple is one receipt, while another
+/// product or run may independently rediscover the same work identity.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct FindingSource {
+    pub product_slug: String,
+    pub run_id: String,
+    pub finding_id: String,
+}
+
+impl FindingSource {
+    fn normalized(self) -> Result<Self, String> {
+        Ok(Self {
+            product_slug: required("source product_slug", self.product_slug, 100)?
+                .to_ascii_lowercase(),
+            run_id: required("source run_id", self.run_id, 200)?,
+            finding_id: required("source finding_id", self.finding_id, 500)?,
+        })
+    }
+
+    pub fn fingerprint(&self) -> String {
+        let bytes = serde_json::to_vec(self).expect("finding source serialization cannot fail");
+        format!("{:x}", Sha256::digest(bytes))
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProductFinding {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mandate_id: Option<String>,
+    pub source: FindingSource,
+    pub identity: WorkIdentity,
+    pub proposed_dispatch: ProposedDispatch,
+    pub rationale: String,
+    pub evidence: Value,
+}
+
+impl ProductFinding {
+    pub fn validated(self) -> Result<Self, String> {
+        if !self.evidence.is_object() {
+            return Err("finding evidence must be a JSON object".into());
+        }
+        Ok(Self {
+            mandate_id: self
+                .mandate_id
+                .map(|value| required("mandate_id", value, 200))
+                .transpose()?,
+            source: self.source.normalized()?,
+            identity: self.identity.normalized()?,
+            proposed_dispatch: self.proposed_dispatch.normalized()?,
+            rationale: required("rationale", self.rationale, 2_000)?,
+            evidence: self.evidence,
+        })
+    }
+
+    pub fn proposal(&self) -> WorkProposal {
+        WorkProposal {
+            mandate_id: self.mandate_id.clone(),
+            identity: self.identity.clone(),
+            proposed_dispatch: self.proposed_dispatch.clone(),
+            origin: WorkOrigin::ProductRun {
+                product_slug: self.source.product_slug.clone(),
+                run_id: self.source.run_id.clone(),
+            },
+            rationale: self.rationale.clone(),
+        }
+    }
+
+    pub fn fingerprint(&self) -> String {
+        let value = serde_json::to_value(self).expect("product finding serialization cannot fail");
+        let canonical = patchhive_product_core::approvals::canonical_json(&value);
+        let bytes = serde_json::to_vec(&canonical)
+            .expect("canonical product finding serialization cannot fail");
+        format!("{:x}", Sha256::digest(bytes))
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct IngestFindingsRequest {
+    pub findings: Vec<ProductFinding>,
+}
+
+impl IngestFindingsRequest {
+    pub fn validated(self) -> Result<Vec<ProductFinding>, String> {
+        if self.findings.is_empty() {
+            return Err("findings must contain at least one item".into());
+        }
+        if self.findings.len() > 100 {
+            return Err("findings must contain at most 100 items".into());
+        }
+        let findings = self
+            .findings
+            .into_iter()
+            .map(ProductFinding::validated)
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut sources = HashSet::with_capacity(findings.len());
+        if findings
+            .iter()
+            .any(|finding| !sources.insert(finding.source.fingerprint()))
+        {
+            return Err("a finding source may appear only once in an ingestion batch".into());
+        }
+        Ok(findings)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct FindingReceipt {
+    pub finding: ProductFinding,
+    pub work_item_id: String,
+    pub work_fingerprint: String,
+    pub finding_fingerprint: String,
+    pub ingested_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "disposition", rename_all = "snake_case")]
+pub enum FindingIngestionDisposition {
+    Created,
+    Deduplicated,
+    AlreadyIngested,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct FindingIngestionResult {
+    pub disposition: FindingIngestionDisposition,
+    pub receipt: FindingReceipt,
+    pub item: WorkItem,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct IngestFindingsOutcome {
+    pub results: Vec<FindingIngestionResult>,
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum MandateAutonomy {
@@ -279,13 +415,13 @@ impl MandateScope {
         })
     }
 
-    fn signal_hive_input(&self) -> Value {
+    fn signal_hive_input(&self, max_repositories: u32) -> Value {
         serde_json::json!({
             "search_query": self.search_query,
             "topics": self.topics,
             "languages": self.languages,
             "min_stars": self.min_stars,
-            "max_repos": self.max_repositories,
+            "max_repos": max_repositories,
             "issues_per_repo": self.issues_per_repository,
             "stale_days": self.stale_days,
         })
@@ -449,6 +585,51 @@ impl MandateReasonRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CapacityLayer {
+    pub limit: u32,
+    pub used: u32,
+    pub remaining: u32,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CapacityLimitingLayer {
+    MandateBacklog,
+    RepoReaper,
+    Suite,
+}
+
+/// Exact PR-slot evidence used to size one discovery proposal. Planned units are
+/// allocated across the current tick so several mandates cannot each claim the
+/// same remaining suite capacity.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DiscoveryCapacity {
+    pub suite: CapacityLayer,
+    pub repo_reaper: CapacityLayer,
+    pub mandate_limit: u32,
+    pub concrete_backlog: u32,
+    pub mandate_remaining: u32,
+    pub allocated_earlier_in_tick: u32,
+    pub admitted_repositories: u32,
+}
+
+impl DiscoveryCapacity {
+    pub fn limiting_layers(&self) -> Vec<CapacityLimitingLayer> {
+        let mut layers = Vec::new();
+        if self.mandate_remaining == 0 {
+            layers.push(CapacityLimitingLayer::MandateBacklog);
+        }
+        if self.repo_reaper.remaining <= self.allocated_earlier_in_tick {
+            layers.push(CapacityLimitingLayer::RepoReaper);
+        }
+        if self.suite.remaining <= self.allocated_earlier_in_tick {
+            layers.push(CapacityLimitingLayer::Suite);
+        }
+        layers
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "decision", rename_all = "snake_case")]
 pub enum ConductorDecision {
     Deferred {
@@ -460,43 +641,73 @@ pub enum ConductorDecision {
         requested_autonomy: MandateAutonomy,
         reason: String,
     },
+    CapacityDeferred {
+        mandate_id: String,
+        requested_autonomy: MandateAutonomy,
+        capacity: DiscoveryCapacity,
+        limiting_layers: Vec<CapacityLimitingLayer>,
+        reason: String,
+    },
     PlannedDiscovery {
         mandate_id: String,
         requested_autonomy: MandateAutonomy,
         effective_autonomy: MandateAutonomy,
+        capacity: DiscoveryCapacity,
         proposed_dispatch: ProposedDispatch,
         rationale: String,
     },
 }
 
 impl ConductorDecision {
-    pub fn for_mandate(mandate: &MandateRecord) -> Self {
+    pub fn observed_only(mandate: &MandateRecord) -> Self {
         if !mandate.lifecycle.is_active() {
             return Self::Deferred {
                 mandate_id: mandate.id.clone(),
                 reason: "Mandate lifecycle evidence is not an active state.".into(),
             };
         }
-        if mandate.config.requested_autonomy == MandateAutonomy::Observe {
-            return Self::ObservedOnly {
+        Self::ObservedOnly {
+            mandate_id: mandate.id.clone(),
+            requested_autonomy: MandateAutonomy::Observe,
+            reason: "Observe autonomy records intent without proposing a product action.".into(),
+        }
+    }
+
+    pub fn with_capacity(mandate: &MandateRecord, capacity: DiscoveryCapacity) -> Self {
+        if !mandate.lifecycle.is_active() {
+            return Self::Deferred {
                 mandate_id: mandate.id.clone(),
-                requested_autonomy: MandateAutonomy::Observe,
-                reason: "Observe autonomy records intent without proposing a product action."
+                reason: "Mandate lifecycle evidence is not an active state.".into(),
+            };
+        }
+        if capacity.admitted_repositories == 0 {
+            let limiting_layers = capacity.limiting_layers();
+            return Self::CapacityDeferred {
+                mandate_id: mandate.id.clone(),
+                requested_autonomy: mandate.config.requested_autonomy,
+                capacity,
+                limiting_layers,
+                reason: "Discovery was deferred because concrete backlog and active PR reservations leave no downstream capacity."
                     .into(),
             };
         }
+        let admitted_repositories = capacity.admitted_repositories;
         Self::PlannedDiscovery {
             mandate_id: mandate.id.clone(),
             requested_autonomy: mandate.config.requested_autonomy,
             effective_autonomy: mandate.config.requested_autonomy.effective_now(),
+            capacity,
             proposed_dispatch: ProposedDispatch {
                 product_slug: "signal-hive".into(),
                 action_id: "scan".into(),
-                input: mandate.config.scope.signal_hive_input(),
+                input: mandate
+                    .config
+                    .scope
+                    .signal_hive_input(admitted_repositories),
             },
             rationale: format!(
-                "Ask SignalHive to discover evidence for mandate: {}",
-                mandate.config.objective
+                "Ask SignalHive to discover evidence for mandate within {admitted_repositories} downstream-capacity unit(s): {}",
+                mandate.config.objective,
             ),
         }
     }
@@ -684,5 +895,86 @@ mod tests {
             WorkProposal::from_request(value).expect_err("must reject array input"),
             "proposed dispatch input must be a JSON object"
         );
+    }
+
+    #[test]
+    fn finding_batch_rejects_duplicate_sources() {
+        let finding = ProductFinding {
+            mandate_id: None,
+            source: FindingSource {
+                product_slug: "signal-hive".into(),
+                run_id: "scan-1".into(),
+                finding_id: "issue-42".into(),
+            },
+            identity: request("owner/repo", "repo-reaper").identity,
+            proposed_dispatch: ProposedDispatch {
+                product_slug: "repo-reaper".into(),
+                action_id: "run".into(),
+                input: json!({"target_repo": "owner/repo"}),
+            },
+            rationale: "Concrete issue".into(),
+            evidence: json!({"issue_number": 42}),
+        };
+        let error = IngestFindingsRequest {
+            findings: vec![finding.clone(), finding],
+        }
+        .validated()
+        .expect_err("duplicate source should be rejected");
+        assert_eq!(
+            error,
+            "a finding source may appear only once in an ingestion batch"
+        );
+    }
+
+    #[test]
+    fn finding_requires_structured_evidence() {
+        let finding = ProductFinding {
+            mandate_id: None,
+            source: FindingSource {
+                product_slug: "signal-hive".into(),
+                run_id: "scan-1".into(),
+                finding_id: "issue-42".into(),
+            },
+            identity: request("owner/repo", "repo-reaper").identity,
+            proposed_dispatch: ProposedDispatch {
+                product_slug: "repo-reaper".into(),
+                action_id: "run".into(),
+                input: json!({"target_repo": "owner/repo"}),
+            },
+            rationale: "Concrete issue".into(),
+            evidence: json!("not structured"),
+        };
+        assert_eq!(
+            IngestFindingsRequest {
+                findings: vec![finding]
+            }
+            .validated()
+            .expect_err("string evidence should be rejected"),
+            "finding evidence must be a JSON object"
+        );
+    }
+
+    #[test]
+    fn finding_fingerprint_is_stable_across_json_object_order() {
+        let base = ProductFinding {
+            mandate_id: None,
+            source: FindingSource {
+                product_slug: "signal-hive".into(),
+                run_id: "scan-1".into(),
+                finding_id: "issue-42".into(),
+            },
+            identity: request("owner/repo", "repo-reaper").identity,
+            proposed_dispatch: ProposedDispatch {
+                product_slug: "repo-reaper".into(),
+                action_id: "run".into(),
+                input: json!({"target_repo": "owner/repo"}),
+            },
+            rationale: "Concrete issue".into(),
+            evidence: serde_json::from_str(r#"{"a":1,"b":2}"#).expect("valid JSON"),
+        };
+        let mut reordered = base.clone();
+        reordered.evidence =
+            serde_json::from_str(r#"{"b":2,"a":1}"#).expect("valid reordered JSON");
+        assert_eq!(base.fingerprint(), reordered.fingerprint());
     }
 }

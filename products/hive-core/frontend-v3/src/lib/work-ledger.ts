@@ -40,6 +40,27 @@ export interface WorkItem {
   updated_at: string;
 }
 
+export interface ProductFinding {
+  mandate_id?: string;
+  source: {
+    product_slug: string;
+    run_id: string;
+    finding_id: string;
+  };
+  identity: WorkIdentity;
+  proposed_dispatch: ProposedDispatch;
+  rationale: string;
+  evidence: Record<string, unknown>;
+}
+
+export interface FindingReceipt {
+  finding: ProductFinding;
+  work_item_id: string;
+  work_fingerprint: string;
+  finding_fingerprint: string;
+  ingested_at: string;
+}
+
 interface Envelope<T> {
   data?: T;
   error?: { message?: string };
@@ -53,5 +74,16 @@ export async function fetchWorkItems(signal?: AbortSignal): Promise<WorkItem[]> 
     throw new Error(body?.error?.message ?? `HiveCore returned HTTP ${response.status}.`);
   }
   if (!body?.data) throw new Error("HiveCore returned no work-ledger data.");
+  return body.data;
+}
+
+export async function fetchFindingReceipts(signal?: AbortSignal): Promise<FindingReceipt[]> {
+  const path = "/api/products/hive-core/work-items/findings";
+  const response = await apiFetch(path, { signal });
+  const body = (await response.json().catch(() => null)) as Envelope<FindingReceipt[]> | null;
+  if (!response.ok) {
+    throw new Error(body?.error?.message ?? `HiveCore returned HTTP ${response.status}.`);
+  }
+  if (!body?.data) throw new Error("HiveCore returned no finding-receipt data.");
   return body.data;
 }

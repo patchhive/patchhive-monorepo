@@ -516,8 +516,9 @@ standalone lockfile before the first export.
 - HiveCore's target design is [docs/hivecore-architecture.md](docs/hivecore-architecture.md)
   (Fleet / Kernel / Conductor / Cockpit). Overview probes now run concurrently and
   committed PR-budget slots carry a bounded lease. The Conductor now has a durable,
-  fingerprint-deduplicated concrete-work ledger, canonical SQLite mandates, and a
-  bounded background/operator proposal loop protected by a durable single-writer
-  lease. It records exact SignalHive discovery plans but cannot advance or dispatch
-  them. Durable fleet snapshots, finding ingestion, and admission/backpressure remain
-  future architecture work.
+  fingerprint-deduplicated concrete-work ledger, idempotent product-finding receipts,
+  canonical SQLite mandates, and a bounded background/operator proposal loop protected
+  by a durable single-writer lease. It sizes SignalHive discovery plans against exact
+  suite/RepoReaper PR headroom and mandate backlog, but cannot advance or dispatch them.
+  Durable fleet snapshots, non-PR resource gates, and durable fleet jobs remain future
+  architecture work.

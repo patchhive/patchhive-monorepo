@@ -8,8 +8,10 @@ use patchhive_product_core::sqlite::{product_db_path, PooledSqliteConnection, Sq
 use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBehavior};
 
 use crate::conductor::{
-    ConductorDecision, ConductorTickLifecycle, ConductorTickRecord, ConductorTickTrigger,
-    MandateConfig, MandateLifecycle, MandateRecord, ProposeWorkOutcome, RunConductorTickOutcome,
+    CapacityLayer, ConductorDecision, ConductorTickLifecycle, ConductorTickRecord,
+    ConductorTickTrigger, DiscoveryCapacity, FindingIngestionDisposition, FindingIngestionResult,
+    FindingReceipt, FindingSource, IngestFindingsOutcome, MandateAutonomy, MandateConfig,
+    MandateLifecycle, MandateRecord, ProductFinding, ProposeWorkOutcome, RunConductorTickOutcome,
     WorkItem, WorkLifecycle, WorkProposal,
 };
 use crate::models::{
@@ -71,22 +73,44 @@ fn propose_work_with_connection(
     proposal: WorkProposal,
 ) -> rusqlite::Result<ProposeWorkOutcome> {
     let transaction = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-    let fingerprint = proposal.identity.fingerprint();
     let observed_at = crate::models::now_rfc3339();
+    let evidence = json_string(&proposal)?;
+    let outcome = propose_work_in_transaction(
+        &transaction,
+        proposal,
+        "proposed",
+        "rediscovered",
+        &evidence,
+        &observed_at,
+    )?;
+    transaction.commit()?;
+    Ok(outcome)
+}
 
-    if let Some(existing) = load_work_item_by_fingerprint(&transaction, &fingerprint)? {
+fn propose_work_in_transaction(
+    transaction: &Transaction<'_>,
+    proposal: WorkProposal,
+    created_event: &str,
+    rediscovered_event: &str,
+    event_evidence: &str,
+    observed_at: &str,
+) -> rusqlite::Result<ProposeWorkOutcome> {
+    let fingerprint = proposal.identity.fingerprint();
+    if let Some(existing) = load_work_item_by_fingerprint(transaction, &fingerprint)? {
         transaction.execute(
             "UPDATE hive_core_work_items SET updated_at = ?1 WHERE id = ?2",
             params![observed_at, existing.id],
         )?;
         transaction.execute(
-            "INSERT INTO hive_core_work_item_events (work_item_id, event, evidence_json, created_at) VALUES (?1, 'rediscovered', ?2, ?3)",
-            params![existing.id, json_string(&proposal)?, observed_at],
+            "INSERT INTO hive_core_work_item_events (work_item_id, event, evidence_json, created_at) VALUES (?1, ?2, ?3, ?4)",
+            params![existing.id, rediscovered_event, event_evidence, observed_at],
         )?;
-        let item = load_work_item_by_fingerprint(&transaction, &fingerprint)?
+        let item = load_work_item_by_fingerprint(transaction, &fingerprint)?
             .expect("work item updated in the same transaction must still exist");
-        transaction.commit()?;
-        return Ok(ProposeWorkOutcome::Deduplicated { item, observed_at });
+        return Ok(ProposeWorkOutcome::Deduplicated {
+            item,
+            observed_at: observed_at.to_owned(),
+        });
     }
 
     let item = WorkItem::discovered(proposal);
@@ -113,11 +137,151 @@ fn propose_work_with_connection(
         ],
     )?;
     transaction.execute(
-        "INSERT INTO hive_core_work_item_events (work_item_id, event, evidence_json, created_at) VALUES (?1, 'proposed', ?2, ?3)",
-        params![item.id, json_string(&item.proposal)?, item.created_at],
+        "INSERT INTO hive_core_work_item_events (work_item_id, event, evidence_json, created_at) VALUES (?1, ?2, ?3, ?4)",
+        params![item.id, created_event, event_evidence, observed_at],
     )?;
-    transaction.commit()?;
     Ok(ProposeWorkOutcome::Created { item })
+}
+
+#[derive(Debug)]
+pub enum FindingIngestionError {
+    UnknownMandate(String),
+    SourceConflict(String),
+    Storage(rusqlite::Error),
+}
+
+impl std::fmt::Display for FindingIngestionError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UnknownMandate(id) => write!(formatter, "mandate {id} was not found"),
+            Self::SourceConflict(source) => write!(
+                formatter,
+                "finding source {source} was already ingested with a different work identity"
+            ),
+            Self::Storage(error) => error.fmt(formatter),
+        }
+    }
+}
+
+impl std::error::Error for FindingIngestionError {}
+
+impl From<rusqlite::Error> for FindingIngestionError {
+    fn from(error: rusqlite::Error) -> Self {
+        Self::Storage(error)
+    }
+}
+
+pub fn ingest_findings(
+    findings: Vec<ProductFinding>,
+) -> Result<IngestFindingsOutcome, FindingIngestionError> {
+    let mut conn = connect()?;
+    ingest_findings_with_connection(&mut conn, findings)
+}
+
+fn ingest_findings_with_connection(
+    conn: &mut Connection,
+    findings: Vec<ProductFinding>,
+) -> Result<IngestFindingsOutcome, FindingIngestionError> {
+    let transaction = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let mut results = Vec::with_capacity(findings.len());
+    for finding in findings {
+        if let Some(mandate_id) = finding.mandate_id.as_deref() {
+            if load_mandate(&transaction, mandate_id)?.is_none() {
+                return Err(FindingIngestionError::UnknownMandate(mandate_id.to_owned()));
+            }
+        }
+        let source_fingerprint = finding.source.fingerprint();
+        let work_fingerprint = finding.identity.fingerprint();
+        let finding_fingerprint = finding.fingerprint();
+        if let Some(receipt) = load_finding_receipt(&transaction, &source_fingerprint)? {
+            if receipt.work_fingerprint != work_fingerprint
+                || receipt.finding_fingerprint != finding_fingerprint
+            {
+                return Err(FindingIngestionError::SourceConflict(format!(
+                    "{}/{}/{}",
+                    finding.source.product_slug, finding.source.run_id, finding.source.finding_id
+                )));
+            }
+            let item =
+                load_work_item_by_id(&transaction, &receipt.work_item_id)?.ok_or_else(|| {
+                    rusqlite::Error::InvalidParameterName(
+                        "finding receipt references a missing work item".into(),
+                    )
+                })?;
+            results.push(FindingIngestionResult {
+                disposition: FindingIngestionDisposition::AlreadyIngested,
+                receipt,
+                item,
+            });
+            continue;
+        }
+
+        let ingested_at = crate::models::now_rfc3339();
+        let evidence = json_string(&finding)?;
+        let proposal_outcome = propose_work_in_transaction(
+            &transaction,
+            finding.proposal(),
+            "finding_ingested",
+            "finding_rediscovered",
+            &evidence,
+            &ingested_at,
+        )?;
+        let (disposition, item) = match proposal_outcome {
+            ProposeWorkOutcome::Created { item } => (FindingIngestionDisposition::Created, item),
+            ProposeWorkOutcome::Deduplicated { item, .. } => {
+                (FindingIngestionDisposition::Deduplicated, item)
+            }
+        };
+        let receipt = FindingReceipt {
+            finding,
+            work_item_id: item.id.clone(),
+            work_fingerprint: item.fingerprint.clone(),
+            finding_fingerprint,
+            ingested_at,
+        };
+        transaction.execute(
+            r#"
+            INSERT INTO hive_core_finding_receipts (
+              source_fingerprint, product_slug, run_id, finding_id, mandate_id,
+              work_item_id, work_fingerprint, finding_fingerprint, finding_json, ingested_at
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+            "#,
+            params![
+                source_fingerprint,
+                receipt.finding.source.product_slug,
+                receipt.finding.source.run_id,
+                receipt.finding.source.finding_id,
+                receipt.finding.mandate_id,
+                receipt.work_item_id,
+                receipt.work_fingerprint,
+                receipt.finding_fingerprint,
+                json_string(&receipt.finding)?,
+                receipt.ingested_at,
+            ],
+        )?;
+        results.push(FindingIngestionResult {
+            disposition,
+            receipt,
+            item,
+        });
+    }
+    transaction.commit()?;
+    Ok(IngestFindingsOutcome { results })
+}
+
+pub fn finding_receipts(limit: u32) -> rusqlite::Result<Vec<FindingReceipt>> {
+    let conn = connect()?;
+    let mut statement = conn.prepare(
+        r#"
+        SELECT source_fingerprint, product_slug, run_id, finding_id, mandate_id,
+               work_item_id, work_fingerprint, finding_fingerprint, finding_json, ingested_at
+        FROM hive_core_finding_receipts
+        ORDER BY ingested_at DESC, source_fingerprint DESC
+        LIMIT ?1
+        "#,
+    )?;
+    let rows = statement.query_map([limit.clamp(1, 500)], finding_receipt_from_row)?;
+    rows.collect()
 }
 
 pub fn work_items(limit: u32) -> rusqlite::Result<Vec<WorkItem>> {
@@ -1460,6 +1624,27 @@ fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
         CREATE INDEX IF NOT EXISTS idx_hive_core_work_item_events_item
           ON hive_core_work_item_events (work_item_id, created_at ASC, id ASC);
 
+        CREATE TABLE IF NOT EXISTS hive_core_finding_receipts (
+          source_fingerprint TEXT PRIMARY KEY,
+          product_slug TEXT NOT NULL,
+          run_id TEXT NOT NULL,
+          finding_id TEXT NOT NULL,
+          mandate_id TEXT,
+          work_item_id TEXT NOT NULL,
+          work_fingerprint TEXT NOT NULL,
+          finding_fingerprint TEXT NOT NULL,
+          finding_json TEXT NOT NULL,
+          ingested_at TEXT NOT NULL,
+          UNIQUE (product_slug, run_id, finding_id),
+          FOREIGN KEY (work_item_id) REFERENCES hive_core_work_items(id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_hive_core_finding_receipts_item
+          ON hive_core_finding_receipts (work_item_id, ingested_at DESC);
+
+        CREATE INDEX IF NOT EXISTS idx_hive_core_finding_receipts_mandate
+          ON hive_core_finding_receipts (mandate_id, ingested_at DESC);
+
         CREATE TABLE IF NOT EXISTS hive_core_mandates (
           id TEXT PRIMARY KEY,
           name TEXT NOT NULL COLLATE NOCASE UNIQUE,
@@ -1610,6 +1795,78 @@ fn load_work_item_by_fingerprint(
         .optional()
 }
 
+fn load_finding_receipt(
+    conn: &Connection,
+    source_fingerprint: &str,
+) -> rusqlite::Result<Option<FindingReceipt>> {
+    conn.query_row(
+        r#"
+        SELECT source_fingerprint, product_slug, run_id, finding_id, mandate_id,
+               work_item_id, work_fingerprint, finding_fingerprint, finding_json, ingested_at
+        FROM hive_core_finding_receipts
+        WHERE source_fingerprint = ?1
+        "#,
+        [source_fingerprint],
+        finding_receipt_from_row,
+    )
+    .optional()
+}
+
+fn finding_receipt_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<FindingReceipt> {
+    let stored_source_fingerprint: String = row.get(0)?;
+    let stored_source = FindingSource {
+        product_slug: row.get(1)?,
+        run_id: row.get(2)?,
+        finding_id: row.get(3)?,
+    };
+    if stored_source.fingerprint() != stored_source_fingerprint {
+        return Err(rusqlite::Error::FromSqlConversionFailure(
+            0,
+            rusqlite::types::Type::Text,
+            Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "stored finding source fingerprint does not match its source identity",
+            )),
+        ));
+    }
+    let stored_mandate_id: Option<String> = row.get(4)?;
+    let finding_json: String = row.get(8)?;
+    let finding = serde_json::from_str::<ProductFinding>(&finding_json)
+        .map_err(|error| invalid_json(8, error))?
+        .validated()
+        .map_err(|message| {
+            rusqlite::Error::FromSqlConversionFailure(
+                8,
+                rusqlite::types::Type::Text,
+                Box::new(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    message,
+                )),
+            )
+        })?;
+    let stored_finding_fingerprint: String = row.get(7)?;
+    if finding.source != stored_source
+        || finding.mandate_id != stored_mandate_id
+        || finding.fingerprint() != stored_finding_fingerprint
+    {
+        return Err(rusqlite::Error::FromSqlConversionFailure(
+            8,
+            rusqlite::types::Type::Text,
+            Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "stored finding receipt columns do not match its finding JSON",
+            )),
+        ));
+    }
+    Ok(FindingReceipt {
+        finding,
+        work_item_id: row.get(5)?,
+        work_fingerprint: row.get(6)?,
+        finding_fingerprint: stored_finding_fingerprint,
+        ingested_at: row.get(9)?,
+    })
+}
+
 const MANDATE_SELECT: &str = r#"
     SELECT id, name, config_json, state_kind, state_json, revision, created_at, updated_at
     FROM hive_core_mandates
@@ -1681,6 +1938,95 @@ fn mandate_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<MandateRecord> 
     })
 }
 
+#[derive(Debug, Clone)]
+struct SharedDiscoveryCapacity {
+    suite: CapacityLayer,
+    repo_reaper: CapacityLayer,
+}
+
+fn load_shared_discovery_capacity(
+    conn: &mut Connection,
+) -> rusqlite::Result<SharedDiscoveryCapacity> {
+    expire_pr_reservations(conn)?;
+    let suite_limit_raw = conn.query_row(
+        "SELECT suite_limit FROM pr_budget_settings WHERE id = 1",
+        [],
+        |row| row.get::<_, i64>(0),
+    )?;
+    let suite_limit = checked_u32(0, suite_limit_raw, "suite PR limit")?;
+    let product_limit_raw = conn
+        .query_row(
+            "SELECT pr_limit FROM product_pr_budgets WHERE product_slug = 'repo-reaper'",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()?;
+    let repo_reaper_limit = product_limit_raw
+        .map(|value| checked_u32(0, value, "RepoReaper PR limit"))
+        .transpose()?
+        .unwrap_or_else(|| default_product_pr_limit("repo-reaper"));
+    let suite_used = active_pr_count_checked(conn, None)?;
+    let repo_reaper_used = active_pr_count_checked(conn, Some("repo-reaper"))?;
+    Ok(SharedDiscoveryCapacity {
+        suite: CapacityLayer {
+            limit: suite_limit,
+            used: suite_used,
+            remaining: suite_limit.saturating_sub(suite_used),
+        },
+        repo_reaper: CapacityLayer {
+            limit: repo_reaper_limit,
+            used: repo_reaper_used,
+            remaining: repo_reaper_limit.saturating_sub(repo_reaper_used),
+        },
+    })
+}
+
+fn mandate_concrete_backlog(conn: &Connection, mandate_id: &str) -> rusqlite::Result<u32> {
+    let count = conn.query_row(
+        r#"
+        SELECT COUNT(DISTINCT work.id)
+        FROM hive_core_work_items AS work
+        LEFT JOIN hive_core_finding_receipts AS receipt
+          ON receipt.work_item_id = work.id
+        WHERE work.state_kind = 'discovered'
+          AND (work.mandate_id = ?1 OR receipt.mandate_id = ?1)
+        "#,
+        [mandate_id],
+        |row| row.get::<_, i64>(0),
+    )?;
+    checked_u32(0, count, "mandate concrete backlog")
+}
+
+fn active_pr_count_checked(conn: &Connection, product: Option<&str>) -> rusqlite::Result<u32> {
+    let count = if let Some(product) = product {
+        conn.query_row(
+            "SELECT COUNT(*) FROM pr_budget_reservations WHERE status IN ('reserved', 'committed') AND product_slug = ?1",
+            [product],
+            |row| row.get::<_, i64>(0),
+        )?
+    } else {
+        conn.query_row(
+            "SELECT COUNT(*) FROM pr_budget_reservations WHERE status IN ('reserved', 'committed')",
+            [],
+            |row| row.get::<_, i64>(0),
+        )?
+    };
+    checked_u32(0, count, "active PR usage")
+}
+
+fn checked_u32(column: usize, value: i64, label: &str) -> rusqlite::Result<u32> {
+    u32::try_from(value).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(
+            column,
+            rusqlite::types::Type::Integer,
+            Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("{label} is outside the supported range: {error}"),
+            )),
+        )
+    })
+}
+
 pub fn run_conductor_tick(
     trigger: ConductorTickTrigger,
 ) -> rusqlite::Result<RunConductorTickOutcome> {
@@ -1742,6 +2088,7 @@ fn run_conductor_tick_with_connection(
     }
 
     let plan = (|| -> rusqlite::Result<(Vec<ConductorDecision>, u32)> {
+        let shared_capacity = load_shared_discovery_capacity(conn)?;
         let active_count = u32::try_from(conn.query_row(
             "SELECT COUNT(*) FROM hive_core_mandates WHERE state_kind = 'active'",
             [],
@@ -1757,10 +2104,55 @@ fn run_conductor_tick_with_connection(
         let mandates = load_mandates(conn, mandate_limit, true)?;
         let selected_count = u32::try_from(mandates.len()).unwrap_or(u32::MAX);
         let remaining = active_count.saturating_sub(selected_count);
-        let decisions = mandates
-            .into_iter()
-            .map(|mandate| ConductorDecision::for_mandate(&mandate))
-            .collect::<Vec<_>>();
+        let mut actionable_remaining = u32::try_from(
+            mandates
+                .iter()
+                .filter(|mandate| mandate.config.requested_autonomy != MandateAutonomy::Observe)
+                .count(),
+        )
+        .unwrap_or(u32::MAX);
+        let mut allocated_in_tick = 0_u32;
+        let mut decisions = Vec::with_capacity(mandates.len());
+        for mandate in mandates {
+            if mandate.config.requested_autonomy == MandateAutonomy::Observe {
+                decisions.push(ConductorDecision::observed_only(&mandate));
+                continue;
+            }
+            let concrete_backlog = mandate_concrete_backlog(conn, &mandate.id)?;
+            let mandate_remaining = mandate
+                .config
+                .limits
+                .pr_budget
+                .saturating_sub(concrete_backlog);
+            let shared_remaining = shared_capacity
+                .suite
+                .remaining
+                .min(shared_capacity.repo_reaper.remaining)
+                .saturating_sub(allocated_in_tick);
+            let fair_share = if actionable_remaining == 0 {
+                0
+            } else {
+                shared_remaining.div_ceil(actionable_remaining)
+            };
+            let admitted_repositories = mandate
+                .config
+                .scope
+                .max_repositories
+                .min(mandate_remaining)
+                .min(fair_share);
+            let capacity = DiscoveryCapacity {
+                suite: shared_capacity.suite.clone(),
+                repo_reaper: shared_capacity.repo_reaper.clone(),
+                mandate_limit: mandate.config.limits.pr_budget,
+                concrete_backlog,
+                mandate_remaining,
+                allocated_earlier_in_tick: allocated_in_tick,
+                admitted_repositories,
+            };
+            decisions.push(ConductorDecision::with_capacity(&mandate, capacity));
+            allocated_in_tick = allocated_in_tick.saturating_add(admitted_repositories);
+            actionable_remaining = actionable_remaining.saturating_sub(1);
+        }
         Ok((decisions, remaining))
     })();
     let (decisions, remaining_active_mandates) = match plan {
@@ -2869,17 +3261,18 @@ mod tests {
     use super::{
         claim_approval_with_connection, collapse_policies, consume_approval_with_connection,
         create_mandate_with_connection, expire_approvals, grant_approval_with_connection,
-        init_schema, insert_approval, load_action_event, load_action_events, load_approval,
-        load_latest_first_stack_smoke_run, load_mandate, load_pr_reservation,
-        load_product_overrides, load_service_token_storage_stats, load_suite_settings,
-        load_work_item_by_id, propose_work_with_connection, record_approval_event,
-        replace_overrides, replace_repository_policies_with_connection,
+        ingest_findings_with_connection, init_schema, insert_approval, load_action_event,
+        load_action_events, load_approval, load_latest_first_stack_smoke_run, load_mandate,
+        load_pr_reservation, load_product_overrides, load_service_token_storage_stats,
+        load_suite_settings, load_work_item_by_id, propose_work_with_connection,
+        record_approval_event, replace_overrides, replace_repository_policies_with_connection,
         reserve_pr_slot_with_connection, run_conductor_tick_with_connection,
         update_mandate_with_connection, write_suite_settings, ServiceTokenStorageStats,
     };
     use crate::conductor::{
-        ConductorDecision, ConductorTickLifecycle, ConductorTickTrigger, MandateAutonomy,
-        MandateConfig, MandateLifecycle, MandateLimits, MandateScope, ProposeWorkOutcome,
+        CapacityLimitingLayer, ConductorDecision, ConductorTickLifecycle, ConductorTickTrigger,
+        FindingIngestionDisposition, FindingSource, MandateAutonomy, MandateConfig,
+        MandateLifecycle, MandateLimits, MandateScope, ProductFinding, ProposeWorkOutcome,
         ProposedDispatch, RunConductorTickOutcome, WorkIdentity, WorkLifecycle, WorkOrigin,
         WorkProposal,
     };
@@ -2941,6 +3334,36 @@ mod tests {
         }
     }
 
+    fn product_finding(
+        mandate_id: Option<String>,
+        run_id: &str,
+        finding_id: &str,
+    ) -> ProductFinding {
+        ProductFinding {
+            mandate_id,
+            source: FindingSource {
+                product_slug: "signal-hive".into(),
+                run_id: run_id.into(),
+                finding_id: finding_id.into(),
+            },
+            identity: WorkIdentity {
+                kind: "github_issue".into(),
+                repository: "nousresearch/hermes-agent".into(),
+                subject_ref: "issue:72086".into(),
+            },
+            proposed_dispatch: ProposedDispatch {
+                product_slug: "repo-reaper".into(),
+                action_id: "run".into(),
+                input: json!({
+                    "target_selection_mode": "direct",
+                    "target_repo": "NousResearch/hermes-agent",
+                }),
+            },
+            rationale: "SignalHive found a concrete maintenance issue".into(),
+            evidence: json!({"priority_score": 92, "issue_number": 72086}),
+        }
+    }
+
     #[test]
     fn conductor_tick_records_bounded_plans_without_dispatching() {
         let mut conn = Connection::open_in_memory().expect("in-memory db should open");
@@ -2994,6 +3417,237 @@ mod tests {
             ))
             .expect("work count should read"),
             0
+        );
+    }
+
+    #[test]
+    fn finding_ingestion_is_idempotent_by_source_and_deduplicates_work_identity() {
+        let mut conn = Connection::open_in_memory().expect("in-memory db should open");
+        init_schema(&conn).expect("schema should initialize");
+        let mandate = create_mandate_with_connection(
+            &conn,
+            mandate_config("finding-receipts", MandateAutonomy::Propose),
+        )
+        .expect("mandate should persist");
+        let first = product_finding(Some(mandate.id.clone()), "scan-1", "issue-72086");
+        let created = ingest_findings_with_connection(&mut conn, vec![first.clone()])
+            .expect("first finding should ingest");
+        assert_eq!(
+            created.results[0].disposition,
+            FindingIngestionDisposition::Created
+        );
+
+        let retried = ingest_findings_with_connection(&mut conn, vec![first])
+            .expect("exact retry should be idempotent");
+        assert_eq!(
+            retried.results[0].disposition,
+            FindingIngestionDisposition::AlreadyIngested
+        );
+
+        let rediscovered = ingest_findings_with_connection(
+            &mut conn,
+            vec![product_finding(Some(mandate.id), "scan-2", "issue-72086")],
+        )
+        .expect("another run may rediscover the same work");
+        assert_eq!(
+            rediscovered.results[0].disposition,
+            FindingIngestionDisposition::Deduplicated
+        );
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM hive_core_work_items", [], |row| row
+                .get::<_, i64>(
+                0
+            ))
+            .expect("work count should read"),
+            1
+        );
+        assert_eq!(
+            conn.query_row(
+                "SELECT COUNT(*) FROM hive_core_finding_receipts",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("receipt count should read"),
+            2
+        );
+        assert_eq!(
+            conn.query_row(
+                "SELECT COUNT(*) FROM hive_core_work_item_events",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("event count should read"),
+            2
+        );
+    }
+
+    #[test]
+    fn finding_source_cannot_be_reused_for_changed_evidence() {
+        let mut conn = Connection::open_in_memory().expect("in-memory db should open");
+        init_schema(&conn).expect("schema should initialize");
+        let finding = product_finding(None, "scan-1", "issue-72086");
+        ingest_findings_with_connection(&mut conn, vec![finding.clone()])
+            .expect("first finding should ingest");
+        let mut changed = finding;
+        changed.evidence = json!({"priority_score": 5, "issue_number": 72086});
+        assert!(matches!(
+            ingest_findings_with_connection(&mut conn, vec![changed]),
+            Err(super::FindingIngestionError::SourceConflict(_))
+        ));
+        assert_eq!(
+            conn.query_row(
+                "SELECT COUNT(*) FROM hive_core_finding_receipts",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("receipt count should read"),
+            1
+        );
+    }
+
+    #[test]
+    fn finding_batch_rolls_back_when_any_source_conflicts() {
+        let mut conn = Connection::open_in_memory().expect("in-memory db should open");
+        init_schema(&conn).expect("schema should initialize");
+        let original = product_finding(None, "scan-1", "issue-72086");
+        ingest_findings_with_connection(&mut conn, vec![original.clone()])
+            .expect("original finding should ingest");
+
+        let mut new_work = product_finding(None, "scan-2", "issue-99");
+        new_work.identity.subject_ref = "issue:99".into();
+        let mut conflicting_retry = original;
+        conflicting_retry.rationale = "Changed intent under the same source".into();
+        assert!(matches!(
+            ingest_findings_with_connection(&mut conn, vec![new_work, conflicting_retry]),
+            Err(super::FindingIngestionError::SourceConflict(_))
+        ));
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM hive_core_work_items", [], |row| row
+                .get::<_, i64>(
+                0
+            ))
+            .expect("work count should read"),
+            1
+        );
+        assert_eq!(
+            conn.query_row(
+                "SELECT COUNT(*) FROM hive_core_finding_receipts",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("receipt count should read"),
+            1
+        );
+        assert_eq!(
+            conn.query_row(
+                "SELECT COUNT(*) FROM hive_core_work_item_events",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("event count should read"),
+            1
+        );
+    }
+
+    #[test]
+    fn conductor_uses_backlog_and_shared_capacity_without_double_allocating() {
+        let mut conn = Connection::open_in_memory().expect("in-memory db should open");
+        init_schema(&conn).expect("schema should initialize");
+        conn.execute(
+            "UPDATE pr_budget_settings SET suite_limit = 2 WHERE id = 1",
+            [],
+        )
+        .expect("suite limit should update");
+        let open =
+            create_mandate_with_connection(&conn, mandate_config("open", MandateAutonomy::Propose))
+                .expect("open mandate should persist");
+        let mut saturated_config = mandate_config("saturated", MandateAutonomy::Propose);
+        saturated_config.limits.pr_budget = 1;
+        let saturated = create_mandate_with_connection(&conn, saturated_config)
+            .expect("saturated mandate should persist");
+        ingest_findings_with_connection(
+            &mut conn,
+            vec![product_finding(
+                Some(saturated.id.clone()),
+                "scan-1",
+                "issue-72086",
+            )],
+        )
+        .expect("concrete backlog should ingest");
+
+        let outcome =
+            run_conductor_tick_with_connection(&mut conn, ConductorTickTrigger::Operator, 10, 60)
+                .expect("tick should settle");
+        let RunConductorTickOutcome::Settled { tick } = outcome else {
+            panic!("tick should own the lease");
+        };
+        let ConductorTickLifecycle::Completed { decisions, .. } = tick.lifecycle else {
+            panic!("tick should complete");
+        };
+        assert!(decisions.iter().any(|decision| matches!(
+            decision,
+            ConductorDecision::CapacityDeferred {
+                mandate_id,
+                limiting_layers,
+                capacity,
+                ..
+            } if mandate_id == &saturated.id
+                && limiting_layers.contains(&CapacityLimitingLayer::MandateBacklog)
+                && capacity.concrete_backlog == 1
+        )));
+        assert!(decisions.iter().any(|decision| matches!(
+            decision,
+            ConductorDecision::PlannedDiscovery {
+                mandate_id,
+                capacity,
+                proposed_dispatch,
+                ..
+            } if mandate_id == &open.id
+                && capacity.admitted_repositories == 2
+                && proposed_dispatch.input["max_repos"] == json!(2)
+        )));
+        let admitted = decisions
+            .iter()
+            .filter_map(|decision| match decision {
+                ConductorDecision::PlannedDiscovery { capacity, .. } => {
+                    Some(capacity.admitted_repositories)
+                }
+                _ => None,
+            })
+            .sum::<u32>();
+        assert_eq!(admitted, 2);
+    }
+
+    #[test]
+    fn malformed_capacity_evidence_fails_the_tick_closed() {
+        let mut conn = Connection::open_in_memory().expect("in-memory db should open");
+        init_schema(&conn).expect("schema should initialize");
+        create_mandate_with_connection(
+            &conn,
+            mandate_config("bad-capacity", MandateAutonomy::Propose),
+        )
+        .expect("mandate should persist");
+        conn.execute(
+            "UPDATE pr_budget_settings SET suite_limit = -1 WHERE id = 1",
+            [],
+        )
+        .expect("fixture should corrupt the suite limit");
+
+        assert!(run_conductor_tick_with_connection(
+            &mut conn,
+            ConductorTickTrigger::Operator,
+            10,
+            60,
+        )
+        .is_err());
+        assert_eq!(
+            conn.query_row(
+                "SELECT state_kind FROM hive_core_conductor_ticks ORDER BY created_at DESC LIMIT 1",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .expect("tick state should read"),
+            "failed"
         );
     }
 

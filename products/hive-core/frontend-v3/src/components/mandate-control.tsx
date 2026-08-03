@@ -238,7 +238,11 @@ function TickHistory({ ticks, mandates }: { ticks: ConductorTickRecord[]; mandat
 }
 
 function DecisionRow({ decision, name }: { decision: ConductorDecision; name: string }) {
-  const text = decision.decision === "planned_discovery" ? `${decision.proposed_dispatch.product_slug} / ${decision.proposed_dispatch.action_id} · effective ${decision.effective_autonomy}` : decision.reason;
+  const text = decision.decision === "planned_discovery"
+    ? `${decision.proposed_dispatch.product_slug} / ${decision.proposed_dispatch.action_id} · ${decision.capacity.admitted_repositories} repos admitted · ${decision.capacity.concrete_backlog} concrete backlog · effective ${decision.effective_autonomy}`
+    : decision.decision === "capacity_deferred"
+      ? `${decision.reason} Limits: ${decision.limiting_layers.join(", ") || "unavailable capacity"}.`
+      : decision.reason;
   return <div className="grid gap-1 rounded border border-border/60 px-2 py-1.5 text-[10px] sm:grid-cols-[140px_120px_1fr]"><span className="font-display text-foreground">{name}</span><span className="font-mono text-[var(--honey)]">{decision.decision.replaceAll("_", " ")}</span><span className="text-muted-foreground">{text}</span></div>;
 }
 

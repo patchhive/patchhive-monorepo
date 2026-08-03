@@ -217,7 +217,9 @@ fn canonical_string_map(values: &std::collections::HashMap<String, String>) -> V
     )
 }
 
-fn canonical_json(value: &Value) -> Value {
+/// Recursively sort JSON object keys so hashes describe semantic JSON rather
+/// than the insertion order chosen by one serializer or caller.
+pub fn canonical_json(value: &Value) -> Value {
     match value {
         Value::Array(items) => Value::Array(items.iter().map(canonical_json).collect()),
         Value::Object(object) => Value::Object(

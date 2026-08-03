@@ -173,6 +173,16 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
             )
             .credential_requirements(["suite:control"]),
             contract::action(
+                "ingest_findings",
+                "Ingest product findings",
+                "POST",
+                "/work-items/findings",
+                "Persist concrete product-run findings and deduplicate them into the proposal-only work ledger.",
+                false,
+                contract::ActionSafety::automatic(contract::ActionEffect::WritesLocalState),
+            )
+            .credential_requirements(["suite:control"]),
+            contract::action(
                 "create_mandate",
                 "Create mandate",
                 "POST",
@@ -204,6 +214,11 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
             ),
             contract::link("pr_budgets", "Pull-request budgets", "/pr-budgets"),
             contract::link("work_items", "Work ledger", "/work-items"),
+            contract::link(
+                "finding_receipts",
+                "Finding receipts",
+                "/work-items/findings",
+            ),
             contract::link("mandates", "Mandates", "/mandates"),
             contract::link("conductor_ticks", "Conductor ticks", "/conductor/ticks"),
         ],

@@ -173,6 +173,12 @@ patchhive/
   conductor boundary is proposal-only: it may create `discovered` work but cannot
   dispatch or advance it. Unsupported or malformed stored lifecycle evidence decodes
   as `unknown`, never as ready work.
+- Concrete product findings enter the HiveCore work ledger through idempotent
+  `FindingSource` receipts keyed by product, run, and finding ID. Reusing one source
+  with changed evidence or a changed proposal is a conflict; different sources that
+  identify the same normalized work fingerprint converge on one item while retaining
+  every receipt. Finding evidence must be a structured JSON object, and an attributed
+  mandate must already exist.
 - HiveCore mandates are canonical SQLite records with non-defaultable autonomy and
   lifecycle types plus optimistic revisions. Broad mandate discovery plans are not
   concrete work items: a conductor tick records a typed `planned_discovery` decision,
@@ -180,6 +186,13 @@ patchhive/
   fingerprinted work ledger. Ticks use a durable single-writer lease, are bounded to
   10 active mandates by default, and cap every requested act mode to `propose`; the
   current conductor has no dispatch transition.
+- Conductor discovery planning is backpressured by observed suite and RepoReaper PR
+  headroom plus each mandate's PR limit and concrete discovered backlog. A tick fairly
+  allocates remaining capacity across the active mandate slice and narrows SignalHive's
+  repository bound to the admitted units. Zero capacity is a typed
+  `capacity_deferred` decision with exact limiting layers; malformed capacity evidence
+  fails the tick closed. Cost, GitHub-rate, sandbox, and owner-politeness admission are
+  still future resource gates and must not be claimed as observed.
 - Booleans remain appropriate for complete binary facts such as whether an action
   is scheduleable. The rule is to eliminate ambiguous state, not booleans generally.
 

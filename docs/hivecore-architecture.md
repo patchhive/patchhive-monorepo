@@ -300,13 +300,21 @@ substrate for long-running supervisor work.
 the first plan. The stable fingerprint contains only kind, normalized GitHub repository, and
 subject reference, so a different discovering product still converges on the same row. The only
 creatable lifecycle is `discovered`; unsupported or malformed stored states decode as `unknown`.
-There is deliberately no work-item transition or conductor dispatch route yet. Finding ingestion,
-backpressure, and durable fleet-job migration remain part of B6.
+There is deliberately no work-item transition or conductor dispatch route yet. Durable fleet-job
+migration remains part of B6.
 
 Broad discovery intent is intentionally recorded in conductor-tick history rather than forced into
 `work_items`: before discovery there is no truthful repository or subject identity to fingerprint.
 Only concrete findings enter the work ledger. This keeps a planned search distinguishable from a
 piece of repository work and prevents fake sentinel repositories from becoming dedup identities.
+
+**Concrete ingestion built as of 2026-08-02:** authenticated products may submit up to 100
+structured findings atomically through `POST /work-items/findings`. Each finding carries a stable
+product/run/finding source, normalized work identity, proposed dispatch, optional existing mandate,
+rationale, and structured evidence. Exact retries return the original receipt without another
+event. Reusing a source with changed evidence or intent is a conflict. Independent sources that
+identify the same work fingerprint deduplicate to one work item while every source receipt remains
+queryable. This is an ingestion boundary, not permission to dispatch the proposal.
 
 ### 3.9 Backpressure: shape the funnel by what can actually ship
 
@@ -323,6 +331,14 @@ The conductor pulls, never pushes, sized to
 - **AI spend** — per-mandate and suite-wide daily caps, checked before dispatch.
 - **Sandbox and clone slots** — bounded concurrent test execution, the highest-risk resource.
 - **Per-owner politeness** — one open PR per owner, cooldown after close-without-merge.
+
+**PR-capacity gate built as of 2026-08-02:** each proposal tick reads active reserved/committed PR
+usage after expiring stale leases, then derives exact suite and RepoReaper headroom. For each
+non-observe mandate it subtracts concrete discovered backlog from the mandate PR limit, fairly
+allocates the shared remaining headroom across the current bounded slice, and narrows SignalHive's
+`max_repos` to that admitted amount. No capacity produces a typed `capacity_deferred` decision with
+all limiting layers. Invalid stored limits fail the tick. GitHub-rate, AI-spend, sandbox, and
+per-owner gates above remain unimplemented and are not represented as observed capacity.
 
 ### 3.10 Outcome feedback
 
@@ -492,11 +508,11 @@ first-run host bring-up remains an HTTP daemon or becomes documented operator se
    closed committed reservations. (B4, B5)
 3. **Approvals as objects.** Landed: exact durable subjects, atomic single-use claims, suite-run
    pending states, audit history, and the v3 operator inbox. (B3)
-4. **The conductor.** In progress: mandates, the proposal-only work ledger, fingerprint dedup,
-   durable single-writer ticks, and bounded discovery planning are built. Next are ingestion of
-   concrete product findings, durable job state replacing the in-memory fleet job, and backpressure
-   sized by real remaining capacity. Keep autonomy at `propose`; no conductor dispatch transition
-   exists yet. (B6)
+4. **The conductor.** In progress: mandates, concrete finding receipts, the proposal-only work
+   ledger, fingerprint dedup, durable single-writer ticks, and PR-capacity-aware discovery planning
+   are built. Next are durable job state replacing the in-memory fleet job and the remaining
+   GitHub-rate, AI-spend, sandbox, and owner-politeness admission gates. Keep autonomy at `propose`;
+   no conductor dispatch transition exists yet. (B6)
 5. **Cockpit and consolidation.** Kernel becomes a crate with the three authority implementations;
    outcome feedback and the reputation governor land; `products/hive-core/backend/` retires.
 

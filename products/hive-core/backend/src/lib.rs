@@ -12,6 +12,7 @@ patchhive_product_core::define_api_key_auth_module! {
                 "/pr-budgets/reservations/{id}/commit",
                 "/pr-budgets/reservations/{id}/release",
                 "/pr-budgets/releases",
+                "/work-items/findings",
                 "/suite-runs",
                 "/api/products/hive-core/suite-runs",
                 "/api/products/hive-core/settings",
@@ -20,6 +21,7 @@ patchhive_product_core::define_api_key_auth_module! {
                 "/api/products/hive-core/pr-budgets/reservations/{id}/commit",
                 "/api/products/hive-core/pr-budgets/reservations/{id}/release",
                 "/api/products/hive-core/pr-budgets/releases",
+                "/api/products/hive-core/work-items/findings",
             ])
             .with_unauthorized_message("Unauthorized — provide X-API-Key or X-PatchHive-Service-Token.")
             .with_public_paths([
@@ -162,6 +164,10 @@ pub fn router() -> Router {
         .route(
             "/work-items/proposals",
             axum::routing::post(pipeline::propose_work),
+        )
+        .route(
+            "/work-items/findings",
+            get(pipeline::list_finding_receipts).post(pipeline::ingest_findings),
         )
         .route("/work-items/:id", get(pipeline::work_item_detail))
         .route(

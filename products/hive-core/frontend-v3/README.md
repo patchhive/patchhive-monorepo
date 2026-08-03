@@ -49,10 +49,10 @@ remaining architecture work.
 | Capability matrix | manifest + observed actions | manifest side real |
 | Outbound capacity | `GET /pr-budgets` | live, with bounded reserved and committed leases |
 | Approvals | `GET/POST /approvals` | live, exact and single-use (B3) |
-| Work ledger | `GET /work-items` | live concrete-work foundation; transitions remain (B6) |
+| Work ledger | `GET /work-items` + `/work-items/findings` | live concrete work plus idempotent source receipts; transitions remain (B6) |
 | Repository policy | `GET /repository-policies` | endpoint exists; needs structured rows (B4) |
 | Mandates | `GET/POST /mandates` | live SQLite intent, lifecycle, limits, and autonomy (§3.6) |
-| Conductor ticks | `GET/POST /conductor/ticks` | live bounded, leased, proposal-only planning (§3.7) |
+| Conductor ticks | `GET/POST /conductor/ticks` | live bounded, leased, PR-capacity-aware proposal planning (§3.7) |
 | Blast radius | work items + mandates | inputs live; calculated radius not built (§3.8) |
 | Run volume | `suite_events` | ledger does not exist yet |
 | Runbook history | smoke tiers + fleet jobs | backend exists; fleet jobs need durable storage (B6) |

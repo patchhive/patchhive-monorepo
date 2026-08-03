@@ -43,14 +43,39 @@ export interface MandateRecord {
   updated_at: string;
 }
 
+export interface CapacityLayer {
+  limit: number;
+  used: number;
+  remaining: number;
+}
+
+export interface DiscoveryCapacity {
+  suite: CapacityLayer;
+  repo_reaper: CapacityLayer;
+  mandate_limit: number;
+  concrete_backlog: number;
+  mandate_remaining: number;
+  allocated_earlier_in_tick: number;
+  admitted_repositories: number;
+}
+
 export type ConductorDecision =
   | { decision: "deferred"; mandate_id: string; reason: string }
   | { decision: "observed_only"; mandate_id: string; requested_autonomy: MandateAutonomy; reason: string }
+  | {
+      decision: "capacity_deferred";
+      mandate_id: string;
+      requested_autonomy: MandateAutonomy;
+      capacity: DiscoveryCapacity;
+      limiting_layers: Array<"mandate_backlog" | "repo_reaper" | "suite">;
+      reason: string;
+    }
   | {
       decision: "planned_discovery";
       mandate_id: string;
       requested_autonomy: MandateAutonomy;
       effective_autonomy: MandateAutonomy;
+      capacity: DiscoveryCapacity;
       proposed_dispatch: ProposedDispatch;
       rationale: string;
     };

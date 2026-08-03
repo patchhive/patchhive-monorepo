@@ -59,7 +59,9 @@ pub use mandates::{
     activate_mandate, archive_mandate, create_mandate, list_conductor_ticks, list_mandates,
     mandate_detail, pause_mandate, run_conductor_tick, update_mandate,
 };
-pub use work_ledger::{list_work_items, propose_work, work_item_detail};
+pub use work_ledger::{
+    ingest_findings, list_finding_receipts, list_work_items, propose_work, work_item_detail,
+};
 
 fn hive_core_action_run_values(limit: u32) -> Vec<Value> {
     crate::db::recent_action_events(limit)

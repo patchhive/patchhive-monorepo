@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Eye, Fingerprint, ListTodo, Loader2, ShieldOff } from "lucide-react";
 
-import { fetchWorkItems, type WorkItem, type WorkOrigin } from "@/lib/work-ledger";
+import {
+  fetchFindingReceipts,
+  fetchWorkItems,
+  type FindingReceipt,
+  type WorkItem,
+  type WorkOrigin,
+} from "@/lib/work-ledger";
 
 const PAGE_SIZE = 6;
 
@@ -16,13 +22,19 @@ function originLabel(origin: WorkOrigin): string {
 
 export function WorkLedger({ syncVersion = 0 }: { syncVersion?: number }) {
   const [items, setItems] = useState<WorkItem[]>([]);
+  const [receipts, setReceipts] = useState<FindingReceipt[]>([]);
   const [visible, setVisible] = useState(PAGE_SIZE);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   const refresh = useCallback(async (signal?: AbortSignal) => {
     try {
-      setItems(await fetchWorkItems(signal));
+      const [nextItems, nextReceipts] = await Promise.all([
+        fetchWorkItems(signal),
+        fetchFindingReceipts(signal),
+      ]);
+      setItems(nextItems);
+      setReceipts(nextReceipts);
       setError("");
     } catch (cause) {
       if (cause instanceof DOMException && cause.name === "AbortError") return;
@@ -49,6 +61,16 @@ export function WorkLedger({ syncVersion = 0 }: { syncVersion?: number }) {
     return { discovered, unknown };
   }, [items]);
 
+  const receiptsByItem = useMemo(() => {
+    const grouped = new Map<string, FindingReceipt[]>();
+    for (const receipt of receipts) {
+      const current = grouped.get(receipt.work_item_id) ?? [];
+      current.push(receipt);
+      grouped.set(receipt.work_item_id, current);
+    }
+    return grouped;
+  }, [receipts]);
+
   return (
     <section id="ledger" className="mt-8 scroll-mt-24 rounded-xl border border-border bg-card/50 p-6 backdrop-blur">
       <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
@@ -64,6 +86,7 @@ export function WorkLedger({ syncVersion = 0 }: { syncVersion?: number }) {
           <span className="inline-flex items-center gap-1 rounded border border-[var(--honey)]/40 px-2 py-1 text-[var(--honey)]"><Eye className="h-3 w-3" /> propose only</span>
           <span className="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-muted-foreground"><ShieldOff className="h-3 w-3" /> dispatch disabled</span>
           <span className="rounded border border-border px-2 py-1 text-muted-foreground">{counts.discovered} discovered</span>
+          <span className="rounded border border-border px-2 py-1 text-muted-foreground">{receipts.length} finding receipts</span>
           {counts.unknown > 0 && <span className="rounded border border-[var(--crit)]/40 px-2 py-1 text-[var(--crit)]">{counts.unknown} unknown</span>}
         </div>
       </div>
@@ -77,7 +100,7 @@ export function WorkLedger({ syncVersion = 0 }: { syncVersion?: number }) {
       ) : (
         <>
           <div className="space-y-3">
-            {items.slice(0, visible).map((item) => <WorkRow key={item.id} item={item} />)}
+            {items.slice(0, visible).map((item) => <WorkRow key={item.id} item={item} receipts={receiptsByItem.get(item.id) ?? []} />)}
           </div>
           {items.length > PAGE_SIZE && (
             <div className="mt-4 flex flex-wrap justify-center gap-2 font-display text-[9px] uppercase tracking-wider">
@@ -92,7 +115,7 @@ export function WorkLedger({ syncVersion = 0 }: { syncVersion?: number }) {
   );
 }
 
-function WorkRow({ item }: { item: WorkItem }) {
+function WorkRow({ item, receipts }: { item: WorkItem; receipts: FindingReceipt[] }) {
   const identity = item.proposal.identity;
   const dispatch = item.proposal.proposed_dispatch;
   const unknown = item.lifecycle.state === "unknown";
@@ -105,16 +128,17 @@ function WorkRow({ item }: { item: WorkItem }) {
         </div>
         <span className={`rounded border px-2 py-1 font-display text-[9px] uppercase tracking-wider ${unknown ? "border-[var(--crit)]/40 text-[var(--crit)]" : "border-[var(--honey)]/40 text-[var(--honey)]"}`}>{item.lifecycle.state}</span>
       </div>
-      <div className="mt-3 grid gap-2 text-[11px] sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mt-3 grid gap-2 text-[11px] sm:grid-cols-2 lg:grid-cols-5">
         <Fact label="Kind" value={identity.kind} />
         <Fact label="Proposed dispatch" value={`${dispatch.product_slug} / ${dispatch.action_id}`} />
         <Fact label="Origin" value={originLabel(item.proposal.origin)} />
         <Fact label="Mandate" value={item.proposal.mandate_id ?? "not assigned"} />
+        <Fact label="Finding receipts" value={receipts.length === 0 ? "none" : `${receipts.length} · latest ${receipts[0].finding.source.product_slug}`} />
       </div>
       <div className="mt-3 flex items-center gap-1.5 font-mono text-[9px] text-muted-foreground"><Fingerprint className="h-3 w-3" /> {item.fingerprint.slice(0, 20)}</div>
       <details className="mt-3">
         <summary className="cursor-pointer font-display text-[9px] uppercase tracking-wider text-muted-foreground">Proposal and lifecycle evidence</summary>
-        <pre className="mt-2 max-h-64 overflow-auto rounded border border-border bg-background/60 p-2 font-mono text-[10px] text-muted-foreground">{JSON.stringify({ proposal: item.proposal, lifecycle: item.lifecycle }, null, 2)}</pre>
+        <pre className="mt-2 max-h-64 overflow-auto rounded border border-border bg-background/60 p-2 font-mono text-[10px] text-muted-foreground">{JSON.stringify({ proposal: item.proposal, lifecycle: item.lifecycle, finding_receipts: receipts }, null, 2)}</pre>
       </details>
     </article>
   );
