@@ -7,7 +7,8 @@ use patchhive_product_core::scheduling::{
 };
 use patchhive_product_core::secrets::TokenProtector;
 use patchhive_product_core::sqlite::{product_db_path, PooledSqliteConnection, SqlitePool};
-use rusqlite::params;
+use rusqlite::{params, OptionalExtension};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::PathBuf;
 
@@ -247,6 +248,14 @@ CREATE TABLE IF NOT EXISTS repo_reaper_pr_tracking (
     follow_up_count INTEGER DEFAULT 0,
     PRIMARY KEY(pr_number, repo)
 );
+CREATE TABLE IF NOT EXISTS repo_reaper_pr_reservation_commits (
+    reservation_id TEXT PRIMARY KEY,
+    state_kind TEXT NOT NULL,
+    state_json TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_repo_reaper_pr_reservation_commits_state
+    ON repo_reaper_pr_reservation_commits(state_kind, updated_at);
 CREATE TABLE IF NOT EXISTS repo_reaper_dry_stalk_runs (
     run_id TEXT PRIMARY KEY,
     repos_json TEXT NOT NULL,
@@ -274,6 +283,167 @@ CREATE TABLE IF NOT EXISTS repo_reaper_settings (
     key TEXT PRIMARY KEY, value TEXT
 );
 ";
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum PrReservationCommitState {
+    Pending {
+        pr_url: String,
+        attempts: u32,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        last_error: Option<String>,
+    },
+    Committed {
+        pr_url: String,
+        committed_at: String,
+    },
+    Unknown {
+        raw_state: String,
+        raw_evidence: Value,
+    },
+}
+
+impl PrReservationCommitState {
+    fn kind(&self) -> &str {
+        match self {
+            Self::Pending { .. } => "pending",
+            Self::Committed { .. } => "committed",
+            Self::Unknown { .. } => "unknown",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PendingPrReservationCommit {
+    pub reservation_id: String,
+    pub pr_url: String,
+}
+
+fn save_pr_reservation_commit_state(
+    reservation_id: &str,
+    state: &PrReservationCommitState,
+) -> Result<()> {
+    let state_json = serde_json::to_string(state)?;
+    let conn = get_conn()?;
+    conn.execute(
+        r#"
+        INSERT INTO repo_reaper_pr_reservation_commits
+          (reservation_id, state_kind, state_json, updated_at)
+        VALUES (?1, ?2, ?3, ?4)
+        ON CONFLICT(reservation_id) DO UPDATE SET
+          state_kind = excluded.state_kind,
+          state_json = excluded.state_json,
+          updated_at = excluded.updated_at
+        "#,
+        params![
+            reservation_id,
+            state.kind(),
+            state_json,
+            Utc::now().to_rfc3339()
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn record_pr_reservation_commit_pending(reservation_id: &str, pr_url: &str) -> Result<()> {
+    save_pr_reservation_commit_state(
+        reservation_id,
+        &PrReservationCommitState::Pending {
+            pr_url: pr_url.to_string(),
+            attempts: 0,
+            last_error: None,
+        },
+    )
+}
+
+pub fn record_pr_reservation_commit_failure(
+    reservation_id: &str,
+    pr_url: &str,
+    error: &str,
+) -> Result<()> {
+    let attempts = pending_pr_reservation_commit_state(reservation_id)?
+        .and_then(|state| match state {
+            PrReservationCommitState::Pending { attempts, .. } => attempts.checked_add(1),
+            _ => None,
+        })
+        .unwrap_or(1);
+    save_pr_reservation_commit_state(
+        reservation_id,
+        &PrReservationCommitState::Pending {
+            pr_url: pr_url.to_string(),
+            attempts,
+            last_error: Some(error.to_string()),
+        },
+    )
+}
+
+pub fn record_pr_reservation_committed(reservation_id: &str, pr_url: &str) -> Result<()> {
+    save_pr_reservation_commit_state(
+        reservation_id,
+        &PrReservationCommitState::Committed {
+            pr_url: pr_url.to_string(),
+            committed_at: Utc::now().to_rfc3339(),
+        },
+    )
+}
+
+fn pending_pr_reservation_commit_state(
+    reservation_id: &str,
+) -> Result<Option<PrReservationCommitState>> {
+    let conn = get_conn()?;
+    let stored = conn
+        .query_row(
+            "SELECT state_kind, state_json FROM repo_reaper_pr_reservation_commits WHERE reservation_id = ?1",
+            [reservation_id],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+        )
+        .optional()?;
+    let Some((raw_state, raw_json)) = stored else {
+        return Ok(None);
+    };
+    let raw_evidence = serde_json::from_str::<Value>(&raw_json).unwrap_or(Value::Null);
+    let state = serde_json::from_value::<PrReservationCommitState>(raw_evidence.clone())
+        .ok()
+        .filter(|state| state.kind() == raw_state)
+        .unwrap_or(PrReservationCommitState::Unknown {
+            raw_state,
+            raw_evidence,
+        });
+    Ok(Some(state))
+}
+
+pub fn pending_pr_reservation_commits(limit: u32) -> Result<Vec<PendingPrReservationCommit>> {
+    let conn = get_conn()?;
+    let mut statement = conn.prepare(
+        "SELECT reservation_id, state_kind, state_json FROM repo_reaper_pr_reservation_commits WHERE state_kind = 'pending' ORDER BY updated_at ASC LIMIT ?1",
+    )?;
+    let rows = statement.query_map([limit.clamp(1, 100)], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+        ))
+    })?;
+    let mut pending = Vec::new();
+    for row in rows {
+        let (reservation_id, raw_state, raw_json) = row?;
+        let raw_evidence = serde_json::from_str::<Value>(&raw_json).unwrap_or(Value::Null);
+        let state = serde_json::from_value::<PrReservationCommitState>(raw_evidence.clone())
+            .ok()
+            .filter(|state| state.kind() == raw_state)
+            .unwrap_or(PrReservationCommitState::Unknown {
+                raw_state,
+                raw_evidence,
+            });
+        if let PrReservationCommitState::Pending { pr_url, .. } = state {
+            pending.push(PendingPrReservationCommit {
+                reservation_id,
+                pr_url,
+            });
+        }
+    }
+    Ok(pending)
+}
 
 pub fn get_lifetime_cost() -> f64 {
     let Ok(conn) = get_conn() else { return 0.0 };

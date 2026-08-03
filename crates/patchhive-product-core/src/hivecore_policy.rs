@@ -61,6 +61,11 @@ pub enum PrReservationState {
     Reserved {
         expires_at: String,
     },
+    /// Publication has started, so the slot must be retained even when the
+    /// product cannot confirm the final commit acknowledgement.
+    Publishing {
+        expires_at: String,
+    },
     Committed {
         pr_url: String,
         expires_at: String,
@@ -96,6 +101,10 @@ impl PrReservationState {
         matches!(self, Self::Committed { .. })
     }
 
+    pub fn is_publishing(&self) -> bool {
+        matches!(self, Self::Publishing { .. })
+    }
+
     pub fn is_released(&self) -> bool {
         matches!(self, Self::Released { .. })
     }
@@ -103,6 +112,7 @@ impl PrReservationState {
     pub fn label(&self) -> &'static str {
         match self {
             Self::Reserved { .. } => "reserved",
+            Self::Publishing { .. } => "publishing",
             Self::Committed { .. } => "committed",
             Self::Released { .. } => "released",
             Self::Expired { .. } => "expired",
@@ -115,6 +125,7 @@ impl PrReservationState {
 #[serde(rename_all = "snake_case")]
 pub enum PrReservationExpiration {
     BeforePullRequest,
+    PublishingLease,
     CommittedLease,
 }
 
@@ -301,6 +312,22 @@ pub async fn commit_pr_slot(
     .send()
     .await
     .context("HiveCore PR reservation commit failed")?;
+    decode_envelope(response).await.map(Some)
+}
+
+pub async fn begin_pr_publication(
+    client: &Client,
+    reservation_id: &str,
+) -> Result<Option<PrBudgetReservation>> {
+    let Some(base_url) = hivecore_url() else {
+        return Ok(None);
+    };
+    let response = apply_auth(client.post(format!(
+        "{base_url}/pr-budgets/reservations/{reservation_id}/publishing"
+    )))
+    .send()
+    .await
+    .context("HiveCore PR publication-start request failed")?;
     decode_envelope(response).await.map(Some)
 }
 

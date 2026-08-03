@@ -398,12 +398,44 @@ pub(super) async fn commit_pr_budget_reservation(
                 "PR reservation was not found.",
             )
         })?;
-    if !reservation.lifecycle.is_committed() {
+    if !matches!(
+        &reservation.lifecycle,
+        PrReservationState::Committed { pr_url: committed_url, .. } if committed_url == pr_url
+    ) {
         return Err(api_error(
             StatusCode::CONFLICT,
             "pr_reservation_not_active",
             format!(
-                "PR reservation cannot be committed from status '{}'.",
+                "PR reservation cannot commit that URL from status '{}'.",
+                reservation.lifecycle.label()
+            ),
+        ));
+    }
+    Ok(Json(ok(reservation)))
+}
+
+pub(super) async fn begin_pr_budget_publication(id: String) -> ApiResult<PrBudgetReservation> {
+    let reservation = db::begin_pr_reservation_publication(&id, &now_rfc3339())
+        .map_err(|err| {
+            api_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "pr_publication_start_failed",
+                format!("HiveCore could not retain PR capacity for publication: {err}"),
+            )
+        })?
+        .ok_or_else(|| {
+            api_error(
+                StatusCode::NOT_FOUND,
+                "pr_reservation_not_found",
+                "PR reservation was not found.",
+            )
+        })?;
+    if !reservation.lifecycle.is_publishing() {
+        return Err(api_error(
+            StatusCode::CONFLICT,
+            "pr_reservation_not_reserved",
+            format!(
+                "PR publication cannot begin from status '{}'.",
                 reservation.lifecycle.label()
             ),
         ));

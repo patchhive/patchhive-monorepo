@@ -165,6 +165,11 @@ patchhive/
   tagged `PrReservationState`; contradictory or unrecognized legacy SQLite rows
   decode as `unknown`. Budget reads fail explicitly instead of substituting the
   default ceiling, zero usage, or an empty reservation list.
+- PR publication is two-phase. A product must advance a short `reserved` lease
+  to durable `publishing` before the external GitHub write. Once the PR URL is
+  known, the product durably records a pending commit and retries HiveCore until
+  the reservation is `committed`; an uncertain acknowledgement retains capacity
+  and must never trigger the guard's pre-publication release behavior.
 - Final PR authorization rechecks per-owner open-PR and closed-unmerged cooldown
   policy inside the same immediate transaction that reserves PR capacity. Mandate
   work resolves limits from its active canonical mandate; direct and scheduled

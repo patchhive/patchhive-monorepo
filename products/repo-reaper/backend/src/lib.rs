@@ -107,8 +107,86 @@ pub async fn init_runtime() -> Result<()> {
         .set(state)
         .map_err(|_| anyhow::anyhow!("RepoReaper runtime initialized concurrently"))?;
     tokio::spawn(startup::pr_poll_loop(http));
+    tokio::spawn(pr_reservation_commit_retry_loop(
+        APP_STATE.get().expect("state set").http.clone(),
+    ));
     tokio::spawn(routes::webhook::scheduler_loop(scheduler_state));
     Ok(())
+}
+
+async fn pr_reservation_commit_retry_loop(http: reqwest::Client) {
+    let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+    loop {
+        interval.tick().await;
+        let pending = match db::pending_pr_reservation_commits(25) {
+            Ok(pending) => pending,
+            Err(error) => {
+                tracing::error!("could not load pending PR reservation commits: {error:#}");
+                continue;
+            }
+        };
+        for commit in pending {
+            match patchhive_product_core::hivecore_policy::commit_pr_slot(
+                &http,
+                &commit.reservation_id,
+                &commit.pr_url,
+            )
+            .await
+            {
+                Ok(Some(reservation)) if reservation.lifecycle.is_committed() => {
+                    if let Err(error) =
+                        db::record_pr_reservation_committed(&commit.reservation_id, &commit.pr_url)
+                    {
+                        tracing::error!(
+                            reservation_id = commit.reservation_id,
+                            "HiveCore committed the PR reservation but RepoReaper could not persist the acknowledgement: {error:#}"
+                        );
+                    }
+                }
+                Ok(Some(reservation)) => {
+                    let error = format!(
+                        "HiveCore returned reservation state '{}'",
+                        reservation.lifecycle.label()
+                    );
+                    if let Err(db_error) = db::record_pr_reservation_commit_failure(
+                        &commit.reservation_id,
+                        &commit.pr_url,
+                        &error,
+                    ) {
+                        tracing::error!(
+                            reservation_id = commit.reservation_id,
+                            "could not retain failed PR reservation retry evidence: {db_error:#}"
+                        );
+                    }
+                }
+                Ok(None) => {
+                    let error = "HiveCore is no longer configured";
+                    if let Err(db_error) = db::record_pr_reservation_commit_failure(
+                        &commit.reservation_id,
+                        &commit.pr_url,
+                        error,
+                    ) {
+                        tracing::error!(
+                            reservation_id = commit.reservation_id,
+                            "could not retain pending PR reservation retry evidence: {db_error:#}"
+                        );
+                    }
+                }
+                Err(error) => {
+                    if let Err(db_error) = db::record_pr_reservation_commit_failure(
+                        &commit.reservation_id,
+                        &commit.pr_url,
+                        &error.to_string(),
+                    ) {
+                        tracing::error!(
+                            reservation_id = commit.reservation_id,
+                            "could not retain pending PR reservation retry evidence: {db_error:#}"
+                        );
+                    }
+                }
+            }
+        }
+    }
 }
 
 async fn restore_runtime_state(state: &AppState) {

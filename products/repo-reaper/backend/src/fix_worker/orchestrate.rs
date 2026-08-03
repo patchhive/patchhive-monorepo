@@ -1523,9 +1523,13 @@ pub async fn fix_one(job: FixIssueJob) {
                 "github.pr.opened",
                 "succeeded",
                 "Pull request opened",
-                json!({"pr_number": outcome.1, "url": outcome.0["html_url"]}),
+                json!({
+                    "pr_number": outcome.number,
+                    "url": outcome.pr["html_url"],
+                    "reservation_commit": outcome.reservation_commit,
+                }),
             );
-            outcome
+            (outcome.pr, outcome.number)
         }
         Err(e) => {
             // The reservation is settled inside publish_pull_request, and the

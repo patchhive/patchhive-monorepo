@@ -511,6 +511,15 @@ pub async fn commit_pr_budget_reservation(
     super::policy::commit_pr_budget_reservation(id, body.pr_url).await
 }
 
+pub async fn begin_pr_budget_publication(
+    Path(id): Path<String>,
+) -> Result<
+    Json<crate::models::ApiEnvelope<PrBudgetReservation>>,
+    (StatusCode, Json<crate::models::ApiEnvelope<Value>>),
+> {
+    super::policy::begin_pr_budget_publication(id).await
+}
+
 pub async fn release_pr_budget_reservation(
     Path(id): Path<String>,
     Json(body): Json<PrReservationReleaseRequest>,

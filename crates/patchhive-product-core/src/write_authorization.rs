@@ -23,8 +23,8 @@ use anyhow::Result;
 use reqwest::Client;
 
 use crate::hivecore_policy::{
-    commit_pr_slot, release_pr_slot, reserve_pr_slot, PrReservationDecision, PrReservationDenial,
-    PrReservationRequest,
+    begin_pr_publication, commit_pr_slot, release_pr_slot, reserve_pr_slot, PrReservationDecision,
+    PrReservationDenial, PrReservationRequest,
 };
 use crate::validation::TestExecutionStatus;
 
@@ -100,7 +100,14 @@ pub enum PrBudget {
 pub struct PrBudgetGuard {
     client: Client,
     reservation_id: String,
-    settled: bool,
+    state: PrBudgetGuardState,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PrBudgetGuardState {
+    Reserved,
+    Publishing,
+    Settled,
 }
 
 impl PrBudgetGuard {
@@ -108,24 +115,63 @@ impl PrBudgetGuard {
         &self.reservation_id
     }
 
+    /// Extend the short reservation into a durable publication lease before
+    /// the external write begins. A PR must never be created without this
+    /// acknowledgement when HiveCore policy is configured.
+    pub async fn begin_publication(&mut self) -> Result<()> {
+        let reservation = begin_pr_publication(&self.client, &self.reservation_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("HiveCore disappeared after granting PR capacity"))?;
+        if !reservation.lifecycle.is_publishing() {
+            anyhow::bail!(
+                "HiveCore did not retain PR capacity for publication (state: {})",
+                reservation.lifecycle.label()
+            );
+        }
+        self.state = PrBudgetGuardState::Publishing;
+        Ok(())
+    }
+
     /// Record that the reservation produced a real pull request.
     pub async fn commit(mut self, pr_url: &str) -> Result<()> {
-        self.settled = true;
-        commit_pr_slot(&self.client, &self.reservation_id, pr_url).await?;
+        if self.state != PrBudgetGuardState::Publishing {
+            anyhow::bail!("PR reservation was not advanced to publishing before commit");
+        }
+        let reservation = commit_pr_slot(&self.client, &self.reservation_id, pr_url)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("HiveCore disappeared before PR reservation commit"))?;
+        match &reservation.lifecycle {
+            crate::hivecore_policy::PrReservationState::Committed {
+                pr_url: committed_url,
+                ..
+            } if committed_url == pr_url => {}
+            _ => anyhow::bail!(
+                "HiveCore did not commit capacity for the exact PR URL (state: {})",
+                reservation.lifecycle.label()
+            ),
+        }
+        self.state = PrBudgetGuardState::Settled;
         Ok(())
     }
 
     /// Return the slot because the write did not happen.
     pub async fn release(mut self, reason: &str) -> Result<()> {
-        self.settled = true;
         release_pr_slot(&self.client, &self.reservation_id, reason).await?;
+        self.state = PrBudgetGuardState::Settled;
         Ok(())
     }
 }
 
 impl Drop for PrBudgetGuard {
     fn drop(&mut self) {
-        if self.settled {
+        if self.state == PrBudgetGuardState::Settled {
+            return;
+        }
+        if self.state == PrBudgetGuardState::Publishing {
+            tracing::error!(
+                reservation_id = self.reservation_id,
+                "PR publication outcome is uncertain; retaining the durable HiveCore slot"
+            );
             return;
         }
         let client = self.client.clone();
@@ -168,7 +214,7 @@ pub async fn request_pr_budget(client: Client, request: &PrReservationRequest) -
             Ok(PrBudget::Granted(PrBudgetGuard {
                 client,
                 reservation_id: reservation.id,
-                settled: false,
+                state: PrBudgetGuardState::Reserved,
             }))
         }
     }

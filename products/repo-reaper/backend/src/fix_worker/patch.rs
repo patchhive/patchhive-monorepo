@@ -2,6 +2,7 @@
 
 use anyhow::Result as AnyhowResult;
 use patchhive_product_core::write_authorization::{PrBudget, ValidatedChange};
+use serde::Serialize;
 use serde_json::{json, Value};
 
 use crate::agents::{agent_patch_retry, GeneratedPatchResponse};
@@ -135,6 +136,27 @@ pub struct PullRequestPublishInput<'a> {
     pub reviewed_diff: &'a str,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum PrReservationCommitOutcome {
+    NotConfigured,
+    Committed {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        local_record_error: Option<String>,
+    },
+    Pending {
+        reservation_id: String,
+        error: String,
+        durable_retry_recorded: bool,
+    },
+}
+
+pub struct PublishedPullRequest {
+    pub pr: Value,
+    pub number: i64,
+    pub reservation_commit: PrReservationCommitOutcome,
+}
+
 /// The one place RepoReaper creates a pull request.
 ///
 /// Publication requires validation evidence and a budget outcome from
@@ -146,7 +168,7 @@ pub async fn publish_pull_request(
     http: &reqwest::Client,
     input: PullRequestPublishInput<'_>,
     budget: PrBudget,
-) -> AnyhowResult<(Value, i64)> {
+) -> AnyhowResult<PublishedPullRequest> {
     let PullRequestPublishInput {
         issue,
         scope,
@@ -160,7 +182,7 @@ pub async fn publish_pull_request(
     } = input;
     let confidence = change.confidence();
     let test = *change.payload();
-    let budget_guard = match budget {
+    let mut budget_guard = match budget {
         PrBudget::Granted(guard) => Some(guard),
         PrBudget::Unconfigured => None,
         PrBudget::Denied(response) => {
@@ -170,6 +192,9 @@ pub async fn publish_pull_request(
             ))
         }
     };
+    if let Some(guard) = budget_guard.as_mut() {
+        guard.begin_publication().await?;
+    }
     let commit_msg = format!(
         "fix: {} (closes #{})",
         issue["title"]
@@ -260,14 +285,60 @@ pub async fn publish_pull_request(
         }
     };
 
-    if let Some(guard) = budget_guard {
-        let pr_url = pr["html_url"].as_str().unwrap_or("");
-        if let Err(error) = guard.commit(pr_url).await {
-            tracing::warn!("could not commit PR reservation: {error:#}");
+    let reservation_commit = if let Some(guard) = budget_guard {
+        let pr_url = pr["html_url"]
+            .as_str()
+            .filter(|url| !url.trim().is_empty())
+            .ok_or_else(|| anyhow::anyhow!("GitHub created a PR without returning its URL"))?;
+        let reservation_id = guard.reservation_id().to_string();
+        let pending_record =
+            crate::db::record_pr_reservation_commit_pending(&reservation_id, pr_url);
+        match guard.commit(pr_url).await {
+            Ok(()) => PrReservationCommitOutcome::Committed {
+                local_record_error: crate::db::record_pr_reservation_committed(
+                    &reservation_id,
+                    pr_url,
+                )
+                .err()
+                .map(|error| error.to_string()),
+            },
+            Err(error) => {
+                let error = error.to_string();
+                let retry_recorded = pending_record.is_ok();
+                if retry_recorded {
+                    if let Err(record_error) = crate::db::record_pr_reservation_commit_failure(
+                        &reservation_id,
+                        pr_url,
+                        &error,
+                    ) {
+                        tracing::error!(
+                            reservation_id,
+                            "could not update durable PR commit retry evidence: {record_error:#}"
+                        );
+                    }
+                }
+                tracing::error!(
+                    reservation_id,
+                    pr_url,
+                    retry_recorded,
+                    "PR exists but HiveCore commit acknowledgement is uncertain: {error}"
+                );
+                PrReservationCommitOutcome::Pending {
+                    reservation_id,
+                    error,
+                    durable_retry_recorded: retry_recorded,
+                }
+            }
         }
-    }
+    } else {
+        PrReservationCommitOutcome::NotConfigured
+    };
 
-    Ok((pr.clone(), pr["number"].as_i64().unwrap_or(0)))
+    Ok(PublishedPullRequest {
+        number: pr["number"].as_i64().unwrap_or(0),
+        pr,
+        reservation_commit,
+    })
 }
 
 #[cfg(test)]

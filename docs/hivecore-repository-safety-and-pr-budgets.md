@@ -188,10 +188,15 @@ Reservation lifecycle:
 2. HiveCore checks opt-out and product eligibility.
 3. HiveCore atomically checks both budget layers and reserves one slot.
 4. HiveCore returns a short-lived reservation ID.
-5. Product opens the PR and commits the reservation with the GitHub PR URL.
-6. If PR creation fails, the product releases the reservation.
-7. Expired uncommitted reservations are reclaimed automatically.
-8. RepoReaper's PR monitor remains a fast release path. HiveCore also sweeps all
+5. Before the external write, the product advances the reservation to a durable
+   `publishing` lease. Failure to acknowledge this transition blocks the write.
+6. Product opens the PR, durably records its exact URL as a pending commit, and
+   commits the HiveCore reservation. An uncertain acknowledgement retains the
+   publishing slot and is retried from the durable product record.
+7. If PR creation fails, the product releases the reservation or publishing lease.
+8. Expired pre-publication reservations are reclaimed automatically. Publishing
+   leases remain conservative until acknowledgement or their longer safety lease.
+9. RepoReaper's PR monitor remains a fast release path. HiveCore also sweeps all
    committed reservations through GitHub and releases only an exact URL that is
    positively observed merged or closed.
 
@@ -204,7 +209,7 @@ independent `granted` and optional-reservation fields. A `granted` decision alwa
 contains the reservation and current usage evidence; a `denied` decision always
 contains the reason, a typed repository-policy/product/suite limiting layer, and
 the same usage evidence. The reservation itself has one tagged lifecycle:
-`reserved`, `committed`, `released`, `expired`, or `unknown`. Contradictory or
+`reserved`, `publishing`, `committed`, `released`, `expired`, or `unknown`. Contradictory or
 unrecognized rows from the legacy string-column schema are preserved as
 `unknown`, never normalized into an active or successful state. Failed reads of
 limits, usage, or reservation history fail the request instead of substituting a

@@ -62,6 +62,10 @@ Operational rules:
 - HiveCore enforces an atomic two-layer PR budget: a
   configurable per-product maximum and one suite-wide ceiling. The suite
   ceiling always wins when it has less capacity than the product maximum.
+- Before creating a pull request, a product must advance its short reservation
+  into the durable `publishing` state. Commit acknowledgement failures retain
+  that capacity, persist the exact PR URL locally, and retry instead of allowing
+  a real PR to outlive an expired pre-publication lease.
 - Every GitHub-facing PR body, issue comment, PR comment, report, or other
   maintained message must end with a product signature that links PatchHive:
   `*ProductName by [PatchHive](https://github.com/patchhive)*`. Use

@@ -9,6 +9,7 @@ patchhive_product_core::define_api_key_auth_module! {
                 "/settings",
                 "/repository-policy/check",
                 "/pr-budgets/reservations",
+                "/pr-budgets/reservations/{id}/publishing",
                 "/pr-budgets/reservations/{id}/commit",
                 "/pr-budgets/reservations/{id}/release",
                 "/pr-budgets/releases",
@@ -18,6 +19,7 @@ patchhive_product_core::define_api_key_auth_module! {
                 "/api/products/hive-core/settings",
                 "/api/products/hive-core/repository-policy/check",
                 "/api/products/hive-core/pr-budgets/reservations",
+                "/api/products/hive-core/pr-budgets/reservations/{id}/publishing",
                 "/api/products/hive-core/pr-budgets/reservations/{id}/commit",
                 "/api/products/hive-core/pr-budgets/reservations/{id}/release",
                 "/api/products/hive-core/pr-budgets/releases",
@@ -340,6 +342,10 @@ pub fn router() -> Router {
         .route(
             "/pr-budgets/reservations",
             axum::routing::post(pipeline::reserve_pr_budget),
+        )
+        .route(
+            "/pr-budgets/reservations/:id/publishing",
+            axum::routing::post(pipeline::begin_pr_budget_publication),
         )
         .route(
             "/pr-budgets/reservations/:id/commit",

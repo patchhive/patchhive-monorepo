@@ -667,7 +667,7 @@ fn expire_work_resources(conn: &Connection) -> rusqlite::Result<()> {
 fn active_owner_pr_count(conn: &Connection, owner: &str) -> rusqlite::Result<u32> {
     let count = conn.query_row(
         "SELECT COUNT(*) FROM pr_budget_reservations
-         WHERE status IN ('reserved', 'committed') AND LOWER(repository) LIKE LOWER(?1)",
+         WHERE status IN ('reserved', 'publishing', 'committed') AND LOWER(repository) LIKE LOWER(?1)",
         [format!("{owner}/%")],
         |row| row.get::<_, i64>(0),
     )?;
@@ -3266,7 +3266,7 @@ pub fn active_pr_usage() -> rusqlite::Result<(u32, HashMap<String, u32>)> {
         r#"
         SELECT product_slug, COUNT(*)
         FROM pr_budget_reservations
-        WHERE status IN ('reserved', 'committed')
+        WHERE status IN ('reserved', 'publishing', 'committed')
         GROUP BY product_slug
         "#,
     )?;
@@ -3439,14 +3439,23 @@ pub fn commit_pr_reservation(
     updated_at: &str,
 ) -> rusqlite::Result<Option<PrBudgetReservation>> {
     let mut conn = connect()?;
-    expire_pr_reservations(&mut conn)?;
+    commit_pr_reservation_with_connection(&mut conn, id, pr_url, updated_at)
+}
+
+fn commit_pr_reservation_with_connection(
+    conn: &mut Connection,
+    id: &str,
+    pr_url: &str,
+    updated_at: &str,
+) -> rusqlite::Result<Option<PrBudgetReservation>> {
+    expire_pr_reservations(conn)?;
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let changed = tx.execute(
         r#"
         UPDATE pr_budget_reservations
         SET status = 'committed', pr_url = ?2, updated_at = ?3,
             expires_at = datetime(?3, '+' || ?4 || ' days')
-        WHERE id = ?1 AND status = 'reserved'
+        WHERE id = ?1 AND status = 'publishing'
         "#,
         params![id, pr_url, updated_at, committed_pr_lease_days()],
     )?;
@@ -3454,6 +3463,46 @@ pub fn commit_pr_reservation(
     if changed > 0 {
         if let Some(reservation) = &reservation {
             record_pr_budget_event(&tx, reservation, "committed", pr_url, updated_at)?;
+        }
+    }
+    tx.commit()?;
+    Ok(reservation)
+}
+
+pub fn begin_pr_reservation_publication(
+    id: &str,
+    updated_at: &str,
+) -> rusqlite::Result<Option<PrBudgetReservation>> {
+    let mut conn = connect()?;
+    begin_pr_reservation_publication_with_connection(&mut conn, id, updated_at)
+}
+
+fn begin_pr_reservation_publication_with_connection(
+    conn: &mut Connection,
+    id: &str,
+    updated_at: &str,
+) -> rusqlite::Result<Option<PrBudgetReservation>> {
+    expire_pr_reservations(conn)?;
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let changed = tx.execute(
+        r#"
+        UPDATE pr_budget_reservations
+        SET status = 'publishing', updated_at = ?2,
+            expires_at = datetime(?2, '+' || ?3 || ' days')
+        WHERE id = ?1 AND status = 'reserved'
+        "#,
+        params![id, updated_at, committed_pr_lease_days()],
+    )?;
+    let reservation = load_pr_reservation(&tx, id)?;
+    if changed > 0 {
+        if let Some(reservation) = &reservation {
+            record_pr_budget_event(
+                &tx,
+                reservation,
+                "publishing",
+                "External PR publication started; capacity is retained until commit acknowledgement.",
+                updated_at,
+            )?;
         }
     }
     tx.commit()?;
@@ -3476,7 +3525,7 @@ pub fn release_pr_reservation(
         r#"
         UPDATE pr_budget_reservations
         SET status = 'released', reason = ?2, updated_at = ?3
-        WHERE id = ?1 AND status IN ('reserved', 'committed')
+        WHERE id = ?1 AND status IN ('reserved', 'publishing', 'committed')
         "#,
         params![id, reason, updated_at],
     )?;
@@ -3545,7 +3594,7 @@ pub fn release_pr_reservations_for_run(
             SELECT id
             FROM pr_budget_reservations
             WHERE product_slug = ?1 AND run_id = ?2
-              AND status IN ('reserved', 'committed')
+              AND status IN ('reserved', 'publishing', 'committed')
             "#,
         )?;
         let rows = stmt
@@ -3558,7 +3607,7 @@ pub fn release_pr_reservations_for_run(
         UPDATE pr_budget_reservations
         SET status = 'released', reason = ?3, updated_at = ?4
         WHERE product_slug = ?1 AND run_id = ?2
-          AND status IN ('reserved', 'committed')
+          AND status IN ('reserved', 'publishing', 'committed')
         "#,
         params![product, run_id, reason, updated_at],
     )?;
@@ -4502,13 +4551,13 @@ fn mandate_concrete_backlog(conn: &Connection, mandate_id: &str) -> rusqlite::Re
 fn active_pr_count_checked(conn: &Connection, product: Option<&str>) -> rusqlite::Result<u32> {
     let count = if let Some(product) = product {
         conn.query_row(
-            "SELECT COUNT(*) FROM pr_budget_reservations WHERE status IN ('reserved', 'committed') AND product_slug = ?1",
+            "SELECT COUNT(*) FROM pr_budget_reservations WHERE status IN ('reserved', 'publishing', 'committed') AND product_slug = ?1",
             [product],
             |row| row.get::<_, i64>(0),
         )?
     } else {
         conn.query_row(
-            "SELECT COUNT(*) FROM pr_budget_reservations WHERE status IN ('reserved', 'committed')",
+            "SELECT COUNT(*) FROM pr_budget_reservations WHERE status IN ('reserved', 'publishing', 'committed')",
             [],
             |row| row.get::<_, i64>(0),
         )?
@@ -5588,13 +5637,13 @@ fn load_product_pr_limits(conn: &Connection) -> rusqlite::Result<HashMap<String,
 fn active_pr_count(conn: &Connection, product: Option<&str>) -> rusqlite::Result<u32> {
     let count = if let Some(product) = product {
         conn.query_row(
-            "SELECT COUNT(*) FROM pr_budget_reservations WHERE status IN ('reserved', 'committed') AND product_slug = ?1",
+            "SELECT COUNT(*) FROM pr_budget_reservations WHERE status IN ('reserved', 'publishing', 'committed') AND product_slug = ?1",
             [product],
             |row| row.get::<_, i64>(0),
         )?
     } else {
         conn.query_row(
-            "SELECT COUNT(*) FROM pr_budget_reservations WHERE status IN ('reserved', 'committed')",
+            "SELECT COUNT(*) FROM pr_budget_reservations WHERE status IN ('reserved', 'publishing', 'committed')",
             [],
             |row| row.get::<_, i64>(0),
         )?
@@ -5643,6 +5692,28 @@ fn expire_pr_reservations_in_transaction(tx: &Transaction<'_>) -> rusqlite::Resu
                'Reservation lease expired before PR creation.', datetime('now')
         FROM pr_budget_reservations
         WHERE status = 'reserved' AND datetime(expires_at) <= datetime('now')
+        "#,
+        [],
+    )?;
+    tx.execute(
+        r#"
+        INSERT INTO pr_budget_events (
+          reservation_id, product_slug, repository, event_type, reason, created_at
+        )
+        SELECT id, product_slug, repository, 'publishing_lease_expired',
+               'Publication acknowledgement lease expired with an uncertain PR outcome.', datetime('now')
+        FROM pr_budget_reservations
+        WHERE status = 'publishing' AND datetime(expires_at) <= datetime('now')
+        "#,
+        [],
+    )?;
+    tx.execute(
+        r#"
+        UPDATE pr_budget_reservations
+        SET status = 'expired',
+            reason = 'Publication acknowledgement lease expired with an uncertain PR outcome.',
+            updated_at = datetime('now')
+        WHERE status = 'publishing' AND datetime(expires_at) <= datetime('now')
         "#,
         [],
     )?;
@@ -5730,12 +5801,17 @@ fn decode_pr_reservation(row: &rusqlite::Row<'_>) -> rusqlite::Result<PrBudgetRe
     let expires_at = non_empty(row.get::<_, String>(9)?);
     let lifecycle = match (raw_status.as_str(), pr_url, reason, expires_at) {
         ("reserved", None, None, Some(expires_at)) => PrReservationState::Reserved { expires_at },
+        ("publishing", None, None, Some(expires_at)) => {
+            PrReservationState::Publishing { expires_at }
+        }
         ("committed", Some(pr_url), None, Some(expires_at)) => {
             PrReservationState::Committed { pr_url, expires_at }
         }
         ("released", pr_url, Some(reason), _) => PrReservationState::Released { pr_url, reason },
         ("expired", pr_url, Some(reason), _) => PrReservationState::Expired {
-            expiration: if pr_url.is_some() {
+            expiration: if reason.contains("Publication acknowledgement") {
+                PrReservationExpiration::PublishingLease
+            } else if pr_url.is_some() {
                 PrReservationExpiration::CommittedLease
             } else {
                 PrReservationExpiration::BeforePullRequest
@@ -5852,7 +5928,8 @@ fn decode_suite_run(row: &rusqlite::Row<'_>) -> rusqlite::Result<crate::models::
 #[cfg(test)]
 mod tests {
     use super::{
-        claim_approval_with_connection, claim_next_work_with_connection, collapse_policies,
+        begin_pr_reservation_publication_with_connection, claim_approval_with_connection,
+        claim_next_work_with_connection, collapse_policies, commit_pr_reservation_with_connection,
         consume_approval_with_connection, create_mandate_with_connection, expire_approvals,
         grant_approval_with_connection, ingest_findings_with_connection, init_schema,
         insert_approval, insert_fleet_launch_job_with_connection,
@@ -6654,6 +6731,59 @@ mod tests {
             .expect("denial audit count should load");
         assert_eq!(grants, 1);
         assert_eq!(denials, 1);
+    }
+
+    #[test]
+    fn pr_publication_retains_capacity_before_external_commit() {
+        let mut conn = Connection::open_in_memory().expect("in-memory db should open");
+        init_schema(&conn).expect("schema should initialize");
+        let reservation = sample_reservation("prr_publish", "run_publish");
+        reserve_pr_slot_with_connection(&mut conn, &reservation, 20, 14)
+            .expect("reservation should persist");
+
+        let direct_commit = commit_pr_reservation_with_connection(
+            &mut conn,
+            &reservation.id,
+            "https://github.com/patchhive/example/pull/40",
+            &now_rfc3339(),
+        )
+        .expect("direct commit should read the reservation")
+        .expect("reservation should exist");
+        assert!(matches!(
+            direct_commit.lifecycle,
+            PrReservationState::Reserved { .. }
+        ));
+
+        let publishing = begin_pr_reservation_publication_with_connection(
+            &mut conn,
+            &reservation.id,
+            &now_rfc3339(),
+        )
+        .expect("publication should begin")
+        .expect("reservation should exist");
+        assert!(matches!(
+            publishing.lifecycle,
+            PrReservationState::Publishing { .. }
+        ));
+
+        let second = sample_reservation("prr_publish_2", "run_publish_2");
+        let denied = reserve_pr_slot_with_connection(&mut conn, &second, 1, 14)
+            .expect("publishing capacity should count against owner policy");
+        assert!(matches!(denied, PrReservationDecision::Denied { .. }));
+
+        let pr_url = "https://github.com/patchhive/example/pull/42";
+        let committed = commit_pr_reservation_with_connection(
+            &mut conn,
+            &reservation.id,
+            pr_url,
+            &now_rfc3339(),
+        )
+        .expect("commit should succeed")
+        .expect("reservation should exist");
+        assert!(matches!(
+            committed.lifecycle,
+            PrReservationState::Committed { pr_url: ref stored, .. } if stored == pr_url
+        ));
     }
 
     #[test]

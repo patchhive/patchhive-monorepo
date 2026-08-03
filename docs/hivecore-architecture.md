@@ -69,7 +69,9 @@ and all of `src/pipeline/`.
   check identities.
 - **Atomic PR budgets.** `db::reserve_pr_slot_with_connection` performs expiry, both budget-layer
   checks, insert, and audit inside one `TransactionBehavior::Immediate` transaction. The
-  `min(product remaining, suite remaining)` rule holds and is unit-tested.
+  `min(product remaining, suite remaining)` rule holds and is unit-tested. Publication advances
+  the short reservation to a durable `publishing` lease before GitHub is mutated; uncertain final
+  acknowledgements retain capacity while RepoReaper retries the exact PR URL from durable state.
 - **Contract drift reporting.** Per-product `/health`, `/startup/checks`, `/capabilities`,
   `/runs`, `/runs/{id}` checks, with `locked` / `skipped` states excluded from the drift count.
 
