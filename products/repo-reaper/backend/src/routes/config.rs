@@ -168,35 +168,30 @@ fn env_from_file(path: &StdPath, key: &str) -> Option<String> {
     })
 }
 
-fn persist_env_updates(path: &StdPath, updates: &[(String, String)]) -> std::io::Result<()> {
+fn persist_env_updates(path: &StdPath, updates: &[(String, String)]) -> anyhow::Result<()> {
     let update_keys: HashSet<&str> = updates.iter().map(|(key, _)| key.as_str()).collect();
-    let existing = fs::read_to_string(path).unwrap_or_default();
-    let mut retained = existing
-        .lines()
-        .filter(|line| {
-            let trimmed = line.trim_start();
-            !update_keys
-                .iter()
-                .any(|key| trimmed.starts_with(&format!("{key}=")))
-        })
-        .map(str::to_string)
-        .collect::<Vec<_>>();
+    patchhive_product_core::environment::update_private_text_file(path, |existing| {
+        let mut retained = existing
+            .lines()
+            .filter(|line| {
+                let trimmed = line.trim_start();
+                !update_keys
+                    .iter()
+                    .any(|key| trimmed.starts_with(&format!("{key}=")))
+            })
+            .map(str::to_string)
+            .collect::<Vec<_>>();
 
-    for (key, value) in updates {
-        retained.push(format!("{key}={value}"));
-    }
+        for (key, value) in updates {
+            retained.push(format!("{key}={value}"));
+        }
 
-    let mut content = retained.join("\n");
-    if !content.is_empty() {
-        content.push('\n');
-    }
-    fs::write(path, content)?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
-    }
-    Ok(())
+        let mut content = retained.join("\n");
+        if !content.is_empty() {
+            content.push('\n');
+        }
+        Ok(content)
+    })
 }
 
 fn canonical_env_path() -> std::path::PathBuf {

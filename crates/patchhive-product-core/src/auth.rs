@@ -11,9 +11,10 @@ use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+#[cfg(test)]
+use std::fs;
 use std::{
     collections::{HashMap, HashSet},
-    fs,
     net::{IpAddr, SocketAddr},
     path::{Path, PathBuf},
     sync::{Mutex, OnceLock, RwLock},
@@ -229,30 +230,19 @@ fn format_env_value(value: &str) -> String {
 }
 
 fn persist_env_value(env_path: &Path, env_var: &str, value: &str) -> Result<()> {
-    let existing = fs::read_to_string(env_path).unwrap_or_default();
-    let filtered = existing
-        .lines()
-        .filter(|line| !line.trim_start().starts_with(&format!("{env_var}=")))
-        .collect::<Vec<_>>()
-        .join("\n");
     let formatted_value = format_env_value(value);
-
-    let content = if filtered.trim().is_empty() {
-        format!("{env_var}={formatted_value}\n")
-    } else {
-        format!("{filtered}\n{env_var}={formatted_value}\n")
-    };
-
-    // Atomic write: write to a temp file then rename to avoid TOCTOU.
-    let tmp_path = env_path.with_file_name(format!(
-        "{}.tmp",
-        env_path.file_name().unwrap_or_default().to_string_lossy()
-    ));
-    fs::write(&tmp_path, content)
-        .with_context(|| format!("failed to write temp env file {}", tmp_path.display()))?;
-    fs::rename(&tmp_path, env_path)
-        .with_context(|| format!("failed to atomically replace {}", env_path.display()))?;
-    Ok(())
+    crate::environment::update_private_text_file(env_path, |existing| {
+        let filtered = existing
+            .lines()
+            .filter(|line| !line.trim_start().starts_with(&format!("{env_var}=")))
+            .collect::<Vec<_>>()
+            .join("\n");
+        Ok(if filtered.trim().is_empty() {
+            format!("{env_var}={formatted_value}\n")
+        } else {
+            format!("{filtered}\n{env_var}={formatted_value}\n")
+        })
+    })
 }
 
 fn request_token(headers: &HeaderMap) -> &str {

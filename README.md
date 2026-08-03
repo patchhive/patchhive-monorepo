@@ -77,7 +77,7 @@ cd patchhive
 
 # Example: SignalHive
 cd products/signal-hive
-cp .env.example .env
+install -m 600 .env.example .env
 docker compose up --build
 ```
 

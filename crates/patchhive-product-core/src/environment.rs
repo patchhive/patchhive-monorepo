@@ -1,11 +1,161 @@
 use std::{
     env,
+    fs::{self, OpenOptions},
+    io::{Read, Write},
     path::{Path, PathBuf},
+    sync::{Mutex, OnceLock},
 };
 
 use anyhow::{Context, Result};
 
 const EXPLICIT_ENV_FILE: &str = "PATCHHIVE_ENV_FILE";
+
+fn private_file_write_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
+struct PendingPrivateFile {
+    path: PathBuf,
+    armed: bool,
+}
+
+impl Drop for PendingPrivateFile {
+    fn drop(&mut self) {
+        if self.armed {
+            let _ = fs::remove_file(&self.path);
+        }
+    }
+}
+
+/// Atomically update a secret-bearing text file without widening permissions.
+///
+/// The complete read/transform/write operation is serialized within the
+/// process, symlink targets are refused, the fresh temporary file is created as
+/// `0600`, and both file and parent directory are synced before returning.
+pub fn update_private_text_file(
+    path: &Path,
+    update: impl FnOnce(&str) -> Result<String>,
+) -> Result<()> {
+    let _guard = private_file_write_lock()
+        .lock()
+        .map_err(|_| anyhow::anyhow!("private file update lock is poisoned"))?;
+
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let file_name = path
+        .file_name()
+        .ok_or_else(|| anyhow::anyhow!("private file path has no file name: {}", path.display()))?;
+    let lock_path = parent.join(format!("{}.lock", file_name.to_string_lossy()));
+    let mut lock_options = OpenOptions::new();
+    lock_options.read(true).write(true).create(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        lock_options.mode(0o600).custom_flags(libc::O_NOFOLLOW);
+    }
+    let lock_file = lock_options
+        .open(&lock_path)
+        .with_context(|| format!("Could not open private file lock {}", lock_path.display()))?;
+    #[cfg(unix)]
+    fs::set_permissions(
+        &lock_path,
+        std::os::unix::fs::PermissionsExt::from_mode(0o600),
+    )?;
+    fs2::FileExt::lock_exclusive(&lock_file)
+        .with_context(|| format!("Could not lock private file {}", path.display()))?;
+
+    if let Ok(metadata) = fs::symlink_metadata(path) {
+        if metadata.file_type().is_symlink() || !metadata.is_file() {
+            anyhow::bail!(
+                "refusing to replace non-regular private file {}",
+                path.display()
+            );
+        }
+    }
+    let mut existing_options = OpenOptions::new();
+    existing_options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        existing_options.custom_flags(libc::O_NOFOLLOW);
+    }
+    let existing = match existing_options.open(path) {
+        Ok(mut file) => {
+            if !file
+                .metadata()
+                .with_context(|| format!("Could not inspect private file {}", path.display()))?
+                .is_file()
+            {
+                anyhow::bail!(
+                    "refusing to replace non-regular private file {}",
+                    path.display()
+                );
+            }
+            let mut content = String::new();
+            file.read_to_string(&mut content)
+                .with_context(|| format!("Could not read private file {}", path.display()))?;
+            content
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(error) => {
+            return Err(error)
+                .with_context(|| format!("Could not read private file {}", path.display()))
+        }
+    };
+    let next = update(&existing)?;
+    let temp_path = parent.join(format!(
+        ".{}.{}.tmp",
+        file_name.to_string_lossy(),
+        uuid::Uuid::new_v4()
+    ));
+
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut temp = options
+        .open(&temp_path)
+        .with_context(|| format!("Could not create private temp file {}", temp_path.display()))?;
+    let mut pending = PendingPrivateFile {
+        path: temp_path.clone(),
+        armed: true,
+    };
+    temp.write_all(next.as_bytes())
+        .with_context(|| format!("Could not write private temp file {}", temp_path.display()))?;
+    temp.sync_all()
+        .with_context(|| format!("Could not sync private temp file {}", temp_path.display()))?;
+    #[cfg(unix)]
+    fs::set_permissions(
+        &temp_path,
+        std::os::unix::fs::PermissionsExt::from_mode(0o600),
+    )?;
+
+    if fs::symlink_metadata(path)
+        .is_ok_and(|metadata| metadata.file_type().is_symlink() || !metadata.is_file())
+    {
+        anyhow::bail!(
+            "refusing to replace non-regular private file {}",
+            path.display()
+        );
+    }
+    fs::rename(&temp_path, path)
+        .with_context(|| format!("Could not atomically replace {}", path.display()))?;
+    pending.armed = false;
+    #[cfg(unix)]
+    fs::set_permissions(path, std::os::unix::fs::PermissionsExt::from_mode(0o600))?;
+    fs::File::open(parent)
+        .and_then(|directory| directory.sync_all())
+        .with_context(|| format!("Could not sync private file directory {}", parent.display()))?;
+    fs2::FileExt::unlock(&lock_file)
+        .with_context(|| format!("Could not unlock private file {}", path.display()))?;
+    Ok(())
+}
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct EnvironmentLoadReport {
@@ -119,7 +269,7 @@ fn nonempty_env(name: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::find_repo_root;
+    use super::{find_repo_root, update_private_text_file};
     use std::fs;
 
     #[test]
@@ -134,5 +284,34 @@ mod tests {
         assert_eq!(find_repo_root(&nested).as_deref(), Some(base.as_path()));
 
         fs::remove_dir_all(base).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn private_updates_force_owner_only_permissions_and_reject_symlinks() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+
+        let base =
+            std::env::temp_dir().join(format!("patchhive-private-file-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&base).expect("create temp directory");
+        let target = base.join(".env");
+        fs::write(&target, "ONE=1\n").expect("write initial file");
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o644))
+            .expect("set permissive mode");
+
+        update_private_text_file(&target, |existing| Ok(format!("{existing}TWO=2\n")))
+            .expect("update private file");
+        assert_eq!(fs::read_to_string(&target).unwrap(), "ONE=1\nTWO=2\n");
+        assert_eq!(
+            fs::metadata(&target).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+
+        let link = base.join("linked.env");
+        symlink(&target, &link).expect("create symlink");
+        assert!(update_private_text_file(&link, |_| Ok("SECRET=x\n".into())).is_err());
+        assert_eq!(fs::read_to_string(&target).unwrap(), "ONE=1\nTWO=2\n");
+
+        fs::remove_dir_all(base).expect("remove temp directory");
     }
 }

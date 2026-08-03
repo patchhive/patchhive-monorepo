@@ -1925,23 +1925,33 @@ fn upsert_env_value(
     key: &str,
     value: &str,
 ) -> Result<(), (StatusCode, Json<ApiError>)> {
-    let existing = fs::read_to_string(env_file).unwrap_or_default();
-    let filtered = existing
-        .lines()
-        .filter(|line| !line.trim_start().starts_with(&format!("{key}=")))
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    let next = if filtered.trim().is_empty() {
-        format!("{key}={value}\n")
-    } else {
-        format!("{filtered}\n{key}={value}\n")
-    };
-
-    fs::write(env_file, next).map_err(|err| {
+    let resolved_env_file =
+        if fs::symlink_metadata(env_file).is_ok_and(|metadata| metadata.file_type().is_symlink()) {
+            env_file.canonicalize().map_err(|err| {
+                error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    &format!("could not resolve {}: {err}", env_file.display()),
+                )
+            })?
+        } else {
+            env_file.to_path_buf()
+        };
+    patchhive_product_core::environment::update_private_text_file(&resolved_env_file, |existing| {
+        let filtered = existing
+            .lines()
+            .filter(|line| !line.trim_start().starts_with(&format!("{key}=")))
+            .collect::<Vec<_>>()
+            .join("\n");
+        Ok(if filtered.trim().is_empty() {
+            format!("{key}={value}\n")
+        } else {
+            format!("{filtered}\n{key}={value}\n")
+        })
+    })
+    .map_err(|err| {
         error(
             StatusCode::INTERNAL_SERVER_ERROR,
-            &format!("could not update {}: {err}", env_file.display()),
+            &format!("could not update {}: {err}", resolved_env_file.display()),
         )
     })
 }
