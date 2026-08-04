@@ -17,6 +17,7 @@ What it does:
 
 Notes:
   - The monorepo remains the source of truth.
+  - Exports require a clean worktree and use committed HEAD exactly.
   - Shared packages are not copied into the export. Standalone product repos
     should depend on published @patchhive/* packages or shared service contracts.
   - Set PATCHHIVE_SMOKE_FRONTEND_DEPS=1 to build the frontend from packaged
@@ -45,6 +46,16 @@ fi
 ROOT_DIR="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$ROOT_DIR"
 
+# shellcheck source=scripts/suite-common.sh
+source "$ROOT_DIR/scripts/suite-common.sh"
+
+patchhive_require_inventory_item "product" "$PRODUCT_NAME" "${PATCHHIVE_PRODUCTS[@]}"
+patchhive_require_branch_name "$TARGET_BRANCH"
+patchhive_require_clean_worktree
+if [[ -n "$REMOTE_NAME" ]]; then
+  patchhive_require_remote_operand "$REMOTE_NAME"
+fi
+
 PRODUCT_PREFIX="products/${PRODUCT_NAME}"
 if [[ ! -d "$PRODUCT_PREFIX" ]]; then
   echo "PatchHive product not found: ${PRODUCT_PREFIX}" >&2
@@ -56,7 +67,22 @@ if [[ "${PATCHHIVE_SMOKE_FRONTEND_DEPS:-0}" == "1" && -f "${PRODUCT_PREFIX}/fron
 fi
 
 TMP_PATHS=()
+LOCKFILE_PATH=""
+ORIGINAL_LOCKFILE=""
+LOCKFILE_EXISTED=0
+RESTORE_LOCKFILE=false
+EXPORT_WORKTREE=""
 cleanup() {
+  if [[ -n "$EXPORT_WORKTREE" ]]; then
+    git worktree remove --force "$EXPORT_WORKTREE" >/dev/null 2>&1 || true
+  fi
+  if [[ "$RESTORE_LOCKFILE" == true && -n "$LOCKFILE_PATH" ]]; then
+    if [[ "$LOCKFILE_EXISTED" -eq 1 ]]; then
+      cp "$ORIGINAL_LOCKFILE" "$LOCKFILE_PATH"
+    else
+      rm -f "$LOCKFILE_PATH"
+    fi
+  fi
   for path in "${TMP_PATHS[@]}"; do
     rm -rf "$path"
   done
@@ -71,11 +97,11 @@ if [[ -f "${PRODUCT_PREFIX}/backend/Cargo.toml" ]]; then
   STANDALONE_LOCKFILE="$(mktemp "/tmp/patchhive-${PRODUCT_NAME}-Cargo.lock-standalone-XXXXXX")"
   TMP_PATHS+=("$ORIGINAL_LOCKFILE" "$STANDALONE_LOCKFILE")
 
-  LOCKFILE_EXISTED=0
   if [[ -f "$LOCKFILE_PATH" ]]; then
     cp "$LOCKFILE_PATH" "$ORIGINAL_LOCKFILE"
     LOCKFILE_EXISTED=1
   fi
+  RESTORE_LOCKFILE=true
 
   "$ROOT_DIR/scripts/refresh-product-lockfile.sh" "$PRODUCT_NAME"
   cp "$LOCKFILE_PATH" "$STANDALONE_LOCKFILE"
@@ -85,6 +111,7 @@ if [[ -f "${PRODUCT_PREFIX}/backend/Cargo.toml" ]]; then
   else
     rm -f "$LOCKFILE_PATH"
   fi
+  RESTORE_LOCKFILE=false
 fi
 
 SANITIZED_NAME="${PRODUCT_NAME//\//-}"
@@ -109,6 +136,7 @@ if [[ -n "$STANDALONE_LOCKFILE" ]]; then
     git -C "$EXPORT_WORKTREE" commit -m "chore: prepare standalone dependencies"
   fi
   git worktree remove "$EXPORT_WORKTREE" >/dev/null
+  EXPORT_WORKTREE=""
 fi
 
 echo
@@ -117,14 +145,14 @@ echo "Created ${EXPORT_BRANCH}"
 if [[ -n "$REMOTE_NAME" ]]; then
   echo "Pushing ${EXPORT_BRANCH} to ${REMOTE_NAME}:${TARGET_BRANCH}..."
   if [[ "${PATCHHIVE_EXPORT_FORCE_WITH_LEASE:-0}" == "1" ]]; then
-    REMOTE_SHA="$(git ls-remote "$REMOTE_NAME" "refs/heads/${TARGET_BRANCH}" | awk '{print $1}')"
+    REMOTE_SHA="$(git ls-remote -- "$REMOTE_NAME" "refs/heads/${TARGET_BRANCH}" | awk '{print $1}')"
     if [[ -n "$REMOTE_SHA" ]]; then
-      git push --force-with-lease="${TARGET_BRANCH}:${REMOTE_SHA}" "$REMOTE_NAME" "${EXPORT_BRANCH}:${TARGET_BRANCH}"
+      git push --force-with-lease="${TARGET_BRANCH}:${REMOTE_SHA}" -- "$REMOTE_NAME" "${EXPORT_BRANCH}:${TARGET_BRANCH}"
     else
-      git push "$REMOTE_NAME" "${EXPORT_BRANCH}:${TARGET_BRANCH}"
+      git push -- "$REMOTE_NAME" "${EXPORT_BRANCH}:${TARGET_BRANCH}"
     fi
   else
-    git push "$REMOTE_NAME" "${EXPORT_BRANCH}:${TARGET_BRANCH}"
+    git push -- "$REMOTE_NAME" "${EXPORT_BRANCH}:${TARGET_BRANCH}"
   fi
   echo "Push complete."
 fi

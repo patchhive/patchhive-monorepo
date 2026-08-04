@@ -402,7 +402,8 @@ Scans for presence of common release files. Evaluated by pinging the GitHub Cont
 | `RELEASE_SENTRY_SERVICE_TOKEN_HASH` | — | Argon2 hash for HiveCore service token (optional) |
 | `PATCHHIVE_GITHUB_TOKEN_RO` | — | GitHub personal access token for API calls |
 | `PATCHHIVE_REPO_MEMORY_URL` | — | Optional RepoMemory base URL for promoted FailGuard evidence |
-| `PATCHHIVE_REPO_MEMORY_API_KEY` | — | API key for the configured RepoMemory endpoint |
+| `PATCHHIVE_REPO_MEMORY_SERVICE_TOKEN` | — | Preferred scoped RepoMemory machine credential in standalone-network mode |
+| `PATCHHIVE_REPO_MEMORY_API_KEY` | — | Compatibility RepoMemory operator API key |
 | `RUST_LOG` | `info` | Logging level |
 | `PATCHHIVE_ALLOW_REMOTE_BOOTSTRAP` | — | Set to `true` to allow API key generation from non-localhost |
 

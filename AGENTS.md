@@ -315,9 +315,23 @@ Shared platform guidance:
   error behavior match standalone operation; suite read surfaces consume its
   durable background snapshots instead of calling handlers directly. Do not
   restore gateway-pending/engine-pending migration states or gateway proxy routes.
-- The unified backend passes its suite base URL and peer-product URLs through
-  explicit runtime configuration. Never mutate the live process environment to
-  teach an in-process engine how to reach another mounted engine.
+- The unified backend passes its suite base URL, peer-product URLs, and one
+  target-issued credential for every enabled engine through explicit runtime
+  configuration. HiveCore consumes those credentials for its durable fleet
+  snapshots and dispatches; operators do not have to save duplicate downstream
+  tokens for engines mounted in the same process. Never mutate the live process
+  environment to teach an in-process engine how to reach another mounted engine.
+- Unified in-process peer calls use process-local scoped service credentials
+  created at startup. The target auth layer retains only the credential hash,
+  the raw value remains only in redacted caller configuration, and every call
+  still traverses the product's normal HTTP auth middleware, declared dispatch
+  scopes, rate limiting, and telemetry. These credentials are intentionally
+  non-durable and disappear on restart; do not copy them into `.env`, expose
+  them through status payloads, or replace them with a middleware bypass.
+- Standalone-network peer calls continue to use explicit
+  `PATCHHIVE_<PEER>_URL` plus a scoped
+  `PATCHHIVE_<PEER>_SERVICE_TOKEN`; operator API keys are compatibility
+  alternatives, not the preferred machine-auth path.
 - Startup warnings used by smoke policy require stable `(code, status)` identities. HiveCore accepts only identities explicitly listed by that product's manifest; never gate autonomy by matching warning prose.
 - The unified backend shared SQLite DB is configured with `PATCHHIVE_DB_PATH`; suite tables stay backend-owned, while product tables should be product-namespaced as engines migrate in-process.
 - Build `services/patchhive-backend/Dockerfile` from the monorepo root so every
@@ -797,6 +811,19 @@ Important env vars:
 
 - FailGuard is a cross-cutting capability, not a standalone product.
 - Its job is to turn bugs, outages, painful reviews, reverted PRs, and other bad outcomes into reusable future knowledge.
+- FailGuard is AI-first for semantic interpretation, not AI-authoritative for
+  safety. Preserve the boundary `deterministic evidence -> AI interpretation ->
+  deterministic enforcement`: models may classify outcomes, explain feedback,
+  correlate failures, extract lessons, and propose or match guardrails, while
+  provenance, scope, lifecycle, promotion authority, exact predicates, audit,
+  rollback, and fail-closed behavior remain typed and mechanically enforced.
+- Repository content, issues, pull-request discussion, and review text are
+  untrusted model input. Use bounded structured outputs and never allow that
+  evidence to issue commands or expand FailGuard authority.
+- A closed-unmerged pull request is evidence to classify, not proof that
+  PatchHive failed. Preserve an explicit outcome taxonomy and `unknown` when the
+  reason cannot be established. AI failure or absence must never become a
+  reassuring classification or an active guardrail.
 - On the RepoMemory side, that means capturing and storing lessons so humans and agents can reuse them later.
 - On the TrustGate side, that means converting those lessons into future warnings, checks, or blocking guardrails.
 - The intended flow is: incident or painful failure -> captured lesson -> durable memory -> future policy.

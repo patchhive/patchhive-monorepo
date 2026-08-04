@@ -16,6 +16,15 @@ Start with a dry run when package versions, product exports, or CI state changed
 ./scripts/release-suite.sh --dry-run
 ```
 
+Non-dry-run publishing and mirror updates require a clean worktree, including
+no untracked files, because every exported artifact comes from committed
+`HEAD`. `--allow-dirty` is limited to local smoke/pack work when publishing,
+package mirror sync, and product export are all explicitly skipped.
+
+Shared npm package versions must be published before product export. The suite
+runner enforces that order and each product export generates a standalone
+lockfile used by `npm ci` in CI and Docker.
+
 Useful scoped runs:
 
 ```bash

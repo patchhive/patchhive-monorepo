@@ -3,30 +3,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-static IN_PROCESS_TRUST_GATE_URL: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-
-pub fn configure_in_process_trust_gate_url(url: impl Into<String>) -> Result<()> {
-    let url = url.into().trim().trim_end_matches('/').to_owned();
-    if url.is_empty() {
-        return Err(anyhow!("in-process TrustGate URL must not be empty"));
-    }
-    if let Some(configured) = IN_PROCESS_TRUST_GATE_URL.get() {
-        return if configured == &url {
-            Ok(())
-        } else {
-            Err(anyhow!(
-                "in-process TrustGate URL is already configured as {configured}"
-            ))
-        };
-    }
-    IN_PROCESS_TRUST_GATE_URL.set(url.clone()).map_err(|_| {
-        let configured = IN_PROCESS_TRUST_GATE_URL
-            .get()
-            .map(String::as_str)
-            .unwrap_or("another value");
-        anyhow!("in-process TrustGate URL is already configured as {configured}")
-    })
-}
+use crate::peer_service::{peer_service, PeerProduct, PeerServiceAuth};
 
 #[derive(Debug, Clone, Serialize)]
 struct ReviewRequest<'a> {
@@ -52,21 +29,27 @@ impl TrustGateReview {
 }
 
 pub fn trust_gate_url() -> Option<String> {
-    std::env::var("PATCHHIVE_TRUST_GATE_URL")
-        .ok()
-        .or_else(|| std::env::var("TRUST_GATE_URL").ok())
-        .map(|value| value.trim().trim_end_matches('/').to_owned())
-        .filter(|value| !value.is_empty())
-        .or_else(|| IN_PROCESS_TRUST_GATE_URL.get().cloned())
+    peer_service(PeerProduct::TrustGate)
+        .map(|configuration| configuration.base_url)
+        .or_else(|| {
+            std::env::var("PATCHHIVE_TRUST_GATE_URL")
+                .ok()
+                .or_else(|| std::env::var("TRUST_GATE_URL").ok())
+                .map(|value| value.trim().trim_end_matches('/').to_owned())
+                .filter(|value| !value.is_empty())
+        })
 }
 
 fn apply_auth(request: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+    if let Some(configuration) = peer_service(PeerProduct::TrustGate) {
+        return configuration.auth.apply(request);
+    }
     if let Some(token) = std::env::var("PATCHHIVE_TRUST_GATE_SERVICE_TOKEN")
         .ok()
         .map(|value| value.trim().to_owned())
         .filter(|value| !value.is_empty())
     {
-        return request.header(crate::auth::SERVICE_TOKEN_HEADER, token);
+        return PeerServiceAuth::ServiceToken(token).apply(request);
     }
     if let Some(key) = std::env::var("PATCHHIVE_TRUST_GATE_API_KEY")
         .ok()
@@ -74,7 +57,7 @@ fn apply_auth(request: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
         .map(|value| value.trim().to_owned())
         .filter(|value| !value.is_empty())
     {
-        return request.header("X-API-Key", key);
+        return PeerServiceAuth::ApiKey(key).apply(request);
     }
     request
 }

@@ -17,6 +17,7 @@ What it does:
 
 Notes:
   - The monorepo remains the source of truth.
+  - Exports require a clean worktree and use committed HEAD exactly.
   - Standalone package repositories are mirrors for visibility, package-focused
     issues, and external consumption.
   - If the default export branch already exists, a timestamped branch name is used
@@ -41,6 +42,16 @@ fi
 ROOT_DIR="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$ROOT_DIR"
 
+# shellcheck source=scripts/suite-common.sh
+source "$ROOT_DIR/scripts/suite-common.sh"
+
+patchhive_require_inventory_item "package" "$PACKAGE_NAME" "${PATCHHIVE_EXPORTABLE_PACKAGES[@]}"
+patchhive_require_branch_name "$TARGET_BRANCH"
+patchhive_require_clean_worktree
+if [[ -n "$REMOTE_NAME" ]]; then
+  patchhive_require_remote_operand "$REMOTE_NAME"
+fi
+
 PACKAGE_PREFIX="packages/${PACKAGE_NAME}"
 if [[ ! -d "$PACKAGE_PREFIX" ]]; then
   echo "PatchHive package not found: ${PACKAGE_PREFIX}" >&2
@@ -62,7 +73,7 @@ echo "Created ${EXPORT_BRANCH}"
 
 if [[ -n "$REMOTE_NAME" ]]; then
   echo "Pushing ${EXPORT_BRANCH} to ${REMOTE_NAME}:${TARGET_BRANCH}..."
-  git push "$REMOTE_NAME" "${EXPORT_BRANCH}:${TARGET_BRANCH}"
+  git push -- "$REMOTE_NAME" "${EXPORT_BRANCH}:${TARGET_BRANCH}"
   echo "Push complete."
 fi
 

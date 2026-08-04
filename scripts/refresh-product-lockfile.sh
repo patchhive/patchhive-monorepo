@@ -34,6 +34,9 @@ if [[ -z "$PRODUCT_NAME" ]]; then
 fi
 
 ROOT_DIR="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+# shellcheck source=scripts/suite-common.sh
+source "$ROOT_DIR/scripts/suite-common.sh"
+patchhive_require_inventory_item "product" "$PRODUCT_NAME" "${PATCHHIVE_PRODUCTS[@]}"
 PRODUCT_DIR="$ROOT_DIR/products/$PRODUCT_NAME"
 BACKEND_DIR="$PRODUCT_DIR/backend"
 

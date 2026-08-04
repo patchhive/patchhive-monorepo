@@ -69,7 +69,7 @@ pub(super) async fn run_product_runbook(
     let started_at = now_rfc3339();
     let overrides = db::product_overrides();
     let override_item = overrides.get(&definition.slug);
-    let auth = ProductStoredAuth::from_override(override_item);
+    let auth = ProductStoredAuth::for_product(definition, override_item);
     let api_url = resolve_api_url(override_item.map(|item| item.api_url.as_str()), definition);
 
     let mut steps = Vec::new();

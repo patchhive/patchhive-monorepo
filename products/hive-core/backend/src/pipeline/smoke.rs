@@ -225,7 +225,7 @@ async fn execute_smoke_tier(
         };
         let override_item = overrides.get(slug);
         let api_url = resolve_api_url(override_item.map(|item| item.api_url.as_str()), definition);
-        let auth = ProductStoredAuth::from_override(override_item);
+        let auth = ProductStoredAuth::for_product(definition, override_item);
 
         match tier {
             SmokeTier::FirstStack => {

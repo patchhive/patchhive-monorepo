@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Context, Result};
+use patchhive_product_core::peer_service::{peer_service, PeerProduct, PeerServiceAuth};
 use patchhive_product_core::repo_memory::{
     fetch_repo_memory_context, repo_memory_url, RepoMemoryContextRequest,
 };
@@ -96,30 +97,64 @@ fn env_value(names: &[&str]) -> Option<String> {
 }
 
 pub fn review_bee_url() -> Option<String> {
-    env_value(&["PATCHHIVE_REVIEW_BEE_URL", "REVIEW_BEE_URL"]).map(|value| trim_url(&value))
+    peer_service(PeerProduct::ReviewBee)
+        .map(|configuration| configuration.base_url)
+        .or_else(|| {
+            env_value(&["PATCHHIVE_REVIEW_BEE_URL", "REVIEW_BEE_URL"]).map(|value| trim_url(&value))
+        })
 }
 
 pub fn trust_gate_url() -> Option<String> {
-    env_value(&[
-        "PATCHHIVE_TRUST_GATE_URL",
-        "PATCHHIVE_TRUSTGATE_URL",
-        "TRUST_GATE_URL",
-        "TRUSTGATE_URL",
-    ])
-    .map(|value| trim_url(&value))
+    peer_service(PeerProduct::TrustGate)
+        .map(|configuration| configuration.base_url)
+        .or_else(|| {
+            env_value(&[
+                "PATCHHIVE_TRUST_GATE_URL",
+                "PATCHHIVE_TRUSTGATE_URL",
+                "TRUST_GATE_URL",
+                "TRUSTGATE_URL",
+            ])
+            .map(|value| trim_url(&value))
+        })
 }
 
-fn review_bee_api_key() -> Option<String> {
-    env_value(&["PATCHHIVE_REVIEW_BEE_API_KEY", "REVIEW_BEE_API_KEY"])
+fn review_bee_auth() -> Option<PeerServiceAuth> {
+    peer_service(PeerProduct::ReviewBee)
+        .map(|configuration| configuration.auth)
+        .or_else(|| {
+            env_value(&[
+                "PATCHHIVE_REVIEW_BEE_SERVICE_TOKEN",
+                "REVIEW_BEE_SERVICE_TOKEN",
+            ])
+            .map(PeerServiceAuth::ServiceToken)
+        })
+        .or_else(|| {
+            env_value(&["PATCHHIVE_REVIEW_BEE_API_KEY", "REVIEW_BEE_API_KEY"])
+                .map(PeerServiceAuth::ApiKey)
+        })
 }
 
-fn trust_gate_api_key() -> Option<String> {
-    env_value(&[
-        "PATCHHIVE_TRUST_GATE_API_KEY",
-        "PATCHHIVE_TRUSTGATE_API_KEY",
-        "TRUST_GATE_API_KEY",
-        "TRUSTGATE_API_KEY",
-    ])
+fn trust_gate_auth() -> Option<PeerServiceAuth> {
+    peer_service(PeerProduct::TrustGate)
+        .map(|configuration| configuration.auth)
+        .or_else(|| {
+            env_value(&[
+                "PATCHHIVE_TRUST_GATE_SERVICE_TOKEN",
+                "PATCHHIVE_TRUSTGATE_SERVICE_TOKEN",
+                "TRUST_GATE_SERVICE_TOKEN",
+                "TRUSTGATE_SERVICE_TOKEN",
+            ])
+            .map(PeerServiceAuth::ServiceToken)
+        })
+        .or_else(|| {
+            env_value(&[
+                "PATCHHIVE_TRUST_GATE_API_KEY",
+                "PATCHHIVE_TRUSTGATE_API_KEY",
+                "TRUST_GATE_API_KEY",
+                "TRUSTGATE_API_KEY",
+            ])
+            .map(PeerServiceAuth::ApiKey)
+        })
 }
 
 pub fn review_bee_configured() -> bool {
@@ -137,15 +172,15 @@ pub fn repo_memory_configured() -> bool {
 async fn post_json<TReq: Serialize, TRes: for<'de> Deserialize<'de>>(
     client: &Client,
     url: String,
-    api_key: Option<String>,
+    auth: Option<PeerServiceAuth>,
     body: &TReq,
 ) -> Result<TRes> {
     let mut request = client
         .post(url)
         .timeout(std::time::Duration::from_secs(30))
         .json(body);
-    if let Some(api_key) = api_key {
-        request = request.header("X-API-Key", api_key);
+    if let Some(auth) = auth {
+        request = auth.apply(request);
     }
 
     let response = request.send().await.context("Integration request failed")?;
@@ -173,7 +208,7 @@ pub async fn fetch_review_bee_context(
     let response = post_json::<_, ReviewBeeResult>(
         client,
         format!("{base_url}/review/github/pr"),
-        review_bee_api_key(),
+        review_bee_auth(),
         &ReviewBeeRequest {
             repo,
             pr_number,
@@ -209,7 +244,7 @@ pub async fn fetch_trust_gate_context(
     let response = post_json::<_, TrustGateResult>(
         client,
         format!("{base_url}/review/github/pr"),
-        trust_gate_api_key(),
+        trust_gate_auth(),
         &TrustGateRequest {
             repo,
             pr_number,

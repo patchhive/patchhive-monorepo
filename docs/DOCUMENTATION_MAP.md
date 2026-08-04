@@ -63,6 +63,7 @@ open rather than written as settled architecture.
 | [PatchHive Registry](patchhive-registry.md) | Future hosted service for HiveCore to publish product catalogs. |
 | [MaintainerBot operating mode](maintainerbot-operating-mode.md) | Packaged bot posture, not a standalone product. |
 | [HiveCore architecture](hivecore-architecture.md) | **Canonical HiveCore design.** Four layers, current-implementation blockers, and the build order toward running the whole suite. |
+| [Autonomous maintenance loop](autonomous-maintenance-loop.md) | Canonical suite-mode flow from mandate and discovery through exact-diff authorization, publication, reconciliation, and memory feedback. |
 | [HiveCore first-stack readiness](hivecore-first-stack-readiness.md) | Readiness audit for the first HiveCore product stack. |
 | [HiveCore suite bootstrap wizard](hivecore-suite-bootstrap-wizard.md) | Bootstrap wizard design. |
 | [Suite runs and fix capabilities](suite-runs-and-fix-capabilities.md) | Long-term system shape: scan → combine evidence → fix. |
@@ -89,6 +90,7 @@ open rather than written as settled architecture.
 | [Product naming strategy](product-naming-strategy.md) | Customer-facing naming rules, internal apiary vocabulary, and rename candidates. |
 | [Future plans](FUTURE_PLANS.md) | Planning scratchpad. |
 | [Full review — 2026-07-31](code-review-2026-07-31.md) | Reproduced findings across code, docs, config and the safety model, with severity and suggested order. |
+| [Security, performance, and safety review — 2026-08-03](security-performance-safety-review-2026-08-03.md) | Post-UI-consolidation runtime, dependency, export/release, and autonomous-safety review with repaired findings and remaining deployment gates. |
 
 ## See Also
 

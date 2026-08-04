@@ -26,7 +26,7 @@ Options:
   --branch <branch>               Monorepo ref used for publish workflows. Default: current branch.
   --target-branch <branch>        Standalone mirror branch. Default: main.
   --dry-run                       Print intended actions without changing repos or publishing.
-  --allow-dirty                   Allow a non-clean worktree for non-dry-run releases.
+  --allow-dirty                   Allow dirty local-only smoke/pack work; external release actions must still use clean HEAD.
   --skip-publish                  Do not trigger npm publish workflows.
   --skip-package-mirrors          Do not sync standalone shared package repos.
   --skip-product-smoke            Do not run packaged frontend smoke builds.
@@ -144,7 +144,7 @@ if [[ -z "$MONOREPO_BRANCH" || -z "$TARGET_BRANCH" ]]; then
   exit 1
 fi
 
-if [[ -z "$CI_TIMEOUT_SECS" || ! "$CI_TIMEOUT_SECS" =~ ^[0-9]+$ ]]; then
+if [[ -z "$CI_TIMEOUT_SECS" || ! "$CI_TIMEOUT_SECS" =~ ^[0-9]+$ || "$CI_TIMEOUT_SECS" -eq 0 ]]; then
   echo "--ci-timeout-secs must be a positive integer." >&2
   exit 1
 fi
@@ -186,15 +186,27 @@ if [[ "$SKIP_PRODUCTS" == true ]]; then
   SELECTED_PRODUCTS=()
 fi
 
-if [[ ! "$MONOREPO_BRANCH" =~ ^[A-Za-z0-9._/-]+$ || ! "$TARGET_BRANCH" =~ ^[A-Za-z0-9._/-]+$ ]]; then
-  echo "Branch names may only contain letters, numbers, dots, underscores, slashes, and dashes." >&2
-  exit 1
-fi
+patchhive_require_branch_name "$MONOREPO_BRANCH"
+patchhive_require_branch_name "$TARGET_BRANCH"
 
-if [[ "$DRY_RUN" == false && "$ALLOW_DIRTY" == false ]]; then
-  if ! git diff --quiet || ! git diff --cached --quiet; then
-    echo "Worktree is dirty. Commit first or rerun with --allow-dirty." >&2
+if [[ "$DRY_RUN" == false ]]; then
+  WORKTREE_STATUS="$(git status --porcelain=v1 --untracked-files=normal)"
+  if [[ -n "$WORKTREE_STATUS" && "$ALLOW_DIRTY" == false ]]; then
+    echo "Worktree is dirty, including untracked files. Commit or stash the exact release input first." >&2
     exit 1
+  fi
+  if [[ -n "$WORKTREE_STATUS" && "$ALLOW_DIRTY" == true ]]; then
+    EXTERNAL_RELEASE=false
+    if [[ ${#SELECTED_PACKAGES[@]} -gt 0 && ( "$SKIP_PUBLISH" == false || "$SKIP_PACKAGE_MIRRORS" == false ) ]]; then
+      EXTERNAL_RELEASE=true
+    fi
+    if [[ ${#SELECTED_PRODUCTS[@]} -gt 0 && "$SKIP_PRODUCT_EXPORTS" == false ]]; then
+      EXTERNAL_RELEASE=true
+    fi
+    if [[ "$EXTERNAL_RELEASE" == true ]]; then
+      echo "--allow-dirty is limited to local smoke/pack work. Publishing and mirror updates require clean committed HEAD." >&2
+      exit 1
+    fi
   fi
 fi
 
@@ -306,7 +318,7 @@ sync_package_mirror() {
 remote_sha() {
   local remote="$1"
   local branch="$2"
-  git ls-remote "$remote" "refs/heads/${branch}" | awk '{print $1}'
+  git ls-remote -- "$remote" "refs/heads/${branch}" | awk '{print $1}'
 }
 
 watch_repo_ci() {
@@ -341,7 +353,9 @@ watch_repo_ci() {
     run_id="$(node -e '
 const runs = JSON.parse(process.argv[1] || "[]");
 const sha = process.argv[2];
-const run = runs.find((item) => item.headSha === sha);
+const run = runs
+  .filter((item) => item.headSha === sha && /(^|\s)CI$/.test(item.workflowName || ""))
+  .sort((left, right) => String(right.createdAt || "").localeCompare(String(left.createdAt || "")))[0];
 process.stdout.write(run ? String(run.databaseId) : "");
 ' "$run_json" "$sha")"
 

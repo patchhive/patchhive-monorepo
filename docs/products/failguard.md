@@ -24,6 +24,95 @@ FailGuard deliberately does not auto-promote producer submissions. Collection
 and correlation are automatic; turning a proposed lesson into durable policy
 requires an operator decision.
 
+## AI-first decision model
+
+FailGuard should use AI for nearly all semantic interpretation while keeping
+the evidence ledger and safety authority deterministic:
+
+```text
+deterministic evidence -> AI interpretation -> deterministic enforcement
+```
+
+AI is the preferred mechanism for work that depends on meaning rather than an
+exact predicate:
+
+- classify why a pull request, review, run, release, or incident ended badly;
+- explain maintainer feedback and distinguish PatchHive mistakes from unrelated
+  outcomes;
+- extract repository conventions, corrective lessons, and proposed prevention;
+- correlate semantically similar failures across producers and repositories;
+- recommend the narrowest repository, owner, path, product, or suite scope; and
+- determine whether a promoted lesson appears relevant to new work.
+
+AI output is a proposal with provenance, confidence, and an explicit
+interpretation state. Model timeout, malformed output, unavailable providers,
+or insufficient evidence remain `failed`, `not_observed`, or `unknown` as
+appropriate. They must never decode as a confirmed PatchHive failure, a safe
+outcome, or permission to activate a guardrail.
+
+The deterministic layer remains authoritative for:
+
+- immutable source evidence, normalized identity, timestamps, and provenance;
+- typed outcome, interpretation, candidate, promotion, and guardrail lifecycle;
+- scope boundaries, deduplication, expiry, revision, and retirement;
+- exact machine-checkable predicates and product-specific enforcement;
+- promotion authority, audit history, rollback, and pause controls; and
+- fail-closed behavior when required evidence or interpretation is unavailable.
+
+### Outcome classification
+
+A closed-unmerged pull request is evidence that needs interpretation, not proof
+that PatchHive produced bad work. FailGuard must retain a typed outcome taxonomy
+that can distinguish at least:
+
+- confirmed PatchHive defect;
+- maintainer preference or repository convention;
+- duplicate or superseded work;
+- stale or abandoned work;
+- external failure unrelated to the patch;
+- reverted change;
+- policy or safety rejection; and
+- unknown or insufficient evidence.
+
+Only supported classifications may propose a lesson, and the original outcome
+evidence remains attached. Unknown must stay unknown instead of being coerced
+into a failure lesson.
+
+### Untrusted-input boundary
+
+Repository files, issue bodies, pull-request descriptions, review comments,
+logs, and maintainer discussion are untrusted model input. FailGuard must use
+bounded context, constrained structured output, and validated schemas. Input
+text may supply evidence but may not issue tool commands, alter system policy,
+select credentials, widen scope, promote a candidate, or bypass approval.
+
+### Guardrail maturity
+
+The target lifecycle separates learning from enforcement:
+
+```text
+raw outcome evidence
+    -> AI interpretation
+    -> reviewable candidate
+    -> historical replay/evaluation
+    -> advisory or shadow observation
+    -> operator-promoted guardrail
+    -> active product enforcement
+    -> revalidation, revision, or retirement
+```
+
+Current v1 keeps operator-edited promotion as the only route from candidate to
+durable policy. This design does not authorize autonomous AI promotion. A future
+evidence-earned promotion mode would require a separate explicit architecture
+decision, configured authority, repeatable evaluation thresholds, shadow-mode
+evidence, complete auditability, immediate rollback, and deterministic limits;
+until then, AI-generated lessons remain reviewable suggestions.
+
+Free-form promoted lessons may guide agents and raise advisory findings. A hard
+block requires either an exact machine-checkable predicate or a product-owned
+deterministic policy decision. A model conclusion alone must not become the
+final blocking authority.
+
 ## Ownership and data flow
 
 ```text
@@ -166,7 +255,8 @@ TrustGate and RepoReaper use the shared RepoMemory client from
 
 ```text
 PATCHHIVE_REPO_MEMORY_URL=http://127.0.0.1:8100/api/products/repo-memory
-PATCHHIVE_REPO_MEMORY_API_KEY=<RepoMemory API key>
+PATCHHIVE_REPO_MEMORY_SERVICE_TOKEN=<scoped RepoMemory service token>
+# PATCHHIVE_REPO_MEMORY_API_KEY=<compatibility operator API key>
 ```
 
 Without that configuration, producer runs continue safely but do not submit

@@ -33,6 +33,9 @@ if [[ -z "$CRATE_NAME" ]]; then
 fi
 
 ROOT_DIR="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+# shellcheck source=scripts/suite-common.sh
+source "$ROOT_DIR/scripts/suite-common.sh"
+patchhive_require_inventory_item "crate" "$CRATE_NAME" "${PATCHHIVE_SHARED_CRATES[@]}"
 CRATE_DIR="$ROOT_DIR/crates/$CRATE_NAME"
 
 if [[ ! -f "$CRATE_DIR/Cargo.toml" ]]; then

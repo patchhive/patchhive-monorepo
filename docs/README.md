@@ -45,6 +45,7 @@ The product documentation set is in [products/](products/).
 - [Platform guardrails](platform-guardrails.md)
 - [Suite stabilization plan](suite-stabilization-plan.md)
 - [HiveCore architecture](hivecore-architecture.md) — canonical HiveCore design
+- [Autonomous maintenance loop](autonomous-maintenance-loop.md)
 - [HiveCore first-stack readiness audit](hivecore-first-stack-readiness.md)
 - [HiveCore suite bootstrap wizard](hivecore-suite-bootstrap-wizard.md)
 - [HiveCore repository safety and PR budgets](hivecore-repository-safety-and-pr-budgets.md)
@@ -57,6 +58,7 @@ The product documentation set is in [products/](products/).
 - [Product export workflow](product-export-workflow.md)
 - [Product starter workflow](product-starter-workflow.md)
 - [Release checklist](release-checklist.md)
+- [Security, performance, and safety review — 2026-08-03](security-performance-safety-review-2026-08-03.md)
 - [UI release workflow](ui-release-workflow.md)
 - [Specialist UI architecture](specialist-ui-architecture.md)
 - [Product shell release workflow](product-shell-release-workflow.md)

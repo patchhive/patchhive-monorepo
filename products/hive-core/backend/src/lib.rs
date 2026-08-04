@@ -62,8 +62,11 @@ pub mod startup;
 pub mod state;
 pub mod work_engine;
 
+use std::collections::HashMap;
+
 use anyhow::Result;
 use axum::{middleware, routing::get, Router};
+use patchhive_product_core::peer_service::PeerServiceAuth;
 use patchhive_product_core::rate_limit::rate_limit_middleware;
 use patchhive_product_core::startup::log_checks;
 
@@ -74,6 +77,9 @@ use patchhive_product_core::hivecore_kernel::DeploymentTopology;
 pub struct RuntimeConfiguration {
     pub topology: DeploymentTopology,
     pub suite_base_url: Option<String>,
+    /// Process-local credentials issued by each engine mounted beside HiveCore.
+    /// Standalone HiveCore leaves this empty and uses its durable product settings.
+    pub in_process_product_auth: HashMap<String, PeerServiceAuth>,
 }
 
 static RUNTIME_CONFIGURATION: std::sync::OnceLock<RuntimeConfiguration> =
@@ -90,6 +96,13 @@ pub fn suite_base_url() -> Option<&'static str> {
     RUNTIME_CONFIGURATION
         .get()
         .and_then(|configuration| configuration.suite_base_url.as_deref())
+}
+
+pub fn in_process_product_auth(slug: &str) -> Option<PeerServiceAuth> {
+    RUNTIME_CONFIGURATION
+        .get()
+        .and_then(|configuration| configuration.in_process_product_auth.get(slug))
+        .cloned()
 }
 
 pub fn materialized_products() -> Vec<models::ProductRuntimeItem> {
@@ -120,6 +133,7 @@ pub async fn init_runtime_for_topology(topology: DeploymentTopology) -> Result<(
     init_runtime_with_configuration(RuntimeConfiguration {
         topology,
         suite_base_url: None,
+        in_process_product_auth: HashMap::new(),
     })
     .await
 }

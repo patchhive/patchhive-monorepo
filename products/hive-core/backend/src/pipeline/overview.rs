@@ -116,7 +116,7 @@ pub(super) async fn product_run_detail(
     let overrides = db::product_overrides();
     let override_item = overrides.get(&definition.slug);
     let api_url = resolve_api_url(override_item.map(|item| item.api_url.as_str()), definition);
-    let auth = ProductStoredAuth::from_override(override_item);
+    let auth = ProductStoredAuth::for_product(definition, override_item);
 
     if definition.slug == "hive-core" {
         let detail = db::action_event(&id)
@@ -291,7 +291,7 @@ fn unavailable_product_runtime(
     failed: bool,
     reason: &str,
 ) -> ProductRuntimeItem {
-    let auth = ProductStoredAuth::from_override(override_item);
+    let auth = ProductStoredAuth::for_product(definition, override_item);
 
     let enabled = override_item.map(|item| item.enabled).unwrap_or(true);
     let not_applicable = !enabled;
@@ -416,7 +416,7 @@ pub(super) async fn build_product_runtime(
     let notes = override_item
         .map(|item| item.notes.clone())
         .unwrap_or_default();
-    let auth = ProductStoredAuth::from_override(override_item);
+    let auth = ProductStoredAuth::for_product(definition, override_item);
     let auth_status = if definition.slug == "hive-core" {
         serde_json::from_value::<ProductAuthStatusBody>(crate::auth::auth_status_payload())
             .map(Observation::observed)

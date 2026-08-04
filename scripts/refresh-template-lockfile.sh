@@ -34,6 +34,9 @@ if [[ -z "$TEMPLATE_NAME" ]]; then
 fi
 
 ROOT_DIR="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+# shellcheck source=scripts/suite-common.sh
+source "$ROOT_DIR/scripts/suite-common.sh"
+patchhive_require_inventory_item "template" "$TEMPLATE_NAME" "${PATCHHIVE_TEMPLATES[@]}"
 TEMPLATE_DIR="$ROOT_DIR/templates/$TEMPLATE_NAME"
 SCAFFOLD_DIR="$TEMPLATE_DIR/scaffold"
 BACKEND_DIR="$SCAFFOLD_DIR/backend"

@@ -2,6 +2,8 @@ use anyhow::{anyhow, Context, Result};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
+use crate::peer_service::{peer_service, PeerProduct, PeerServiceAuth};
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct RepoMemoryContextRequest {
     pub repo: String,
@@ -149,19 +151,35 @@ pub struct FailGuardCandidateResponse {
 }
 
 pub fn repo_memory_url() -> Option<String> {
-    std::env::var("PATCHHIVE_REPO_MEMORY_URL")
-        .ok()
-        .or_else(|| std::env::var("REPO_MEMORY_URL").ok())
-        .map(|value| value.trim().trim_end_matches('/').to_string())
-        .filter(|value| !value.is_empty())
+    peer_service(PeerProduct::RepoMemory)
+        .map(|configuration| configuration.base_url)
+        .or_else(|| {
+            std::env::var("PATCHHIVE_REPO_MEMORY_URL")
+                .ok()
+                .or_else(|| std::env::var("REPO_MEMORY_URL").ok())
+                .map(|value| value.trim().trim_end_matches('/').to_string())
+                .filter(|value| !value.is_empty())
+        })
 }
 
-fn repo_memory_api_key() -> Option<String> {
-    std::env::var("PATCHHIVE_REPO_MEMORY_API_KEY")
-        .ok()
-        .or_else(|| std::env::var("REPO_MEMORY_API_KEY").ok())
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
+fn repo_memory_auth() -> Option<PeerServiceAuth> {
+    peer_service(PeerProduct::RepoMemory)
+        .map(|configuration| configuration.auth)
+        .or_else(|| {
+            std::env::var("PATCHHIVE_REPO_MEMORY_SERVICE_TOKEN")
+                .ok()
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty())
+                .map(PeerServiceAuth::ServiceToken)
+        })
+        .or_else(|| {
+            std::env::var("PATCHHIVE_REPO_MEMORY_API_KEY")
+                .ok()
+                .or_else(|| std::env::var("REPO_MEMORY_API_KEY").ok())
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty())
+                .map(PeerServiceAuth::ApiKey)
+        })
 }
 
 pub async fn fetch_repo_memory_context(
@@ -174,8 +192,8 @@ pub async fn fetch_repo_memory_context(
 
     let url = format!("{base_url}/context");
     let mut http = client.post(url).json(request);
-    if let Some(api_key) = repo_memory_api_key() {
-        http = http.header("X-API-Key", api_key);
+    if let Some(auth) = repo_memory_auth() {
+        http = auth.apply(http);
     }
 
     let response = http
@@ -209,8 +227,8 @@ pub async fn submit_failguard_candidate(
 
     let url = format!("{base_url}/failguard/candidates");
     let mut http = client.post(url).json(request);
-    if let Some(api_key) = repo_memory_api_key() {
-        http = http.header("X-API-Key", api_key);
+    if let Some(auth) = repo_memory_auth() {
+        http = auth.apply(http);
     }
 
     let response = http

@@ -119,7 +119,7 @@ pub(super) fn build_settings_product_item(
     definition: &ProductDefinition,
     override_item: Option<&ProductOverride>,
 ) -> ProductSettingsItem {
-    let auth = ProductStoredAuth::from_override(override_item);
+    let auth = ProductStoredAuth::for_product(definition, override_item);
     ProductSettingsItem {
         slug: definition.slug.clone(),
         title: definition.title.clone(),

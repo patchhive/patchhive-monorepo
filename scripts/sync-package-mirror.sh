@@ -56,6 +56,14 @@ fi
 ROOT_DIR="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$ROOT_DIR"
 
+# shellcheck source=scripts/suite-common.sh
+source "$ROOT_DIR/scripts/suite-common.sh"
+
+patchhive_require_inventory_item "package" "$PACKAGE_NAME" "${PATCHHIVE_EXPORTABLE_PACKAGES[@]}"
+patchhive_require_branch_name "$TARGET_BRANCH"
+patchhive_require_remote_operand "$REMOTE_NAME"
+patchhive_require_clean_worktree
+
 PACKAGE_PREFIX="packages/${PACKAGE_NAME}"
 if [[ ! -d "$PACKAGE_PREFIX" ]]; then
   echo "PatchHive package not found: ${PACKAGE_PREFIX}" >&2
@@ -65,6 +73,11 @@ fi
 if ! git remote get-url "$REMOTE_NAME" >/dev/null 2>&1; then
   echo "Git remote not found: ${REMOTE_NAME}" >&2
   exit 1
+fi
+
+REMOTE_SHA="$(git ls-remote -- "$REMOTE_NAME" "refs/heads/${TARGET_BRANCH}" | awk '{print $1}')"
+if [[ -n "$REMOTE_SHA" ]]; then
+  git fetch --prune "$REMOTE_NAME" "+refs/heads/${TARGET_BRANCH}:refs/remotes/${REMOTE_NAME}/${TARGET_BRANCH}" >/dev/null
 fi
 
 REMOTE_REF="refs/remotes/${REMOTE_NAME}/${TARGET_BRANCH}"
@@ -126,10 +139,14 @@ git commit -m "$COMMIT_MESSAGE" >/dev/null
 
 if [[ "$RESET_HISTORY" == true ]]; then
   echo "Force-pushing clean mirror history to ${REMOTE_NAME}:${TARGET_BRANCH}..."
-  git push --force "$REMOTE_NAME" "HEAD:${TARGET_BRANCH}"
+  if [[ -n "$REMOTE_SHA" ]]; then
+    git push --force-with-lease="${TARGET_BRANCH}:${REMOTE_SHA}" -- "$REMOTE_NAME" "HEAD:${TARGET_BRANCH}"
+  else
+    git push -- "$REMOTE_NAME" "HEAD:${TARGET_BRANCH}"
+  fi
 else
   echo "Pushing squash-sync commit to ${REMOTE_NAME}:${TARGET_BRANCH}..."
-  git push "$REMOTE_NAME" "HEAD:${TARGET_BRANCH}"
+  git push -- "$REMOTE_NAME" "HEAD:${TARGET_BRANCH}"
 fi
 
 popd >/dev/null

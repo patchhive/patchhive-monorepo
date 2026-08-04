@@ -120,7 +120,7 @@ pub(crate) async fn dispatch_with_approval(
         ));
     }
 
-    let auth = ProductStoredAuth::from_override(override_item);
+    let auth = ProductStoredAuth::for_product(definition, override_item);
     if !auth.machine_auth_configured() {
         return Err(api_error(
             StatusCode::BAD_REQUEST,

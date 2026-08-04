@@ -36,7 +36,7 @@ These are not product-prefixed. They appear across multiple products:
 | `REPO_REAPER_GITHUB_TOKEN_RW` | RepoReaper-only classic PAT for branches, commits, and pull requests. |
 | `RUST_LOG` | Rust logging level. |
 | `PATCHHIVE_ALLOW_REMOTE_BOOTSTRAP` | Set `true` to allow API-key generation from non-localhost. Defaults to localhost-only. |
-| `PATCHHIVE_<OTHER>_URL` / `PATCHHIVE_<OTHER>_API_KEY` | Cross-product wiring (e.g. `PATCHHIVE_REPO_MEMORY_URL`, `PATCHHIVE_TRUST_GATE_URL`). Lets one product call another. |
+| `PATCHHIVE_<OTHER>_URL` / `PATCHHIVE_<OTHER>_SERVICE_TOKEN` / `PATCHHIVE_<OTHER>_API_KEY` | Standalone-network cross-product wiring. Prefer scoped service tokens; API keys are compatibility/operator alternatives. The unified backend supplies every enabled engine's mounted URL and process-local scoped credential directly—including HiveCore fleet polling and dispatch—without duplicating raw secrets into `.env` or HiveCore settings. |
 
 ## Per-Product Prefix Map
 
@@ -73,8 +73,10 @@ be reconciled deliberately rather than copied forward:
 2. Add it to `.env.example` **and** the detailed doc's `## Configuration` section.
 3. Document the scope/permission it implies (e.g. GitHub token scopes) in the same place.
 4. Keep secrets as `*_HASH` or `*_SECRET` — never store raw tokens in the repo.
-5. If the variable wires two products together, use the `PATCHHIVE_<OTHER>_URL` / `_API_KEY`
-   convention so the dependency is discoverable.
+5. If the variable wires two standalone products together, use the
+   `PATCHHIVE_<OTHER>_URL` / `_SERVICE_TOKEN` convention, with `_API_KEY` only as
+   a compatibility alternative. Unified in-process wiring belongs in explicit
+   runtime configuration and must still pass through normal scoped HTTP auth.
 
 ## Source of Truth
 

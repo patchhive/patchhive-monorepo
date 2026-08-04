@@ -101,12 +101,23 @@ That will:
 
 The script is intentionally safe and portable:
 
+- it requires a clean working tree and exports committed `HEAD` exactly
 - it does not overwrite an existing export branch
 - if `export/<product>` already exists, it creates a timestamped branch name instead
 - if the product has a Rust backend, it refreshes the standalone-safe `backend/Cargo.lock` before exporting
 - it snapshots current shared crates and rewrites monorepo-only paths to that
   standalone snapshot
 - it rewrites local frontend package paths and Docker context for the mirror
+- it resolves and commits a standalone `package-lock.json`, then uses `npm ci`
+  in CI and Docker builds
+- it uses repository-root Docker contexts, explicit Dockerfile paths, locked
+  Cargo builds, non-root runtime users, and digest-pinned generated base images
+
+The shared package versions referenced by the product must already exist on
+npm. The suite release runner publishes and waits for them before product
+export. A direct export fails before creating a portable commit if npm cannot
+resolve the exact package version; it never deletes the lockfile and pretends
+the export is ready.
 
 For standalone product repositories that are treated as mirrors, you can opt into a guarded mirror update:
 
@@ -290,7 +301,12 @@ If you want to push directly to a standalone service remote:
 PATCHHIVE_EXPORT_FORCE_WITH_LEASE=1 ./scripts/export-service.sh patchhive-backend https://github.com/patchhive/patchhive-unified-backend.git main
 ```
 
-That creates a subtree export branch from `services/patchhive-backend` and pushes it into the standalone mirror. The guarded force-with-lease mode is appropriate when replacing initial hand-made mirror commits with the first real monorepo export.
+PatchHive services currently use monorepo-relative Rust path dependencies.
+`export-service.sh` therefore fails closed instead of producing a service-only
+subtree that cannot compile or build its Docker image. Build and publish the
+unified backend image from the monorepo root for now. A future standalone
+service mirror must carry an explicit dependency bundle and preserve the root
+Docker build context before this guard can be removed.
 
 ## Recommended First Export
 
@@ -329,10 +345,11 @@ That creates a subtree export branch from `services/patchhive-backend` and pushe
 ## Recommended Service Export
 
 1. Keep the service source under `services/<service-name>` in the monorepo.
-2. Create or confirm the standalone service mirror repository.
-3. Run the service export script.
-4. Push the export branch to the service repo.
-5. Keep canonical service changes in the monorepo and re-export when needed.
+2. Build and publish its image from the monorepo root.
+3. Do not publish a service-only subtree while its Cargo manifest retains
+   monorepo-relative path dependencies.
+4. Add and verify a portable dependency bundle before enabling a standalone
+   service mirror.
 
 ## Day-To-Day Workflow
 

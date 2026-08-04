@@ -147,11 +147,14 @@ frontend.
 | `MERGE_KEEPER_DB_POOL_SIZE` | SQLite connection pool size (default: product-core default). |
 | `MERGE_KEEPER_PORT` | Backend port (default: `8050`). |
 | `PATCHHIVE_REVIEW_BEE_URL` | Optional ReviewBee base URL. |
-| `PATCHHIVE_REVIEW_BEE_API_KEY` | Optional ReviewBee API key. |
+| `PATCHHIVE_REVIEW_BEE_SERVICE_TOKEN` | Preferred scoped ReviewBee machine credential for standalone-network integration. |
+| `PATCHHIVE_REVIEW_BEE_API_KEY` | Compatibility ReviewBee operator API key. |
 | `PATCHHIVE_TRUST_GATE_URL` | Optional TrustGate base URL. |
-| `PATCHHIVE_TRUST_GATE_API_KEY` | Optional TrustGate API key. |
+| `PATCHHIVE_TRUST_GATE_SERVICE_TOKEN` | Preferred scoped TrustGate machine credential for standalone-network integration. |
+| `PATCHHIVE_TRUST_GATE_API_KEY` | Compatibility TrustGate operator API key. |
 | `PATCHHIVE_REPO_MEMORY_URL` | Optional RepoMemory base URL. |
-| `PATCHHIVE_REPO_MEMORY_API_KEY` | Optional RepoMemory API key. |
+| `PATCHHIVE_REPO_MEMORY_SERVICE_TOKEN` | Preferred scoped RepoMemory machine credential for standalone-network integration. |
+| `PATCHHIVE_REPO_MEMORY_API_KEY` | Compatibility RepoMemory operator API key. |
 | `RUST_LOG` | Rust logging level (default: `info`). |
 
 ## Technical Architecture

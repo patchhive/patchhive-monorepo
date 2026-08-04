@@ -5,7 +5,7 @@ set -euo pipefail
 usage() {
   cat <<'EOF'
 Usage:
-  ./scripts/tag-release.sh <repo-reaper|ui|ai-local> <version> [--dry-run] [--monorepo-only] [--standalone-only]
+  ./scripts/tag-release.sh <product|package|crate> <version> [--dry-run] [--monorepo-only] [--standalone-only]
 
 Examples:
   ./scripts/tag-release.sh repo-reaper v0.1.0
@@ -70,35 +70,39 @@ if [[ "$MONOREPO_ONLY" == true && "$STANDALONE_ONLY" == true ]]; then
   exit 1
 fi
 
-case "$TARGET" in
-  repo-reaper)
-    MONOREPO_TAG_PREFIX="repo-reaper"
-    STANDALONE_REMOTE="repo-reaper"
-    STANDALONE_REF="repo-reaper/main"
-    ;;
-  ui)
-    MONOREPO_TAG_PREFIX="ui"
-    STANDALONE_REMOTE="patchhive-ui"
-    STANDALONE_REF="patchhive-ui/main"
-    ;;
-  ai-local)
-    MONOREPO_TAG_PREFIX="ai-local"
-    STANDALONE_REMOTE="patchhive-ai-local"
-    STANDALONE_REF="patchhive-ai-local/main"
-    ;;
-  *)
-    echo "Unknown target: $TARGET" >&2
-    usage
-    exit 1
-    ;;
-esac
+ROOT_DIR="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+cd "$ROOT_DIR"
+
+# shellcheck source=scripts/suite-common.sh
+source "$ROOT_DIR/scripts/suite-common.sh"
+
+if patchhive_array_contains "$TARGET" "${PATCHHIVE_PRODUCTS[@]}"; then
+  MONOREPO_TAG_PREFIX="$TARGET"
+  STANDALONE_REMOTE="${PATCHHIVE_PRODUCT_REMOTES[$TARGET]}"
+elif patchhive_array_contains "$TARGET" "${PATCHHIVE_EXPORTABLE_PACKAGES[@]}"; then
+  MONOREPO_TAG_PREFIX="$TARGET"
+  STANDALONE_REMOTE="${PATCHHIVE_PACKAGE_REMOTES[$TARGET]}"
+elif patchhive_array_contains "$TARGET" "${PATCHHIVE_SHARED_CRATES[@]}"; then
+  MONOREPO_TAG_PREFIX="$TARGET"
+  STANDALONE_REMOTE="${PATCHHIVE_CRATE_REMOTES[$TARGET]}"
+else
+  echo "Unknown release target: $TARGET" >&2
+  usage
+  exit 1
+fi
 
 if [[ "$VERSION" != v* ]]; then
   VERSION="v${VERSION}"
 fi
+if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+  echo "Version must be a semantic version such as v1.2.3 or v1.2.3-rc.1." >&2
+  exit 1
+fi
 
-ROOT_DIR="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
-cd "$ROOT_DIR"
+STANDALONE_REF="${STANDALONE_REMOTE}/main"
+if [[ "$DRY_RUN" == false ]]; then
+  patchhive_require_clean_worktree
+fi
 
 MONOREPO_TAG="${MONOREPO_TAG_PREFIX}/${VERSION}"
 TEMP_TAG="tmp-${MONOREPO_TAG_PREFIX//\//-}-${VERSION}-$$"
@@ -119,6 +123,11 @@ if [[ "$STANDALONE_ONLY" == false ]]; then
 fi
 
 if [[ "$MONOREPO_ONLY" == false ]]; then
+  if ! git remote get-url "$STANDALONE_REMOTE" >/dev/null 2>&1; then
+    echo "Standalone remote not found: ${STANDALONE_REMOTE}" >&2
+    exit 1
+  fi
+  git fetch --prune "$STANDALONE_REMOTE" "+refs/heads/main:refs/remotes/${STANDALONE_REMOTE}/main" >/dev/null
   if ! git show-ref --verify --quiet "refs/remotes/${STANDALONE_REF}"; then
     echo "Standalone mirror ref not found locally: ${STANDALONE_REF}" >&2
     echo "Sync the mirror first, or fetch that remote, before tagging." >&2
@@ -143,12 +152,12 @@ fi
 
 if [[ "$STANDALONE_ONLY" == false ]]; then
   git tag -a "$MONOREPO_TAG" -m "Release ${MONOREPO_TAG}"
-  git push origin "refs/tags/${MONOREPO_TAG}"
+  git push -- origin "refs/tags/${MONOREPO_TAG}"
 fi
 
 if [[ "$MONOREPO_ONLY" == false ]]; then
   git tag -a "$TEMP_TAG" "$STANDALONE_REF" -m "Release ${TARGET} ${VERSION}"
-  git push "$STANDALONE_REMOTE" "refs/tags/${TEMP_TAG}:refs/tags/${VERSION}"
+  git push -- "$STANDALONE_REMOTE" "refs/tags/${TEMP_TAG}:refs/tags/${VERSION}"
   git tag -d "$TEMP_TAG" >/dev/null
 fi
 

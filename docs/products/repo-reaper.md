@@ -469,7 +469,8 @@ PATCHHIVE_TRUST_GATE_SERVICE_TOKEN=...
 | `REAPER_ALLOW_HOST_TESTS` | ❌ | `false` | Allow host test execution |
 | `REAPER_TEST_TIMEOUT_SECONDS` | ❌ | `600` | Test timeout |
 | `PATCHHIVE_REPO_MEMORY_URL` | ❌ | — | RepoMemory API endpoint |
-| `PATCHHIVE_REPO_MEMORY_API_KEY` | ❌ | — | RepoMemory API key |
+| `PATCHHIVE_REPO_MEMORY_SERVICE_TOKEN` | ❌ | — | Preferred scoped RepoMemory machine credential in standalone-network mode |
+| `PATCHHIVE_REPO_MEMORY_API_KEY` | ❌ | — | Compatibility RepoMemory operator API key |
 | `PATCHHIVE_TRUST_GATE_URL` | PR publication | Unified-suite TrustGate URL when `PATCHHIVE_SUITE_BASE_URL` is unavailable |
 | `PATCHHIVE_TRUST_GATE_SERVICE_TOKEN` | If TrustGate auth is enabled | Scoped TrustGate machine credential |
 | `PATCHHIVE_TRUST_GATE_API_KEY` | ❌ | — | Compatibility operator-key alternative to the service token |

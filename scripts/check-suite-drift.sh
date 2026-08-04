@@ -37,7 +37,7 @@ require_contains() {
     fail "missing file: $path"
     return
   fi
-  if ! grep -Fq "$needle" "$path"; then
+  if ! grep -Fq -- "$needle" "$path"; then
     fail "$path missing ${label}"
   fi
 }
@@ -213,6 +213,15 @@ check_release_docs() {
   require_contains "README.md" "npm run check:suite-drift" "suite drift command"
   require_contains "docs/release-checklist.md" "./scripts/release-suite.sh" "suite release script"
   require_contains "docs/product-export-workflow.md" "PATCHHIVE_EXPORT_FORCE_WITH_LEASE" "force-with-lease export option"
+  require_contains "scripts/prepare-standalone-product.sh" "cargo build --release --locked" "locked standalone Rust image build"
+  require_contains "scripts/prepare-standalone-product.sh" "npm ci --prefer-online" "locked standalone frontend image build"
+  require_contains "scripts/prepare-standalone-product.sh" "--package-lock-only" "standalone frontend lockfile generation"
+  require_contains "scripts/prepare-standalone-product.sh" 'file: \${{ matrix.dockerfile }}' "standalone CI Dockerfile selection"
+  require_contains "scripts/release-suite.sh" "git status --porcelain=v1 --untracked-files=normal" "release dirty-tree guard including untracked files"
+  require_contains "scripts/export-product.sh" "patchhive_require_clean_worktree" "product export committed-HEAD guard"
+  require_contains "scripts/export-crate.sh" "chore: prepare standalone dependencies" "crate export standalone dependency commit"
+  require_contains "scripts/export-template.sh" "chore: refresh standalone lockfile" "template export lockfile commit"
+  require_contains "scripts/export-service.sh" "Cannot export" "service path-dependency fail-closed guard"
 }
 
 check_github_message_branding() {

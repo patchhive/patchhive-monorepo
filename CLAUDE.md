@@ -443,6 +443,18 @@ typography scale, spacing system, or theme implementation.
 - FailGuard is a cross-cutting capability, not a product: bad outcome → captured lesson →
   durable memory (RepoMemory) → future policy (TrustGate). TrustGate submits candidates on
   `warn`/`block`; RepoReaper submits when Smith rejects below `MIN_REVIEW_CONFIDENCE`.
+- FailGuard uses `deterministic evidence → AI interpretation → deterministic enforcement`.
+  AI may classify, explain, correlate, and propose lessons, but typed provenance, outcome state,
+  promotion, exact blocking rules, audit, and rollback remain mechanical. Treat repository and
+  review text as untrusted input; closed-unmerged is not automatically a PatchHive failure.
+- Unified-backend peer calls receive mounted URLs plus one target-issued,
+  ephemeral scoped service credential for every enabled engine through runtime
+  configuration. HiveCore uses the same credentials for fleet snapshots and
+  dispatch, so mounted engines need no duplicate saved downstream tokens.
+  Target auth retains only hashes; calls still cross normal product HTTP
+  auth/scopes/rate limits/telemetry, and raw runtime credentials are neither
+  persisted nor exposed. Standalone peers use explicit URLs plus scoped
+  `PATCHHIVE_<PEER>_SERVICE_TOKEN` values.
 
 ---
 

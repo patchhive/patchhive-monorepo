@@ -6,7 +6,8 @@ The canonical source lives in the PatchHive monorepo at `services/patchhive-back
 The standalone `patchhive/patchhive-unified-backend` repository is an exported
 mirror target, but development should happen here first.
 
-The long-term goal is one backend Docker image that can run either the full PatchHive suite or a single standalone product. HiveCore should be the first frontend wired to this backend, then product frontends can move over product by product.
+The backend image can run either the full PatchHive suite or a selected subset
+of products. HiveCore remains the distinct control-plane product and cockpit.
 
 ## Runtime Modes
 
@@ -27,6 +28,19 @@ Multiple products:
 ```bash
 PATCHHIVE_PRODUCTS=hive-core,signal-hive,trust-gate cargo run
 ```
+
+At startup, every enabled engine issues one scoped process-local service
+credential. The target retains only its hash; the raw credential is held in
+redacted runtime configuration and disappears on restart. HiveCore uses these
+credentials for authenticated fleet snapshots and dispatch, while direct peer
+clients use them for their mounted HTTP contracts. Calls still traverse normal
+product authentication, declared scopes, rate limits, and telemetry. Do not
+copy these runtime credentials into `.env` or HiveCore settings.
+
+Standalone product processes remain independent. Cross-process integrations
+use explicit `PATCHHIVE_<PEER>_URL` and
+`PATCHHIVE_<PEER>_SERVICE_TOKEN` configuration; an operator API key is only a
+compatibility alternative.
 
 ## Container Image
 

@@ -17,6 +17,7 @@ What it does:
 
 Notes:
   - The monorepo remains the source of truth.
+  - Exports require a clean worktree and use committed HEAD exactly.
   - Standalone service repositories are mirrors for visibility, releases,
     issues, and Docker image build context.
   - Set PATCHHIVE_EXPORT_FORCE_WITH_LEASE=1 when updating a standalone mirror
@@ -43,9 +44,25 @@ fi
 ROOT_DIR="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$ROOT_DIR"
 
+# shellcheck source=scripts/suite-common.sh
+source "$ROOT_DIR/scripts/suite-common.sh"
+
+patchhive_require_inventory_item "service" "$SERVICE_NAME" "${PATCHHIVE_SERVICES[@]}"
+patchhive_require_branch_name "$TARGET_BRANCH"
+patchhive_require_clean_worktree
+if [[ -n "$REMOTE_NAME" ]]; then
+  patchhive_require_remote_operand "$REMOTE_NAME"
+fi
+
 SERVICE_PREFIX="services/${SERVICE_NAME}"
 if [[ ! -d "$SERVICE_PREFIX" ]]; then
   echo "PatchHive service not found: ${SERVICE_PREFIX}" >&2
+  exit 1
+fi
+
+if grep -Eq 'path[[:space:]]*=[[:space:]]*"\.\./\.\./' "$SERVICE_PREFIX/Cargo.toml"; then
+  echo "Cannot export ${SERVICE_NAME} as a service-only subtree: its Cargo manifest has monorepo path dependencies." >&2
+  echo "Publish the monorepo-root Docker image or add an explicit portable dependency bundle before creating this mirror." >&2
   exit 1
 fi
 
@@ -65,14 +82,14 @@ echo "Created ${EXPORT_BRANCH}"
 if [[ -n "$REMOTE_NAME" ]]; then
   echo "Pushing ${EXPORT_BRANCH} to ${REMOTE_NAME}:${TARGET_BRANCH}..."
   if [[ "${PATCHHIVE_EXPORT_FORCE_WITH_LEASE:-0}" == "1" ]]; then
-    REMOTE_SHA="$(git ls-remote "$REMOTE_NAME" "refs/heads/${TARGET_BRANCH}" | awk '{print $1}')"
+    REMOTE_SHA="$(git ls-remote -- "$REMOTE_NAME" "refs/heads/${TARGET_BRANCH}" | awk '{print $1}')"
     if [[ -n "$REMOTE_SHA" ]]; then
-      git push --force-with-lease="${TARGET_BRANCH}:${REMOTE_SHA}" "$REMOTE_NAME" "${EXPORT_BRANCH}:${TARGET_BRANCH}"
+      git push --force-with-lease="${TARGET_BRANCH}:${REMOTE_SHA}" -- "$REMOTE_NAME" "${EXPORT_BRANCH}:${TARGET_BRANCH}"
     else
-      git push "$REMOTE_NAME" "${EXPORT_BRANCH}:${TARGET_BRANCH}"
+      git push -- "$REMOTE_NAME" "${EXPORT_BRANCH}:${TARGET_BRANCH}"
     fi
   else
-    git push "$REMOTE_NAME" "${EXPORT_BRANCH}:${TARGET_BRANCH}"
+    git push -- "$REMOTE_NAME" "${EXPORT_BRANCH}:${TARGET_BRANCH}"
   fi
   echo "Push complete."
 fi

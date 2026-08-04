@@ -45,7 +45,30 @@ pub struct ProductStoredAuth {
 }
 
 impl ProductStoredAuth {
-    pub fn from_override(override_item: Option<&ProductOverride>) -> Self {
+    pub fn for_product(
+        definition: &crate::state::ProductDefinition,
+        override_item: Option<&ProductOverride>,
+    ) -> Self {
+        let uses_in_process_target = override_item
+            .map(|item| item.api_url.trim().is_empty())
+            .unwrap_or(true);
+        if uses_in_process_target {
+            if let Some(auth) = crate::in_process_product_auth(&definition.slug) {
+                return match auth {
+                    patchhive_product_core::peer_service::PeerServiceAuth::ServiceToken(token) => {
+                        Self {
+                            service_token: token,
+                            legacy_api_key: String::new(),
+                        }
+                    }
+                    patchhive_product_core::peer_service::PeerServiceAuth::ApiKey(key) => Self {
+                        service_token: String::new(),
+                        legacy_api_key: key,
+                    },
+                };
+            }
+        }
+
         Self {
             service_token: override_item
                 .map(|item| item.service_token.trim().to_string())

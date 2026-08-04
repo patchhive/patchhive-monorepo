@@ -2,6 +2,8 @@ use anyhow::{anyhow, Context, Result};
 use reqwest::Client;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
+use crate::peer_service::{peer_service, PeerProduct, PeerServiceAuth};
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct RepositoryPolicyDecisionRequest {
     pub repository: String,
@@ -208,20 +210,27 @@ struct ApiError {
 }
 
 pub fn hivecore_url() -> Option<String> {
-    std::env::var("PATCHHIVE_HIVECORE_URL")
-        .ok()
-        .or_else(|| std::env::var("HIVECORE_URL").ok())
-        .map(|value| value.trim().trim_end_matches('/').to_string())
-        .filter(|value| !value.is_empty())
+    peer_service(PeerProduct::HiveCore)
+        .map(|configuration| configuration.base_url)
+        .or_else(|| {
+            std::env::var("PATCHHIVE_HIVECORE_URL")
+                .ok()
+                .or_else(|| std::env::var("HIVECORE_URL").ok())
+                .map(|value| value.trim().trim_end_matches('/').to_string())
+                .filter(|value| !value.is_empty())
+        })
 }
 
 fn apply_auth(request: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+    if let Some(configuration) = peer_service(PeerProduct::HiveCore) {
+        return configuration.auth.apply(request);
+    }
     if let Some(token) = std::env::var("PATCHHIVE_HIVECORE_SERVICE_TOKEN")
         .ok()
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
     {
-        return request.header("X-PatchHive-Service-Token", token);
+        return PeerServiceAuth::ServiceToken(token).apply(request);
     }
     if let Some(key) = std::env::var("PATCHHIVE_HIVECORE_API_KEY")
         .ok()
@@ -229,7 +238,7 @@ fn apply_auth(request: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
     {
-        return request.header("X-API-Key", key);
+        return PeerServiceAuth::ApiKey(key).apply(request);
     }
     request
 }

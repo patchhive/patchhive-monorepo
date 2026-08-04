@@ -132,7 +132,8 @@ All configuration is via environment variables. The backend reads `.env` automat
 | `TRUST_GITHUB_WEBHOOK_SECRET` | No | — | Signed webhook secret for pull request events. Required to use `POST /webhooks/github`. |
 | `TRUSTGATE_PUBLIC_URL` | No | — | Public URL for deep-links from GitHub artifacts back to saved TrustGate decisions (`/history/{id}`). |
 | `PATCHHIVE_REPO_MEMORY_URL` | No | — | RepoMemory API base URL for context enrichment and FailGuard candidate submission. |
-| `PATCHHIVE_REPO_MEMORY_API_KEY` | No | — | API key for RepoMemory auth. |
+| `PATCHHIVE_REPO_MEMORY_SERVICE_TOKEN` | No | — | Preferred scoped RepoMemory machine credential in standalone-network mode. |
+| `PATCHHIVE_REPO_MEMORY_API_KEY` | No | — | Compatibility RepoMemory operator API key. |
 | `TRUST_API_KEY_HASH` | No | — | Pre-seeded bcrypt hash of the operator API key. If unset, generate the first key from `POST /auth/generate-key` (local-only). |
 | `TRUST_SERVICE_TOKEN_HASH` | No | — | Pre-seeded bcrypt hash of a service token for HiveCore or other PatchHive service callers. |
 | `TRUST_DB_PATH` | No | `trust-gate.db` | SQLite database file path for rules, templates, and review history. |

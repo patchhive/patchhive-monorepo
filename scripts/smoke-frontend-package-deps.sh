@@ -76,6 +76,9 @@ if [[ -z "$PRODUCT_NAME" ]]; then
 fi
 
 ROOT_DIR="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+# shellcheck source=scripts/suite-common.sh
+source "$ROOT_DIR/scripts/suite-common.sh"
+patchhive_require_inventory_item "product" "$PRODUCT_NAME" "${PATCHHIVE_PRODUCTS[@]}"
 FRONTEND_DIR="$ROOT_DIR/products/$PRODUCT_NAME/frontend"
 
 if [[ ! -f "$FRONTEND_DIR/package.json" ]]; then

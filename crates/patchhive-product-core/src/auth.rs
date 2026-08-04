@@ -72,6 +72,12 @@ struct ServiceTokenExpiryState {
     expires_soon: bool,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct InProcessServiceTokenRecord {
+    hash: String,
+    scopes: Vec<String>,
+}
+
 impl ApiKeyAuthConfig {
     pub fn new(hash_env_var: impl Into<String>, key_prefix: impl Into<String>) -> Self {
         Self {
@@ -172,6 +178,52 @@ fn fingerprint_for_hash(hash: &str) -> String {
 fn runtime_env_values() -> &'static RwLock<HashMap<String, String>> {
     static RUNTIME_VALUES: OnceLock<RwLock<HashMap<String, String>>> = OnceLock::new();
     RUNTIME_VALUES.get_or_init(|| RwLock::new(HashMap::new()))
+}
+
+fn in_process_service_tokens() -> &'static RwLock<HashMap<String, InProcessServiceTokenRecord>> {
+    static TOKENS: OnceLock<RwLock<HashMap<String, InProcessServiceTokenRecord>>> = OnceLock::new();
+    TOKENS.get_or_init(|| RwLock::new(HashMap::new()))
+}
+
+fn in_process_service_token_record(
+    config: &ApiKeyAuthConfig,
+) -> Option<InProcessServiceTokenRecord> {
+    let service = config.service.as_ref()?;
+    in_process_service_tokens()
+        .read()
+        .ok()
+        .and_then(|tokens| tokens.get(&service.hash_env_var).cloned())
+}
+
+/// Create one process-local credential for calls between engines mounted in the
+/// unified backend. Only its hash is retained by the target auth layer; the raw
+/// token is returned to the caller configuration and disappears on restart.
+/// Requests still pass through the normal service-token scope checks.
+pub fn configure_in_process_service_token(config: &ApiKeyAuthConfig) -> Result<String> {
+    let service = config
+        .service
+        .as_ref()
+        .context("service-token auth is not configured for this product")?;
+    let token = format!(
+        "{}runtime-{}",
+        service.key_prefix,
+        uuid::Uuid::new_v4().to_string().replace('-', "")
+    );
+    let record = InProcessServiceTokenRecord {
+        hash: hash_token(&token),
+        scopes: service.default_scopes.clone(),
+    };
+    let mut tokens = in_process_service_tokens()
+        .write()
+        .map_err(|_| anyhow!("in-process service-token lock is poisoned"))?;
+    if tokens.contains_key(&service.hash_env_var) {
+        return Err(anyhow!(
+            "in-process service token for {} is already configured",
+            service.hash_env_var
+        ));
+    }
+    tokens.insert(service.hash_env_var.clone(), record);
+    Ok(token)
 }
 
 fn warned_configs() -> &'static Mutex<HashSet<String>> {
@@ -387,7 +439,7 @@ pub fn verify_token(config: &ApiKeyAuthConfig, token: &str) -> bool {
     verify_hash(token, stored_hash(config))
 }
 
-pub fn verify_service_token(config: &ApiKeyAuthConfig, token: &str) -> bool {
+fn verify_stored_service_token(config: &ApiKeyAuthConfig, token: &str) -> bool {
     match stored_service_auth_state(config) {
         StoredServiceAuthState::None => false,
         StoredServiceAuthState::LegacyHash(hash) => verify_hash(token, hash),
@@ -395,6 +447,14 @@ pub fn verify_service_token(config: &ApiKeyAuthConfig, token: &str) -> bool {
             !service_token_record_expired(&record) && verify_hash(token, record.hash)
         }
     }
+}
+
+pub fn verify_service_token(config: &ApiKeyAuthConfig, token: &str) -> bool {
+    verify_stored_service_token(config, token) || verify_in_process_service_token(config, token)
+}
+
+fn verify_in_process_service_token(config: &ApiKeyAuthConfig, token: &str) -> bool {
+    in_process_service_token_record(config).is_some_and(|record| verify_hash(token, record.hash))
 }
 
 pub fn generate_and_save_key(config: &ApiKeyAuthConfig) -> Result<String> {
@@ -797,6 +857,7 @@ pub fn auth_status_payload(config: &ApiKeyAuthConfig) -> serde_json::Value {
         "service_auth_expired": service_expiry.expired,
         "service_auth_expires_soon": service_expiry.expires_soon,
         "service_auth_token": service_token,
+        "in_process_service_auth_enabled": in_process_service_token_record(config).is_some(),
         "suite_bootstrap_enabled": suite_bootstrap_enabled(),
         "service_auth_known_scopes": [
             SERVICE_SCOPE_RUNS_READ,
@@ -899,6 +960,23 @@ fn service_token_allows_request(config: &ApiKeyAuthConfig, method: &Method, path
     }
 }
 
+fn in_process_service_token_allows_request(
+    config: &ApiKeyAuthConfig,
+    token: &str,
+    method: &Method,
+    path: &str,
+) -> bool {
+    let Some(record) = in_process_service_token_record(config) else {
+        return false;
+    };
+    if !verify_hash(token, record.hash) {
+        return false;
+    }
+    required_service_scope(config, method, path)
+        .map(|scope| record.scopes.iter().any(|item| item == scope))
+        .unwrap_or(false)
+}
+
 fn service_token_scope_error(config: &ApiKeyAuthConfig, method: &Method, path: &str) -> Response {
     if let Some(scope) = required_service_scope(config, method, path) {
         (
@@ -934,8 +1012,9 @@ pub async fn auth_middleware(
 
     let operator_enabled = auth_enabled(config);
     let service_enabled = service_auth_enabled(config);
+    let in_process_service_enabled = in_process_service_token_record(config).is_some();
 
-    if !operator_enabled && !service_enabled {
+    if !operator_enabled && !service_enabled && !in_process_service_enabled {
         warn_auth_unconfigured(config);
         return (
             StatusCode::SERVICE_UNAVAILABLE,
@@ -947,11 +1026,19 @@ pub async fn auth_middleware(
     }
 
     let service_token = request_service_token(&headers);
-    if service_enabled && !service_token.is_empty() && verify_service_token(config, service_token) {
-        if service_token_allows_request(config, &method, &path) {
-            return next.run(request).await;
+    if !service_token.is_empty() {
+        if service_enabled && verify_stored_service_token(config, service_token) {
+            if service_token_allows_request(config, &method, &path) {
+                return next.run(request).await;
+            }
+            return service_token_scope_error(config, &method, &path);
         }
-        return service_token_scope_error(config, &method, &path);
+        if in_process_service_enabled && verify_in_process_service_token(config, service_token) {
+            if in_process_service_token_allows_request(config, service_token, &method, &path) {
+                return next.run(request).await;
+            }
+            return service_token_scope_error(config, &method, &path);
+        }
     }
 
     let token = request_token(&headers);
@@ -997,12 +1084,20 @@ macro_rules! define_api_key_auth_module {
                 $crate::auth::service_auth_enabled(&AUTH_CONFIG)
             }
 
+            pub fn verify_service_token(token: &str) -> bool {
+                $crate::auth::verify_service_token(&AUTH_CONFIG, token)
+            }
+
             pub fn generate_and_save_service_token() -> ::anyhow::Result<String> {
                 $crate::auth::generate_and_save_service_token(&AUTH_CONFIG)
             }
 
             pub fn rotate_and_save_service_token() -> ::anyhow::Result<String> {
                 $crate::auth::rotate_and_save_service_token(&AUTH_CONFIG)
+            }
+
+            pub fn configure_in_process_service_token() -> ::anyhow::Result<String> {
+                $crate::auth::configure_in_process_service_token(&AUTH_CONFIG)
             }
 
             pub fn auth_status_payload() -> ::serde_json::Value {
@@ -1082,6 +1177,12 @@ mod tests {
         }
     }
 
+    fn clear_in_process_service_token(service_env_var: &str) {
+        if let Ok(mut tokens) = in_process_service_tokens().write() {
+            tokens.remove(service_env_var);
+        }
+    }
+
     fn test_config_with_service(
         env_var: &str,
         service_env_var: &str,
@@ -1091,6 +1192,44 @@ mod tests {
             .with_env_path(env_path)
             .with_service_token(service_env_var, "svc_")
             .with_service_dispatch_paths(["/run", "/review", "/schedules/{name}/run"])
+    }
+
+    #[test]
+    fn in_process_service_token_uses_normal_dispatch_scopes_without_persistence() {
+        let service_env_var = "PATCHHIVE_TEST_IN_PROCESS_SERVICE_TOKEN_HASH";
+        clear_in_process_service_token(service_env_var);
+        let config = test_config_with_service(
+            "PATCHHIVE_TEST_IN_PROCESS_API_KEY_HASH",
+            service_env_var,
+            PathBuf::from("unused-in-process-auth.env"),
+        );
+
+        assert!(!service_auth_enabled(&config));
+        let token = configure_in_process_service_token(&config)
+            .expect("in-process service token should configure");
+        assert!(verify_service_token(&config, &token));
+        assert!(in_process_service_token_allows_request(
+            &config,
+            &token,
+            &Method::POST,
+            "/run",
+        ));
+        assert!(!in_process_service_token_allows_request(
+            &config,
+            &token,
+            &Method::POST,
+            "/settings",
+        ));
+        assert_eq!(
+            auth_status_payload(&config)["in_process_service_auth_enabled"],
+            true
+        );
+        assert_eq!(
+            auth_status_payload(&config)["service_auth_configured"],
+            false
+        );
+
+        clear_in_process_service_token(service_env_var);
     }
 
     #[test]

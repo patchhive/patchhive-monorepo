@@ -24,6 +24,26 @@ PATCHHIVE_SHARED_PACKAGES=(
   ai-models
 )
 
+PATCHHIVE_EXPORTABLE_PACKAGES=(
+  ui
+  product-shell
+  ai-models
+  ai-local
+)
+
+PATCHHIVE_SHARED_CRATES=(
+  patchhive-product-core
+  patchhive-github-pr
+  patchhive-github-data
+  patchhive-github-security
+)
+
+PATCHHIVE_SERVICES=(
+  patchhive-backend
+  patchhive-launcher
+  patchhive-registry
+)
+
 PATCHHIVE_TEMPLATES=(
   product-starter
 )
@@ -107,12 +127,28 @@ declare -gA PATCHHIVE_PACKAGE_REMOTES=(
   [ui]="patchhive-ui"
   [product-shell]="product-shell"
   [ai-models]="ai-models"
+  [ai-local]="patchhive-ai-local"
 )
 
 declare -gA PATCHHIVE_PACKAGE_REPOS=(
   [ui]="patchhive/patchhive-ui"
   [product-shell]="patchhive/product-shell"
   [ai-models]="patchhive/ai-models"
+  [ai-local]="patchhive/patchhive-ai-local"
+)
+
+declare -gA PATCHHIVE_CRATE_REMOTES=(
+  [patchhive-product-core]="product-core"
+  [patchhive-github-pr]="github-pr"
+  [patchhive-github-data]="github-data"
+  [patchhive-github-security]="github-security"
+)
+
+declare -gA PATCHHIVE_CRATE_REPOS=(
+  [patchhive-product-core]="patchhive/patchhive-product-core"
+  [patchhive-github-pr]="patchhive/patchhive-github-pr"
+  [patchhive-github-data]="patchhive/patchhive-github-data"
+  [patchhive-github-security]="patchhive/patchhive-github-security"
 )
 
 declare -gA PATCHHIVE_PACKAGE_NPM_NAMES=(
@@ -139,6 +175,41 @@ patchhive_array_contains() {
     [[ "$item" == "$needle" ]] && return 0
   done
   return 1
+}
+
+patchhive_require_inventory_item() {
+  local kind="$1"
+  local value="$2"
+  shift 2
+  if ! patchhive_array_contains "$value" "$@"; then
+    echo "Unknown PatchHive ${kind}: ${value}" >&2
+    return 1
+  fi
+}
+
+patchhive_require_branch_name() {
+  local value="$1"
+  if [[ -z "$value" || "$value" == -* ]] || ! git check-ref-format --branch "$value" >/dev/null 2>&1; then
+    echo "Invalid branch name: ${value:-<empty>}" >&2
+    return 1
+  fi
+}
+
+patchhive_require_remote_operand() {
+  local value="$1"
+  if [[ -z "$value" || "$value" == -* || "$value" == *$'\n'* || "$value" == *$'\r'* ]]; then
+    echo "Invalid Git remote name or URL." >&2
+    return 1
+  fi
+}
+
+patchhive_require_clean_worktree() {
+  local status
+  status="$(git status --porcelain=v1 --untracked-files=normal)"
+  if [[ -n "$status" ]]; then
+    echo "Worktree is dirty, including untracked files. Commit or stash the exact release input first." >&2
+    return 1
+  fi
 }
 
 patchhive_split_csv() {
