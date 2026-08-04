@@ -10,7 +10,7 @@ TrustGate reviews diffs before they move forward. It checks pasted unified diffs
 
 ## Product Role
 
-TrustGate is PatchHive's trust and safety layer: a product that checks AI-generated or pull-request-backed diffs against repo-specific risk rules. It does not rewrite code, approve code, merge pull requests, or turn every warning into hard policy. Its job is to make risk visible before downstream automation or maintainers advance a change.
+TrustGate is Tendwright's trust and safety layer: a product that checks AI-generated or pull-request-backed diffs against repo-specific risk rules. It does not rewrite code, approve code, merge pull requests, or turn every warning into hard policy. Its job is to make risk visible before downstream automation or maintainers advance a change.
 
 FailGuard remains cross-cutting: TrustGate can suggest candidates, but RepoMemory owns the review and storage loop.
 

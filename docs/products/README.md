@@ -1,11 +1,11 @@
-# PatchHive Product Documentation
+# Tendwright Product Documentation
 
 <p align="center">
-  <img src="../../patchhive3.png" width="120" alt="PatchHive logo" />
+  <img src="../../patchhive3.png" width="120" alt="Tendwright by PatchHive" />
 </p>
 
 These pages are written as GitHub-facing product docs. They explain what each
-PatchHive product does, where its boundaries are, how to run it, and how it fits
+Tendwright product does, where its boundaries are, how to run it, and how it fits
 into the wider suite.
 
 Every product remains independently runnable. HiveCore brings products together

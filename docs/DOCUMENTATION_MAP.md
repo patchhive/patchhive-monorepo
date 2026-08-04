@@ -1,13 +1,13 @@
-# PatchHive Documentation Map
+# Tendwright Documentation Map
 
 The central index for everything under `docs/`. Start here when you don't know which file
 holds what you need.
 
-PatchHive is monorepo-first. Product work starts in `products/<slug>/` and is documented in
+Tendwright is monorepo-first. Product work starts in `products/<slug>/` and is documented in
 depth at `docs/products/<slug>.md`. Each product README is a short getting-started companion
 that links back to its detailed doc (see [PRODUCT_README_TEMPLATE.md](PRODUCT_README_TEMPLATE.md)).
 
-When a PatchHive discussion, note, or external conversation reaches a concrete
+When a Tendwright discussion, note, or external conversation reaches a concrete
 architecture, product, contract, workflow, or safety decision, record it in the
 canonical repository documentation before implementation or model handoff.
 Brainstorming may remain in planning docs, but unresolved choices must be marked

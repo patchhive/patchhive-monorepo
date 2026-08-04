@@ -13,7 +13,7 @@
 
 ## Product Role
 
-RepoReaper is PatchHive's outbound contribution product. It is a **multi-agent system** that:
+RepoReaper is Tendwright's outbound contribution product. It is a **multi-agent system** that:
 
 1. **Discovers** open issues across GitHub repos, or hunts inside a supplied target repo (filtered by language, stars, labels, and custom allow/deny/opt-out lists)
 2. **Scores** issues for fixability using an AI Scout agent

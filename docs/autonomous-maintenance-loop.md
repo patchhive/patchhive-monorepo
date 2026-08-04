@@ -3,7 +3,7 @@
 Status: **canonical target lifecycle; implementation deltas are tracked below**
 Validated: 2026-08-03
 
-This document defines the end-to-end suite-mode lifecycle that PatchHive must
+This document defines the end-to-end suite-mode lifecycle that Tendwright must
 prove before it begins routine autonomous outbound contribution. It refines the
 short form:
 

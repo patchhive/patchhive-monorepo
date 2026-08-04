@@ -1,6 +1,6 @@
 # FailGuard
 
-FailGuard is PatchHive's reviewed failure-learning loop. It is owned by
+FailGuard is Tendwright's reviewed failure-learning loop. It is owned by
 RepoMemory rather than deployed as a standalone product.
 
 Its job is to turn evidence-backed bad outcomes into durable, reusable, and

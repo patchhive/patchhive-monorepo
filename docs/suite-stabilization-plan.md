@@ -1,6 +1,6 @@
 # Suite Stabilization Plan
 
-PatchHive's specialist engines now run in-process through the unified backend,
+Tendwright's specialist engines now run in-process through the unified backend,
 their canonical frontends live in `products/<product>/frontend/`, and suite data
 uses the shared SQLite path. Stabilization is no longer a migration exercise;
 it is enforcement of the architecture that now exists.

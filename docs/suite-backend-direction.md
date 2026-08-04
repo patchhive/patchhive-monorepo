@@ -1,6 +1,6 @@
 # Suite Backend Architecture
 
-PatchHive's specialist products run in one shared backend runtime while keeping
+Tendwright's specialist products run in one shared backend runtime while keeping
 distinct product identities, workflows, safety boundaries, frontends, exports,
 and evidence models.
 

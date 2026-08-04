@@ -1,6 +1,6 @@
 # Suite Runs And Fix Capabilities
 
-PatchHive's long-term system shape is not just a set of dashboards. HiveCore should eventually coordinate the whole suite: scan broadly, combine product evidence, identify eligible fixes, and dispatch approved product-owned repair actions.
+Tendwright's long-term system shape is not just a set of dashboards. HiveCore should eventually coordinate the whole suite: scan broadly, combine product evidence, identify eligible fixes, and dispatch approved product-owned repair actions.
 
 The core model is:
 

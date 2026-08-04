@@ -1,6 +1,6 @@
 # ReleaseSentry
 
-ReleaseSentry checks whether a repo, product, or release candidate is actually ready to ship. It is PatchHive's release-readiness layer — the place where CI health, version and changelog drift, release blockers, and deployment surface evidence become a clear `ready`, `watch`, or `hold` decision.
+ReleaseSentry checks whether a repo, product, or release candidate is actually ready to ship. It is Tendwright's release-readiness layer — the place where CI health, version and changelog drift, release blockers, and deployment surface evidence become a clear `ready`, `watch`, or `hold` decision.
 
 ReleaseSentry can run as a standalone product during the transition, but the
 monorepo source now also exports it as an in-process product module for the

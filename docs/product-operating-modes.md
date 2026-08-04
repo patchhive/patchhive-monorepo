@@ -1,6 +1,6 @@
 # Product Operating Modes
 
-PatchHive treats **who starts a run** and **how a target is selected** as two
+Tendwright treats **who starts a run** and **how a target is selected** as two
 independent decisions. Do not use `autonomous` as a synonym for `discovery`.
 
 ## Run triggers
@@ -8,7 +8,7 @@ independent decisions. Do not use `autonomous` as a synonym for `discovery`.
 - **Operator**: the operator clicks Run or dispatches the action directly.
 - **Schedule**: a product-local or HiveCore schedule starts the action.
 - **Webhook**: an authenticated external event starts the action.
-- **Orchestration**: HiveCore or another authorized PatchHive product dispatches
+- **Orchestration**: HiveCore or another authorized Tendwright product dispatches
   the action.
 
 Operator-run and self-run behavior are both first-class. Automation does not

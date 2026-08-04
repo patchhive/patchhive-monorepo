@@ -1,7 +1,7 @@
 # Shared Squad Architecture
 
 RepoReaper's agent team should become the first implementation of a shared
-PatchHive Squad pattern instead of remaining a one-off product feature.
+Tendwright Squad pattern instead of remaining a one-off product feature.
 
 A Squad is a product-owned set of AI-capable roles backed by shared provider,
 model, credential, preset, readiness, and audit plumbing. Products decide what

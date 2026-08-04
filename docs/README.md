@@ -1,13 +1,13 @@
-# PatchHive Documentation
+# Tendwright Documentation
 
 <p align="center">
-  <img src="../patchhive3.png" width="120" alt="PatchHive logo" />
+  <img src="../patchhive3.png" width="120" alt="Tendwright by PatchHive" />
 </p>
 
-This directory holds the operational and GitHub-facing documentation for the
-PatchHive suite.
+This directory holds the operational and GitHub-facing documentation for
+Tendwright by PatchHive.
 
-PatchHive is monorepo-first. Product work starts here, then product directories
+Tendwright is monorepo-first. Product work starts here, then product directories
 are exported into standalone repositories under the `patchhive` GitHub
 organization when they are ready to stand alone.
 

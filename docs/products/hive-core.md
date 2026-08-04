@@ -1,10 +1,10 @@
 # HiveCore
 
 <p align="center">
-  <img src="../../../patchhive3.png" width="120" alt="PatchHive logo" />
+  <img src="../../../patchhive3.png" width="120" alt="Tendwright by PatchHive" />
 </p>
 
-HiveCore is the PatchHive control plane. It brings standalone PatchHive products into one operational interface for health, launch links, shared defaults, run history, capability visibility, action dispatch, and product handoffs.
+HiveCore is the Tendwright control plane. It brings standalone Tendwright products into one operational interface for health, launch links, shared defaults, run history, capability visibility, action dispatch, and product handoffs.
 
 `products/hive-core/frontend/` is the sole active HiveCore cockpit. Its final parity
 audit passed on 2026-08-03, when the obsolete versioned frontend trees and unused

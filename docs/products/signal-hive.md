@@ -4,7 +4,7 @@
   <img src="../../../patchhive3.png" width="120" alt="PatchHive logo" />
 </p>
 
-SignalHive is PatchHive's maintenance reconnaissance product. It scans GitHub signals and lightweight code markers to surface stale work, duplicate reports, recurring bug patterns, and hidden maintenance drag before anyone asks for a patch.
+SignalHive is Tendwright's maintenance reconnaissance product. It scans GitHub signals and lightweight code markers to surface stale work, duplicate reports, recurring bug patterns, and hidden maintenance drag before anyone asks for a patch.
 
 SignalHive keeps its standalone backend binary and exported product repo, while
 its engine is also mounted in-process by the unified PatchHive backend. It owns
