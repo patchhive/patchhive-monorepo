@@ -15,11 +15,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/patchhive/ai-models.git"
+    "url": "https://github.com/patchhive/patchhive-monorepo",
+    "directory": "packages/ai-models"
   },
-  "homepage": "https://github.com/patchhive/ai-models",
+  "homepage": "https://github.com/patchhive/patchhive-monorepo/tree/main/packages/ai-models",
   "bugs": {
-    "url": "https://github.com/patchhive/ai-models/issues"
+    "url": "https://github.com/patchhive/patchhive-monorepo/issues"
   },
   "keywords": [
     "patchhive",

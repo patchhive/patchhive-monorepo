@@ -25,6 +25,10 @@ Shared npm package versions must be published before product export. The suite
 runner enforces that order and each product export generates a standalone
 lockfile used by `npm ci` in CI and Docker.
 
+Shared package `repository.url` values must identify the canonical monorepo and
+use `repository.directory` for their workspace path. npm provenance compares
+that metadata with the publishing workflow and rejects standalone-mirror URLs.
+
 Useful scoped runs:
 
 ```bash

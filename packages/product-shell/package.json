@@ -15,11 +15,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/patchhive/product-shell.git"
+    "url": "https://github.com/patchhive/patchhive-monorepo",
+    "directory": "packages/product-shell"
   },
-  "homepage": "https://github.com/patchhive/product-shell",
+  "homepage": "https://github.com/patchhive/patchhive-monorepo/tree/main/packages/product-shell",
   "bugs": {
-    "url": "https://github.com/patchhive/product-shell/issues"
+    "url": "https://github.com/patchhive/patchhive-monorepo/issues"
   },
   "keywords": [
     "patchhive",

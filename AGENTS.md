@@ -288,6 +288,11 @@ Data/storage:
 Packaging:
 - Each product should have `docker-compose.yml`, `backend/Dockerfile`, and `frontend/Dockerfile`
 - `@patchhive/ai-local` is the shared localhost gateway for user-owned Codex/Copilot sessions
+- Shared npm packages published by monorepo GitHub Actions must identify
+  `https://github.com/patchhive/patchhive-monorepo` as `repository.url` and set
+  their package path as `repository.directory`. npm provenance validates that
+  identity against the publishing workflow; standalone package repositories are
+  mirrors, not the signed publication source.
 
 Shared platform guidance:
 - Product naming should follow

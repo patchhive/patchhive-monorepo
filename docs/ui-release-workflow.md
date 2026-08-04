@@ -36,6 +36,11 @@ If you want to preview the next version without editing files:
 
 4. Run the `Publish UI Package` GitHub Actions workflow.
 
+The package `repository.url` must remain the canonical monorepo and
+`repository.directory` must remain `packages/ui`. npm verifies both against the
+GitHub Actions provenance identity; the standalone mirror is not the signed
+publication source.
+
 5. After the npm publish succeeds, update the standalone package mirror with a clean sync commit:
 
 ```bash

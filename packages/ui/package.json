@@ -23,11 +23,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/patchhive/patchhive-ui.git"
+    "url": "https://github.com/patchhive/patchhive-monorepo",
+    "directory": "packages/ui"
   },
-  "homepage": "https://github.com/patchhive/patchhive-ui",
+  "homepage": "https://github.com/patchhive/patchhive-monorepo/tree/main/packages/ui",
   "bugs": {
-    "url": "https://github.com/patchhive/patchhive-ui/issues"
+    "url": "https://github.com/patchhive/patchhive-monorepo/issues"
   },
   "publishConfig": {
     "registry": "https://registry.npmjs.org/",
