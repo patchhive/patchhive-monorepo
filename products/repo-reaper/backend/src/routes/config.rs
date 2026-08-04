@@ -22,7 +22,7 @@ use crate::agents::{
 };
 use crate::db::{
     agents_from_storage_json, agents_to_storage_json, get_conn, get_lifetime_cost,
-    normalize_openrouter_agent, save_active_agents, set_setting,
+    normalize_codex_agent, normalize_openrouter_agent, save_active_agents, set_setting,
 };
 use crate::state::{AgentConfig, AppState};
 
@@ -46,6 +46,7 @@ pub fn router() -> Router<AppState> {
 }
 
 const PROVIDER_MODELS: &[(&str, &[&str])] = &[
+    ("codex", &["gpt-5.4"]),
     (
         "anthropic",
         &[
@@ -470,6 +471,10 @@ async fn discover_provider_models(
     body: Option<ModelDiscoveryBody>,
 ) -> anyhow::Result<(Vec<String>, &'static str)> {
     match provider {
+        "codex" => Ok((
+            crate::ai_local::fetch_provider_models(http, "codex").await?,
+            "patchhive-ai-local",
+        )),
         "openai" => discover_openai_models(http, body).await,
         "anthropic" => discover_anthropic_models(http, body).await,
         "gemini" => discover_gemini_models(http, body).await,
@@ -713,7 +718,7 @@ async fn fetch_openai_compatible_models(
     let mut request = http
         .get(format!("{}/models", base.trim_end_matches('/')))
         .timeout(Duration::from_secs(8));
-    request = if crate::ai_local::is_local_openai_base(base) {
+    request = if crate::ai_local::is_configured_gateway_base(base) {
         let gateway_key = std::env::var("PATCHHIVE_AI_GATEWAY_API_KEY")
             .ok()
             .filter(|value| !value.trim().is_empty())
@@ -904,6 +909,7 @@ async fn set_team(State(state): State<AppState>, Json(body): Json<TeamBody>) -> 
         a.status = "idle".into();
         a.current_task = String::new();
         normalize_openrouter_agent(&mut a);
+        normalize_codex_agent(&mut a);
         map.insert(a.id.clone(), a);
     }
     let agents = map.values().cloned().collect::<Vec<_>>();
@@ -973,6 +979,7 @@ async fn save_preset(
         agent.status = "idle".into();
         agent.current_task.clear();
         normalize_openrouter_agent(agent);
+        normalize_codex_agent(agent);
     }
     drop(active);
     let Ok(conn) = get_conn() else {
@@ -1220,6 +1227,11 @@ mod tests {
 
         assert_eq!(models.first().map(String::as_str), Some("openrouter/free"));
         assert!(models.iter().any(|model| model.ends_with(":free")));
+    }
+
+    #[test]
+    fn codex_subscription_is_a_supported_model_provider() {
+        assert_eq!(static_provider_models("codex"), vec!["gpt-5.4"]);
     }
 
     #[test]

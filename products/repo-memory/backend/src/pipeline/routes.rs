@@ -105,6 +105,15 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
                 contract::ActionSafety::automatic(contract::ActionEffect::WritesLocalState),
             ),
             contract::action(
+                "retry_failguard_interpretation",
+                "Retry FailGuard AI interpretation",
+                "POST",
+                "/failguard/candidates/{id}/interpret",
+                "Attach a bounded review-only AI interpretation to an open candidate.",
+                false,
+                contract::ActionSafety::operator_required(contract::ActionEffect::WritesLocalState),
+            ),
+            contract::action(
                 "curate_memory",
                 "Curate durable memory",
                 "POST",

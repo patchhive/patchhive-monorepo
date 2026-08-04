@@ -42,6 +42,27 @@ use explicit `PATCHHIVE_<PEER>_URL` and
 `PATCHHIVE_<PEER>_SERVICE_TOKEN` configuration; an operator API key is only a
 compatibility alternative.
 
+### Local AI gateway lifecycle
+
+When `PATCHHIVE_AI_URL` points to loopback, the source-checkout unified backend
+starts `@patchhive/ai-local` before product initialization and stops the child it
+owns during graceful shutdown. If an authenticated PatchHive gateway is already
+reachable, the backend reuses it and does not claim its lifecycle. Remote
+gateways always remain operator-managed.
+
+Configure the loopback gateway once with:
+
+```bash
+npm run configure:ai-local
+```
+
+That command preserves a valid existing credential or generates a new 256-bit
+credential, writes only the canonical ignored root `.env`, and keeps the file at
+owner-only permissions. Set `PATCHHIVE_AI_AUTOSTART=false` when another process
+manager owns the gateway. Packaged backend containers do not contain the
+package-owned Node/Codex runtime, so they require an explicit AI gateway
+sidecar rather than source-checkout autostart.
+
 ## Container Image
 
 Build the unified image from the monorepo root because its Cargo manifest uses

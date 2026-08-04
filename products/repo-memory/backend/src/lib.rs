@@ -13,6 +13,7 @@ patchhive_product_core::define_api_key_auth_module! {
                 "/failguard/matches",
                 "/failguard/candidates/{id}/promote",
                 "/failguard/candidates/{id}/dismiss",
+                "/failguard/candidates/{id}/interpret",
                 "/api/products/repo-memory/ingest",
                 "/api/products/repo-memory/context",
                 "/api/products/repo-memory/memories/curation",
@@ -22,6 +23,7 @@ patchhive_product_core::define_api_key_auth_module! {
                 "/api/products/repo-memory/failguard/matches",
                 "/api/products/repo-memory/failguard/candidates/{id}/promote",
                 "/api/products/repo-memory/failguard/candidates/{id}/dismiss",
+                "/api/products/repo-memory/failguard/candidates/{id}/interpret",
             ])
             .with_unauthorized_message("Unauthorized — provide X-API-Key or X-PatchHive-Service-Token.")
             .with_public_paths([
@@ -117,6 +119,10 @@ pub fn router() -> Router {
         .route(
             "/failguard/candidates/:id/dismiss",
             post(pipeline::dismiss_failguard_candidate),
+        )
+        .route(
+            "/failguard/candidates/:id/interpret",
+            post(pipeline::retry_failguard_interpretation),
         )
         .route("/context", post(pipeline::context))
         .route("/history", get(pipeline::history))

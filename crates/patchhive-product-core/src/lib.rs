@@ -1,3 +1,4 @@
+pub mod ai_gateway;
 pub mod approvals;
 pub mod auth;
 pub mod branding;

@@ -1,5 +1,25 @@
 # PatchHive Product Naming Strategy
 
+## Brand Architecture Decision
+
+**PatchHive** is the studio and creator brand. **Tendwright by PatchHive** is
+the customer-facing name of the complete autonomous software-maintenance
+system. Spell the name `Tendwright`, combining *tend* with *wright*; do not use
+`Tendwrite`.
+
+Every specialist product keeps its own **`<Product> by PatchHive`** identity,
+including RepoReaper by PatchHive, SignalHive by PatchHive, TrustGate by
+PatchHive, RepoMemory by PatchHive, and HiveCore by PatchHive. Tendwright is the
+umbrella system those products form together, not a new dependency between
+them. Each specialist remains independently runnable without HiveCore or the
+rest of Tendwright.
+
+HiveCore remains Tendwright's control plane and orchestration layer; it is not
+the name of the whole system. Existing `patchhive` technical namespaces,
+environment variables, repositories, packages, and database identifiers remain
+valid. Adopting the customer-facing Tendwright name does not authorize a broad
+technical-identifier rename.
+
 PatchHive should use apiary language to create a coherent product world without
 making customers decode obscure biology before they understand what a product
 does.
@@ -37,7 +57,7 @@ be changed merely to increase the number of bee references:
 | MergeKeeper | Keep | Strong descriptive control-plane name. |
 | FlakeSting | Keep | Distinctive and naturally tied to CI pain. |
 | RefactorScout | Keep for now | Clearer and more credible than forcing `ScoutBee`. |
-| HiveCore | Keep | Correctly names the suite's central orchestration layer. |
+| HiveCore | Keep | Correctly names Tendwright's central orchestration layer. |
 
 ## Strong Rename Candidates
 
@@ -109,4 +129,3 @@ For a new product, evaluate names in this order:
    into an approved action workflow?
 
 The goal is a suite that feels deliberately related, not a collection of puns.
-

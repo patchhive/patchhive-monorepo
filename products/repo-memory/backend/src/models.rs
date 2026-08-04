@@ -313,7 +313,7 @@ pub struct FailGuardLessonResponse {
     pub guardrail: FailGuardGuardrail,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FailGuardCandidate {
     pub id: String,
     pub repo: String,
@@ -339,6 +339,91 @@ pub struct FailGuardCandidate {
     pub updated_at: String,
     #[serde(default)]
     pub last_seen_at: String,
+    pub interpretation: FailGuardInterpretation,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum FailGuardInterpretation {
+    Observed {
+        classification: FailGuardFailureClass,
+        summary: String,
+        proposed_lesson: String,
+        proposed_prevention: String,
+        scope: FailGuardInterpretationScope,
+        confidence: u8,
+        evidence_indices: Vec<u32>,
+        provider: String,
+        model: String,
+        interpreted_at: String,
+    },
+    Failed {
+        code: FailGuardInterpretationFailure,
+        message: String,
+        attempted_at: String,
+    },
+    NotObserved {
+        reason: FailGuardInterpretationAbsentReason,
+    },
+    Unknown {
+        reason: String,
+    },
+}
+
+impl FailGuardInterpretation {
+    pub fn pending() -> Self {
+        Self::NotObserved {
+            reason: FailGuardInterpretationAbsentReason::Pending,
+        }
+    }
+
+    pub fn legacy_unknown() -> Self {
+        Self::Unknown {
+            reason: "legacy_missing_or_malformed_interpretation".into(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum FailGuardFailureClass {
+    PatchHiveDefect,
+    MaintainerPreference,
+    DuplicateOrSuperseded,
+    StaleOrAbandoned,
+    ExternalFailure,
+    RevertedChange,
+    PolicyOrSafetyRejection,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum FailGuardInterpretationScope {
+    Repository,
+    AffectedPaths,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum FailGuardInterpretationFailure {
+    Configuration,
+    Transport,
+    Timeout,
+    Authentication,
+    Provider,
+    MalformedResponse,
+    InvalidOutput,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum FailGuardInterpretationAbsentReason {
+    Pending,
+    NotConfigured,
+    Disabled,
+    AdmissionLimited,
 }
 
 fn default_occurrence_count() -> u32 {

@@ -43,17 +43,22 @@ Check the Codex-owned login without exposing credential contents:
 npm run auth:ai-local:codex:status
 ```
 
-Then start the gateway and point an AI-capable product at it:
+Configure the canonical ignored root `.env` once:
 
 ```bash
-export PATCHHIVE_AI_GATEWAY_API_KEY="$(openssl rand -hex 32)"
-npm run dev:ai-local-rust
-export PATCHHIVE_AI_URL=http://127.0.0.1:8787/v1
+npm run configure:ai-local
 ```
 
-Put the stable gateway key in the ignored root `.env` when the gateway and
-products should survive separate restarts. Product callers use that key for the
-local gateway; it is unrelated to the Codex-owned OAuth credential.
+That command preserves a valid existing gateway key or generates a stable
+256-bit key, writes the loopback URL and autostart setting, and keeps `.env` at
+owner-only permissions. Product callers use that key for the local gateway; it
+is unrelated to the Codex-owned OAuth credential.
+
+In a source checkout, the unified backend authenticates and reuses an existing
+gateway or starts `@patchhive/ai-local` before product initialization. Graceful
+backend shutdown stops only the child process it owns. Set
+`PATCHHIVE_AI_AUTOSTART=false` when another process manager owns the gateway.
+Direct `npm run start:ai-local` remains available for standalone products.
 
 The Node compatibility gateway also supports this path. It requires
 `PATCHHIVE_AI_GATEWAY_API_KEY`; the Rust gateway requires that key whenever it
@@ -102,9 +107,14 @@ explicitly `not_observed`.
 
 ## Product use
 
-- RepoReaper already prefers `PATCHHIVE_AI_URL` for compatible agents and can
-  use Codex for its Squad roles.
-- FailGuard may use the same gateway for classification, explanation,
+- RepoReaper exposes **Codex (ChatGPT subscription)** as a first-class Squad
+  provider. Selecting it discovers only models owned by the authenticated Codex
+  gateway adapter and explicitly pins execution to that adapter, so provider
+  fallback cannot silently change the credential path. The provider key and
+  custom base URL fields are disabled and scrubbed for Codex agents; RepoReaper
+  stores neither Codex OAuth tokens nor a substitute API key.
+- FailGuard uses the same gateway for bounded, review-only classification,
+  explanation, and lesson/prevention proposals. Future workers may add semantic
   correlation, lesson extraction, and relevance matching.
 - Future AI products should integrate with the gateway contract or the shared
   Squad substrate rather than add another ChatGPT login flow.
@@ -132,6 +142,9 @@ approval, or become a hard guardrail without deterministic policy authority.
   or explain the official login command, but Codex remains the credential owner.
 - Provider fallback must remain visible in response attempt evidence. Operators
   who need a specific billing/auth path should select only that provider.
+- Packaged backend containers do not contain the host Codex credential context
+  or package-owned Node runtime. Run the gateway as an explicit sidecar for
+  container deployments rather than copying OAuth credentials into the backend.
 
 Official background: [Codex authentication](https://learn.chatgpt.com/docs/auth.md)
 and the [Codex SDK](https://learn.chatgpt.com/docs/codex-sdk.md).

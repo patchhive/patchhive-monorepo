@@ -45,6 +45,7 @@ pub struct MaintainerProfileBucket {
 mod context;
 mod diff;
 mod failguard;
+pub(crate) mod failguard_ai;
 mod helpers;
 mod memory_run;
 mod routes;
@@ -55,7 +56,7 @@ pub use context::disposition_rank;
 pub use failguard::{
     backfill_promoted_guardrails, capture_failguard_lesson, create_failguard_candidate,
     dismiss_failguard_candidate, failguard_candidates, failguard_guardrails, failguard_matches,
-    promote_failguard_candidate,
+    promote_failguard_candidate, retry_failguard_interpretation,
 };
 pub use helpers::{build_entry, build_prompt_pack, build_summary, EntryDraft};
 pub use memory_run::truncate;

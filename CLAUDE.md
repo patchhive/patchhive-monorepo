@@ -13,7 +13,14 @@ docs, never left in a transcript; unresolved choices go in planning docs, labele
 
 ## 1. Orientation
 
-PatchHive is a monorepo-first suite of software-maintenance products. Rust (`axum` +
+PatchHive is the studio and creator brand; **Tendwright by PatchHive** is the
+customer-facing name of the complete system. Spell it `Tendwright` (*tend* +
+*wright*), never `Tendwrite`. Each specialist keeps its `<Product> by PatchHive`
+identity and remains independently runnable; HiveCore is Tendwright's control
+plane, not the whole-system name. Existing PatchHive technical identifiers stay
+valid unless a separate compatibility migration is approved.
+
+PatchHive is a monorepo-first family of software-maintenance products. Rust (`axum` +
 `rusqlite`) backends, React 19 + Vite frontends, SQLite only, no ORM, no AI provider SDKs
 (raw `reqwest` HTTP). Built personal-use-first by Jeremy Coe (`@coe0718`); MIT; alpha.
 
@@ -400,6 +407,15 @@ typography scale, spacing system, or theme implementation.
   only gateway/provider selection, keep auth state typed and redacted, and may
   use the gateway standalone without HiveCore. See
   [docs/chatgpt-subscription-ai.md](docs/chatgpt-subscription-ai.md).
+- RepoReaper exposes this as the first-class `codex` Squad provider labeled
+  **Codex (ChatGPT subscription)**. It requires authenticated Codex gateway
+  evidence, explicitly pins calls to that adapter, and never accepts or stores
+  a per-agent provider key or base URL for Codex agents.
+- In source-checkout suite mode, the unified backend supervises a configured
+  loopback `@patchhive/ai-local` child and reuses an already-authenticated
+  gateway. `npm run configure:ai-local` safely configures the canonical root
+  `.env`; set `PATCHHIVE_AI_AUTOSTART=false` for an external process manager or
+  container sidecar.
 - Encryption keys (`REAPER_ENCRYPTION_KEY`, `PATCHHIVE_ENCRYPTION_KEY`,
   `HIVECORE_ENCRYPTION_KEY`) need ≥32 chars of machine-random material
   (`openssl rand -hex 32`) and must stay stable across restarts. HiveCore uses its stable encryption
@@ -452,6 +468,10 @@ typography scale, spacing system, or theme implementation.
   AI may classify, explain, correlate, and propose lessons, but typed provenance, outcome state,
   promotion, exact blocking rules, audit, and rollback remain mechanical. Treat repository and
   review text as untrusted input; closed-unmerged is not automatically a PatchHive failure.
+- RepoMemory saves the raw FailGuard candidate before the optional `PATCHHIVE_AI_URL`
+  pass. Interpretations are separately tagged as observed/failed/not-observed/unknown,
+  bounded by a durable hourly admission ledger, and remain review-only; correlation
+  resets interpretation to pending and no model result can promote or widen scope.
 - Unified-backend peer calls receive mounted URLs plus one target-issued,
   ephemeral scoped service credential for every enabled engine through runtime
   configuration. HiveCore uses the same credentials for fleet snapshots and

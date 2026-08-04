@@ -93,6 +93,12 @@ light/dark persistence.
 | `REPO_MEMORY_SERVICE_TOKEN_HASH` | Optional pre-seeded service-token hash for HiveCore or other PatchHive product callers. | unset |
 | `REPO_MEMORY_DB_PATH` | SQLite path for runs and memory entries. | `repo-memory.db` |
 | `REPO_MEMORY_PORT` | Backend port for split local runs. | `8030` |
+| `PATCHHIVE_AI_URL` | Optional OpenAI-compatible gateway for FailGuard semantic interpretation. | unset |
+| `PATCHHIVE_AI_GATEWAY_API_KEY` | Scoped credential for the loopback PatchHive AI gateway. | unset |
+| `REPO_MEMORY_FAILGUARD_AI_ENABLED` | Enable review-only FailGuard interpretation. | `true` |
+| `REPO_MEMORY_FAILGUARD_AI_MODEL` | Interpretation model. | `gpt-5.4-mini` |
+| `REPO_MEMORY_FAILGUARD_AI_TIMEOUT_SECS` | Per-call timeout, clamped to 5–30 seconds. | `30` |
+| `REPO_MEMORY_FAILGUARD_AI_MAX_CALLS_PER_HOUR` | Durable hourly admission ceiling, clamped to 1–200. | `20` |
 | `RUST_LOG` | Rust logging level. | `info` |
 
 ## Technical Architecture
@@ -170,8 +176,9 @@ main.rs                          Standalone listener and CORS wrapper
 
  FailGuard Flow
      │
-     ├─ POST /failguard/candidates → build_failguard_candidate + db::save_failguard_candidate → status="open"
+     ├─ POST /failguard/candidates → persist raw candidate → bounded typed AI interpretation → status="open"
      ├─ GET  /failguard/candidates → db::list_failguard_candidates(repo, status)
+     ├─ POST /failguard/candidates/:id/interpret → retry review-only interpretation
      ├─ POST /failguard/candidates/:id/promote → candidate_to_lesson_request → save_failguard_lesson → status="promoted"
      │       └─ save_failguard_lesson: carry forward latest entries + new failure_pattern → save_run + save_memory_curation
      └─ POST /failguard/candidates/:id/dismiss → db::update_failguard_candidate_status → status="dismissed"
@@ -185,6 +192,7 @@ FailGuard lives in RepoMemory. It provides a review loop for bad outcomes before
 - **Confidence defaults**: `trustgate-block` = 86, `trustgate-warn` = 78, `repo-reaper-rejection` = 82, `reverted-pr` = 88, `reviewbee-thread` = 74, `operator` = 70.
 - **Statuses**: `open` (awaiting review), `promoted` (accepted → memory), `dismissed` (rejected).
 - **Integration**: TrustGate submits candidates automatically on `warn` or `block`. RepoReaper submits candidates when Smith rejects below configured confidence threshold. Both are best-effort and skipped when `PATCHHIVE_REPO_MEMORY_URL` is not set.
+- **Interpretation**: Raw candidates are durable before optional AI work. The tagged interpretation preserves observed, failed, not-observed, and unknown states; only an operator can promote it.
 
 ## API Endpoints
 

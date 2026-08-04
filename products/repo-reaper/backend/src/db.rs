@@ -558,6 +558,16 @@ pub fn normalize_openrouter_agent(agent: &mut AgentConfig) -> bool {
     false
 }
 
+pub fn normalize_codex_agent(agent: &mut AgentConfig) -> bool {
+    if agent.provider != "codex" {
+        return false;
+    }
+    let changed = agent.base_url.is_some() || agent.api_key.is_some();
+    agent.base_url = None;
+    agent.api_key = None;
+    changed
+}
+
 fn normalize_openrouter_agents(agents: &mut [AgentConfig]) -> usize {
     agents
         .iter_mut()
@@ -589,6 +599,7 @@ fn protect_agent_for_storage(
     protector: &TokenProtector,
 ) -> Result<AgentConfig> {
     let mut stored = agent.clone();
+    normalize_codex_agent(&mut stored);
     stored.api_key = protect_optional_secret(stored.api_key.as_deref(), protector)
         .with_context(|| format!("failed to protect API key for {}", stored.name))?;
     stored.bot_token = protect_optional_secret(stored.bot_token.as_deref(), protector)
@@ -604,6 +615,7 @@ fn reveal_agent_from_storage(
         .with_context(|| format!("failed to reveal API key for {}", agent.name))?;
     agent.bot_token = reveal_optional_secret(agent.bot_token.as_deref(), protector)
         .with_context(|| format!("failed to reveal bot token for {}", agent.name))?;
+    normalize_codex_agent(&mut agent);
     Ok(agent)
 }
 
@@ -1123,8 +1135,8 @@ pub fn set_setting(key: &str, value: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{
-        insert_run_artifact, normalize_openrouter_agent, RunArtifactInput, TrackedPullRequest,
-        MAX_PR_FOLLOW_UPS, SCHEMA,
+        insert_run_artifact, normalize_codex_agent, normalize_openrouter_agent, RunArtifactInput,
+        TrackedPullRequest, MAX_PR_FOLLOW_UPS, SCHEMA,
     };
     use crate::state::{AgentConfig, AgentStats};
     use rusqlite::Connection;
@@ -1279,5 +1291,32 @@ mod tests {
         assert!(normalize_openrouter_agent(&mut agent));
         assert_eq!(agent.provider, "openrouter");
         assert!(!normalize_openrouter_agent(&mut agent));
+    }
+
+    #[test]
+    fn codex_agent_never_keeps_provider_credentials_or_base_url() {
+        let mut agent = AgentConfig {
+            id: "scout".into(),
+            name: "Scout".into(),
+            role: "scout".into(),
+            provider: "codex".into(),
+            model: "gpt-5.4".into(),
+            base_url: Some("https://example.invalid/v1".into()),
+            api_key: Some("must-not-be-stored".into()),
+            bot_token: Some("github-token-remains-separate".into()),
+            bot_user: None,
+            status: "idle".into(),
+            current_task: String::new(),
+            stats: AgentStats::default(),
+        };
+
+        assert!(normalize_codex_agent(&mut agent));
+        assert!(agent.base_url.is_none());
+        assert!(agent.api_key.is_none());
+        assert_eq!(
+            agent.bot_token.as_deref(),
+            Some("github-token-remains-separate")
+        );
+        assert!(!normalize_codex_agent(&mut agent));
     }
 }

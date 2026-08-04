@@ -12,6 +12,8 @@ struct ModelList {
 #[derive(Debug, Deserialize)]
 struct ModelEntry {
     id: String,
+    #[serde(default)]
+    owned_by: String,
 }
 
 fn nonempty_env(key: &str) -> Option<String> {
@@ -38,16 +40,8 @@ fn authenticate_gateway_request(request: RequestBuilder) -> RequestBuilder {
     }
 }
 
-pub fn is_local_openai_base(base: &str) -> bool {
-    reqwest::Url::parse(base)
-        .ok()
-        .and_then(|url| url.host_str().map(str::to_ascii_lowercase))
-        .is_some_and(|host| {
-            host == "localhost"
-                || host
-                    .parse::<std::net::IpAddr>()
-                    .is_ok_and(|address| address.is_loopback())
-        })
+pub fn is_configured_gateway_base(base: &str) -> bool {
+    configured_url().is_some_and(|configured| normalize(&configured) == normalize(base))
 }
 
 pub async fn fetch_status(http: &Client) -> Value {
@@ -97,6 +91,50 @@ pub async fn fetch_status(http: &Client) -> Value {
 }
 
 pub async fn fetch_models(http: &Client) -> Result<Vec<String>> {
+    Ok(fetch_model_entries(http)
+        .await?
+        .into_iter()
+        .map(|entry| entry.id)
+        .collect())
+}
+
+pub async fn fetch_provider_models(http: &Client, provider: &str) -> Result<Vec<String>> {
+    let status = fetch_status(http).await;
+    let provider_status = status
+        .get("providers")
+        .and_then(Value::as_object)
+        .and_then(|providers| providers.get(provider))
+        .ok_or_else(|| anyhow!("PatchHive AI gateway did not report the {provider} provider"))?;
+    let auth_status = provider_status
+        .get("auth")
+        .and_then(|auth| auth.get("status"))
+        .and_then(Value::as_str);
+    let authenticated = auth_status == Some("authenticated")
+        || (auth_status.is_none()
+            && provider_status.get("logged_in").and_then(Value::as_bool) == Some(true));
+    if !authenticated {
+        let evidence = auth_status.unwrap_or("unknown");
+        return Err(anyhow!(
+            "PatchHive AI provider {provider} is not authenticated (status: {evidence})"
+        ));
+    }
+
+    let owner = format!("patchhive-{provider}");
+    let models = fetch_model_entries(http)
+        .await?
+        .into_iter()
+        .filter(|entry| entry.owned_by == owner)
+        .map(|entry| entry.id)
+        .collect::<Vec<_>>();
+    if models.is_empty() {
+        return Err(anyhow!(
+            "PatchHive AI gateway reported no models for authenticated provider {provider}"
+        ));
+    }
+    Ok(models)
+}
+
+async fn fetch_model_entries(http: &Client) -> Result<Vec<ModelEntry>> {
     let url = configured_url().ok_or_else(|| anyhow!("PATCHHIVE_AI_URL is not configured"))?;
     let resp = authenticate_gateway_request(http.get(models_url(&url)))
         .timeout(Duration::from_secs(5))
@@ -116,7 +154,7 @@ pub async fn fetch_models(http: &Client) -> Result<Vec<String>> {
         .json()
         .await
         .map_err(|error| anyhow!("Could not parse PatchHive AI models response: {error}"))?;
-    Ok(list.data.into_iter().map(|entry| entry.id).collect())
+    Ok(list.data)
 }
 
 fn normalize(url: &str) -> String {

@@ -4,6 +4,12 @@
 
 It gives the suite one stable OpenAI-compatible endpoint while the actual model execution can come from official, user-owned provider paths such as Codex and GitHub Copilot. That keeps PatchHive products provider-agnostic without teaching every product how to handle auth, model discovery, and fallback logic on its own.
 
+In a monorepo source run, configure it once with `npm run configure:ai-local`.
+The unified PatchHive backend then starts and stops the loopback gateway with
+its own lifecycle. Direct `npm run start:ai-local` remains available for
+standalone products and externally managed development sessions; the CLI loads
+`PATCHHIVE_ENV_FILE` when supplied or the canonical monorepo root `.env`.
+
 ## What It Provides
 
 - a localhost API for `/v1/models`, `/v1/chat/completions`, and `/v1/responses`

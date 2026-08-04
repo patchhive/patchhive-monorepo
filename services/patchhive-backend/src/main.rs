@@ -33,6 +33,7 @@ fn suite_public_paths() -> Vec<String> {
     .collect()
 }
 
+mod ai_gateway_process;
 mod config;
 mod db;
 mod models;
@@ -57,6 +58,7 @@ async fn main() -> Result<()> {
 
     let config = Config::from_env()?;
     let bind_addr = config.bind_addr;
+    let mut ai_gateway = ai_gateway_process::LocalAiGatewayProcess::start().await?;
     products::init_enabled_products(&config).await?;
     let state = Arc::new(AppState::new(config)?);
 
@@ -74,6 +76,7 @@ async fn main() -> Result<()> {
     )
     .with_graceful_shutdown(shutdown_signal())
     .await?;
+    ai_gateway.shutdown().await;
     Ok(())
 }
 

@@ -1,7 +1,7 @@
 // failguard.rs - FailGuard related route handlers and helpers
 
 use axum::{
-    extract::{Json, Path, Query},
+    extract::{Json, Path, Query, State},
     Json as JsonResponse,
 };
 use chrono::Utc;
@@ -14,8 +14,9 @@ use crate::{
         FailGuardCandidateListResponse, FailGuardCandidatePromoteRequest,
         FailGuardCandidatePromoteResponse, FailGuardCandidateRequest, FailGuardCandidateResponse,
         FailGuardGuardrail, FailGuardGuardrailListResponse, FailGuardGuardrailMatch,
-        FailGuardLessonRequest, FailGuardLessonResponse, FailGuardMatchListResponse,
-        FailGuardMatchRecord, FailGuardSuggestion, IngestRecord, MemoryEntry, MemoryEvidence,
+        FailGuardInterpretation, FailGuardLessonRequest, FailGuardLessonResponse,
+        FailGuardMatchListResponse, FailGuardMatchRecord, FailGuardSuggestion, IngestRecord,
+        MemoryEntry, MemoryEvidence,
     },
 };
 
@@ -25,6 +26,7 @@ use super::{
     normalize_disposition, not_found, path_bucket, truncate, valid_repo, JsonError, JsonResult,
 };
 use crate::pipeline::utils::normalize_candidate_status;
+use crate::state::AppState;
 
 pub async fn capture_failguard_lesson(
     Json(request): Json<FailGuardLessonRequest>,
@@ -105,6 +107,7 @@ pub async fn failguard_candidates(
 }
 
 pub async fn create_failguard_candidate(
+    State(state): State<AppState>,
     Json(mut request): Json<FailGuardCandidateRequest>,
 ) -> JsonResult<FailGuardCandidateResponse> {
     request.repo = request.repo.trim().to_string();
@@ -154,6 +157,12 @@ pub async fn create_failguard_candidate(
             .map_err(internal_error)?;
     }
 
+    let mut candidate = candidate;
+    candidate.interpretation = super::failguard_ai::interpret_candidate(&state.http, &candidate)
+        .await
+        .map_err(internal_error)?;
+    db::update_failguard_candidate(&candidate).map_err(internal_error)?;
+
     Ok(JsonResponse(FailGuardCandidateResponse {
         ok: true,
         message: if correlated {
@@ -164,6 +173,34 @@ pub async fn create_failguard_candidate(
         } else {
             "FailGuard candidate queued for review.".into()
         },
+        candidate,
+    }))
+}
+
+pub async fn retry_failguard_interpretation(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> JsonResult<FailGuardCandidateResponse> {
+    let mut candidate = db::get_failguard_candidate(id.trim())
+        .map_err(internal_error)?
+        .ok_or_else(|| not_found("FailGuard candidate not found."))?;
+    if candidate.status != "open" {
+        return Err(bad_request(
+            "FailGuard can only reinterpret open candidates awaiting review.",
+        ));
+    }
+
+    candidate.interpretation = FailGuardInterpretation::pending();
+    candidate.updated_at = Utc::now().to_rfc3339();
+    db::update_failguard_candidate(&candidate).map_err(internal_error)?;
+    candidate.interpretation = super::failguard_ai::interpret_candidate(&state.http, &candidate)
+        .await
+        .map_err(internal_error)?;
+    db::update_failguard_candidate(&candidate).map_err(internal_error)?;
+
+    Ok(JsonResponse(FailGuardCandidateResponse {
+        ok: true,
+        message: "FailGuard interpretation attempt recorded for operator review.".into(),
         candidate,
     }))
 }
@@ -389,6 +426,7 @@ pub fn build_failguard_candidate(request: FailGuardCandidateRequest) -> FailGuar
         created_at: now.clone(),
         updated_at: now.clone(),
         last_seen_at: now,
+        interpretation: FailGuardInterpretation::pending(),
     }
 }
 
@@ -424,6 +462,7 @@ fn merge_failguard_candidate(
     existing.affected_paths = clean_failguard_items(existing.affected_paths, 12);
     existing.evidence.extend(incoming.evidence);
     existing.evidence = clean_failguard_items(existing.evidence, 10);
+    existing.interpretation = FailGuardInterpretation::pending();
     existing
 }
 

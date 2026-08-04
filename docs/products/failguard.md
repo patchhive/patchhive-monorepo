@@ -10,19 +10,29 @@ observable safeguards:
    configured.
 2. FailGuard correlates repeated open outcomes instead of creating an endless
    duplicate queue.
-3. A human reviews and edits the proposed outcome, lesson, prevention, paths,
+3. FailGuard optionally attaches a typed, bounded AI interpretation after the
+   deterministic candidate is durably stored.
+4. A human reviews and edits the proposed outcome, lesson, prevention, paths,
    and evidence.
-4. Promotion writes the durable explanation into RepoMemory as a pinned or
+5. Promotion writes the durable explanation into RepoMemory as a pinned or
    policy-weighted `failure_pattern` memory.
-5. Promotion also compiles product-specific guardrail suggestions.
-6. Later product context requests return matching guardrails and record a match
+6. Promotion also compiles product-specific guardrail suggestions.
+7. Later product context requests return matching guardrails and record a match
    in the FailGuard ledger.
-7. HiveCore can eventually summarize recurrence and guardrail effectiveness
+8. HiveCore can eventually summarize recurrence and guardrail effectiveness
    from that shared ledger.
 
 FailGuard deliberately does not auto-promote producer submissions. Collection
 and correlation are automatic; turning a proposed lesson into durable policy
 requires an operator decision.
+
+The current semantic worker calls the OpenAI-compatible `PATCHHIVE_AI_URL`
+gateway synchronously after saving the raw candidate. Its result is a tagged
+`observed`, `failed`, `not_observed`, or `unknown` interpretation stored beside,
+not over, the deterministic candidate. Correlated evidence resets the
+interpretation to pending and produces a fresh bounded pass. AI outage,
+misconfiguration, timeout, malformed output, or hourly admission exhaustion
+does not discard failure evidence and cannot activate a guardrail.
 
 ## AI-first decision model
 
@@ -129,6 +139,8 @@ TrustGate / RepoReaper / future producers
                   | POST /failguard/candidates
                   v
        correlated open candidate
+                  |
+          typed AI proposal
                   |
           human edit + promote
                   |
@@ -248,6 +260,7 @@ authentication unless otherwise noted.
 | `GET` | `/failguard/candidates` | List candidates; supports `repo` and `status`. |
 | `POST` | `/failguard/candidates/:id/promote` | Edit, promote, and compile an open candidate. |
 | `POST` | `/failguard/candidates/:id/dismiss` | Dismiss an open candidate with a resolution note. |
+| `POST` | `/failguard/candidates/:id/interpret` | Retry bounded AI interpretation for an open candidate. |
 | `POST` | `/failguard/lessons` | Capture an already-reviewed lesson and compile it. |
 | `GET` | `/failguard/guardrails` | List compiled guardrails; supports `repo` and `status`. |
 | `GET` | `/failguard/matches` | List match records; supports `repo`, `consumer`, and bounded `limit`. |
@@ -271,12 +284,27 @@ Without that configuration, producer runs continue safely but do not submit
 FailGuard candidates or consume compiled guardrails. Startup diagnostics must
 make that degraded integration visible.
 
+## Interpretation configuration
+
+| Variable | Purpose | Default |
+| --- | --- | --- |
+| `PATCHHIVE_AI_URL` | OpenAI-compatible gateway; use `@patchhive/ai-local` for ChatGPT subscription execution. | unset |
+| `PATCHHIVE_AI_GATEWAY_API_KEY` | Scoped bearer credential for a loopback PatchHive AI gateway. | unset |
+| `PATCHHIVE_AI_API_KEY` | Credential for a deliberately configured non-loopback gateway. | unset |
+| `REPO_MEMORY_FAILGUARD_AI_ENABLED` | Enables semantic interpretation without affecting deterministic capture. | `true` |
+| `REPO_MEMORY_FAILGUARD_AI_MODEL` | Requested interpretation model. | `gpt-5.4-mini` |
+| `REPO_MEMORY_FAILGUARD_AI_TIMEOUT_SECS` | Completion deadline, clamped to 5–30 seconds. | `30` |
+| `REPO_MEMORY_FAILGUARD_AI_MAX_CALLS_PER_HOUR` | Durable suite-wide RepoMemory admission limit, clamped to 1–200. | `20` |
+
 ## Safety boundaries
 
 - Automatic producers may suggest; they may not promote.
 - Only open candidates may be promoted or dismissed.
 - Dismissal never creates product context or enforcement.
 - Evidence and path collections are normalized, deduplicated, and bounded.
+- Model input treats every evidence field as untrusted data; typed output may
+  reference only supplied evidence indices and cannot widen path scope.
+- AI calls are durably admitted and audited, and raw model output is not stored.
 - A promoted lesson remains visible as human-reviewed policy.
 - Match counts are observability, not proof of recurrence.
 - Product behavior must describe whether enforcement is deterministic,

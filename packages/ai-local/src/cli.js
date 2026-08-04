@@ -1,6 +1,21 @@
 #!/usr/bin/env node
 
-import { startGateway, resolveGatewayConfig } from "./index.js";
+import { existsSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { loadEnvFile } from "node:process";
+import { fileURLToPath } from "node:url";
+
+const explicitEnv = String(process.env.PATCHHIVE_ENV_FILE || "").trim();
+const canonicalEnv = resolve(dirname(fileURLToPath(import.meta.url)), "../../../.env");
+if (explicitEnv) {
+  loadEnvFile(explicitEnv);
+} else if (existsSync(canonicalEnv)) {
+  loadEnvFile(canonicalEnv);
+}
+
+// Load adapters only after canonical environment values are available; some
+// provider modules establish their bounded fallback catalogs at module load.
+const { startGateway, resolveGatewayConfig } = await import("./index.js");
 
 const config = resolveGatewayConfig();
 const gateway = await startGateway(config);

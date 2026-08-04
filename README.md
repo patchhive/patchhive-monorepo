@@ -1,12 +1,19 @@
-# PatchHive
+# Tendwright by PatchHive
 
-PatchHive is a product suite for software maintenance, review, and autonomous contribution.
+Tendwright is the complete PatchHive system for software maintenance, review,
+and autonomous contribution. PatchHive is the studio and creator brand; each
+specialist retains its own `<Product> by PatchHive` identity and can run
+independently.
 
-This repository is the PatchHive source-of-truth monorepo. New products, shared packages, and shared Rust crates are built here first, then exported into standalone repositories under [`patchhive`](https://github.com/patchhive) when they are ready to stand on their own.
+This repository is the PatchHive source-of-truth monorepo for Tendwright and its
+specialists. New products, shared packages, and shared Rust crates are built
+here first, then exported into standalone repositories under
+[`patchhive`](https://github.com/patchhive) when they are ready to stand on their
+own.
 
 PatchHive is alpha software, built personal-use-first by Jeremy Coe (`@coe0718`). Public source is intended to make the work inspectable, reusable, and easier to collaborate around, but the suite is still changing quickly and should not be treated as a hardened hosted platform.
 
-## Product Suite
+## Tendwright Product System
 
 | Product | Repo | Role |
 | --- | --- | --- |

@@ -24,6 +24,7 @@
     "auth:ai-local:codex": "npm --workspace @patchhive/ai-local run auth:codex",
     "auth:ai-local:codex:device": "npm --workspace @patchhive/ai-local run auth:codex:device",
     "auth:ai-local:codex:status": "npm --workspace @patchhive/ai-local run auth:codex:status",
+    "configure:ai-local": "node ./scripts/configure-ai-local.mjs",
     "dev:ai-local": "npm --workspace @patchhive/ai-local run dev",
     "dev:ai-local-rust": "cargo run --manifest-path packages/ai-local/rust-gateway/Cargo.toml",
     "new:product": "./scripts/new-product.sh",

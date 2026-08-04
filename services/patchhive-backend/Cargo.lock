@@ -1235,6 +1235,7 @@ dependencies = [
  "release-sentry",
  "repo-memory",
  "repo-reaper",
+ "reqwest",
  "review-bee",
  "rusqlite",
  "serde",

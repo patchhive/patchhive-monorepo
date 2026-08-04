@@ -55,6 +55,7 @@ RepoMemory owns the FailGuard review loop:
 
 - `GET /failguard/candidates` lists suggested lessons by repo and status.
 - `POST /failguard/candidates` queues a bad outcome from an operator, TrustGate, RepoReaper, or another product.
+- `POST /failguard/candidates/:id/interpret` retries the bounded review-only AI interpretation.
 - `POST /failguard/candidates/:id/promote` turns a reviewed candidate into a curated `failure_pattern` memory.
 - `POST /failguard/candidates/:id/dismiss` rejects noisy or unhelpful candidates.
 - `POST /failguard/lessons` still captures an already-approved lesson directly.
@@ -112,6 +113,12 @@ suggest/review/promote/dismiss loop. It passed final parity acceptance on
 | `REPO_MEMORY_SERVICE_TOKEN_HASH` | Optional pre-seeded service-token hash for HiveCore or other PatchHive product callers. |
 | `REPO_MEMORY_DB_PATH` | SQLite path for runs and memory entries. |
 | `REPO_MEMORY_PORT` | Backend port for split local runs. |
+| `PATCHHIVE_AI_URL` | Optional OpenAI-compatible gateway used for FailGuard interpretation after raw evidence is saved. |
+| `PATCHHIVE_AI_GATEWAY_API_KEY` | Scoped bearer credential required for a loopback PatchHive AI gateway. |
+| `REPO_MEMORY_FAILGUARD_AI_ENABLED` | Enable review-only AI interpretation (`true`). |
+| `REPO_MEMORY_FAILGUARD_AI_MODEL` | Interpretation model (`gpt-5.4-mini`). |
+| `REPO_MEMORY_FAILGUARD_AI_TIMEOUT_SECS` | Per-call timeout, clamped to 5–30 seconds (`30`). |
+| `REPO_MEMORY_FAILGUARD_AI_MAX_CALLS_PER_HOUR` | Durable admission limit, clamped to 1–200 (`20`). |
 | `RUST_LOG` | Rust logging level. |
 
 RepoMemory works best with a classic GitHub token. Reading merged pull requests, reviews,
@@ -122,7 +129,9 @@ and issues is enough for the core MVP loop.
 RepoMemory is intentionally context-first. It does not open pull requests, mutate repositories,
 or automatically promote every bad outcome into durable policy. FailGuard is a cross-cutting
 capability surfaced through RepoMemory, not a standalone product; humans can review, promote, or
-dismiss candidates before they become pinned failure-pattern memories.
+dismiss candidates before they become pinned failure-pattern memories. AI output is stored
+separately from source evidence and can prefill the review form, but it cannot promote, dismiss,
+dispatch, publish, or widen a candidate's scope.
 
 ## HiveCore Fit
 

@@ -1,4 +1,5 @@
 use patchhive_product_core::{
+    ai_gateway::AiGatewayConfiguration,
     github_auth::verify_github_token,
     github_permissions::GitHubPermissionProfile,
     sqlite::db_path_message,
@@ -34,9 +35,31 @@ pub async fn validate_config(client: &Client) -> Vec<StartupCheck> {
     checks.push(StartupCheck::info(
         "RepoMemory builds durable repo memory from merged PRs, reviewer feedback, and past bugs.",
     ));
-    checks.push(StartupCheck::info(
-        "RepoMemory does not require a live AI provider for the MVP loop. It uses GitHub data plus deterministic extraction heuristics.",
-    ));
+    match crate::pipeline::failguard_ai::enabled_from_environment() {
+        Ok(false) => checks.push(StartupCheck::info(
+            "FailGuard AI interpretation is explicitly disabled; deterministic candidate capture remains active.",
+        )),
+        Err(error) => checks.push(
+            StartupCheck::warn(format!(
+                "FailGuard AI interpretation configuration is invalid: {error}"
+            ))
+            .with_identity("failguard_ai", "invalid"),
+        ),
+        Ok(true) => match AiGatewayConfiguration::from_environment() {
+            Ok(Some(_)) => checks.push(StartupCheck::info(
+                "FailGuard AI interpretation is configured. Model output remains review-only and cannot promote guardrails.",
+            )),
+            Ok(None) => checks.push(StartupCheck::info(
+                "FailGuard deterministic capture is ready; AI interpretation will be not_observed until PATCHHIVE_AI_URL is configured.",
+            )),
+            Err(error) => checks.push(
+                StartupCheck::warn(format!(
+                    "FailGuard AI interpretation configuration is invalid: {error}"
+                ))
+                .with_identity("failguard_ai", "invalid"),
+            ),
+        },
+    }
 
     checks
 }

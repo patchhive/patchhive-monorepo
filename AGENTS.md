@@ -13,7 +13,17 @@ label open choices honestly.
 
 ## What PatchHive Is
 
-PatchHive is a software maintenance platform: a family of focused tools that help engineering teams find, prioritize, and automate maintenance work without losing reviewability or trust.
+PatchHive is the studio and creator brand. **Tendwright by PatchHive** is the
+customer-facing name of its complete autonomous software-maintenance system: a
+family of focused tools that help engineering teams find, prioritize, and
+automate maintenance work without losing reviewability or trust. Spell it
+`Tendwright` (*tend* + *wright*), never `Tendwrite`.
+
+Every specialist keeps its own `<Product> by PatchHive` identity and remains
+independently runnable. Tendwright is the umbrella system they form together;
+it is not a runtime dependency. HiveCore remains Tendwright's control plane,
+not the name of the whole system. Existing PatchHive technical namespaces and
+identifiers remain valid unless a separate compatibility migration is approved.
 
 Core principles:
 - Maintenance work should be continuously visible.
@@ -282,6 +292,11 @@ AI provider integration:
   Codex access or refresh tokens. This is a Codex execution credential, not a
   general OpenAI Platform API key. Standalone products use the same gateway and
   do not require HiveCore. See `docs/chatgpt-subscription-ai.md`.
+- RepoReaper exposes that path as the first-class `codex` Squad provider labeled
+  **Codex (ChatGPT subscription)**. Its model discovery requires positively
+  authenticated Codex gateway evidence, and its requests explicitly select the
+  Codex adapter. Codex agents never accept or persist a provider API key or
+  custom base URL; RepoReaper retains only the scoped gateway credential.
 - Local AI auth evidence is typed and redacted. Preserve `authenticated`,
   `not_authenticated`, `failed`, and `not_observed` separately, plus the
   credential mode; compatibility `logged_in` output is derived as
@@ -290,6 +305,13 @@ AI provider integration:
   seconds and uses a bounded per-provider adapter-process pool (default 2,
   configurable to 1-8). A timed-out process is restarted; do not restore a
   single unbounded mutex-held process that serializes every gateway caller.
+- A source-checkout unified backend supervises a configured loopback
+  `@patchhive/ai-local` process: it authenticates and reuses an existing gateway,
+  otherwise starts the package-owned CLI before product initialization, and
+  stops only the child it owns. `PATCHHIVE_AI_AUTOSTART=false` delegates that
+  lifecycle to another process manager. Remote gateways and container sidecars
+  are never spawned by the backend. `npm run configure:ai-local` writes the
+  canonical ignored root `.env` with a redacted 256-bit scoped gateway secret.
 
 Data/storage:
 - SQLite only
@@ -635,6 +657,10 @@ RepoReaper specialist UI scope:
 - The Squad surface covers role editing, provider defaults, live model discovery and testing,
   Agent-ready and Free filters, encrypted credential posture, cooldown
   clearing, and the preset lifecycle of save, activate/load, and delete.
+- The Squad provider picker includes **Codex (ChatGPT subscription)** as a
+  distinct credential-free choice when the local AI gateway is configured.
+  It displays redacted Codex authentication evidence, discovers only Codex-owned
+  gateway models, and never stores the operator's Codex OAuth credentials.
 - RepoReaper persists the active team and team presets in SQLite. Per-agent API keys and bot token overrides are encrypted at rest through `patchhive_product_core::secrets::TokenProtector` when `REAPER_ENCRYPTION_KEY` or `PATCHHIVE_ENCRYPTION_KEY` is set; without one of those keys, those secret fields stay memory-only and are not written to SQLite. Adding an encryption key later migrates existing plaintext active-team and preset secrets on boot.
 - Dry Stalk is still a no-write mode, but it needs at least a Scout agent because issue scoring and dry-run analysis use the AI agent pipeline.
 - Operator-started missions and explicitly enabled write schedules are
@@ -843,6 +869,12 @@ Important env vars:
   PatchHive failed. Preserve an explicit outcome taxonomy and `unknown` when the
   reason cannot be established. AI failure or absence must never become a
   reassuring classification or an active guardrail.
+- RepoMemory now persists every raw candidate before attempting bounded semantic
+  interpretation through `PATCHHIVE_AI_URL`. The separate tagged interpretation
+  preserves `observed`, `failed`, `not_observed`, and `unknown`; model output may
+  prefill operator review but cannot overwrite provenance, promote, dismiss,
+  dispatch, publish, or widen scope. Calls use a durable hourly admission ledger,
+  and correlated new evidence resets interpretation to pending before retry.
 - On the RepoMemory side, that means capturing and storing lessons so humans and agents can reuse them later.
 - On the TrustGate side, that means converting those lessons into future warnings, checks, or blocking guardrails.
 - The intended flow is: incident or painful failure -> captured lesson -> durable memory -> future policy.

@@ -129,6 +129,7 @@ fn cost_rates(provider: &str, model: &str) -> (f64, f64) {
         ("openai", m) if m.contains("gpt-4o") && !m.contains("mini") => (0.0025, 0.01),
         ("openai", m) if m.contains("mini") => (0.00015, 0.0006),
         ("openai", _) => (0.0025, 0.01),
+        ("codex", _) => (0.0, 0.0),
         ("gemini", _) => (0.00035, 0.00105),
         ("groq", _) => (0.00059, 0.00079),
         ("ollama", _) => (0.0, 0.0),
@@ -349,6 +350,12 @@ pub async fn ai_call(http: &Client, p: &AgentCallParams<'_>) -> Result<(String, 
             let base = crate::ai_local::openai_base_url();
             openai_call(http, p, &base).await
         }
+        "codex" => {
+            let base = crate::ai_local::configured_url().ok_or_else(|| {
+                anyhow!("PATCHHIVE_AI_URL is required for the Codex subscription provider")
+            })?;
+            openai_call(http, p, &base).await
+        }
         "gemini" => gemini_call(http, p).await,
         "groq" => {
             let base = std::env::var("GROQ_BASE_URL")
@@ -444,14 +451,19 @@ async fn openai_call(http: &Client, p: &AgentCallParams<'_>, base: &str) -> Resu
         };
         let body = openai_request_body(p, max_tokens);
         let mut req = http.post(format!("{base}/chat/completions")).json(&body);
-        req = if crate::ai_local::is_local_openai_base(base) {
+        req = if crate::ai_local::is_configured_gateway_base(base) {
             let gateway_key = std::env::var("PATCHHIVE_AI_GATEWAY_API_KEY")
                 .ok()
                 .filter(|value| !value.trim().is_empty())
                 .ok_or_else(|| {
                     anyhow!("PATCHHIVE_AI_GATEWAY_API_KEY is required for the local AI gateway")
                 })?;
-            req.bearer_auth(gateway_key)
+            let request = req.bearer_auth(gateway_key);
+            if p.provider == "codex" {
+                request.header("x-patchhive-provider", "codex")
+            } else {
+                request
+            }
         } else if let Some(key) = key.as_deref() {
             req.bearer_auth(key)
         } else {
@@ -906,8 +918,8 @@ pub async fn agent_pr_comment_fix(
 #[cfg(test)]
 mod tests {
     use super::{
-        openai_reported_cost, openai_request_body, parse_typed_json, AgentCallParams, AiCostBudget,
-        DryRunAnalysisResponse, GeneratedPatchResponse, SmithReviewResponse,
+        cost_rates, openai_reported_cost, openai_request_body, parse_typed_json, AgentCallParams,
+        AiCostBudget, DryRunAnalysisResponse, GeneratedPatchResponse, SmithReviewResponse,
     };
     use std::sync::{atomic::AtomicI64, Arc};
 
@@ -1020,5 +1032,10 @@ mod tests {
             openai_reported_cost(&serde_json::json!({"usage": {"cost": "0"}})),
             0.0
         );
+    }
+
+    #[test]
+    fn codex_subscription_has_no_estimated_api_spend() {
+        assert_eq!(cost_rates("codex", "gpt-5.4"), (0.0, 0.0));
     }
 }

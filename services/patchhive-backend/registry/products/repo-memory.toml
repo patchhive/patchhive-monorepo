@@ -19,6 +19,7 @@ tiers = ["read-only-fleet"]
 acknowledged_startup = [
   { code = "api_key_auth", status = "missing" },
   { code = "github_token", status = "missing" },
+  { code = "failguard_ai", status = "invalid" },
 ]
 
 [safety]
@@ -47,6 +48,12 @@ description = "Generate context packs for downstream agents."
 id = "failguard"
 label = "FailGuard"
 description = "Queue and promote lessons from painful outcomes."
+mutating = true
+
+[[capabilities]]
+id = "failguard-ai-interpretation"
+label = "FailGuard AI interpretation"
+description = "Attach bounded review-only semantic interpretations to failure candidates."
 mutating = true
 
 [[routes]]
@@ -153,6 +160,11 @@ description = "Promote a FailGuard candidate into durable memory."
 method = "POST"
 path = "/api/products/repo-memory/failguard/candidates/:id/dismiss"
 description = "Dismiss a FailGuard candidate."
+
+[[routes]]
+method = "POST"
+path = "/api/products/repo-memory/failguard/candidates/:id/interpret"
+description = "Retry bounded AI interpretation for an open FailGuard candidate."
 
 [[routes]]
 method = "POST"

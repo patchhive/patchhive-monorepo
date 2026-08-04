@@ -270,6 +270,12 @@ Product workflows preserved in the canonical frontend:
   image/video, moderation, and provider utility entries from noisy catalogs.
   Free provider models remain visible by default, and RepoReaper can narrow
   the picker to free-marked model IDs when the operator enables Free only.
+- **Codex (ChatGPT subscription)** is a distinct Squad provider. Its discovery
+  path requires positively authenticated Codex evidence from
+  `@patchhive/ai-local`, returns only Codex-owned gateway models, and pins model
+  tests and agent calls to the Codex adapter. It does not accept or persist a
+  per-agent provider API key or custom base URL; Codex remains the sole owner of
+  OAuth login, refresh, and logout.
 - Provider defaults can also test the selected model through
   `/models/:provider/test`, which sends a tiny prompt through RepoReaper's real
   provider runtime and reports auth, rate limit, timeout, or provider errors.

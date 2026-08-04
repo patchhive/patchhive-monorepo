@@ -1,11 +1,18 @@
 use once_cell::sync::Lazy;
 use patchhive_product_core::sqlite::{product_db_path, PooledSqliteConnection, SqlitePool};
-use rusqlite::{params, params_from_iter, Connection, OptionalExtension};
+use rusqlite::{params, params_from_iter, Connection, OptionalExtension, TransactionBehavior};
+use uuid::Uuid;
 
 use crate::models::{
-    stable_memory_ref, FailGuardCandidate, FailGuardGuardrail, FailGuardMatchRecord, HistoryItem,
-    IngestRecord, KnownRepo, MemoryEntry, OverviewCounts,
+    stable_memory_ref, FailGuardCandidate, FailGuardGuardrail, FailGuardInterpretation,
+    FailGuardMatchRecord, HistoryItem, IngestRecord, KnownRepo, MemoryEntry, OverviewCounts,
 };
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FailGuardAiAdmission {
+    Granted { reservation_id: String },
+    Denied { used: u32, limit: u32 },
+}
 
 static DB_POOL: Lazy<SqlitePool> = Lazy::new(|| {
     SqlitePool::new(db_path(), "RepoMemory").with_pool_size_env("REPO_MEMORY_DB_POOL_SIZE")
@@ -88,7 +95,19 @@ pub fn init_db() -> rusqlite::Result<()> {
           created_at TEXT NOT NULL,
           updated_at TEXT NOT NULL,
           last_seen_at TEXT NOT NULL DEFAULT '',
-          recurrence_of TEXT NOT NULL DEFAULT ''
+          recurrence_of TEXT NOT NULL DEFAULT '',
+          interpretation_json TEXT NOT NULL DEFAULT '{"status":"unknown","reason":"legacy_missing_or_malformed_interpretation"}'
+        );
+
+        CREATE TABLE IF NOT EXISTS failguard_ai_calls (
+          id TEXT PRIMARY KEY,
+          candidate_id TEXT NOT NULL,
+          reserved_at_epoch INTEGER NOT NULL,
+          completed_at_epoch INTEGER,
+          state TEXT NOT NULL,
+          provider TEXT NOT NULL DEFAULT '',
+          model TEXT NOT NULL DEFAULT '',
+          error_code TEXT NOT NULL DEFAULT ''
         );
 
         CREATE TABLE IF NOT EXISTS failguard_guardrails (
@@ -132,6 +151,8 @@ pub fn init_db() -> rusqlite::Result<()> {
           ON failguard_guardrails (repo, status, updated_at DESC);
         CREATE INDEX IF NOT EXISTS idx_failguard_matches_guardrail_created
           ON failguard_matches (guardrail_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_failguard_ai_calls_reserved
+          ON failguard_ai_calls (reserved_at_epoch DESC);
         "#,
     )?;
     ensure_column(
@@ -175,6 +196,12 @@ pub fn init_db() -> rusqlite::Result<()> {
         "failguard_candidates",
         "last_seen_at",
         "TEXT NOT NULL DEFAULT ''",
+    )?;
+    ensure_column(
+        &conn,
+        "failguard_candidates",
+        "interpretation_json",
+        "TEXT NOT NULL DEFAULT '{\"status\":\"unknown\",\"reason\":\"legacy_missing_or_malformed_interpretation\"}'",
     )?;
     conn.execute(
         r#"
@@ -632,15 +659,16 @@ pub fn save_memory_curation(
 
 pub fn save_failguard_candidate(candidate: &FailGuardCandidate) -> rusqlite::Result<()> {
     let conn = connect()?;
+    let interpretation_json = serialize_interpretation(candidate)?;
     conn.execute(
         r#"
         INSERT INTO failguard_candidates (
           id, repo, source_type, source_ref, title, outcome, lesson, prevention,
           affected_paths_json, evidence_json, confidence, correlation_key, occurrence_count,
           status, memory_ref, resolution_note, created_at, updated_at, last_seen_at,
-          recurrence_of
+          recurrence_of, interpretation_json
         )
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)
         "#,
         params![
             candidate.id,
@@ -663,9 +691,83 @@ pub fn save_failguard_candidate(candidate: &FailGuardCandidate) -> rusqlite::Res
             candidate.updated_at,
             candidate.last_seen_at,
             candidate.recurrence_of,
+            interpretation_json,
         ],
     )?;
     Ok(())
+}
+
+pub fn reserve_failguard_ai_call(
+    candidate_id: &str,
+    now_epoch: i64,
+    hourly_limit: u32,
+) -> rusqlite::Result<FailGuardAiAdmission> {
+    let mut conn = connect()?;
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let window_start = now_epoch.saturating_sub(3600);
+    let used = tx.query_row(
+        "SELECT COUNT(*) FROM failguard_ai_calls WHERE reserved_at_epoch >= ?1",
+        params![window_start],
+        |row| row.get::<_, i64>(0),
+    )? as u32;
+    if used >= hourly_limit {
+        tx.commit()?;
+        return Ok(FailGuardAiAdmission::Denied {
+            used,
+            limit: hourly_limit,
+        });
+    }
+
+    let reservation_id = Uuid::new_v4().to_string();
+    tx.execute(
+        r#"
+        INSERT INTO failguard_ai_calls (
+          id, candidate_id, reserved_at_epoch, state
+        ) VALUES (?1, ?2, ?3, 'reserved')
+        "#,
+        params![reservation_id, candidate_id, now_epoch],
+    )?;
+    tx.commit()?;
+    Ok(FailGuardAiAdmission::Granted { reservation_id })
+}
+
+pub fn complete_failguard_ai_call(
+    reservation_id: &str,
+    now_epoch: i64,
+    succeeded: bool,
+    provider: &str,
+    model: &str,
+    error_code: &str,
+) -> rusqlite::Result<()> {
+    let conn = connect()?;
+    let changed = conn.execute(
+        r#"
+        UPDATE failguard_ai_calls
+        SET completed_at_epoch = ?2,
+            state = ?3,
+            provider = ?4,
+            model = ?5,
+            error_code = ?6
+        WHERE id = ?1 AND state = 'reserved'
+        "#,
+        params![
+            reservation_id,
+            now_epoch,
+            if succeeded { "completed" } else { "failed" },
+            provider,
+            model,
+            error_code,
+        ],
+    )?;
+    if changed != 1 {
+        return Err(rusqlite::Error::QueryReturnedNoRows);
+    }
+    Ok(())
+}
+
+fn serialize_interpretation(candidate: &FailGuardCandidate) -> rusqlite::Result<String> {
+    serde_json::to_string(&candidate.interpretation)
+        .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))
 }
 
 pub fn find_open_failguard_candidate(
@@ -679,7 +781,7 @@ pub fn find_open_failguard_candidate(
           id, repo, source_type, source_ref, title, outcome, lesson, prevention,
           affected_paths_json, evidence_json, confidence, correlation_key, occurrence_count,
           status, memory_ref, resolution_note, created_at, updated_at, last_seen_at,
-          recurrence_of
+          recurrence_of, interpretation_json
         FROM failguard_candidates
         WHERE repo = ?1 AND correlation_key = ?2 AND status = 'open'
         ORDER BY updated_at DESC
@@ -692,6 +794,7 @@ pub fn find_open_failguard_candidate(
 
 pub fn update_failguard_candidate(candidate: &FailGuardCandidate) -> rusqlite::Result<()> {
     let conn = connect()?;
+    let interpretation_json = serialize_interpretation(candidate)?;
     conn.execute(
         r#"
         UPDATE failguard_candidates
@@ -706,7 +809,8 @@ pub fn update_failguard_candidate(candidate: &FailGuardCandidate) -> rusqlite::R
             updated_at = ?10,
             last_seen_at = ?11,
             correlation_key = ?12,
-            recurrence_of = ?13
+            recurrence_of = ?13,
+            interpretation_json = ?14
         WHERE id = ?1
         "#,
         params![
@@ -723,6 +827,7 @@ pub fn update_failguard_candidate(candidate: &FailGuardCandidate) -> rusqlite::R
             candidate.last_seen_at,
             candidate.correlation_key,
             candidate.recurrence_of,
+            interpretation_json,
         ],
     )?;
     Ok(())
@@ -929,7 +1034,7 @@ pub fn list_failguard_candidates(
           id, repo, source_type, source_ref, title, outcome, lesson, prevention,
           affected_paths_json, evidence_json, confidence, correlation_key, occurrence_count,
           status, memory_ref, resolution_note, created_at, updated_at, last_seen_at,
-          recurrence_of
+          recurrence_of, interpretation_json
         FROM failguard_candidates
         WHERE 1=1
         "#,
@@ -968,7 +1073,7 @@ pub fn get_failguard_candidate(id: &str) -> rusqlite::Result<Option<FailGuardCan
           id, repo, source_type, source_ref, title, outcome, lesson, prevention,
           affected_paths_json, evidence_json, confidence, correlation_key, occurrence_count,
           status, memory_ref, resolution_note, created_at, updated_at, last_seen_at,
-          recurrence_of
+          recurrence_of, interpretation_json
         FROM failguard_candidates
         WHERE id = ?1
         "#,
@@ -1090,6 +1195,7 @@ fn decode_memory_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<MemoryEntry>
 fn decode_failguard_candidate(row: &rusqlite::Row<'_>) -> rusqlite::Result<FailGuardCandidate> {
     let affected_paths_json: String = row.get(8)?;
     let evidence_json: String = row.get(9)?;
+    let interpretation_json: String = row.get(20)?;
     Ok(FailGuardCandidate {
         id: row.get(0)?,
         repo: row.get(1)?,
@@ -1111,7 +1217,12 @@ fn decode_failguard_candidate(row: &rusqlite::Row<'_>) -> rusqlite::Result<FailG
         updated_at: row.get(17)?,
         last_seen_at: row.get(18)?,
         recurrence_of: row.get(19)?,
+        interpretation: decode_failguard_interpretation(&interpretation_json),
     })
+}
+
+fn decode_failguard_interpretation(value: &str) -> FailGuardInterpretation {
+    serde_json::from_str(value).unwrap_or_else(|_| FailGuardInterpretation::legacy_unknown())
 }
 
 fn decode_failguard_guardrail(row: &rusqlite::Row<'_>) -> rusqlite::Result<FailGuardGuardrail> {
@@ -1139,6 +1250,14 @@ fn decode_failguard_guardrail(row: &rusqlite::Row<'_>) -> rusqlite::Result<FailG
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn malformed_legacy_interpretation_is_unknown_not_permission() {
+        assert_eq!(
+            decode_failguard_interpretation("{not-json"),
+            FailGuardInterpretation::legacy_unknown()
+        );
+    }
 
     fn memory_test_connection() -> Connection {
         let conn = Connection::open_in_memory().expect("open in-memory database");
