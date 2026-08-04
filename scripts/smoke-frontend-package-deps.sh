@@ -19,7 +19,6 @@ What it does:
 
 Environment:
   PATCHHIVE_UI_TARBALL             Optional local @patchhivehq/ui tarball.
-  PATCHHIVE_UI_V3_TARBALL          Optional local @patchhivehq/ui-v3 tarball.
   PATCHHIVE_PRODUCT_SHELL_TARBALL  Optional local @patchhivehq/product-shell tarball.
   PATCHHIVE_AI_MODELS_TARBALL      Optional local @patchhivehq/ai-models tarball.
   PATCHHIVE_NPM_CACHE_DIR          Optional npm cache directory. Defaults to /tmp/patchhive-npm-cache.
@@ -28,7 +27,6 @@ EOF
 
 PRODUCT_NAME=""
 UI_TARBALL="${PATCHHIVE_UI_TARBALL:-}"
-UI_V3_TARBALL="${PATCHHIVE_UI_V3_TARBALL:-}"
 PRODUCT_SHELL_TARBALL="${PATCHHIVE_PRODUCT_SHELL_TARBALL:-}"
 AI_MODELS_TARBALL="${PATCHHIVE_AI_MODELS_TARBALL:-}"
 KEEP_WORKTREE=false
@@ -41,10 +39,6 @@ while [[ $# -gt 0 ]]; do
       ;;
     --ui-tarball)
       UI_TARBALL="${2:-}"
-      shift 2
-      ;;
-    --ui-v3-tarball)
-      UI_V3_TARBALL="${2:-}"
       shift 2
       ;;
     --product-shell-tarball)
@@ -99,11 +93,6 @@ if [[ -n "$PRODUCT_SHELL_TARBALL" && ! -f "$PRODUCT_SHELL_TARBALL" ]]; then
   exit 1
 fi
 
-if [[ -n "$UI_V3_TARBALL" && ! -f "$UI_V3_TARBALL" ]]; then
-  echo "Specialist UI tarball not found: $UI_V3_TARBALL" >&2
-  exit 1
-fi
-
 if [[ -n "$AI_MODELS_TARBALL" && ! -f "$AI_MODELS_TARBALL" ]]; then
   echo "AI models tarball not found: $AI_MODELS_TARBALL" >&2
   exit 1
@@ -126,16 +115,13 @@ rsync -a \
   --exclude .vite \
   "$FRONTEND_DIR/" "$WORK_DIR/"
 
-node - "$WORK_DIR/package.json" "$UI_TARBALL" "$UI_V3_TARBALL" "$PRODUCT_SHELL_TARBALL" "$AI_MODELS_TARBALL" <<'NODE'
+node - "$WORK_DIR/package.json" "$UI_TARBALL" "$PRODUCT_SHELL_TARBALL" "$AI_MODELS_TARBALL" <<'NODE'
 const fs = require("fs");
-const [pkgPath, uiTarball, uiV3Tarball, productShellTarball, aiModelsTarball] = process.argv.slice(2);
+const [pkgPath, uiTarball, productShellTarball, aiModelsTarball] = process.argv.slice(2);
 const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
 pkg.dependencies ||= {};
 if (uiTarball) {
   pkg.dependencies["@patchhivehq/ui"] = `file:${uiTarball}`;
-}
-if (uiV3Tarball) {
-  pkg.dependencies["@patchhivehq/ui-v3"] = `file:${uiV3Tarball}`;
 }
 if (productShellTarball) {
   pkg.dependencies["@patchhivehq/product-shell"] = `file:${productShellTarball}`;

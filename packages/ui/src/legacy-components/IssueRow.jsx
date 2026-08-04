@@ -1,4 +1,5 @@
-import { ScoreBadge, ConfidenceBar, Tag, STATUS_LABELS, ROLE_META, timeAgo } from "../index.js";
+import { ROLE_META, STATUS_LABELS } from "../legacy-theme.js";
+import { ConfidenceBar, ScoreBadge, Tag, timeAgo } from "../legacy-primitives.jsx";
 
 const STATUS_COLOR = {
   queued:   "#484868",

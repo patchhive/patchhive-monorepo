@@ -15,7 +15,7 @@ import {
   countLabel,
   describeScheduleExecution,
   readJson,
-} from "@patchhivehq/ui-v3";
+} from "@patchhivehq/ui";
 
 const CADENCES = [{ value: "6", label: "Every 6 hours" }, { value: "12", label: "Every 12 hours" }, { value: "24", label: "Daily" }, { value: "72", label: "Every 3 days" }, { value: "168", label: "Weekly" }];
 const TARGET_MODES = [{ value: "direct", label: "Target repo" }, { value: "discovery", label: "Autonomous discovery" }];

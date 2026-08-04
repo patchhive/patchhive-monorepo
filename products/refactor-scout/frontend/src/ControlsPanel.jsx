@@ -22,7 +22,7 @@ import {
   countLabel,
   describeScheduleExecution,
   readJson,
-} from "@patchhivehq/ui-v3";
+} from "@patchhivehq/ui";
 
 const CADENCES = [
   { value: "1", label: "Hourly" },

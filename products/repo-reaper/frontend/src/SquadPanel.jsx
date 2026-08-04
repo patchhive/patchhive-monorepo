@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Bot, LoaderCircle, Save, Sparkles, Trash2, Users } from "lucide-react";
 import { useProviderModelDiscovery } from "@patchhivehq/ai-models/model-discovery";
-import { GuidanceNotice, ProgressiveList, V3_TEXT } from "@patchhivehq/ui-v3";
+import { GuidanceNotice, ProgressiveList, V3_TEXT } from "@patchhivehq/ui";
 import { Chip, readResponse, roleLabel, statusLabel, statusTone } from "./shared.jsx";
 
 const ROLES = ["scout", "judge", "reaper", "smith", "gatekeeper"];

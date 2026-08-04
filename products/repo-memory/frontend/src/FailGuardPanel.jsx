@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { ArchiveX, CheckCircle2, ShieldAlert, Sparkles } from "lucide-react";
-import { DashboardControls, GuidanceNotice, ProgressiveList, V3_TEXT, useSavedDashboardViews } from "@patchhivehq/ui-v3";
+import { DashboardControls, GuidanceNotice, ProgressiveList, V3_TEXT, useSavedDashboardViews } from "@patchhivehq/ui";
 
 const EMPTY_CANDIDATE = { repo: "", source_type: "operator", source_ref: "", title: "", outcome: "", lesson: "", prevention: "", affected_paths: "", evidence: "" };
 const EMPTY_LESSON = { repo: "", title: "", outcome: "", lesson: "", prevention: "", affected_paths: "", evidence: "", disposition: "policy", pinned: true };

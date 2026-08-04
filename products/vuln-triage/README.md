@@ -66,7 +66,7 @@ npm --prefix products/vuln-triage/frontend run dev
 
 The standalone backend is a thin launcher around the same product module.
 
-> **UI:** The canonical specialist UI lives in `frontend/`, uses `@patchhivehq/ui-v3`, and is the default Docker frontend.
+> **UI:** The canonical specialist UI lives in `frontend/`, uses `@patchhivehq/ui`, and is the default Docker frontend.
 
 ## Configuration
 

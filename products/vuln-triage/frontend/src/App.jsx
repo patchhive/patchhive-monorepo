@@ -33,7 +33,7 @@ import {
   ThemeToggle,
   V3_TEXT,
   useSavedDashboardViews,
-} from "@patchhivehq/ui-v3";
+} from "@patchhivehq/ui";
 import { API } from "./config.js";
 
 const TABS = [

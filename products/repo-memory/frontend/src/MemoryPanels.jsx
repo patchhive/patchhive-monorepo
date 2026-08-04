@@ -7,7 +7,7 @@ import {
   ProgressiveList,
   V3_TEXT,
   useSavedDashboardViews,
-} from "@patchhivehq/ui-v3";
+} from "@patchhivehq/ui";
 
 async function readJson(response, fallback) {
   const data = await response.json().catch(() => ({}));

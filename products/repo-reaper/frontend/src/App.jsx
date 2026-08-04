@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Skull } from "lucide-react";
 import { createApiFetcher, useApiKeyAuth } from "@patchhivehq/product-shell/auth";
-import { ProductHeader, ProductLoginScreen, ProductShell, V3_TEXT } from "@patchhivehq/ui-v3";
+import { ProductHeader, ProductLoginScreen, ProductShell, V3_TEXT } from "@patchhivehq/ui";
 import { API } from "./config.js";
 import ChecksPanel from "./ChecksPanel.jsx";
 import ControlsPanel from "./ControlsPanel.jsx";

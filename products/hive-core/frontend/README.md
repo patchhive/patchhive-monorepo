@@ -17,7 +17,7 @@ npm run build        # vite build (generates routeTree.gen.ts) then tsc --noEmit
 
 **This is not a specialist product UI.** HiveCore is a control plane, not a
 specialist product, so it keeps a distinct cockpit architecture (AGENTS.md). It
-does not use `@patchhivehq/ui-v3`, keeps its own honey/amber visual language, and is
+does not use `@patchhivehq/ui`, keeps its own honey/amber visual language, and is
 dark-only rather than following the suite-wide `patchhive.theme` preference.
 
 **SPA, not TanStack Start.** The export shipped SSR with `createServerFn`. HiveCore is

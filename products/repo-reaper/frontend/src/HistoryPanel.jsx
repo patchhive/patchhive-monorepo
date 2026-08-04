@@ -7,7 +7,7 @@ import {
   ProgressiveList,
   V3_TEXT,
   useSavedDashboardViews,
-} from "@patchhivehq/ui-v3";
+} from "@patchhivehq/ui";
 import { Chip, Fact, formatDate, money, reasonLabel, statusLabel, statusTone } from "./shared.jsx";
 import ScoutReport, { scoutReportMarkdown } from "./ScoutReport.jsx";
 

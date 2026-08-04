@@ -360,7 +360,6 @@ process.stdout.write(run ? String(run.databaseId) : "");
 smoke_product_frontend() {
   local product="$1"
   local ui_tarball="${PACKAGE_TARBALLS[ui]:-}"
-  local ui_v3_tarball="${PACKAGE_TARBALLS[ui-v3]:-}"
   local shell_tarball="${PACKAGE_TARBALLS[product-shell]:-}"
   local ai_models_tarball="${PACKAGE_TARBALLS[ai-models]:-}"
 
@@ -376,7 +375,6 @@ smoke_product_frontend() {
 
   run_env \
     PATCHHIVE_UI_TARBALL="$ui_tarball" \
-    PATCHHIVE_UI_V3_TARBALL="$ui_v3_tarball" \
     PATCHHIVE_PRODUCT_SHELL_TARBALL="$shell_tarball" \
     PATCHHIVE_AI_MODELS_TARBALL="$ai_models_tarball" \
     "$ROOT_DIR/scripts/smoke-frontend-package-deps.sh" "$product"

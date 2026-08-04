@@ -54,7 +54,6 @@ const path = require("path");
 const [sourceRoot, exportRoot, productName] = process.argv.slice(2);
 const packageMap = {
   "@patchhivehq/ui": "ui",
-  "@patchhivehq/ui-v3": "ui-v3",
   "@patchhivehq/product-shell": "product-shell",
   "@patchhivehq/ai-models": "ai-models",
 };

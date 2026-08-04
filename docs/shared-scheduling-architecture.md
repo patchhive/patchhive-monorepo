@@ -46,7 +46,7 @@ DELETE /schedules/:name
 POST   /schedules/:name/run
 ```
 
-`@patchhivehq/ui-v3` provides `ProductScheduleManager` for the corresponding
+`@patchhivehq/ui` provides `ProductScheduleManager` for the corresponding
 operator surface: save current inputs, load them, pause or enable the schedule,
 run now, inspect the next/last run, and delete it.
 

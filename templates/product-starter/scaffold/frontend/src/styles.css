@@ -1,5 +1,5 @@
 @import "tailwindcss";
-@import "@patchhivehq/ui-v3/styles.css";
+@import "@patchhivehq/ui/styles.css";
 @source "./";
-@source "__MONOREPO_PREFIX__/packages/ui-v3/src";
+@source "__MONOREPO_PREFIX__/packages/ui/src";
 @custom-variant dark (&:is(.dark, .dark *));

@@ -15,6 +15,10 @@ fail() {
   failures=$((failures + 1))
 }
 
+if [[ -e "$ROOT_DIR/packages/ui-v3" ]]; then
+  fail "packages/ui-v3 must not be restored; packages/ui is the canonical shared UI package"
+fi
+
 require_file() {
   local path="$1"
   [[ -f "$path" ]] || fail "missing file: $path"
@@ -56,14 +60,13 @@ check_frontend_dependencies() {
   local label="$2"
   local expected_ui="^$(patchhive_version_from_package_json "$ROOT_DIR/packages/ui/package.json")"
   local expected_shell="^$(patchhive_version_from_package_json "$ROOT_DIR/packages/product-shell/package.json")"
-  local actual_ui actual_ui_v3 actual_shell
+  local actual_ui actual_shell
 
   actual_ui="$(json_field "$package_json" "dependencies.@patchhivehq/ui")"
-  actual_ui_v3="$(json_field "$package_json" "dependencies.@patchhivehq/ui-v3")"
   actual_shell="$(json_field "$package_json" "dependencies.@patchhivehq/product-shell")"
 
-  if [[ -n "$actual_ui_v3" ]]; then
-    [[ -n "$actual_shell" ]] || fail "$label uses @patchhivehq/ui-v3 but is missing @patchhivehq/product-shell"
+  if [[ "$actual_ui" == file:* ]]; then
+    [[ -n "$actual_shell" ]] || fail "$label uses @patchhivehq/ui but is missing @patchhivehq/product-shell"
     return
   fi
 
@@ -73,7 +76,7 @@ check_frontend_dependencies() {
 
 check_specialist_theme_inventory() {
   local output
-  output="$(node - "$ROOT_DIR/packages/ui-v3/src/styles.css" "${PATCHHIVE_PRODUCTS[@]}" <<'NODE'
+  output="$(node - "$ROOT_DIR/packages/ui/src/styles.css" "${PATCHHIVE_PRODUCTS[@]}" <<'NODE'
 const fs = require("fs");
 const [stylesPath, ...allProducts] = process.argv.slice(2);
 const products = allProducts.filter((product) => product !== "hive-core");
@@ -152,9 +155,9 @@ check_product() {
   done
 
   if [[ "$product" != "hive-core" ]]; then
-    require_contains "packages/ui-v3/src/index.jsx" "\"${product}\":" "specialist brand ${product}"
-    require_contains "packages/ui-v3/src/styles.css" "html[data-product=\"${product}\"]" "specialist accent ${product}"
-    require_contains "$frontend_dir/package.json" '"@patchhivehq/ui-v3"' "canonical specialist UI dependency"
+    require_contains "packages/ui/src/index.jsx" "\"${product}\":" "specialist brand ${product}"
+    require_contains "packages/ui/src/styles.css" "html[data-product=\"${product}\"]" "specialist accent ${product}"
+    require_contains "$frontend_dir/package.json" '"@patchhivehq/ui"' "canonical specialist UI dependency"
     if command -v rg >/dev/null 2>&1; then
       if ! rg -q "productKey[=:][[:space:]]*[\"']${product}[\"']" "$frontend_dir/src"; then
         fail "$product frontend does not declare productKey ${product}"
@@ -185,9 +188,9 @@ check_template() {
   require_file "$template/.github/workflows/ci.yml"
   check_frontend_dependencies "$template/frontend/package.json" "product-starter scaffold"
   require_contains "$template/frontend/src/App.jsx" "ProductShell" "template specialist shell"
-  require_contains "$template/frontend/src/App.jsx" "ProductLoginScreen" "template v3 login screen"
-  require_contains "$template/frontend/package.json" '"@patchhivehq/ui-v3"' "template specialist UI dependency"
-  require_contains "$template/frontend/package.json" '__MONOREPO_PREFIX__/packages/ui-v3' "generated shared-package path placeholder"
+  require_contains "$template/frontend/src/App.jsx" "ProductLoginScreen" "template canonical login screen"
+  require_contains "$template/frontend/package.json" '"@patchhivehq/ui"' "template specialist UI dependency"
+  require_contains "$template/frontend/package.json" '__MONOREPO_PREFIX__/packages/ui' "generated shared-package path placeholder"
   require_contains "$template/backend/Cargo.toml" '__MONOREPO_PREFIX__/crates/patchhive-product-core' "generated shared-core path placeholder"
   require_contains "$template/docker-compose.yml" 'dockerfile: products/__PRODUCT_SLUG__/frontend/Dockerfile' "root-context frontend build"
   require_file "$template/backend/src/lib.rs"

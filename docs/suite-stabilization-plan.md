@@ -15,7 +15,7 @@ specialist cleanup work.
 - Require every specialist backend to expose a reusable `init_runtime()` and
   `router()`; standalone `main.rs` files stay thin launchers over that engine.
 - Require every specialist frontend at its canonical `frontend/` path to use
-  `@patchhivehq/ui-v3` and `@patchhivehq/product-shell`.
+  `@patchhivehq/ui` and `@patchhivehq/product-shell`.
 - Reject new `frontend-v2`, `frontend-v3`, and `frontend-legacy` specialist
   trees in suite drift checks.
 - Keep one root `.env` and one `PATCHHIVE_DB_PATH`; product-local env files and

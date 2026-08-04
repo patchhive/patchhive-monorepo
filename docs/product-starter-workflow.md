@@ -72,7 +72,7 @@ Do these early:
 
 1. Replace all starter copy and placeholder routes with the real product loop.
 2. Adjust startup checks so they reflect the product's real dependencies.
-3. Add the product brand and accent tokens to `packages/ui-v3/`.
+3. Add the product brand and accent tokens to `packages/ui/`.
 4. Add a product manifest under
    `services/patchhive-backend/registry/products/` and mount the engine.
 5. Add the product to `scripts/suite-common.sh`, root `.env.example`, and the

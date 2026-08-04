@@ -1,7 +1,7 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
 COPY packages/product-shell ./packages/product-shell
-COPY packages/ui-v3 ./packages/ui-v3
+COPY packages/ui ./packages/ui
 COPY products/flake-sting/frontend ./products/flake-sting/frontend
 WORKDIR /app/products/flake-sting/frontend
 ARG VITE_API_URL=http://127.0.0.1:8100/api/products/flake-sting

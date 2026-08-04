@@ -16,7 +16,7 @@ import {
   ProductShell,
   ScanWarnings,
   V3_TEXT,
-} from "@patchhivehq/ui-v3";
+} from "@patchhivehq/ui";
 import { API } from "./config.js";
 
 const CHIP_TONES = {

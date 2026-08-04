@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { BookOpenCheck, FileText, Save, ShieldCheck, Trash2 } from "lucide-react";
-import { V3_TEXT } from "@patchhivehq/ui-v3";
+import { V3_TEXT } from "@patchhivehq/ui";
 
 const DEFAULT_RULES = {
   repo: "",

@@ -214,7 +214,7 @@ echo "Created $TARGET_DIR"
 echo
 echo "Next steps:"
 echo "  1. Replace starter copy and routes with the real product workflow immediately."
-echo "  2. Add the product brand to packages/ui-v3/src/index.jsx and its accent tokens to packages/ui-v3/src/styles.css."
+echo "  2. Add the product brand to packages/ui/src/index.jsx and its accent tokens to packages/ui/src/styles.css."
 echo "  3. Add a declarative manifest in services/patchhive-backend/registry/products/$SLUG.toml."
 echo "  4. Mount init_runtime() and router() in services/patchhive-backend without duplicating product behavior."
 echo "  5. Add the product to scripts/suite-common.sh, root .env.example, and canonical docs."

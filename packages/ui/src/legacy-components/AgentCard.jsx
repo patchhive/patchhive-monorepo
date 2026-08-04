@@ -1,4 +1,5 @@
-import { ROLE_META, PROVIDERS, StatusDot, Tag, ConfidenceBar } from "../index.js";
+import { PROVIDERS, ROLE_META } from "../legacy-theme.js";
+import { ConfidenceBar, StatusDot, Tag } from "../legacy-primitives.jsx";
 
 export default function AgentCard({ agent, onRemove, compact=false }) {
   const role = ROLE_META[agent.role] || { label: agent.role, icon: "◎", color: "#888" };

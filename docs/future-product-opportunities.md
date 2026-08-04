@@ -342,8 +342,8 @@ The dependency and security workflow should preserve explicit handoffs:
    evidence after the more central automation pipeline is mature.
 
 These priorities describe product value, not immediate implementation order.
-Per the UI v3 and unified-backend migration rules, the current integrated
-product set should reach parity before another engine or frontend is started.
+The canonical UI and unified backend now cover the integrated product set.
+Future products should begin on those steady-state foundations.
 
 ## Naming Status
 

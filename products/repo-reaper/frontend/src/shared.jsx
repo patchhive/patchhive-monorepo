@@ -1,4 +1,4 @@
-import { V3_TEXT } from "@patchhivehq/ui-v3";
+import { V3_TEXT } from "@patchhivehq/ui";
 
 export const DEFAULT_PARAMS = {
   target_repo: "",

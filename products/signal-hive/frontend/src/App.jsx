@@ -11,7 +11,7 @@ import {
   ScanWarnings,
   V3_TEXT,
   countLabel,
-} from "@patchhivehq/ui-v3";
+} from "@patchhivehq/ui";
 import ControlsPanel from "./ControlsPanel.jsx";
 import { API } from "./config.js";
 import { downloadDashboardSnapshot } from "./snapshot.js";

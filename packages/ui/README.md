@@ -1,35 +1,20 @@
 # @patchhivehq/ui
 
-`@patchhivehq/ui` is PatchHive's control-plane and compatibility React package.
-Canonical specialist products use `@patchhivehq/ui-v3`.
+`@patchhivehq/ui` is the canonical shared React interface for PatchHive.
 
-It preserves the primitives still used by HiveCore, product-shell compatibility
-components, and ai-models. Do not add new specialist product surfaces here.
+It contains the specialist product shell, theme, diagnostics, controls,
+history, scheduling, and workspace primitives used by all eleven specialist
+products. A small set of earlier primitives remains exported for the published
+`@patchhivehq/product-shell` and `@patchhivehq/ai-models` APIs; those exports are
+compatibility support, not a second visual system.
 
-## What It Includes
+Import the package and its shared stylesheet:
 
-- theme helpers such as `applyTheme` and product theme maps
-- layout primitives such as buttons, inputs, tabs, dividers, and empty states
-- shared product chrome such as headers, footers, and status badges
-- reusable product components such as `AgentCard`, `DiffViewer`, `IssueRow`, `LoginPage`, and `PanelErrorBoundary`
-
-## Example
-
-```js
-import {
-  applyTheme,
-  Btn,
-  Input,
-  PatchHiveHeader,
-  PatchHiveFooter,
-  PanelErrorBoundary,
-  TabBar,
-  LoginPage,
-} from "@patchhivehq/ui";
+```jsx
+import { ProductHeader, ProductShell, Surface } from "@patchhivehq/ui";
+import "@patchhivehq/ui/styles.css";
 ```
 
-## Publishing Model
-
-`@patchhivehq/ui` is published to the public npm registry so its remaining standalone consumers can install it without private package registry auth.
-
-The monorepo is the source of truth for development and releases. The standalone `patchhive/patchhive-ui` repository is a mirror for visibility, package-level CI, and external consumption.
+The package is published from the monorepo to the public npm registry so
+standalone PatchHive product repositories can install it without private
+registry authentication.

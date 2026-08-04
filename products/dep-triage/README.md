@@ -3,7 +3,7 @@
 DepTriage is PatchHive's dependency-noise filter. It reads open dependency pull
 requests, optionally folds in Dependabot alerts, groups that activity by package,
 and turns the result into a ranked queue — `update now`, `watch`, or `ignore for
-now`. The canonical Lovable-derived v3 frontend lives in `frontend/` and targets
+now`. The canonical Lovable-derived frontend lives in `frontend/` and targets
 the in-process unified-backend route at `/api/products/dep-triage`.
 
 ## Documentation

@@ -35,8 +35,7 @@ products/<slug>/
   frontend/         canonical specialist frontend
   docker-compose.yml, README.md, data/
 packages/
-  ui/               @patchhivehq/ui        control-plane/shared compatibility primitives
-  ui-v3/            @patchhivehq/ui-v3     specialist shell/controls/workspace
+  ui/               @patchhivehq/ui        canonical shared product interface
   product-shell/    @patchhivehq/product-shell   auth bootstrap, session gate, app frame
   ai-models/        @patchhivehq/ai-models       provider catalog + model selector
   ai-local/         @patchhive/ai-local          localhost OpenAI-compatible gateway (+ rust-gateway)
@@ -50,7 +49,7 @@ services/
   patchhive-launcher/  localhost-only host-control daemon (Docker/.env mutation for HiveCore)
   patchhive-registry/  opt-in registry for sanitized public suite snapshots
 templates/product-starter/scaffold/   source for ./scripts/new-product.sh
-unified-ui-revamp-main/               Lovable project — executable design source for UI v3
+unified-ui-revamp-main/               Lovable project — executable design source for the canonical UI
 docs/                                 start at docs/DOCUMENTATION_MAP.md
 scripts/                              export, mirror, release, drift, lockfile tooling
 ```
@@ -84,9 +83,9 @@ Ports are authoritative in [scripts/suite-common.sh](scripts/suite-common.sh); R
 `docs/products/<slug>.md`, and `docker-compose.yml` must agree or `check:suite-drift` fails.
 All eleven specialist products and HiveCore are mounted in-process inside
 `patchhive-backend`. HiveCore remains the distinct control-plane product, with its
-canonical cockpit in `products/hive-core/frontend/`. Its v3 parity audit passed and
+canonical cockpit in `products/hive-core/frontend/`. Its final parity audit passed and
 the obsolete versioned frontend trees were removed on 2026-08-03.
-HiveCore v3 keeps the operator API key in memory only and deliberately requires a
+The HiveCore cockpit keeps the operator API key in memory only and deliberately requires a
 fresh login after reload. Never restore Web Storage or cookie persistence for it;
 retain best-effort cleanup of keys left by earlier builds.
 
@@ -307,7 +306,7 @@ export const API = import.meta.env.VITE_API_URL || "http://localhost:8000";
   `ProductSessionGate`, `ProductAppFrame`, `ProductSetupWizard`. The shell owns the API key;
   panels receive the resolved key or fetcher as props and must not read `localStorage`
   themselves.
-- **`@patchhivehq/ui-v3`** — `ProductShell`, `ProductHeader`, `ThemeToggle`, `Surface`,
+- **`@patchhivehq/ui`** — `ProductShell`, `ProductHeader`, `ThemeToggle`, `Surface`,
   `MetricCard`, `V3_TEXT`, `PATCHHIVE_THEME_KEY`, `PATCHHIVE_THEME_BOOTSTRAP`,
   `usePatchHiveTheme`; `IntegratedProductApp`, `ProductLoginScreen`, `PriorityHighlights`,
   `countLabel`, `readJson`; `ActivityTimeline`, `CopyMarkdownButton`, `DashboardControls`,
@@ -316,13 +315,11 @@ export const API = import.meta.env.VITE_API_URL || "http://localhost:8000";
   Controls surface — `ProductControlsLayout`, `ProductControlsPair`, `ProductControlSection`,
   `ProductTargetScopeSection`, `ProductControlsSafetyBoundary`, `ControlField`,
   `ControlSelectField`, `ControlButton`, `ControlPanelTitle`.
-- **`@patchhivehq/ui`** — compatibility and control-plane primitives still used
-  outside the specialist shell. Do not remove it until those consumers move.
 - **`@patchhivehq/ai-models`** — `AIModelSelector` + provider catalog. Backends expose
   `GET/POST /models/:provider`. Browser code never calls a third-party AI provider directly;
   it may pass a user-entered key to the local product backend for one-time model discovery.
 
-`IntegratedProductApp({apiBase, auth, config, fetcher})` is the standard v3 read-only
+`IntegratedProductApp({apiBase, auth, config, fetcher})` is the standard specialist read-only
 product app: it builds the `workspace | history | [extra tabs] | checks | sources` tab set,
 persists tab/repo/dashboard state under `<productKey>.v3.*`, and polls `/health`,
 `/startup/checks`, `/overview`, `/history`. Products supply `config` (icon, labels,
@@ -479,7 +476,7 @@ Key env: `REPO_REAPER_GITHUB_TOKEN_RW`, `BOT_GITHUB_USER`, `BOT_GITHUB_EMAIL`,
 `REAPER_TEST_TIMEOUT_SECONDS`, `WEBHOOK_SECRET`, `REAPER_DB_PATH`, `REAPER_WORK_DIR`
 (default `/tmp/repo-reaper`).
 
-RepoReaper's canonical v3 Squad covers the legacy team and preset workflows. HiveCore-driven
+RepoReaper's canonical Squad covers the legacy team and preset workflows. HiveCore-driven
 setup must continue to preserve the product-owned write credential, scoped approval gates,
 and validation requirements.
 

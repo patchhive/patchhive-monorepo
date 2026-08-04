@@ -4,8 +4,8 @@ PatchHive's eleven specialist products use one canonical frontend location and
 one shared visual system:
 
 - product applications live in `products/<product>/frontend/`;
-- shared specialist components live in `packages/ui-v3/` and are published as
-  `@patchhivehq/ui-v3`;
+- shared specialist components live in `packages/ui/` and are published as
+  `@patchhivehq/ui`;
 - authentication and browser API helpers live in `packages/product-shell/`;
 - product APIs are served in-process by `services/patchhive-backend` under
   `/api/products/<product>`.

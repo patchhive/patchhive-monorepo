@@ -4,14 +4,14 @@
 
 It holds cross-product API-key bootstrap, session handling, authenticated fetch
 helpers, and compatibility frames. Canonical specialist visual structure lives
-in `@patchhivehq/ui-v3`.
+in `@patchhivehq/ui`.
 
 ## What It Includes
 
 - `useApiKeyAuth` for shared API-key bootstrap and session handling
 - `createApiFetcher` for authenticated requests to product backends
 - compatibility `ProductSessionGate`, `ProductAppFrame`, and
-  `ProductSetupWizard` components for remaining non-v3 consumers
+  `ProductSetupWizard` components for compatibility consumers
 
 ## Example
 

@@ -36,7 +36,7 @@ cd ../frontend && npm install && npm run dev
 
 ## Local Notes
 
-- The frontend uses `@patchhivehq/ui-v3` and `@patchhivehq/product-shell`.
+- The frontend uses `@patchhivehq/ui` and `@patchhivehq/product-shell`.
 - The backend uses `PATCHHIVE_DB_PATH` in suite mode and
   `__ENV_PREFIX___DB_PATH` as a standalone compatibility override.
 - Register and mount the engine in `services/patchhive-backend` before treating

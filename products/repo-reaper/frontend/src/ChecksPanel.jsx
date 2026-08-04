@@ -1,5 +1,5 @@
 import { Bot, Cpu, Database, GitBranch, ShieldCheck } from "lucide-react";
-import { GitHubPermissionGuidance, GuidanceNotice, StartupCheckList, V3_TEXT } from "@patchhivehq/ui-v3";
+import { GitHubPermissionGuidance, GuidanceNotice, StartupCheckList, V3_TEXT } from "@patchhivehq/ui";
 import { Chip, Fact, money } from "./shared.jsx";
 
 export default function ChecksPanel({ checks, config, health, onRefresh }) {

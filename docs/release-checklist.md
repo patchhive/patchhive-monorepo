@@ -74,7 +74,7 @@ npm run version:ui -- patch
 
 2. Review the changed files:
 
-- `packages/ui/package.json` or `packages/ui-v3/package.json`
+- `packages/ui/package.json`
 - `package-lock.json`
 - any dependents updated to the new `^version`
 

@@ -20,7 +20,6 @@ PATCHHIVE_PRODUCTS=(
 
 PATCHHIVE_SHARED_PACKAGES=(
   ui
-  ui-v3
   product-shell
   ai-models
 )
@@ -106,28 +105,24 @@ declare -gA PATCHHIVE_PRODUCT_BACKEND_PORTS=(
 
 declare -gA PATCHHIVE_PACKAGE_REMOTES=(
   [ui]="patchhive-ui"
-  [ui-v3]="ui-v3"
   [product-shell]="product-shell"
   [ai-models]="ai-models"
 )
 
 declare -gA PATCHHIVE_PACKAGE_REPOS=(
   [ui]="patchhive/patchhive-ui"
-  [ui-v3]="patchhive/ui-v3"
   [product-shell]="patchhive/product-shell"
   [ai-models]="patchhive/ai-models"
 )
 
 declare -gA PATCHHIVE_PACKAGE_NPM_NAMES=(
   [ui]="@patchhivehq/ui"
-  [ui-v3]="@patchhivehq/ui-v3"
   [product-shell]="@patchhivehq/product-shell"
   [ai-models]="@patchhivehq/ai-models"
 )
 
 declare -gA PATCHHIVE_PACKAGE_PUBLISH_WORKFLOWS=(
   [ui]="publish-ui-package.yml"
-  [ui-v3]="publish-ui-v3-package.yml"
   [product-shell]="publish-product-shell-package.yml"
   [ai-models]="publish-ai-models-package.yml"
 )

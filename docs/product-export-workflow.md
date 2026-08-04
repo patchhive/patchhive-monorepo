@@ -32,12 +32,11 @@ That is intentional.
 Standalone product repositories should:
 
 - depend on published shared packages such as `@patchhivehq/ui`
-- depend on published shared packages such as `@patchhivehq/ui-v3`
 - depend on published shared packages such as `@patchhivehq/product-shell`
 - use shared service contracts for things like `PATCHHIVE_AI_URL`
 - avoid local `file:` dependencies back into the monorepo
 
-`@patchhivehq/ui` and `@patchhivehq/ui-v3` publish to the public npm registry so standalone control-plane and specialist products can install the correct shared interface without package-registry authentication.
+`@patchhivehq/ui` publishes to the public npm registry so standalone products can install the canonical shared interface without package-registry authentication.
 `@patchhivehq/product-shell` follows the same pattern.
 
 That means:

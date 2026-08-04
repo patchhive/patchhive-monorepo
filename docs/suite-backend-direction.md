@@ -120,7 +120,7 @@ checklist and does not authorize changes to HiveCore.
 - `scripts/check-rust-packages.sh` verifies the registered Rust package set.
 - Registry tests validate route ownership and product enablement.
 - Shared frontend dependency smoke tests ensure specialist consumers resolve
-  `ui-v3` and product-shell consistently.
+  `ui` and product-shell consistently.
 - Export checks prove standalone mirrors can be regenerated without hand edits.
 
 The steady-state rule is simple: one specialist runtime, many honest product

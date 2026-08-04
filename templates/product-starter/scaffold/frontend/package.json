@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@patchhivehq/product-shell": "file:__MONOREPO_PREFIX__/packages/product-shell",
-    "@patchhivehq/ui-v3": "file:__MONOREPO_PREFIX__/packages/ui-v3",
+    "@patchhivehq/ui": "file:__MONOREPO_PREFIX__/packages/ui",
     "lucide-react": "^0.575.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"

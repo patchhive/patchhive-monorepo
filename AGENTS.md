@@ -73,8 +73,7 @@ RepoReaper was built first because it descended from Jeremy's earlier GitFix exp
 ```text
 patchhive/
   packages/
-    ui/                     @patchhivehq/ui shared React component library
-    ui-v3/                  @patchhivehq/ui-v3 Lovable-derived specialist product UI
+    ui/                     @patchhivehq/ui canonical shared product UI
     product-shell/          @patchhivehq/product-shell shared frontend shell/auth helpers
     ai-models/              @patchhivehq/ai-models shared AI provider/model selector UX
     ai-local/               @patchhive/ai-local localhost AI gateway
@@ -268,9 +267,9 @@ Backend:
 
 Frontend:
 - React + Vite
-- Existing production and v2 product frontends use JavaScript and shared CSS variables.
-- UI v3 may use Tailwind utility classes where they are part of the canonical Lovable implementation; do not translate them into a different visual system merely to preserve the older no-framework convention.
-- TypeScript is allowed when extracting code directly from the Lovable UI, but product v3 frontends may remain JSX when that preserves the same rendered result with less deployment churn.
+- Specialist product frontends use the canonical shared package and may remain JavaScript where that keeps deployment simple.
+- The canonical specialist UI may use Tailwind utility classes where they are part of the Lovable implementation; do not translate them into a different visual system merely to preserve the older no-framework convention.
+- TypeScript is allowed when extracting code directly from the Lovable UI, but product frontends may remain JSX when that preserves the same rendered result with less deployment churn.
 
 AI provider integration:
 - Direct HTTP via `reqwest`
@@ -331,32 +330,25 @@ Shared platform guidance:
 - When the same Rust backend seam exists in 2 or more products, prefer extracting it into `crates/patchhive-product-core` before starting another product.
 - See [docs/platform-guardrails.md](docs/platform-guardrails.md) and [docs/product-api-contract-v1.md](docs/product-api-contract-v1.md).
 
-## Compatibility UI Package
+## Canonical Shared UI
 
 Location: `packages/ui/`
-
-`@patchhivehq/ui` remains active for control-plane and shared compatibility
-consumers. Specialist products use `@patchhivehq/ui-v3` instead.
-
-Rules:
-- If a component will appear in 2 or more products, put it in `packages/ui/src/components/` and re-export it from `packages/ui/src/index.js`.
-- If a component is product-specific, keep it inside that product.
-- Do not add new specialist product surfaces here.
-
-## Specialist UI
-
-Location: `packages/ui-v3/`
 
 This is the canonical shared interface for PatchHive's eleven specialist
 products. Their production frontends live in `products/<product>/frontend/`
 and their engines are mounted in-process by the unified backend. The specialist
 UI is steady-state architecture, not an active migration track.
 
+The package also retains a small compatibility export surface used by
+`@patchhivehq/product-shell` and `@patchhivehq/ai-models`. Do not build a second
+visual system around those exports. New shared product components belong in
+`packages/ui/src/` and product-specific components stay with their product.
+
 Rules:
 - Use the actual Lovable component structure, theme tokens, typography, spacing, radii, glass surfaces, shadows, backgrounds, and responsive behavior. Do not approximate it from screenshots or replace it with a static mockup.
-- Every specialist product remains an independent frontend, Docker image, API integration, and workflow. Share only the stable visual shell and primitives through `@patchhivehq/ui-v3`.
-- Reuse `@patchhivehq/ui-v3` progressive lists, saved dashboard views, filter/sort controls, and activity timelines across specialist products; products supply their own field and event mappings.
-- Reuse `ProductScheduleManager` from `@patchhivehq/ui-v3` for products that
+- Every specialist product remains an independent frontend, Docker image, API integration, and workflow. Share only the stable visual shell and primitives through `@patchhivehq/ui`.
+- Reuse `@patchhivehq/ui` progressive lists, saved dashboard views, filter/sort controls, and activity timelines across specialist products; products supply their own field and event mappings.
+- Reuse `ProductScheduleManager` from `@patchhivehq/ui` for products that
   expose the shared schedule contract. Products supply the current typed action
   payload and retain ownership of action-specific safety copy and execution.
 - Schedule UIs label the explicit target modes **Target repo** and
@@ -370,10 +362,10 @@ Rules:
   sections honestly rather than rendering placeholders.
 - Build Controls tabs with the shared `ProductControlsLayout`, paired control
   row, control-section/field/button/title primitives, and shared safety boundary
-  from `@patchhivehq/ui-v3`. SignalHive defines the canonical hierarchy and
+  from `@patchhivehq/ui`. SignalHive defines the canonical hierarchy and
   spacing; products supply their own scope fields, copy, and execution behavior
   without visually forking the page.
-- Every product must persist every first-class finding produced inside its configured input scope. Input bounds are valid; post-analysis evidence truncation is not. APIs may paginate complete retained collections, and v3 should progressively render them with show-more, show-all, and collapse controls while filters operate over the complete retained set.
+- Every product must persist every first-class finding produced inside its configured input scope. Input bounds are valid; post-analysis evidence truncation is not. APIs may paginate complete retained collections, and the canonical UI should progressively render them with show-more, show-all, and collapse controls while filters operate over the complete retained set.
 - Show aggregate dashboard KPIs once. Use the shared assessment card for up to three prioritized findings instead of repeating repository, finding, run, and warning totals in multiple surfaces. Read-only products should call this an assessment and explain the factors behind labels such as review priority.
 - Product differences belong in product name/icon, accent colors, copy, tabs, data, forms, actions, and workflow-specific panels.
 - Keep the specialist footer identity as `<Product> by PatchHive`, the product subtitle, and `Autonomous maintenance suite`.
@@ -488,8 +480,8 @@ Rules:
   snapshot and lockfile with
   `./scripts/refresh-product-lockfile.sh <product-slug>`.
 
-Specialist product brand labels live in `packages/ui-v3/src/index.jsx`, and
-their accent tokens live in `packages/ui-v3/src/styles.css`:
+Specialist product brand labels live in `packages/ui/src/index.jsx`, and
+their accent tokens live in `packages/ui/src/styles.css`:
 - `repo-reaper`
 - `signal-hive`
 - `review-bee`
@@ -777,11 +769,11 @@ Important env vars:
 - The canonical HiveCore design is `docs/hivecore-architecture.md`. It defines the four layers
   (Fleet, Kernel, Conductor, Cockpit), records the current implementation's blockers, and owns the
   build order. Read it before changing HiveCore; the notes below remain true but are narrower.
-- `products/hive-core/frontend/` is the canonical HiveCore cockpit. Its v3 parity
+- `products/hive-core/frontend/` is the canonical HiveCore cockpit. Its final parity
   audit passed and the obsolete versioned frontend trees were removed on 2026-08-03.
   Do not recreate `frontend-v2`, `frontend-v3`, or another migration tree; change
   and verify the canonical frontend directly.
-- HiveCore v3 keeps the operator API key in browser memory only. Never persist it in
+- The HiveCore cockpit keeps the operator API key in browser memory only. Never persist it in
   `localStorage`, `sessionStorage`, cookies, or another browser-owned durable store;
   a page reload intentionally requires login again. Retain best-effort deletion of
   keys left in Web Storage by earlier builds while that migration cleanup is useful.

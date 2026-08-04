@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { S, Input, Btn } from "../index.js";
+import { Btn, Input, S } from "../legacy-primitives.jsx";
 
 export default function LoginPage({
   onLogin,

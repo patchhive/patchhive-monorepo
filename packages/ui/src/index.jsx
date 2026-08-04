@@ -5,6 +5,15 @@ import { V3_TEXT } from "./tokens.js";
 
 export { PATCHHIVE_THEME_BOOTSTRAP, PATCHHIVE_THEME_KEY, usePatchHiveTheme } from "./theme.jsx";
 export { V3_TEXT } from "./tokens.js";
+// Compatibility exports for the remaining shared-package consumers. New
+// product surfaces should use the canonical specialist primitives below.
+export * from "./legacy-theme.js";
+export * from "./legacy-primitives.jsx";
+export { default as AgentCard } from "./legacy-components/AgentCard.jsx";
+export { default as DiffViewer } from "./legacy-components/DiffViewer.jsx";
+export { default as IssueRow } from "./legacy-components/IssueRow.jsx";
+export { default as LoginPage } from "./legacy-components/LoginPage.jsx";
+export { default as PanelErrorBoundary } from "./legacy-components/PanelErrorBoundary.jsx";
 
 const PRODUCT_BRANDS = {
   "repo-reaper": { name: "RepoReaper", subtitle: "patch execution cell" },

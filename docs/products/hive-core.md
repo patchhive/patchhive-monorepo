@@ -6,7 +6,7 @@
 
 HiveCore is the PatchHive control plane. It brings standalone PatchHive products into one operational interface for health, launch links, shared defaults, run history, capability visibility, action dispatch, and product handoffs.
 
-`products/hive-core/frontend/` is the sole active HiveCore cockpit. Its v3 parity
+`products/hive-core/frontend/` is the sole active HiveCore cockpit. Its final parity
 audit passed on 2026-08-03, when the obsolete versioned frontend trees and unused
 Lovable-export residue were removed. Future cockpit work changes the canonical
 frontend directly.
@@ -16,7 +16,7 @@ frontend directly.
 | Area | Status |
 |------|--------|
 | Unified-backend HiveCore engine | ✅ Integrated and mounted in process |
-| V3 operator-workflow parity | ✅ Complete |
+| Operator-workflow parity | ✅ Complete |
 | Canonical frontend, CI, Docker, and npm wiring | ✅ Promoted |
 | Obsolete frontend and UI-v2 compatibility code | ✅ Removed |
 | Missing workflows from the former production frontend | **None found** |

@@ -10,7 +10,7 @@ import {
   ProductShell,
   V3_TEXT,
   countLabel,
-} from "@patchhivehq/ui-v3";
+} from "@patchhivehq/ui";
 import FailGuardPanel from "./FailGuardPanel.jsx";
 import { MemoryLibraryPanel, PromptPackPanel } from "./MemoryPanels.jsx";
 import { API } from "./config.js";

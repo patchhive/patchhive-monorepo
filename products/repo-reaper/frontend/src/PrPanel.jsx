@@ -1,5 +1,5 @@
 import { ExternalLink, GitPullRequest, RefreshCw } from "lucide-react";
-import { GuidanceNotice, ProgressiveList, V3_TEXT } from "@patchhivehq/ui-v3";
+import { GuidanceNotice, ProgressiveList, V3_TEXT } from "@patchhivehq/ui";
 import { Chip, formatDate, statusLabel, statusTone } from "./shared.jsx";
 
 export default function PrPanel({ busy, onRefresh, onRefreshPr, prs }) {

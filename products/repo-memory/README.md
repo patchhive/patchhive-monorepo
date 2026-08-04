@@ -90,7 +90,7 @@ cd ../frontend && npm install && npm run dev
 ```
 
 Generate the first local API key from the UI at `http://localhost:5176`. The
-frontend uses `@patchhivehq/ui-v3` and `@patchhivehq/product-shell`. The
+frontend uses `@patchhivehq/ui` and `@patchhivehq/product-shell`. The
 generated prompt pack is meant to be reused as context, not treated as
 infallible policy.
 

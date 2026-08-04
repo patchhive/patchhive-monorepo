@@ -1,7 +1,7 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
 COPY packages/product-shell ./packages/product-shell
-COPY packages/ui-v3 ./packages/ui-v3
+COPY packages/ui ./packages/ui
 COPY products/__PRODUCT_SLUG__/frontend ./products/__PRODUCT_SLUG__/frontend
 WORKDIR /app/products/__PRODUCT_SLUG__/frontend
 ARG VITE_API_URL=/api/products/__PRODUCT_SLUG__

@@ -505,7 +505,7 @@ cargo build --release
 - **No AI provider required**: The MVP loop uses GitHub data plus deterministic extraction heuristics (classification of review sentences, tokenization of issue bodies, path bucketing, frequency counting, confidence scoring).
 - **Auth**: Optional API-key auth with service-token support for HiveCore.
 - **Database**: SQLite via `patchhive_product_core::sqlite` pooled connections.
-- **Frontend**: Uses `@patchhivehq/ui-v3` and `@patchhivehq/product-shell`; the canonical UI lives in `frontend/`.
+- **Frontend**: Uses `@patchhivehq/ui` and `@patchhivehq/product-shell`; the canonical UI lives in `frontend/`.
 
 ## Standalone Repository
 

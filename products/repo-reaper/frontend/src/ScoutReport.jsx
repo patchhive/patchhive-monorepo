@@ -1,5 +1,5 @@
 import { ShieldCheck } from "lucide-react";
-import { V3_TEXT } from "@patchhivehq/ui-v3";
+import { V3_TEXT } from "@patchhivehq/ui";
 import { Chip, normalizeCollection } from "./shared.jsx";
 
 function reportTone(value) {

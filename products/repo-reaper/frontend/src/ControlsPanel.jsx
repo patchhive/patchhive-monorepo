@@ -12,7 +12,7 @@ import {
   ProductControlsSafetyBoundary,
   ProductScheduleManager,
   V3_TEXT,
-} from "@patchhivehq/ui-v3";
+} from "@patchhivehq/ui";
 import { readResponse, serializeRunParams } from "./shared.jsx";
 
 const REPO_LISTS = [

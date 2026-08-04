@@ -29,8 +29,7 @@ Detailed product documentation lives in [docs/products](docs/products/).
 
 | Foundation | Repo | Purpose |
 | --- | --- | --- |
-| `@patchhivehq/ui` | [`patchhive/patchhive-ui`](https://github.com/patchhive/patchhive-ui) | Control-plane and compatibility React primitives. |
-| `@patchhivehq/ui-v3` | [`patchhive/ui-v3`](https://github.com/patchhive/ui-v3) | Canonical shared shell, diagnostics, controls, history, and workspace primitives for specialist products. |
+| `@patchhivehq/ui` | [`patchhive/patchhive-ui`](https://github.com/patchhive/patchhive-ui) | Canonical shared shell, diagnostics, controls, history, scheduling, and compatibility primitives. |
 | `@patchhivehq/product-shell` | [`patchhive/product-shell`](https://github.com/patchhive/product-shell) | Shared frontend auth bootstrap, session handling, and product app framing. |
 | `@patchhivehq/ai-models` | [`patchhive/ai-models`](https://github.com/patchhive/ai-models) | Shared AI provider catalog, model selector UX, and live model discovery contract. |
 | `@patchhive/ai-local` | [`patchhive/patchhive-ai-local`](https://github.com/patchhive/patchhive-ai-local) | Local OpenAI-compatible gateway for Codex, Copilot, and future providers. |
