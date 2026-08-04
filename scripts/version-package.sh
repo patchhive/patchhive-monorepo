@@ -16,7 +16,9 @@ Examples:
 What it updates:
   - packages/<package-dir>/package.json
   - package-lock.json workspace metadata
-  - workspace package.json files that depend on the package name you pass
+  - semver-based workspace dependencies on the package name you pass
+
+Local file:, link:, and workspace: dependencies are intentionally preserved.
 EOF
 }
 
@@ -124,6 +126,13 @@ if (lock.packages[`packages/${packageDir}`]) {
 }
 
 const dependencyKeys = ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"];
+const localDependencyProtocols = ["file:", "link:", "workspace:"];
+
+function shouldUpdateDependencySpec(value) {
+  return typeof value === "string"
+    && !localDependencyProtocols.some((protocol) => value.startsWith(protocol));
+}
+
 const packageJsonFiles = walkPackageJsonFiles(rootDir)
   .filter((filePath) => filePath !== pkgPath);
 
@@ -134,7 +143,7 @@ for (const filePath of packageJsonFiles) {
   let touched = false;
 
   for (const key of dependencyKeys) {
-    if (json[key] && json[key][packageName]) {
+    if (json[key] && shouldUpdateDependencySpec(json[key][packageName])) {
       json[key][packageName] = `^${newVersion}`;
       touched = true;
     }
@@ -151,7 +160,7 @@ for (const filePath of packageJsonFiles) {
 for (const pkgMeta of Object.values(lock.packages)) {
   if (!pkgMeta || typeof pkgMeta !== "object") continue;
   for (const key of dependencyKeys) {
-    if (pkgMeta[key] && pkgMeta[key][packageName]) {
+    if (pkgMeta[key] && shouldUpdateDependencySpec(pkgMeta[key][packageName])) {
       pkgMeta[key][packageName] = `^${newVersion}`;
     }
   }

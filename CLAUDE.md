@@ -508,6 +508,9 @@ and validation requirements.
 - Shared npm package metadata names the monorepo plus `repository.directory` so
   npm provenance matches the GitHub Actions publisher; standalone package repos
   remain mirrors.
+- Release checks compare packed shared-package artifacts to npm `dist.shasum`;
+  a reused version with different bytes must fail and be bumped. Version scripts
+  preserve local dependency protocols.
 - CI: `rust-check.yml` (runs `check-rust-packages.sh`), `suite-drift.yml`, and package
   publish workflows. `cleanup-action-runs.yml` runs daily with narrowly scoped
   `actions: write` permission and deletes workflow runs older than three days.

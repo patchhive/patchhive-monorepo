@@ -293,6 +293,10 @@ Packaging:
   their package path as `repository.directory`. npm provenance validates that
   identity against the publishing workflow; standalone package repositories are
   mirrors, not the signed publication source.
+- Never treat an npm name/version match as proof that the workspace artifact was
+  released. Compare the packed artifact with npm's `dist.shasum` and require a
+  version bump on mismatch. Version scripts must preserve monorepo-local
+  `file:`, `link:`, and `workspace:` dependency protocols.
 
 Shared platform guidance:
 - Product naming should follow

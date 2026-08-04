@@ -234,28 +234,30 @@ npm_package_name() {
   echo "${PATCHHIVE_PACKAGE_NPM_NAMES[$package]}"
 }
 
-wait_for_npm_version() {
+wait_for_npm_package() {
   local npm_name="$1"
   local expected_version="$2"
+  local expected_shasum="$3"
   local deadline=$((SECONDS + 1200))
-  local live_version=""
+  local live_version="" live_shasum=""
 
   if [[ "$DRY_RUN" == true ]]; then
-    echo "[dry-run] Would wait for ${npm_name}@${expected_version} on npm."
+    echo "[dry-run] Would wait for ${npm_name}@${expected_version} with the packed artifact shasum."
     return 0
   fi
 
-  echo "Waiting for ${npm_name}@${expected_version} to resolve from npm..."
+  echo "Waiting for ${npm_name}@${expected_version} to resolve from npm with the expected artifact..."
   while (( SECONDS < deadline )); do
     live_version="$(npm --cache "$NPM_CACHE_DIR" view "${npm_name}@${expected_version}" version 2>/dev/null || true)"
-    if [[ "$live_version" == "$expected_version" ]]; then
-      echo "${npm_name}@${expected_version} is live."
+    live_shasum="$(npm --cache "$NPM_CACHE_DIR" view "${npm_name}@${expected_version}" dist.shasum 2>/dev/null || true)"
+    if [[ "$live_version" == "$expected_version" && "$live_shasum" == "$expected_shasum" ]]; then
+      echo "${npm_name}@${expected_version} is live with the expected artifact."
       return 0
     fi
     sleep 20
   done
 
-  echo "Timed out waiting for ${npm_name}@${expected_version}." >&2
+  echo "Timed out waiting for ${npm_name}@${expected_version} with shasum ${expected_shasum}." >&2
   return 1
 }
 
@@ -277,11 +279,12 @@ pack_package() {
 
 publish_package_if_needed() {
   local package="$1"
-  local npm_name version live_version workflow
+  local npm_name version live_version live_shasum local_shasum workflow tarball
 
   npm_name="$(npm_package_name "$package")"
   version="$(package_version "$package")"
   workflow="${PATCHHIVE_PACKAGE_PUBLISH_WORKFLOWS[$package]}"
+  tarball="${PACKAGE_TARBALLS[$package]:-}"
 
   if [[ "$SKIP_PUBLISH" == true ]]; then
     echo "Skipping publish for ${npm_name}."
@@ -289,18 +292,30 @@ publish_package_if_needed() {
   fi
 
   if [[ "$DRY_RUN" == true ]]; then
-    echo "[dry-run] Would check npm for ${npm_name}@${version}, publish via ${workflow} if missing, then wait for npm."
+    echo "[dry-run] Would compare the packed ${npm_name}@${version} artifact with npm, publish via ${workflow} if missing, then verify the registry shasum."
     return 0
   fi
+
+  if [[ ! -f "$tarball" ]]; then
+    echo "No packed artifact is available for ${npm_name}; refusing to publish or accept a registry version." >&2
+    return 1
+  fi
+  local_shasum="$(sha1sum "$tarball" | awk '{print $1}')"
 
   live_version="$(npm --cache "$NPM_CACHE_DIR" view "${npm_name}@${version}" version 2>/dev/null || true)"
   if [[ "$live_version" == "$version" ]]; then
-    echo "${npm_name}@${version} is already published."
-    return 0
+    live_shasum="$(npm --cache "$NPM_CACHE_DIR" view "${npm_name}@${version}" dist.shasum 2>/dev/null || true)"
+    if [[ "$live_shasum" == "$local_shasum" ]]; then
+      echo "${npm_name}@${version} is already published with the exact packed artifact."
+      return 0
+    fi
+    echo "Version collision: ${npm_name}@${version} exists on npm, but its shasum does not match the packed workspace artifact." >&2
+    echo "Bump the package version before release; npm versions are immutable." >&2
+    return 1
   fi
 
   run gh workflow run "$workflow" --repo patchhive/patchhive-monorepo --ref "$MONOREPO_BRANCH"
-  wait_for_npm_version "$npm_name" "$version"
+  wait_for_npm_package "$npm_name" "$version" "$local_shasum"
 }
 
 sync_package_mirror() {

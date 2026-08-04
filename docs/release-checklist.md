@@ -29,6 +29,12 @@ Shared package `repository.url` values must identify the canonical monorepo and
 use `repository.directory` for their workspace path. npm provenance compares
 that metadata with the publishing workflow and rejects standalone-mirror URLs.
 
+The release runner compares each local packed tarball's SHA-1 with npm's
+`dist.shasum`. A matching version with different content is a release failure,
+not an already-published success; bump the immutable npm version. Package
+versioning preserves monorepo `file:`, `link:`, and `workspace:` dependencies
+instead of rewriting them to registry ranges.
+
 Useful scoped runs:
 
 ```bash
