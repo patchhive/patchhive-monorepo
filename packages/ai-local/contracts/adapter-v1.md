@@ -104,11 +104,21 @@ Response:
   "id": "health_1",
   "result": {
     "ok": true,
-    "adapter": "copilot",
-    "logged_in": true
+    "adapter": "codex",
+    "logged_in": true,
+    "auth": {
+      "status": "authenticated",
+      "mode": "chatgpt_subscription",
+      "managed_by": "codex"
+    }
   }
 }
 ```
+
+Auth `status` is `authenticated`, `not_authenticated`, `failed`, or
+`not_observed`. `logged_in` is compatibility output derived as `true`, `false`,
+or `null`; it is `null` when the probe failed or was not attempted. Adapters do
+not return raw provider output, tokens, refresh material, or credential paths.
 
 ### `list_models`
 

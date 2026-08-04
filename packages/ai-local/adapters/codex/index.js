@@ -1,9 +1,14 @@
 #!/usr/bin/env node
 
-import fs from "node:fs";
-import os from "node:os";
 import readline from "node:readline";
 import { Codex } from "@openai/codex-sdk";
+
+import {
+  codexBootstrapHint,
+  codexClientOptions,
+  legacyLoggedIn,
+  probeCodexAuth,
+} from "./auth.js";
 
 const DEFAULT_MODELS = [
   "gpt-5.4",
@@ -22,11 +27,6 @@ function parseModels(value) {
     .map(item => item.trim())
     .filter(Boolean);
   return parsed.length ? parsed : DEFAULT_MODELS;
-}
-
-function codexLoginPresent() {
-  const authPath = `${os.homedir()}/.codex/auth.json`;
-  return fs.existsSync(authPath);
 }
 
 function toPositiveInt(value, fallback) {
@@ -83,7 +83,7 @@ function failure(id, code, message, retryable = false) {
 }
 
 const models = parseModels(process.env.PATCHHIVE_AI_CODEX_MODELS);
-const client = new Codex();
+const client = new Codex(codexClientOptions());
 
 async function runCompletion(params = {}) {
   const model = String(params.model || process.env.PATCHHIVE_AI_CODEX_MODEL || models[0]);
@@ -147,11 +147,14 @@ for await (const line of rl) {
   }
 
   if (method === "health") {
+    const auth = await probeCodexAuth();
     process.stdout.write(`${success(id, {
-      ok: true,
+      ok: auth.status === "authenticated",
       adapter: "codex",
-      logged_in: codexLoginPresent(),
+      logged_in: legacyLoggedIn(auth),
+      auth,
       models,
+      bootstrap_hint: auth.status === "authenticated" ? null : codexBootstrapHint(),
     })}\n`);
     continue;
   }

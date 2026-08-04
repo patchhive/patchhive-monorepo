@@ -146,6 +146,9 @@ local provider/model test.
 
 Squad credentials are sensitive enough to be platform-owned:
 
+- ChatGPT subscription access goes through the shared `@patchhive/ai-local`
+  Codex adapter. Codex owns OAuth, credential persistence, and refresh; Squad
+  records store only the gateway/provider selection and never Codex tokens.
 - Per-product encryption keys are preferred, for example
   `REAPER_ENCRYPTION_KEY`.
 - `PATCHHIVE_ENCRYPTION_KEY` can be a suite-wide fallback.

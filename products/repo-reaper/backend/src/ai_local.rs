@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Result};
-use reqwest::Client;
+use reqwest::{Client, RequestBuilder};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::time::Duration;
@@ -31,6 +31,13 @@ pub fn openai_base_url() -> String {
         .unwrap_or_else(|| "https://api.openai.com/v1".to_string())
 }
 
+fn authenticate_gateway_request(request: RequestBuilder) -> RequestBuilder {
+    match nonempty_env("PATCHHIVE_AI_GATEWAY_API_KEY") {
+        Some(key) => request.bearer_auth(key),
+        None => request,
+    }
+}
+
 pub fn is_local_openai_base(base: &str) -> bool {
     reqwest::Url::parse(base)
         .ok()
@@ -48,8 +55,7 @@ pub async fn fetch_status(http: &Client) -> Value {
         return json!({ "configured": false });
     };
 
-    match http
-        .get(health_url(&url))
+    match authenticate_gateway_request(http.get(health_url(&url)))
         .timeout(Duration::from_secs(5))
         .send()
         .await
@@ -92,8 +98,7 @@ pub async fn fetch_status(http: &Client) -> Value {
 
 pub async fn fetch_models(http: &Client) -> Result<Vec<String>> {
     let url = configured_url().ok_or_else(|| anyhow!("PATCHHIVE_AI_URL is not configured"))?;
-    let resp = http
-        .get(models_url(&url))
+    let resp = authenticate_gateway_request(http.get(models_url(&url)))
         .timeout(Duration::from_secs(5))
         .send()
         .await

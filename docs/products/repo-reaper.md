@@ -443,6 +443,7 @@ PATCHHIVE_TRUST_GATE_SERVICE_TOKEN=...
 | `BOT_GITHUB_EMAIL` | ❌ | — | Git commit email |
 | `PROVIDER_API_KEY` | ❌ | — | Fallback AI provider API key |
 | `PATCHHIVE_AI_URL` | ❌ | — | OpenAI-compatible local AI gateway |
+| `PATCHHIVE_AI_GATEWAY_API_KEY` | ❌ | — | Shared bearer for authenticated calls to the local AI gateway; not a provider credential |
 | `OLLAMA_BASE_URL` | ❌ | `http://localhost:11434` | Ollama endpoint |
 | `ANTHROPIC_API_KEY` | ❌ | — | Provider-specific API key |
 | `OPENAI_API_KEY` | ❌ | — | Provider-specific API key |

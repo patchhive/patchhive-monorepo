@@ -158,10 +158,12 @@ That creates:
 
 ```bash
 cd packages/ai-local
+node --test test/*.test.js
 node --check src/cli.js
+node --check adapters/codex/auth.js
 node --check adapters/codex/index.js
 node --check adapters/copilot/index.js
-cd rust-gateway && cargo check --locked
+cd rust-gateway && cargo test --locked && cargo clippy --all-targets --locked -- -D warnings
 ```
 
 3. Commit and push the monorepo changes.

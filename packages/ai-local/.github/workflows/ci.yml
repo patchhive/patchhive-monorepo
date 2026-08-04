@@ -16,10 +16,10 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Set up Node.js
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 24
 
@@ -31,6 +31,8 @@ jobs:
 
       - name: Verify adapters
         run: |
+          node --test test/*.test.js
+          node --check adapters/codex/auth.js
           node --check adapters/codex/index.js
           node --check adapters/copilot/index.js
 
@@ -43,10 +45,13 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
 
-      - name: Check Rust gateway
-        run: cargo check --locked
+      - name: Test Rust gateway
+        run: cargo test --locked
+
+      - name: Lint Rust gateway
+        run: cargo clippy --all-targets --locked -- -D warnings

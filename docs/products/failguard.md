@@ -50,6 +50,14 @@ or insufficient evidence remain `failed`, `not_observed`, or `unknown` as
 appropriate. They must never decode as a confirmed PatchHive failure, a safe
 outcome, or permission to activate a guardrail.
 
+FailGuard's semantic workers may use a ChatGPT subscription through the shared
+`@patchhive/ai-local` Codex adapter. FailGuard does not own an OAuth flow or
+provider credential store; standalone and suite deployments both use
+`PATCHHIVE_AI_URL`. Provider availability and auth are explicit runtime
+evidence, and unavailable AI pauses or fails interpretation rather than
+promoting a candidate or permitting enforcement. See
+[ChatGPT Subscription AI](../chatgpt-subscription-ai.md).
+
 The deterministic layer remains authoritative for:
 
 - immutable source evidence, normalized identity, timestamps, and provenance;

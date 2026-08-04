@@ -12,8 +12,12 @@
     ".": "./src/index.js"
   },
   "scripts": {
+    "auth:codex": "codex login",
+    "auth:codex:device": "codex login --device-auth",
+    "auth:codex:status": "codex login status",
     "dev": "node ./src/cli.js",
-    "start": "node ./src/cli.js"
+    "start": "node ./src/cli.js",
+    "test": "node --test ./test/*.test.js"
   },
   "repository": {
     "type": "git",
@@ -33,6 +37,6 @@
   "dependencies": {
     "@github/copilot": "^1.0.17",
     "@github/copilot-sdk": "^0.2.1",
-    "@openai/codex-sdk": "^0.118.0"
+    "@openai/codex-sdk": "^0.146.0"
   }
 }

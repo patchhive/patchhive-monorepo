@@ -122,7 +122,10 @@ struct InitializeResult {
 struct AdapterHealth {
     ok: bool,
     adapter: String,
-    logged_in: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    logged_in: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    auth: Option<AdapterAuth>,
     models: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     auth_mode: Option<String>,
@@ -140,6 +143,44 @@ struct AdapterHealth {
     restart_count: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     last_restart_reason: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct AdapterAuth {
+    status: AdapterAuthStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    mode: Option<AdapterAuthMode>,
+    managed_by: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    reason: Option<AdapterAuthReason>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum AdapterAuthStatus {
+    Authenticated,
+    NotAuthenticated,
+    Failed,
+    NotObserved,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum AdapterAuthMode {
+    ChatgptSubscription,
+    ApiKey,
+    AccessToken,
+    Unknown,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum AdapterAuthReason {
+    LoginRequired,
+    CliUnavailable,
+    ProbeTimeout,
+    ProbeFailed,
+    ProbeDisabled,
 }
 
 #[derive(Debug, Deserialize)]
@@ -277,7 +318,13 @@ async fn health(State(state): State<AppState>, headers: HeaderMap) -> impl IntoR
             Err(error) => json!({
                 "ok": false,
                 "adapter": provider,
-                "logged_in": false,
+                "logged_in": null,
+                "auth": {
+                    "status": "failed",
+                    "mode": null,
+                    "managed_by": provider,
+                    "reason": "probe_failed",
+                },
                 "models": [],
                 "error": error.to_string(),
                 "restart_count": adapter.restart_count.load(Ordering::SeqCst),
@@ -1116,7 +1163,10 @@ fn unix_timestamp() -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{bounded_timeout_ms, DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS, MIN_TIMEOUT_MS};
+    use super::{
+        bounded_timeout_ms, AdapterAuthMode, AdapterAuthStatus, AdapterHealth, DEFAULT_TIMEOUT_MS,
+        MAX_TIMEOUT_MS, MIN_TIMEOUT_MS,
+    };
 
     #[test]
     fn completion_deadlines_are_always_bounded() {
@@ -1124,5 +1174,51 @@ mod tests {
         assert_eq!(bounded_timeout_ms(Some(0)), MIN_TIMEOUT_MS);
         assert_eq!(bounded_timeout_ms(Some(u64::MAX)), MAX_TIMEOUT_MS);
         assert_eq!(bounded_timeout_ms(Some(42_000)), 42_000);
+    }
+
+    #[test]
+    fn adapter_health_preserves_typed_subscription_auth() {
+        let health: AdapterHealth = serde_json::from_value(serde_json::json!({
+            "ok": true,
+            "adapter": "codex",
+            "logged_in": true,
+            "auth": {
+                "status": "authenticated",
+                "mode": "chatgpt_subscription",
+                "managed_by": "codex"
+            },
+            "models": ["gpt-5.4"]
+        }))
+        .expect("typed Codex auth health should decode");
+
+        let auth = health.auth.expect("auth observation should be present");
+        assert!(matches!(auth.status, AdapterAuthStatus::Authenticated));
+        assert!(matches!(
+            auth.mode,
+            Some(AdapterAuthMode::ChatgptSubscription)
+        ));
+    }
+
+    #[test]
+    fn failed_auth_probe_does_not_decode_as_logged_out() {
+        let health: AdapterHealth = serde_json::from_value(serde_json::json!({
+            "ok": false,
+            "adapter": "codex",
+            "logged_in": null,
+            "auth": {
+                "status": "failed",
+                "mode": null,
+                "managed_by": "codex",
+                "reason": "probe_failed"
+            },
+            "models": []
+        }))
+        .expect("failed auth evidence should decode");
+
+        assert_eq!(health.logged_in, None);
+        assert!(matches!(
+            health.auth.map(|auth| auth.status),
+            Some(AdapterAuthStatus::Failed)
+        ));
     }
 }

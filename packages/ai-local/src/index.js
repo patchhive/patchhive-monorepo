@@ -4,6 +4,13 @@ import { randomUUID, timingSafeEqual } from "node:crypto";
 import { CopilotClient } from "@github/copilot-sdk";
 import { Codex } from "@openai/codex-sdk";
 
+import {
+  codexBootstrapHint,
+  codexClientOptions,
+  legacyLoggedIn,
+  probeCodexAuth,
+} from "../adapters/codex/auth.js";
+
 const DEFAULT_TIMEOUT_MS = 120_000;
 const DEFAULT_MAX_BODY_BYTES = 1_048_576;
 const DEFAULT_PROVIDER_ORDER = ["codex", "copilot"];
@@ -244,7 +251,7 @@ function tokensEqual(presented, configured) {
 class CodexAdapter {
   constructor(config) {
     this.config = config;
-    this.client = new Codex();
+    this.client = new Codex(codexClientOptions());
   }
 
   async complete({ model, messages, timeoutMs }) {
@@ -270,6 +277,17 @@ class CodexAdapter {
       model,
       text: turn.finalResponse?.trim() || "",
       usage: turn.usage,
+    };
+  }
+
+  async health() {
+    const auth = await probeCodexAuth();
+    return {
+      ok: auth.status === "authenticated",
+      adapter: "codex",
+      logged_in: legacyLoggedIn(auth),
+      auth,
+      bootstrap_hint: auth.status === "authenticated" ? null : codexBootstrapHint(),
     };
   }
 }
@@ -319,6 +337,39 @@ class CopilotAdapter {
   async close() {
     if (this.client) {
       await this.client.stop();
+    }
+  }
+
+  async health() {
+    try {
+      const client = await this.getClient();
+      const status = await client.getAuthStatus();
+      const authenticated = Boolean(status?.isAuthenticated);
+      return {
+        ok: authenticated,
+        adapter: "copilot",
+        logged_in: authenticated,
+        auth: {
+          status: authenticated ? "authenticated" : "not_authenticated",
+          mode: status?.authType ? "logged_in_user" : null,
+          managed_by: "copilot",
+          reason: authenticated ? undefined : "login_required",
+        },
+        bootstrap_hint: authenticated ? null : "Run `npx copilot login`.",
+      };
+    } catch {
+      return {
+        ok: false,
+        adapter: "copilot",
+        logged_in: null,
+        auth: {
+          status: "failed",
+          mode: null,
+          managed_by: "copilot",
+          reason: "probe_failed",
+        },
+        bootstrap_hint: "Run `npx copilot login`.",
+      };
     }
   }
 }
@@ -407,10 +458,22 @@ export function createGateway(config = resolveGatewayConfig()) {
     }
 
     if (req.method === "GET" && url.pathname === "/health") {
+      if (!tokensEqual(requestToken(req), config.apiKey)) {
+        writeJson(res, 401, createErrorPayload("Unauthorized."));
+        return;
+      }
+      const providerEntries = await Promise.all(
+        Array.from(adapters.entries()).map(async ([provider, adapter]) => [
+          provider,
+          await adapter.health(),
+        ]),
+      );
+      const providers = Object.fromEntries(providerEntries);
       writeJson(res, 200, {
-        ok: true,
+        ok: Object.values(providers).some(provider => provider.ok),
+        gateway: "patchhive-ai-local",
         provider_order: config.providerOrder,
-        providers: Array.from(adapters.keys()),
+        providers,
         base_url_hint: `http://${config.host}:${config.port}/v1`,
       });
       return;

@@ -276,6 +276,16 @@ AI provider integration:
 - Preserve support for Anthropic, OpenAI, Gemini, Groq, Ollama, and custom OpenAI-compatible endpoints
 - No provider SDK dependencies unless there is a compelling repo-wide change
 - Prefer `PATCHHIVE_AI_URL` for PatchHive-wide OpenAI-compatible local gateways before falling back to raw provider endpoints
+- ChatGPT subscription access must use the official Codex SDK/CLI through
+  `@patchhive/ai-local`. Codex owns OAuth, credential storage, refresh, and
+  logout; PatchHive products and databases must never receive, copy, or expose
+  Codex access or refresh tokens. This is a Codex execution credential, not a
+  general OpenAI Platform API key. Standalone products use the same gateway and
+  do not require HiveCore. See `docs/chatgpt-subscription-ai.md`.
+- Local AI auth evidence is typed and redacted. Preserve `authenticated`,
+  `not_authenticated`, `failed`, and `not_observed` separately, plus the
+  credential mode; compatibility `logged_in` output is derived as
+  `true`/`false`/`null`, never a reassuring boolean after a failed probe.
 - The Rust `@patchhive/ai-local` gateway clamps completion deadlines to 1-300
   seconds and uses a bounded per-provider adapter-process pool (default 2,
   configurable to 1-8). A timed-out process is restarted; do not restore a

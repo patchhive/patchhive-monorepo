@@ -74,6 +74,7 @@ cd ../frontend && npm install && npm run dev
 | `BOT_GITHUB_USER` / `BOT_GITHUB_EMAIL` | Git identity for PatchHive commits and pull requests. |
 | `PROVIDER_API_KEY` | Direct AI provider API key when not using a local OpenAI-compatible gateway. |
 | `PATCHHIVE_AI_URL` | Optional OpenAI-compatible local gateway such as `@patchhive/ai-local`. |
+| `PATCHHIVE_AI_GATEWAY_API_KEY` | Shared bearer used by RepoReaper to call the local gateway; it is not a provider or OAuth token. |
 | `OLLAMA_BASE_URL` | Optional Ollama endpoint. |
 | `COST_BUDGET_USD` | Hard run budget ceiling; request payloads may only lower it. |
 | `MIN_REVIEW_CONFIDENCE` | Minimum Smith confidence before validation and PR delivery. |
@@ -100,6 +101,13 @@ To give HiveCore a dedicated machine credential instead of reusing the operator 
 If you only want to work on public repositories, keep your GitHub token public-only. If you want RepoReaper to clone, push, and open pull requests against specific repositories, grant only the write permissions those repositories actually need.
 
 AI and Platform Integrations: RepoReaper can run through direct provider APIs or through `@patchhive/ai-local`.
+
+The local gateway can use the OS user's ChatGPT subscription through the
+official Codex SDK. Authenticate once with `npm run auth:ai-local:codex` from
+the monorepo root, start the gateway, and keep
+`PATCHHIVE_AI_URL=http://127.0.0.1:8787/v1`. RepoReaper never receives or stores
+the Codex OAuth tokens. See
+[ChatGPT Subscription AI](../../docs/chatgpt-subscription-ai.md).
 
 ```bash
 PATCHHIVE_AI_URL=http://127.0.0.1:8787/v1

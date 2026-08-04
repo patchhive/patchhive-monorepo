@@ -395,6 +395,11 @@ typography scale, spacing system, or theme implementation.
   target-specific write. Scope guidance: [docs/github-token-scopes.md](docs/github-token-scopes.md).
 - Prefer `PATCHHIVE_AI_URL` (OpenAI-compatible local gateway) before raw provider endpoints.
   Preserve Anthropic, OpenAI, Gemini, Groq, Ollama, and custom OpenAI-compatible support.
+- ChatGPT subscription execution goes only through the official Codex SDK/CLI
+  in `@patchhive/ai-local`; Codex owns OAuth and token refresh. Products store
+  only gateway/provider selection, keep auth state typed and redacted, and may
+  use the gateway standalone without HiveCore. See
+  [docs/chatgpt-subscription-ai.md](docs/chatgpt-subscription-ai.md).
 - Encryption keys (`REAPER_ENCRYPTION_KEY`, `PATCHHIVE_ENCRYPTION_KEY`,
   `HIVECORE_ENCRYPTION_KEY`) need ≥32 chars of machine-random material
   (`openssl rand -hex 32`) and must stay stable across restarts. HiveCore uses its stable encryption

@@ -66,37 +66,58 @@ pub async fn validate_config(http: &Client) -> Vec<StartupCheck> {
 
     if ai_local_url.is_some() {
         let status = crate::ai_local::fetch_status(http).await;
-        if status["ok"].as_bool().unwrap_or(false) {
-            let ready: Vec<String> = status["providers"]
-                .as_object()
-                .map(|providers| {
-                    providers
-                        .iter()
-                        .filter(|(_, data)| {
-                            data["ok"].as_bool().unwrap_or(false)
-                                && data["logged_in"].as_bool().unwrap_or(false)
-                        })
-                        .map(|(name, _)| name.clone())
-                        .collect()
+        if let Some(providers) = status["providers"].as_object() {
+            let ready: Vec<String> = providers
+                .iter()
+                .filter(|(_, data)| {
+                    data["auth"]["status"].as_str() == Some("authenticated")
+                        || (data.get("auth").is_none()
+                            && data["logged_in"].as_bool().unwrap_or(false))
                 })
-                .unwrap_or_default();
+                .map(|(name, _)| name.clone())
+                .collect();
+            let unavailable: Vec<String> = providers
+                .iter()
+                .filter(|(_, data)| {
+                    matches!(
+                        data["auth"]["status"].as_str(),
+                        Some("failed" | "not_observed")
+                    )
+                })
+                .map(|(name, _)| name.clone())
+                .collect();
+
             if ready.is_empty() {
-                results.push(StartupCheck::warn(
-                    "PatchHive AI gateway is reachable, but no local providers are authenticated yet",
-                ).with_identity("ai_gateway", "no_authenticated_provider"));
+                if unavailable.is_empty() {
+                    results.push(StartupCheck::warn(
+                        "PatchHive AI gateway is reachable, but no local providers are authenticated yet",
+                    ).with_identity("ai_gateway", "no_authenticated_provider"));
+                } else {
+                    results.push(StartupCheck::warn(format!(
+                        "PatchHive AI gateway is reachable, but authentication could not be verified for: {}",
+                        unavailable.join(", ")
+                    )).with_identity("ai_gateway", "authentication_unknown"));
+                }
             } else {
                 results.push(StartupCheck::ok(format!(
                     "PatchHive AI gateway reachable — ready providers: {}",
                     ready.join(", ")
                 )));
             }
-        } else {
+        } else if !status["ok"].as_bool().unwrap_or(false) {
             results.push(
                 StartupCheck::warn(format!(
                     "PATCHHIVE_AI_URL is set, but the local AI gateway is not ready: {}",
                     status["error"].as_str().unwrap_or("unknown error")
                 ))
                 .with_identity("ai_gateway", "failed"),
+            );
+        } else {
+            results.push(
+                StartupCheck::warn(
+                    "PATCHHIVE_AI_URL is set, but the gateway returned no provider evidence",
+                )
+                .with_identity("ai_gateway", "provider_evidence_missing"),
             );
         }
     }

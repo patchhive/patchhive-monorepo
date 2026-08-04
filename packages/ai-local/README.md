@@ -19,6 +19,22 @@ It gives the suite one stable OpenAI-compatible endpoint while the actual model 
 
 ## Run Locally
 
+Authenticate Codex with the ChatGPT subscription owned by the current OS user:
+
+```bash
+npm run auth:ai-local:codex
+
+# Headless alternative
+npm run auth:ai-local:codex:device
+
+# Redacted status check
+npm run auth:ai-local:codex:status
+```
+
+Codex owns OAuth, credential storage, refresh, and logout. PatchHive consumes
+that login only through the official SDK and never stores or returns the OAuth
+tokens. See [ChatGPT Subscription AI](../../docs/chatgpt-subscription-ai.md).
+
 ```bash
 npm install
 npm run dev:ai-local
@@ -40,8 +56,12 @@ Key environment variables include:
 - `PATCHHIVE_AI_HOST`
 - `PATCHHIVE_AI_PORT`
 - `PATCHHIVE_AI_PROVIDER_ORDER`
+- `PATCHHIVE_AI_GATEWAY_API_KEY` (required by the Node gateway and callers;
+  required by the Rust gateway when it binds beyond loopback)
 - `PATCHHIVE_AI_ADAPTER_POOL_SIZE` (Rust gateway, default `2`, clamped to `1-8`)
 - `PATCHHIVE_AI_TIMEOUT_MS`
+- `PATCHHIVE_AI_CODEX_CLI_PATH` (only when `codex` is not on `PATH`)
+- `PATCHHIVE_AI_CODEX_AUTH_PROBE` (default `true`; `false` reports `not_observed`)
 - `PATCHHIVE_AI_CODEX_MODEL`
 - `PATCHHIVE_AI_COPILOT_MODEL`
 - `PATCHHIVE_AI_COPILOT_GITHUB_TOKEN`
@@ -53,6 +73,11 @@ Rust gateway requests may lower their deadline with `patchhive_timeout_ms`, but
 the gateway clamps it to `1-300` seconds. Each provider uses a small process pool
 so one slow completion does not block unrelated health, model, or completion
 requests; a timed-out process is restarted before it serves more work.
+
+`GET /health` reports redacted, typed provider auth evidence. Codex auth states
+are `authenticated`, `not_authenticated`, `failed`, and `not_observed`, with a
+separate mode such as `chatgpt_subscription`; an unavailable probe is never
+reported as a successful or definitively logged-out boolean.
 
 ## Repository Model
 

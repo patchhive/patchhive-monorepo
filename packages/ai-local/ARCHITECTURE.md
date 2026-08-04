@@ -1,8 +1,6 @@
 # Hybrid Architecture
 
-This package currently ships as a working Node-only localhost gateway.
-
-The long-term target is a hybrid layout:
+This package ships a Node compatibility gateway and a working hybrid gateway:
 
 - Rust owns the product-facing gateway
 - Node owns the official Codex and Copilot SDK adapters
@@ -30,7 +28,7 @@ packages/ai-local/
 
 ### Rust Gateway
 
-Future home: `packages/ai-local/rust-gateway/`
+Home: `packages/ai-local/rust-gateway/`
 
 Owns:
 
@@ -64,7 +62,7 @@ Should not own:
 
 ### Node Codex Adapter
 
-Future home: `packages/ai-local/adapters/codex/`
+Home: `packages/ai-local/adapters/codex/`
 
 Owns:
 
@@ -79,7 +77,7 @@ Should depend on:
 
 ### Node Copilot Adapter
 
-Future home: `packages/ai-local/adapters/copilot/`
+Home: `packages/ai-local/adapters/copilot/`
 
 Owns:
 
@@ -129,7 +127,7 @@ That means RepoReaper and future products do not care whether the gateway is Nod
 
 The Rust gateway and Node adapters should speak newline-delimited JSON messages.
 
-Contract lives in [adapter-v1.md](/home/coemedia/Documents/code/patchhive/packages/ai-local/contracts/adapter-v1.md).
+Contract lives in [adapter-v1.md](contracts/adapter-v1.md).
 
 Core methods:
 
@@ -201,6 +199,8 @@ Status:
 - implemented for `POST /v1/chat/completions`
 - implemented for `POST /v1/responses`
 - implemented for multi-provider fallback
+- implemented for redacted Codex auth observation, including explicit
+  ChatGPT-subscription, API-key, access-token, failed, and unobserved states
 - implemented for Copilot auth/bootstrap hints and env-driven auth config
 - implemented for automatic adapter restart and restart metadata in `/health`
 - implemented for bounded request deadlines and per-provider process pools, so

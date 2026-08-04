@@ -55,6 +55,7 @@ open rather than written as settled architecture.
 | Doc | What it covers |
 | --- | --- |
 | [Platform guardrails](platform-guardrails.md) | Reputation and alignment rules as the suite grows toward HiveCore. |
+| [ChatGPT subscription AI](chatgpt-subscription-ai.md) | Official Codex SDK/CLI subscription auth, shared gateway flow, typed status, and credential boundary. |
 | [Suite stabilization plan](suite-stabilization-plan.md) | Current stabilization priorities and tracking. |
 | [Suite backend direction](suite-backend-direction.md) | The shared-backend runtime direction (Option A) for the suite. |
 | [Product API contract v1](product-api-contract-v1.md) | First shared contract target for product backends. |
