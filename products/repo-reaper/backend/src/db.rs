@@ -1028,6 +1028,40 @@ pub fn tracked_pull_request(repo: &str, pr_number: i64) -> Result<Option<Tracked
     }))
 }
 
+pub fn record_maintainer_exclusion(repo: &str, opt_out: bool) -> Result<()> {
+    let conn = get_conn()?;
+    patchhive_product_core::repo_policy::upsert(
+        &conn,
+        &patchhive_product_core::repo_policy::RepoPolicyEntry {
+            repository: repo.to_string(),
+            kind: if opt_out {
+                patchhive_product_core::repo_policy::PolicyKind::OptOut
+            } else {
+                patchhive_product_core::repo_policy::PolicyKind::Denylist
+            },
+            source: "repo-reaper:maintainer-engagement".into(),
+            notes: "Automation halted from a trusted maintainer message.".into(),
+            verified: false,
+            updated_at: chrono::Utc::now().to_rfc3339(),
+        },
+    )
+}
+
+pub fn repository_is_excluded(repo: &str) -> Result<bool> {
+    let conn = get_conn()?;
+    Ok(
+        patchhive_product_core::repo_policy::entries_for(&conn, repo)?
+            .into_iter()
+            .any(|entry| {
+                matches!(
+                    entry.kind,
+                    patchhive_product_core::repo_policy::PolicyKind::OptOut
+                        | patchhive_product_core::repo_policy::PolicyKind::Denylist
+                )
+            }),
+    )
+}
+
 /// Count a follow-up attempt against the pull request's cap.
 ///
 /// Recorded when the attempt starts, so a crashed or failed follow-up still

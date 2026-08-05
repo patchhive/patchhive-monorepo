@@ -183,6 +183,16 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
             )
             .credential_requirements(["suite:control"]),
             contract::action(
+                "register_owned_github_artifact",
+                "Register owned GitHub artifact",
+                "POST",
+                "/engagements/artifacts",
+                "Register exact product ownership evidence for an issue or pull request before maintainer messages are accepted.",
+                false,
+                contract::ActionSafety::automatic(contract::ActionEffect::WritesLocalState),
+            )
+            .credential_requirements(["suite:control"]),
+            contract::action(
                 "create_mandate",
                 "Create mandate",
                 "POST",
@@ -244,6 +254,7 @@ pub async fn capabilities() -> Json<contract::ProductCapabilities> {
             ),
             contract::link("pr_budgets", "Pull-request budgets", "/pr-budgets"),
             contract::link("work_items", "Work ledger", "/work-items"),
+            contract::link("engagements", "Maintainer engagements", "/engagements"),
             contract::link(
                 "finding_receipts",
                 "Finding receipts",

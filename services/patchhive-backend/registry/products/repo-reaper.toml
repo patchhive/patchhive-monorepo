@@ -66,6 +66,12 @@ label = "Pull request"
 description = "Open attributed PatchHive pull requests."
 mutating = true
 
+[[capabilities]]
+id = "maintainer-follow-up"
+label = "Maintainer follow-up"
+description = "Apply approved review feedback to a RepoReaper-owned draft pull request or post one exact approved reply."
+mutating = true
+
 [[routes]]
 method = "GET"
 path = "/api/products/repo-reaper/health"
@@ -115,6 +121,16 @@ description = "Start a guarded autonomous patch run."
 method = "POST"
 path = "/api/products/repo-reaper/dry-run"
 description = "Start a dry stalk run without writing patches or opening pull requests."
+
+[[routes]]
+method = "POST"
+path = "/api/products/repo-reaper/maintainer-engagements/follow-up"
+description = "Apply one approved maintainer change request to an owned draft pull request."
+
+[[routes]]
+method = "POST"
+path = "/api/products/repo-reaper/maintainer-engagements/reply"
+description = "Post one exact operator-approved reply to an owned GitHub artifact."
 
 [[routes]]
 method = "GET"

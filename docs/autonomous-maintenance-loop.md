@@ -12,6 +12,13 @@ Mandate -> SignalHive -> HiveCore work ledger -> TrustGate -> RepoReaper
         -> pull request -> reconciliation -> RepoMemory
 ```
 
+After Tendwright publishes an issue or pull request, maintainer feedback follows
+the separate durable branch in
+[Maintainer Engagement Loop](maintainer-engagement-loop.md). A maintainer message
+is evidence, not dispatch authority; stop, opt-out, and security language pauses
+the repository, while replies and requested changes return through exact
+HiveCore approval.
+
 That form names the right products but puts important safety decisions in the
 wrong order and makes RepoMemory look like a single terminal action. The
 authoritative lifecycle below follows the current contracts where they are

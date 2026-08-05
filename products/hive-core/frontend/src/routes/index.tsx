@@ -69,6 +69,7 @@ import { ApprovalInbox } from "@/components/approval-inbox";
 import { WorkLedger } from "@/components/work-ledger";
 import { MandateControl } from "@/components/mandate-control";
 import { ControlCenter } from "@/components/control-center";
+import { EngagementInbox } from "@/components/engagement-inbox";
 
 
 type IndexSearch = { run?: string; filter?: "all" | "warn" | "crit" };
@@ -198,6 +199,7 @@ function DeckInner() {
         <SuiteRuns syncVersion={suite.version} />
         <MandateControl syncVersion={suite.version} />
         <WorkLedger syncVersion={suite.version} />
+        <EngagementInbox syncVersion={suite.version} />
         <ApprovalInbox syncVersion={suite.version} />
         <ContractDrift syncVersion={suite.version} />
         <CapabilitySearch syncVersion={suite.version} />

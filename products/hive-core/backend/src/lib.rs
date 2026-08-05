@@ -14,6 +14,7 @@ patchhive_product_core::define_api_key_auth_module! {
                 "/pr-budgets/reservations/{id}/release",
                 "/pr-budgets/releases",
                 "/work-items/findings",
+                "/engagements/artifacts",
                 "/suite-runs",
                 "/api/products/hive-core/suite-runs",
                 "/api/products/hive-core/settings",
@@ -24,6 +25,7 @@ patchhive_product_core::define_api_key_auth_module! {
                 "/api/products/hive-core/pr-budgets/reservations/{id}/release",
                 "/api/products/hive-core/pr-budgets/releases",
                 "/api/products/hive-core/work-items/findings",
+                "/api/products/hive-core/engagements/artifacts",
             ])
             .with_unauthorized_message("Unauthorized — provide X-API-Key or X-PatchHive-Service-Token.")
             .with_public_paths([
@@ -35,6 +37,7 @@ patchhive_product_core::define_api_key_auth_module! {
                 "/auth/rotate-service-token",
                 "/startup/checks",
                 "/capabilities",
+                "/webhooks/github/engagements",
                 "/api/products/hive-core/health",
                 "/api/products/hive-core/auth/login",
                 "/api/products/hive-core/auth/status",
@@ -43,6 +46,7 @@ patchhive_product_core::define_api_key_auth_module! {
                 "/api/products/hive-core/auth/rotate-service-token",
                 "/api/products/hive-core/startup/checks",
                 "/api/products/hive-core/capabilities",
+                "/api/products/hive-core/webhooks/github/engagements",
             ])
     }
 }
@@ -54,6 +58,7 @@ patchhive_product_core::define_api_key_auth_module! {
 mod bootstrap_authority;
 pub mod conductor;
 pub mod db;
+pub mod engagements;
 pub mod models;
 pub mod pipeline;
 pub mod pr_reconciliation;
@@ -256,6 +261,20 @@ pub fn router() -> Router {
             get(pipeline::list_finding_receipts).post(pipeline::ingest_findings),
         )
         .route("/work-items/:id", get(pipeline::work_item_detail))
+        .route("/engagements", get(engagements::list_engagements))
+        .route(
+            "/engagements/artifacts",
+            axum::routing::post(engagements::register_artifact),
+        )
+        .route("/engagements/:id", get(engagements::engagement_detail))
+        .route(
+            "/engagements/:id/decision",
+            axum::routing::post(engagements::decide_engagement),
+        )
+        .route(
+            "/webhooks/github/engagements",
+            axum::routing::post(engagements::github_webhook),
+        )
         .route("/events", get(pipeline::list_suite_ledger))
         .route("/blast-radius/:slug", get(pipeline::live_blast_radius))
         .route("/governance", get(pipeline::governance_status))

@@ -8,8 +8,12 @@ patchhive_product_core::define_api_key_auth_module! {
             .with_service_dispatch_paths([
                 "/run",
                 "/dry-run",
+                "/maintainer-engagements/follow-up",
+                "/maintainer-engagements/reply",
                 "/api/products/repo-reaper/run",
                 "/api/products/repo-reaper/dry-run",
+                "/api/products/repo-reaper/maintainer-engagements/follow-up",
+                "/api/products/repo-reaper/maintainer-engagements/reply",
             ])
             .with_unauthorized_message("Unauthorized — provide X-API-Key or X-PatchHive-Service-Token.")
             .with_public_paths([
@@ -224,6 +228,7 @@ pub fn router() -> Router {
         .route("/dry-run", post(pipeline::dry_run))
         .merge(routes::config::router())
         .merge(routes::history::router())
+        .merge(routes::engagement::router())
         .merge(routes::webhook::router())
         .layer(middleware::from_fn(auth::auth_middleware))
         .layer(middleware::from_fn(rate_limit_middleware))
@@ -398,6 +403,34 @@ pub fn advertised_capabilities() -> contract::ProductCapabilities {
                 contract::TargetSelectionMode::Discovery,
             ])
             .credential_requirements(["github:issues:read", "provider:ai"]),
+            contract::action(
+                "maintainer_follow_up",
+                "Apply maintainer-requested changes",
+                "POST",
+                "/maintainer-engagements/follow-up",
+                "Generate, review, test, and push a bounded follow-up commit to a RepoReaper-owned draft pull request.",
+                true,
+                contract::ActionSafety::operator_required(
+                    contract::ActionEffect::MutatesRepository {
+                        opens_pull_request: false,
+                    },
+                ),
+            )
+            .credential_requirements([
+                "github:contents:write",
+                "github:pull_requests:write",
+                "provider:ai",
+            ]),
+            contract::action(
+                "maintainer_reply",
+                "Reply to a maintainer",
+                "POST",
+                "/maintainer-engagements/reply",
+                "Post one exact operator-approved, attributed reply on a RepoReaper-owned pull request.",
+                false,
+                contract::ActionSafety::operator_required(contract::ActionEffect::WritesExternalState),
+            )
+            .credential_requirements(["github:issues:write"]),
         ],
         vec![
             contract::link("history", "History", "/history"),

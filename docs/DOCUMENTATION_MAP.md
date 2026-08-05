@@ -63,6 +63,7 @@ open rather than written as settled architecture.
 | [SQLite connection strategy](sqlite-connection-strategy.md) | Shared `SqlitePool` usage across backends. |
 | [PatchHive Registry](patchhive-registry.md) | Future hosted service for HiveCore to publish product catalogs. |
 | [MaintainerBot operating mode](maintainerbot-operating-mode.md) | Packaged bot posture, not a standalone product. |
+| [Maintainer engagement loop](maintainer-engagement-loop.md) | Signed GitHub feedback ingestion, pause policy, operator decisions, and guarded response handoffs. |
 | [HiveCore architecture](hivecore-architecture.md) | **Canonical HiveCore design.** Four layers, current-implementation blockers, and the build order toward running the whole suite. |
 | [Autonomous maintenance loop](autonomous-maintenance-loop.md) | Canonical suite-mode flow from mandate and discovery through exact-diff authorization, publication, reconciliation, and memory feedback. |
 | [HiveCore first-stack readiness](hivecore-first-stack-readiness.md) | Readiness audit for the first HiveCore product stack. |

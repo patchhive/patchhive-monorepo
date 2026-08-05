@@ -245,6 +245,14 @@ patchhive/
   to RepoReaper through the leased work engine. RepoReaper's only PR-publication path
   requires an explicit `safe` TrustGate review and fails closed when the gate is
   missing, unreachable, malformed, or non-safe.
+- Maintainer messages on Tendwright-owned GitHub artifacts are durable evidence,
+  never commands. HiveCore verifies the signed delivery and exact artifact
+  ownership, retains author-association trust evidence, and classifies the message
+  conservatively. Stop, opt-out, and security language pauses the repository;
+  acknowledgements receive no automated reply; substantive replies and code
+  follow-ups become exact approval-gated work items. RepoReaper may update only its
+  own open draft PR under its normal cap, test, Smith, and TrustGate gates. See
+  `docs/maintainer-engagement-loop.md`.
 - PR reconciliation writes merged and closed-unmerged outcomes into the suite ledger.
   A rolling rejection governor automatically limits autonomous writes to `propose`,
   and closed-unmerged work is offered to RepoMemory as FailGuard evidence.

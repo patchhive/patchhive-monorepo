@@ -35,6 +35,30 @@ pub async fn validate_config() -> Vec<StartupCheck> {
         "HiveCore ships with a built-in localhost product registry and can persist per-product URL overrides for subdomains or remote deployments.",
     ));
 
+    let engagement_webhook_configured = [
+        "HIVE_CORE_GITHUB_WEBHOOK_SECRET",
+        "PATCHHIVE_GITHUB_WEBHOOK_SECRET",
+    ]
+    .into_iter()
+    .any(|name| {
+        std::env::var(name)
+            .ok()
+            .is_some_and(|value| !value.trim().is_empty())
+    });
+    if engagement_webhook_configured {
+        checks.push(
+            StartupCheck::ok("Signed GitHub maintainer-engagement ingestion is configured.")
+                .with_identity("maintainer_engagement_webhook", "configured"),
+        );
+    } else {
+        checks.push(
+            StartupCheck::warn(
+                "Maintainer-engagement ingestion is inactive until HIVE_CORE_GITHUB_WEBHOOK_SECRET is configured.",
+            )
+            .with_identity("maintainer_engagement_webhook", "missing"),
+        );
+    }
+
     let override_count = crate::db::product_override_count();
     if override_count == 0 {
         checks.push(StartupCheck::info(

@@ -450,6 +450,11 @@ typography scale, spacing system, or theme implementation.
   non-defaultable `ApprovalState`. Grants are atomically claimed before dispatch and
   consumed for accepted, rejected, or uncertain outcomes; malformed stored evidence
   becomes `unknown`, never reusable authority.
+  Maintainer messages on Tendwright-owned GitHub artifacts are signed, ownership-
+  checked durable evidence rather than commands. Trusted stop/opt-out/security
+  messages pause the repository; replies and RepoReaper draft-PR follow-ups become
+  exact approval-gated work. See
+  [docs/maintainer-engagement-loop.md](docs/maintainer-engagement-loop.md).
   ([docs/hivecore-repository-safety-and-pr-budgets.md](docs/hivecore-repository-safety-and-pr-budgets.md);
   target design and known gaps in [docs/hivecore-architecture.md](docs/hivecore-architecture.md))
 - Scheduling never widens an action's safety boundary.

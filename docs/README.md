@@ -54,6 +54,7 @@ The product documentation set is in [products/](products/).
 - [Product API contract v1](product-api-contract-v1.md)
 - [GitHub token scopes](github-token-scopes.md)
 - [MaintainerBot operating mode](maintainerbot-operating-mode.md)
+- [Maintainer engagement loop](maintainer-engagement-loop.md)
 - [SQLite connection strategy](sqlite-connection-strategy.md)
 - [Product export workflow](product-export-workflow.md)
 - [Product starter workflow](product-starter-workflow.md)

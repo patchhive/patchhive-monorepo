@@ -4,7 +4,7 @@ use crate::db::{
     record_product_schedule_result, save_product_schedule, start_run, RunStart, RunStatus,
     DRY_RUN_SCHEDULE_ACTION, RUN_SCHEDULE_ACTION,
 };
-use crate::fix_worker::{run_follow_up, FollowUpRequest};
+use crate::fix_worker::FollowUpRequest;
 use crate::pipeline::{
     execute_dry_run, execute_run, ActiveRunGuard, RunExecutionResult, RunRequest,
 };
@@ -18,6 +18,10 @@ use axum::{
 };
 use patchhive_github_pr::{env_value, verify_github_webhook_signature};
 use patchhive_product_core::contract::TargetSelectionMode;
+use patchhive_product_core::maintainer_engagement::{
+    classify_maintainer_message, trusted_author_association, EngagementDisposition,
+    MaintainerIntent,
+};
 use patchhive_product_core::scheduling::{ProductSchedule, SaveProductScheduleRequest};
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -269,10 +273,6 @@ fn verify_webhook_signature_or_forbid(
     })
 }
 
-fn trusted_comment_author_association(value: Option<&str>) -> bool {
-    matches!(value, Some("OWNER" | "MEMBER" | "COLLABORATOR"))
-}
-
 async fn github_webhook(
     State(state): State<AppState>,
     req: Request<Body>,
@@ -322,77 +322,104 @@ async fn github_webhook(
         ));
     }
 
-    if event == "issue_comment" && payload["action"].as_str() == Some("created") {
-        let issue = &payload["issue"];
-        let comment = &payload["comment"];
+    if let Some((request, association, review_state)) =
+        maintainer_follow_up_request(&event, &payload)
+    {
         let bot = std::env::var("BOT_GITHUB_USER").unwrap_or_default();
-        let author = comment["user"]["login"].as_str().unwrap_or("");
-        let author_association = comment["author_association"].as_str();
-
-        if !issue["pull_request"].is_object() {
-            return Ok(Json(
-                json!({"triggered":false,"reason":"not_a_pull_request"}),
-            ));
-        }
-        if author == bot {
+        if request.comment_author == bot {
             return Ok(Json(json!({"triggered":false,"reason":"own_comment"})));
         }
-        if !trusted_comment_author_association(author_association) {
+        if !trusted_author_association(association) {
             return Ok(Json(json!({
                 "triggered": false,
                 "reason": "commenter_not_authorized",
             })));
         }
-        // Watch mode governs every webhook-triggered write, not just new issues.
-        if !state.watch_mode.load(std::sync::atomic::Ordering::SeqCst) {
-            return Ok(Json(
-                json!({"triggered":false,"reason":"watch_mode_disabled"}),
-            ));
+        let intent = classify_maintainer_message(&request.comment_body, review_state);
+        if intent.disposition() == EngagementDisposition::PauseRepository {
+            crate::db::record_maintainer_exclusion(
+                &request.repo,
+                intent == MaintainerIntent::OptOutRequest,
+            )
+            .map_err(|error| {
+                tracing::error!(%error, repo = request.repo, "could not persist maintainer exclusion");
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
         }
-
-        let request = FollowUpRequest {
-            repo: payload["repository"]["full_name"]
-                .as_str()
-                .unwrap_or("")
-                .to_string(),
-            pr_number: issue["number"].as_i64().unwrap_or(0),
-            issue_title: issue["title"].as_str().unwrap_or("").to_string(),
-            comment_body: comment["body"].as_str().unwrap_or("").to_string(),
-            comment_author: author.to_string(),
-        };
-
-        // Ownership and the per-pull-request cap are checked inside the run so
-        // the refusal is recorded as evidence, but they are answered
-        // synchronously here so GitHub sees why nothing happened.
-        let state_clone = state.clone();
-        tokio::spawn(async move {
-            let Ok(_active_run) = ActiveRunGuard::claim(state_clone.run_active.clone()) else {
-                tracing::info!("RepoReaper follow-up skipped because another operation is active");
-                return;
-            };
-            let permit = match state_clone
-                .process_worker_semaphore
-                .clone()
-                .acquire_owned()
-                .await
-            {
-                Ok(permit) => permit,
-                Err(_) => return,
-            };
-            let repo = request.repo.clone();
-            if let Err(refusal) = run_follow_up(state_clone, request).await {
-                tracing::info!(
-                    repo,
-                    reason = refusal.reason(),
-                    "RepoReaper follow-up refused"
-                );
-            }
-            drop(permit);
-        });
-        return Ok(Json(json!({"triggered":true,"type":"pr_follow_up"})));
+        if intent.disposition() != EngagementDisposition::ProposeChange {
+            return Ok(Json(json!({
+                "triggered": false,
+                "reason": "maintainer_message_not_a_change_request",
+                "intent": intent,
+            })));
+        }
+        return Ok(Json(json!({
+            "triggered": false,
+            "reason": "operator_approval_required",
+            "intent": intent,
+        })));
     }
 
     Ok(Json(json!({"triggered":false,"event":event})))
+}
+
+fn maintainer_follow_up_request<'a>(
+    event: &str,
+    payload: &'a Value,
+) -> Option<(FollowUpRequest, Option<&'a str>, Option<&'a str>)> {
+    let action = payload["action"].as_str()?;
+    let repo = payload["repository"]["full_name"].as_str()?.to_string();
+    match event {
+        "issue_comment" if action == "created" || action == "edited" => {
+            let issue = &payload["issue"];
+            if !issue["pull_request"].is_object() {
+                return None;
+            }
+            let comment = &payload["comment"];
+            Some((
+                FollowUpRequest {
+                    repo,
+                    pr_number: issue["number"].as_i64()?,
+                    issue_title: issue["title"].as_str().unwrap_or("").to_string(),
+                    comment_body: comment["body"].as_str().unwrap_or("").to_string(),
+                    comment_author: comment["user"]["login"].as_str()?.to_string(),
+                },
+                comment["author_association"].as_str(),
+                None,
+            ))
+        }
+        "pull_request_review" if action == "submitted" || action == "edited" => {
+            let pull_request = &payload["pull_request"];
+            let review = &payload["review"];
+            Some((
+                FollowUpRequest {
+                    repo,
+                    pr_number: pull_request["number"].as_i64()?,
+                    issue_title: pull_request["title"].as_str().unwrap_or("").to_string(),
+                    comment_body: review["body"].as_str().unwrap_or("").to_string(),
+                    comment_author: review["user"]["login"].as_str()?.to_string(),
+                },
+                review["author_association"].as_str(),
+                review["state"].as_str(),
+            ))
+        }
+        "pull_request_review_comment" if action == "created" || action == "edited" => {
+            let pull_request = &payload["pull_request"];
+            let comment = &payload["comment"];
+            Some((
+                FollowUpRequest {
+                    repo,
+                    pr_number: pull_request["number"].as_i64()?,
+                    issue_title: pull_request["title"].as_str().unwrap_or("").to_string(),
+                    comment_body: comment["body"].as_str().unwrap_or("").to_string(),
+                    comment_author: comment["user"]["login"].as_str()?.to_string(),
+                },
+                comment["author_association"].as_str(),
+                None,
+            ))
+        }
+        _ => None,
+    }
 }
 
 async fn webhook_single_fix(state: AppState, repo: &str, issue: Value) {
@@ -663,7 +690,7 @@ async fn execute_saved_schedule(
 #[cfg(test)]
 mod tests {
     use super::{
-        normalize_schedule_payload, trusted_comment_author_association,
+        maintainer_follow_up_request, normalize_schedule_payload,
         verify_webhook_signature_or_forbid,
     };
     use axum::http::{HeaderMap, StatusCode};
@@ -683,14 +710,26 @@ mod tests {
     }
 
     #[test]
-    fn follow_up_comments_require_repository_authority() {
-        for association in ["OWNER", "MEMBER", "COLLABORATOR"] {
-            assert!(trusted_comment_author_association(Some(association)));
-        }
-        for association in ["CONTRIBUTOR", "FIRST_TIME_CONTRIBUTOR", "NONE"] {
-            assert!(!trusted_comment_author_association(Some(association)));
-        }
-        assert!(!trusted_comment_author_association(None));
+    fn formal_reviews_are_normalized_into_follow_up_requests() {
+        let payload = serde_json::json!({
+            "action": "submitted",
+            "repository": {"full_name": "owner/repo"},
+            "pull_request": {"number": 7, "title": "Fix it"},
+            "review": {
+                "body": "Please change this",
+                "state": "changes_requested",
+                "author_association": "MEMBER",
+                "user": {"login": "maintainer"}
+            }
+        });
+
+        let (request, association, state) =
+            maintainer_follow_up_request("pull_request_review", &payload).expect("review");
+
+        assert_eq!(request.repo, "owner/repo");
+        assert_eq!(request.pr_number, 7);
+        assert_eq!(association, Some("MEMBER"));
+        assert_eq!(state, Some("changes_requested"));
     }
 
     #[test]

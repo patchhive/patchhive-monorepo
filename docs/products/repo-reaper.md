@@ -634,6 +634,8 @@ On boot, `startup::validate_config` runs:
 |--------|------|-------------|
 | `POST` | `/run` | Start a full autonomous hunt (SSE stream) |
 | `POST` | `/dry-run` | Dry run — discover & score only, no patches (SSE stream) |
+| `POST` | `/maintainer-engagements/follow-up` | Apply one exact approval-gated change request to an owned draft PR |
+| `POST` | `/maintainer-engagements/reply` | Post one exact approval-gated attributed reply on an owned PR |
 
 ### Configuration (authenticated)
 
@@ -692,16 +694,24 @@ RepoReaper accepts GitHub webhooks for **watch mode**:
 
 When a webhook arrives, RepoReaper verifies the signature using `patchhive_github_pr::verify_github_webhook_signature`. An empty or missing secret is rejected with `403` before the payload is parsed. Watch mode gates every webhook-triggered write.
 
-Two events are handled:
+New issues and three maintainer-feedback event families are handled:
 
 **`issues` (opened, labelled `bug`)** — triggers a new hunt with the last-used configuration through the full pipeline, if a run is not already active.
 
-**`issue_comment` (created, on a pull request)** — triggers a maintainer-feedback follow-up. This **adds a commit to the existing pull request** and never opens a competing one, so it consumes no HiveCore PR budget. It refuses unless every one of these holds:
+**`issue_comment` (created or edited, on a pull request), `pull_request_review`
+(submitted or edited), and `pull_request_review_comment` (created or edited)**
+are normalized into maintainer-feedback evidence. Acknowledgements and questions
+do not enter the patch path. Stop, opt-out, and security language records a local
+repository exclusion before returning. A trusted explicit change request returns
+`operator_approval_required`; only the guarded maintainer action can start a
+follow-up. That action **adds a commit to the existing pull request** and never
+opens a competing one, so it consumes no HiveCore PR budget. It refuses unless
+every one of these holds:
 
 | Gate | Refusal reason |
 |------|----------------|
-| Watch mode is enabled | `watch_mode_disabled` |
 | The comment is not RepoReaper's own | `own_comment` |
+| The message receives an exact operator approval | `operator_approval_required` |
 | RepoReaper opened the pull request (present in `repo_reaper_pr_tracking`) | `not_our_pull_request` |
 | The pull request is open and unmerged | `pull_request_closed` |
 | Fewer than three follow-ups already attempted on it | `follow_up_cap_reached` |
@@ -711,7 +721,10 @@ Two events are handled:
 
 Every refusal is recorded as run evidence, so a follow-up that does not happen is visible in History and to HiveCore rather than silent. The cap is consumed when the attempt starts, so a failed follow-up cannot be retried indefinitely by re-commenting.
 
-Validation runs before the commit is pushed. If it does not pass and the pull request is currently ready for review, RepoReaper returns it to draft via the GraphQL `convertPullRequestToDraft` mutation — GitHub's REST API only accepts `draft` at creation time. The pull request comment states the validation outcome and the draft change.
+Automated follow-up commits are draft-only. Validation runs before the commit is
+pushed; a failing validation does not publish the follow-up. Ready-for-review
+pull requests require an operator-controlled path rather than an automatic draft
+state change.
 
 ### Scheduled Runs
 

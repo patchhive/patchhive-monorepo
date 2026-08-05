@@ -62,7 +62,7 @@ pub fn db_path() -> String {
     product_db_path("HIVE_CORE_DB_PATH", "hive-core.db")
 }
 
-fn connect() -> rusqlite::Result<PooledSqliteConnection<'static>> {
+pub(crate) fn connect() -> rusqlite::Result<PooledSqliteConnection<'static>> {
     DB_POOL.get()
 }
 
@@ -4168,6 +4168,60 @@ fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
 
         CREATE INDEX IF NOT EXISTS idx_hive_core_work_outcomes_owner
           ON hive_core_work_outcomes (owner, outcome_kind, observed_at DESC);
+
+        CREATE TABLE IF NOT EXISTS hive_core_owned_github_artifacts (
+          id TEXT PRIMARY KEY,
+          artifact_kind TEXT NOT NULL,
+          repository TEXT NOT NULL,
+          artifact_number INTEGER NOT NULL,
+          artifact_url TEXT NOT NULL,
+          owner_product TEXT NOT NULL,
+          run_id TEXT,
+          work_item_id TEXT,
+          created_at TEXT NOT NULL,
+          UNIQUE (artifact_kind, repository, artifact_number)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_hive_core_owned_artifacts_product
+          ON hive_core_owned_github_artifacts (owner_product, created_at DESC);
+
+        CREATE TABLE IF NOT EXISTS hive_core_maintainer_engagements (
+          id TEXT PRIMARY KEY,
+          delivery_id TEXT NOT NULL,
+          source_id TEXT NOT NULL,
+          event_name TEXT NOT NULL,
+          event_action TEXT NOT NULL,
+          artifact_kind TEXT NOT NULL,
+          repository TEXT NOT NULL,
+          artifact_number INTEGER NOT NULL,
+          artifact_url TEXT NOT NULL,
+          owner_product TEXT NOT NULL,
+          author_login TEXT NOT NULL,
+          author_association TEXT NOT NULL,
+          trust_kind TEXT NOT NULL,
+          body TEXT NOT NULL,
+          intent_kind TEXT NOT NULL,
+          lifecycle_kind TEXT NOT NULL,
+          lifecycle_json TEXT NOT NULL,
+          received_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          UNIQUE (delivery_id, event_name, source_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_hive_core_engagements_inbox
+          ON hive_core_maintainer_engagements (lifecycle_kind, updated_at DESC, id DESC);
+
+        CREATE TABLE IF NOT EXISTS hive_core_maintainer_engagement_events (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          engagement_id TEXT NOT NULL,
+          event_kind TEXT NOT NULL,
+          evidence_json TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          FOREIGN KEY (engagement_id) REFERENCES hive_core_maintainer_engagements(id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_hive_core_engagement_events_record
+          ON hive_core_maintainer_engagement_events (engagement_id, created_at ASC, id ASC);
 
         CREATE TABLE IF NOT EXISTS hive_core_suite_events (
           id TEXT PRIMARY KEY,

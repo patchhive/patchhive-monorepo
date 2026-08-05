@@ -172,6 +172,11 @@ async fn execute(
     if !tracked.accepts_follow_up() {
         return Err(FollowUpRefusal::FollowUpCapReached);
     }
+    if crate::db::repository_is_excluded(&request.repo)
+        .map_err(|_| FollowUpRefusal::RepositoryBlocked)?
+    {
+        return Err(FollowUpRefusal::RepositoryBlocked);
+    }
 
     let policy = check_repository_policy(
         &state.http,

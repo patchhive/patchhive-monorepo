@@ -8,6 +8,7 @@ pub mod github_auth;
 pub mod github_permissions;
 pub mod hivecore_kernel;
 pub mod hivecore_policy;
+pub mod maintainer_engagement;
 pub mod peer_service;
 pub mod rate_limit;
 pub mod repo_memory;

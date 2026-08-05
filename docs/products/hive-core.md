@@ -208,6 +208,11 @@ canonical policy store; see
 | `GET` | `/work-items/findings` | Operator API key / Service token | Read durable product-finding receipts |
 | `POST` | `/work-items/findings` | Operator API key / Service token | Atomically ingest up to 100 concrete product findings |
 | `GET` | `/work-items/:id` | Operator API key | Read one work item with its finding receipts |
+| `GET` | `/engagements` | Operator API key | Read signed maintainer-message receipts and decisions |
+| `POST` | `/engagements/artifacts` | API key / Service token | Register exact product ownership of a GitHub artifact |
+| `GET` | `/engagements/:id` | Operator API key | Read one engagement and its audit events |
+| `POST` | `/engagements/:id/decision` | Operator API key | Record no-response/pause/resolution or propose an exact reply/follow-up |
+| `POST` | `/webhooks/github/engagements` | Public, signed | Ingest supported GitHub maintainer-message deliveries |
 | `GET` | `/events` | Operator API key | Read the unified durable work, dispatch, and outcome ledger |
 | `GET` | `/blast-radius/:slug` | Operator API key | Read work-ledger-derived impact counts for one product |
 | `GET` | `/governance` | Operator API key | Read topology, pause, smoke, resource, rate, and reputation evidence |
@@ -287,6 +292,8 @@ All errors are wrapped in the `ApiEnvelope` format:
 | `HIVE_CORE_DB_PATH` | `hive-core.db` | SQLite database file path |
 | `HIVE_CORE_DB_POOL_SIZE` | — | SQLite connection pool size |
 | `HIVE_CORE_API_KEY_HASH` | — | Argon2 hash for API key auth (optional) |
+| `HIVE_CORE_GITHUB_WEBHOOK_SECRET` | — | HMAC secret for maintainer-engagement GitHub deliveries; `PATCHHIVE_GITHUB_WEBHOOK_SECRET` is the suite compatibility name |
+| `PATCHHIVE_GITHUB_BOT_LOGIN` | `BOT_GITHUB_USER` | GitHub identity whose own messages must not re-enter the engagement loop |
 | `HIVE_CORE_SERVICE_TOKEN_HASH` | — | Argon2 hash for HiveCore service token (optional) |
 | `HIVECORE_ENCRYPTION_KEY` | — | Encrypts saved downstream product service tokens and generated suite bootstrap authority at rest. Auto-migrates existing plaintext token rows on boot; keep this key stable |
 | `PATCHHIVE_LAUNCHER_URL` | — | Base URL for the local `patchhive-launcher` service that controls Docker start/stop |

@@ -61,6 +61,11 @@ id = "work-outcome-ledger"
 label = "Work and outcome ledger"
 description = "Correlate product findings, handoffs, dispatches, pull requests, outcomes, and live blast radius."
 
+[[capabilities]]
+id = "maintainer-engagements"
+label = "Maintainer engagements"
+description = "Verify, classify, pause, and route messages on Tendwright-owned GitHub artifacts."
+
 [[routes]]
 method = "GET"
 path = "/api/products"
@@ -125,6 +130,26 @@ description = "Read one work item and its source receipts."
 method = "GET"
 path = "/api/products/hive-core/events"
 description = "Read the unified HiveCore work and outcome ledger."
+
+[[routes]]
+method = "GET"
+path = "/api/products/hive-core/engagements"
+description = "Read the durable maintainer-engagement inbox."
+
+[[routes]]
+method = "POST"
+path = "/api/products/hive-core/engagements/artifacts"
+description = "Register product ownership of a GitHub issue or pull request."
+
+[[routes]]
+method = "POST"
+path = "/api/products/hive-core/engagements/:id/decision"
+description = "Record an operator decision or propose an exact guarded response handoff."
+
+[[routes]]
+method = "POST"
+path = "/api/products/hive-core/webhooks/github/engagements"
+description = "Ingest signed GitHub maintainer messages on owned artifacts."
 
 [[routes]]
 method = "GET"
