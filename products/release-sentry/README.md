@@ -45,7 +45,7 @@ Example request:
 
 ```json
 {
-  "repo": "patchhive/patchhive-monorepo",
+  "repo": "patchhive/tendwright",
   "branch": "main",
   "target_version": "0.2.0",
   "target_tag": "v0.2.0",

@@ -51,7 +51,7 @@ DepTriage Backend
 
 ```json
 {
-  "repo": "patchhive/patchhive-monorepo",
+  "repo": "patchhive/tendwright",
   "pr_limit": 25,
   "include_alerts": true
 }
@@ -73,8 +73,8 @@ DepTriage Backend
 {
   "id": "550e8400-e29b-41d4-a716-446655440000",
   "created_at": "2026-06-28T10:30:00Z",
-  "repo": "patchhive/patchhive-monorepo",
-  "summary": "DepTriage ranked 5 dependency items for `patchhive/patchhive-monorepo`: 2 update now, 1 watch, 2 ignore for now. Highest urgency: lodash is currently marked `update now` because DepTriage saw high severity alert, major version jump, runtime impact.",
+  "repo": "patchhive/tendwright",
+  "summary": "DepTriage ranked 5 dependency items for `patchhive/tendwright`: 2 update now, 1 watch, 2 ignore for now. Highest urgency: lodash is currently marked `update now` because DepTriage saw high severity alert, major version jump, runtime impact.",
   "metrics": {
     "scanned_pull_requests": 20,
     "dependency_pull_requests": 4,
@@ -110,7 +110,7 @@ DepTriage Backend
         {
           "number": 142,
           "title": "Bump lodash from 4.17.20 to 4.17.21",
-          "html_url": "https://github.com/patchhive/patchhive-monorepo/pull/142",
+          "html_url": "https://github.com/patchhive/tendwright/pull/142",
           "updated_at": "2026-06-14T08:00:00Z",
           "author": "dependabot[bot]",
           "source_tool": "dependabot",
@@ -128,7 +128,7 @@ DepTriage Backend
           "ecosystem": "npm",
           "severity": "high",
           "summary": "Prototype Pollution in lodash",
-          "html_url": "https://github.com/patchhive/patchhive-monorepo/security/dependabot/42",
+          "html_url": "https://github.com/patchhive/tendwright/security/dependabot/42",
           "created_at": "2026-06-01T12:00:00Z",
           "vulnerable_version_range": "< 4.17.21",
           "first_patched_version": "4.17.21"
@@ -360,7 +360,7 @@ Status is `"degraded"` when `config_errors > 0` or `db_ok` is `false`, otherwise
     "ignore_for_now": 82
   },
   "recent_scans": [
-    { "id": "...", "repo": "patchhive/patchhive-monorepo", "summary": "...", "tracked_items": 5, "update_now": 2, "watch": 1, "ignore_for_now": 2, "created_at": "2026-06-28T10:30:00Z" }
+    { "id": "...", "repo": "patchhive/tendwright", "summary": "...", "tracked_items": 5, "update_now": 2, "watch": 1, "ignore_for_now": 2, "created_at": "2026-06-28T10:30:00Z" }
   ]
 }
 ```
@@ -373,7 +373,7 @@ Returns up to 30 `HistoryItem` records (most recent first):
 [
   {
     "id": "550e8400-e29b-41d4-a716-446655440000",
-    "repo": "patchhive/patchhive-monorepo",
+    "repo": "patchhive/tendwright",
     "summary": "DepTriage ranked 5 dependency items...",
     "tracked_items": 5,
     "update_now": 2,

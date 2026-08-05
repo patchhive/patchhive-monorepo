@@ -314,7 +314,7 @@ publish_package_if_needed() {
     return 1
   fi
 
-  run gh workflow run "$workflow" --repo patchhive/patchhive-monorepo --ref "$MONOREPO_BRANCH"
+  run gh workflow run "$workflow" --repo patchhive/tendwright --ref "$MONOREPO_BRANCH"
   wait_for_npm_package "$npm_name" "$version" "$local_shasum"
 }
 

@@ -847,26 +847,24 @@ fn five() { let _ = ("Content-Type", "application/vnd.github+json"); }
     #[test]
     fn github_repo_targets_parse_common_inputs() {
         assert_eq!(
-            parse_github_repo_target("patchhive/patchhive-monorepo")
+            parse_github_repo_target("patchhive/tendwright")
                 .map(|target| target.label())
                 .as_deref(),
-            Some("patchhive/patchhive-monorepo")
+            Some("patchhive/tendwright")
         );
         assert_eq!(
-            parse_github_repo_target("https://github.com/patchhive/patchhive-monorepo.git")
+            parse_github_repo_target("https://github.com/patchhive/tendwright.git")
                 .map(|target| target.label())
                 .as_deref(),
-            Some("patchhive/patchhive-monorepo")
+            Some("patchhive/tendwright")
         );
         assert_eq!(
-            parse_github_repo_target("git@github.com:patchhive/patchhive-monorepo.git")
+            parse_github_repo_target("git@github.com:patchhive/tendwright.git")
                 .map(|target| target.label())
                 .as_deref(),
-            Some("patchhive/patchhive-monorepo")
+            Some("patchhive/tendwright")
         );
-        assert!(
-            parse_github_repo_target("https://example.com/patchhive/patchhive-monorepo").is_none()
-        );
-        assert!(parse_github_repo_target("patchhive/patchhive-monorepo/tree/main").is_none());
+        assert!(parse_github_repo_target("https://example.com/patchhive/tendwright").is_none());
+        assert!(parse_github_repo_target("patchhive/tendwright/tree/main").is_none());
     }
 }

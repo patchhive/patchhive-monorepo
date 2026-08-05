@@ -78,7 +78,7 @@ patchhive/
 ### Work on an Existing Product
 
 ```bash
-git clone https://github.com/patchhive/patchhive-monorepo.git patchhive
+git clone https://github.com/patchhive/tendwright.git patchhive
 cd patchhive
 
 # Example: SignalHive

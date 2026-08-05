@@ -64,7 +64,7 @@ ReleaseSentry Backend
 
 ```json
 {
-  "repo": "patchhive/patchhive-monorepo",
+  "repo": "patchhive/tendwright",
   "branch": "main",
   "target_version": "0.2.0",
   "target_tag": "v0.2.0",
@@ -95,15 +95,15 @@ ReleaseSentry Backend
   "id": "550e8400-e29b-41d4-a716-446655440000",
   "created_at": "2026-05-15T10:30:00Z",
   "updated_at": "2026-05-15T10:30:00Z",
-  "repo": "patchhive/patchhive-monorepo",
+  "repo": "patchhive/tendwright",
   "branch": "main",
   "target_version": "0.2.0",
   "target_tag": "v0.2.0",
   "status": "watch",
   "decision": "watch",
   "score": 92,
-  "title": "patchhive/patchhive-monorepo release readiness",
-  "summary": "ReleaseSentry says watch v0.2.0 for patchhive/patchhive-monorepo: 5 passed, 1 warned, 0 blocked.",
+  "title": "patchhive/tendwright release readiness",
+  "summary": "ReleaseSentry says watch v0.2.0 for patchhive/tendwright: 5 passed, 1 warned, 0 blocked.",
   "metrics": {
     "checks": 7,
     "passed": 5,
@@ -125,7 +125,7 @@ ReleaseSentry Backend
       "status": "pass",
       "detail": "Repository is reachable and active.",
       "evidence": ["Default branch: main", "Last push: 2026-05-14T20:00:00Z"],
-      "links": [{ "label": "Repository", "url": "https://github.com/patchhive/patchhive-monorepo" }]
+      "links": [{ "label": "Repository", "url": "https://github.com/patchhive/tendwright" }]
     },
     {
       "key": "release-history",
@@ -133,7 +133,7 @@ ReleaseSentry Backend
       "status": "pass",
       "detail": "Target release v0.2.0 exists in GitHub releases.",
       "evidence": ["tag: v0.2.0", "draft: false", "prerelease: false", "published: 2026-05-13T00:00:00Z"],
-      "links": [{ "label": "Release", "url": "https://github.com/patchhive/patchhive-monorepo/releases/tag/v0.2.0" }]
+      "links": [{ "label": "Release", "url": "https://github.com/patchhive/tendwright/releases/tag/v0.2.0" }]
     },
     {
       "key": "tags",
@@ -149,7 +149,7 @@ ReleaseSentry Backend
       "status": "warn",
       "detail": "12 successes, 1 failing, 1 pending across 14 recent runs on main.",
       "evidence": ["Test Suite #847 · success", "Lint #846 · failure", "Build #845 · success"],
-      "links": [{ "label": "Latest workflow run", "url": "https://github.com/patchhive/patchhive-monorepo/actions/runs/12345" }]
+      "links": [{ "label": "Latest workflow run", "url": "https://github.com/patchhive/tendwright/actions/runs/12345" }]
     },
     {
       "key": "release-blockers",
@@ -165,7 +165,7 @@ ReleaseSentry Backend
       "status": "pass",
       "detail": "CHANGELOG.md mentions the target version or tag.",
       "evidence": ["1243 bytes decoded from CHANGELOG.md"],
-      "links": [{ "label": "CHANGELOG.md", "url": "https://github.com/patchhive/patchhive-monorepo/blob/main/CHANGELOG.md" }]
+      "links": [{ "label": "CHANGELOG.md", "url": "https://github.com/patchhive/tendwright/blob/main/CHANGELOG.md" }]
     },
     {
       "key": "release-surface",
@@ -487,7 +487,7 @@ release-sentry/
     "hold": 4
   },
   "recent_runs": [
-    { "id": "...", "repo": "patchhive/patchhive-monorepo", "decision": "ready", "score": 100, ... }
+    { "id": "...", "repo": "patchhive/tendwright", "decision": "ready", "score": 100, ... }
   ]
 }
 ```

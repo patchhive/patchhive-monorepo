@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT"
 description = "Opt-in PatchHive suite registry service."
-repository = "https://github.com/patchhive/patchhive-monorepo"
+repository = "https://github.com/patchhive/tendwright"
 
 [[bin]]
 name = "patchhive-registry"

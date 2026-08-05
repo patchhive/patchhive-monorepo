@@ -61,7 +61,7 @@ Before making the repository public:
 Current CLI limitation:
 
 - The available GitHub token has push access but not admin access to
-  `patchhive/patchhive-monorepo`.
+  `patchhive/tendwright`.
 - Repository-level settings and visibility changes must be completed by an
   admin in GitHub settings, or by rerunning the relevant `gh api` calls with an
   admin-capable token.

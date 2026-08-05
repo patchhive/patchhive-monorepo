@@ -98,7 +98,7 @@ npm run version:ui -- patch
 - any dependents updated to the new `^version`
 
 3. Commit and push the monorepo changes.
-4. Run the matching UI publish workflow in `patchhive/patchhive-monorepo`.
+4. Run the matching UI publish workflow in `patchhive/tendwright`.
 5. Sync the standalone mirror:
 
 ```bash
@@ -132,7 +132,7 @@ npm run version:product-shell -- patch
 - any dependents updated to the new `^version`
 
 3. Commit and push the monorepo changes.
-4. Run the `Publish Product Shell Package` workflow in `patchhive/patchhive-monorepo`.
+4. Run the `Publish Product Shell Package` workflow in `patchhive/tendwright`.
 5. Sync the standalone mirror:
 
 ```bash

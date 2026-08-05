@@ -15,12 +15,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/patchhive/patchhive-monorepo",
+    "url": "https://github.com/patchhive/tendwright",
     "directory": "packages/product-shell"
   },
-  "homepage": "https://github.com/patchhive/patchhive-monorepo/tree/main/packages/product-shell",
+  "homepage": "https://github.com/patchhive/tendwright/tree/main/packages/product-shell",
   "bugs": {
-    "url": "https://github.com/patchhive/patchhive-monorepo/issues"
+    "url": "https://github.com/patchhive/tendwright/issues"
   },
   "keywords": [
     "patchhive",

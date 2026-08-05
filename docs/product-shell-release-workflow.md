@@ -32,7 +32,7 @@ If you want to preview the next version without editing files:
 
 3. Commit and push the monorepo changes.
 
-4. Run the GitHub Actions workflow in `patchhive/patchhive-monorepo`:
+4. Run the GitHub Actions workflow in `patchhive/tendwright`:
 
 - `Publish Product Shell Package`
 
