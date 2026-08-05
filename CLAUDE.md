@@ -54,7 +54,7 @@ crates/
 services/
   patchhive-backend/   unified suite runtime; mounts product engines in-process
   patchhive-launcher/  localhost-only host-control daemon (Docker/.env mutation for HiveCore)
-  patchhive-registry/  opt-in registry for sanitized public suite snapshots
+  patchhive-registry/  opt-in public evidence, community snapshots, and repo opt-outs
 templates/product-starter/scaffold/   source for ./scripts/new-product.sh
 unified-ui-revamp-main/               Lovable project — executable design source for the canonical UI
 docs/                                 start at docs/DOCUMENTATION_MAP.md

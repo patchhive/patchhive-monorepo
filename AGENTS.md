@@ -375,6 +375,13 @@ Shared platform guidance:
   alternatives, not the preferred machine-auth path.
 - Startup warnings used by smoke policy require stable `(code, status)` identities. HiveCore accepts only identities explicitly listed by that product's manifest; never gate autonomy by matching warning prose.
 - The unified backend shared SQLite DB is configured with `PATCHHIVE_DB_PATH`; suite tables stay backend-owned, while product tables should be product-namespaced as engines migrate in-process.
+- The PatchHive Registry is an opt-in public evidence network and
+  repository-owner opt-out authority; installation integration is outbound-only
+  from HiveCore. It may show PatchHive-operated and community installation
+  activity, but it must never introduce leaderboards, rankings, streaks,
+  competitive scores, or volume rewards. GitHub-verified contribution outcomes
+  and instance-reported aggregates remain visibly separate, typed
+  provenance/freshness evidence; see `docs/patchhive-registry.md`.
 - Build `services/patchhive-backend/Dockerfile` from the monorepo root so every
   Rust path dependency and generated product manifest is present. Keep its
   dependency build locked, base images digest-pinned, runtime non-root, suite

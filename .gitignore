@@ -56,4 +56,7 @@ tmp/
 
 # Nested standalone site checkout
 patchhive-sites/
+
+# In-progress PatchHive.dev website concept
+unified-brand-vision-main/
 .codegraph/

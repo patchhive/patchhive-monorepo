@@ -1,23 +1,27 @@
 # PatchHive Registry
 
-The PatchHive Registry is a future hosted service that lets HiveCore publish a
-safe, opt-in view of a running PatchHive suite so the public PatchHive website
-can feel alive.
+The PatchHive Registry is PatchHive's public, opt-in evidence service. It lets
+HiveCore publish a safe view of a running Tendwright installation, exposes
+GitHub-verifiable public contribution outcomes, and owns the verified
+repository opt-out lifecycle consumed by Tendwright installations.
 
 The core idea:
 
 ```text
-Products -> HiveCore -> PatchHive Registry -> PatchHive website
+Products -> HiveCore -> PatchHive Registry -> patchhive.dev
+GitHub reconciliation ------------^
+Repository-owner controls --------^
 ```
 
 Products should not each phone home independently. HiveCore is the suite brain,
 so HiveCore should collect local state, sanitize it, and publish only the
-allowed registry snapshot. The registry is not the brain. It is the public
-switchboard and status relay.
+allowed registry snapshot. The Registry is not the brain. It is the public
+evidence and policy relay. A local Tendwright installation remains fully useful
+when the Registry is unavailable or disabled.
 
 ## Why This Fits PatchHive
 
-PatchHive is a suite, not a pile of separate tools. HiveCore already knows which
+Tendwright is a suite, not a pile of separate tools. HiveCore already knows which
 products are running, which products are paired, which smoke checks passed, what
 capabilities are exposed, and which products are ready for orchestration.
 
@@ -49,6 +53,87 @@ The registry should not become:
 - A hidden telemetry system.
 
 Local PatchHive must continue to work with the registry completely disabled.
+
+## Canonical Community And Contribution Model
+
+The Registry may show PatchHive-operated activity and opted-in community
+Tendwright installations. Its purpose is to make collective helpful
+contribution visible, not to create competition. It must never ship
+leaderboards, rankings, streaks, competitive scores, "top contributor" labels,
+acceptance-rate comparisons, or volume-based rewards.
+
+The public Registry has three evidence surfaces:
+
+1. **PatchHive-operated contributions:** public PRs opened by PatchHive-owned
+   identities and reconciled directly against GitHub.
+2. **Community installation profiles:** outbound-only, sanitized snapshots and
+   selected public contribution references submitted by operators who opted in.
+3. **Collective impact:** evidence-backed totals across eligible public records,
+   presented without comparing or ordering installations or people.
+
+An installation profile may show its own factual history, enabled product
+slugs, coarse readiness, versions, aggregate activity selected by the operator,
+and last-report time. The Registry never probes a local installation, requires
+an inbound port, receives a HiveCore control credential, or describes a
+heartbeat as proof that an instance is currently reachable.
+
+Visibility is operator-controlled:
+
+- **disabled:** HiveCore sends nothing;
+- **anonymous:** adoption and compatibility aggregates only;
+- **named private:** visible only to the operator account;
+- **unlisted:** available by stable direct link but absent from directories and
+  community aggregates; and
+- **public:** eligible for the public directory and collective impact totals.
+
+The current service implements `anonymous`, `named-private`, and `public-demo`;
+`public-demo` is the compatibility predecessor to the target `public` mode.
+Unlisted profiles and operator-managed visibility changes are not implemented
+yet. Moving to greater visibility always requires fresh consent. Reducing
+visibility must remove the profile from affected public reads immediately.
+
+Public fields carry provenance and freshness. At minimum, consumers distinguish
+`github_verified`, `instance_reported`, `stale`, `verification_failed`,
+`not_observed`, and `unknown`. These states must not collapse into zero counts,
+a reassuring status, or a single `verified` boolean.
+
+Contribution statistics are summaries over durable public PR references. The
+outcome lifecycle distinguishes open, merged, closed without merge,
+verification failed, not observed, and unknown evidence. Only GitHub-observed
+records contribute to verified totals; instance-reported counts stay labeled
+and separate.
+
+A real public PR verifies a GitHub lifecycle, but not which installation created
+it. Installation attribution additionally requires a Registry-issued receipt
+bound before publication or a GitHub identity whose control the operator
+verified. Product attribution requires structured publication evidence or PR
+disclosure and is never guessed from prose, repository topic, or author alone.
+
+Useful non-competitive summaries include:
+
+- verified PRs opened, currently open, merged, and closed without merge;
+- public repositories helped by at least one verified merged contribution;
+- maintenance categories addressed;
+- outcome totals over an explicit time window;
+- median time to first public maintainer response or merge when observable; and
+- observation timestamps with links to the underlying public PRs.
+
+Unsuccessful outcomes remain visible and may feed reviewed FailGuard learning;
+they are not hidden to improve a score.
+
+### Current Implementation Boundary
+
+The hosted-service MVP currently implements install registration,
+per-install update credentials, authenticated heartbeat and smoke ingestion,
+sanitized public-demo reads, GitHub-verified repository-owner opt-out
+assertions/revocations, and the typed HiveCore opt-out feed.
+
+It does not yet implement HiveCore publishing, contribution ingestion and
+GitHub reconciliation, verified PR statistics, unlisted profiles, credential
+rotation, visibility management, install unpublish/deletion, Maintenance Brief
+publication, or live `patchhive.dev` consumption. The website must not imply
+that any of those are live, and checked-in fixtures must be labeled as demo
+data.
 
 ## Privacy Boundary
 
@@ -196,8 +281,13 @@ POST /v1/installs/:install_id/heartbeat
 POST /v1/installs/:install_id/smoke
 POST /v1/installs/:install_id/briefs
 POST /v1/installs/:install_id/briefs/:snapshot_id/unpublish
+POST /v1/installs/:install_id/contributions
+PATCH /v1/installs/:install_id/visibility
+DELETE /v1/installs/:install_id
 GET  /v1/public/installs
 GET  /v1/public/installs/:public_slug
+GET  /v1/public/contributions
+GET  /v1/public/contributions/summary
 GET  /v1/public/briefs/:owner/:repo
 GET  /v1/public/briefs/:owner/:repo/versions/:snapshot_id
 ```
@@ -208,6 +298,11 @@ token should only allow that install to update its own registry record.
 Heartbeats should be idempotent and rate-limited. The registry should tolerate
 offline installs and show stale status clearly instead of pretending the fleet is
 still live.
+
+Contribution, visibility, deletion, and brief routes are target contracts, not
+current MVP endpoints. Contribution submission accepts bounded public PR
+references and source attribution, then queues independent GitHub verification;
+it does not accept an installation's claimed merge state as verified truth.
 
 The brief endpoints are future contract direction, not part of the current
 hosted-service MVP. Publishing a brief should use the installation's scoped
@@ -301,7 +396,11 @@ The PatchHive website can use registry data to become a living status surface.
 
 Possible website sections:
 
-- Live suite card: "12 products online"
+- PatchHive-operated contribution history with direct public PR evidence
+- Collective verified impact across opted-in installations
+- A community installation directory with no ordering by output or quality
+- Individual installation profiles showing factual history without comparison
+- Last-reported suite card: "12 products reported ready · 4 minutes ago"
 - Product fleet map with current versions
 - Latest smoke evidence
 - Public demo launch links
@@ -310,6 +409,11 @@ Possible website sections:
   assessed commit and carrying only explicitly sanitized specialist evidence
 - Anonymous install/version adoption charts
 - GHCR image freshness
+
+The website must visually separate PatchHive-operated activity, community
+activity, GitHub-verified evidence, and instance-reported evidence. Community
+copy describes shared helpful impact and must not introduce rankings,
+comparisons, streaks, scores, or volume rewards.
 
 Maintenance Brief publication must be snapshot-based. HiveCore should assemble
 the authenticated cross-product brief, show the operator the exact sanitized
@@ -438,12 +542,16 @@ explicitly opted into public reporting.
 
 ## Decision
 
-The PatchHive Registry should be pursued as a HiveCore-fed hosted registry, not
-as separate product behavior inside every product.
+The PatchHive Registry is a HiveCore-fed, opt-in public evidence network and
+repository-owner policy authority, not separate phone-home behavior inside
+every product. Its community purpose is collective helpful contribution; it
+will not ship competitive mechanics.
 
-The first implementation should be local-only:
+The implementation sequence from the current hosted-service MVP is:
 
-1. HiveCore generates a sanitized registry snapshot.
-2. The website consumes sample/local snapshots.
-3. Only after the privacy boundary feels solid should HiveCore publish to a
-   hosted registry.
+1. HiveCore generates and previews a sanitized local registry snapshot.
+2. Add visibility changes, credential rotation, immediate unpublish, and
+   deletion before inviting community installations.
+3. Add contribution receipts, source attribution, and GitHub reconciliation.
+4. Connect `patchhive.dev`, keeping fixtures visibly labeled as demo data until
+   real Registry evidence is available.

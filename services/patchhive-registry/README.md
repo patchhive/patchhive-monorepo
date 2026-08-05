@@ -4,6 +4,14 @@
 It accepts opt-in, sanitized PatchHive suite snapshots and exposes only public
 `public-demo` records.
 
+The target Registry also includes operator-controlled community instance
+profiles and GitHub-verified public contribution evidence. Those capabilities
+are not implemented by this MVP. The Registry is intentionally
+non-competitive: it will not rank installations or contributors, award
+volume-based scores, or present instance-reported counts as verified facts. See
+[`docs/patchhive-registry.md`](../../docs/patchhive-registry.md) for the
+canonical boundary and implementation plan.
+
 This service does not require HiveCore yet. HiveCore can later publish the same
 snapshot shape to these endpoints.
 
